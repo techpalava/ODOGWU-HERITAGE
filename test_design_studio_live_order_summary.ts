@@ -11,6 +11,7 @@ import type {
   FutureShippingStateV1,
   GarmentTypeStepSelection,
   StyleCategory,
+  WearerOrderStateV2,
 } from "./src/types";
 import { createAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
 import { mergeProvisionalAdditionalConstructionForLiveSummary } from "./src/utils/additionalGarmentFabricPicker";
@@ -304,6 +305,7 @@ const buildAuthority = ({
   additionalConstructionState = null as AdditionalGarmentConstructionStateV1 | null,
   designSelections = {} as DesignSelections,
   styleOverrides = {} as Partial<StyleCategory>,
+  wearerOrder = null as WearerOrderStateV2 | null,
 }: {
   garmentTypes?: GarmentTypeStepSelection["garmentTypes"];
   demographic?: NonNullable<GarmentTypeStepSelection["demographic"]>;
@@ -318,6 +320,7 @@ const buildAuthority = ({
   additionalConstructionState?: AdditionalGarmentConstructionStateV1 | null;
   designSelections?: DesignSelections;
   styleOverrides?: Partial<StyleCategory>;
+  wearerOrder?: WearerOrderStateV2 | null;
 }) => {
   const garmentTypeSelection = buildSelection(garmentTypes, demographic);
   let allocation =
@@ -493,6 +496,7 @@ const buildAuthority = ({
     measurementPlan,
     measurementState,
     basePricing,
+    ...(wearerOrder ? { wearerOrder } : {}),
   };
   const summary = projectFutureDesignStudioSummary(summaryInput);
   const selectedDesignPrice =
@@ -2019,6 +2023,105 @@ assert.doesNotMatch(viewSource, /DesignStudioOrderSummaryTrigger/);
 assert.doesNotMatch(viewSource, /closeMobileLiveOrderSummary/);
 assert.doesNotMatch(viewSource, /Your Order Summary/);
 assert.equal(LIVE_ORDER_SUMMARY_HEADING, "Order Summary");
+
+const wearerOrderFor = (
+  wearers: ReadonlyArray<{
+    wearerId: string;
+    displayName: string;
+    presentationOrder: number;
+  }>,
+  assignmentByGarmentKey: Record<string, string>,
+): WearerOrderStateV2 => ({
+  schemaVersion: 2,
+  wearers: wearers.map((wearer) => ({
+    wearerId: wearer.wearerId,
+    displayName: wearer.displayName,
+    fitContext: "male",
+    presentationOrder: wearer.presentationOrder,
+    measurement: createEmptyFutureMeasurementState(),
+  })),
+  assignmentByGarmentKey,
+});
+
+const namedWearers = buildAuthority({
+  garmentTypes: ["shirt", "kaftan"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA, kaftan: fabricA },
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-nol", displayName: "Nol", presentationOrder: 0 },
+      { wearerId: "wearer-pio", displayName: "Pio", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-nol",
+      "base:kaftan": "wearer-pio",
+    },
+  ),
+});
+const nolLine = constructionLine(namedWearers.view, "base:shirt");
+const pioLine = constructionLine(namedWearers.view, "base:kaftan");
+assert.equal(nolLine?.label, "Standard Shirt");
+assert.equal(nolLine?.wearerLabel, "Nol");
+assert.equal(nolLine?.supportingDetail, undefined);
+assert.equal(pioLine?.label, "Long Shirt");
+assert.equal(pioLine?.wearerLabel, "Pio");
+assert.equal(
+  section(namedWearers.view, "fabrics").lines.every((line) => line.wearerLabel == null),
+  true,
+);
+assert.equal(
+  section(namedWearers.view, "style_and_options").lines.every(
+    (line) => line.wearerLabel == null,
+  ),
+  true,
+);
+
+const blankWearers = buildAuthority({
+  garmentTypes: ["shirt", "kaftan"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA, kaftan: fabricA },
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-blank", displayName: "", presentationOrder: 0 },
+      { wearerId: "wearer-spaces", displayName: "   ", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-blank",
+      "base:kaftan": "wearer-spaces",
+    },
+  ),
+});
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, "Person 1");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, "Person 2");
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.label, "Long Shirt");
+
+const soloWearer = buildAuthority({
+  garmentTypes: ["shirt"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA },
+  wearerOrder: wearerOrderFor(
+    [{ wearerId: "wearer-nol", displayName: "Nol", presentationOrder: 0 }],
+    { "base:shirt": "wearer-nol" },
+  ),
+});
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, undefined);
+
+const unassignedSecond = buildAuthority({
+  garmentTypes: ["shirt", "kaftan"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA, kaftan: fabricA },
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-nol", displayName: "Nol", presentationOrder: 0 },
+      { wearerId: "wearer-pio", displayName: "Pio", presentationOrder: 1 },
+    ],
+    { "base:shirt": "wearer-nol" },
+  ),
+});
+assert.equal(constructionLine(unassignedSecond.view, "base:shirt")?.wearerLabel, "Nol");
+assert.equal(constructionLine(unassignedSecond.view, "base:kaftan")?.wearerLabel, undefined);
 
 const helperSource = readFileSync(
   new URL("./src/utils/designStudioLiveOrderSummary.ts", import.meta.url),

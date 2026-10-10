@@ -11,6 +11,20 @@ import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummar
 import { formatCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
+const GarmentWearerLine = ({
+  line,
+}: {
+  line: LiveOrderSummaryLine;
+}) =>
+  line.wearerLabel ? (
+    <p
+      data-live-order-summary-wearer={line.focusGarmentKey || line.id}
+      className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50"
+    >
+      {line.wearerLabel}
+    </p>
+  ) : null;
+
 const RemoveGarmentButton = ({
   target,
   originStage,
@@ -170,6 +184,7 @@ const SummarySection = ({
                 <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
                   {formatCustomDetailsGarmentLabel(line.label)}
                 </p>
+                <GarmentWearerLine line={line} />
                 {line.detail ? (
                   <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
                     {line.detail}
@@ -335,6 +350,7 @@ const SummarySubsection = ({
             <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
               {formatCustomDetailsGarmentLabel(line.label)}
             </p>
+            <GarmentWearerLine line={line} />
             {line.detail ? (
               <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
                 {line.detail}

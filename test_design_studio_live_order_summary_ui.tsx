@@ -1485,4 +1485,141 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
   );
 }
 
+const wearerSummaryView: LiveOrderSummaryView = {
+  sections: [
+    {
+      id: "construction",
+      title: "Garments Ordered",
+      editStage: "garment_type",
+      lines: [
+        {
+          id: "construction-base:shirt",
+          label: "Standard Shirt",
+          detail: null,
+          supportingDetail: "Fabric: Needs fabric",
+          wearerLabel: "Nol",
+          amountLabel: "€65.00",
+          focusGarmentKey: "base:shirt",
+        },
+        {
+          id: "construction-base:kaftan",
+          label: "Long Shirt",
+          detail: null,
+          wearerLabel: "Person 2",
+          amountLabel: "€70.00",
+          focusGarmentKey: "base:kaftan",
+        },
+        {
+          id: "construction-base:trouser",
+          label: "Trouser",
+          detail: null,
+          amountLabel: "€75.00",
+          focusGarmentKey: "base:trouser",
+        },
+      ],
+    },
+    {
+      id: "fabrics",
+      title: "Fabrics",
+      editStage: "fabric",
+      lines: [
+        {
+          id: "fabric-base:shirt",
+          label: "Standard Shirt",
+          detail: "Royal Forest Mosaic",
+          amountLabel: null,
+        },
+      ],
+    },
+    {
+      id: "style_and_options",
+      title: "Style & Options",
+      editStage: "design_style",
+      lines: [
+        {
+          id: "style-and-options-base:shirt",
+          label: "Standard Shirt",
+          detail: "Royal Senator Classic",
+          amountLabel: null,
+        },
+      ],
+    },
+  ],
+  totalStatus: "pending",
+  totalLabel: "Current Total",
+  totalValueLabel: "Pending",
+  totalAmountCents: null,
+  quoteRequired: false,
+};
+let wearerRenderer: ReturnType<typeof create>;
+act(() => {
+  wearerRenderer = create(
+    createElement(DesignStudioOrderSummary, {
+      view: wearerSummaryView,
+      unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric", "design_style"]),
+      currentStageId: "measurement",
+      onEditStage: () => undefined,
+    }),
+  );
+});
+const wearerNodes = wearerRenderer.root.findAll(
+  (node) => typeof node.props?.["data-live-order-summary-wearer"] === "string",
+);
+assert.deepEqual(
+  wearerNodes.map((node) => [
+    node.props["data-live-order-summary-wearer"],
+    textOf(node),
+    node.props.className,
+  ]),
+  [
+    [
+      "base:shirt",
+      "Nol",
+      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+    ],
+    [
+      "base:kaftan",
+      "Person 2",
+      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+    ],
+  ],
+);
+const shirtRow = oneByLineId(wearerRenderer.root, "construction-base:shirt");
+const shirtTitle = shirtRow.findAll(
+  (node) => node.type === "p" && node.props?.className?.includes("font-semibold"),
+);
+assert.equal(textOf(shirtTitle[0]), "Standard Shirt");
+assert.equal(
+  shirtRow.findAll(
+    (node) => node.props?.["data-live-order-summary-wearer"] === "base:shirt",
+  ).length,
+  1,
+);
+assert.equal(
+  oneByLineId(wearerRenderer.root, "construction-base:trouser").findAll(
+    (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+  ).length,
+  0,
+);
+for (const sectionId of ["fabrics", "style_and_options"]) {
+  const sectionNode = oneByTestId(
+    wearerRenderer.root,
+    `live-order-summary-section-${sectionId}`,
+  );
+  assert.equal(
+    sectionNode.findAll(
+      (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+    ).length,
+    0,
+  );
+}
+const fabricStatus = shirtRow.findAll(
+  (node) => node.type === "p" && textOf(node) === "Fabric: Needs fabric",
+);
+assert.equal(fabricStatus.length, 1);
+assert.equal(fabricStatus[0].props.className.includes("font-semibold"), true);
+act(() => {
+  wearerRenderer.unmount();
+});
+
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");
