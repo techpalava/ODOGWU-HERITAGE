@@ -1182,6 +1182,51 @@ assert.match(
   customDetailsSource,
   /orderSummary \? \(\s*<div className="mt-5 min-w-0 lg:mt-0/,
 );
+const customDetailsStageMarkup = customDetailsSource.slice(
+  customDetailsSource.indexOf("data-stage-id={stage}"),
+);
+const customDetailsSummaryGridClass =
+  "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6";
+const customDetailsSummaryGridAt = customDetailsStageMarkup.indexOf(
+  customDetailsSummaryGridClass,
+);
+assert.ok(
+  customDetailsSummaryGridAt >= 0,
+  "Steps 4 and 5 start a two-column grid for the form and live Order Summary",
+);
+const beforeCustomDetailsSummaryGrid = customDetailsStageMarkup.slice(
+  0,
+  customDetailsSummaryGridAt,
+);
+const customDetailsLeftColumnMarkers = [
+  "data-step4-garment-context-list",
+  "data-step5-garment-context-list",
+  "data-additional-garment-fabric-announcement",
+  "id={`future-${stage}-title`}",
+  "{completion.blockers.length > 0 &&",
+];
+for (const marker of customDetailsLeftColumnMarkers) {
+  assert.equal(
+    beforeCustomDetailsSummaryGrid.includes(marker),
+    false,
+    `${marker} is not a full-width sibling above the summary column`,
+  );
+}
+const customDetailsSummaryColumnAt = customDetailsStageMarkup.indexOf(
+  "orderSummary ? (",
+  customDetailsSummaryGridAt,
+);
+assert.ok(customDetailsSummaryColumnAt > customDetailsSummaryGridAt);
+const customDetailsLeftColumn = customDetailsStageMarkup.slice(
+  customDetailsSummaryGridAt,
+  customDetailsSummaryColumnAt,
+);
+for (const marker of customDetailsLeftColumnMarkers) {
+  assert.ok(
+    customDetailsLeftColumn.includes(marker),
+    `${marker} stays in the left column beside the Order Summary`,
+  );
+}
 
 const manyItemsView: LiveOrderSummaryView = {
   sections: [
