@@ -928,6 +928,15 @@ export const DormantFutureMeasurementStep = ({
   });
   const routeSaveMessage = progressPresentation.statusMessage;
   const routeStatusLabel = progressPresentation.statusLabel;
+  const fitConflictBlocksContinue = Boolean(fitConflictMessage) && !canContinueToSummary;
+  const fitConflictStatus = fitConflictBlocksContinue ? (
+    <div data-measurement-fit-conflict-status="true" className="mt-3 min-w-0">
+      <h3 className="font-serif text-lg font-bold text-heritage-green">Fit conflict</h3>
+      <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
+        {fitConflictMessage}
+      </p>
+    </div>
+  ) : null;
   const sampleStatus = getStatusLabel(
     MEASUREMENT_SAMPLE_CLOTH_METHOD,
     selectedMethod,
@@ -967,6 +976,7 @@ export const DormantFutureMeasurementStep = ({
             ariaLabel: "Continue to Summary",
           }}
         />
+        {fitConflictStatus}
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 6 of 9
         </p>
@@ -1312,7 +1322,12 @@ export const DormantFutureMeasurementStep = ({
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
               {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
             </p>
-            <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
+            <h3
+              className="mt-1 font-serif text-lg font-bold text-heritage-green"
+              data-measurement-fit-conflict-status={
+                routeStatusLabel === "Fit conflict" ? "true" : undefined
+              }
+            >
               {routeStatusLabel}
             </h3>
             <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
@@ -1557,6 +1572,14 @@ export const DormantFutureMeasurementStep = ({
           onBack={onBack}
           note={(
             <>
+              {fitConflictBlocksContinue ? (
+                <p
+                  data-measurement-fit-conflict-status="true"
+                  className="font-serif text-sm font-bold text-heritage-green lg:text-right"
+                >
+                  Fit conflict
+                </p>
+              ) : null}
               <p
                 id="measurement-risk-selection-notice"
                 data-measurement-risk-notice="true"

@@ -297,6 +297,28 @@ export const renameWearer = (
   });
 };
 
+/**
+ * Remove on the last card: blank the name and clear the fit, keep the wearer id
+ * (and measurement bag). Only for me does not call this. A later fit choice
+ * still sole-auto-assigns through reconcileWearerOrder.
+ */
+export const clearWearerIdentity = (
+  order: WearerOrderStateV2,
+  wearerId: string,
+): WearerMutationResult => {
+  if (!order.wearers.some((wearer) => wearer.wearerId === wearerId)) {
+    return blocked(order, "WEARER_NOT_FOUND");
+  }
+  return updated({
+    ...order,
+    wearers: order.wearers.map((wearer) =>
+      wearer.wearerId === wearerId
+        ? { ...wearer, displayName: "", fitContext: null }
+        : wearer,
+    ),
+  });
+};
+
 export const reorderWearers = (
   order: WearerOrderStateV2,
   wearerIds: readonly string[],
@@ -426,6 +448,87 @@ export const wearerFitConflictCopy = ({
       ? "Change the fit or add another person to split garments."
       : `Change the fit or assign ${garmentLabels.length === 1 ? "it" : "them"} to another person.`
   }`;
+
+export type MeasurementFitConflict = {
+  readonly garmentKeys: readonly string[];
+  readonly message: string;
+};
+
+/**
+ * Fit conflict that blocks Measurement Continue.
+ * Sole: garments this fit cannot wear (left unassigned by sole auto-assign),
+ * or any garment still assigned to someone whose fit cannot wear it.
+ * Split: the same assigned case, plus an unassigned garment a chosen fit
+ * cannot wear (the in-row "Not available for … selected fit" note). Merely
+ * unassigned garments that every chosen fit can wear stay on the assignment gate.
+ */
+export const resolveMeasurementFitConflict = ({
+  order,
+  garments,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+  garmentLabel,
+  wearerLabel,
+}: {
+  order: WearerOrderStateV2;
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  garmentLabel: (garment: MeasurementPhysicalGarment) => string;
+  wearerLabel: (wearer: WearerProfileV1) => string;
+}): MeasurementFitConflict | null => {
+  const isUnfit = (
+    garment: MeasurementPhysicalGarment,
+    fitContext: WearerProfileV1["fitContext"],
+  ) =>
+    fitContext !== null &&
+    !isGarmentEligibleForWearer({
+      garment,
+      fitContext,
+      garmentTypeSelection,
+      additionalGarmentConstructions,
+    });
+  const sole = order.wearers.length === 1;
+  const sorted = [...order.wearers].sort(
+    (left, right) => left.presentationOrder - right.presentationOrder,
+  );
+  for (const wearer of sorted) {
+    const conflicts = garments.filter((garment) => {
+      const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
+      return (
+        (ownerId === wearer.wearerId || (sole && !ownerId)) &&
+        isUnfit(garment, wearer.fitContext)
+      );
+    });
+    if (conflicts.length === 0) continue;
+    return {
+      garmentKeys: conflicts.map((garment) => garment.garmentKey),
+      message: wearerFitConflictCopy({
+        wearerLabel: wearerLabel(wearer),
+        garmentLabels: conflicts.map(garmentLabel),
+        sole,
+      }),
+    };
+  }
+  if (sole) return null;
+  for (const wearer of sorted) {
+    if (wearer.fitContext === null) continue;
+    const conflicts = garments.filter((garment) => {
+      const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
+      return !ownerId && isUnfit(garment, wearer.fitContext);
+    });
+    if (conflicts.length === 0) continue;
+    return {
+      garmentKeys: conflicts.map((garment) => garment.garmentKey),
+      message: wearerFitConflictCopy({
+        wearerLabel: wearerLabel(wearer),
+        garmentLabels: conflicts.map(garmentLabel),
+        sole: false,
+      }),
+    };
+  }
+  return null;
+};
 
 export const deleteWearer = (
   order: WearerOrderStateV2,
