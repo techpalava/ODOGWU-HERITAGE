@@ -268,7 +268,6 @@ const architectureView: LiveOrderSummaryView = {
       footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
       footers: [
         { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
-        { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
       ],
     },
     {
@@ -276,9 +275,13 @@ const architectureView: LiveOrderSummaryView = {
       title: "Personalized Additions",
       editStage: "personalized_additions",
       lines: [
-        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "Included" },
-        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "Included" },
-        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "Included" },
+        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+      ],
+      footer: { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
+      footers: [
+        { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
       ],
     },
     {
@@ -422,8 +425,8 @@ assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repe
   const constructionText = textOf(constructionNodes[0]);
   assert.ok(constructionText.includes("Garment Subtotal"));
   assert.ok(constructionText.includes("€210.00"));
-  assert.ok(constructionText.includes("Personalized Additions Subtotal"));
-  assert.ok(constructionText.includes("€36.00"));
+  assert.ok(!constructionText.includes("Personalized Additions Subtotal"));
+  assert.ok(!constructionText.includes("€36.00"));
   const personalizedNodes = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-personalized_additions");
   assert.equal(personalizedNodes.length, 1);
   const personalizedText = textOf(personalizedNodes[0]);
@@ -431,13 +434,51 @@ assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repe
   assert.ok(personalizedText.includes("Name Monogram"));
   assert.ok(personalizedText.includes("Embroidery Design"));
   assert.ok(personalizedText.includes("Traditional Hat"));
+  assert.equal(
+    (personalizedText.match(/€12\.00/g) || []).length,
+    3,
+    "each exact personalized addition row shows its euro price",
+  );
+  const lineItemIndex = personalizedText.indexOf("Traditional Hat");
+  const subtotalIndex = personalizedText.indexOf("Personalized Additions Subtotal");
+  assert.ok(
+    lineItemIndex >= 0 && subtotalIndex > lineItemIndex,
+    "Personalized Additions Subtotal sits after the line items",
+  );
+  assert.ok(personalizedText.includes("€36.00"));
 }
+assert.equal(
+  oneByTestId(
+    architectureRenderer.root,
+    "live-order-summary-section-personalized_additions",
+  ).findAllByProps({
+    "data-testid": "live-order-summary-personalized_additions-subtotal",
+  }).length,
+  1,
+);
+assert.equal(
+  oneByTestId(
+    architectureRenderer.root,
+    "live-order-summary-personalized_additions-subtotal",
+  ).props["data-subtotal-cents"],
+  3600,
+);
+assert.equal(
+  oneByTestId(
+    architectureRenderer.root,
+    "live-order-summary-section-construction",
+  ).findAllByProps({
+    "data-testid":
+      "live-order-summary-construction-footer-personalized-additions-subtotal",
+  }).length,
+  0,
+);
 assert.equal(
   architectureRenderer.root.findAllByProps({
     "data-testid":
       "live-order-summary-construction-footer-personalized-additions-subtotal",
   }).length,
-  1,
+  0,
 );
 const emptyPersonalizedAdditionsView: LiveOrderSummaryView = {
   ...architectureView,
@@ -1484,5 +1525,142 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
     ),
   );
 }
+
+const wearerSummaryView: LiveOrderSummaryView = {
+  sections: [
+    {
+      id: "construction",
+      title: "Garments Ordered",
+      editStage: "garment_type",
+      lines: [
+        {
+          id: "construction-base:shirt",
+          label: "Standard Shirt",
+          detail: null,
+          supportingDetail: "Fabric: Needs fabric",
+          wearerLabel: "Nol",
+          amountLabel: "€65.00",
+          focusGarmentKey: "base:shirt",
+        },
+        {
+          id: "construction-base:kaftan",
+          label: "Long Shirt",
+          detail: null,
+          wearerLabel: "Person 2",
+          amountLabel: "€70.00",
+          focusGarmentKey: "base:kaftan",
+        },
+        {
+          id: "construction-base:trouser",
+          label: "Trouser",
+          detail: null,
+          amountLabel: "€75.00",
+          focusGarmentKey: "base:trouser",
+        },
+      ],
+    },
+    {
+      id: "fabrics",
+      title: "Fabrics",
+      editStage: "fabric",
+      lines: [
+        {
+          id: "fabric-base:shirt",
+          label: "Standard Shirt",
+          detail: "Royal Forest Mosaic",
+          amountLabel: null,
+        },
+      ],
+    },
+    {
+      id: "style_and_options",
+      title: "Style & Options",
+      editStage: "design_style",
+      lines: [
+        {
+          id: "style-and-options-base:shirt",
+          label: "Standard Shirt",
+          detail: "Royal Senator Classic",
+          amountLabel: null,
+        },
+      ],
+    },
+  ],
+  totalStatus: "pending",
+  totalLabel: "Current Total",
+  totalValueLabel: "Pending",
+  totalAmountCents: null,
+  quoteRequired: false,
+};
+let wearerRenderer: ReturnType<typeof create>;
+act(() => {
+  wearerRenderer = create(
+    createElement(DesignStudioOrderSummary, {
+      view: wearerSummaryView,
+      unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric", "design_style"]),
+      currentStageId: "measurement",
+      onEditStage: () => undefined,
+    }),
+  );
+});
+const wearerNodes = wearerRenderer.root.findAll(
+  (node) => typeof node.props?.["data-live-order-summary-wearer"] === "string",
+);
+assert.deepEqual(
+  wearerNodes.map((node) => [
+    node.props["data-live-order-summary-wearer"],
+    textOf(node),
+    node.props.className,
+  ]),
+  [
+    [
+      "base:shirt",
+      "Nol",
+      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+    ],
+    [
+      "base:kaftan",
+      "Person 2",
+      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+    ],
+  ],
+);
+const shirtRow = oneByLineId(wearerRenderer.root, "construction-base:shirt");
+const shirtTitle = shirtRow.findAll(
+  (node) => node.type === "p" && node.props?.className?.includes("font-semibold"),
+);
+assert.equal(textOf(shirtTitle[0]), "Standard Shirt");
+assert.equal(
+  shirtRow.findAll(
+    (node) => node.props?.["data-live-order-summary-wearer"] === "base:shirt",
+  ).length,
+  1,
+);
+assert.equal(
+  oneByLineId(wearerRenderer.root, "construction-base:trouser").findAll(
+    (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+  ).length,
+  0,
+);
+for (const sectionId of ["fabrics", "style_and_options"]) {
+  const sectionNode = oneByTestId(
+    wearerRenderer.root,
+    `live-order-summary-section-${sectionId}`,
+  );
+  assert.equal(
+    sectionNode.findAll(
+      (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+    ).length,
+    0,
+  );
+}
+const fabricStatus = shirtRow.findAll(
+  (node) => node.type === "p" && textOf(node) === "Fabric: Needs fabric",
+);
+assert.equal(fabricStatus.length, 1);
+assert.equal(fabricStatus[0].props.className.includes("font-semibold"), true);
+act(() => {
+  wearerRenderer.unmount();
+});
 
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestInstance } from "react-test-renderer";
 import type {
   AiTryOnWorkflowStateV1,
   AdditionalGarmentConstructionStateV1,
@@ -11,6 +12,7 @@ import type {
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
   StyleCategory,
+  WearerOrderStateV2,
 } from "./src/types";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import {
@@ -2353,5 +2355,280 @@ assert.match(
   readFileSync("src/components/DesignStudioView.tsx", "utf8"),
   /uploadedPreviewByOccurrenceToken: futureDesignStylePreviewByOccurrenceToken/,
 );
+
+const directText = (node: ReactTestInstance): string =>
+  node.children.filter((child): child is string => typeof child === "string").join("");
+
+const renderSummaryGarmentCards = (
+  summary: ReturnType<typeof projectFutureDesignStudioSummary>,
+  extras: {
+    onEditGarment?: (garmentKey: string) => void;
+    removalTargets?: ReadonlyArray<{
+      garmentKey: string;
+      occurrenceLabel: string;
+      roleLabel: string;
+      presentationOrdinal: number;
+      canRequestRemoval: boolean;
+      disabledReason: string | null;
+      accessibleName: string;
+    }>;
+  } = {},
+) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureSummaryStep, {
+        summary,
+        onBack: () => {},
+        onEditGarments: () => {},
+        onEditFabrics: () => {},
+        onEditDesignStyle: () => {},
+        onEditCustomDetails: () => {},
+        onEditAiTryOn: () => {},
+        onEditMeasurements: () => {},
+        onEditGarment: extras.onEditGarment,
+        removalTargets: extras.removalTargets,
+        onRequestGarmentRemoval: extras.removalTargets ? () => {} : undefined,
+        canContinueToShipping: false,
+        onContinueToShipping: () => {},
+      }),
+    );
+  });
+  const cards = renderer.root.findAll(
+    (node) =>
+      node.type === "article" &&
+      typeof node.props["data-summary-garment-card"] === "string",
+  );
+  const wearerChips = renderer.root.findAll(
+    (node) =>
+      node.type === "span" &&
+      typeof node.props["data-summary-garment-wearer"] === "string",
+  );
+  const headings = renderer.root.findAll(
+    (node) =>
+      node.type === "h4" &&
+      typeof node.props["data-garment-removal-row-heading"] === "string",
+  );
+  return { renderer, cards, wearerChips, headings };
+};
+
+const wearerOrderFor = (
+  wearers: ReadonlyArray<{
+    wearerId: string;
+    displayName: string;
+    presentationOrder: number;
+  }>,
+  assignmentByGarmentKey: Record<string, string>,
+): WearerOrderStateV2 => ({
+  schemaVersion: 2,
+  wearers: wearers.map((wearer) => ({
+    wearerId: wearer.wearerId,
+    displayName: wearer.displayName,
+    fitContext: "male" as const,
+    presentationOrder: wearer.presentationOrder,
+    measurement: exactInput.measurementState,
+  })),
+  assignmentByGarmentKey,
+});
+
+const repeatedWearerSummary = (
+  wearerOrder: WearerOrderStateV2,
+) =>
+  projectFutureDesignStudioSummary({
+    ...exactInput,
+    fabricAllocationState: repeatedShirtFabricState,
+    additionalGarmentConstructionState: repeatedShirtConstruction.state,
+    wearerOrder,
+  });
+
+assert.equal(exactSummary.garmentSummary[0]?.wearerLabel, null);
+
+const namedWearerSummary = repeatedWearerSummary(
+  wearerOrderFor(
+    [
+      { wearerId: "wearer-chief", displayName: "Chief", presentationOrder: 0 },
+      { wearerId: "wearer-ada", displayName: "Ada", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-chief",
+      "additional:shirt:1": "wearer-ada",
+    },
+  ),
+);
+assert.equal(
+  namedWearerSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")?.wearerLabel,
+  "Chief",
+);
+assert.equal(
+  namedWearerSummary.garmentSummary.find((row) => row.garmentKey === "additional:shirt:1")?.wearerLabel,
+  "Ada",
+);
+const namedCards = renderSummaryGarmentCards(namedWearerSummary, {
+  onEditGarment: () => {},
+  removalTargets: [
+    {
+      garmentKey: "base:shirt",
+      occurrenceLabel: "Standard Shirt",
+      roleLabel: "main",
+      presentationOrdinal: 1,
+      canRequestRemoval: true,
+      disabledReason: null,
+      accessibleName: "Remove Standard Shirt",
+    },
+    {
+      garmentKey: "additional:shirt:1",
+      occurrenceLabel: "Standard Shirt 2",
+      roleLabel: "additional",
+      presentationOrdinal: 2,
+      canRequestRemoval: true,
+      disabledReason: null,
+      accessibleName: "Remove Standard Shirt 2",
+    },
+  ],
+});
+assert.deepEqual(
+  namedCards.headings.map((heading) => [
+    heading.props["data-garment-removal-row-heading"],
+    directText(heading),
+  ]),
+  [
+    ["base:shirt", "Standard Shirt"],
+    ["additional:shirt:1", "Standard Shirt 2"],
+  ],
+);
+assert.deepEqual(
+  namedCards.wearerChips.map((chip) => [
+    chip.props["data-summary-garment-wearer"],
+    directText(chip),
+  ]),
+  [
+    ["base:shirt", "Chief"],
+    ["additional:shirt:1", "Ada"],
+  ],
+);
+assert.equal(
+  namedCards.headings.some((heading) =>
+    heading.findAll(
+      (node) => node.props["data-summary-garment-wearer"] !== undefined,
+    ).length > 0,
+  ),
+  false,
+);
+assert.deepEqual(
+  namedCards.renderer.root
+    .findAll(
+      (node) =>
+        node.type === "button" &&
+        typeof node.props["data-summary-edit-garment"] === "string",
+    )
+    .map((button) => button.props["data-summary-edit-garment"]),
+  ["base:shirt", "additional:shirt:1"],
+);
+assert.deepEqual(
+  namedCards.renderer.root
+    .findAll(
+      (node) =>
+        node.type === "button" &&
+        typeof node.props["data-garment-removal-button"] === "string",
+    )
+    .map((button) => [
+      button.props["data-garment-removal-button"],
+      button.props["data-garment-removal-origin-stage"],
+    ]),
+  [
+    ["base:shirt", "summary"],
+    ["additional:shirt:1", "summary"],
+  ],
+);
+act(() => {
+  namedCards.renderer.unmount();
+});
+
+const blankNameSummary = repeatedWearerSummary(
+  wearerOrderFor(
+    [
+      { wearerId: "wearer-blank", displayName: "", presentationOrder: 0 },
+      { wearerId: "wearer-spaces", displayName: "   ", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-blank",
+      "additional:shirt:1": "wearer-spaces",
+    },
+  ),
+);
+assert.deepEqual(
+  blankNameSummary.garmentSummary.map((row) => [row.garmentKey, row.wearerLabel]),
+  [
+    ["base:shirt", "Person 1"],
+    ["additional:shirt:1", "Person 2"],
+  ],
+);
+const blankCards = renderSummaryGarmentCards(blankNameSummary);
+assert.deepEqual(
+  blankCards.wearerChips.map((chip) => [
+    chip.props["data-summary-garment-wearer"],
+    directText(chip),
+  ]),
+  [
+    ["base:shirt", "Person 1"],
+    ["additional:shirt:1", "Person 2"],
+  ],
+);
+assert.deepEqual(
+  blankCards.headings.map((heading) => directText(heading)),
+  ["Standard Shirt", "Standard Shirt 2"],
+);
+act(() => {
+  blankCards.renderer.unmount();
+});
+
+const soloWearerSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerOrder: wearerOrderFor(
+    [{ wearerId: "wearer-amaka", displayName: "Amaka", presentationOrder: 0 }],
+    { "base:shirt": "wearer-amaka" },
+  ),
+});
+assert.equal(soloWearerSummary.garmentSummary[0]?.wearerLabel, null);
+const soloCards = renderSummaryGarmentCards(soloWearerSummary);
+assert.equal(soloCards.cards.length, 1);
+assert.equal(soloCards.wearerChips.length, 0);
+assert.equal(directText(soloCards.headings[0]), "Standard Shirt");
+act(() => {
+  soloCards.renderer.unmount();
+});
+
+const partialAssignmentSummary = repeatedWearerSummary(
+  wearerOrderFor(
+    [
+      { wearerId: "wearer-chief", displayName: "Chief", presentationOrder: 0 },
+      { wearerId: "wearer-ada", displayName: "Ada", presentationOrder: 1 },
+    ],
+    { "base:shirt": "wearer-chief" },
+  ),
+);
+assert.equal(
+  partialAssignmentSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")
+    ?.wearerLabel,
+  "Chief",
+);
+assert.equal(
+  partialAssignmentSummary.garmentSummary.find(
+    (row) => row.garmentKey === "additional:shirt:1",
+  )?.wearerLabel,
+  null,
+);
+const partialCards = renderSummaryGarmentCards(partialAssignmentSummary);
+assert.deepEqual(
+  partialCards.wearerChips.map((chip) => [
+    chip.props["data-summary-garment-wearer"],
+    directText(chip),
+  ]),
+  [["base:shirt", "Chief"]],
+);
+act(() => {
+  partialCards.renderer.unmount();
+});
 
 console.log("PASS: dormant future Summary projection and Step 7 integration");

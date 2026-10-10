@@ -385,6 +385,14 @@ export const DormantFutureSummaryStep = ({
                       <span className="rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
                         {garment.role}
                       </span>
+                      {garment.wearerLabel ? (
+                        <span
+                          data-summary-garment-wearer={garment.garmentKey}
+                          className="rounded-full border border-heritage-ink/12 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-heritage-ink/60"
+                        >
+                          {garment.wearerLabel}
+                        </span>
+                      ) : null}
                     </div>
                     {removalTarget?.disabledReason && (
                       <p

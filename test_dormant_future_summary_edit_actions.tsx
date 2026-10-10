@@ -18,6 +18,7 @@ const summary: FutureDesignStudioSummary = {
       physicalComponents: [],
       construction: [],
       constructionTotalCents: 0,
+      wearerLabel: null,
     },
     {
       garmentKey: "base:trouser",
@@ -29,6 +30,7 @@ const summary: FutureDesignStudioSummary = {
       physicalComponents: [],
       construction: [],
       constructionTotalCents: 0,
+      wearerLabel: null,
     },
   ],
   fabricSummary: [
