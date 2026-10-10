@@ -2174,6 +2174,7 @@ const wearerOrderFor = (
     wearerId: string;
     displayName: string;
     presentationOrder: number;
+    fitContext?: "male" | "female" | "unisex" | null;
   }>,
   assignmentByGarmentKey: Record<string, string>,
 ): WearerOrderStateV2 => ({
@@ -2181,7 +2182,7 @@ const wearerOrderFor = (
   wearers: wearers.map((wearer) => ({
     wearerId: wearer.wearerId,
     displayName: wearer.displayName,
-    fitContext: "male",
+    fitContext: wearer.fitContext === undefined ? "male" : wearer.fitContext,
     presentationOrder: wearer.presentationOrder,
     measurement: createEmptyFutureMeasurementState(),
   })),
@@ -2207,16 +2208,20 @@ const nolLine = constructionLine(namedWearers.view, "base:shirt");
 const pioLine = constructionLine(namedWearers.view, "base:kaftan");
 assert.equal(nolLine?.label, "Standard Shirt");
 assert.equal(nolLine?.wearerLabel, "Nol");
+assert.equal(nolLine?.fitLabel, "Male fit");
 assert.equal(nolLine?.supportingDetail, undefined);
 assert.equal(pioLine?.label, "Long Shirt");
 assert.equal(pioLine?.wearerLabel, "Pio");
+assert.equal(pioLine?.fitLabel, "Male fit");
 assert.equal(
-  section(namedWearers.view, "fabrics").lines.every((line) => line.wearerLabel == null),
+  section(namedWearers.view, "fabrics").lines.every(
+    (line) => line.wearerLabel == null && line.fitLabel == null,
+  ),
   true,
 );
 assert.equal(
   section(namedWearers.view, "style_and_options").lines.every(
-    (line) => line.wearerLabel == null,
+    (line) => line.wearerLabel == null && line.fitLabel == null,
   ),
   true,
 );
@@ -2237,7 +2242,9 @@ const blankWearers = buildAuthority({
   ),
 });
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, "Person 1");
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, "Male fit");
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, "Person 2");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, "Male fit");
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.label, "Standard Shirt");
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.label, "Long Shirt");
 
@@ -2246,12 +2253,47 @@ const soloWearer = buildAuthority({
   demographic: "male",
   fabricByGarment: { shirt: fabricA },
   wearerOrder: wearerOrderFor(
-    [{ wearerId: "wearer-nol", displayName: "Nol", presentationOrder: 0 }],
-    { "base:shirt": "wearer-nol" },
+    [{
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      presentationOrder: 0,
+      fitContext: "female",
+    }],
+    { "base:shirt": "wearer-amaka" },
   ),
 });
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.label, "Standard Shirt");
-assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, undefined);
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, "Amaka");
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, "Female fit");
+assert.equal(
+  section(soloWearer.view, "fabrics").lines.every(
+    (line) => line.wearerLabel == null && line.fitLabel == null,
+  ),
+  true,
+);
+assert.equal(
+  section(soloWearer.view, "style_and_options").lines.every(
+    (line) => line.wearerLabel == null && line.fitLabel == null,
+  ),
+  true,
+);
+
+const soloFitUnset = buildAuthority({
+  garmentTypes: ["shirt"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA },
+  wearerOrder: wearerOrderFor(
+    [{
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      presentationOrder: 0,
+      fitContext: null,
+    }],
+    { "base:shirt": "wearer-amaka" },
+  ),
+});
+assert.equal(constructionLine(soloFitUnset.view, "base:shirt")?.wearerLabel, "Amaka");
+assert.equal(constructionLine(soloFitUnset.view, "base:shirt")?.fitLabel, undefined);
 
 const unassignedSecond = buildAuthority({
   garmentTypes: ["shirt", "kaftan"],
@@ -2266,7 +2308,9 @@ const unassignedSecond = buildAuthority({
   ),
 });
 assert.equal(constructionLine(unassignedSecond.view, "base:shirt")?.wearerLabel, "Nol");
+assert.equal(constructionLine(unassignedSecond.view, "base:shirt")?.fitLabel, "Male fit");
 assert.equal(constructionLine(unassignedSecond.view, "base:kaftan")?.wearerLabel, undefined);
+assert.equal(constructionLine(unassignedSecond.view, "base:kaftan")?.fitLabel, undefined);
 
 const helperSource = readFileSync(
   new URL("./src/utils/designStudioLiveOrderSummary.ts", import.meta.url),

@@ -1584,6 +1584,7 @@ const wearerSummaryView: LiveOrderSummaryView = {
           detail: null,
           supportingDetail: "Fabric: Needs fabric",
           wearerLabel: "Nol",
+          fitLabel: "Female fit",
           amountLabel: "€65.00",
           focusGarmentKey: "base:shirt",
         },
@@ -1592,6 +1593,7 @@ const wearerSummaryView: LiveOrderSummaryView = {
           label: "Long Shirt",
           detail: null,
           wearerLabel: "Person 2",
+          fitLabel: "Male fit",
           amountLabel: "€70.00",
           focusGarmentKey: "base:kaftan",
         },
@@ -1681,9 +1683,44 @@ assert.equal(
   ).length,
   1,
 );
+const fitNodes = wearerRenderer.root.findAll(
+  (node) => typeof node.props?.["data-live-order-summary-fit"] === "string",
+);
+assert.deepEqual(
+  fitNodes.map((node) => [
+    node.props["data-live-order-summary-fit"],
+    textOf(node),
+    node.props.className,
+  ]),
+  [
+    [
+      "base:shirt",
+      "Female fit",
+      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+    ],
+    [
+      "base:kaftan",
+      "Male fit",
+      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+    ],
+  ],
+);
+const shirtChildTypes = shirtRow.findAll(
+  (node) =>
+    node.props?.["data-live-order-summary-wearer"] === "base:shirt" ||
+    node.props?.["data-live-order-summary-fit"] === "base:shirt",
+);
+assert.deepEqual(
+  shirtChildTypes.map((node) =>
+    node.props["data-live-order-summary-wearer"] ? "wearer" : "fit",
+  ),
+  ["wearer", "fit"],
+);
 assert.equal(
   oneByLineId(wearerRenderer.root, "construction-base:trouser").findAll(
-    (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+    (node) =>
+      node.props?.["data-live-order-summary-wearer"] !== undefined ||
+      node.props?.["data-live-order-summary-fit"] !== undefined,
   ).length,
   0,
 );
@@ -1694,7 +1731,9 @@ for (const sectionId of ["fabrics", "style_and_options"]) {
   );
   assert.equal(
     sectionNode.findAll(
-      (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+      (node) =>
+        node.props?.["data-live-order-summary-wearer"] !== undefined ||
+        node.props?.["data-live-order-summary-fit"] !== undefined,
     ).length,
     0,
   );

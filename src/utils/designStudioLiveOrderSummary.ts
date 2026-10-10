@@ -69,9 +69,14 @@ export interface LiveOrderSummaryLine {
   readonly supportingDetail?: string | null;
   /**
    * Assigned person's public name on a Garments Ordered row.
-   * Set only when the summary garment has a wearerLabel (2+ people, assigned).
+   * Set when the summary garment has a wearerLabel.
    */
   readonly wearerLabel?: string | null;
+  /**
+   * Assigned person's fit on a Garments Ordered row.
+   * Set when the summary garment has a fitLabel.
+   */
+  readonly fitLabel?: string | null;
   readonly amountLabel: string | null;
   /** Canonical selected Design thumbnail, scoped to this exact occurrence. */
   readonly imageUrl?: string | null;
@@ -682,6 +687,7 @@ export const projectDesignStudioLiveOrderSummary = ({
       label: garmentLabels.get(garment.garmentKey) || garment.label,
       detail: null,
       ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
+      ...(garment.fitLabel ? { fitLabel: garment.fitLabel } : {}),
       amountLabel:
         garment.constructionTotalCents === null
           ? null
