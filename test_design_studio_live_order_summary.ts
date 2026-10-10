@@ -1973,6 +1973,24 @@ assert.deepEqual(
       amountCents: constructionSection.footer?.amountCents,
       note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
     },
+  ],
+  "Garments Ordered keeps only Garment Subtotal",
+);
+assert.equal(
+  constructionSection.footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ),
+  false,
+  "Personalized Additions Subtotal is not under Garments Ordered",
+);
+assert.deepEqual(
+  personalizedSection.footers?.map(({ id, label, amountCents, note }) => ({
+    id,
+    label,
+    amountCents,
+    note,
+  })),
+  [
     {
       id: "personalized-additions-subtotal",
       label: LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
@@ -1980,7 +1998,12 @@ assert.deepEqual(
       note: "",
     },
   ],
-  "Garments Ordered stacks Garment Subtotal then Personalized Additions Subtotal",
+  "Personalized Additions Subtotal sits on the Personalized Additions section",
+);
+assert.equal(
+  personalizedSection.footer?.id,
+  "personalized-additions-subtotal",
+  "the section footer is the Personalized Additions Subtotal",
 );
 assert.equal(
   personalizedAdditions.view.totalLabel,
@@ -2076,11 +2099,18 @@ assert.deepEqual(
   "zero and missing exact prices stay Included; a non-exact price requires evaluation",
 );
 assert.equal(
-  section(mixedPersonalizedPrices, "construction").footers?.find(
+  section(mixedPersonalizedPrices, "personalized_additions").footers?.find(
     (footer) => footer.id === "personalized-additions-subtotal",
   )?.amountCents,
   1200,
   "the Personalized Additions Subtotal still rolls up only exact prices above zero",
+);
+assert.equal(
+  section(mixedPersonalizedPrices, "construction").footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ),
+  false,
+  "a partial Personalized Additions Subtotal stays off Garments Ordered",
 );
 assert.equal(
   mixedPersonalizedPrices.totalAmountCents,
@@ -2100,11 +2130,18 @@ assert.equal(
   "an invalid personalized addition price requires evaluation and is not shown as euros",
 );
 assert.equal(
+  section(invalidPersonalizedPrice, "personalized_additions").footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ) ?? false,
+  false,
+  "a zero-priced exact set does not add a Personalized Additions Subtotal",
+);
+assert.equal(
   section(invalidPersonalizedPrice, "construction").footers?.some(
     (footer) => footer.id === "personalized-additions-subtotal",
   ),
   false,
-  "a zero-priced exact set does not add a Personalized Additions Subtotal",
+  "a zero-priced exact set does not put a Personalized Additions Subtotal under Garments Ordered",
 );
 assert.equal(
   invalidPersonalizedPrice.totalAmountCents,
