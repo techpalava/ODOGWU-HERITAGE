@@ -6,7 +6,7 @@ import {
 } from "./customerAuth.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 
-function authErrorResponse(error: unknown) {
+export function authErrorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   switch (message) {
     case "INVALID_CREDENTIALS":
@@ -29,6 +29,12 @@ function authErrorResponse(error: unknown) {
       return {
         status: 409,
         message: "An account with this email address already exists.",
+      };
+    case "EMAIL_ALREADY_REGISTERED":
+      return {
+        status: 409,
+        message:
+          "This email is already registered. Sign in with Google or your existing PIN.",
       };
     case "INVALID_REGISTRATION":
       return {
