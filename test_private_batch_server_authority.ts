@@ -6,7 +6,7 @@ import {
   FutureOrderV2ServerError,
   persistFutureOrderV2ForVerifiedIdentity,
 } from "./src/server/futureOrderV2Persistence";
-import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import { createCatalogueAuthoritativeFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
   throw new Error("This authority regression requires the Firestore emulator.");
@@ -22,7 +22,11 @@ const persist = (uid: string, orderId: string, orderIdentity: any) =>
   persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid, isAnonymous: false },
     request: {
-      masterOrder: createFutureOrderV2Fixture(orderId, undefined, orderIdentity),
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(
+        orderId,
+        undefined,
+        orderIdentity,
+      ),
       customerOwnerUid: uid,
     },
     adapter,

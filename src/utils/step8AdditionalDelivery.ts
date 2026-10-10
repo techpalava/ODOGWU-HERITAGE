@@ -21,7 +21,7 @@ import {
   type Step8DestinationSelectionMode,
   type Step8DestinationZone,
   type Step8WeightTier,
-} from "../config/Step8AdditionalDeliveryConfig";
+} from "../config/Step8AdditionalDeliveryConfig.js";
 
 export type Step8DeliveryMethod = FutureShippingFulfilmentSelection;
 

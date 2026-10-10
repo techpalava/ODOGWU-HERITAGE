@@ -21,7 +21,10 @@ import {
   persistFutureOrderV2ForVerifiedIdentity,
 } from "./src/server/futureOrderV2Persistence";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
-import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import {
+  createCatalogueAuthoritativeFutureOrderV2Fixture,
+  createFutureOrderV2Fixture,
+} from "./testing/futureOrderV2Fixture";
 
 const PROJECT_ID = "demo-odogwu-future-order-v2";
 const EMULATOR_HOST = "127.0.0.1:8088";
@@ -64,7 +67,7 @@ const persistAsOwner = (orderId: string, styleName?: string) =>
   persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid: OWNER_UID, isAnonymous: false },
     request: {
-      masterOrder: createFutureOrderV2Fixture(orderId, styleName),
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(orderId, styleName),
       customerOwnerUid: OWNER_UID,
     },
     adapter: adminAdapter,

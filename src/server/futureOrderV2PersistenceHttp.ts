@@ -1,4 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import {
@@ -28,9 +29,20 @@ type FutureOrderV2AdminServices = {
 export interface FutureOrderV2PersistenceHttpDependencies {
   getServices?: () => FutureOrderV2AdminServices;
   createAdapter?: (db: unknown) => FutureOrderV2PersistenceAdapter;
+  readCatalog?: (db: unknown) => Promise<unknown>;
   now?: () => Date;
   log?: (message: string) => void;
 }
+
+const readCustomDetailCatalog = async (db: unknown): Promise<unknown[]> => {
+  if (!db || typeof (db as { collection?: unknown }).collection !== "function") {
+    return [];
+  }
+  const snapshot = await (db as Firestore).collection("custom_detail_catalog").get();
+  return snapshot.docs.map((entry) =>
+    attachCustomDetailCatalogDocumentId(entry.id, entry.data()),
+  );
+};
 
 const getHeader = (req: HttpRequest, name: string): string | undefined => {
   const value = req.headers[name.toLowerCase()];
@@ -74,6 +86,7 @@ export const createFutureOrderV2PersistenceHandler = (
     dependencies.createAdapter ||
     ((db: unknown) =>
       createAdminFutureOrderV2PersistenceAdapter(db as Firestore));
+  const readCatalog = dependencies.readCatalog || readCustomDetailCatalog;
   const log = dependencies.log || ((message: string) => console.info(message));
 
   return async (req: HttpRequest, res: HttpResponse) => {
@@ -124,6 +137,7 @@ export const createFutureOrderV2PersistenceHandler = (
         },
         request: request.value,
         adapter: createAdapter(services.db),
+        catalog: await readCatalog(services.db),
         now: dependencies.now,
       });
       const status =
