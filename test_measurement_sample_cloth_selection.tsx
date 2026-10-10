@@ -132,6 +132,13 @@ assert.doesNotMatch(collectText(aiSection), /Information only/);
 const onsiteCard = alternateSection.findByProps({ "data-measurement-onsite-info": "true" });
 assert.match(collectText(onsiteCard), /Onsite Physical measurements/);
 assert.match(collectText(onsiteCard), /Reach out to the contact to arrange a measurement/);
+const onsiteBookingWindow = onsiteCard.findByProps({
+  "data-measurement-onsite-booking-window": "true",
+});
+assert.equal(
+  collectText(onsiteBookingWindow),
+  "Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.",
+);
 const onsiteLink = onsiteCard.findByType("a");
 assert.equal(onsiteLink.props.href, FUTURE_PICKUP_ATELIER_WHATSAPP_URL);
 assert.equal(onsiteLink.props.target, "_blank");
