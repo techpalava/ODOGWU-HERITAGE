@@ -21,6 +21,8 @@ import type {
   FabricAllocationPricingResult,
   ResolvedFabricAllocationPricing,
 } from "./fabricAllocationPricing";
+import { hasUsableFabricImage } from "./fabricCatalogueAvailability";
+import { isUsableFabricColorHex } from "../components/AssignedFabricPreview";
 import type { FutureFabricStageCompletion } from "./designStudioFutureFabricStage";
 import {
   getFutureDesignStyleCompositionLabel,
@@ -99,6 +101,10 @@ export interface FutureSummaryFabricAllocation {
   allocationId: string;
   fabricCode: string;
   fabricName: string;
+  /** Trimmed catalogue image URL, or null when the fabric has no usable image. */
+  image: string | null;
+  /** Trimmed catalogue hex, or null when the fabric has no usable colour. */
+  colorHex: string | null;
   availability: "available" | "unavailable" | "missing";
   capacityUnits: number;
   materialPrice: number | null;
@@ -526,10 +532,17 @@ const mapFabrics = ({
   );
   return fabricAllocationState.fabricAllocations.map((allocation) => {
     const line = pricingByAllocation.get(allocation.allocationId);
+    const previewFabric = line?.fabric;
+    const rawHex = previewFabric?.colorHex;
     return {
       allocationId: allocation.allocationId,
       fabricCode: allocation.fabricCode,
-      fabricName: line?.fabric.name || "Fabric unavailable",
+      fabricName: previewFabric?.name || "Fabric unavailable",
+      image:
+        previewFabric && hasUsableFabricImage(previewFabric)
+          ? previewFabric.image!.trim()
+          : null,
+      colorHex: isUsableFabricColorHex(rawHex) ? rawHex.trim() : null,
       availability: !line
         ? "missing"
         : line.fabric.stockStatus === "IN_STOCK" ||

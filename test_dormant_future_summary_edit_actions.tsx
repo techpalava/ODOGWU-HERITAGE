@@ -40,6 +40,8 @@ const summary: FutureDesignStudioSummary = {
       allocationId: "alloc-1",
       fabricCode: "FAB-1",
       fabricName: "Ankara",
+      image: null,
+      colorHex: null,
       availability: "available",
       capacityUnits: 2,
       materialPrice: null,
