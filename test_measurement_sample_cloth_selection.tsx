@@ -247,7 +247,7 @@ assert.equal(
 );
 assert.match(collectText(renderer.root), new RegExp(MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE));
 assert.match(collectText(renderer.root), /Measure these on the sample garment/);
-assert.match(collectText(renderer.root), /Chest \/ bust across sample \(laid flat\)/);
+assert.match(collectText(renderer.root), /Chest \/ Borst across sample \(laid flat\)/);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-field": "total_height" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-field": "head_circumference" }).length, 0);
 assert.notEqual(
