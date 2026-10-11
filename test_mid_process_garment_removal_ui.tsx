@@ -189,6 +189,8 @@ const summary: FutureDesignStudioSummary = {
       allocationId: "allocation-shared",
       fabricCode: "FAB-A",
       fabricName: "Heritage Ivory Lattice",
+      image: null,
+      colorHex: null,
       availability: "available",
       capacityUnits: 2,
       materialPrice: 40,
