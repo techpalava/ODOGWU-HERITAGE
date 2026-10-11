@@ -42,7 +42,7 @@ import {
   type GarmentScopedCustomDetailsReconciliationResult,
 } from "./garmentScopedCustomDetailsDomain";
 import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
-import { fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -860,7 +860,6 @@ const mapMeasurements = ({
       return [];
     }
     const sampleMode = isSampleClothMeasurementMethod(measurementState.route);
-    const unitLabel = measurementState.unit === "inch" ? "in" : "cm";
     const value = roundMeasurementDisplayValue(
       fromCanonicalCentimetres(stored.valueCm, measurementState.unit),
     );
@@ -871,11 +870,6 @@ const mapMeasurements = ({
       ];
     const convertedCm = requirement.sampleGeometry === "laid_flat_half_width"
       ? derivedValue?.valueCm ?? getSampleClothProductionEquivalentCm(stored.valueCm)
-      : null;
-    const convertedValue = convertedCm != null && Number.isFinite(convertedCm)
-      ? roundMeasurementDisplayValue(
-          fromCanonicalCentimetres(convertedCm, measurementState.unit),
-        )
       : null;
     const occurrenceOwned =
       requirement.scope === "garment" ||
@@ -890,13 +884,18 @@ const mapMeasurements = ({
             requirement.definition.customerLabel,
           )
         : requirement.definition.customerLabel,
-      formattedValue: `${value} ${unitLabel}`,
-      convertedFormattedValue: convertedValue != null
-        ? `${convertedValue} ${unitLabel}`
-        : null,
-      convertedLabel: convertedValue != null
-        ? "Converted from sample cloth"
-        : null,
+      formattedValue: formatDualUnitMeasurementDisplay(
+        stored.valueCm,
+        measurementState.unit,
+      ),
+      convertedFormattedValue:
+        convertedCm != null && Number.isFinite(convertedCm)
+          ? formatDualUnitMeasurementDisplay(convertedCm, measurementState.unit)
+          : null,
+      convertedLabel:
+        convertedCm != null && Number.isFinite(convertedCm)
+          ? "Converted from sample cloth"
+          : null,
       value,
       unit: measurementState.unit,
       provenance: stored.provenance,
