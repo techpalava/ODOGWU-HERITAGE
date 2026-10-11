@@ -1,7 +1,7 @@
 import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig";
 import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig";
 import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
-import { wearerPublicLabel } from "./wearerOrder";
+import { wearerAssignmentLabel, wearerPublicLabel } from "./wearerOrder";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -1039,7 +1039,7 @@ const summarizeOrderMeasurements = ({
       wearerGroups: [
         {
           wearerId: wearer.wearerId,
-          displayName: wearerPublicLabel(wearer.displayName, 0),
+          displayName: wearerAssignmentLabel(wearer.displayName, 0),
           garmentKeys: [...wearer.garmentKeys],
           route: summary.route,
           routeLabel: summary.routeLabel,

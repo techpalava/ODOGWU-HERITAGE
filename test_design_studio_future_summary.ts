@@ -2325,6 +2325,47 @@ assert.equal(
   ),
   youSummary.measurementSummary.wearerGroups?.[0]?.routeLabel,
 );
+const blankSoleSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-blank",
+      displayName: "",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: {
+        ...exactInput.measurementState,
+        route: "high_risk",
+      },
+    },
+  ],
+});
+const blankSoleGroup = blankSoleSummary.measurementSummary.wearerGroups?.[0];
+assert.equal(blankSoleGroup?.displayName, "You");
+assert.equal(blankSoleGroup?.routeLabel, "High Risk");
+const blankSoleCompact = formatCompactWearerRouteLabel(
+  blankSoleGroup?.displayName || "",
+  blankSoleGroup?.routeLabel || "",
+);
+assert.equal(blankSoleCompact, "High Risk");
+assert.equal(blankSoleCompact.includes("Person 1"), false);
+const blankSoleMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: blankSoleSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+assert.equal(blankSoleMarkup.includes("Person 1"), false);
+assert.match(blankSoleMarkup, /High Risk/);
 const twoWearerSummary = projectFutureDesignStudioSummary({
   ...exactInput,
   wearerRuntimes: [
