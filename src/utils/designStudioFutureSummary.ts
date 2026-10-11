@@ -89,8 +89,10 @@ export interface FutureSummaryGarment {
   }>;
   construction: FutureSummaryConstructionOccurrence[];
   constructionTotalCents: number | null;
-  /** Public name beside the role badge. Null for a solo order or an unassigned garment. */
+  /** Public name beside the role badge. Null when the garment is unassigned or its wearer is missing. */
   wearerLabel: string | null;
+  /** Assigned wearer's fit. Null when unassigned, the wearer is missing, or fit is not chosen. */
+  fitLabel: string | null;
 }
 
 export interface FutureSummaryFabricAllocation {
@@ -237,7 +239,7 @@ export interface FutureDesignStudioSummaryInput {
   aiTryOnWorkflow: AiTryOnWorkflowStateV1;
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
-  /** Assignment authority for garment-card names. Absent projections stay unlabeled. */
+  /** Assignment authority for garment-card names and fit. Absent projections stay unlabeled. */
   wearerOrder?: WearerOrderStateV2 | null;
   wearerRuntimes?: readonly {
     wearerId: string;
@@ -338,18 +340,37 @@ const getSummaryStatus = ({
   return blockers.length === 0 ? "ready" : "incomplete";
 };
 
+const assignedWearerForGarment = (
+  wearerOrder: WearerOrderStateV2 | null | undefined,
+  garmentKey: string,
+) => {
+  if (!wearerOrder) return null;
+  const wearerId = wearerOrder.assignmentByGarmentKey[garmentKey];
+  if (!wearerId) return null;
+  return (
+    wearerOrder.wearers.find((candidate) => candidate.wearerId === wearerId) ??
+    null
+  );
+};
+
 const wearerLabelForAssignedGarment = (
   wearerOrder: WearerOrderStateV2 | null | undefined,
   garmentKey: string,
 ): string | null => {
-  if (!wearerOrder || wearerOrder.wearers.length < 2) return null;
-  const wearerId = wearerOrder.assignmentByGarmentKey[garmentKey];
-  if (!wearerId) return null;
-  const wearer = wearerOrder.wearers.find(
-    (candidate) => candidate.wearerId === wearerId,
-  );
+  const wearer = assignedWearerForGarment(wearerOrder, garmentKey);
   if (!wearer) return null;
   return wearerPublicLabel(wearer.displayName, wearer.presentationOrder);
+};
+
+const fitLabelForAssignedGarment = (
+  wearerOrder: WearerOrderStateV2 | null | undefined,
+  garmentKey: string,
+): string | null => {
+  const fitContext = assignedWearerForGarment(wearerOrder, garmentKey)?.fitContext;
+  if (fitContext === "male") return "Male fit";
+  if (fitContext === "female") return "Female fit";
+  if (fitContext === "unisex") return "Unisex fit";
+  return null;
 };
 
 const mapGarments = ({
@@ -463,6 +484,7 @@ const mapGarments = ({
       constructionTotalCents:
         construction?.status === "resolved" ? construction.totalPriceCents : null,
       wearerLabel: wearerLabelForAssignedGarment(wearerOrder, garmentKey),
+      fitLabel: fitLabelForAssignedGarment(wearerOrder, garmentKey),
     };
   });
 };

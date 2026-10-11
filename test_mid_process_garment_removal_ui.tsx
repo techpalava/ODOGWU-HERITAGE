@@ -124,6 +124,7 @@ const summary: FutureDesignStudioSummary = {
       construction: [construction("base:shirt", "Standard Shirt", 6500)],
       constructionTotalCents: 6500,
       wearerLabel: null,
+      fitLabel: null,
     },
     {
       garmentKey: "additional:shirt:1",
@@ -144,6 +145,7 @@ const summary: FutureDesignStudioSummary = {
       ],
       constructionTotalCents: 6500,
       wearerLabel: null,
+      fitLabel: null,
     },
     {
       garmentKey: "additional:shirt:2",
@@ -164,6 +166,7 @@ const summary: FutureDesignStudioSummary = {
       ],
       constructionTotalCents: 6500,
       wearerLabel: null,
+      fitLabel: null,
     },
     {
       garmentKey: "base:skirt",
@@ -178,6 +181,7 @@ const summary: FutureDesignStudioSummary = {
       construction: [construction("base:skirt", "Standard Skirt", 7500)],
       constructionTotalCents: 7500,
       wearerLabel: null,
+      fitLabel: null,
     },
   ],
   fabricSummary: [

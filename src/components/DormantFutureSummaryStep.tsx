@@ -393,6 +393,14 @@ export const DormantFutureSummaryStep = ({
                           {garment.wearerLabel}
                         </span>
                       ) : null}
+                      {garment.fitLabel ? (
+                        <span
+                          data-summary-garment-fit={garment.garmentKey}
+                          className="rounded-full border border-heritage-ink/12 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-heritage-ink/60"
+                        >
+                          {garment.fitLabel}
+                        </span>
+                      ) : null}
                     </div>
                     {removalTarget?.disabledReason && (
                       <p
@@ -444,8 +452,8 @@ export const DormantFutureSummaryStep = ({
                     )}
                   </div>
                 </div>
-              <p className="mt-1 text-xs capitalize text-heritage-ink/60">
-                {garment.demographic || "Demographic pending"} | {formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
+              <p className="mt-1 text-xs text-heritage-ink/60">
+                {garment.fitLabel || "Fit pending"} | {formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
               </p>
               {garment.physicalComponents.length > 1 && (
                 <p className="mt-2 text-xs text-heritage-ink/70">
