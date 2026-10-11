@@ -63,6 +63,7 @@ import {
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import {
   createEmptyFutureMeasurementState,
+  formatDualUnitMeasurementDisplay,
   getMeasurementPhysicalGarments,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
@@ -521,8 +522,46 @@ assert.deepEqual(exactSummary.designStyleOccurrences?.map((row) => row.name), ["
 assert.equal(exactSummary.customDetailsSummary[0].occurrences[0].priceCents, 0);
 assert.equal(exactSummary.aiTryOnSummary.label, "Skipped by choice");
 assert.ok(exactSummary.measurementSummary.shared.length > 0);
+const dualInchDisplay = /^\d+(?:\.\d{1,2})? in \(\d+(?:\.\d{1,2})? cm\)$/;
+const dualCentimetreDisplay = /^\d+(?:\.\d{1,2})? cm \(\d+(?:\.\d{1,2})? in\)$/;
+assert.equal(formatDualUnitMeasurementDisplay(106.68, "inch"), "42 in (106.68 cm)");
+assert.equal(formatDualUnitMeasurementDisplay(106.68, "cm"), "106.68 cm (42 in)");
 assert.ok(
-  exactSummary.measurementSummary.shared.every((value) => value.formattedValue.endsWith(" in")),
+  exactSummary.measurementSummary.shared.every((value) =>
+    dualInchDisplay.test(value.formattedValue),
+  ),
+  "inch-preferred summary rows show inches first and centimetres in parentheses",
+);
+assert.ok(
+  exactSummary.measurementSummary.shared.some(
+    (value) => value.formattedValue === "10 in (25.4 cm)",
+  ),
+  "a 10 inch entry stays canonical and renders both units",
+);
+assert.ok(
+  exactSummary.measurementSummary.byGarment.every((garment) =>
+    garment.values.every((value) => dualInchDisplay.test(value.formattedValue)),
+  ),
+  "garment measurement rows use the same dual-unit format",
+);
+const centimetrePreferredSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  measurementState: {
+    ...exactInput.measurementState,
+    unit: "cm",
+  },
+});
+assert.ok(
+  centimetrePreferredSummary.measurementSummary.shared.every((value) =>
+    dualCentimetreDisplay.test(value.formattedValue),
+  ),
+  "centimetre-preferred summary rows show centimetres first and inches in parentheses",
+);
+assert.ok(
+  centimetrePreferredSummary.measurementSummary.shared.some(
+    (value) => value.formattedValue === "25.4 cm (10 in)",
+  ),
+  "the same canonical centimetres render centimetres first when that unit is preferred",
 );
 assert.ok(
   exactSummary.measurementSummary.byGarment.some(
@@ -1950,6 +1989,11 @@ assert.match(summarySource, /Continue to Delivery/);
 assert.match(summarySource, /disabled/);
 assert.match(summarySource, /DesignStudioBackButton/);
 assert.match(summarySource, /backDestination="Measurement"/);
+assert.match(
+  summarySource,
+  /Both inches and centimetres are shown, with your preferred unit first\./,
+);
+assert.equal(summarySource.includes("Display unit:"), false);
 assert.match(summarySource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
 assert.match(summarySource, /Your design summary is ready/);
 assert.match(
@@ -2009,6 +2053,12 @@ if (destinationDeliveryResolution.projectedTotalCents === null) {
   throw new Error("destination delivery must supply an authoritative payable projection");
 }
 const destinationDeliveryMarkup = renderSummaryMarkup(destinationDeliveryResolution);
+assert.match(destinationDeliveryMarkup, /10 in \(25\.4 cm\)/);
+assert.equal(destinationDeliveryMarkup.includes("Display unit:"), false);
+assert.match(
+  destinationDeliveryMarkup,
+  /Both inches and centimetres are shown, with your preferred unit first\./,
+);
 assert.match(destinationDeliveryMarkup, /data-summary-cost-breakdown/);
 assert.match(destinationDeliveryMarkup, />Cost Breakdown</);
 assert.match(destinationDeliveryMarkup, />Order Subtotal</);
@@ -2275,6 +2325,47 @@ assert.equal(
   ),
   youSummary.measurementSummary.wearerGroups?.[0]?.routeLabel,
 );
+const blankSoleSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-blank",
+      displayName: "",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: {
+        ...exactInput.measurementState,
+        route: "high_risk",
+      },
+    },
+  ],
+});
+const blankSoleGroup = blankSoleSummary.measurementSummary.wearerGroups?.[0];
+assert.equal(blankSoleGroup?.displayName, "You");
+assert.equal(blankSoleGroup?.routeLabel, "High Risk");
+const blankSoleCompact = formatCompactWearerRouteLabel(
+  blankSoleGroup?.displayName || "",
+  blankSoleGroup?.routeLabel || "",
+);
+assert.equal(blankSoleCompact, "High Risk");
+assert.equal(blankSoleCompact.includes("Person 1"), false);
+const blankSoleMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: blankSoleSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+assert.equal(blankSoleMarkup.includes("Person 1"), false);
+assert.match(blankSoleMarkup, /High Risk/);
 const twoWearerSummary = projectFutureDesignStudioSummary({
   ...exactInput,
   wearerRuntimes: [

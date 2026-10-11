@@ -18,6 +18,7 @@ import {
   type FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
 import {
+  formatDualUnitMeasurementDisplay,
   fromCanonicalCentimetres,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
@@ -132,6 +133,8 @@ export interface FuturePaymentReviewMeasurementItem {
   readonly label: string;
   readonly displayValue: number;
   readonly unitLabel: "in" | "cm";
+  /** Preferred unit first, alternate in parentheses. Customer-facing payment review line. */
+  readonly formattedDisplay: string;
   readonly provenanceLabel:
     | "Customer entered"
     | "System derived"
@@ -242,6 +245,7 @@ const toMeasurementItem = ({
     fromCanonicalCentimetres(valueCm, unit),
   ),
   unitLabel: unit === "inch" ? "in" : "cm",
+  formattedDisplay: formatDualUnitMeasurementDisplay(valueCm, unit),
   provenanceLabel:
     convertedFromSample
       ? "Converted from sample cloth"

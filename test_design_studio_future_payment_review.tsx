@@ -381,6 +381,9 @@ for (const expected of [
   "Status: Ready to review",
   "Shared measurements",
   "Chest",
+  "70 in (177.8 cm)",
+  "40 in (101.6 cm)",
+  "54 in (137.16 cm)",
   "Garment Length",
   "Deliver to an Address",
   "Ada Heritage",
@@ -392,6 +395,17 @@ for (const expected of [
 ]) {
   assert.ok(reviewMarkup.includes(expected), `Missing review text: ${expected}`);
 }
+const centimetreReviewGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: { ...measurementState, unit: "cm" },
+  garments: candidate.garments.map((garment) => ({
+    garmentKey: garment.garmentKey,
+    label: garment.label,
+  })),
+});
+const centimetreHeight = centimetreReviewGroups
+  .flatMap((group) => group.items)
+  .find((item) => item.measurementId === "height");
+assert.equal(centimetreHeight?.formattedDisplay, "177.8 cm (70 in)");
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
 assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));
@@ -554,9 +568,16 @@ assert.ok(
   ),
 );
 assert.ok(
-  paymentReviewStageSource.includes(
-    "onEditStage={(stage) => navigateToFutureStage(stage)}",
-  ),
+  paymentReviewStageSource.includes("onEditStage={(stage) => {"),
+  "payment review edit opens a block that can record a return lease",
+);
+assert.ok(
+  paymentReviewStageSource.includes('returnStageId: "payment"'),
+  "editing from payment review returns to payment",
+);
+assert.ok(
+  paymentReviewStageSource.includes("navigateToFutureStage(stage)"),
+  "payment review edit still navigates to the chosen stage",
 );
 const adaSampleGroups = getFuturePaymentReviewMeasurementGroups({
   measurements: {
