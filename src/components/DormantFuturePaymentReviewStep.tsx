@@ -1013,7 +1013,7 @@ export const DormantFuturePaymentReviewStep = ({
                             </span>
                           </dt>
                           <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                            {item.displayValue} {item.unitLabel}
+                            {item.formattedDisplay}
                           </dd>
                         </div>
                       ))}

@@ -813,7 +813,7 @@ export const DormantFutureSummaryStep = ({
         </Section>
         <Section
           title="Measurements"
-          description="Measurements are displayed using the unit selected in Step 6."
+          description="Both inches and centimetres are shown, with your preferred unit first."
           editLabel="Edit Measurements"
           onEdit={onEditMeasurements}
         >
@@ -889,9 +889,6 @@ export const DormantFutureSummaryStep = ({
               : null}
           </div>
           )}
-          <p className="mt-1 text-xs text-heritage-ink/60">
-            Display unit: {summary.measurementSummary.unit === "inch" ? "Inches" : "Centimetres"}
-          </p>
           {summary.measurementSummary.shared.length > 0 && (
             <div className="mt-3">
               <h4 className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">

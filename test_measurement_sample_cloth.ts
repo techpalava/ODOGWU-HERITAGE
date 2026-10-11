@@ -346,8 +346,10 @@ const sharedPayment = paymentGroups.find((group) => group.garmentKey === null)?.
 const chestPayment = sharedPayment.find((item) => item.measurementId === "chest_bust_circumference");
 const neckPayment = sharedPayment.find((item) => item.measurementId === "neck_circumference");
 assert.equal(chestPayment?.displayValue, 40);
+assert.equal(chestPayment?.formattedDisplay, "40 in (101.6 cm)");
 assert.equal(chestPayment?.provenanceLabel, "Converted from sample cloth");
 assert.equal(neckPayment?.displayValue, 10);
+assert.equal(neckPayment?.formattedDisplay, "10 in (25.4 cm)");
 assert.equal(neckPayment?.provenanceLabel, "Customer entered");
 const leftoverHeightState = reconcileFutureMeasurementState({
   state: {
@@ -382,6 +384,7 @@ const lengthPayment = paymentGroups
   .find((group) => group.garmentKey === "shirt:1")
   ?.items.find((item) => item.measurementId === "shirt_length_standard");
 assert.equal(lengthPayment?.displayValue, 10);
+assert.equal(lengthPayment?.formattedDisplay, "10 in (25.4 cm)");
 assert.equal(lengthPayment?.provenanceLabel, "Customer entered");
 
 const summary = projectFutureDesignStudioSummary({
@@ -406,14 +409,14 @@ assert.equal(summary.measurementSummary.routeLabel, "Sample Cloth Measurements")
 const chestSummary = summary.measurementSummary.shared.find(
   (value) => value.measurementId === "chest_bust_circumference",
 );
-assert.equal(chestSummary?.formattedValue, "20 in");
-assert.equal(chestSummary?.convertedFormattedValue, "40 in");
+assert.equal(chestSummary?.formattedValue, "20 in (50.8 cm)");
+assert.equal(chestSummary?.convertedFormattedValue, "40 in (101.6 cm)");
 assert.equal(chestSummary?.convertedLabel, "Converted from sample cloth");
 assert.match(chestSummary?.label || "", /laid flat/i);
 const lengthSummary = summary.measurementSummary.byGarment
   .flatMap((garment) => garment.values)
   .find((value) => value.measurementId === "shirt_length_standard");
-assert.equal(lengthSummary?.formattedValue, "10 in");
+assert.equal(lengthSummary?.formattedValue, "10 in (25.4 cm)");
 assert.equal(lengthSummary?.convertedFormattedValue, null);
 
 const switchedToHigh = reconcileFutureMeasurementState({
@@ -512,6 +515,41 @@ assert.equal(
   20,
   "Unit switch must not turn the entered width into its doubled equivalent.",
 );
+const centimetreSummary = projectFutureDesignStudioSummary({
+  step1GarmentTypeSelection: shirtSelection,
+  garmentTypeSelection: shirtSelection,
+  designSourceKind: "catalogue",
+  catalogInspection: inspectCustomDetailCatalog([]),
+  fabricAllocationState: { fabricAllocations: [] },
+  fabricCompletion: { blockers: [] },
+  materialPricing: null,
+  designStyleSelection: { status: "incomplete" },
+  customDetailsReconciliation: null,
+  customDetailsCompletion: null,
+  customDetailsPricing: null,
+  personalizedInputs: null,
+  aiTryOnWorkflow: { status: "skipped" },
+  measurementPlan: sampleShirtPlan,
+  measurementState: unitReconciled,
+  basePricing: null,
+} as never);
+const centimetreChestSummary = centimetreSummary.measurementSummary.shared.find(
+  (value) => value.measurementId === "chest_bust_circumference",
+);
+assert.equal(centimetreChestSummary?.formattedValue, "50.8 cm (20 in)");
+assert.equal(centimetreChestSummary?.convertedFormattedValue, "101.6 cm (40 in)");
+const centimetrePaymentGroups = getFuturePaymentReviewMeasurementGroups({
+  garments: [{ garmentKey: "shirt:1", label: "Standard Shirt" }],
+  measurements: unitReconciled,
+} as never);
+const centimetreChestPayment = centimetrePaymentGroups
+  .find((group) => group.garmentKey === null)
+  ?.items.find((item) => item.measurementId === "chest_bust_circumference");
+const centimetreNeckPayment = centimetrePaymentGroups
+  .find((group) => group.garmentKey === null)
+  ?.items.find((item) => item.measurementId === "neck_circumference");
+assert.equal(centimetreChestPayment?.formattedDisplay, "101.6 cm (40 in)");
+assert.equal(centimetreNeckPayment?.formattedDisplay, "25.4 cm (10 in)");
 
 const cmFilled = fillDirect(
   "sample_cloth",

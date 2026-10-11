@@ -1058,6 +1058,24 @@ export const fromCanonicalCentimetres = (
 export const roundMeasurementDisplayValue = (value: number): number =>
   Math.round(value * 100) / 100;
 
+const measurementDisplayUnitLabel = (unit: MeasurementUnit): "in" | "cm" =>
+  unit === "inch" ? "in" : "cm";
+
+/** Preferred unit first, alternate in parentheses. Both sides are formatted from valueCm. */
+export const formatDualUnitMeasurementDisplay = (
+  valueCm: number,
+  preferredUnit: MeasurementUnit,
+): string => {
+  const alternateUnit: MeasurementUnit = preferredUnit === "inch" ? "cm" : "inch";
+  const preferred = roundMeasurementDisplayValue(
+    fromCanonicalCentimetres(valueCm, preferredUnit),
+  );
+  const alternate = roundMeasurementDisplayValue(
+    fromCanonicalCentimetres(valueCm, alternateUnit),
+  );
+  return `${preferred} ${measurementDisplayUnitLabel(preferredUnit)} (${alternate} ${measurementDisplayUnitLabel(alternateUnit)})`;
+};
+
 const createEmptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({
   shared: {},
   byGarmentKey: {},
