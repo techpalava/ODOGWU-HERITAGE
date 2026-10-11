@@ -568,9 +568,16 @@ assert.ok(
   ),
 );
 assert.ok(
-  paymentReviewStageSource.includes(
-    "onEditStage={(stage) => navigateToFutureStage(stage)}",
-  ),
+  paymentReviewStageSource.includes("onEditStage={(stage) => {"),
+  "payment review edit opens a block that can record a return lease",
+);
+assert.ok(
+  paymentReviewStageSource.includes('returnStageId: "payment"'),
+  "editing from payment review returns to payment",
+);
+assert.ok(
+  paymentReviewStageSource.includes("navigateToFutureStage(stage)"),
+  "payment review edit still navigates to the chosen stage",
 );
 const adaSampleGroups = getFuturePaymentReviewMeasurementGroups({
   measurements: {

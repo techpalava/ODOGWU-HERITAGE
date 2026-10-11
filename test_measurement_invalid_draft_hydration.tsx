@@ -87,6 +87,7 @@ Object.defineProperty(globalThis, "window", {
   configurable: true,
   value: {
     localStorage: storage,
+    location: { search: "" },
     scrollY: 0,
     scrollTo: () => undefined,
     setTimeout: globalThis.setTimeout.bind(globalThis),
