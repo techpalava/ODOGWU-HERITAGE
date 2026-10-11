@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { loadStripe, type Stripe, type StripeCardElement } from "@stripe/stripe-js";
+import {
+  loadStripe,
+  type Stripe,
+  type StripeCardElement,
+  type StripeElements,
+  type StripeExpressCheckoutElementConfirmEvent,
+} from "@stripe/stripe-js";
 import {
   registerFutureOrderV2PaymentConfirmer,
+  type FutureOrderV2PaymentConfirmContext,
+  type FutureOrderV2PaymentConfirmation,
   type FutureOrderV2PaymentMethod,
 } from "../utils/futureOrderV2Payment";
 import { describeFutureOrderV2CardError } from "../utils/futureOrderV2CardErrors";
@@ -11,33 +19,90 @@ import {
   type FutureOrderV2StripeReturnSurface,
 } from "../utils/futureOrderV2StripeReturn";
 
+/** Matches the server minimum. This sizes the wallet sheet only; the charge is the persisted total. */
+const EXPRESS_CHECKOUT_MINIMUM_CENTS = 50;
+
+export const isFutureOrderV2ExpressCheckoutAmount = (
+  amountCents: number | null | undefined,
+): amountCents is number =>
+  typeof amountCents === "number" &&
+  Number.isSafeInteger(amountCents) &&
+  amountCents >= EXPRESS_CHECKOUT_MINIMUM_CENTS;
+
+export const isFutureOrderV2ExpressWalletAvailable = (
+  paymentMethods:
+    | { readonly applePay?: boolean; readonly googlePay?: boolean }
+    | null
+    | undefined,
+): boolean => Boolean(paymentMethods?.applePay || paymentMethods?.googlePay);
+
+const walletFlagsFromChange = (
+  paymentMethods:
+    | {
+        readonly applePay?: { readonly available?: boolean };
+        readonly googlePay?: { readonly available?: boolean };
+      }
+    | undefined,
+): { applePay: boolean; googlePay: boolean } | undefined => {
+  if (!paymentMethods) return undefined;
+  return {
+    applePay: paymentMethods.applePay?.available === true,
+    googlePay: paymentMethods.googlePay?.available === true,
+  };
+};
+
 /**
- * Card via Stripe Element, or iDEAL bank redirect.
+ * Card via Stripe Element, iDEAL bank redirect, or Apple Pay / Google Pay.
+ * Wallets use a separate Express Checkout Element and confirm as card.
  * The test card is 4242 4242 4242 4242.
  */
 export const FutureOrderV2StripeCard = ({
   disabled,
   orderId,
   returnSurface,
+  amountCents = null,
+  onExpressCheckoutConfirm,
   onReadyChange,
   onMethodChange,
 }: {
   disabled: boolean;
   orderId: string;
   returnSurface: FutureOrderV2StripeReturnSurface;
+  /** Reviewed total shown in the wallet sheet. The PaymentIntent amount stays server-side. */
+  amountCents?: number | null;
+  /**
+   * Existing pay action. It calls authorizeFutureOrderV2Payment; the registered
+   * confirmer then runs stripe.confirmPayment for the Express Checkout Element.
+   */
+  onExpressCheckoutConfirm?: () => void | Promise<void>;
   onReadyChange: (ready: boolean) => void;
   onMethodChange?: (method: FutureOrderV2PaymentMethod) => void;
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const expressMountRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<StripeCardElement | null>(null);
   const stripeRef = useRef<Stripe | null>(null);
+  const expressElementsRef = useRef<StripeElements | null>(null);
+  const expressConfirmingRef = useRef(false);
+  const expressConfirmEventRef = useRef<StripeExpressCheckoutElementConfirmEvent | null>(
+    null,
+  );
+  const expressConfirmOutcomeRef = useRef<
+    "idle" | "confirmed" | "failed" | "redirecting"
+  >("idle");
   const methodRef = useRef<FutureOrderV2PaymentMethod>("card");
   const orderIdRef = useRef(orderId);
   const returnSurfaceRef = useRef(returnSurface);
   const onReadyChangeRef = useRef(onReadyChange);
   const onMethodChangeRef = useRef(onMethodChange);
+  const onExpressCheckoutConfirmRef = useRef(onExpressCheckoutConfirm);
+  const amountCentsRef = useRef(amountCents);
+  const disabledRef = useRef(disabled);
   onReadyChangeRef.current = onReadyChange;
   onMethodChangeRef.current = onMethodChange;
+  onExpressCheckoutConfirmRef.current = onExpressCheckoutConfirm;
+  amountCentsRef.current = amountCents;
+  disabledRef.current = disabled;
   orderIdRef.current = orderId;
   returnSurfaceRef.current = returnSurface;
 
@@ -47,6 +112,9 @@ export const FutureOrderV2StripeCard = ({
   const [message, setMessage] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [stripeClient, setStripeClient] = useState<Stripe | null>(null);
+  const [expressCheckoutResolved, setExpressCheckoutResolved] = useState(false);
+  const [expressCheckoutVisible, setExpressCheckoutVisible] = useState(false);
 
   methodRef.current = method;
 
@@ -66,6 +134,77 @@ export const FutureOrderV2StripeCard = ({
     setCardReady(false);
     setIdealReady(false);
     onReadyChangeRef.current(false);
+
+    const failExpressCheckout = (
+      confirmation: Extract<FutureOrderV2PaymentConfirmation, { status: "failed" }>,
+    ): FutureOrderV2PaymentConfirmation => {
+      expressConfirmOutcomeRef.current = "failed";
+      expressConfirmEventRef.current?.paymentFailed({
+        message: confirmation.message,
+      });
+      return confirmation;
+    };
+
+    const confirmExpressCheckout = async (
+      clientSecret: string,
+      context: FutureOrderV2PaymentConfirmContext,
+    ): Promise<FutureOrderV2PaymentConfirmation> => {
+      const activeStripe = stripeRef.current;
+      const elements = expressElementsRef.current;
+      const activeOrderId = context.orderId || orderIdRef.current;
+      if (!activeStripe || !elements || !activeOrderId) {
+        return failExpressCheckout({
+          status: "failed",
+          message: "Apple Pay and Google Pay could not be confirmed.",
+        });
+      }
+      stashFutureOrderV2StripeReturnContext({
+        orderId: activeOrderId,
+        paymentReference: `future-v2-payment-${activeOrderId}`,
+        surface: returnSurfaceRef.current,
+      });
+      const result = await activeStripe.confirmPayment({
+        elements,
+        clientSecret,
+        confirmParams: {
+          return_url: buildFutureOrderV2StripeReturnUrl(activeOrderId),
+        },
+        redirect: "if_required",
+      });
+      const paymentIntent =
+        result.paymentIntent ?? result.error?.payment_intent ?? null;
+      const paymentIntentId = paymentIntent?.id || "";
+      if (paymentIntent?.status === "succeeded" && paymentIntentId.startsWith("pi_")) {
+        expressConfirmOutcomeRef.current = "confirmed";
+        return { status: "confirmed", paymentIntentId };
+      }
+      if (result.error) {
+        return failExpressCheckout({
+          status: "failed",
+          message: describeFutureOrderV2CardError({
+            code: result.error.code,
+            declineCode: result.error.decline_code,
+            message: result.error.message,
+          }),
+        });
+      }
+      const redirectUrl =
+        paymentIntent?.next_action?.type === "redirect_to_url"
+          ? paymentIntent.next_action.redirect_to_url?.url
+          : null;
+      if (redirectUrl) {
+        expressConfirmOutcomeRef.current = "redirecting";
+        window.location.assign(redirectUrl);
+        return { status: "redirecting" };
+      }
+      return failExpressCheckout({
+        status: "failed",
+        message:
+          paymentIntent?.status === "processing"
+            ? "The payment is still processing. Retry this same order in a moment."
+            : "The payment was not completed. Retry this same order.",
+      });
+    };
 
     const mountCard = async () => {
       const response = await fetch("/api/future-order-v2/payment-intent");
@@ -110,7 +249,11 @@ export const FutureOrderV2StripeCard = ({
         if (!cancelled) setFieldError(event.error?.message ?? null);
       });
 
-      registerFutureOrderV2PaymentConfirmer(async (clientSecret) => {
+      registerFutureOrderV2PaymentConfirmer(async (clientSecret, context) => {
+        if (expressConfirmingRef.current) {
+          return confirmExpressCheckout(clientSecret, context);
+        }
+
         const activeStripe = stripeRef.current;
         if (!activeStripe) {
           return {
@@ -132,7 +275,7 @@ export const FutureOrderV2StripeCard = ({
             paymentReference: `future-v2-payment-${activeOrderId}`,
             surface: returnSurfaceRef.current,
           });
-          const result = await activeStripe.confirmIdealPayment(
+          const idealResult = await activeStripe.confirmIdealPayment(
             clientSecret,
             {
               payment_method: { ideal: {} },
@@ -140,17 +283,17 @@ export const FutureOrderV2StripeCard = ({
             },
             { handleActions: false },
           );
-          if (result.error) {
+          if (idealResult.error) {
             return {
               status: "failed",
               message: describeFutureOrderV2CardError({
-                code: result.error.code,
-                declineCode: result.error.decline_code,
-                message: result.error.message,
+                code: idealResult.error.code,
+                declineCode: idealResult.error.decline_code,
+                message: idealResult.error.message,
               }),
             };
           }
-          const paymentIntent = result.paymentIntent;
+          const paymentIntent = idealResult.paymentIntent;
           const paymentIntentId = paymentIntent?.id || "";
           if (paymentIntent?.status === "succeeded" && paymentIntentId.startsWith("pi_")) {
             return { status: "confirmed", paymentIntentId };
@@ -175,22 +318,22 @@ export const FutureOrderV2StripeCard = ({
             message: "Stripe payments could not be loaded.",
           };
         }
-        const result = await activeStripe.confirmCardPayment(clientSecret, {
+        const cardResult = await activeStripe.confirmCardPayment(clientSecret, {
           payment_method: { card: cardRef.current },
         });
         const paymentIntent =
-          result.paymentIntent ?? result.error?.payment_intent ?? null;
+          cardResult.paymentIntent ?? cardResult.error?.payment_intent ?? null;
         const paymentIntentId = paymentIntent?.id || "";
         if (paymentIntent?.status === "succeeded" && paymentIntentId.startsWith("pi_")) {
           return { status: "confirmed", paymentIntentId };
         }
-        if (result.error) {
+        if (cardResult.error) {
           return {
             status: "failed",
             message: describeFutureOrderV2CardError({
-              code: result.error.code,
-              declineCode: result.error.decline_code,
-              message: result.error.message,
+              code: cardResult.error.code,
+              declineCode: cardResult.error.decline_code,
+              message: cardResult.error.message,
             }),
           };
         }
@@ -208,6 +351,7 @@ export const FutureOrderV2StripeCard = ({
               : "The card payment was not completed. Retry this same order.",
         };
       });
+      if (!cancelled) setStripeClient(stripe);
     };
 
     mountCard().catch((error: unknown) => {
@@ -232,6 +376,126 @@ export const FutureOrderV2StripeCard = ({
   }, []);
 
   useEffect(() => {
+    const stripe = stripeClient;
+    const mount = expressMountRef.current;
+    if (!stripe || !mount) return;
+    if (
+      !isFutureOrderV2ExpressCheckoutAmount(amountCents) ||
+      !onExpressCheckoutConfirmRef.current
+    ) {
+      setExpressCheckoutResolved(true);
+      setExpressCheckoutVisible(false);
+      return;
+    }
+
+    let cancelled = false;
+    setExpressCheckoutResolved(false);
+    setExpressCheckoutVisible(false);
+    const elements = stripe.elements({
+      mode: "payment",
+      amount: amountCents,
+      currency: "eur",
+      allowedPaymentMethodTypes: ["card", "ideal"],
+    });
+    const expressCheckout = elements.create("expressCheckout", {
+      paymentMethods: {
+        applePay: "auto",
+        googlePay: "auto",
+        link: "never",
+        paypal: "never",
+        amazonPay: "never",
+        klarna: "never",
+      },
+    });
+    expressElementsRef.current = elements;
+    expressCheckout.mount(mount);
+
+    const applyAvailability = (
+      flags: { applePay?: boolean; googlePay?: boolean } | undefined,
+    ) => {
+      if (cancelled) return;
+      setExpressCheckoutResolved(true);
+      setExpressCheckoutVisible(isFutureOrderV2ExpressWalletAvailable(flags));
+    };
+    expressCheckout.on("ready", (event) => {
+      applyAvailability(event.availablePaymentMethods);
+    });
+    expressCheckout.on("availablepaymentmethodschange", (event) => {
+      applyAvailability(walletFlagsFromChange(event.paymentMethods));
+    });
+    expressCheckout.on("click", (event) => {
+      if (
+        disabledRef.current ||
+        expressConfirmingRef.current ||
+        !onExpressCheckoutConfirmRef.current ||
+        !isFutureOrderV2ExpressCheckoutAmount(amountCentsRef.current)
+      ) {
+        event.reject();
+        return;
+      }
+      event.resolve();
+    });
+    expressCheckout.on("confirm", (event) => {
+      const confirmPay = onExpressCheckoutConfirmRef.current;
+      const activeElements = expressElementsRef.current;
+      if (
+        !confirmPay ||
+        !activeElements ||
+        disabledRef.current ||
+        expressConfirmingRef.current
+      ) {
+        event.paymentFailed({
+          message: "Apple Pay and Google Pay could not be confirmed.",
+        });
+        return;
+      }
+      expressConfirmingRef.current = true;
+      expressConfirmEventRef.current = event;
+      expressConfirmOutcomeRef.current = "idle";
+      void (async () => {
+        try {
+          const { error: submitError } = await activeElements.submit();
+          if (submitError) {
+            const submitMessage = describeFutureOrderV2CardError({
+              code: submitError.code,
+              declineCode: submitError.decline_code,
+              message: submitError.message,
+            });
+            event.paymentFailed({ message: submitMessage });
+            if (!cancelled) setMessage(submitMessage);
+            return;
+          }
+          await confirmPay();
+          if (expressConfirmOutcomeRef.current === "idle") {
+            event.paymentFailed({
+              message: "The payment could not be confirmed. Retry this same order.",
+            });
+          }
+        } catch {
+          event.paymentFailed({
+            message: "The payment could not be confirmed. Retry this same order.",
+          });
+          if (!cancelled) {
+            setMessage("The payment could not be confirmed. Retry this same order.");
+          }
+        } finally {
+          expressConfirmingRef.current = false;
+          expressConfirmEventRef.current = null;
+          expressConfirmOutcomeRef.current = "idle";
+        }
+      })();
+    });
+
+    return () => {
+      cancelled = true;
+      expressCheckout.destroy();
+      if (expressElementsRef.current === elements) {
+        expressElementsRef.current = null;
+      }
+    };
+  }, [stripeClient, amountCents]);
+
+  useEffect(() => {
     cardRef.current?.update({ disabled: disabled || method !== "card" });
   }, [disabled, method]);
 
@@ -247,6 +511,17 @@ export const FutureOrderV2StripeCard = ({
 
   return (
     <div className="mt-4 max-w-md space-y-3">
+      <div
+        data-future-order-v2-express-checkout={
+          expressCheckoutVisible ? "available" : "hidden"
+        }
+        hidden={expressCheckoutResolved && !expressCheckoutVisible}
+        aria-hidden={expressCheckoutVisible ? undefined : true}
+        className={expressCheckoutVisible ? undefined : "invisible"}
+      >
+        <div ref={expressMountRef} />
+      </div>
+
       <div
         className="grid grid-cols-2 gap-2"
         role="radiogroup"
