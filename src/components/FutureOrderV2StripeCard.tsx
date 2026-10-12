@@ -8,6 +8,7 @@ import {
 } from "@stripe/stripe-js";
 import {
   registerFutureOrderV2PaymentConfirmer,
+  readFutureOrderV2JsonBody,
   type FutureOrderV2PaymentConfirmContext,
   type FutureOrderV2PaymentConfirmation,
   type FutureOrderV2PaymentMethod,
@@ -18,6 +19,11 @@ import {
   stashFutureOrderV2StripeReturnContext,
   type FutureOrderV2StripeReturnSurface,
 } from "../utils/futureOrderV2StripeReturn";
+import {
+  resolveFutureOrderV2StripeShipping,
+  toFutureOrderV2KlarnaBillingDetails,
+} from "../utils/futureOrderV2StripeShipping";
+import type { FutureShippingStateV1 } from "../types";
 
 /** Matches the server minimum. This sizes the wallet sheet only; the charge is the persisted total. */
 const EXPRESS_CHECKOUT_MINIMUM_CENTS = 50;
@@ -52,8 +58,9 @@ const walletFlagsFromChange = (
 };
 
 /**
- * Card via Stripe Element, iDEAL bank redirect, or Apple Pay / Google Pay.
+ * Card via Stripe Element, iDEAL or Klarna redirect, or Apple Pay / Google Pay.
  * Wallets use a separate Express Checkout Element and confirm as card.
+ * Klarna is a radio here and is never offered on that element.
  * The test card is 4242 4242 4242 4242.
  */
 export const FutureOrderV2StripeCard = ({
@@ -61,6 +68,7 @@ export const FutureOrderV2StripeCard = ({
   orderId,
   returnSurface,
   amountCents = null,
+  shippingState = null,
   onExpressCheckoutConfirm,
   onReadyChange,
   onMethodChange,
@@ -70,6 +78,8 @@ export const FutureOrderV2StripeCard = ({
   returnSurface: FutureOrderV2StripeReturnSurface;
   /** Reviewed total shown in the wallet sheet. The PaymentIntent amount stays server-side. */
   amountCents?: number | null;
+  /** Persisted Step 9 shipping. Klarna confirm reads it; the charge amount does not. */
+  shippingState?: FutureShippingStateV1 | null;
   /**
    * Existing pay action. It calls authorizeFutureOrderV2Payment; the registered
    * confirmer then runs stripe.confirmPayment for the Express Checkout Element.
@@ -93,6 +103,7 @@ export const FutureOrderV2StripeCard = ({
   const methodRef = useRef<FutureOrderV2PaymentMethod>("card");
   const orderIdRef = useRef(orderId);
   const returnSurfaceRef = useRef(returnSurface);
+  const shippingStateRef = useRef(shippingState);
   const onReadyChangeRef = useRef(onReadyChange);
   const onMethodChangeRef = useRef(onMethodChange);
   const onExpressCheckoutConfirmRef = useRef(onExpressCheckoutConfirm);
@@ -105,6 +116,7 @@ export const FutureOrderV2StripeCard = ({
   disabledRef.current = disabled;
   orderIdRef.current = orderId;
   returnSurfaceRef.current = returnSurface;
+  shippingStateRef.current = shippingState;
 
   const [method, setMethod] = useState<FutureOrderV2PaymentMethod>("card");
   const [cardReady, setCardReady] = useState(false);
@@ -124,7 +136,7 @@ export const FutureOrderV2StripeCard = ({
     nextIdealReady: boolean,
   ) => {
     onReadyChangeRef.current(
-      nextMethod === "ideal" ? nextIdealReady : nextCardReady,
+      nextMethod === "card" ? nextCardReady : nextIdealReady,
     );
   };
 
@@ -208,15 +220,15 @@ export const FutureOrderV2StripeCard = ({
 
     const mountCard = async () => {
       const response = await fetch("/api/future-order-v2/payment-intent");
-      const payload: unknown = await response.json();
-      if (!response.ok) {
+      const payload = await readFutureOrderV2JsonBody(response);
+      if (!response.ok || payload == null) {
         const error =
           payload &&
           typeof payload === "object" &&
           "error" in payload &&
           typeof payload.error === "string"
             ? payload.error
-            : "Stripe payments are not available.";
+            : "Stripe payments are not available right now. Retry this same order.";
         throw new Error(error);
       }
       const publishableKey =
@@ -309,6 +321,61 @@ export const FutureOrderV2StripeCard = ({
           return {
             status: "failed",
             message: "Stripe did not return a bank redirect for iDEAL.",
+          };
+        }
+
+        if (methodRef.current === "klarna") {
+          const activeOrderId = orderIdRef.current;
+          const shipping = resolveFutureOrderV2StripeShipping(
+            shippingStateRef.current,
+          );
+          if (!activeOrderId || !shipping) {
+            return {
+              status: "failed",
+              message: "Prepare the order before paying with Klarna.",
+            };
+          }
+          stashFutureOrderV2StripeReturnContext({
+            orderId: activeOrderId,
+            paymentReference: `future-v2-payment-${activeOrderId}`,
+            surface: returnSurfaceRef.current,
+          });
+          const klarnaResult = await activeStripe.confirmKlarnaPayment(
+            clientSecret,
+            {
+              payment_method: {
+                billing_details: toFutureOrderV2KlarnaBillingDetails(shipping),
+              },
+              return_url: buildFutureOrderV2StripeReturnUrl(activeOrderId),
+            },
+            { handleActions: false },
+          );
+          if (klarnaResult.error) {
+            return {
+              status: "failed",
+              message: describeFutureOrderV2CardError({
+                code: klarnaResult.error.code,
+                declineCode: klarnaResult.error.decline_code,
+                message: klarnaResult.error.message,
+              }),
+            };
+          }
+          const paymentIntent = klarnaResult.paymentIntent;
+          const paymentIntentId = paymentIntent?.id || "";
+          if (paymentIntent?.status === "succeeded" && paymentIntentId.startsWith("pi_")) {
+            return { status: "confirmed", paymentIntentId };
+          }
+          const redirectUrl =
+            paymentIntent?.next_action?.type === "redirect_to_url"
+              ? paymentIntent.next_action.redirect_to_url?.url
+              : null;
+          if (redirectUrl) {
+            window.location.assign(redirectUrl);
+            return { status: "redirecting" };
+          }
+          return {
+            status: "failed",
+            message: "Stripe did not return a redirect for Klarna.",
           };
         }
 
@@ -523,7 +590,7 @@ export const FutureOrderV2StripeCard = ({
       </div>
 
       <div
-        className="grid grid-cols-2 gap-2"
+        className="grid grid-cols-3 gap-2"
         role="radiogroup"
         aria-label="Payment method"
         data-future-order-v2-payment-methods
@@ -558,6 +625,21 @@ export const FutureOrderV2StripeCard = ({
         >
           iDEAL
         </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={method === "klarna"}
+          data-future-order-v2-method-klarna
+          disabled={disabled}
+          onClick={() => selectMethod("klarna")}
+          className={`rounded-xl border-2 px-3 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+            method === "klarna"
+              ? "border-heritage-gold bg-heritage-gold/15 text-white"
+              : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+          } disabled:cursor-not-allowed disabled:opacity-60`}
+        >
+          Klarna
+        </button>
       </div>
 
       <div className={method === "card" ? "block" : "hidden"}>
@@ -591,6 +673,16 @@ export const FutureOrderV2StripeCard = ({
         >
           Pay with iDEAL. You will be redirected to your Dutch bank to authorize
           this payment, then returned here.
+        </p>
+      </div>
+
+      <div className={method === "klarna" ? "block" : "hidden"}>
+        <p
+          data-future-order-v2-klarna-help
+          className="text-xs leading-relaxed text-white/75"
+        >
+          Pay with Klarna. You will be redirected to Klarna to authorize this
+          payment, then returned here.
         </p>
       </div>
 

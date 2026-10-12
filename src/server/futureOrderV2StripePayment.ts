@@ -6,16 +6,23 @@ import {
   FUTURE_ORDER_V2_COLLECTION,
   parsePersistedFutureOrderV2,
 } from "../utils/futureOrderV2PersistenceContract.js";
+import {
+  resolveFutureOrderV2StripeShipping,
+  type FutureOrderV2StripeShipping,
+} from "../utils/futureOrderV2StripeShipping.js";
 
 const MINIMUM_EUR_CENTS = 50;
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = ["card", "ideal"] as const;
+export const FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = ["card", "ideal", "klarna"] as const;
 const IDEAL_IDEMPOTENCY_SUFFIX = ":ideal";
+const KLARNA_IDEMPOTENCY_SUFFIX = ":klarna";
 
 export interface FutureOrderV2StripePaymentIntentInput {
   readonly amountCents: number;
   readonly orderId: string;
   readonly paymentReference: string;
+  /** Step 9 address for Klarna. Null when that address is not a Stripe country. The amount stays the persisted total. */
+  readonly shipping: FutureOrderV2StripeShipping | null;
 }
 
 export interface FutureOrderV2StripePaymentIntent {
@@ -105,9 +112,34 @@ const getStripeTestClient = (): Stripe => {
   return stripeTestClient;
 };
 
-const paymentIntentSupportsIdeal = (
+/**
+ * Older PaymentIntents stay on their idempotency key.
+ * A card-only intent is reissued as :ideal; a card+iDEAL intent is reissued as :klarna.
+ * A fresh key already includes every current method, so the suffix is unused.
+ */
+export const nextFutureOrderV2StripeIdempotencyUpgrade = (
   types: readonly string[] | null | undefined,
-): boolean => (types ?? []).includes("ideal");
+): typeof IDEAL_IDEMPOTENCY_SUFFIX | typeof KLARNA_IDEMPOTENCY_SUFFIX | null => {
+  const list = types ?? [];
+  if (!list.includes("ideal")) return IDEAL_IDEMPOTENCY_SUFFIX;
+  if (!list.includes("klarna")) return KLARNA_IDEMPOTENCY_SUFFIX;
+  return null;
+};
+
+const stripeShipping = (
+  shipping: FutureOrderV2StripeShipping,
+): Stripe.PaymentIntentCreateParams.Shipping => ({
+  name: shipping.name,
+  ...(shipping.phone ? { phone: shipping.phone } : {}),
+  address: {
+    line1: shipping.address.line1,
+    ...(shipping.address.line2 ? { line2: shipping.address.line2 } : {}),
+    city: shipping.address.city,
+    ...(shipping.address.state ? { state: shipping.address.state } : {}),
+    postal_code: shipping.address.postalCode,
+    country: shipping.address.country,
+  },
+});
 
 const isIdempotencyConflict = (error: unknown): boolean => {
   if (!error || typeof error !== "object") return false;
@@ -143,27 +175,51 @@ export const createFutureOrderV2StripeTestPaymentIntent = async (
       paymentReference: input.paymentReference,
       stage: "Design Studio V2",
     },
+    ...(input.shipping ? { shipping: stripeShipping(input.shipping) } : {}),
   };
 
   const createOnce = (idempotencyKey: string) =>
     stripe.paymentIntents.create(createParams, { idempotencyKey });
 
+  const createUpgraded = (
+    suffix: typeof IDEAL_IDEMPOTENCY_SUFFIX | typeof KLARNA_IDEMPOTENCY_SUFFIX,
+  ) => createOnce(`${input.paymentReference}${suffix}`);
+
+  const withCurrentMethods = async (
+    paymentIntent: Stripe.PaymentIntent,
+  ): Promise<Stripe.PaymentIntent> => {
+    const suffix = nextFutureOrderV2StripeIdempotencyUpgrade(
+      paymentIntent.payment_method_types,
+    );
+    if (!suffix) return paymentIntent;
+    try {
+      const upgraded = await createUpgraded(suffix);
+      const next = nextFutureOrderV2StripeIdempotencyUpgrade(
+        upgraded.payment_method_types,
+      );
+      if (!next) return upgraded;
+      return createUpgraded(next);
+    } catch (error) {
+      if (!isIdempotencyConflict(error) || suffix === KLARNA_IDEMPOTENCY_SUFFIX) {
+        throw error;
+      }
+      // The :ideal key already belongs to a card+iDEAL intent. Mint :klarna.
+      return createUpgraded(KLARNA_IDEMPOTENCY_SUFFIX);
+    }
+  };
+
   try {
     const paymentIntent = await createOnce(input.paymentReference);
-    if (paymentIntentSupportsIdeal(paymentIntent.payment_method_types)) {
-      return mapPaymentIntent(paymentIntent);
-    }
-    // Older card-only PI reused via idempotency — mint a card+iDEAL intent.
-    const upgraded = await createOnce(
-      `${input.paymentReference}${IDEAL_IDEMPOTENCY_SUFFIX}`,
-    );
-    return mapPaymentIntent(upgraded);
+    return mapPaymentIntent(await withCurrentMethods(paymentIntent));
   } catch (error) {
     if (!isIdempotencyConflict(error)) throw error;
-    const upgraded = await createOnce(
-      `${input.paymentReference}${IDEAL_IDEMPOTENCY_SUFFIX}`,
-    );
-    return mapPaymentIntent(upgraded);
+    try {
+      const ideal = await createUpgraded(IDEAL_IDEMPOTENCY_SUFFIX);
+      return mapPaymentIntent(await withCurrentMethods(ideal));
+    } catch (idealError) {
+      if (!isIdempotencyConflict(idealError)) throw idealError;
+      return mapPaymentIntent(await createUpgraded(KLARNA_IDEMPOTENCY_SUFFIX));
+    }
   }
 };
 
@@ -335,6 +391,9 @@ export const handleFutureOrderV2StripePayment = async (
       amountCents,
       orderId,
       paymentReference,
+      shipping: resolveFutureOrderV2StripeShipping(
+        order.value.masterOrder.cartItem.candidate.shipping.state,
+      ),
     });
     if (!paymentIntent.id.startsWith("pi_") || !paymentIntent.clientSecret) {
       return sendError(

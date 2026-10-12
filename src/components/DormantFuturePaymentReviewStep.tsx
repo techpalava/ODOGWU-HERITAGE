@@ -26,7 +26,8 @@ import {
   FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
   FUTURE_ORDER_V2_PAY_HEADING,
   FUTURE_ORDER_V2_PAY_READY_MESSAGE,
-  FUTURE_ORDER_V2_REDIRECTING_MESSAGE,
+  futureOrderV2RedirectingMessage,
+  futureOrderV2RedirectingPayLabel,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
@@ -73,6 +74,8 @@ interface DormantFuturePaymentReviewStepProps {
   onRequestCancelOrder?: () => void;
   onRetryPaymentRecord?: () => void;
   onViewDashboard?: () => void;
+  /** Starting radio. Customers begin on card; tests pass ideal or klarna. */
+  initialPaymentMethod?: FutureOrderV2PaymentMethod;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -617,6 +620,7 @@ export const DormantFuturePaymentReviewStep = ({
   onRequestCancelOrder,
   onRetryPaymentRecord,
   onViewDashboard,
+  initialPaymentMethod = "card",
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
   const isReviewable = isFuturePaymentReviewStageUnlocked(result);
@@ -649,18 +653,18 @@ export const DormantFuturePaymentReviewStep = ({
   const payIsBusy = preparationIsPending || paymentIsProcessing;
   const reviewedTotalCents =
     candidate?.pricing.status === "exact" ? candidate.pricing.exactTotalCents : null;
+  const [stripePaymentReady, setStripePaymentReady] = useState(false);
+  const [paymentMethod, setPaymentMethod] =
+    useState<FutureOrderV2PaymentMethod>(initialPaymentMethod);
+  const redirectingMessage = futureOrderV2RedirectingMessage(paymentMethod);
+  const redirectingPayLabel = futureOrderV2RedirectingPayLabel(paymentMethod);
   const payLabel = preparationIsPending
     ? "Saving your order..."
-    : payment?.status === "redirecting"
-      ? "Continuing to your bank..."
-      : paymentIsProcessing
+    : paymentIsProcessing
       ? "Processing payment..."
       : reviewedTotalCents === null
         ? "Pay"
         : `Pay ${moneyFromCents(reviewedTotalCents)}`;
-  const [stripePaymentReady, setStripePaymentReady] = useState(false);
-  const [paymentMethod, setPaymentMethod] =
-    useState<FutureOrderV2PaymentMethod>("card");
   const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
   const paymentIsConfirmed = payment?.status === "confirmed";
   useEffect(() => {
@@ -674,7 +678,7 @@ export const DormantFuturePaymentReviewStep = ({
           ? "Payment received. Saving it to your order..."
           : `Payment received. Reference: ${payment.providerTransactionReference}.`
       : payment?.status === "redirecting"
-        ? FUTURE_ORDER_V2_REDIRECTING_MESSAGE
+        ? redirectingMessage
       : payment?.status === "processing"
         ? "Processing your payment..."
         : preparationIsPending
@@ -1263,6 +1267,11 @@ export const DormantFuturePaymentReviewStep = ({
                   onExpressCheckoutConfirm={onPay}
                   onReadyChange={setStripePaymentReady}
                   onMethodChange={setPaymentMethod}
+                  shippingState={
+                    isV2PaymentReviewCandidate(candidate)
+                      ? candidate.shipping.state
+                      : null
+                  }
                 />
                 {payment?.status === "failed" && (
                   <FutureOrderV2PaymentAlert message={payment.message} />
@@ -1316,12 +1325,29 @@ export const DormantFuturePaymentReviewStep = ({
               </>
             )}
             {payment?.status === "redirecting" && (
-              <p
-                data-future-order-v2-ideal-redirecting
-                className="mt-4 text-sm leading-relaxed text-white/85"
-              >
-                {FUTURE_ORDER_V2_REDIRECTING_MESSAGE}
-              </p>
+              <>
+                <button
+                  type="button"
+                  data-future-order-v2-pay={true}
+                  data-future-order-v2-redirecting-pay={paymentMethod}
+                  disabled
+                  aria-busy="true"
+                  aria-describedby="future-payment-pending-explanation"
+                  className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+                >
+                  <LockKeyhole aria-hidden="true" size={14} />
+                  {redirectingPayLabel}
+                </button>
+                <p
+                  data-future-order-v2-redirecting={paymentMethod}
+                  {...(paymentMethod === "klarna"
+                    ? { "data-future-order-v2-klarna-redirecting": true }
+                    : { "data-future-order-v2-ideal-redirecting": true })}
+                  className="mt-4 text-sm leading-relaxed text-white/85"
+                >
+                  {redirectingMessage}
+                </p>
+              </>
             )}
             {paymentIsRecording && (
               <button

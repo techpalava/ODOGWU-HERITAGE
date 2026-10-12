@@ -4,7 +4,7 @@ import type { FutureOrderV2PreparationAttempt } from "./futureOrderV2Preparation
 import type { Batch } from "../types";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
 
-export type FutureOrderV2PaymentMethod = "card" | "ideal";
+export type FutureOrderV2PaymentMethod = "card" | "ideal" | "klarna";
 
 export interface FutureOrderV2PaymentAttempt {
   readonly orderId: string;
@@ -41,6 +41,27 @@ export const registerFutureOrderV2PaymentIdentityResolver = (
   resolver: FutureOrderV2PaymentIdentityResolver | null,
 ): void => {
   paymentIdentityResolver = resolver;
+};
+
+/**
+ * Payment-intent failures are sometimes a plain-text crash page.
+ * Parsing that page as JSON throws "Unexpected token 'A'". Return null instead.
+ */
+export const readFutureOrderV2JsonBody = async (
+  response: Pick<Response, "text">,
+): Promise<unknown> => {
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    return null;
+  }
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 };
 
 const resolvePaymentIdentity = async (): Promise<FutureOrderV2PaymentIdentity | null> => {
@@ -292,8 +313,8 @@ export const authorizeFutureOrderV2Payment = async (
         masterOrder: attempt.masterOrder,
       }),
     });
-    payload = await response.json();
-    if (!response.ok) {
+    payload = await readFutureOrderV2JsonBody(response);
+    if (!response.ok || payload == null) {
       const message =
         payload &&
         typeof payload === "object" &&

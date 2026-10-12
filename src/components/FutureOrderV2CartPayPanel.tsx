@@ -163,6 +163,7 @@ export const FutureOrderV2CartPayPanel = ({
         amountCents={totalCents}
         onExpressCheckoutConfirm={handlePay}
         onReadyChange={setStripeReady}
+        shippingState={item.candidate.shipping.state}
       />
       {message ? <FutureOrderV2PaymentAlert message={message} /> : null}
       <button
