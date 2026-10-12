@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   handleFutureOrderV2StripeConfig,
   handleFutureOrderV2StripePayment,
+  nextFutureOrderV2StripeIdempotencyUpgrade,
 } from "./src/server/futureOrderV2StripePayment";
 import type { HttpResponse } from "./src/server/httpTypes";
 import {
@@ -20,10 +21,27 @@ import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2Persisten
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
 import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
 import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
+import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
+import {
+  resolveFutureOrderV2StripeShipping,
+  toFutureOrderV2KlarnaBillingDetails,
+} from "./src/utils/futureOrderV2StripeShipping";
 import {
   createCatalogueAuthoritativeFutureOrderV2Fixture,
   createFutureOrderV2Fixture,
 } from "./testing/futureOrderV2Fixture";
+
+const PICKUP_STRIPE_SHIPPING = {
+  name: "Ada Lovelace",
+  email: "ada@example.test",
+  phone: "+31 6 12345678",
+  address: {
+    line1: "Frans Snijderslaan 4-b",
+    city: "Eindhoven",
+    postalCode: "5642 AN",
+    country: "NL",
+  },
+};
 
 const OWNER_UID = "stripe-payment-owner";
 const OTHER_UID = "stripe-payment-other";
@@ -278,7 +296,7 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
         return {
           id: "pi_test_reviewed",
           clientSecret: "pi_test_reviewed_secret_abc",
-          paymentMethodTypes: ["card", "ideal"],
+          paymentMethodTypes: ["card", "ideal", "klarna"],
         };
       },
     },
@@ -288,11 +306,12 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
     amountCents: 30000,
     orderId: prepared.orderId,
     paymentReference,
+    shipping: PICKUP_STRIPE_SHIPPING,
   });
   assert.deepEqual(state.body, {
     paymentIntentId: "pi_test_reviewed",
     clientSecret: "pi_test_reviewed_secret_abc",
-    paymentMethodTypes: ["card", "ideal"],
+    paymentMethodTypes: ["card", "ideal", "klarna"],
   });
 }
 
@@ -394,13 +413,15 @@ assert.match(stripeSource, /createOnce\(input\.paymentReference\)/);
 assert.match(stripeSource, /payment_method_types: \[\.\.\.FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES\]/);
 assert.match(
   stripeSource,
-  /FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = \["card", "ideal"\]/,
+  /FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = \["card", "ideal", "klarna"\]/,
 );
 assert.equal(stripeSource.includes('"paypal"'), false);
-assert.equal(stripeSource.includes("klarna"), false);
+assert.match(stripeSource, /KLARNA_IDEMPOTENCY_SUFFIX/);
+assert.match(stripeSource, /resolveFutureOrderV2StripeShipping/);
+assert.match(stripeSource, /postal_code: shipping\.address\.postalCode/);
 assert.equal(stripeSource.includes("apple_pay"), false);
 assert.equal(stripeSource.includes("google_pay"), false);
-assert.deepEqual(stripeSource.match(/":[a-z_]+"/g), ['":ideal"']);
+assert.deepEqual(stripeSource.match(/":[a-z_]+"/g), ['":ideal"', '":klarna"']);
 assert.match(stripeSource, /IDEAL_IDEMPOTENCY_SUFFIX/);
 assert.match(stripeSource, /idempotencyKey/);
 assert.match(stripeSource, /AUTH_REQUIRED/);
@@ -412,14 +433,18 @@ assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripePayment"), true
 assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripeConfig"), true);
 const stripeCardSource = readFileSync("src/components/FutureOrderV2StripeCard.tsx", "utf8");
 assert.match(stripeCardSource, /confirmIdealPayment/);
+assert.match(stripeCardSource, /confirmKlarnaPayment/);
 assert.match(stripeCardSource, /confirmCardPayment/);
 assert.match(stripeCardSource, /data-future-order-v2-method-ideal/);
 assert.match(stripeCardSource, /data-future-order-v2-method-card/);
+assert.match(stripeCardSource, /data-future-order-v2-method-klarna/);
+assert.match(stripeCardSource, /data-future-order-v2-klarna-help/);
 assert.match(stripeCardSource, /expressCheckout/);
 assert.match(stripeCardSource, /confirmPayment/);
 assert.match(stripeCardSource, /data-future-order-v2-express-checkout/);
 assert.match(stripeCardSource, /stashFutureOrderV2StripeReturnContext/);
 assert.match(stripeCardSource, /klarna:\s*"never"/);
+assert.equal(/klarna:\s*"auto"/.test(stripeCardSource), false);
 assert.match(stripeCardSource, /applePay:\s*"auto"/);
 assert.match(stripeCardSource, /googlePay:\s*"auto"/);
 assert.match(stripeCardSource, /allowedPaymentMethodTypes:\s*\["card", "ideal"\]/);
@@ -458,7 +483,7 @@ globalThis.fetch = async (_url, init) => {
     JSON.stringify({
       paymentIntentId: "pi_test_reviewed",
       clientSecret: "pi_test_reviewed_secret_abc",
-      paymentMethodTypes: ["card", "ideal"],
+      paymentMethodTypes: ["card", "ideal", "klarna"],
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
@@ -471,7 +496,7 @@ registerFutureOrderV2PaymentIdentityResolver(() => ({
 }));
 registerFutureOrderV2PaymentConfirmer(async (clientSecret, context) => {
   assert.equal(clientSecret, "pi_test_reviewed_secret_abc");
-  assert.deepEqual(context.paymentMethodTypes, ["card", "ideal"]);
+  assert.deepEqual(context.paymentMethodTypes, ["card", "ideal", "klarna"]);
   return { status: "confirmed", paymentIntentId: "pi_test_reviewed" };
 });
 try {
@@ -680,7 +705,83 @@ try {
     amountCents: payable.exactTotalCents,
     orderId: authoritativePersisted.value.orderId,
     paymentReference: authoritativeReference,
+    shipping: PICKUP_STRIPE_SHIPPING,
   });
+}
+
+assert.equal(nextFutureOrderV2StripeIdempotencyUpgrade(["card"]), ":ideal");
+assert.equal(nextFutureOrderV2StripeIdempotencyUpgrade(null), ":ideal");
+assert.equal(
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal"]),
+  ":klarna",
+);
+assert.equal(
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal", "klarna"]),
+  null,
+);
+
+const pickupResolved = resolveFutureOrderV2StripeShipping(
+  prepared.masterOrder.cartItem.candidate.shipping.state,
+);
+assert.deepEqual(pickupResolved, PICKUP_STRIPE_SHIPPING);
+assert.equal(pickupResolved?.address.line1.includes("Historical"), false);
+assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
+  email: "ada@example.test",
+  name: "Ada Lovelace",
+  phone: "+31 6 12345678",
+  address: {
+    line1: "Frans Snijderslaan 4-b",
+    city: "Eindhoven",
+    postal_code: "5642 AN",
+    country: "NL",
+  },
+});
+
+{
+  const delivery = createEmptyFutureShippingState();
+  delivery.fulfilmentMethod = "destination_delivery";
+  delivery.customerInformation.fullName = "Ada Lovelace";
+  delivery.customerInformation.email = "ada@example.test";
+  delivery.customerInformation.phone = "+31 6 00000000";
+  delivery.customerInformation.deliveryAddress = {
+    addressLine1: "Damrak 1",
+    addressLine2: "Floor 2",
+    city: "Amsterdam",
+    stateRegion: "Noord-Holland",
+    postalCode: "1012 LG",
+    countryCode: "uk",
+  };
+  assert.deepEqual(resolveFutureOrderV2StripeShipping(delivery), {
+    name: "Ada Lovelace",
+    email: "ada@example.test",
+    phone: "+31 6 00000000",
+    address: {
+      line1: "Damrak 1",
+      line2: "Floor 2",
+      city: "Amsterdam",
+      state: "Noord-Holland",
+      postalCode: "1012 LG",
+      country: "GB",
+    },
+  });
+}
+
+{
+  const unnamed = createEmptyFutureShippingState();
+  unnamed.fulfilmentMethod = "eindhoven_pickup";
+  unnamed.customerInformation.email = "ada@example.test";
+  assert.equal(resolveFutureOrderV2StripeShipping(unnamed), null);
+  const other = createEmptyFutureShippingState();
+  other.fulfilmentMethod = "destination_delivery";
+  other.customerInformation.fullName = "Ada Lovelace";
+  other.customerInformation.email = "ada@example.test";
+  other.customerInformation.deliveryAddress = {
+    addressLine1: "Somewhere 1",
+    city: "Lagos",
+    postalCode: "100001",
+    countryCode: "XX",
+  };
+  assert.equal(resolveFutureOrderV2StripeShipping(other), null);
 }
 
 console.log(

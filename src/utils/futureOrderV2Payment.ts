@@ -4,7 +4,7 @@ import type { FutureOrderV2PreparationAttempt } from "./futureOrderV2Preparation
 import type { Batch } from "../types";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
 
-export type FutureOrderV2PaymentMethod = "card" | "ideal";
+export type FutureOrderV2PaymentMethod = "card" | "ideal" | "klarna";
 
 export interface FutureOrderV2PaymentAttempt {
   readonly orderId: string;

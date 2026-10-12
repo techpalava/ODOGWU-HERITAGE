@@ -164,11 +164,15 @@ assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /Apple Pay/);
 assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /Google Pay/);
 assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /card/);
 assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /iDEAL/);
-assert.equal(/klarna/i.test(FUTURE_ORDER_V2_PAY_READY_MESSAGE), false);
+assert.equal(/klarna/i.test(FUTURE_ORDER_V2_PAY_READY_MESSAGE), true);
+assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /Klarna/);
 assert.ok(markup.includes("data-future-order-v2-card"));
 assert.ok(markup.includes('data-future-order-v2-express-checkout="hidden"'));
 assert.ok(markup.includes("data-future-order-v2-method-card"));
 assert.ok(markup.includes("data-future-order-v2-method-ideal"));
+assert.ok(markup.includes("data-future-order-v2-method-klarna"));
+assert.ok(markup.includes("data-future-order-v2-klarna-help"));
+assert.match(markup, /redirected to Klarna/);
 assert.equal((markup.match(/data-future-order-v2-pay="true"/g) || []).length, 1);
 assert.match(markup, /Pay €\d+\.\d{2}/);
 for (const removed of [

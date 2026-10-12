@@ -1263,6 +1263,11 @@ export const DormantFuturePaymentReviewStep = ({
                   onExpressCheckoutConfirm={onPay}
                   onReadyChange={setStripePaymentReady}
                   onMethodChange={setPaymentMethod}
+                  shippingState={
+                    isV2PaymentReviewCandidate(candidate)
+                      ? candidate.shipping.state
+                      : null
+                  }
                 />
                 {payment?.status === "failed" && (
                   <FutureOrderV2PaymentAlert message={payment.message} />

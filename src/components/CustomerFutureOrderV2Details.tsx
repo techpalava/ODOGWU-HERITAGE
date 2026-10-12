@@ -154,7 +154,7 @@ export const CustomerFutureOrderV2Details = ({
           ? "Your payment went through."
           : isRedirecting
             ? "Continue at your bank to authorize this iDEAL payment."
-            : "Choose Apple Pay, Google Pay, card, or iDEAL and pay to complete your order.";
+            : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order.";
 
   const dialog = (
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
@@ -428,6 +428,7 @@ export const CustomerFutureOrderV2Details = ({
                         amountCents={totalCents}
                         onExpressCheckoutConfirm={handlePay}
                         onReadyChange={setPaymentReady}
+                        shippingState={shipping}
                       />
                       {payOutcome?.status === "failed" && !payBusy && (
                         <FutureOrderV2PaymentAlert message={payOutcome.message} />

@@ -39,7 +39,7 @@ export const FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE =
   "Your prepared order is ready for payment authorization.";
 export const FUTURE_ORDER_V2_PAY_HEADING = "Payment";
 export const FUTURE_ORDER_V2_PAY_READY_MESSAGE =
-  "Choose Apple Pay, Google Pay, card, or iDEAL and pay to place your order.";
+  "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to place your order.";
 export const FUTURE_ORDER_V2_REDIRECTING_MESSAGE =
   "Continue at your bank to authorize this iDEAL payment.";
 /** @deprecated Use FUTURE_ORDER_V2_REDIRECTING_MESSAGE. */
