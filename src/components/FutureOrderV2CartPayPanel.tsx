@@ -160,6 +160,8 @@ export const FutureOrderV2CartPayPanel = ({
         disabled={paying}
         orderId={orderId}
         returnSurface="dashboard"
+        amountCents={totalCents}
+        onExpressCheckoutConfirm={handlePay}
         onReadyChange={setStripeReady}
       />
       {message ? <FutureOrderV2PaymentAlert message={message} /> : null}
