@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { act, create } from "react-test-renderer";
 import {
   handleFutureOrderV2StripeConfig,
   handleFutureOrderV2StripePayment,
@@ -13,10 +15,15 @@ import {
   registerFutureOrderV2PaymentConfirmer,
   registerFutureOrderV2PaymentIdentityResolver,
 } from "./src/utils/futureOrderV2Payment";
+import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import {
+  FutureOrderV2StripeCard,
+  futureOrderV2ExpressCheckoutShell,
   isFutureOrderV2ExpressCheckoutAmount,
   isFutureOrderV2ExpressWalletAvailable,
+  isFutureOrderV2StripePayReady,
 } from "./src/components/FutureOrderV2StripeCard";
+import { createFutureOrderV2PaymentReviewHandoff } from "./src/utils/designStudioFuturePaymentReview";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
@@ -451,7 +458,16 @@ assert.match(stripeCardSource, /klarna:\s*"never"/);
 assert.equal(/klarna:\s*"auto"/.test(stripeCardSource), false);
 assert.match(stripeCardSource, /applePay:\s*"auto"/);
 assert.match(stripeCardSource, /googlePay:\s*"auto"/);
-assert.match(stripeCardSource, /allowedPaymentMethodTypes:\s*\["card", "ideal"\]/);
+assert.match(stripeCardSource, /allowedPaymentMethodTypes:\s*\["card"\]/);
+assert.equal(/allowedPaymentMethodTypes:\s*\[[^\]]*ideal/.test(stripeCardSource), false);
+assert.equal(stripeCardSource.includes("idealReady"), false);
+assert.equal(stripeCardSource.includes('"invisible"'), false);
+assert.match(stripeCardSource, /pointer-events-none/);
+assert.match(stripeCardSource, /relative z-10/);
+assert.match(
+  stripeCardSource,
+  /reportReady\(next, cardReady, stripeClientReady\)/,
+);
 assert.equal(stripeCardSource.includes("confirmPayPalPayment"), false);
 assert.equal(stripeCardSource.includes("data-future-order-v2-method-paypal"), false);
 assert.equal(stripeCardSource.includes(":wallet"), false);
@@ -473,6 +489,11 @@ const reviewStepSource = readFileSync(
 );
 assert.match(reviewStepSource, /onExpressCheckoutConfirm=\{onPay\}/);
 assert.match(reviewStepSource, /amountCents=\{reviewedTotalCents\}/);
+assert.match(
+  reviewStepSource,
+  /disabled=\{!isReviewable \|\| payIsBusy \|\| !stripePaymentReady\}/,
+);
+assert.equal(reviewStepSource.includes("cardReady"), false);
 
 assert.equal(isFutureOrderV2ExpressWalletAvailable(undefined), false);
 assert.equal(isFutureOrderV2ExpressWalletAvailable(null), false);
@@ -484,6 +505,60 @@ assert.equal(isFutureOrderV2ExpressCheckoutAmount(null), false);
 assert.equal(isFutureOrderV2ExpressCheckoutAmount(49), false);
 assert.equal(isFutureOrderV2ExpressCheckoutAmount(50), true);
 assert.equal(isFutureOrderV2ExpressCheckoutAmount(10.5), false);
+
+assert.equal(
+  isFutureOrderV2StripePayReady({
+    method: "ideal",
+    cardReady: false,
+    stripeClientReady: true,
+  }),
+  true,
+  "selecting iDEAL reports ready once Stripe.js is loaded, without Card Element interaction",
+);
+assert.equal(
+  isFutureOrderV2StripePayReady({
+    method: "klarna",
+    cardReady: false,
+    stripeClientReady: true,
+  }),
+  true,
+  "selecting Klarna reports ready once Stripe.js is loaded, without Card Element interaction",
+);
+assert.equal(
+  isFutureOrderV2StripePayReady({
+    method: "card",
+    cardReady: false,
+    stripeClientReady: true,
+  }),
+  false,
+  "Card Pay still waits for the Card Element",
+);
+assert.equal(
+  isFutureOrderV2StripePayReady({
+    method: "ideal",
+    cardReady: true,
+    stripeClientReady: false,
+  }),
+  false,
+);
+assert.equal(
+  isFutureOrderV2StripePayReady({
+    method: "klarna",
+    cardReady: true,
+    stripeClientReady: false,
+  }),
+  false,
+);
+const hiddenExpress = futureOrderV2ExpressCheckoutShell(false);
+assert.equal(hiddenExpress.hidden, true);
+assert.equal(hiddenExpress["aria-hidden"], true);
+assert.equal(hiddenExpress.className, "pointer-events-none");
+assert.equal(hiddenExpress["data-future-order-v2-express-checkout"], "hidden");
+assert.equal(String(hiddenExpress.className).includes("invisible"), false);
+const shownExpress = futureOrderV2ExpressCheckoutShell(true);
+assert.equal(shownExpress.hidden, false);
+assert.equal(shownExpress.className, undefined);
+assert.equal(shownExpress["data-future-order-v2-express-checkout"], "available");
 
 const originalFetch = globalThis.fetch;
 let postedAmount = false;
@@ -846,6 +921,134 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
     countryCode: "XX",
   };
   assert.equal(resolveFutureOrderV2StripeShipping(other), null);
+}
+
+{
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const previousFetch = globalThis.fetch;
+  let payStarts = 0;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({ error: "Stripe test payments are not configured." }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  const handoff = createFutureOrderV2PaymentReviewHandoff(prepared.candidate, {
+    status: "prepared",
+    cartItemId: prepared.cartItemId,
+    orderId: prepared.orderId,
+  });
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    await act(async () => {
+      renderer = create(
+        createElement(DormantFuturePaymentReviewStep, {
+          result: handoff,
+          onBack: () => undefined,
+          onEditStage: () => undefined,
+          onPay: () => {
+            payStarts += 1;
+          },
+        }),
+      );
+      await Promise.resolve();
+    });
+    assert.ok(renderer);
+    const payButton = () =>
+      renderer!.root.findByProps({ "data-future-order-v2-pay": true });
+    assert.equal(payButton().props.disabled, true);
+
+    const express = renderer.root.findByProps({
+      "data-future-order-v2-express-checkout": "hidden",
+    });
+    assert.equal(express.props.hidden, true);
+    assert.match(String(express.props.className), /pointer-events-none/);
+    assert.equal(/\binvisible\b/.test(String(express.props.className || "")), false);
+    assert.equal(express.props["aria-hidden"], true);
+
+    const methods = renderer.root.findByProps({
+      "data-future-order-v2-payment-methods": true,
+    });
+    assert.match(String(methods.props.className), /\brelative\b/);
+    assert.match(String(methods.props.className), /\bz-10\b/);
+
+    await act(async () => {
+      renderer!.root
+        .findByProps({ "data-future-order-v2-method-ideal": true })
+        .props.onClick();
+    });
+    assert.equal(payStarts, 0, "Selecting iDEAL must not start payment");
+    assert.equal(
+      renderer.root.findByProps({ "data-future-order-v2-method-ideal": true }).props[
+        "aria-checked"
+      ],
+      true,
+    );
+    assert.equal(payButton().props.disabled, true);
+
+    const stripeCard = renderer.root.findByType(FutureOrderV2StripeCard);
+    await act(async () => {
+      stripeCard.props.onReadyChange(
+        isFutureOrderV2StripePayReady({
+          method: "ideal",
+          cardReady: false,
+          stripeClientReady: true,
+        }),
+      );
+    });
+    assert.equal(
+      payButton().props.disabled,
+      false,
+      "Pay is not gated solely by missing cardReady for iDEAL",
+    );
+    await act(async () => {
+      payButton().props.onClick();
+    });
+    assert.equal(payStarts, 1);
+
+    await act(async () => {
+      renderer!.root
+        .findByProps({ "data-future-order-v2-method-klarna": true })
+        .props.onClick();
+    });
+    assert.equal(payStarts, 1, "Selecting Klarna must not start payment");
+    assert.equal(
+      renderer.root.findByProps({ "data-future-order-v2-method-klarna": true }).props[
+        "aria-checked"
+      ],
+      true,
+    );
+    await act(async () => {
+      stripeCard.props.onReadyChange(
+        isFutureOrderV2StripePayReady({
+          method: "klarna",
+          cardReady: false,
+          stripeClientReady: false,
+        }),
+      );
+    });
+    assert.equal(payButton().props.disabled, true);
+    await act(async () => {
+      stripeCard.props.onReadyChange(
+        isFutureOrderV2StripePayReady({
+          method: "klarna",
+          cardReady: false,
+          stripeClientReady: true,
+        }),
+      );
+    });
+    assert.equal(
+      payButton().props.disabled,
+      false,
+      "Pay is not gated solely by missing cardReady for Klarna",
+    );
+  } finally {
+    if (renderer) {
+      await act(async () => {
+        renderer!.unmount();
+      });
+    }
+    globalThis.fetch = previousFetch;
+  }
 }
 
 console.log(
