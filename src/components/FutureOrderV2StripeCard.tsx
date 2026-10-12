@@ -8,6 +8,7 @@ import {
 } from "@stripe/stripe-js";
 import {
   registerFutureOrderV2PaymentConfirmer,
+  readFutureOrderV2JsonBody,
   type FutureOrderV2PaymentConfirmContext,
   type FutureOrderV2PaymentConfirmation,
   type FutureOrderV2PaymentMethod,
@@ -219,15 +220,15 @@ export const FutureOrderV2StripeCard = ({
 
     const mountCard = async () => {
       const response = await fetch("/api/future-order-v2/payment-intent");
-      const payload: unknown = await response.json();
-      if (!response.ok) {
+      const payload = await readFutureOrderV2JsonBody(response);
+      if (!response.ok || payload == null) {
         const error =
           payload &&
           typeof payload === "object" &&
           "error" in payload &&
           typeof payload.error === "string"
             ? payload.error
-            : "Stripe payments are not available.";
+            : "Stripe payments are not available right now. Retry this same order.";
         throw new Error(error);
       }
       const publishableKey =

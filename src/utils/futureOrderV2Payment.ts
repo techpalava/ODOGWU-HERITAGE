@@ -43,6 +43,27 @@ export const registerFutureOrderV2PaymentIdentityResolver = (
   paymentIdentityResolver = resolver;
 };
 
+/**
+ * Payment-intent failures are sometimes a plain-text crash page.
+ * Parsing that page as JSON throws "Unexpected token 'A'". Return null instead.
+ */
+export const readFutureOrderV2JsonBody = async (
+  response: Pick<Response, "text">,
+): Promise<unknown> => {
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    return null;
+  }
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+};
+
 const resolvePaymentIdentity = async (): Promise<FutureOrderV2PaymentIdentity | null> => {
   if (paymentIdentityResolver) return paymentIdentityResolver();
   try {
@@ -292,8 +313,8 @@ export const authorizeFutureOrderV2Payment = async (
         masterOrder: attempt.masterOrder,
       }),
     });
-    payload = await response.json();
-    if (!response.ok) {
+    payload = await readFutureOrderV2JsonBody(response);
+    if (!response.ok || payload == null) {
       const message =
         payload &&
         typeof payload === "object" &&

@@ -1,10 +1,16 @@
 import type { DeliveryAddress, FutureShippingStateV1 } from "../types.js";
-import { FUTURE_PICKUP_ATELIER_ADDRESS } from "./designStudioFutureShipping.js";
 import {
   isStep8FakeCountryCode,
   isValidIsoCountryCode,
   normalizeStep8CountryCode,
 } from "./step8AdditionalDelivery.js";
+
+/**
+ * Same display line as FUTURE_PICKUP_ATELIER_ADDRESS.
+ * Inlined so the payment function does not load the client shipping module:
+ * that module's extensionless imports crash the Node function before it can answer.
+ */
+const PICKUP_ATELIER_ADDRESS = "Frans Snijderslaan 4-b, 5642 AN, Eindhoven";
 
 /** Eindhoven atelier. Klarna shipping for pickup uses this address, not the contact's home address. */
 const ATELIER_PICKUP_COUNTRY = "NL";
@@ -47,7 +53,7 @@ const trimmed = (value: string | null | undefined): string => (value ?? "").trim
  * Pickup payments use that atelier address with country NL.
  */
 const atelierPickupAddress = (): FutureOrderV2StripeShippingAddress | null => {
-  const parts = FUTURE_PICKUP_ATELIER_ADDRESS.split(",").map((part) => part.trim());
+  const parts = PICKUP_ATELIER_ADDRESS.split(",").map((part) => part.trim());
   const [line1, postalCode, city] = parts;
   if (!line1 || !postalCode || !city || parts.length !== 3) return null;
   return {

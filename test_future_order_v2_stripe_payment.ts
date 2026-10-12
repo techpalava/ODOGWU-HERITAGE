@@ -8,6 +8,7 @@ import {
 import type { HttpResponse } from "./src/server/httpTypes";
 import {
   authorizeFutureOrderV2Payment,
+  readFutureOrderV2JsonBody,
   readFutureOrderV2ReviewedTotalCents,
   registerFutureOrderV2PaymentConfirmer,
   registerFutureOrderV2PaymentIdentityResolver,
@@ -21,7 +22,10 @@ import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2Persisten
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
 import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
 import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
-import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
+import {
+  createEmptyFutureShippingState,
+  FUTURE_PICKUP_ATELIER_ADDRESS,
+} from "./src/utils/designStudioFutureShipping";
 import {
   resolveFutureOrderV2StripeShipping,
   toFutureOrderV2KlarnaBillingDetails,
@@ -452,6 +456,17 @@ assert.equal(stripeCardSource.includes("confirmPayPalPayment"), false);
 assert.equal(stripeCardSource.includes("data-future-order-v2-method-paypal"), false);
 assert.equal(stripeCardSource.includes(":wallet"), false);
 assert.equal(stripeCardSource.includes(":apple"), false);
+assert.match(stripeCardSource, /readFutureOrderV2JsonBody/);
+assert.equal(stripeCardSource.includes("response.json()"), false);
+const shippingUtilSource = readFileSync(
+  "src/utils/futureOrderV2StripeShipping.ts",
+  "utf8",
+);
+assert.equal(shippingUtilSource.includes("designStudioFutureShipping"), false);
+assert.equal(shippingUtilSource.includes(FUTURE_PICKUP_ATELIER_ADDRESS), true);
+const paymentClientSource = readFileSync("src/utils/futureOrderV2Payment.ts", "utf8");
+assert.match(paymentClientSource, /readFutureOrderV2JsonBody/);
+assert.equal(paymentClientSource.includes("response.json()"), false);
 const reviewStepSource = readFileSync(
   "src/components/DormantFuturePaymentReviewStep.tsx",
   "utf8",
@@ -541,6 +556,55 @@ try {
     masterOrder: prepared.masterOrder,
   });
   assert.equal(redirecting.status, "redirecting");
+} finally {
+  registerFutureOrderV2PaymentConfirmer(null);
+  registerFutureOrderV2PaymentIdentityResolver(null);
+  globalThis.fetch = originalFetch;
+}
+
+{
+  const crashPage = await readFutureOrderV2JsonBody(
+    new Response("A server error has occurred", {
+      status: 500,
+      headers: { "Content-Type": "text/plain" },
+    }),
+  );
+  assert.equal(crashPage, null);
+  const jsonError = await readFutureOrderV2JsonBody(
+    new Response(JSON.stringify({ error: "Stripe test payments are not configured." }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  assert.deepEqual(jsonError, { error: "Stripe test payments are not configured." });
+}
+
+globalThis.fetch = async () =>
+  new Response("A server error has occurred", {
+    status: 500,
+    headers: { "Content-Type": "text/plain" },
+  });
+registerFutureOrderV2PaymentIdentityResolver(() => ({
+  isAnonymous: false,
+  async getIdToken() {
+    return "owner-token";
+  },
+}));
+registerFutureOrderV2PaymentConfirmer(async () => {
+  throw new Error("The confirmer must not run when the payment intent is not JSON.");
+});
+try {
+  const crashed = await authorizeFutureOrderV2Payment({
+    orderId: prepared.orderId,
+    cartItemId: prepared.cartItemId,
+    paymentReference,
+    masterOrder: prepared.masterOrder,
+  });
+  assert.equal(crashed.status, "failed");
+  if (crashed.status !== "failed") throw new Error("Expected a readable payment failure.");
+  assert.equal(crashed.message.includes("Unexpected token"), false);
+  assert.equal(crashed.message.includes("not valid JSON"), false);
+  assert.match(crashed.message, /Retry this same order/);
 } finally {
   registerFutureOrderV2PaymentConfirmer(null);
   registerFutureOrderV2PaymentIdentityResolver(null);
