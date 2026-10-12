@@ -59,8 +59,8 @@ export const validateGarmentScopedCustomDetailText = (
   value: unknown,
 ): GarmentScopedCustomDetailTextValidation => {
   if (typeof value !== "string") return { status: "invalid_type" };
-  const text = value.replace(/\r\n?/g, "\n").trim();
-  if (text.length === 0) return { status: "empty" };
+  const text = value.replace(/\r\n?/g, "\n");
+  if (text.trim().length === 0) return { status: "empty" };
   if (text.length > GARMENT_SCOPED_CUSTOM_DETAIL_TEXT_MAX_LENGTH) {
     return {
       status: "too_long",
