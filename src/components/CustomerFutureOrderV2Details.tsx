@@ -17,15 +17,18 @@ import {
 } from "../utils/futureOrderV2WorkshopProgress";
 import { WorkshopStageList } from "./WorkshopStageList";
 import {
-  formatCustomerOrderDate,
-  formatFutureOrderV2PaidAmount,
-  type FutureOrderV2PaymentRecord,
-} from "../utils/futureOrderV2PaymentRecord";
-import {
+  futureOrderV2RedirectingMessage,
+  futureOrderV2RedirectingPayLabel,
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewMeasurementGroups,
   getFuturePaymentReviewPricingRows,
 } from "../utils/designStudioFuturePaymentReview";
+import type { FutureOrderV2PaymentMethod } from "../utils/futureOrderV2Payment";
+import {
+  formatCustomerOrderDate,
+  formatFutureOrderV2PaidAmount,
+  type FutureOrderV2PaymentRecord,
+} from "../utils/futureOrderV2PaymentRecord";
 
 interface CustomerFutureOrderV2DetailsProps {
   order: PersistedFutureOrderV2;
@@ -62,6 +65,8 @@ export const CustomerFutureOrderV2Details = ({
     Exclude<FutureOrderV2DashboardPaymentOutcome, { status: "paid" } | { status: "redirecting" }> | null
   >(initialPayOutcome);
   const [paymentReady, setPaymentReady] = useState(false);
+  const [paymentMethod, setPaymentMethod] =
+    useState<FutureOrderV2PaymentMethod>("card");
   const [isRedirecting, setIsRedirecting] = useState(false);
   const payInFlightRef = useRef(false);
   const payment = subscribedPayment ?? localPayment ?? undefined;
@@ -139,12 +144,16 @@ export const CustomerFutureOrderV2Details = ({
       }),
     );
   };
+  const redirectingMessage = futureOrderV2RedirectingMessage(paymentMethod);
+  const redirectingPayLabel = futureOrderV2RedirectingPayLabel(paymentMethod);
   const payLabel =
     payPhase === "processing"
       ? "Processing payment..."
       : payPhase === "recording"
         ? "Confirming payment..."
-        : `Pay ${formatFutureOrderV2PaidAmount(totalCents ?? 0)}`;
+        : isRedirecting
+          ? redirectingPayLabel
+          : `Pay ${formatFutureOrderV2PaidAmount(totalCents ?? 0)}`;
   const payStatusMessage =
     payPhase === "processing"
       ? "Processing your payment..."
@@ -153,7 +162,7 @@ export const CustomerFutureOrderV2Details = ({
         : payOutcome?.status === "record_failed"
           ? "Your payment went through."
           : isRedirecting
-            ? "Continue at your bank to authorize this iDEAL payment."
+            ? redirectingMessage
             : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order.";
 
   const dialog = (
@@ -428,18 +437,36 @@ export const CustomerFutureOrderV2Details = ({
                         amountCents={totalCents}
                         onExpressCheckoutConfirm={handlePay}
                         onReadyChange={setPaymentReady}
+                        onMethodChange={setPaymentMethod}
                         shippingState={shipping}
                       />
                       {payOutcome?.status === "failed" && !payBusy && (
                         <FutureOrderV2PaymentAlert message={payOutcome.message} />
                       )}
                       {isRedirecting ? (
-                        <p
-                          data-customer-v2-order-ideal-redirecting
-                          className="text-sm leading-relaxed text-heritage-ink/80"
-                        >
-                          Continue at your bank to authorize this iDEAL payment.
-                        </p>
+                        <>
+                          <p
+                            data-customer-v2-order-redirecting={paymentMethod}
+                            {...(paymentMethod === "klarna"
+                              ? { "data-customer-v2-order-klarna-redirecting": true }
+                              : { "data-customer-v2-order-ideal-redirecting": true })}
+                            className="text-sm leading-relaxed text-heritage-ink/80"
+                          >
+                            {redirectingMessage}
+                          </p>
+                          <button
+                            type="button"
+                            data-customer-v2-order-pay
+                            data-customer-v2-order-redirecting-pay={paymentMethod}
+                            disabled
+                            aria-busy="true"
+                            aria-describedby={`${headingId}-pay-status`}
+                            className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green opacity-60 sm:w-auto"
+                          >
+                            <LockKeyhole size={14} aria-hidden="true" />
+                            {redirectingPayLabel}
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"
