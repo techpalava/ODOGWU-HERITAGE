@@ -256,6 +256,28 @@ assert.equal(
   ),
   undefined,
 );
+const spacedRequirement = setGarmentScopedCustomDetailText({
+  state: inputState.state,
+  garmentKey: "base:shirt",
+  selectionGroup: PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+  optionId: PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  text: "Add gold trim. ",
+});
+assert.equal(spacedRequirement.status, "saved");
+assert.equal(
+  spacedRequirement.status === "saved" ? spacedRequirement.text : null,
+  "Add gold trim. ",
+);
+assert.equal(
+  getGarmentScopedCustomDetailText(
+    spacedRequirement.state,
+    "base:shirt",
+    PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+    PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  ),
+  "Add gold trim. ",
+  "trailing and internal spaces stay intact so multi-word text can be typed",
+);
 
 const fullReconciliation = reconcile();
 const reconciledInputs = reconcileGarmentScopedPersonalizedInputs({
