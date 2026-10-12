@@ -65,6 +65,42 @@ export const getGarmentTypeStageCompletion = (
   };
 };
 
+export interface GarmentTypeStillNeededItem {
+  code: GarmentTypeStageBlockerCode;
+  label: string;
+}
+
+/**
+ * Customer copy for the Step 1 blockers that already keep Fabric locked.
+ * The completion rules stay in getGarmentTypeStageCompletion.
+ */
+export const describeGarmentTypeStageBlockers = (
+  blockers: readonly GarmentTypeStageBlocker[],
+): GarmentTypeStillNeededItem[] => {
+  const items: GarmentTypeStillNeededItem[] = [];
+  if (blockers.some((blocker) => blocker.code === "GARMENT_REQUIRED")) {
+    items.push({
+      code: "GARMENT_REQUIRED",
+      label: "Select at least one garment.",
+    });
+  }
+  if (blockers.some((blocker) => blocker.code === "DEMOGRAPHIC_REQUIRED")) {
+    items.push({
+      code: "DEMOGRAPHIC_REQUIRED",
+      label:
+        "Choose who this design is for (Male, Female, or Unisex / Family).",
+    });
+  }
+  if (blockers.some((blocker) => blocker.code === "CONSTRUCTION_UNRESOLVED")) {
+    items.push({
+      code: "CONSTRUCTION_UNRESOLVED",
+      label:
+        "Construction pricing needs review before this order can continue.",
+    });
+  }
+  return items;
+};
+
 export const createDormantDesignStudioJourneyState = ({
   persistedDraft,
   normalizedCustomDetailCatalog,
