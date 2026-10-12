@@ -42,6 +42,37 @@ export const isFutureOrderV2ExpressWalletAvailable = (
     | undefined,
 ): boolean => Boolean(paymentMethods?.applePay || paymentMethods?.googlePay);
 
+/**
+ * Card Pay waits for the Card Element. iDEAL and Klarna confirm through
+ * stripe.confirmIdealPayment / confirmKlarnaPayment and only need Stripe.js.
+ */
+export const isFutureOrderV2StripePayReady = ({
+  method,
+  cardReady,
+  stripeClientReady,
+}: {
+  method: FutureOrderV2PaymentMethod;
+  cardReady: boolean;
+  stripeClientReady: boolean;
+}): boolean =>
+  method === "ideal" || method === "klarna" ? stripeClientReady : cardReady;
+
+/** Hidden wallet chrome must not intercept the method pills or Pay. */
+export const futureOrderV2ExpressCheckoutShell = (walletsShown: boolean) =>
+  walletsShown
+    ? {
+        "data-future-order-v2-express-checkout": "available" as const,
+        hidden: false,
+        "aria-hidden": undefined,
+        className: undefined as string | undefined,
+      }
+    : {
+        "data-future-order-v2-express-checkout": "hidden" as const,
+        hidden: true,
+        "aria-hidden": true as const,
+        className: "pointer-events-none",
+      };
+
 const walletFlagsFromChange = (
   paymentMethods:
     | {
@@ -120,12 +151,10 @@ export const FutureOrderV2StripeCard = ({
 
   const [method, setMethod] = useState<FutureOrderV2PaymentMethod>("card");
   const [cardReady, setCardReady] = useState(false);
-  const [idealReady, setIdealReady] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [stripeClient, setStripeClient] = useState<Stripe | null>(null);
-  const [expressCheckoutResolved, setExpressCheckoutResolved] = useState(false);
   const [expressCheckoutVisible, setExpressCheckoutVisible] = useState(false);
 
   methodRef.current = method;
@@ -133,10 +162,14 @@ export const FutureOrderV2StripeCard = ({
   const reportReady = (
     nextMethod: FutureOrderV2PaymentMethod,
     nextCardReady: boolean,
-    nextIdealReady: boolean,
+    nextStripeClientReady: boolean,
   ) => {
     onReadyChangeRef.current(
-      nextMethod === "card" ? nextCardReady : nextIdealReady,
+      isFutureOrderV2StripePayReady({
+        method: nextMethod,
+        cardReady: nextCardReady,
+        stripeClientReady: nextStripeClientReady,
+      }),
     );
   };
 
@@ -144,7 +177,6 @@ export const FutureOrderV2StripeCard = ({
     let cancelled = false;
     let card: StripeCardElement | null = null;
     setCardReady(false);
-    setIdealReady(false);
     onReadyChangeRef.current(false);
 
     const failExpressCheckout = (
@@ -254,8 +286,7 @@ export const FutureOrderV2StripeCard = ({
         if (cancelled) return;
         setTestMode(true);
         setCardReady(true);
-        setIdealReady(true);
-        reportReady(methodRef.current, true, true);
+        reportReady(methodRef.current, true, stripeRef.current !== null);
       });
       card.on("change", (event) => {
         if (!cancelled) setFieldError(event.error?.message ?? null);
@@ -429,7 +460,6 @@ export const FutureOrderV2StripeCard = ({
           : "Stripe payments are not available.",
       );
       setCardReady(false);
-      setIdealReady(false);
       onReadyChangeRef.current(false);
     });
 
@@ -450,19 +480,17 @@ export const FutureOrderV2StripeCard = ({
       !isFutureOrderV2ExpressCheckoutAmount(amountCents) ||
       !onExpressCheckoutConfirmRef.current
     ) {
-      setExpressCheckoutResolved(true);
       setExpressCheckoutVisible(false);
       return;
     }
 
     let cancelled = false;
-    setExpressCheckoutResolved(false);
     setExpressCheckoutVisible(false);
     const elements = stripe.elements({
       mode: "payment",
       amount: amountCents,
       currency: "eur",
-      allowedPaymentMethodTypes: ["card", "ideal"],
+      allowedPaymentMethodTypes: ["card"],
     });
     const expressCheckout = elements.create("expressCheckout", {
       paymentMethods: {
@@ -481,7 +509,6 @@ export const FutureOrderV2StripeCard = ({
       flags: { applePay?: boolean; googlePay?: boolean } | undefined,
     ) => {
       if (cancelled) return;
-      setExpressCheckoutResolved(true);
       setExpressCheckoutVisible(isFutureOrderV2ExpressWalletAvailable(flags));
     };
     expressCheckout.on("ready", (event) => {
@@ -566,31 +593,27 @@ export const FutureOrderV2StripeCard = ({
     cardRef.current?.update({ disabled: disabled || method !== "card" });
   }, [disabled, method]);
 
+  const stripeClientReady = stripeClient !== null;
+
   useEffect(() => {
-    reportReady(method, cardReady, idealReady);
-  }, [method, cardReady, idealReady]);
+    reportReady(method, cardReady, stripeClientReady);
+  }, [method, cardReady, stripeClientReady]);
 
   const selectMethod = (next: FutureOrderV2PaymentMethod) => {
+    methodRef.current = next;
     setMethod(next);
     onMethodChangeRef.current?.(next);
-    reportReady(next, cardReady, idealReady);
+    reportReady(next, cardReady, stripeClientReady);
   };
 
   return (
     <div className="mt-4 max-w-md space-y-3">
-      <div
-        data-future-order-v2-express-checkout={
-          expressCheckoutVisible ? "available" : "hidden"
-        }
-        hidden={expressCheckoutResolved && !expressCheckoutVisible}
-        aria-hidden={expressCheckoutVisible ? undefined : true}
-        className={expressCheckoutVisible ? undefined : "invisible"}
-      >
+      <div {...futureOrderV2ExpressCheckoutShell(expressCheckoutVisible)}>
         <div ref={expressMountRef} />
       </div>
 
       <div
-        className="grid grid-cols-3 gap-2"
+        className="relative z-10 grid grid-cols-3 gap-2"
         role="radiogroup"
         aria-label="Payment method"
         data-future-order-v2-payment-methods
