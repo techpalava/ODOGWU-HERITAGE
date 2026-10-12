@@ -1,8 +1,10 @@
 import {
+  AlertTriangle,
   CheckCircle2,
   Info,
   MapPin,
   PackageCheck,
+  Pencil,
   Truck,
 } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
@@ -35,6 +37,8 @@ interface DormantFutureShippingStepProps {
   onRefreshQuote: () => void;
   onBack: () => void;
   canContinueToReview: boolean;
+  priceEvaluationPending?: boolean;
+  onEditPersonalizedAdditions?: () => void;
   onContinueToReview: () => void;
 }
 
@@ -55,6 +59,8 @@ export const DormantFutureShippingStep = ({
   onChange,
   onBack,
   canContinueToReview,
+  priceEvaluationPending = false,
+  onEditPersonalizedAdditions,
   onContinueToReview,
 }: DormantFutureShippingStepProps) => {
   const customer = state.customerInformation;
@@ -164,6 +170,7 @@ export const DormantFutureShippingStep = ({
             disabled: !canContinueToReview,
             locked: !canContinueToReview,
             icon: canContinueToReview ? "package" : "lock",
+            describedBy: "future-payment-lock-reason",
             ariaLabel: "Review Order",
           }}
         />
@@ -180,6 +187,39 @@ export const DormantFutureShippingStep = ({
           How would you like to receive your order?
         </p>
       </header>
+
+      {priceEvaluationPending ? (
+        <div
+          role="status"
+          data-future-shipping-price-evaluation-pending="true"
+          className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5"
+        >
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-heritage-gold"
+            size={19}
+          />
+          <div className="min-w-0">
+            <h3 className="font-serif text-lg font-bold text-heritage-green">
+              Price evaluation required
+            </h3>
+            <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+              One or more personalised requirements must be evaluated before
+              Review Order and an exact total can be confirmed.
+            </p>
+            {onEditPersonalizedAdditions ? (
+              <button
+                type="button"
+                onClick={onEditPersonalizedAdditions}
+                className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/20 px-3 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                <Pencil aria-hidden="true" size={13} />
+                Edit Personalized Additions
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-green/20 bg-heritage-green/5 p-4 sm:p-5">
         <Info aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-green" size={19} />
@@ -759,11 +799,13 @@ export const DormantFutureShippingStep = ({
           onBack={onBack}
           note={(
             <p id="future-payment-lock-reason" className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right">
-              {canContinueToReview
-                ? "Your order review is ready. Online payment remains unavailable."
-                : resolution.quoteRequired
-                  ? "Custom shipping quote required before reviewing payment."
-                  : "Complete delivery or pickup before reviewing your order."}
+              {priceEvaluationPending
+                ? "Review Order is locked until personalised price evaluation is resolved (or the personalized addition is removed)."
+                : canContinueToReview
+                  ? "Your order review is ready. Online payment remains unavailable."
+                  : resolution.quoteRequired
+                    ? "Custom shipping quote required before reviewing payment."
+                    : "Complete delivery or pickup before reviewing your order."}
             </p>
           )}
           forward={{
