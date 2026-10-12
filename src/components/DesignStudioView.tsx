@@ -888,6 +888,10 @@ export default function DesignStudioView({
   const businessSettings = useAppStore((state) => state.businessSettings);
   const isLoadingData = useAppStore((state) => state.isLoadingData);
   const stylesLoadState = useAppStore((state) => state.stylesLoadState);
+  const fabricsLoadState = useAppStore((state) => state.fabricsLoadState);
+  const retryFabricsSubscription = useAppStore(
+    (state) => state.retryFabricsSubscription,
+  );
   const storeBatches = useAppStore((state) => state.batches);
   const storeCustomGroups = useAppStore((state) => state.customGroups);
   const customGroupAccessById = useAppStore(
@@ -10235,6 +10239,7 @@ export default function DesignStudioView({
             }
             onContinue={handleOpenDormantFabricStage}
             continueDisabled={!garmentTypeStageCompletion.isComplete}
+            stageBlockers={garmentTypeStageCompletion.blockers}
           />
         </div>
       ) : futureStageId === "fabric" ? (
@@ -10285,6 +10290,8 @@ export default function DesignStudioView({
           onUseSameFabric={handleUseSameFutureFabric}
           onChooseAnotherFabric={handleChooseAnotherFutureFabric}
           onCancelPendingFabric={handleCancelFuturePendingFabric}
+          fabricsCatalogueState={fabricsLoadState}
+          onRetryFabricCatalogue={retryFabricsSubscription}
           orderSummary={
             embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
           }

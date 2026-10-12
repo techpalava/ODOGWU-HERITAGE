@@ -36,6 +36,7 @@ import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 import { guestUploadedDesignOwnershipContinuity } from "../services/guestUploadedDesignOwnershipContinuity";
 import { DesignStyleAuthorityService } from "../services/designStyleAuthorityService";
+import type { FabricCatalogueLoadState } from "../utils/fabricCatalogueNotice";
 import type { StylesLoadState } from "../utils/stylesCatalogueLoadState";
 import {
   applyStylesCatalogueListenerEvent,
@@ -167,7 +168,10 @@ export interface AppState {
   ) => void;
 
   fabrics: Fabric[];
+  /** First Firestore fabrics snapshot, or the listener error. */
+  fabricsLoadState: FabricCatalogueLoadState;
   setFabrics: (fabrics: Fabric[] | ((prev: Fabric[]) => Fabric[])) => void;
+  retryFabricsSubscription: () => void;
   customDetailCatalog: CustomDetailOption[];
   setCustomDetailCatalog: (
     catalog:
@@ -223,6 +227,38 @@ let authBootstrapSequence = 0;
 // Separate from the Private Batch access generation: this authority answers
 // only whether an initializeData invocation is still the newest startup run.
 let initializationRequestId = 0;
+let fabricsListenerUnsubscribe: (() => void) | null = null;
+
+const attachFabricsListener = (
+  set: (partial: {
+    fabrics?: Fabric[];
+    fabricsLoadState: FabricCatalogueLoadState;
+  }) => void,
+): (() => void) => {
+  fabricsListenerUnsubscribe?.();
+  const requestId = initializationRequestId;
+  let active = true;
+  const unsubscribe = FabricService.subscribeToFabrics(
+    (nextFabrics) => {
+      if (!active || requestId !== initializationRequestId) return;
+      set({ fabrics: nextFabrics, fabricsLoadState: "ready" });
+    },
+    () => {
+      if (!active || requestId !== initializationRequestId) return;
+      set({ fabricsLoadState: "error" });
+    },
+  );
+  const wrapped = () => {
+    if (!active) return;
+    active = false;
+    unsubscribe();
+    if (fabricsListenerUnsubscribe === wrapped) {
+      fabricsListenerUnsubscribe = null;
+    }
+  };
+  fabricsListenerUnsubscribe = wrapped;
+  return wrapped;
+};
 let privateBatchSubscriptionController: ReturnType<
   typeof createPrivateBatchSubscriptionController
 > | null = null;
@@ -671,11 +707,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   fabrics: [],
+  fabricsLoadState: "loading",
   setFabrics: (fabrics) => {
     const newFabrics =
       typeof fabrics === "function" ? fabrics(get().fabrics) : fabrics;
     set({ fabrics: newFabrics });
     StorageService.saveFabrics(newFabrics);
+  },
+  retryFabricsSubscription: () => {
+    const previous = fabricsListenerUnsubscribe;
+    if (previous) {
+      previous();
+      storeUnsubs = storeUnsubs.filter((unsub) => unsub !== previous);
+    }
+    set({ fabricsLoadState: "loading" });
+    storeUnsubs.push(attachFabricsListener(set));
   },
   styles: [],
   setStyles: async (styles) => {
@@ -780,6 +826,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isLoadingData: true,
       stylesLoadState: "loading",
       stylesLoadError: null,
+      fabricsLoadState: "loading",
     });
     try {
       // Start catalog/settings fetches and real-time listeners together so
@@ -862,11 +909,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
 
       // Real-time Fabric Listener
-      storeUnsubs.push(
-        FabricService.subscribeToFabrics((fabrics) => {
-           set({ fabrics });
-        })
-      );
+      storeUnsubs.push(attachFabricsListener(set));
 
       storeUnsubs.push(
         DesignStyleAuthorityService.subscribeToPublished(
