@@ -24,6 +24,10 @@ import {
   toFutureOrderV2KlarnaBillingDetails,
 } from "../utils/futureOrderV2StripeShipping";
 import type { FutureShippingStateV1 } from "../types";
+import {
+  FutureOrderV2AllowedCardIcons,
+  FutureOrderV2MethodIcon,
+} from "./futureOrderV2PaymentMethodIcons";
 
 /** Matches the server minimum. This sizes the wallet sheet only; the charge is the persisted total. */
 const EXPRESS_CHECKOUT_MINIMUM_CENTS = 50;
@@ -625,12 +629,13 @@ export const FutureOrderV2StripeCard = ({
           data-future-order-v2-method-card
           disabled={disabled}
           onClick={() => selectMethod("card")}
-          className={`rounded-xl border-2 px-3 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+          className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
             method === "card"
               ? "border-heritage-gold bg-heritage-gold/15 text-white"
               : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
           } disabled:cursor-not-allowed disabled:opacity-60`}
         >
+          <FutureOrderV2MethodIcon method="card" />
           Card
         </button>
         <button
@@ -640,12 +645,13 @@ export const FutureOrderV2StripeCard = ({
           data-future-order-v2-method-ideal
           disabled={disabled}
           onClick={() => selectMethod("ideal")}
-          className={`rounded-xl border-2 px-3 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+          className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
             method === "ideal"
               ? "border-heritage-gold bg-heritage-gold/15 text-white"
               : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
           } disabled:cursor-not-allowed disabled:opacity-60`}
         >
+          <FutureOrderV2MethodIcon method="ideal" />
           iDEAL
         </button>
         <button
@@ -655,12 +661,13 @@ export const FutureOrderV2StripeCard = ({
           data-future-order-v2-method-klarna
           disabled={disabled}
           onClick={() => selectMethod("klarna")}
-          className={`rounded-xl border-2 px-3 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+          className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
             method === "klarna"
               ? "border-heritage-gold bg-heritage-gold/15 text-white"
               : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
           } disabled:cursor-not-allowed disabled:opacity-60`}
         >
+          <FutureOrderV2MethodIcon method="klarna" />
           Klarna
         </button>
       </div>
@@ -683,9 +690,12 @@ export const FutureOrderV2StripeCard = ({
           </p>
         )}
         {testMode && (
-          <p className="mt-2 text-xs leading-relaxed text-white/75">
-            Test card 4242 4242 4242 4242. Use any future expiry and any CVC.
-          </p>
+          <div className="mt-2 space-y-1.5">
+            <FutureOrderV2AllowedCardIcons />
+            <p className="text-xs leading-relaxed text-white/75">
+              Test card 4242 4242 4242 4242. Use any future expiry and any CVC.
+            </p>
+          </div>
         )}
       </div>
 

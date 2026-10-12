@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { act, create } from "react-test-renderer";
 import {
   handleFutureOrderV2StripeConfig,
@@ -23,6 +24,7 @@ import {
   isFutureOrderV2ExpressWalletAvailable,
   isFutureOrderV2StripePayReady,
 } from "./src/components/FutureOrderV2StripeCard";
+import { FutureOrderV2AllowedCardIcons } from "./src/components/futureOrderV2PaymentMethodIcons";
 import { createFutureOrderV2PaymentReviewHandoff } from "./src/utils/designStudioFuturePaymentReview";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
@@ -450,6 +452,49 @@ assert.match(stripeCardSource, /data-future-order-v2-method-ideal/);
 assert.match(stripeCardSource, /data-future-order-v2-method-card/);
 assert.match(stripeCardSource, /data-future-order-v2-method-klarna/);
 assert.match(stripeCardSource, /data-future-order-v2-klarna-help/);
+assert.match(stripeCardSource, /inline-flex w-full min-w-0 items-center justify-center gap-1\.5/);
+assert.match(stripeCardSource, /FutureOrderV2MethodIcon method="card"/);
+assert.match(stripeCardSource, /FutureOrderV2MethodIcon method="ideal"/);
+assert.match(stripeCardSource, /FutureOrderV2MethodIcon method="klarna"/);
+assert.match(
+  stripeCardSource,
+  /\{testMode && \(\s*<div className="mt-2 space-y-1\.5">\s*<FutureOrderV2AllowedCardIcons \/>\s*<p className="text-xs leading-relaxed text-white\/75">\s*Test card 4242 4242 4242 4242\. Use any future expiry and any CVC\./,
+);
+assert.equal(
+  (stripeCardSource.match(/FutureOrderV2AllowedCardIcons/g) || []).length,
+  2,
+);
+const paymentMethodIconSource = readFileSync(
+  "src/components/futureOrderV2PaymentMethodIcons.tsx",
+  "utf8",
+);
+assert.match(paymentMethodIconSource, /data-future-order-v2-method-icon=\{method\}/);
+assert.match(paymentMethodIconSource, /aria-hidden="true"/);
+assert.match(paymentMethodIconSource, /data-future-order-v2-allowed-card-icons/);
+assert.match(paymentMethodIconSource, /data-future-order-v2-allowed-card-icon=\{brand\}/);
+assert.match(paymentMethodIconSource, /brand="visa"/);
+assert.match(paymentMethodIconSource, /brand="mastercard"/);
+assert.match(paymentMethodIconSource, /brand="amex"/);
+assert.equal(/<img\b|https?:\/\//.test(paymentMethodIconSource), false);
+assert.equal(/apple|google|wallet|paypal/i.test(paymentMethodIconSource), false);
+const allowedCardMarkup = renderToStaticMarkup(
+  createElement(FutureOrderV2AllowedCardIcons),
+);
+assert.match(allowedCardMarkup, /data-future-order-v2-allowed-card-icons="true"/);
+assert.match(allowedCardMarkup, /aria-hidden="true"/);
+assert.match(allowedCardMarkup, /data-future-order-v2-allowed-card-icon="visa"/);
+assert.match(allowedCardMarkup, /data-future-order-v2-allowed-card-icon="mastercard"/);
+assert.match(allowedCardMarkup, /data-future-order-v2-allowed-card-icon="amex"/);
+assert.equal(
+  allowedCardMarkup.indexOf('data-future-order-v2-allowed-card-icon="visa"') <
+    allowedCardMarkup.indexOf('data-future-order-v2-allowed-card-icon="mastercard"'),
+  true,
+);
+assert.equal(
+  allowedCardMarkup.indexOf('data-future-order-v2-allowed-card-icon="mastercard"') <
+    allowedCardMarkup.indexOf('data-future-order-v2-allowed-card-icon="amex"'),
+  true,
+);
 assert.match(stripeCardSource, /expressCheckout/);
 assert.match(stripeCardSource, /confirmPayment/);
 assert.match(stripeCardSource, /data-future-order-v2-express-checkout/);
@@ -970,6 +1015,26 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
     });
     assert.match(String(methods.props.className), /\brelative\b/);
     assert.match(String(methods.props.className), /\bz-10\b/);
+    for (const methodName of ["card", "ideal", "klarna"] as const) {
+      const radio = renderer.root.findByProps({
+        [`data-future-order-v2-method-${methodName}`]: true,
+      });
+      assert.equal(radio.props.role, "radio");
+      assert.match(String(radio.props.className), /inline-flex/);
+      assert.match(String(radio.props.className), /items-center/);
+      assert.match(String(radio.props.className), /justify-center/);
+      assert.match(String(radio.props.className), /gap-1\.5/);
+      const methodIcon = radio.findByProps({
+        "data-future-order-v2-method-icon": methodName,
+      });
+      assert.equal(methodIcon.props["aria-hidden"], "true");
+    }
+    assert.equal(
+      renderer.root.findAllByProps({
+        "data-future-order-v2-allowed-card-icons": true,
+      }).length,
+      0,
+    );
 
     await act(async () => {
       renderer!.root
