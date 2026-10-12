@@ -1,6 +1,7 @@
 import { db } from "./firebase";
 import { collection, doc, onSnapshot, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { Fabric } from "../types";
+import { reportFabricSubscriptionFailure } from "../utils/fabricCatalogueNotice";
 import { ImageService } from "./imageService";
 
 const FABRICS_COLLECTION = "fabrics";
@@ -30,12 +31,15 @@ function sanitizeForFirestore(val: any): any {
 
 export const FabricService = {
   // Subscribe to real-time changes
-  subscribeToFabrics: (callback: (fabrics: Fabric[]) => void) => {
+  subscribeToFabrics: (
+    callback: (fabrics: Fabric[]) => void,
+    onError?: (error: unknown) => void,
+  ) => {
     return onSnapshot(collection(db, FABRICS_COLLECTION), (snapshot) => {
       const fabrics = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fabric));
       callback(fabrics);
     }, (error) => {
-      console.error("Error subscribing to fabrics:", error);
+      reportFabricSubscriptionFailure(error, onError);
     });
   },
 

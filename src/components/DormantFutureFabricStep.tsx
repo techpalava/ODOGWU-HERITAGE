@@ -15,6 +15,11 @@ import {
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
+import { FabricCatalogueNotice } from "./FabricCatalogueNotice";
+import {
+  resolveFabricCatalogueNotice,
+  type FabricCatalogueLoadState,
+} from "../utils/fabricCatalogueNotice";
 import { Step1FabricAssignmentDialog } from "./Step1FabricAssignmentDialog";
 import { ChangeFabricAllocationDialog } from "./ChangeFabricAllocationDialog";
 import { PartialFabricCapacityAssignmentDialog } from "./PartialFabricCapacityAssignmentDialog";
@@ -150,6 +155,8 @@ interface DormantFutureFabricStepProps {
   unassignedFocusRequestId?: number | null;
   unassignedFocusGarmentKey?: string | null;
   onUnassignedFocusHandled?: (requestId: number) => void;
+  fabricsCatalogueState?: FabricCatalogueLoadState;
+  onRetryFabricCatalogue?: () => void;
 }
 
 const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
@@ -373,6 +380,8 @@ export const DormantFutureFabricStep = ({
   unassignedFocusRequestId = null,
   unassignedFocusGarmentKey = null,
   onUnassignedFocusHandled,
+  fabricsCatalogueState = "ready",
+  onRetryFabricCatalogue,
 }: DormantFutureFabricStepProps) => {
   void onUseSameFabricForGarment;
   const lastHandledUnassignedFocusRequestIdRef = useRef<number | null>(null);
@@ -826,6 +835,50 @@ export const DormantFutureFabricStep = ({
   );
   const shouldDockContinueAction =
     completion.isComplete && !isCatalogueOpen && !pendingStep1FabricAssignment;
+  const catalogueNotice = resolveFabricCatalogueNotice({
+    loadState: fabricsCatalogueState,
+    visibleCount: visibleFabrics.length,
+  });
+  const catalogueNoticeReplacesGrid =
+    catalogueNotice === "loading" ||
+    catalogueNotice === "empty" ||
+    (catalogueNotice === "error" && visibleFabrics.length === 0);
+
+  const scrollToFabricCatalogue = () => {
+    const anchor = catalogueScrollAnchorRef.current;
+    if (anchor && typeof anchor.scrollIntoView === "function") {
+      anchor.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+    if (catalogueHeadingRef.current) {
+      focusElementSafely(catalogueHeadingRef.current);
+    }
+  };
+
+  const renderVisibleCatalogue = (gridClassName: string) => (
+    <>
+      {catalogueNotice === "error" && visibleFabrics.length > 0 ? (
+        <div className="mb-4">
+          <FabricCatalogueNotice
+            kind="error"
+            onRetry={onRetryFabricCatalogue}
+          />
+        </div>
+      ) : null}
+      <div className={gridClassName}>
+        {catalogueNoticeReplacesGrid && catalogueNotice ? (
+          <FabricCatalogueNotice
+            kind={catalogueNotice}
+            onRetry={onRetryFabricCatalogue}
+          />
+        ) : (
+          visibleFabrics.map((fabric) => renderCatalogueCard(fabric))
+        )}
+      </div>
+    </>
+  );
 
   const restoreCatalogueFocus = () => {
     const request = ++catalogueFocusRequestRef.current;
@@ -2142,6 +2195,14 @@ export const DormantFutureFabricStep = ({
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
               {STEP2_FABRIC_CAPACITY_INTRO}
             </p>
+            <button
+              type="button"
+              data-testid="future-fabric-catalogue-jump"
+              onClick={scrollToFabricCatalogue}
+              className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-heritage-green underline decoration-heritage-gold underline-offset-4 transition hover:text-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Browse the fabric catalogue
+            </button>
           </div>
           <div
             aria-live="polite"
@@ -2545,6 +2606,7 @@ export const DormantFutureFabricStep = ({
           ref={catalogueSectionRef}
           data-testid="future-fabric-inline-catalogue"
           data-catalogue-dialog-open={isCatalogueOpen}
+          data-fabric-catalogue-state={fabricsCatalogueState}
           className="mt-8 border-t border-heritage-gold/20 pt-6"
           tabIndex={-1}
         >
@@ -2614,9 +2676,9 @@ export const DormantFutureFabricStep = ({
               {assignmentAnnouncement}
             </p>
           </div>
-          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
-          </div>
+          {renderVisibleCatalogue(
+            "grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+          )}
           {catalogueTargetGarmentKey && (
             <div className="mt-5">
               <button
@@ -2998,9 +3060,9 @@ export const DormantFutureFabricStep = ({
               </button>
             </div>
 
-            <div className="grid min-w-0 grid-cols-1 gap-4 py-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
-            </div>
+            {renderVisibleCatalogue(
+              "grid min-w-0 grid-cols-1 gap-4 py-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+            )}
           </div>
           </div>,
           document.body,

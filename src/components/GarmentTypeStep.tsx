@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
 import {
   DesignStudioForwardButton,
@@ -37,6 +37,11 @@ import {
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import { formatRequiredFabricQuantitySentence } from "../utils/designStudioFutureFabricStage";
+import {
+  describeGarmentTypeStageBlockers,
+  type GarmentTypeStageBlocker,
+  type GarmentTypeStageBlockerCode,
+} from "../utils/designStudioJourneyMode";
 
 const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   value: CustomDetailDemographic;
@@ -183,6 +188,11 @@ export interface GarmentTypeStepProps {
   idPrefix?: string;
   onContinue?: () => void;
   continueDisabled?: boolean;
+  /**
+   * Canonical Step 1 blockers from getGarmentTypeStageCompletion.
+   * When omitted, the step derives the same three codes from its own props.
+   */
+  stageBlockers?: readonly GarmentTypeStageBlocker[];
 }
 
 export const formatGarmentTypeStepEuro = (price: number): string =>
@@ -294,6 +304,7 @@ export const GarmentTypeStep = ({
   idPrefix = "garment-type-step",
   onContinue,
   continueDisabled = false,
+  stageBlockers,
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
   const presentation = getGarmentTypeStepPresentation({
@@ -343,6 +354,56 @@ export const GarmentTypeStep = ({
   };
 
   const showDockedContinue = Boolean(onContinue) && !continueDisabled;
+  const stillNeeded = describeGarmentTypeStageBlockers(
+    stageBlockers ??
+      [
+        ...(presentation.selectedGarmentTypes.length === 0
+          ? [{ code: "GARMENT_REQUIRED" as const }]
+          : []),
+        ...(selectedDemographics.length === 0
+          ? [{ code: "DEMOGRAPHIC_REQUIRED" as const }]
+          : []),
+        ...presentation.constructionPricing
+          .filter((resolution) => resolution.status !== "resolved")
+          .map((resolution) => ({
+            code: "CONSTRUCTION_UNRESOLVED" as const,
+            garmentType: resolution.garmentType,
+          })),
+      ],
+  );
+  const showStillNeeded =
+    Boolean(onContinue) && continueDisabled && stillNeeded.length > 0;
+  const audienceNeeded =
+    showStillNeeded &&
+    stillNeeded.some((item) => item.code === "DEMOGRAPHIC_REQUIRED") &&
+    presentation.selectedGarmentTypes.length > 0;
+  const stillNeededId = `${idPrefix}-still-needed`;
+
+  const scrollToStillNeeded =
+    (targetId: string) => (event: MouseEvent<HTMLAnchorElement>) => {
+      if (typeof document === "undefined") return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      event.preventDefault();
+      const reduceMotion =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      target.querySelector<HTMLElement>("input, button")?.focus();
+    };
+
+  const stillNeededTarget = (
+    code: GarmentTypeStageBlockerCode,
+  ): string | null => {
+    if (code === "DEMOGRAPHIC_REQUIRED") return `${idPrefix}-audience`;
+    if (code === "GARMENT_REQUIRED" || code === "CONSTRUCTION_UNRESOLVED") {
+      return `${idPrefix}-garments`;
+    }
+    return null;
+  };
 
   const fabricQuantitySummary = (
     <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-gold/20 bg-heritage-cream/35 p-3 sm:p-4">
@@ -373,11 +434,52 @@ export const GarmentTypeStep = ({
         <DesignStudioStepActions
           backDisabled
           className="mb-5"
+          note={
+            showStillNeeded ? (
+              <div
+                id={stillNeededId}
+                role="status"
+                data-testid="step1-still-needed"
+                data-step1-still-needed={stillNeeded
+                  .map((item) => item.code)
+                  .join(" ")}
+                className="w-full rounded-xl border border-heritage-gold/50 bg-heritage-cream/70 px-3 py-2 text-left text-xs leading-relaxed text-heritage-ink lg:max-w-sm"
+              >
+                <p className="font-bold text-heritage-green">
+                  Still needed before Fabric
+                </p>
+                <ul className="mt-1 list-disc space-y-1 pl-4">
+                  {stillNeeded.map((item) => {
+                    const targetId = stillNeededTarget(item.code);
+                    return (
+                      <li
+                        key={item.code}
+                        data-step1-still-needed-item={item.code}
+                      >
+                        {targetId ? (
+                          <a
+                            href={`#${targetId}`}
+                            onClick={scrollToStillNeeded(targetId)}
+                            className="font-semibold text-heritage-green underline decoration-heritage-gold underline-offset-2"
+                          >
+                            {item.label}
+                          </a>
+                        ) : (
+                          item.label
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null
+          }
           forward={onContinue ? {
             destination: "Fabric",
             onClick: onContinue,
             disabled: continueDisabled,
             ariaLabel: "Continue to Fabric",
+            describedBy: showStillNeeded ? stillNeededId : undefined,
           } : undefined}
         />
         <div className="border-b border-heritage-gold/15 pb-5">
@@ -396,7 +498,10 @@ export const GarmentTypeStep = ({
           </p>
         </div>
 
-        <fieldset className="mt-6 min-w-0 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-6 lg:gap-y-1">
+        <fieldset
+          id={`${idPrefix}-garments`}
+          className="mt-6 min-w-0 scroll-mt-24 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-6 lg:gap-y-1"
+        >
           <legend className="font-serif text-lg font-bold text-heritage-green lg:col-start-1 lg:row-start-1">
             Garment Type
           </legend>
@@ -545,10 +650,23 @@ export const GarmentTypeStep = ({
           </div>
         </fieldset>
 
-        <fieldset className="mt-7 min-w-0 border-t border-heritage-gold/15 pt-6">
+        <fieldset
+          id={`${idPrefix}-audience`}
+          data-step1-audience-needed={audienceNeeded ? "true" : undefined}
+          className={
+            audienceNeeded
+              ? "mt-7 min-w-0 scroll-mt-24 rounded-2xl border-2 border-heritage-gold bg-heritage-cream/50 px-4 pb-5 pt-4 ring-2 ring-heritage-gold/80"
+              : "mt-7 min-w-0 scroll-mt-24 border-t border-heritage-gold/15 pt-6"
+          }
+        >
           <legend className="font-serif text-lg font-bold text-heritage-green">
             Who is this design for?
           </legend>
+          {audienceNeeded ? (
+            <p className="mt-2 text-sm font-semibold leading-relaxed text-heritage-green">
+              Still needed to continue to Fabric.
+            </p>
+          ) : null}
           <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
             {DEMOGRAPHIC_OPTIONS.map((option) => {
               const inputId = `${idPrefix}-demographic-${option.value}`;

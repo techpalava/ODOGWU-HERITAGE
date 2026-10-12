@@ -17,6 +17,10 @@ import {
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import { getGarmentTypeStepSelectedFabricQuantity } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
+import {
+  describeGarmentTypeStageBlockers,
+  getGarmentTypeStageCompletion,
+} from "./src/utils/designStudioJourneyMode";
 import type {
   CustomDetailDemographic,
   CustomDetailOption,
@@ -620,5 +624,132 @@ assert.ok(
 );
 assert.ok(continueEnabledMarkup.includes('data-docked="true"'));
 assert.ok(continueEnabledMarkup.includes("fixed inset-x-0 bottom-0"));
+assert.equal(
+  continueEnabledMarkup.includes('data-testid="step1-still-needed"'),
+  false,
+  "A complete Step 1 does not show a still-needed hint",
+);
+assert.equal(
+  continueEnabledMarkup.includes("data-step1-audience-needed"),
+  false,
+);
+
+const stuckSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt"],
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+const stuckCompletion = getGarmentTypeStageCompletion(stuckSelection);
+assert.equal(stuckCompletion.isComplete, false);
+assert.deepEqual(
+  describeGarmentTypeStageBlockers(stuckCompletion.blockers).map(
+    (item) => item.code,
+  ),
+  ["DEMOGRAPHIC_REQUIRED"],
+);
+const stuckMarkup = renderToStaticMarkup(
+  createElement(GarmentTypeStep, {
+    selectedGarmentTypes: stuckSelection.garmentTypes,
+    selectedDemographics: [],
+    normalizedCustomDetailCatalog: catalog,
+    onGarmentTypesChange: () => undefined,
+    onDemographicsChange: () => undefined,
+    onConstructionDefaultsChange: () => undefined,
+    onContinue: () => undefined,
+    continueDisabled: !stuckCompletion.isComplete,
+    stageBlockers: stuckCompletion.blockers,
+  }),
+);
+assert.ok(stuckMarkup.includes('data-testid="step1-still-needed"'));
+assert.ok(
+  stuckMarkup.includes('data-step1-still-needed="DEMOGRAPHIC_REQUIRED"'),
+);
+assert.ok(
+  stuckMarkup.includes(
+    "Choose who this design is for (Male, Female, or Unisex / Family).",
+  ),
+);
+assert.ok(stuckMarkup.includes('href="#garment-type-step-audience"'));
+assert.ok(stuckMarkup.includes('data-step1-audience-needed="true"'));
+assert.ok(stuckMarkup.includes("Still needed to continue to Fabric."));
+assert.ok(stuckMarkup.includes('aria-describedby="garment-type-step-still-needed"'));
+assert.equal(
+  stuckMarkup.includes('data-testid="future-garment-type-continue-action"'),
+  false,
+  "The audience question still keeps Continue to Fabric in the header",
+);
+const continueLabelAt = stuckMarkup.indexOf('aria-label="Continue to Fabric"');
+assert.ok(continueLabelAt > 0);
+assert.ok(
+  stuckMarkup.slice(continueLabelAt - 180, continueLabelAt).includes("disabled"),
+  "Continue to Fabric stays disabled until the audience question is answered",
+);
+
+const emptyStepCompletion = getGarmentTypeStageCompletion(
+  reconcileGarmentTypeStepSelection({
+    normalizedCustomDetailCatalog: catalog,
+  }).selection,
+);
+const emptyStepMarkup = renderToStaticMarkup(
+  createElement(GarmentTypeStep, {
+    selectedGarmentTypes: [],
+    selectedDemographics: [],
+    normalizedCustomDetailCatalog: catalog,
+    onGarmentTypesChange: () => undefined,
+    onDemographicsChange: () => undefined,
+    onConstructionDefaultsChange: () => undefined,
+    onContinue: () => undefined,
+    continueDisabled: true,
+    stageBlockers: emptyStepCompletion.blockers,
+  }),
+);
+assert.ok(
+  emptyStepMarkup.includes(
+    'data-step1-still-needed="GARMENT_REQUIRED DEMOGRAPHIC_REQUIRED"',
+  ),
+);
+assert.equal(
+  emptyStepMarkup.includes("data-step1-audience-needed"),
+  false,
+  "The audience question is highlighted after a garment is selected",
+);
+assert.ok(emptyStepMarkup.includes('href="#garment-type-step-garments"'));
+
+const unresolvedBlockerMarkup = renderToStaticMarkup(
+  createElement(GarmentTypeStep, {
+    selectedGarmentTypes: ["shirt"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: unresolvedCatalog,
+    onGarmentTypesChange: () => undefined,
+    onDemographicsChange: () => undefined,
+    onConstructionDefaultsChange: () => undefined,
+    onContinue: () => undefined,
+    continueDisabled: true,
+    stageBlockers: [
+      { code: "CONSTRUCTION_UNRESOLVED", garmentType: "shirt" },
+    ],
+  }),
+);
+assert.ok(
+  unresolvedBlockerMarkup.includes(
+    'data-step1-still-needed="CONSTRUCTION_UNRESOLVED"',
+  ),
+);
+assert.ok(
+  unresolvedBlockerMarkup.includes(
+    "Construction pricing needs review before this order can continue.",
+  ),
+);
+assert.equal(
+  unresolvedBlockerMarkup.includes("data-step1-audience-needed"),
+  false,
+);
+assert.equal(
+  describeGarmentTypeStageBlockers([
+    { code: "CONSTRUCTION_UNRESOLVED", garmentType: "shirt" },
+    { code: "CONSTRUCTION_UNRESOLVED", garmentType: "trouser" },
+  ]).length,
+  1,
+  "Several unresolved constructions stay one still-needed line",
+);
 
 console.log("Garment Type Step controlled component verification passed.");
