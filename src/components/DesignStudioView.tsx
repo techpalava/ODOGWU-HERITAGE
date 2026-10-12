@@ -366,6 +366,7 @@ import {
 import {
   authorizeFutureOrderV2Payment,
   executeFutureOrderV2Payment,
+  readFutureOrderV2JsonBody,
   validatePreparedFutureOrderV2PaymentEligibility,
   type FutureOrderV2PaymentAttempt,
 } from "../utils/futureOrderV2Payment";
@@ -8353,7 +8354,7 @@ export default function DesignStudioView({
       if (!search.includes("future_order_v2_stripe_return=1")) return;
 
       const configResponse = await fetch("/api/future-order-v2/payment-intent");
-      const configPayload: unknown = await configResponse.json();
+      const configPayload = await readFutureOrderV2JsonBody(configResponse);
       const publishableKey =
         configResponse.ok &&
         configPayload &&

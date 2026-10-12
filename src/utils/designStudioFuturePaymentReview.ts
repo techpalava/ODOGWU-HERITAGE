@@ -17,6 +17,7 @@ import {
   type FutureOrderCandidateV1,
   type FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
+import type { FutureOrderV2PaymentMethod } from "./futureOrderV2Payment";
 import {
   formatDualUnitMeasurementDisplay,
   fromCanonicalCentimetres,
@@ -39,12 +40,31 @@ export const FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE =
   "Your prepared order is ready for payment authorization.";
 export const FUTURE_ORDER_V2_PAY_HEADING = "Payment";
 export const FUTURE_ORDER_V2_PAY_READY_MESSAGE =
-  "Choose Apple Pay, Google Pay, card, or iDEAL and pay to place your order.";
+  "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to place your order.";
 export const FUTURE_ORDER_V2_REDIRECTING_MESSAGE =
   "Continue at your bank to authorize this iDEAL payment.";
+export const FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE =
+  "Continue at Klarna to complete this payment.";
+export const FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL = "Continuing to your bank...";
+export const FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL = "Continuing to Klarna...";
 /** @deprecated Use FUTURE_ORDER_V2_REDIRECTING_MESSAGE. */
 export const FUTURE_ORDER_V2_PAYPAL_REDIRECTING_MESSAGE =
   FUTURE_ORDER_V2_REDIRECTING_MESSAGE;
+
+/** Banner and pay-button label for the in-progress redirect. */
+export const futureOrderV2RedirectingMessage = (
+  method: FutureOrderV2PaymentMethod,
+): string =>
+  method === "klarna"
+    ? FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE
+    : FUTURE_ORDER_V2_REDIRECTING_MESSAGE;
+
+export const futureOrderV2RedirectingPayLabel = (
+  method: FutureOrderV2PaymentMethod,
+): string =>
+  method === "klarna"
+    ? FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL
+    : FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL;
 export const FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE =
   "Sign in to pay for this order.";
 

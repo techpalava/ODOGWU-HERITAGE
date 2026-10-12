@@ -10,7 +10,10 @@ import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import { StorageService } from "../services/storageService";
 import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
-import { authorizeFutureOrderV2Payment } from "../utils/futureOrderV2Payment";
+import {
+  authorizeFutureOrderV2Payment,
+  readFutureOrderV2JsonBody,
+} from "../utils/futureOrderV2Payment";
 import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
 import { retireStudioFutureDesignDraft } from "../services/retirePaidStudioDraft";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
@@ -93,7 +96,7 @@ export default function DashboardView({
       if (!search.includes("future_order_v2_stripe_return=1")) return;
 
       const configResponse = await fetch("/api/future-order-v2/payment-intent");
-      const configPayload: unknown = await configResponse.json();
+      const configPayload = await readFutureOrderV2JsonBody(configResponse);
       const publishableKey =
         configResponse.ok &&
         configPayload &&

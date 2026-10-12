@@ -5,7 +5,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import {
   createFutureOrderV2PaymentReviewHandoff,
+  FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE,
+  FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL,
   FUTURE_ORDER_V2_PAY_READY_MESSAGE,
+  FUTURE_ORDER_V2_REDIRECTING_MESSAGE,
+  FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL,
+  futureOrderV2RedirectingMessage,
+  futureOrderV2RedirectingPayLabel,
 } from "./src/utils/designStudioFuturePaymentReview";
 import {
   createFutureOrderV2PaymentAttempt,
@@ -164,11 +170,15 @@ assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /Apple Pay/);
 assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /Google Pay/);
 assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /card/);
 assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /iDEAL/);
-assert.equal(/klarna/i.test(FUTURE_ORDER_V2_PAY_READY_MESSAGE), false);
+assert.equal(/klarna/i.test(FUTURE_ORDER_V2_PAY_READY_MESSAGE), true);
+assert.match(FUTURE_ORDER_V2_PAY_READY_MESSAGE, /Klarna/);
 assert.ok(markup.includes("data-future-order-v2-card"));
 assert.ok(markup.includes('data-future-order-v2-express-checkout="hidden"'));
 assert.ok(markup.includes("data-future-order-v2-method-card"));
 assert.ok(markup.includes("data-future-order-v2-method-ideal"));
+assert.ok(markup.includes("data-future-order-v2-method-klarna"));
+assert.ok(markup.includes("data-future-order-v2-klarna-help"));
+assert.match(markup, /redirected to Klarna/);
 assert.equal((markup.match(/data-future-order-v2-pay="true"/g) || []).length, 1);
 assert.match(markup, /Pay €\d+\.\d{2}/);
 for (const removed of [
@@ -179,6 +189,65 @@ for (const removed of [
 ]) {
   assert.equal(markup.includes(removed), false, `Removed payment wording returned: ${removed}`);
 }
+
+assert.equal(futureOrderV2RedirectingMessage("ideal"), FUTURE_ORDER_V2_REDIRECTING_MESSAGE);
+assert.equal(futureOrderV2RedirectingMessage("card"), FUTURE_ORDER_V2_REDIRECTING_MESSAGE);
+assert.equal(
+  futureOrderV2RedirectingMessage("klarna"),
+  FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE,
+);
+assert.equal(futureOrderV2RedirectingPayLabel("ideal"), FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL);
+assert.equal(futureOrderV2RedirectingPayLabel("card"), FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL);
+assert.equal(
+  futureOrderV2RedirectingPayLabel("klarna"),
+  FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL,
+);
+assert.equal(/bank|iDEAL/i.test(FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE), false);
+assert.equal(/bank|iDEAL/i.test(FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL), false);
+
+const redirectingHandoff = createFutureOrderV2PaymentReviewHandoff(
+  preparedCandidate,
+  {
+    status: "prepared",
+    cartItemId: prepared.cartItemId,
+    orderId: prepared.orderId,
+  },
+  {
+    status: "redirecting",
+    paymentReference: paymentAttempt.attempt.paymentReference,
+  },
+);
+const renderRedirecting = (method: "ideal" | "klarna") =>
+  renderToStaticMarkup(
+    createElement(DormantFuturePaymentReviewStep, {
+      result: redirectingHandoff,
+      initialPaymentMethod: method,
+      onBack: () => undefined,
+      onEditStage: () => undefined,
+      onPay: () => undefined,
+    }),
+  );
+const idealRedirectMarkup = renderRedirecting("ideal");
+assert.ok(idealRedirectMarkup.includes(FUTURE_ORDER_V2_REDIRECTING_MESSAGE));
+assert.ok(idealRedirectMarkup.includes(FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL));
+assert.ok(idealRedirectMarkup.includes("data-future-order-v2-ideal-redirecting"));
+assert.equal(idealRedirectMarkup.includes("data-future-order-v2-klarna-redirecting"), false);
+assert.equal(idealRedirectMarkup.includes(FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE), false);
+const klarnaRedirectMarkup = renderRedirecting("klarna");
+assert.ok(klarnaRedirectMarkup.includes(FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE));
+assert.ok(klarnaRedirectMarkup.includes(FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL));
+assert.ok(klarnaRedirectMarkup.includes("data-future-order-v2-klarna-redirecting"));
+assert.equal(klarnaRedirectMarkup.includes("data-future-order-v2-ideal-redirecting"), false);
+assert.equal(klarnaRedirectMarkup.includes(FUTURE_ORDER_V2_REDIRECTING_MESSAGE), false);
+assert.equal(klarnaRedirectMarkup.includes(FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL), false);
+
+const dashboardSource = readFileSync("src/components/CustomerFutureOrderV2Details.tsx", "utf8");
+assert.match(dashboardSource, /futureOrderV2RedirectingMessage\(paymentMethod\)/);
+assert.match(dashboardSource, /futureOrderV2RedirectingPayLabel\(paymentMethod\)/);
+assert.equal(
+  dashboardSource.includes("Continue at your bank to authorize this iDEAL payment."),
+  false,
+);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.match(studioSource, /handleExecuteFutureOrderV2Payment/);
