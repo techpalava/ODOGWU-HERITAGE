@@ -689,6 +689,19 @@ const shippingSource = readFileSync("src/components/DormantFutureShippingStep.ts
 const stepperSource = readFileSync("src/components/DesignStudioJourneyStepper.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(studioSource, /isFutureShippingStepComplete/);
+assert.match(
+  studioSource,
+  /canContinueToReview=\{\s*isFutureShippingStepComplete\(futureShippingResolution\) &&\s*futureSummary\.status !== "pricing_pending"\s*\}/,
+  "Review Order stays locked while the summary is pricing_pending",
+);
+assert.match(
+  studioSource,
+  /priceEvaluationPending=\{futureSummary\.status === "pricing_pending"\}/,
+);
+assert.match(
+  studioSource,
+  /onEditPersonalizedAdditions=\{\(\) =>\s*navigateToFutureStage\("personalized_additions"\)\s*\}/,
+);
 assert.match(studioSource, /futureStageId === "shipping"/);
 assert.match(studioSource, /handleOpenDormantShippingStage/);
 assert.match(studioSource, /futureShippingState/);
@@ -716,6 +729,17 @@ assert.match(shippingSource, /Free · €0\.00/);
 assert.match(shippingSource, /Typical 2–5 kg rate/);
 assert.match(shippingSource, /Review Order/);
 assert.match(shippingSource, /canContinueToReview/);
+assert.match(shippingSource, /priceEvaluationPending/);
+assert.match(shippingSource, /onEditPersonalizedAdditions/);
+assert.match(
+  shippingSource,
+  /data-future-shipping-price-evaluation-pending="true"/,
+);
+assert.match(
+  shippingSource,
+  /id="future-payment-lock-reason"[\s\S]*priceEvaluationPending\s*\?\s*"Review Order is locked until personalised price evaluation is resolved \(or the personalized addition is removed\)\."/,
+  "the payment lock reason must explain a pending personalised price evaluation",
+);
 assert.match(shippingSource, /disabled/);
 assert.match(shippingSource, /aria-live="polite"/);
 assert.match(shippingSource, /min-h-11/);

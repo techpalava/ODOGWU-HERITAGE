@@ -10839,9 +10839,14 @@ export default function DesignStudioView({
             onChange={setFutureShippingState}
             onRefreshQuote={handleRefreshDormantShippingQuote}
             onBack={() => navigateToFutureStage("summary")}
-            canContinueToReview={isFutureShippingStepComplete(
-              futureShippingResolution,
-            )}
+            canContinueToReview={
+              isFutureShippingStepComplete(futureShippingResolution) &&
+              futureSummary.status !== "pricing_pending"
+            }
+            priceEvaluationPending={futureSummary.status === "pricing_pending"}
+            onEditPersonalizedAdditions={() =>
+              navigateToFutureStage("personalized_additions")
+            }
             onContinueToReview={handleOpenDormantPaymentReviewStage}
           />
         </>
