@@ -112,7 +112,7 @@ The signed-in Chrome restore check after #289 passed. Live checks after #368 and
 
 - Repository `techpalava/ODOGWU-HERITAGE`. Remote name is `github`, never `origin`.
 - Check current main and production SHAs with `git fetch github`. Trees match after each release;
-  SHAs differ because of sync merges. Exception after the #620 cycle: [#621](https://github.com/techpalava/ODOGWU-HERITAGE/pull/621) merged to main (`dac2dda3fef27e69bb65efa9e752e83d28e2fd80`, 2026-10-12 10:00:55 UTC) while [#623](https://github.com/techpalava/ODOGWU-HERITAGE/pull/623) was open. Production `f955b1ec0f838ad6f13af3f9c65a18b8c606fc57` is an ancestor of main and does not contain #621, so the trees are not equal. Do not release that main tip to production until #621 is separately authorized.
+  SHAs differ because of sync merges. During the #620 sync, [#621](https://github.com/techpalava/ODOGWU-HERITAGE/pull/621) merged to main (`dac2dda3fef27e69bb65efa9e752e83d28e2fd80`, 2026-10-12 10:00:55 UTC). Another agent then merged [#624](https://github.com/techpalava/ODOGWU-HERITAGE/pull/624) to production (`acf6b58dbfc5e5a642f2a9d10b9a46194e1e5241`, 2026-10-12 10:04:48 UTC). That was not part of the #620 release. The #620 customer-domain check still saw `buildId` `f955b1ec0f838ad6f13af3f9c65a18b8c606fc57`.
 - Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`,
   aligned to `github/main` and ready for a fresh feature branch when the next
   task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`,
@@ -225,7 +225,7 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
   is not enough” fallthrough; fix is stashed, not released.
 - Step 7 optional UX C is deferred: in the For me strip, the Fit conflict message can name a hidden person while the strip says "for you". Do not implement until Xavier authorizes it.
 - Ops for Xavier: register `odogwu-heritage.vercel.app` under Stripe Dashboard → Settings → Payment method domains for both production and test. Until that domain is registered, Apple Pay and Google Pay will not show on the live site. Klarna is enabled in Stripe test and live per Xavier (2026-10-12) and is on the Stage 10 radios (#620). No Firestore/Storage rules deploy for #614 or #620.
-- [#621](https://github.com/techpalava/ODOGWU-HERITAGE/pull/621) is on main and is not in production `f955b1e`. It was not part of the #620 release. Do not start or release it until Xavier authorizes that separately.
+- [#621](https://github.com/techpalava/ODOGWU-HERITAGE/pull/621) is on main and was merged to the production branch by [#624](https://github.com/techpalava/ODOGWU-HERITAGE/pull/624) (`acf6b58dbfc5e5a642f2a9d10b9a46194e1e5241`). It was not part of the #620 release and this task did not merge it.
 - No other work is authorized. Wait for the user's next task.
 
 ## Do not change
