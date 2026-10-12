@@ -1259,6 +1259,8 @@ export const DormantFuturePaymentReviewStep = ({
                     preparation?.status === "prepared" ? preparation.orderId : ""
                   }
                   returnSurface="design-studio"
+                  amountCents={reviewedTotalCents}
+                  onExpressCheckoutConfirm={onPay}
                   onReadyChange={setStripePaymentReady}
                   onMethodChange={setPaymentMethod}
                 />

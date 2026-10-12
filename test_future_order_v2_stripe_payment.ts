@@ -11,6 +11,10 @@ import {
   registerFutureOrderV2PaymentConfirmer,
   registerFutureOrderV2PaymentIdentityResolver,
 } from "./src/utils/futureOrderV2Payment";
+import {
+  isFutureOrderV2ExpressCheckoutAmount,
+  isFutureOrderV2ExpressWalletAvailable,
+} from "./src/components/FutureOrderV2StripeCard";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
@@ -393,6 +397,10 @@ assert.match(
   /FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = \["card", "ideal"\]/,
 );
 assert.equal(stripeSource.includes('"paypal"'), false);
+assert.equal(stripeSource.includes("klarna"), false);
+assert.equal(stripeSource.includes("apple_pay"), false);
+assert.equal(stripeSource.includes("google_pay"), false);
+assert.deepEqual(stripeSource.match(/":[a-z_]+"/g), ['":ideal"']);
 assert.match(stripeSource, /IDEAL_IDEMPOTENCY_SUFFIX/);
 assert.match(stripeSource, /idempotencyKey/);
 assert.match(stripeSource, /AUTH_REQUIRED/);
@@ -404,9 +412,38 @@ assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripePayment"), true
 assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripeConfig"), true);
 const stripeCardSource = readFileSync("src/components/FutureOrderV2StripeCard.tsx", "utf8");
 assert.match(stripeCardSource, /confirmIdealPayment/);
+assert.match(stripeCardSource, /confirmCardPayment/);
 assert.match(stripeCardSource, /data-future-order-v2-method-ideal/);
+assert.match(stripeCardSource, /data-future-order-v2-method-card/);
+assert.match(stripeCardSource, /expressCheckout/);
+assert.match(stripeCardSource, /confirmPayment/);
+assert.match(stripeCardSource, /data-future-order-v2-express-checkout/);
+assert.match(stripeCardSource, /stashFutureOrderV2StripeReturnContext/);
+assert.match(stripeCardSource, /klarna:\s*"never"/);
+assert.match(stripeCardSource, /applePay:\s*"auto"/);
+assert.match(stripeCardSource, /googlePay:\s*"auto"/);
+assert.match(stripeCardSource, /allowedPaymentMethodTypes:\s*\["card", "ideal"\]/);
 assert.equal(stripeCardSource.includes("confirmPayPalPayment"), false);
 assert.equal(stripeCardSource.includes("data-future-order-v2-method-paypal"), false);
+assert.equal(stripeCardSource.includes(":wallet"), false);
+assert.equal(stripeCardSource.includes(":apple"), false);
+const reviewStepSource = readFileSync(
+  "src/components/DormantFuturePaymentReviewStep.tsx",
+  "utf8",
+);
+assert.match(reviewStepSource, /onExpressCheckoutConfirm=\{onPay\}/);
+assert.match(reviewStepSource, /amountCents=\{reviewedTotalCents\}/);
+
+assert.equal(isFutureOrderV2ExpressWalletAvailable(undefined), false);
+assert.equal(isFutureOrderV2ExpressWalletAvailable(null), false);
+assert.equal(isFutureOrderV2ExpressWalletAvailable({}), false);
+assert.equal(isFutureOrderV2ExpressWalletAvailable({ applePay: false, googlePay: false }), false);
+assert.equal(isFutureOrderV2ExpressWalletAvailable({ applePay: true }), true);
+assert.equal(isFutureOrderV2ExpressWalletAvailable({ googlePay: true }), true);
+assert.equal(isFutureOrderV2ExpressCheckoutAmount(null), false);
+assert.equal(isFutureOrderV2ExpressCheckoutAmount(49), false);
+assert.equal(isFutureOrderV2ExpressCheckoutAmount(50), true);
+assert.equal(isFutureOrderV2ExpressCheckoutAmount(10.5), false);
 
 const originalFetch = globalThis.fetch;
 let postedAmount = false;
