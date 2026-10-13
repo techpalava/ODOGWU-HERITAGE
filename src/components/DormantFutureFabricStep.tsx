@@ -11,6 +11,7 @@ import type {
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
@@ -420,6 +421,15 @@ export const DormantFutureFabricStep = ({
     fabric: Fabric;
     targets: RemoveFabricAssignmentTarget[];
   } | null>(null);
+  useReportDesignStudioBlockingOverlay(
+    "fabric-step",
+    isCatalogueOpen ||
+      pendingOrphanRepair !== null ||
+      pendingStep1FabricAssignment !== null ||
+      pendingPartialFabricAssignment !== null ||
+      pendingChangeFabricAllocation !== null ||
+      pendingFabricRemoval !== null,
+  );
   const fabricRemovalTriggerRef = useRef<HTMLElement | null>(null);
   const orphanRepairTriggerRef = useRef<HTMLElement | null>(null);
   const orphanRepairDialogRef = useRef<HTMLDivElement | null>(null);

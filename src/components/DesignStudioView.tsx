@@ -70,6 +70,8 @@ import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
 import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
+import { DesignStudioScrollFabHost } from "./DesignStudioScrollFabHost";
+import { DesignStudioBlockingOverlayProvider } from "./designStudioBlockingOverlay";
 import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
@@ -938,6 +940,7 @@ export default function DesignStudioView({
   const [futureStageNavigationRequest, setFutureStageNavigationRequest] =
     useState<DesignStudioNavigationRequest | null>(null);
   const futureStageNavigationTargetRef = useRef<HTMLElement | null>(null);
+  const futureStageBottomTargetRef = useRef<HTMLDivElement | null>(null);
   const fabricReentryBaselineRef = useRef<FabricReentryBaseline | null>(null);
   const fabricReentryDetectInputsRef = useRef<{
     garmentTypeSelection: GarmentTypeStepSelection;
@@ -10100,8 +10103,19 @@ export default function DesignStudioView({
       futureDraftIdentity.status === "pending_authenticated" ||
       futureDraftIdentity.status === "authenticated" ||
       futureDraftIdentity.status === "guest");
+  const studioBlockingOverlayOpen =
+    showAdditionalGarmentFabricDialog ||
+    showAdditionalGarmentDesignStyleDialog ||
+    Boolean(futureGarmentRemovalDialogRequest) ||
+    Boolean(summaryFabricChangePending) ||
+    futureOrderCancelDialogOpen ||
+    showRemainingFabricCapacityOffer;
+  const currentStageLabel =
+    DESIGN_STUDIO_STEPS.find((step) => step.id === futureStageId)?.label ||
+    "Design Studio";
 
   return (
+    <DesignStudioBlockingOverlayProvider ownedOpen={studioBlockingOverlayOpen}>
     <div
       id="design-studio-ten-stage-journey"
       data-journey-mode="ten_stage"
@@ -10502,7 +10516,6 @@ export default function DesignStudioView({
               current === requestId ? null : current,
             );
           }}
-          fabricModalOpen={showAdditionalGarmentFabricDialog}
           onViewAdditionalGarment={(garmentKey) => {
             setFutureCustomDetailsFocusGarmentKey(garmentKey);
             window.requestAnimationFrame(() => {
@@ -10897,6 +10910,12 @@ export default function DesignStudioView({
           />
         ) : null
       ) : null}
+          <div
+            ref={futureStageBottomTargetRef}
+            data-design-studio-stage-bottom-target="true"
+            tabIndex={-1}
+            className="h-px w-full outline-none"
+          />
         </section>
         {showShellLiveOrderSummary ? (
           <div className="min-w-0">
@@ -10904,6 +10923,11 @@ export default function DesignStudioView({
           </div>
         ) : null}
       </div>
+      <DesignStudioScrollFabHost
+        stageLabel={currentStageLabel}
+        topTargetRef={futureStageNavigationTargetRef}
+        bottomTargetRef={futureStageBottomTargetRef}
+      />
       {showRemainingFabricCapacityOffer && (
         <FutureRemainingFabricCapacityOfferCard
           offers={remainingFabricCapacityOffers}
@@ -11017,5 +11041,6 @@ export default function DesignStudioView({
         />
       )}
     </div>
+    </DesignStudioBlockingOverlayProvider>
   );
 }

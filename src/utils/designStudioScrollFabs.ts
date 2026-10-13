@@ -1,12 +1,15 @@
 /**
- * Step 4 "Go to Bottom" visibility via document scroll progress.
+ * Design Studio Go to Top / Go to Bottom visibility via document scroll progress.
+ * Below 40% shows Go to Bottom only. At or above 40% shows Go to Top only.
  * Kept free of React so Node tests can exercise attach/cleanup without
  * relying on react-test-renderer host refs (which stay null in this toolchain).
  */
 
-export const CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS = 0.4;
+export const DESIGN_STUDIO_SCROLL_FAB_SWITCH_PROGRESS = 0.4;
 
-export function getCustomDetailsScrollProgress(args?: {
+export type DesignStudioScrollFabKind = "top" | "bottom" | "none";
+
+export function getDesignStudioScrollProgress(args?: {
   scrollY?: number;
   scrollHeight?: number;
   clientHeight?: number;
@@ -28,21 +31,35 @@ export function getCustomDetailsScrollProgress(args?: {
   return Math.min(1, Math.max(0, scrollY / maxScroll));
 }
 
-export function isCustomDetailsGoToBottomVisibleFromProgress(
+export function isDesignStudioGoToBottomVisibleFromProgress(
   progress: number,
-  hideAt: number = CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS,
+  hideAt: number = DESIGN_STUDIO_SCROLL_FAB_SWITCH_PROGRESS,
 ): boolean {
   return progress < hideAt;
 }
 
-export function isCustomDetailsGoToTopVisibleFromProgress(
+export function isDesignStudioGoToTopVisibleFromProgress(
   progress: number,
-  showAt: number = CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS,
+  showAt: number = DESIGN_STUDIO_SCROLL_FAB_SWITCH_PROGRESS,
 ): boolean {
   return progress >= showAt;
 }
 
-export function attachCustomDetailsScrollProgressListener(args: {
+export function resolveDesignStudioScrollFab(args: {
+  progress: number;
+  blockingOverlayOpen: boolean;
+  switchAt?: number;
+}): DesignStudioScrollFabKind {
+  if (args.blockingOverlayOpen) return "none";
+  return isDesignStudioGoToBottomVisibleFromProgress(
+    args.progress,
+    args.switchAt,
+  )
+    ? "bottom"
+    : "top";
+}
+
+export function attachDesignStudioScrollProgressListener(args: {
   onProgressChange: (progress: number) => void;
   getProgress?: () => number;
 }): () => void {
@@ -54,7 +71,7 @@ export function attachCustomDetailsScrollProgressListener(args: {
   }
 
   const getProgress =
-    args.getProgress ?? (() => getCustomDetailsScrollProgress());
+    args.getProgress ?? (() => getDesignStudioScrollProgress());
 
   const update = () => {
     args.onProgressChange(getProgress());
@@ -70,29 +87,30 @@ export function attachCustomDetailsScrollProgressListener(args: {
   };
 }
 
-export function attachCustomDetailsGoToBottomScrollListener(args: {
-  onVisibilityChange: (showGoToBottom: boolean) => void;
-  hideAtProgress?: number;
-  getProgress?: () => number;
-}): () => void {
-  const hideAt =
-    args.hideAtProgress ?? CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS;
-  return attachCustomDetailsScrollProgressListener({
-    getProgress: args.getProgress,
-    onProgressChange: (progress) => {
-      args.onVisibilityChange(
-        isCustomDetailsGoToBottomVisibleFromProgress(progress, hideAt),
-      );
-    },
-  });
-}
-
-export function scrollCustomDetailsToBottom(args: {
+export function scrollDesignStudioToTop(args: {
   target: HTMLElement | null;
   scrollTo?: typeof window.scrollTo;
 }): void {
   const target = args.target;
   if (target) {
+    target.style.scrollMarginTop = "6rem";
+    target.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      target.focus?.({ preventScroll: true });
+    }, 320);
+    return;
+  }
+  const scrollTo = args.scrollTo ?? window.scrollTo.bind(window);
+  scrollTo({ top: 0, behavior: "smooth" });
+}
+
+export function scrollDesignStudioToBottom(args: {
+  target: HTMLElement | null;
+  scrollTo?: typeof window.scrollTo;
+}): void {
+  const target = args.target;
+  if (target) {
+    // Clears the docked Continue bar and other sticky stage chrome.
     target.style.scrollMarginBottom = "6rem";
     target.scrollIntoView?.({ behavior: "smooth", block: "end" });
     window.setTimeout(() => {

@@ -130,7 +130,11 @@ assert.equal(alternateSection.findAllByProps({ "data-measurement-ai-coming-soon"
 assert.match(collectText(alternateSection), /Information only\. These do not complete your measurements\./);
 assert.doesNotMatch(collectText(aiSection), /Information only/);
 const onsiteCard = alternateSection.findByProps({ "data-measurement-onsite-info": "true" });
-assert.match(collectText(onsiteCard), /Onsite Physical measurements/);
+const onsiteHeading = alternateSection.findByProps({ "data-measurement-option-heading": "onsite" });
+assert.equal(onsiteHeading.type, "h3");
+assert.equal(onsiteHeading.props.className, "font-serif text-lg font-bold text-heritage-green");
+assert.equal(collectText(onsiteHeading), "Option 3: Onsite Physical Measurements");
+assert.equal(onsiteCard.findAll((node) => node.type === "h3").length, 0);
 assert.match(collectText(onsiteCard), /Reach out to the contact to arrange a measurement/);
 const onsiteBookingWindow = onsiteCard.findByProps({
   "data-measurement-onsite-booking-window": "true",
@@ -150,7 +154,11 @@ assert.equal(
 );
 const aiCard = aiSection.findByProps({ "data-measurement-ai-coming-soon": "true" });
 assert.equal(aiCard.props["aria-disabled"], "true");
-assert.match(collectText(aiCard), /AI Measurements \(coming soon\)/);
+const aiHeading = aiSection.findByProps({ "data-measurement-option-heading": "ai_measurements" });
+assert.equal(aiHeading.type, "h3");
+assert.equal(aiHeading.props.className, "font-serif text-lg font-bold text-heritage-green");
+assert.equal(collectText(aiHeading), "Option 4: AI Photo Measurements");
+assert.match(collectText(aiCard), /Coming soon/);
 assert.equal(aiCard.findAll((node) => node.type === "a" || node.type === "button").length, 0);
 assert.equal(
   renderer.root.findAllByProps({ type: "radio" }).filter((radio) => radio.props.checked).length,
@@ -183,14 +191,19 @@ assert.equal(
 const pageText = collectText(renderer.root);
 assert.equal(
   renderer.root.findByProps({ "data-measurement-option-heading": "body" }).children[0],
-  "Body Measurements",
+  "Option 1: Close-to-Body Measurements",
 );
 assert.equal(
   renderer.root.findByProps({ "data-measurement-option-subtitle": "risk" }).children[0],
   "Measurement by Risk Level",
 );
 assert.match(pageText, /Measurement by Risk Level/);
-assert.match(pageText, /Body Measurements/);
+assert.match(pageText, /Option 1: Close-to-Body Measurements/);
+const sampleLegend = renderer.root
+  .findByProps({ "data-measurement-sample-selector": "true" })
+  .findByType("legend");
+assert.equal(collectText(sampleLegend), "Option 2: Sample Cloth Measurements");
+assert.equal(sampleLegend.props.className, "font-serif text-lg font-bold text-heritage-green");
 assert.equal(
   renderer.root.findAll(
     (node) =>
