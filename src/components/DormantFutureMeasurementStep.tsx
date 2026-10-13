@@ -1107,7 +1107,7 @@ export const DormantFutureMeasurementStep = ({
             data-measurement-option-heading="body"
             className="font-serif text-lg font-bold text-heritage-green"
           >
-            Body Measurements
+            Option 1: Close-to-Body Measurements
           </h3>
           <p
             data-measurement-option-subtitle="risk"
@@ -1117,7 +1117,7 @@ export const DormantFutureMeasurementStep = ({
           </p>
         </header>
         <fieldset data-measurement-risk-selector="true" className="mt-3">
-          <legend className="sr-only">Body Measurements</legend>
+          <legend className="sr-only">Option 1: Close-to-Body Measurements</legend>
           <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
             {ROUTES.map((route) => {
               const selected = selectedRoute === route.id;
@@ -1202,7 +1202,7 @@ export const DormantFutureMeasurementStep = ({
       >
         <fieldset data-measurement-sample-selector="true">
           <legend className="font-serif text-lg font-bold text-heritage-green">
-            {MEASUREMENT_SAMPLE_CLOTH_LABEL}
+            Option 2: Sample Cloth Measurements
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
             {MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION}
@@ -1249,19 +1249,22 @@ export const DormantFutureMeasurementStep = ({
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="alternate_contact"
-        aria-label="Other measurement options"
+        aria-label="Option 3: Onsite Physical Measurements"
       >
-        <p className="text-xs leading-relaxed text-heritage-ink/60">
+        <h3
+          data-measurement-option-heading="onsite"
+          className="font-serif text-lg font-bold text-heritage-green"
+        >
+          Option 3: Onsite Physical Measurements
+        </h3>
+        <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
           Information only. These do not complete your measurements.
         </p>
         <div
           data-measurement-onsite-info="true"
           className="mt-2 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3"
         >
-          <h3 className="break-words text-sm font-semibold text-heritage-green">
-            Onsite Physical measurements
-          </h3>
-          <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
+          <p className="break-words text-xs leading-relaxed text-heritage-ink/65">
             Reach out to the contact to arrange a measurement
           </p>
           <p
@@ -1285,16 +1288,22 @@ export const DormantFutureMeasurementStep = ({
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="ai_measurements"
-        aria-label="AI Measurements"
+        aria-label="Option 4: AI Photo Measurements"
       >
+        <h3
+          data-measurement-option-heading="ai_measurements"
+          className="font-serif text-lg font-bold text-heritage-green"
+        >
+          Option 4: AI Photo Measurements
+        </h3>
         <div
           data-measurement-ai-coming-soon="true"
           aria-disabled="true"
-          className="min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-3 opacity-70"
+          className="mt-2 min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-3 opacity-70"
         >
-          <h3 className="break-words text-sm font-semibold text-heritage-green/80">
-            AI Measurements (coming soon)
-          </h3>
+          <p className="break-words text-sm font-semibold text-heritage-green/80">
+            Coming soon
+          </p>
         </div>
       </section>
 
