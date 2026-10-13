@@ -26,6 +26,7 @@ import {
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
 
 interface DormantFutureDesignStyleStepProps {
@@ -272,6 +273,10 @@ export const DormantFutureDesignStyleStep = ({
     useState<DesignStyleStepCatalogueEntry | null>(null);
   const [detailsEntry, setDetailsEntry] =
     useState<DesignStyleStepCatalogueEntry | null>(null);
+  useReportDesignStudioBlockingOverlay(
+    "design-style-step",
+    pendingEntry !== null || detailsEntry !== null,
+  );
   const [selectedOccurrenceTokens, setSelectedOccurrenceTokens] = useState<
     ReadonlySet<string>
   >(new Set());

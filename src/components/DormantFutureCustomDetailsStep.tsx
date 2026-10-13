@@ -73,21 +73,7 @@ import type { CustomDetailsPresentationStageId } from "../utils/customDetailsSta
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
-import { scrollCustomDetailsToTop } from "../utils/customDetailsGoToTop";
-import {
-  attachCustomDetailsScrollProgressListener,
-  isCustomDetailsGoToBottomVisibleFromProgress,
-  isCustomDetailsGoToTopVisibleFromProgress,
-  scrollCustomDetailsToBottom,
-} from "../utils/customDetailsGoToBottom";
-import {
-  CustomDetailsGoToTopButton,
-  shouldShowCustomDetailsGoToTop,
-} from "./CustomDetailsGoToTopButton";
-import {
-  CustomDetailsGoToBottomButton,
-  shouldShowCustomDetailsGoToBottom,
-} from "./CustomDetailsGoToBottomButton";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFutureCustomDetailsStepProps {
@@ -173,7 +159,6 @@ interface DormantFutureCustomDetailsStepProps {
   /** A one-shot Order Summary focus request that can re-fire for the same target. */
   additionalGarmentNavigationRequestId?: number | null;
   onAdditionalGarmentNavigationHandled?: (requestId: number) => void;
-  fabricModalOpen?: boolean;
   onViewAdditionalGarment?: (garmentKey: string) => void;
   onBack: () => void;
   onContinue: () => void;
@@ -467,7 +452,6 @@ export const DormantFutureCustomDetailsStep = ({
   focusAdditionalGarmentKey,
   additionalGarmentNavigationRequestId = null,
   onAdditionalGarmentNavigationHandled,
-  fabricModalOpen = false,
   onViewAdditionalGarment,
   onBack,
   onContinue,
@@ -513,10 +497,6 @@ export const DormantFutureCustomDetailsStep = ({
   const lastHandledAdditionalGarmentNavigationRequestIdRef = useRef<
     number | null
   >(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const bottomTargetRef = useRef<HTMLDivElement | null>(null);
-  const scrollProgressDetachRef = useRef<(() => void) | null>(null);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const selectedPersonalizedIdentities = useMemo(
     () => reconciliation.subjects.flatMap((subject) => {
       const group = reconciliation.applicabilityByGarmentKey
@@ -804,25 +784,6 @@ export const DormantFutureCustomDetailsStep = ({
     onAdditionalGarmentNavigationHandled,
   ]);
 
-  useEffect(() => {
-    scrollProgressDetachRef.current?.();
-    scrollProgressDetachRef.current = attachCustomDetailsScrollProgressListener({
-      onProgressChange: setScrollProgress,
-    });
-    return () => {
-      scrollProgressDetachRef.current?.();
-      scrollProgressDetachRef.current = null;
-    };
-  }, []);
-
-  const handleGoToTop = () => {
-    scrollCustomDetailsToTop({ title: titleRef.current });
-  };
-
-  const handleGoToBottom = () => {
-    scrollCustomDetailsToBottom({ target: bottomTargetRef.current });
-  };
-
   const getAssignedFabricForGarment = (garmentKey: string) => {
     if (!fabricAllocationState) return null;
     const allocation = fabricAllocationState.fabricAllocations.find((candidate) =>
@@ -937,6 +898,10 @@ export const DormantFutureCustomDetailsStep = ({
     canPresentAdditionalGarmentCustomDetailsPrompt &&
     additionalGarmentChoice !== null &&
     compatibleCopySources.length > 0;
+  useReportDesignStudioBlockingOverlay(
+    "custom-details-choice",
+    showAdditionalGarmentChoiceDialog,
+  );
 
   useEffect(() => {
     if (
@@ -1601,7 +1566,6 @@ export const DormantFutureCustomDetailsStep = ({
 
   return (
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
-      <div data-custom-details-top-sentinel="true" aria-hidden="true" className="h-px w-full" />
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div className="min-w-0 space-y-4">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
@@ -1622,7 +1586,6 @@ export const DormantFutureCustomDetailsStep = ({
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step {isPersonalizedAdditionsStage ? 5 : 4} of 10</p>
         <h2
           id={`future-${stage}-title`}
-          ref={titleRef}
           tabIndex={-1}
           className="mt-1 scroll-mt-24 font-serif text-2xl font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:text-3xl"
         >
@@ -2239,44 +2202,19 @@ export const DormantFutureCustomDetailsStep = ({
         )}
       </div>
 
-      <div
-        ref={bottomTargetRef}
-        data-custom-details-bottom-target="true"
-        tabIndex={-1}
-        className="outline-none"
-      >
-        <DesignStudioStepActions
-          backDestination={previousStageLabel}
-          onBack={onBack}
-          forward={{
-            destination: nextStageLabel,
-            onClick: onContinue,
-            disabled: !canContinue,
-            locked: !canContinue,
-            ariaLabel: canContinue
-              ? `Continue to ${nextStageLabel}`
-              : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
-          }}
-        />
-      </div>
-
-      {shouldShowCustomDetailsGoToBottom({
-        scrollBelowFortyPercent:
-          isCustomDetailsGoToBottomVisibleFromProgress(scrollProgress),
-        fabricModalOpen,
-        choiceDialogOpen: showAdditionalGarmentChoiceDialog,
-      }) ? (
-        <CustomDetailsGoToBottomButton onClick={handleGoToBottom} />
-      ) : null}
-
-      {shouldShowCustomDetailsGoToTop({
-        scrollAtOrAboveFortyPercent:
-          isCustomDetailsGoToTopVisibleFromProgress(scrollProgress),
-        fabricModalOpen,
-        choiceDialogOpen: showAdditionalGarmentChoiceDialog,
-      }) ? (
-        <CustomDetailsGoToTopButton onClick={handleGoToTop} />
-      ) : null}
+      <DesignStudioStepActions
+        backDestination={previousStageLabel}
+        onBack={onBack}
+        forward={{
+          destination: nextStageLabel,
+          onClick: onContinue,
+          disabled: !canContinue,
+          locked: !canContinue,
+          ariaLabel: canContinue
+            ? `Continue to ${nextStageLabel}`
+            : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
+        }}
+      />
 
       {showAdditionalGarmentChoiceDialog && (
           <div

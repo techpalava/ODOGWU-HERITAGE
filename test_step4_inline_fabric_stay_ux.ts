@@ -3,6 +3,7 @@
  * authority; unlock history; scroll; Go to Top; Go to Bottom.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
@@ -11,29 +12,34 @@ import {
 } from "./src/components/DesignStudioJourneyStepper";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import {
-  CustomDetailsGoToTopButton,
-  shouldShowCustomDetailsGoToTop,
-} from "./src/components/CustomDetailsGoToTopButton";
+  DesignStudioBlockingOverlayProvider,
+  useDesignStudioBlockingOverlayOpen,
+  useReportDesignStudioBlockingOverlay,
+} from "./src/components/designStudioBlockingOverlay";
 import {
-  CustomDetailsGoToBottomButton,
-  shouldShowCustomDetailsGoToBottom,
-} from "./src/components/CustomDetailsGoToBottomButton";
+  DesignStudioGoToBottomButton,
+  DesignStudioGoToTopButton,
+  DesignStudioScrollFabHost,
+  shouldShowDesignStudioGoToBottom,
+  shouldShowDesignStudioGoToTop,
+} from "./src/components/DesignStudioScrollFabHost";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
   resolveAuthoritativePrimaryFabricCode,
 } from "./src/utils/additionalGarmentFabricPicker";
-import { scrollCustomDetailsToTop } from "./src/utils/customDetailsGoToTop";
+import { DESIGN_STUDIO_STAGE_IDS } from "./src/utils/designSourceJourney";
 import {
-  CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS,
-  attachCustomDetailsGoToBottomScrollListener,
-  attachCustomDetailsScrollProgressListener,
-  getCustomDetailsScrollProgress,
-  isCustomDetailsGoToBottomVisibleFromProgress,
-  isCustomDetailsGoToTopVisibleFromProgress,
-  scrollCustomDetailsToBottom,
-} from "./src/utils/customDetailsGoToBottom";
+  DESIGN_STUDIO_SCROLL_FAB_SWITCH_PROGRESS,
+  attachDesignStudioScrollProgressListener,
+  getDesignStudioScrollProgress,
+  isDesignStudioGoToBottomVisibleFromProgress,
+  isDesignStudioGoToTopVisibleFromProgress,
+  resolveDesignStudioScrollFab,
+  scrollDesignStudioToBottom,
+  scrollDesignStudioToTop,
+} from "./src/utils/designStudioScrollFabs";
 import { applyFutureFabricCardSelection } from "./src/utils/designStudioFutureFabricStage";
 import { activateFutureCatalogStyleSelection } from "./src/utils/designSourceState";
 import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
@@ -203,52 +209,40 @@ const fabricB: Fabric = {
 
 // Go to Top visibility / action
 {
-  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(0), false);
-  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(0.39), false);
-  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(0.4), true);
-  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(1), true);
+  assert.equal(isDesignStudioGoToTopVisibleFromProgress(0), false);
+  assert.equal(isDesignStudioGoToTopVisibleFromProgress(0.39), false);
+  assert.equal(isDesignStudioGoToTopVisibleFromProgress(0.4), true);
+  assert.equal(isDesignStudioGoToTopVisibleFromProgress(1), true);
 
   assert.equal(
-    shouldShowCustomDetailsGoToTop({
+    shouldShowDesignStudioGoToTop({
       scrollAtOrAboveFortyPercent: false,
-      fabricModalOpen: false,
-      choiceDialogOpen: false,
+      blockingOverlayOpen: false,
     }),
     false,
-    "hidden near Step 4 top",
+    "hidden near the stage top",
   );
   assert.equal(
-    shouldShowCustomDetailsGoToTop({
+    shouldShowDesignStudioGoToTop({
       scrollAtOrAboveFortyPercent: true,
-      fabricModalOpen: false,
-      choiceDialogOpen: false,
+      blockingOverlayOpen: false,
     }),
     true,
     "visible at or above 40% scroll progress",
   );
   assert.equal(
-    shouldShowCustomDetailsGoToTop({
+    shouldShowDesignStudioGoToTop({
       scrollAtOrAboveFortyPercent: true,
-      fabricModalOpen: true,
-      choiceDialogOpen: false,
+      blockingOverlayOpen: true,
     }),
     false,
-    "hidden while fabric modal open",
-  );
-  assert.equal(
-    shouldShowCustomDetailsGoToTop({
-      scrollAtOrAboveFortyPercent: true,
-      fabricModalOpen: false,
-      choiceDialogOpen: true,
-    }),
-    false,
-    "hidden while additional-garment choice dialog open",
+    "hidden while a blocking overlay is open",
   );
 
   // Mutual exclusion across the shared 40% threshold
   for (const progress of [0, 0.39, 0.4, 1] as const) {
-    const showBottom = isCustomDetailsGoToBottomVisibleFromProgress(progress);
-    const showTop = isCustomDetailsGoToTopVisibleFromProgress(progress);
+    const showBottom = isDesignStudioGoToBottomVisibleFromProgress(progress);
+    const showTop = isDesignStudioGoToTopVisibleFromProgress(progress);
     assert.equal(
       showBottom && showTop,
       false,
@@ -281,7 +275,7 @@ const fabricB: Fabric = {
     fn();
     return 0;
   }) as typeof setTimeout;
-  scrollCustomDetailsToTop({ title });
+  scrollDesignStudioToTop({ target: title });
   assert.equal(scrollIntoViewCalls, 1);
   assert.equal(focusCalls, 1);
   assert.equal(title.style.scrollMarginTop, "6rem");
@@ -291,7 +285,8 @@ const fabricB: Fabric = {
   let renderer!: ReturnType<typeof create>;
   act(() => {
     renderer = create(
-      createElement(CustomDetailsGoToTopButton, {
+      createElement(DesignStudioGoToTopButton, {
+        stageLabel: "Custom Details",
         onClick: () => {
           goToTopClicks += 1;
         },
@@ -299,7 +294,7 @@ const fabricB: Fabric = {
     );
   });
   const btn = renderer.root.findByProps({
-    "data-custom-details-go-to-top": "true",
+    "data-design-studio-go-to-top": "true",
   });
   assert.equal(btn.props["aria-label"], "Go to top of Custom Details");
   assert.equal(btn.props.title, "Go to top");
@@ -372,27 +367,32 @@ const fabricB: Fabric = {
         onClearAccessories: () => undefined,
         onAddAdditionalGarment: () => undefined,
         onRemoveAdditionalGarment: () => undefined,
-        fabricModalOpen: false,
         onBack: () => undefined,
         onContinue: () => undefined,
       }),
     );
   });
   assert.equal(
-    renderer.root.findAllByProps({ "data-custom-details-top-sentinel": "true" })
+    renderer.root.findAllByProps({ "data-design-studio-go-to-top": "true" })
       .length,
-    1,
+    0,
+    "Custom Details does not mount Go to Top",
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-design-studio-go-to-bottom": "true" })
+      .length,
+    0,
+    "Custom Details does not mount Go to Bottom",
   );
   assert.equal(
     renderer.root.findAllByProps({ "data-custom-details-go-to-top": "true" })
       .length,
     0,
-    "Go to Top absent near top (progress under 40%)",
   );
   assert.equal(
-    renderer.root.findAllByProps({ "data-custom-details-bottom-target": "true" })
+    renderer.root.findAllByProps({ "data-custom-details-go-to-bottom": "true" })
       .length,
-    1,
+    0,
   );
 
   void DESIGN_STUDIO_STEPS;
@@ -401,60 +401,54 @@ const fabricB: Fabric = {
 
 // Go to Bottom visibility / action
 {
-  assert.equal(CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS, 0.4);
-  assert.equal(getCustomDetailsScrollProgress({ scrollY: 0, scrollHeight: 1000, clientHeight: 500 }), 0);
+  assert.equal(DESIGN_STUDIO_SCROLL_FAB_SWITCH_PROGRESS, 0.4);
+  assert.equal(getDesignStudioScrollProgress({ scrollY: 0, scrollHeight: 1000, clientHeight: 500 }), 0);
   assert.equal(
-    getCustomDetailsScrollProgress({ scrollY: 195, scrollHeight: 1000, clientHeight: 500 }),
+    getDesignStudioScrollProgress({ scrollY: 195, scrollHeight: 1000, clientHeight: 500 }),
     0.39,
   );
   assert.equal(
-    getCustomDetailsScrollProgress({ scrollY: 200, scrollHeight: 1000, clientHeight: 500 }),
+    getDesignStudioScrollProgress({ scrollY: 200, scrollHeight: 1000, clientHeight: 500 }),
     0.4,
   );
   assert.equal(
-    getCustomDetailsScrollProgress({ scrollY: 500, scrollHeight: 1000, clientHeight: 500 }),
+    getDesignStudioScrollProgress({ scrollY: 500, scrollHeight: 1000, clientHeight: 500 }),
     1,
   );
-  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(0), true);
-  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(0.39), true);
-  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(0.4), false);
-  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(1), false);
+  assert.equal(isDesignStudioGoToBottomVisibleFromProgress(0), true);
+  assert.equal(isDesignStudioGoToBottomVisibleFromProgress(0.39), true);
+  assert.equal(isDesignStudioGoToBottomVisibleFromProgress(0.4), false);
+  assert.equal(isDesignStudioGoToBottomVisibleFromProgress(1), false);
+  assert.equal(resolveDesignStudioScrollFab({ progress: 0, blockingOverlayOpen: false }), "bottom");
+  assert.equal(resolveDesignStudioScrollFab({ progress: 0.39, blockingOverlayOpen: false }), "bottom");
+  assert.equal(resolveDesignStudioScrollFab({ progress: 0.4, blockingOverlayOpen: false }), "top");
+  assert.equal(resolveDesignStudioScrollFab({ progress: 1, blockingOverlayOpen: false }), "top");
+  assert.equal(resolveDesignStudioScrollFab({ progress: 0, blockingOverlayOpen: true }), "none");
+  assert.equal(resolveDesignStudioScrollFab({ progress: 0.4, blockingOverlayOpen: true }), "none");
 
   assert.equal(
-    shouldShowCustomDetailsGoToBottom({
+    shouldShowDesignStudioGoToBottom({
       scrollBelowFortyPercent: true,
-      fabricModalOpen: false,
-      choiceDialogOpen: false,
+      blockingOverlayOpen: false,
     }),
     true,
-    "visible near Step 4 top",
+    "visible below 40% scroll progress",
   );
   assert.equal(
-    shouldShowCustomDetailsGoToBottom({
+    shouldShowDesignStudioGoToBottom({
       scrollBelowFortyPercent: false,
-      fabricModalOpen: false,
-      choiceDialogOpen: false,
+      blockingOverlayOpen: false,
     }),
     false,
     "hidden once scroll reaches 40%",
   );
   assert.equal(
-    shouldShowCustomDetailsGoToBottom({
+    shouldShowDesignStudioGoToBottom({
       scrollBelowFortyPercent: true,
-      fabricModalOpen: true,
-      choiceDialogOpen: false,
+      blockingOverlayOpen: true,
     }),
     false,
-    "hidden while fabric modal open",
-  );
-  assert.equal(
-    shouldShowCustomDetailsGoToBottom({
-      scrollBelowFortyPercent: true,
-      fabricModalOpen: false,
-      choiceDialogOpen: true,
-    }),
-    false,
-    "hidden while additional-garment choice dialog open",
+    "hidden while a blocking overlay is open",
   );
 
   if (!globalThis.window) {
@@ -478,19 +472,14 @@ const fabricB: Fabric = {
   let progress = 0;
   let reportedProgress: number | null = null;
   let bottomVisibility: boolean | null = null;
-  const detachProgress = attachCustomDetailsScrollProgressListener({
+  const detachProgress = attachDesignStudioScrollProgressListener({
     onProgressChange: (next) => {
       reportedProgress = next;
+      bottomVisibility = isDesignStudioGoToBottomVisibleFromProgress(next);
     },
     getProgress: () => progress,
   });
   assert.equal(reportedProgress, 0, "progress listener reports initial progress");
-  const detachBottom = attachCustomDetailsGoToBottomScrollListener({
-    onVisibilityChange: (show) => {
-      bottomVisibility = show;
-    },
-    getProgress: () => progress,
-  });
   assert.equal(bottomVisibility, true, "initial progress 0 shows Go to Bottom");
   assert.ok(listeners.get("scroll")?.size);
   assert.ok(listeners.get("resize")?.size);
@@ -500,7 +489,7 @@ const fabricB: Fabric = {
   assert.equal(reportedProgress, 0.4);
   assert.equal(bottomVisibility, false, "40% progress hides Go to Bottom");
   assert.equal(
-    isCustomDetailsGoToTopVisibleFromProgress(reportedProgress ?? 0),
+    isDesignStudioGoToTopVisibleFromProgress(reportedProgress ?? 0),
     true,
     "40% progress shows Go to Top",
   );
@@ -509,17 +498,16 @@ const fabricB: Fabric = {
   for (const fn of listeners.get("resize") ?? []) fn();
   assert.equal(bottomVisibility, true, "resize re-evaluates visibility");
   assert.equal(
-    isCustomDetailsGoToTopVisibleFromProgress(reportedProgress ?? 0),
+    isDesignStudioGoToTopVisibleFromProgress(reportedProgress ?? 0),
     false,
     "under 40% keeps Go to Top hidden",
   );
 
   const scrollListenerCount = listeners.get("scroll")?.size ?? 0;
   const resizeListenerCount = listeners.get("resize")?.size ?? 0;
-  detachBottom();
   detachProgress();
-  assert.equal(listeners.get("scroll")?.size ?? 0, scrollListenerCount - 2);
-  assert.equal(listeners.get("resize")?.size ?? 0, resizeListenerCount - 2);
+  assert.equal(listeners.get("scroll")?.size ?? 0, scrollListenerCount - 1);
+  assert.equal(listeners.get("resize")?.size ?? 0, resizeListenerCount - 1);
 
   if (originalAdd) globalThis.window.addEventListener = originalAdd;
   if (originalRemove) globalThis.window.removeEventListener = originalRemove;
@@ -540,7 +528,7 @@ const fabricB: Fabric = {
     fn();
     return 0;
   }) as typeof setTimeout;
-  scrollCustomDetailsToBottom({ target });
+  scrollDesignStudioToBottom({ target });
   assert.equal(scrollIntoViewCalls, 1);
   assert.equal(focusCalls, 1);
   assert.equal(target.style.scrollMarginBottom, "6rem");
@@ -550,7 +538,8 @@ const fabricB: Fabric = {
   let bottomRenderer!: ReturnType<typeof create>;
   act(() => {
     bottomRenderer = create(
-      createElement(CustomDetailsGoToBottomButton, {
+      createElement(DesignStudioGoToBottomButton, {
+        stageLabel: "Custom Details",
         onClick: () => {
           goToBottomClicks += 1;
         },
@@ -558,7 +547,7 @@ const fabricB: Fabric = {
     );
   });
   const bottomBtn = bottomRenderer.root.findByProps({
-    "data-custom-details-go-to-bottom": "true",
+    "data-design-studio-go-to-bottom": "true",
   });
   assert.equal(bottomBtn.props["aria-label"], "Go to bottom of Custom Details");
   assert.equal(bottomBtn.props.title, "Go to bottom");
@@ -569,6 +558,212 @@ const fabricB: Fabric = {
     bottomBtn.props.onClick();
   });
   assert.equal(goToBottomClicks, 1);
+}
+
+// Shared host: every stage, one mount, overlays hide both arrows
+{
+  assert.deepEqual(
+    [...DESIGN_STUDIO_STAGE_IDS],
+    [
+      "garment_type",
+      "fabric",
+      "design_style",
+      "custom_details",
+      "personalized_additions",
+      "try_on",
+      "measurement",
+      "summary",
+      "shipping",
+      "payment",
+    ],
+  );
+
+  let scrollIntoViewCalls = 0;
+  const topTarget = {
+    style: {} as Record<string, string>,
+    scrollIntoView: () => {
+      scrollIntoViewCalls += 1;
+    },
+    focus: () => undefined,
+  } as unknown as HTMLElement;
+  const bottomTarget = {
+    style: {} as Record<string, string>,
+    scrollIntoView: () => {
+      scrollIntoViewCalls += 1;
+    },
+    focus: () => undefined,
+  } as unknown as HTMLElement;
+  const topRef: { current: HTMLElement | null } = { current: topTarget };
+  const bottomRef: { current: HTMLElement | null } = { current: bottomTarget };
+  if (!globalThis.window) {
+    // @ts-expect-error test env
+    globalThis.window = globalThis;
+  }
+  const originalSetTimeout = globalThis.window.setTimeout;
+  globalThis.window.setTimeout = ((fn: () => void) => {
+    fn();
+    return 0;
+  }) as typeof setTimeout;
+
+  function ChoiceReporter({ open }: { open: boolean }) {
+    useReportDesignStudioBlockingOverlay("custom-details-choice", open);
+    const blocking = useDesignStudioBlockingOverlayOpen();
+    return createElement("span", {
+      "data-reported-blocking-overlay": blocking ? "true" : "false",
+    });
+  }
+
+  let host!: ReturnType<typeof create>;
+  act(() => {
+    host = create(
+      createElement(DesignStudioBlockingOverlayProvider, {
+        ownedOpen: false,
+        children: createElement(DesignStudioScrollFabHost, {
+          stageLabel: "Fabric",
+          topTargetRef: topRef,
+          bottomTargetRef: bottomRef,
+          progress: 0.2,
+        }),
+      }),
+    );
+  });
+  const bottomButtons = host.root.findAllByProps({
+    "data-design-studio-go-to-bottom": "true",
+  });
+  assert.equal(bottomButtons.length, 1, "below 40% shows one Go to Bottom");
+  assert.equal(
+    host.root.findAllByProps({ "data-design-studio-go-to-top": "true" }).length,
+    0,
+  );
+  assert.equal(bottomButtons[0].props["aria-label"], "Go to bottom of Fabric");
+  act(() => {
+    bottomButtons[0].props.onClick();
+  });
+  assert.equal(scrollIntoViewCalls, 1);
+  assert.equal(bottomTarget.style.scrollMarginBottom, "6rem");
+
+  act(() => {
+    host.update(
+      createElement(DesignStudioBlockingOverlayProvider, {
+        ownedOpen: false,
+        children: createElement(DesignStudioScrollFabHost, {
+          stageLabel: "Measurement",
+          topTargetRef: topRef,
+          bottomTargetRef: bottomRef,
+          progress: 0.4,
+        }),
+      }),
+    );
+  });
+  const topButtons = host.root.findAllByProps({
+    "data-design-studio-go-to-top": "true",
+  });
+  assert.equal(topButtons.length, 1, "at 40% shows one Go to Top");
+  assert.equal(
+    host.root.findAllByProps({ "data-design-studio-go-to-bottom": "true" }).length,
+    0,
+  );
+  assert.equal(topButtons[0].props["aria-label"], "Go to top of Measurement");
+  act(() => {
+    topButtons[0].props.onClick();
+  });
+  assert.equal(scrollIntoViewCalls, 2);
+  assert.equal(topTarget.style.scrollMarginTop, "6rem");
+
+  act(() => {
+    host.update(
+      createElement(DesignStudioBlockingOverlayProvider, {
+        ownedOpen: true,
+        children: createElement(DesignStudioScrollFabHost, {
+          stageLabel: "Custom Details",
+          topTargetRef: topRef,
+          bottomTargetRef: bottomRef,
+          progress: 0,
+        }),
+      }),
+    );
+  });
+  assert.equal(
+    host.root.findAllByProps({ "data-design-studio-go-to-bottom": "true" }).length,
+    0,
+    "studio fabric modal hides Go to Bottom",
+  );
+  assert.equal(
+    host.root.findAllByProps({ "data-design-studio-go-to-top": "true" }).length,
+    0,
+    "studio fabric modal hides Go to Top",
+  );
+
+  act(() => {
+    host.update(
+      createElement(DesignStudioBlockingOverlayProvider, {
+        ownedOpen: false,
+        children: [
+          createElement(ChoiceReporter, { key: "choice", open: true }),
+          createElement(DesignStudioScrollFabHost, {
+            key: "fab",
+            stageLabel: "Custom Details",
+            topTargetRef: topRef,
+            bottomTargetRef: bottomRef,
+            progress: 0.1,
+          }),
+        ],
+      }),
+    );
+  });
+  assert.equal(
+    host.root.findByProps({ "data-reported-blocking-overlay": "true" }).props[
+      "data-reported-blocking-overlay"
+    ],
+    "true",
+  );
+  assert.equal(
+    host.root.findAllByProps({ "data-design-studio-go-to-bottom": "true" }).length,
+    0,
+    "additional-garment choice dialog hides Go to Bottom",
+  );
+  assert.equal(
+    host.root.findAllByProps({ "data-design-studio-go-to-top": "true" }).length,
+    0,
+    "additional-garment choice dialog hides Go to Top",
+  );
+
+  globalThis.window.setTimeout = originalSetTimeout;
+
+  const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+  const customDetailsSource = readFileSync(
+    "src/components/DormantFutureCustomDetailsStep.tsx",
+    "utf8",
+  );
+  const fabricSource = readFileSync("src/components/DormantFutureFabricStep.tsx", "utf8");
+  const designStyleSource = readFileSync(
+    "src/components/DormantFutureDesignStyleStep.tsx",
+    "utf8",
+  );
+  assert.equal(
+    (studioSource.match(/<DesignStudioScrollFabHost\b/g) || []).length,
+    1,
+    "Design Studio mounts the scroll FAB host once",
+  );
+  assert.match(studioSource, /data-design-studio-stage-bottom-target="true"/);
+  assert.match(studioSource, /showAdditionalGarmentFabricDialog/);
+  assert.match(studioSource, /showAdditionalGarmentDesignStyleDialog/);
+  assert.match(studioSource, /futureGarmentRemovalDialogRequest/);
+  assert.match(studioSource, /futureOrderCancelDialogOpen/);
+  assert.match(studioSource, /showRemainingFabricCapacityOffer/);
+  assert.doesNotMatch(
+    customDetailsSource,
+    /DesignStudioScrollFabHost|DesignStudioGoToTopButton|DesignStudioGoToBottomButton|data-design-studio-go-to/,
+  );
+  assert.match(
+    customDetailsSource,
+    /useReportDesignStudioBlockingOverlay\(\s*"custom-details-choice"/,
+  );
+  assert.match(fabricSource, /useReportDesignStudioBlockingOverlay\(\s*"fabric-step"/);
+  assert.match(
+    designStyleSource,
+    /useReportDesignStudioBlockingOverlay\(\s*"design-style-step"/,
+  );
 }
 
 console.log("PASS: step4 stay / unlock / go-to-top / go-to-bottom UX repair");
