@@ -383,9 +383,9 @@ export const DormantFutureShippingStep = ({
                 data-testid="future-shipping-pickup-location"
                 className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 md:col-span-2"
               >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
+                <h4 className="font-serif text-lg font-bold text-heritage-green">
                   Pickup location
-                </p>
+                </h4>
                 <p className="mt-1.5 flex min-w-0 items-start gap-2 break-words text-sm font-semibold text-heritage-green">
                   <MapPin
                     aria-hidden="true"
