@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { DormantFutureShippingStep } from "./src/components/DormantFutureShippingStep";
 import type { FutureShippingStateV1 } from "./src/types";
 import {
   DEFAULT_FUTURE_PICKUP_LOCATION,
@@ -221,6 +224,74 @@ assert.equal(whitespaceOnlyName.status, "incomplete");
 assert.ok(
   whitespaceOnlyName.diagnostics.some((diagnostic) => diagnostic.field === "fullName"),
 );
+
+const reconcilePickupContact = (
+  contact: Partial<FutureShippingStateV1["customerInformation"]>,
+) =>
+  reconcileFutureShippingState({
+    state: {
+      ...withContact(createEmptyFutureShippingState()),
+      fulfilmentMethod: "eindhoven_pickup",
+      customerInformation: {
+        ...withContact(createEmptyFutureShippingState()).customerInformation,
+        ...contact,
+      },
+    },
+    garmentCount: 2,
+    selectedDesignPrice: 500,
+  });
+
+const invalidEmail = reconcilePickupContact({ email: "not-an-email" });
+assert.equal(invalidEmail.status, "invalid");
+assert.ok(
+  invalidEmail.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "INVALID_EMAIL" &&
+      diagnostic.field === "email" &&
+      diagnostic.message === "Enter a valid email address.",
+  ),
+);
+assert.equal(isFutureShippingStepComplete(invalidEmail), false);
+
+for (const phone of ["abc", "123", "()", "---"]) {
+  const invalidPhone = reconcilePickupContact({ phone });
+  assert.equal(invalidPhone.status, "invalid", phone);
+  assert.ok(
+    invalidPhone.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "INVALID_PHONE" &&
+        diagnostic.field === "phone" &&
+        diagnostic.message ===
+          "Enter a valid WhatsApp number with country code (e.g. +31 6 12345678).",
+    ),
+    phone,
+  );
+  assert.equal(isFutureShippingStepComplete(invalidPhone), false, phone);
+}
+
+const blankPhone = reconcilePickupContact({ phone: "   " });
+assert.equal(blankPhone.status, "incomplete");
+assert.ok(
+  blankPhone.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "REQUIRED_FIELD" && diagnostic.field === "phone",
+  ),
+);
+assert.equal(
+  blankPhone.diagnostics.some((diagnostic) => diagnostic.code === "INVALID_PHONE"),
+  false,
+);
+
+const compactInternationalPhone = reconcilePickupContact({ phone: "+31612345678" });
+assert.equal(compactInternationalPhone.status, "quote_ready");
+assert.equal(isFutureShippingStepComplete(compactInternationalPhone), true);
+assert.equal(
+  pickup.state.customerInformation.phone,
+  " +31 6 1234 5678 ",
+  "existing withContact keeps the spaced international phone",
+);
+assert.equal(pickup.status, "quote_ready");
+assert.equal(isFutureShippingStepComplete(pickup), true);
 
 const persistedTrimmedComment = persistFutureShippingState({
   draft: { id: "draft-1" },
@@ -721,6 +792,11 @@ assert.match(
 );
 assert.match(summarySource, /Cost Breakdown/);
 assert.match(stepperSource, /canEnterShipping/);
+assert.match(shippingSource, /placeholder="\+31 6 12345678"/);
+assert.match(shippingSource, /Include country code for WhatsApp\./);
+assert.match(shippingSource, /future-shipping-phone-hint/);
+assert.match(shippingSource, /errorFor\("phone"\)/);
+assert.match(shippingSource, /errorFor\("email"\)/);
 assert.match(shippingSource, /Delivery &amp; Pickup/);
 assert.match(shippingSource, /Pick Up in Eindhoven/);
 assert.match(shippingSource, /Deliver to an Address/);
@@ -814,5 +890,80 @@ for (const countryCode of STEP8_QUOTE_REQUIRED_COUNTRY_CODES) {
     countryCode,
   );
 }
+
+const renderShippingStep = (
+  resolution: ReturnType<typeof reconcileFutureShippingState>,
+  canContinueToReview: boolean,
+) =>
+  renderToStaticMarkup(
+    createElement(DormantFutureShippingStep, {
+      state: resolution.state,
+      resolution,
+      selectedDesignPrice: 500,
+      garmentCount: 2,
+      onChange: () => undefined,
+      onRefreshQuote: () => undefined,
+      onBack: () => undefined,
+      canContinueToReview,
+      onContinueToReview: () => undefined,
+    }),
+  );
+
+const reviewOrderButtons = (markup: string) =>
+  [...markup.matchAll(/<button\b[^>]*aria-label="Review Order"[^>]*>/g)].map(
+    (match) => match[0],
+  );
+
+const pickupMarkup = renderShippingStep(pickup, true);
+assert.match(
+  pickupMarkup,
+  /data-testid="future-shipping-pickup-location"[\s\S]*?<h4 class="font-serif text-lg font-bold text-heritage-green">\s*Pickup location\s*<\/h4>/,
+);
+assert.match(pickupMarkup, /placeholder="\+31 6 12345678"/);
+assert.match(pickupMarkup, /id="future-shipping-phone-hint"/);
+assert.match(pickupMarkup, /Include country code for WhatsApp\./);
+assert.match(pickupMarkup, /aria-describedby="future-shipping-phone-hint"/);
+assert.equal(pickupMarkup.includes("Enter a valid WhatsApp number"), false);
+assert.equal(pickupMarkup.includes("Enter a valid email address."), false);
+const enabledReviewButtons = reviewOrderButtons(pickupMarkup);
+assert.ok(enabledReviewButtons.length >= 1);
+assert.ok(
+  enabledReviewButtons.every((button) => !button.includes('disabled=""')),
+);
+
+const invalidPhoneMarkup = renderShippingStep(
+  reconcilePickupContact({ phone: "abc" }),
+  false,
+);
+assert.match(invalidPhoneMarkup, /id="future-shipping-phone-error"/);
+assert.match(
+  invalidPhoneMarkup,
+  /aria-describedby="future-shipping-phone-hint future-shipping-phone-error"/,
+);
+assert.match(invalidPhoneMarkup, /aria-invalid="true"/);
+assert.match(
+  invalidPhoneMarkup,
+  /Enter a valid WhatsApp number with country code \(e\.g\. \+31 6 12345678\)\./,
+);
+const blockedPhoneReviewButtons = reviewOrderButtons(invalidPhoneMarkup);
+assert.ok(blockedPhoneReviewButtons.length >= 1);
+assert.ok(
+  blockedPhoneReviewButtons.every((button) => button.includes('disabled=""')),
+);
+
+const invalidEmailMarkup = renderShippingStep(invalidEmail, false);
+assert.match(invalidEmailMarkup, /id="future-shipping-email-error"/);
+assert.match(invalidEmailMarkup, /aria-describedby="future-shipping-email-error"/);
+assert.match(invalidEmailMarkup, /Enter a valid email address\./);
+const blockedEmailReviewButtons = reviewOrderButtons(invalidEmailMarkup);
+assert.ok(blockedEmailReviewButtons.length >= 1);
+assert.ok(
+  blockedEmailReviewButtons.every((button) => button.includes('disabled=""')),
+);
+
+const deliveryMarkup = renderShippingStep(deliveryClearsPickup, true);
+assert.match(deliveryMarkup, /placeholder="\+31 6 12345678"/);
+assert.equal(deliveryMarkup.includes("Include country code for WhatsApp."), false);
+assert.equal(deliveryMarkup.includes('id="future-shipping-phone-hint"'), false);
 
 console.log("PASS: Step 8 Delivery & Pickup state, completion, and UI contracts");

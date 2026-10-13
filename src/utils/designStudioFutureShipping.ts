@@ -501,6 +501,14 @@ export const normalizeFutureShippingState = (
 const isValidEmail = (value: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
+/** Digits and plus signs only, matching auth `normalizePhone`. */
+const normalizeCustomerPhone = (value: string): string =>
+  value.replace(/[^\d+]/g, "");
+
+/** Optional single leading +, then 8–15 digits, first digit 1–9. */
+const isValidPhone = (value: string): boolean =>
+  /^\+?[1-9]\d{7,14}$/.test(normalizeCustomerPhone(value));
+
 const getCustomerDiagnostics = (
   state: FutureShippingStateV1,
 ): FutureShippingStageDiagnostic[] => {
@@ -525,6 +533,14 @@ const getCustomerDiagnostics = (
   };
   requireText("fullName", fullName, "Enter the recipient's full name.");
   requireText("phone", phone, "Enter a phone contact.");
+  if (phone && !isValidPhone(phone)) {
+    diagnostics.push({
+      code: "INVALID_PHONE",
+      field: "phone",
+      message:
+        "Enter a valid WhatsApp number with country code (e.g. +31 6 12345678).",
+    });
+  }
   requireText("email", email, "Enter an email address.");
   if (email && !isValidEmail(email)) {
     diagnostics.push({
@@ -742,6 +758,7 @@ export const reconcileFutureShippingState = ({
     (diagnostic) =>
       diagnostic.code === "MALFORMED_SHIPPING_STATE" ||
       diagnostic.code === "INVALID_EMAIL" ||
+      diagnostic.code === "INVALID_PHONE" ||
       diagnostic.code === "INVALID_COUNTRY",
   );
   if (diagnostics.length > 0) {
