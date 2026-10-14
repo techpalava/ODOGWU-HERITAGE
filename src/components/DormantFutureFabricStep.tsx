@@ -2545,7 +2545,7 @@ export const DormantFutureFabricStep = ({
                       openCatalogue(event.currentTarget, assignment.garmentKey);
                     }}
                     aria-label={`Change fabric for ${garmentLabel}`}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-[10px] font-bold uppercase tracking-wide text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start"
                   >
                     Change Fabric
                   </button>
@@ -2564,7 +2564,7 @@ export const DormantFutureFabricStep = ({
                     }
                     data-testid={`assign-to-fabric-${assignment.garmentKey}`}
                     aria-label={`Assign fabric for ${garmentLabel}`}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-[10px] font-bold uppercase tracking-wide text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:self-start"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:self-start"
                   >
                     Assign to Fabric
                   </button>
@@ -2589,7 +2589,7 @@ export const DormantFutureFabricStep = ({
                       openCatalogue(event.currentTarget, assignment.garmentKey);
                     }}
                     aria-label={`Add fabric for ${garmentLabel}`}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-[10px] font-bold uppercase tracking-wide text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start"
                   >
                     Add Fabric
                   </button>
