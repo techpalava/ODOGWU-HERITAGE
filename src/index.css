@@ -18,6 +18,7 @@
   --animate-step2-assignment-success: step2-assignment-success 1.2s ease-out 1;
   --animate-step2-next-unassigned: step2-next-unassigned 1.2s ease-out 1;
   --animate-live-order-summary-enter: live-order-summary-enter 350ms ease-out 1;
+  --animate-step-guide-beam: step-guide-beam 3.4s ease-in-out infinite;
 }
 
 @keyframes step1-select-attention {
@@ -62,6 +63,18 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes step-guide-beam {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(197 168 92 / 0);
+    border-left-color: rgb(197 168 92 / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 14px 0 rgb(197 168 92 / 0.28);
+    border-left-color: rgb(197 168 92 / 1);
   }
 }
 

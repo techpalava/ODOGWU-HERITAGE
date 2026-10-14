@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
@@ -1343,21 +1344,17 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       {hydrationInvalid && (
-        <section
+        <DesignStudioStepGuide
           role="alert"
+          title="Measurement review needed"
+          titleAs="h3"
+          titleClassName="font-serif"
           data-measurement-hydration-error="true"
-          className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4"
         >
-          <div className="flex min-w-0 items-start gap-3">
-            <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
-            <div className="min-w-0">
-              <h3 className="font-serif font-bold text-heritage-green">Measurement review needed</h3>
-              <p className="mt-2 text-sm text-heritage-ink/70">
-                {FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE}
-              </p>
-            </div>
-          </div>
-        </section>
+          <p className="mt-2 text-sm text-heritage-ink/70">
+            {FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE}
+          </p>
+        </DesignStudioStepGuide>
       )}
 
       {selectedMethod && !hydrationInvalid && (
@@ -1562,17 +1559,15 @@ export const DormantFutureMeasurementStep = ({
       )}
 
       {blockerMessages.length > 0 && (
-        <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
-            <div className="min-w-0">
-              <h3 className="font-serif font-bold text-heritage-green">Measurement review needed</h3>
-              <ul className="mt-2 space-y-1 text-sm text-heritage-ink/70">
-                {blockerMessages.map((message) => <li key={message}>{message}</li>)}
-              </ul>
-            </div>
-          </div>
-        </section>
+        <DesignStudioStepGuide
+          title="Measurement review needed"
+          titleAs="h3"
+          titleClassName="font-serif"
+        >
+          <ul className="mt-2 space-y-1 text-sm text-heritage-ink/70">
+            {blockerMessages.map((message) => <li key={message}>{message}</li>)}
+          </ul>
+        </DesignStudioStepGuide>
       )}
 
       {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (

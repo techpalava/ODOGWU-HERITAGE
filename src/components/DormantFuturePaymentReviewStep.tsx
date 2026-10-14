@@ -11,6 +11,7 @@ import {
   Truck,
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
@@ -220,49 +221,36 @@ const CandidateAttention = ({
   const firstBlocker = blockers[0];
   const editStage = getFuturePaymentReviewEditStage(firstBlocker);
   return (
-    <section
-      aria-labelledby="future-order-attention-title"
-      className="min-w-0 rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-5 sm:p-6"
+    <DesignStudioStepGuide
+      title="Your order needs attention"
+      titleAs="h2"
+      titleId="future-order-attention-title"
+      titleClassName="font-serif text-xl"
     >
-      <div className="flex min-w-0 items-start gap-3">
-        <AlertTriangle
-          aria-hidden="true"
-          className="mt-0.5 shrink-0 text-heritage-gold"
-          size={20}
-        />
-        <div className="min-w-0 flex-1">
-          <h2
-            id="future-order-attention-title"
-            className="font-serif text-xl font-bold text-heritage-green"
-          >
-            Your order needs attention
-          </h2>
-          <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
-            {firstBlocker.message}
-          </p>
-          {editStage && (
-            <div className="mt-3">
-              <EditButton
-                label={getFuturePaymentReviewEditLabel(editStage)}
-                onClick={() => onEditStage(editStage)}
-              />
-            </div>
-          )}
-          {blockers.length > 1 && (
-            <ul className="mt-4 space-y-2 border-t border-heritage-gold/20 pt-4 text-sm text-heritage-ink/65">
-              {blockers.slice(1).map((blocker) => (
-                <li
-                  key={`${blocker.stage}:${blocker.code}:${blocker.garmentKey || ""}:${blocker.allocationId || ""}`}
-                  className="break-words"
-                >
-                  {blocker.message}
-                </li>
-              ))}
-            </ul>
-          )}
+      <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
+        {firstBlocker.message}
+      </p>
+      {editStage && (
+        <div className="mt-3">
+          <EditButton
+            label={getFuturePaymentReviewEditLabel(editStage)}
+            onClick={() => onEditStage(editStage)}
+          />
         </div>
-      </div>
-    </section>
+      )}
+      {blockers.length > 1 && (
+        <ul className="mt-4 space-y-2 border-t border-heritage-gold/20 pt-4 text-sm text-heritage-ink/65">
+          {blockers.slice(1).map((blocker) => (
+            <li
+              key={`${blocker.stage}:${blocker.code}:${blocker.garmentKey || ""}:${blocker.allocationId || ""}`}
+              className="break-words"
+            >
+              {blocker.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </DesignStudioStepGuide>
   );
 };
 

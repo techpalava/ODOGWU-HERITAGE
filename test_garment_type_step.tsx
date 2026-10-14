@@ -14,6 +14,7 @@ import {
   updateGarmentTypeDemographics,
   updateGarmentTypeSelection,
 } from "./src/components/GarmentTypeStep";
+import { DesignStudioStepGuide } from "./src/components/DesignStudioStepGuide";
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import { getGarmentTypeStepSelectedFabricQuantity } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
@@ -642,6 +643,16 @@ assert.equal(
   "A complete Step 1 does not show a still-needed hint",
 );
 assert.equal(
+  continueEnabledMarkup.includes(">Guide<"),
+  false,
+  "A complete Step 1 does not keep the Guide beam",
+);
+assert.equal(
+  continueEnabledMarkup.includes("motion-safe:animate-step-guide-beam"),
+  false,
+  "A complete Step 1 does not animate an empty guide",
+);
+assert.equal(
   continueEnabledMarkup.includes("data-step1-audience-needed"),
   false,
 );
@@ -672,6 +683,14 @@ const stuckMarkup = renderToStaticMarkup(
   }),
 );
 assert.ok(stuckMarkup.includes('data-testid="step1-still-needed"'));
+assert.ok(
+  stuckMarkup.includes(">Guide<"),
+  "The Step 1 attention checklist is labelled Guide",
+);
+assert.ok(
+  stuckMarkup.includes("motion-safe:animate-step-guide-beam"),
+  "The Step 1 guide beams while a requirement remains",
+);
 assert.ok(
   stuckMarkup.includes('data-step1-still-needed="DEMOGRAPHIC_REQUIRED"'),
 );
@@ -762,6 +781,31 @@ assert.equal(
   ]).length,
   1,
   "Several unresolved constructions stay one still-needed line",
+);
+
+const idleGuideMarkup = renderToStaticMarkup(
+  createElement(DesignStudioStepGuide, {
+    title: "Still needed before Fabric",
+    active: false,
+  }),
+);
+assert.ok(idleGuideMarkup.includes(">Guide<"));
+assert.equal(
+  idleGuideMarkup.includes("motion-safe:animate-step-guide-beam"),
+  false,
+  "An idle guide does not keep the gold beam",
+);
+const emptyGuideMarkup = renderToStaticMarkup(
+  createElement(
+    DesignStudioStepGuide,
+    { title: "Still needed before Fabric" },
+    null,
+  ),
+);
+assert.equal(
+  emptyGuideMarkup.includes("motion-safe:animate-step-guide-beam"),
+  false,
+  "A guide with no remaining items does not animate",
 );
 
 console.log("Garment Type Step controlled component verification passed.");
