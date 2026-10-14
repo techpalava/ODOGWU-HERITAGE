@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type React from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import {
@@ -315,7 +316,7 @@ export const DormantFutureSummaryStep = ({
           }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-          Step 7 of 9
+          {formatDesignStudioStepCounter("summary")}
         </p>
         <h2
           id="future-summary-title"

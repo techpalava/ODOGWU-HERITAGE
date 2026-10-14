@@ -26,6 +26,7 @@ import {
   type FutureShippingStageResolution,
 } from "../utils/designStudioFutureShipping";
 import { formatStep8CustomerDestination } from "../utils/step8AdditionalDelivery";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
 interface DormantFutureShippingStepProps {
@@ -175,7 +176,7 @@ export const DormantFutureShippingStep = ({
           }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-          Step 8 of 9
+          {formatDesignStudioStepCounter("shipping")}
         </p>
         <h2
           id="future-shipping-title"
@@ -224,7 +225,7 @@ export const DormantFutureShippingStep = ({
       <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-green/20 bg-heritage-green/5 p-4 sm:p-5">
         <Info aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-green" size={19} />
         <p className="min-w-0 text-sm font-semibold leading-relaxed text-heritage-green">
-          Standard Shipping to Eindhoven is already included. Step 8 only adds
+          Standard Shipping to Eindhoven is already included. This step only adds
           pickup or additional delivery from Eindhoven.
         </p>
       </div>

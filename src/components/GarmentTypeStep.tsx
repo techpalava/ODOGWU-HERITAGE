@@ -42,6 +42,7 @@ import {
   type GarmentTypeStageBlocker,
   type GarmentTypeStageBlockerCode,
 } from "../utils/designStudioJourneyMode";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 
 const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   value: CustomDetailDemographic;
@@ -484,7 +485,7 @@ export const GarmentTypeStep = ({
         />
         <div className="border-b border-heritage-gold/15 pb-5">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-            Step 1 of 9
+            {formatDesignStudioStepCounter("garment_type")}
           </p>
           <h2
             id={`${idPrefix}-title`}
