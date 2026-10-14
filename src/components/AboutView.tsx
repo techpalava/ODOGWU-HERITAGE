@@ -596,7 +596,7 @@ export default function AboutView() {
               </li>
               <li>
                 Individual orders use weight-band shipping from Lagos to
-                Eindhoven, starting at <strong>€131.25</strong>. The cart
+                Eindhoven, starting at <strong>€14</strong>. The cart
                 combines garment pieces into one shipment quote.
               </li>
               <li>

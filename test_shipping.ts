@@ -18,6 +18,7 @@ import {
   calculateFinalMileShipping,
   calculateIndividualShipping,
   confirmCartShippingReprice,
+  INDIVIDUAL_SHIPPING_PRICING_VERSION,
   getGarmentPieceCount,
   migrateLegacyCartShippingItems,
   resolveAuthoritativeGarmentPieceCount,
@@ -111,6 +112,24 @@ const makeItem = (
   };
   return base;
 };
+
+assert.equal(
+  INDIVIDUAL_SHIPPING_PRICING_VERSION,
+  "2026-10-14-individual-v2",
+);
+assert.deepEqual(
+  [1, 5, 13, 25, 49].map((pieces) => {
+    const quote = calculateIndividualShipping(pieces);
+    return [quote.weightBand, quote.priceEur, quote.pricingVersion];
+  }),
+  [
+    ["0 - 2 kg", 14, INDIVIDUAL_SHIPPING_PRICING_VERSION],
+    [">2 - 5 kg", 35, INDIVIDUAL_SHIPPING_PRICING_VERSION],
+    [">5 - 10 kg", 70, INDIVIDUAL_SHIPPING_PRICING_VERSION],
+    [">10 - 20 kg", 140, INDIVIDUAL_SHIPPING_PRICING_VERSION],
+    [">20 kg", 210, INDIVIDUAL_SHIPPING_PRICING_VERSION],
+  ],
+);
 
 assert.equal(getGarmentPieceCount("3-Piece Set"), 3);
 assert.equal(getGarmentPieceCount("Family Look"), 4);
@@ -534,12 +553,12 @@ assert.equal(mixedCart.batchShippingQuotes.length, 2);
 closeTo(mixedCart.garmentSubtotal, 300, "mixed garment subtotal");
 closeTo(
   mixedCart.shippingTotal,
-  131.25 + 30.18 + 45.27,
+  14 + 30.18 + 45.27,
   "mixed route shipping",
 );
 closeTo(
   mixedCart.depositDueNow,
-  150 + 131.25 + 30.18 + 45.27,
+  150 + 14 + 30.18 + 45.27,
   "mixed route due now",
 );
 closeTo(mixedCart.remainingDue, 150, "mixed route remaining");
@@ -626,7 +645,7 @@ closeTo(
 );
 closeTo(
   mixedArrivalDeliveryCart.totalShipping,
-  131.25 + 30.18 + 45.27 + 38 * 3,
+  14 + 30.18 + 45.27 + 38 * 3,
   "mixed route shipping remains additive",
 );
 
@@ -1002,7 +1021,7 @@ closeTo(
 );
 closeTo(
   changedRateSnapshot?.updatedShippingTotal ?? null,
-  131.25,
+  14,
   "legacy shipping is repriced with the current configuration",
 );
 assert.equal(
@@ -1030,12 +1049,12 @@ closeTo(
 );
 closeTo(
   confirmedChangedRatePricing.totalShipping,
-  131.25,
+  14,
   "confirmed migration uses the accurate shipping total",
 );
 closeTo(
   confirmedChangedRatePricing.total,
-  231.25,
+  114,
   "confirmed migration produces the accurate cart total",
 );
 

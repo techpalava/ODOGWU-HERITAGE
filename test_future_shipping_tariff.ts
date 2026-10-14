@@ -178,7 +178,23 @@ for (const zone of Object.keys(
 }
 
 // The dormant configuration must not alter the currently deployed calculators.
-assert.equal(calculateIndividualShipping(1).priceEur, 131.25);
+assert.deepEqual(
+  [1, 5, 13, 25, 49].map((pieces) => {
+    const quote = calculateIndividualShipping(pieces);
+    return [quote.weightBand, quote.priceEur];
+  }),
+  [
+    ["0 - 2 kg", 14],
+    [">2 - 5 kg", 35],
+    [">5 - 10 kg", 70],
+    [">10 - 20 kg", 140],
+    [">20 kg", 210],
+  ],
+);
+assert.equal(
+  calculateIndividualShipping(1).pricingVersion,
+  "2026-10-14-individual-v2",
+);
 assert.equal(
   calculateBatchShipping({
     batchId: "QA-BATCH",
