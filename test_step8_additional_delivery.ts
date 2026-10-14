@@ -29,7 +29,7 @@ import {
   calculateIndividualShipping,
 } from "./src/utils/shippingPricing";
 
-const STANDARD_SHIPPING_INDIVIDUAL_EUR = 131.25;
+const STANDARD_SHIPPING_INDIVIDUAL_EUR = 14;
 const STANDARD_SHIPPING_BATCH_EUR = 15.09;
 
 const weightRows: ReadonlyArray<{

@@ -169,7 +169,7 @@ const makeDraft = (
     constructionSewingCost: 65,
     customDetailsPrice: 12,
     selectedDesignPrice: 216.31,
-    lagosToEindhovenShipping: 131.25,
+    lagosToEindhovenShipping: 14,
     eindhovenToDestinationShipping: null,
     total: 216.31,
   },

@@ -19,18 +19,18 @@ export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;
 export const BATCH_SHIPPING_PRICING_VERSION = "2026-07-30-flat-v1" as const;
 export const INDIVIDUAL_SHIPPING_PRICING_VERSION =
-  "2026-07-30-individual-v1" as const;
+  "2026-10-14-individual-v2" as const;
 export const BATCH_FLAT_RATE_EUR_PER_GARMENT = 15.09;
 export const BATCH_MINIMUM_GARMENTS = 10;
 export const FINAL_MILE_PRICING_VERSION = "2026-07-30-final-mile-v1" as const;
 export const CART_SHIPPING_SNAPSHOT_VERSION =
   "2026-07-30-cart-shipping-v1" as const;
 const INDIVIDUAL_SHIPPING_RATE_EUR = Object.freeze({
-  "0 - 2 kg": 131.25,
-  ">2 - 5 kg": 131.25,
-  ">5 - 10 kg": 236.25,
-  ">10 - 20 kg": 425.25,
-  ">20 kg": 765.45,
+  "0 - 2 kg": 14,
+  ">2 - 5 kg": 35,
+  ">5 - 10 kg": 70,
+  ">10 - 20 kg": 140,
+  ">20 kg": 210,
 });
 
 export const BATCH_SHIPPING_POLICY = Object.freeze({
