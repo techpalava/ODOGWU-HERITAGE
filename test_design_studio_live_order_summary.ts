@@ -306,6 +306,7 @@ const buildAuthority = ({
   designSelections = {} as DesignSelections,
   styleOverrides = {} as Partial<StyleCategory>,
   wearerOrder = null as WearerOrderStateV2 | null,
+  orderType = null as string | null,
 }: {
   garmentTypes?: GarmentTypeStepSelection["garmentTypes"];
   demographic?: NonNullable<GarmentTypeStepSelection["demographic"]>;
@@ -321,6 +322,7 @@ const buildAuthority = ({
   designSelections?: DesignSelections;
   styleOverrides?: Partial<StyleCategory>;
   wearerOrder?: WearerOrderStateV2 | null;
+  orderType?: string | null;
 }) => {
   const garmentTypeSelection = buildSelection(garmentTypes, demographic);
   let allocation =
@@ -537,6 +539,7 @@ const buildAuthority = ({
     additionalConstructionState: additionalConstruction.state,
     catalogInspection: inspection,
     showAdditionalClothesCosts: false,
+    orderType,
   });
   return {
     summary,
@@ -1428,6 +1431,11 @@ assert.equal(
   "pickup must not display a shipping charge",
 );
 assert.equal(pickup.view.costBreakdown?.shipping, null);
+assert.equal(
+  pickup.view.costBreakdown?.includedInboundShipping ?? null,
+  null,
+  "omitting the order type does not invent an inbound display line",
+);
 assert.equal(pickup.view.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 assert.equal(pickup.view.totalStatus, "exact");
 assert.equal(
@@ -1438,6 +1446,100 @@ assert.equal(
   pickup.candidateResult.candidate?.pricing.status,
   "exact",
 );
+const individualPickup = buildAuthority({
+  fabricByGarment: { shirt: fabricA },
+  measurementRoute: "low_risk",
+  shippingState: {
+    ...withContact(createEmptyFutureShippingState()),
+    fulfilmentMethod: "eindhoven_pickup",
+  },
+  orderType: "Individual",
+});
+assert.equal(individualPickup.summary.garmentSummary.length, 1);
+assert.equal(
+  individualPickup.view.costBreakdown?.includedInboundShipping?.label,
+  "Lagos → Eindhoven shipping",
+);
+assert.equal(
+  individualPickup.view.costBreakdown?.includedInboundShipping?.valueLabel,
+  "€14.00",
+);
+assert.equal(
+  individualPickup.view.costBreakdown?.includedInboundShipping?.amountCents,
+  1400,
+);
+assert.equal(
+  individualPickup.view.costBreakdown?.includedInboundShipping?.included,
+  true,
+);
+assert.equal(
+  individualPickup.view.totalAmountCents,
+  pickup.view.totalAmountCents,
+  "the included inbound band is not added to the live total",
+);
+assert.equal(
+  individualPickup.view.costBreakdown?.subtotal.amountCents,
+  individualPickup.view.totalAmountCents,
+);
+assert.equal(
+  individualPickup.candidateResult.candidate?.pricing.components
+    .lagosToEindhovenShipping.status,
+  "included_in_garment_construction",
+);
+assert.equal(
+  individualPickup.candidateResult.candidate?.pricing.components
+    .lagosToEindhovenShipping.amountCents,
+  null,
+);
+const communityPickup = buildAuthority({
+  fabricByGarment: { shirt: fabricA },
+  measurementRoute: "low_risk",
+  shippingState: {
+    ...withContact(createEmptyFutureShippingState()),
+    fulfilmentMethod: "eindhoven_pickup",
+  },
+  orderType: "Community",
+});
+assert.equal(communityPickup.view.costBreakdown?.includedInboundShipping, null);
+assert.equal(
+  communityPickup.view.totalAmountCents,
+  pickup.view.totalAmountCents,
+);
+for (const [pieceCount, amountCents] of [
+  [5, 3500],
+  [13, 7000],
+  [25, 14000],
+  [49, 21000],
+] as const) {
+  const banded = projectDesignStudioLiveOrderSummary({
+    summary: {
+      ...individualPickup.summary,
+      garmentSummary: Array.from({ length: pieceCount }, (_, index) => ({
+        ...individualPickup.summary.garmentSummary[0],
+        garmentKey: `base:shirt:${index}`,
+      })),
+    },
+    shippingResolution: individualPickup.shippingResolution,
+    candidatePricing: individualPickup.candidateResult.candidate?.pricing ?? null,
+    fabricAllocationState: individualPickup.allocation,
+    measurementState: individualPickup.measurementState,
+    measurementPlan: individualPickup.measurementPlan,
+    designSource: {
+      kind: "catalog",
+      sourceKey: "style-shirt",
+      styleId: "style-shirt",
+    },
+    additionalConstructionState: individualPickup.additionalConstruction.state,
+    catalogInspection: inspection,
+    showAdditionalClothesCosts: false,
+    orderType: "Individual",
+  });
+  assert.equal(
+    banded.costBreakdown?.includedInboundShipping?.amountCents,
+    amountCents,
+  );
+  assert.equal(banded.totalAmountCents, individualPickup.view.totalAmountCents);
+}
 
 const courier = buildAuthority({
   fabricByGarment: { shirt: fabricA },

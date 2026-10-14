@@ -59,6 +59,8 @@ import type { CustomerOrderContextPresentation } from "../utils/customerOrderCon
 interface DormantFuturePaymentReviewStepProps {
   result: FuturePaymentReviewResult;
   orderContext?: CustomerOrderContextPresentation;
+  /** Effective studio order type. Falls back to the visible order context. */
+  inboundOrderType?: string | null;
   onBack: () => void;
   onEditStage: (stage: Exclude<DesignStudioStageId, "payment">) => void;
   survivorSummary?: FutureDesignStudioSummary | null;
@@ -609,6 +611,7 @@ const RetainedGarmentReview = ({
 export const DormantFuturePaymentReviewStep = ({
   result,
   orderContext = defaultOrderContext,
+  inboundOrderType = null,
   onBack,
   onEditStage,
   survivorSummary = null,
@@ -629,7 +632,18 @@ export const DormantFuturePaymentReviewStep = ({
     ? getFuturePaymentReviewMeasurementGroups(candidate)
     : [];
   const pricingRows = candidate
-    ? getFuturePaymentReviewPricingRows(candidate.pricing)
+    ? getFuturePaymentReviewPricingRows(candidate.pricing, {
+        orderType:
+          inboundOrderType ??
+          (orderContext.kind === "individual"
+            ? "Individual"
+            : orderContext.kind === "community"
+              ? "Community"
+              : orderContext.role === "Member"
+                ? "Group Member"
+                : "Group Organizer"),
+        physicalGarmentCount: candidate.garments.length,
+      })
     : [];
   const shippingCustomer = candidate?.shipping.state.customerInformation;
   const shippingAddress = shippingCustomer?.deliveryAddress;
@@ -1121,6 +1135,22 @@ export const DormantFuturePaymentReviewStep = ({
                     className="-mt-1 border-b border-heritage-green/10 pb-3 text-xs leading-relaxed text-heritage-ink/60"
                   >
                     {row.label}
+                  </div>
+                ) : row.presentation === "included" ? (
+                  <div
+                    key={row.id}
+                    data-pricing-row={row.id}
+                    data-excluded-from-total="true"
+                    data-included-cents={row.amountCents ?? undefined}
+                    className="flex min-w-0 flex-wrap items-center justify-between gap-2"
+                  >
+                    <dt className="min-w-0 break-words text-heritage-ink/70">{row.label}</dt>
+                    <dd className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 text-right font-mono font-medium text-heritage-green">
+                      <span>{row.amountCents === null ? <PendingAmount /> : moneyFromCents(row.amountCents)}</span>
+                      <span className="rounded-full border border-heritage-green/20 bg-heritage-cream px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                        Included
+                      </span>
+                    </dd>
                   </div>
                 ) : (
                   <div

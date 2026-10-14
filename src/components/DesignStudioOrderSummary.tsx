@@ -579,6 +579,29 @@ export const DesignStudioOrderSummary = ({
                   {view.costBreakdown.subtotal.valueLabel}
                 </dd>
               </div>
+              {view.costBreakdown.includedInboundShipping ? (
+                <div
+                  data-testid="live-order-summary-included-inbound"
+                  data-excluded-from-total="true"
+                  data-included-cents={
+                    view.costBreakdown.includedInboundShipping.amountCents ??
+                    undefined
+                  }
+                  className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-heritage-ink/75"
+                >
+                  <dt className="min-w-0 break-words">
+                    {view.costBreakdown.includedInboundShipping.label}
+                  </dt>
+                  <dd className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 text-right font-mono font-medium text-heritage-ink">
+                    <span>
+                      {view.costBreakdown.includedInboundShipping.valueLabel}
+                    </span>
+                    <span className="rounded-full border border-heritage-green/20 bg-heritage-cream px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                      Included
+                    </span>
+                  </dd>
+                </div>
+              ) : null}
               {view.costBreakdown.shipping ? (
                 <div
                   data-testid="live-order-summary-shipping"

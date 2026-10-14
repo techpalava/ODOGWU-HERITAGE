@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import type { CustomDetailCatalogInspection } from "./catalogHelpers";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "./designPriceBreakdownPresentation";
+import { resolveIndividualInboundShippingDisplay } from "./individualInboundShippingDisplay";
 import type { FutureShippingStageResolution } from "./designStudioFutureShipping";
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
@@ -149,10 +150,14 @@ export interface LiveOrderSummaryCostBreakdownLine {
   readonly label: string;
   readonly valueLabel: string;
   readonly amountCents: number | null;
+  /** Display-only included amount. Never added to the payable total. */
+  readonly included?: boolean;
 }
 
 export interface LiveOrderSummaryCostBreakdown {
   readonly subtotal: LiveOrderSummaryCostBreakdownLine;
+  /** Individual Lagos→Eindhoven band. Omitted for Community and other batches. */
+  readonly includedInboundShipping?: LiveOrderSummaryCostBreakdownLine | null;
   /** Omitted for a confirmed no-shipping collection method. */
   readonly shipping: LiveOrderSummaryCostBreakdownLine | null;
 }
@@ -580,10 +585,12 @@ const resolveCostBreakdown = ({
   summary,
   candidatePricing,
   shippingResolution,
+  orderType = null,
 }: {
   summary: FutureDesignStudioSummary;
   candidatePricing: FutureOrderCandidatePricingV1 | null;
   shippingResolution: FutureShippingStageResolution | null;
+  orderType?: string | null;
 }): LiveOrderSummaryCostBreakdown | null => {
   const method = shippingResolution?.state.fulfilmentMethod;
   if (!method) return null;
@@ -611,12 +618,25 @@ const resolveCostBreakdown = ({
           amountCents: shippingCents,
         };
 
+  const includedInbound = resolveIndividualInboundShippingDisplay({
+    orderType,
+    physicalGarmentCount: summary.garmentSummary.length,
+  });
+
   return {
     subtotal: {
       label: "Order Subtotal",
       valueLabel: moneyFromCents(subtotalCents),
       amountCents: subtotalCents,
     },
+    includedInboundShipping: includedInbound
+      ? {
+          label: includedInbound.label,
+          valueLabel: moneyFromCents(includedInbound.amountCents),
+          amountCents: includedInbound.amountCents,
+          included: true,
+        }
+      : null,
     shipping,
   };
 };
@@ -633,6 +653,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   additionalConstructionState: _additionalConstructionState = null,
   catalogInspection: _catalogInspection = null,
   showAdditionalClothesCosts,
+  orderType = null,
 }: {
   summary: FutureDesignStudioSummary;
   shippingResolution: FutureShippingStageResolution | null;
@@ -645,6 +666,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   additionalConstructionState?: AdditionalGarmentConstructionStateV1 | null;
   catalogInspection?: CustomDetailCatalogInspection | null;
   showAdditionalClothesCosts?: boolean;
+  orderType?: string | null;
 }): LiveOrderSummaryView => {
   const assignedFabric = fabricByGarmentKey(summary);
   const garmentItems = summary.garmentSummary.map((garment) => ({
@@ -815,6 +837,7 @@ export const projectDesignStudioLiveOrderSummary = ({
     summary,
     candidatePricing,
     shippingResolution,
+    orderType,
   });
 
   const allSections: LiveOrderSummarySection[] = [
