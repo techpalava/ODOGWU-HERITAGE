@@ -24,10 +24,13 @@ import {
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 import { OrderContextDetails } from "./CustomerOrderContext";
 import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
+import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
 
 interface DormantFutureSummaryStepProps {
   summary: FutureDesignStudioSummary;
   orderContext?: CustomerOrderContextPresentation;
+  /** Effective studio order type. Falls back to the visible order context. */
+  inboundOrderType?: string | null;
   onBack: () => void;
   onEditGarments: () => void;
   onEditFabrics: () => void;
@@ -196,6 +199,7 @@ const SummaryFabricPreview = ({
 export const DormantFutureSummaryStep = ({
   summary,
   orderContext = defaultOrderContext,
+  inboundOrderType = null,
   onBack,
   onEditGarments,
   onEditFabrics,
@@ -253,6 +257,18 @@ export const DormantFutureSummaryStep = ({
     summary.pricingSummary.selectedDesignPrice
       ? summary.pricingSummary.selectedDesignPrice.selectedDesignPrice
       : knownConfirmedPrice;
+  const includedInbound = resolveIndividualInboundShippingDisplay({
+    orderType:
+      inboundOrderType ??
+      (orderContext.kind === "individual"
+        ? "Individual"
+        : orderContext.kind === "community"
+          ? "Community"
+          : orderContext.role === "Member"
+            ? "Group Member"
+            : "Group Organizer"),
+    physicalGarmentCount: summary.garmentSummary.length,
+  });
   const deliveryMethod = shippingResolution?.state.fulfilmentMethod || null;
   const isDestinationDelivery = deliveryMethod === "destination_delivery";
   const shippingAmountCents =
@@ -962,6 +978,22 @@ export const DormantFutureSummaryStep = ({
               {orderSubtotal === null ? "Pending" : money(orderSubtotal)}
             </dd>
           </div>
+          {includedInbound ? (
+            <div
+              data-summary-included-inbound="true"
+              data-excluded-from-total="true"
+              data-included-cents={includedInbound.amountCents}
+              className="flex min-w-0 flex-wrap items-center justify-between gap-3 text-white/80"
+            >
+              <dt className="min-w-0">{includedInbound.label}</dt>
+              <dd className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 text-right font-mono font-medium text-white">
+                <span>{money(includedInbound.priceEur)}</span>
+                <span className="rounded-full border border-white/40 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-white">
+                  Included
+                </span>
+              </dd>
+            </div>
+          ) : null}
           {deliveryMethod ? (
             <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
               <dt className="min-w-0">Delivery</dt>

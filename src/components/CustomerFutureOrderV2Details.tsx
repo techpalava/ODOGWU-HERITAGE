@@ -91,7 +91,10 @@ export const CustomerFutureOrderV2Details = ({
   );
   const garments = getFuturePaymentReviewGarments(candidate);
   const measurementGroups = getFuturePaymentReviewMeasurementGroups(candidate);
-  const pricingRows = getFuturePaymentReviewPricingRows(candidate.pricing);
+  const pricingRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
+    orderType: candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: candidate.garments.length,
+  });
   const shipping = candidate.shipping.state;
   const customer = shipping.customerInformation;
   const address = customer.deliveryAddress;
@@ -335,6 +338,23 @@ export const CustomerFutureOrderV2Details = ({
                     <p key={row.id} className="text-xs text-heritage-ink/60">
                       {row.label}
                     </p>
+                  ) : row.presentation === "included" ? (
+                    <div
+                      key={row.id}
+                      data-pricing-row={row.id}
+                      data-excluded-from-total="true"
+                      className="flex justify-between gap-3"
+                    >
+                      <dt>{row.label}</dt>
+                      <dd className="font-mono">
+                        {row.amountCents === null
+                          ? "Pending"
+                          : formatFutureOrderV2PaidAmount(row.amountCents)}{" "}
+                        <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                          Included
+                        </span>
+                      </dd>
+                    </div>
                   ) : (
                     <div key={row.id} className="flex justify-between gap-3">
                       <dt>{row.label}</dt>

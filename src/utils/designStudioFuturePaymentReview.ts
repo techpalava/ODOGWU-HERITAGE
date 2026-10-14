@@ -18,6 +18,7 @@ import {
   type FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
 import type { FutureOrderV2PaymentMethod } from "./futureOrderV2Payment";
+import { resolveIndividualInboundShippingDisplay } from "./individualInboundShippingDisplay";
 import {
   formatDualUnitMeasurementDisplay,
   fromCanonicalCentimetres,
@@ -172,11 +173,12 @@ export interface FuturePaymentReviewPricingRow {
   readonly id:
     | "garment_construction"
     | "included_components"
+    | "lagos_eindhoven_included"
     | "custom_details"
     | "post_eindhoven";
   readonly label: string;
   readonly amountCents: number | null;
-  readonly presentation: "amount" | "supporting_note";
+  readonly presentation: "amount" | "supporting_note" | "included";
 }
 
 export const FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE =
@@ -518,6 +520,11 @@ export const getFuturePaymentReviewShippingStatusLabel = (
 
 export const getFuturePaymentReviewPricingRows = (
   pricing: FutureOrderCandidatePricingV1,
+  display?: {
+    orderType?: string | null;
+    batchType?: string | null;
+    physicalGarmentCount?: number | null;
+  } | null,
 ): readonly FuturePaymentReviewPricingRow[] => {
   const rows: FuturePaymentReviewPricingRow[] = [
     {
@@ -532,13 +539,29 @@ export const getFuturePaymentReviewPricingRows = (
       amountCents: null,
       presentation: "supporting_note",
     },
-    {
-      id: "custom_details",
-      label: "Custom Details Subtotal",
-      amountCents: pricing.customDetailsCents,
-      presentation: "amount",
-    },
   ];
+  const includedInbound =
+    typeof display?.physicalGarmentCount === "number"
+      ? resolveIndividualInboundShippingDisplay({
+          orderType: display.orderType,
+          batchType: display.batchType,
+          physicalGarmentCount: display.physicalGarmentCount,
+        })
+      : null;
+  if (includedInbound) {
+    rows.push({
+      id: "lagos_eindhoven_included",
+      label: includedInbound.label,
+      amountCents: includedInbound.amountCents,
+      presentation: "included",
+    });
+  }
+  rows.push({
+    id: "custom_details",
+    label: "Custom Details Subtotal",
+    amountCents: pricing.customDetailsCents,
+    presentation: "amount",
+  });
   if (pricing.postEindhovenAdjustmentCents !== 0) {
     rows.push({
       id: "post_eindhoven",

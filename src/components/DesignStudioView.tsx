@@ -3930,6 +3930,7 @@ export default function DesignStudioView({
       additionalConstructionState: overlayState,
       catalogInspection: futureCatalogInspection,
       showAdditionalClothesCosts,
+      orderType: futureOrderIdentity?.orderType ?? ctx.orderType,
     });
   }, [
     futureSummary,
@@ -3945,6 +3946,8 @@ export default function DesignStudioView({
     additionalGarmentFabricTransaction,
     futureCatalogInspection,
     showAdditionalClothesCosts,
+    futureOrderIdentity?.orderType,
+    ctx.orderType,
   ]);
   const liveOrderSummaryUnlockedStages = useMemo(() => {
     const unlocked = new Set<DesignStudioStageId>();
@@ -10761,6 +10764,7 @@ export default function DesignStudioView({
         <DormantFutureSummaryStep
           summary={futureSummary}
           orderContext={customerOrderContextPresentation}
+          inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
           onBack={() => navigateToFutureStage("measurement")}
           onEditGarments={() => {
             beginSummaryEditReturn({ focusStageId: "garment_type" });
@@ -10869,6 +10873,7 @@ export default function DesignStudioView({
           <DormantFuturePaymentReviewStep
             result={futurePaymentReviewHandoff}
             orderContext={customerOrderContextPresentation}
+            inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
             survivorSummary={futureSummary}
             removalTargets={futureGarmentRemovalTargets}
             onRequestGarmentRemoval={(target, trigger) =>
