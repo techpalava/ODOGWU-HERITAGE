@@ -263,7 +263,7 @@ const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(customDetailsSource, /isFutureCustomDetailsContentReady/);
 assert.match(customDetailsSource, /onContinue/);
 assert.match(customDetailsSource, /Continue to AI Try-on/);
-assert.match(tryOnSource, /Step 5 of 9/);
+assert.match(tryOnSource, /formatDesignStudioStepCounter\("try_on"\)/);
 assert.match(tryOnSource, /DesignStudioBackButton/);
 assert.match(tryOnSource, /backDestination="Custom Details"/);
 assert.match(tryOnSource, /Continue to Measurement is locked/);

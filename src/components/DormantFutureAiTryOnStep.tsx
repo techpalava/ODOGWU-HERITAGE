@@ -7,6 +7,7 @@ import {
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import type { AiTryOnWorkflowStateV1 } from "../types";
 import { getAiTryOnWorkflowAllowedActions } from "../utils/aiTryOnWorkflow";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 
 interface DormantFutureAiTryOnStepProps {
   workflow: AiTryOnWorkflowStateV1;
@@ -103,7 +104,7 @@ export const DormantFutureAiTryOnStep = ({
           }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-          Step 5 of 9
+          {formatDesignStudioStepCounter("try_on")}
         </p>
         <h2
           id="future-ai-try-on-title"

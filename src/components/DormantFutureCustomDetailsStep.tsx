@@ -72,6 +72,7 @@ import {
 import type { CustomDetailsPresentationStageId } from "../utils/customDetailsStageOwnership";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
@@ -471,6 +472,7 @@ export const DormantFutureCustomDetailsStep = ({
   const nextStageLabel = isPersonalizedAdditionsStage
     ? "AI Try-on"
     : "Personalized Additions";
+  const stepCounterLabel = formatDesignStudioStepCounter(stage);
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
   void showAdditionalClothesCosts;
   const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<
@@ -1583,7 +1585,7 @@ export const DormantFutureCustomDetailsStep = ({
               : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
           }}
         />
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step {isPersonalizedAdditionsStage ? 5 : 4} of 10</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold" data-step-counter={stepCounterLabel}>{stepCounterLabel}</p>
         <h2
           id={`future-${stage}-title`}
           tabIndex={-1}

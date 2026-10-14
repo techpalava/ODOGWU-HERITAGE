@@ -9,6 +9,7 @@ import type {
   GarmentTypeStepSelection,
 } from "../types";
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
@@ -2192,7 +2193,7 @@ export const DormantFutureFabricStep = ({
           } : undefined}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-          Step 2 of 9
+          {formatDesignStudioStepCounter("fabric")}
         </p>
         <div className="mt-2 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
