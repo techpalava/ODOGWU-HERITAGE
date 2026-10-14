@@ -1,4 +1,7 @@
-import { DESIGN_STUDIO_TEN_STAGE_FOUNDATION } from "../utils/designSourceJourney";
+import {
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION,
+  getDesignStudioStepCounter,
+} from "../utils/designSourceJourney";
 
 export const DESIGN_STUDIO_STEPS = DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map(
   ({ id, title }) => ({ id, label: title }),
@@ -128,6 +131,7 @@ export const DesignStudioJourneyStepper = ({
           isUnlocked,
         });
         const isCompleted = state === "completed";
+        const stepCounter = getDesignStudioStepCounter(step.id);
 
         return (
           <li key={step.id} className="min-w-0">
@@ -138,7 +142,8 @@ export const DesignStudioJourneyStepper = ({
               tabIndex={isClickable ? 0 : -1}
               aria-current={isCurrent ? "step" : undefined}
               aria-disabled={!isClickable}
-              aria-label={`Step ${index + 1}: ${step.label}, ${state}`}
+              aria-label={`Step ${stepCounter.step}: ${step.label}, ${state}`}
+              data-step-counter={stepCounter.label}
               data-stage-id={step.id}
               data-stage-unlocked={isUnlocked ? "true" : "false"}
               data-stage-current={isCurrent ? "true" : "false"}
@@ -158,7 +163,7 @@ export const DesignStudioJourneyStepper = ({
                 className="font-mono text-[11px] font-bold leading-none"
                 aria-hidden="true"
               >
-                {index + 1}
+                {stepCounter.step}
               </span>
               <span className="mt-1 min-w-0 break-words text-[9px] font-semibold leading-tight">
                 {step.label}

@@ -54,6 +54,7 @@ import { GarmentTypeStep, getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJourneyStepper";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import {
   canBeginFutureDesignDraftHydration,
   preserveUnresolvedCatalogueStyleSelection,
@@ -10228,7 +10229,7 @@ export default function DesignStudioView({
         <section
           ref={futureStageNavigationTargetRef}
           tabIndex={-1}
-          aria-label={`Step ${DESIGN_STUDIO_STEPS.findIndex((step) => step.id === futureStageId) + 1}: ${DESIGN_STUDIO_STEPS.find((step) => step.id === futureStageId)?.label || "Design Studio"}`}
+          aria-label={`${formatDesignStudioStepCounter(futureStageId)}: ${currentStageLabel}`}
           data-design-studio-stage-target={futureStageId}
           className="min-w-0 scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
         >

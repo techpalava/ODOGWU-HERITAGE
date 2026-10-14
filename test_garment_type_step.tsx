@@ -341,7 +341,7 @@ const populatedMarkup = renderStep({
   selectedDemographics: ["male", "female"],
   selectedFabricQuantity: 1,
 });
-assert.ok(populatedMarkup.includes("Step 1 of 9"));
+assert.ok(populatedMarkup.includes("Step 1 of 10"));
 assert.ok(populatedMarkup.includes("What garment type do you want to order?"));
 assert.ok(populatedMarkup.includes("Who is this design for?"));
 assert.ok(populatedMarkup.includes("1 fabric · 2 garments"));

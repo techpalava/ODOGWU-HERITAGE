@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
   FabricGarmentType,
@@ -978,7 +979,7 @@ export const DormantFutureMeasurementStep = ({
         />
         {fitConflictStatus}
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-          Step 6 of 9
+          {formatDesignStudioStepCounter("measurement")}
         </p>
         <h2
           id="future-measurement-title"

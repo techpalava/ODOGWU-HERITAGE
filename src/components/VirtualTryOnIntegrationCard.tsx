@@ -5,6 +5,7 @@ import {
   Info,
 } from "lucide-react";
 import { StyleCategory, Fabric } from "../types";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useAppStore } from "../store/useAppStore";
 
 import virtualTryOnConcept from "../assets/images/regenerated_image_1782898035247.png";
@@ -129,7 +130,7 @@ export default function VirtualTryOnIntegrationCard({
       <div className="space-y-2 text-center sm:text-left">
         <div className="flex flex-col sm:flex-row items-center sm:items-center justify-center sm:justify-start gap-2">
           <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider">
-            Step 4 of 9
+            {formatDesignStudioStepCounter("try_on")}
           </span>
           <span className="inline-flex items-center gap-1.5 px-3 py-0.5 bg-heritage-gold/10 text-heritage-gold text-[9px] font-black uppercase rounded-full tracking-widest border border-heritage-gold/25 shadow-xs">
             <Sparkles

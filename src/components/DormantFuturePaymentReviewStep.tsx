@@ -11,6 +11,7 @@ import {
   Truck,
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
 import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
@@ -707,7 +708,7 @@ export const DormantFuturePaymentReviewStep = ({
         />
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-            Step 9 of 9
+            {formatDesignStudioStepCounter("payment")}
           </p>
           <span className="rounded-full border border-heritage-green/15 bg-heritage-green/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green">
             1 Design

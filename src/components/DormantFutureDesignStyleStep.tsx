@@ -26,6 +26,7 @@ import {
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
 
@@ -1123,7 +1124,7 @@ export const DormantFutureDesignStyleStep = ({
               ariaLabel: "Continue to Custom Details",
             }}
           />
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 3 of 9</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">{formatDesignStudioStepCounter("design_style")}</p>
           <h2 id="future-design-style-title" className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl">Design Style</h2>
           <p
             id={onSelectUploadFile ? "design-style-upload-guidance" : undefined}
