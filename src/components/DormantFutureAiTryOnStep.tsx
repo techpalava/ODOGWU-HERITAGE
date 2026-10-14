@@ -173,10 +173,10 @@ export const DormantFutureAiTryOnStep = ({
             <button
               type="button"
               onClick={onSkip}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-gold/40 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className="inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-heritage-gold/40 px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide text-heritage-green transition [overflow-wrap:normal] hover:bg-heritage-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
-              <SkipForward aria-hidden="true" size={14} />
-              Continue without AI Try-on
+              <SkipForward aria-hidden="true" size={14} className="shrink-0" />
+              <span className="min-w-0 text-balance">Continue without AI Try-on</span>
             </button>
           )}
         </div>
