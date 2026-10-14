@@ -25,7 +25,11 @@ import {
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
-import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import {
+  DesignStudioForwardButton,
+  DesignStudioStepActions,
+  studioOutlinedNavInteractionClass,
+} from "./DesignStudioBackButton";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
@@ -1181,7 +1185,7 @@ export const DormantFutureDesignStyleStep = ({
             </section>
           )}
 
-          {showCatalogue && catalogueEntries.length === 0 && <div role="status" data-testid="step3-zero-selectable" className="mt-7 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"><p className="font-bold text-heritage-green">No published Design Styles are currently available.</p><button type="button" onClick={onReturnToGarmentType} className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green">Return to Garment Type</button></div>}
+          {showCatalogue && catalogueEntries.length === 0 && <div role="status" data-testid="step3-zero-selectable" className="mt-7 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"><p className="font-bold text-heritage-green">No published Design Styles are currently available.</p><button type="button" onClick={onReturnToGarmentType} className={`mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green ${studioOutlinedNavInteractionClass}`}>Return to Garment Type</button></div>}
 
           {showCatalogue && catalogueEntries.length > 0 && (
             <section ref={allDesignsRef} data-testid="step3-all-designs" className="mt-8 min-w-0 scroll-mt-24">

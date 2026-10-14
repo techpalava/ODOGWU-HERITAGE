@@ -167,7 +167,10 @@ assert.match(measurementSource, /data-measurement-option-section="sample_cloth"/
 assert.match(measurementSource, /data-measurement-form=\{selectedMethod\}/);
 assert.match(measurementSource, /data-measurement-section/);
 assert.match(measurementSource, /MEASUREMENT_RISK_SELECTION_NOTICE/);
-assert.match(measurementSource, /aria-describedby="measurement-risk-selection-notice"/);
+assert.match(
+  measurementSource,
+  /"aria-describedby": "measurement-risk-selection-notice"/,
+);
 assert.match(measurementSource, /DesignStudioBackButton/);
 assert.match(measurementSource, /backDestination="AI Try-on"/);
 assert.match(measurementSource, /Continue to Summary/);
