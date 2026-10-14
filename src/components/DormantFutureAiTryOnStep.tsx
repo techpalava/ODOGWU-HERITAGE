@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import {
   DesignStudioStepActions,
+  studioContinueNavInteractionClass,
   studioOutlinedNavInteractionClass,
 } from "./DesignStudioBackButton";
 import type { AiTryOnWorkflowStateV1 } from "../types";
@@ -176,7 +177,7 @@ export const DormantFutureAiTryOnStep = ({
             <button
               type="button"
               onClick={onSkip}
-              className={`inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-heritage-gold/40 bg-white px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide text-heritage-green [overflow-wrap:normal] ${studioOutlinedNavInteractionClass}`}
+              className={`inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass}`}
             >
               <SkipForward aria-hidden="true" size={14} className="shrink-0" />
               <span className="min-w-0 text-balance">Continue without AI Try-on</span>

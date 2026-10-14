@@ -1,5 +1,8 @@
 import { Plus, X } from "lucide-react";
-import { studioOutlinedNavInteractionClass } from "./DesignStudioBackButton";
+import {
+  studioContinueNavInteractionClass,
+  studioOutlinedNavInteractionClass,
+} from "./DesignStudioBackButton";
 import { useEffect, useId, useRef, useState } from "react";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type { CanonicalPhysicalGarmentType, DesignStudioStageId, Fabric } from "../types";
@@ -328,7 +331,7 @@ export const FutureRemainingFabricCapacityOfferCard = ({
                 type="button"
                 onClick={onContinue}
                 data-testid="remaining-fabric-capacity-offer-decline"
-                className={`inline-flex min-h-11 w-full max-w-full min-w-0 items-center justify-center rounded-xl border border-heritage-green/30 bg-white px-4 text-center text-xs font-bold uppercase leading-snug tracking-wide text-heritage-green [overflow-wrap:normal] ${studioOutlinedNavInteractionClass}`}
+                className={`inline-flex min-h-11 w-full max-w-full min-w-0 items-center justify-center rounded-xl px-4 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass}`}
               >
                 <span className="min-w-0 text-balance">Continue to Design Style</span>
               </button>

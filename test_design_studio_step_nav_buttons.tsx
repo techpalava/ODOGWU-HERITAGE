@@ -6,6 +6,7 @@ import {
   DesignStudioBackButton,
   DesignStudioForwardButton,
   DesignStudioStepActions,
+  studioContinueNavInteractionClass,
   studioOutlinedNavInteractionClass,
 } from "./src/components/DesignStudioBackButton";
 
@@ -71,8 +72,8 @@ const backSecondary = backButton
   .findAllByType("span")
   .find((span) => classNameOf(span).includes("text-current/75"));
 assert.ok(backSecondary);
-assert.match(classNameOf(backSecondary), /group-enabled:group-hover:text-white/);
-assert.match(classNameOf(backSecondary), /group-focus-visible:text-white/);
+assert.match(classNameOf(backSecondary), /group-enabled:group-hover:text-white!/);
+assert.match(classNameOf(backSecondary), /group-focus-visible:text-white!/);
 
 const lockedBack = render(<DesignStudioBackButton disabled />);
 const lockedBackButton = lockedBack.root.findByType("button");
@@ -103,11 +104,30 @@ assert.match(textOf(forwardButton), /to Delivery & Pickup/);
 assert.equal(classNameOf(forwardButton).includes("whitespace-nowrap"), false);
 const forwardIcon = forwardButton.findAllByType("svg").at(-1)!;
 assert.equal(String(forwardIcon.props["aria-hidden"]), "true");
-assert.match(classNameOf(forwardButton), /enabled:hover:bg-heritage-forest/);
+assert.match(studioContinueNavInteractionClass, /bg-heritage-green/);
+assert.match(studioContinueNavInteractionClass, /text-white/);
+assert.match(studioContinueNavInteractionClass, /enabled:hover:bg-white/);
+assert.match(studioContinueNavInteractionClass, /enabled:hover:text-heritage-green/);
+assert.match(studioContinueNavInteractionClass, /enabled:hover:border-heritage-green/);
+assert.match(studioContinueNavInteractionClass, /focus-visible:bg-white/);
+assert.match(studioContinueNavInteractionClass, /focus-visible:text-heritage-green/);
+assert.match(studioContinueNavInteractionClass, /duration-200/);
 assert.equal(
-  /(?:^|\s)hover:bg-heritage-forest(?:\s|$)/.test(classNameOf(forwardButton)),
+  /(?:^|\s)hover:bg-white(?:\s|$)/.test(studioContinueNavInteractionClass),
   false,
 );
+assert.match(classNameOf(forwardButton), /bg-heritage-green/);
+assert.match(classNameOf(forwardButton), /text-white/);
+assert.match(classNameOf(forwardButton), /enabled:hover:bg-white/);
+assert.match(classNameOf(forwardButton), /enabled:hover:text-heritage-green/);
+assert.match(classNameOf(forwardButton), /focus-visible:bg-white/);
+assert.equal(classNameOf(forwardButton).includes("enabled:hover:bg-heritage-forest"), false);
+const forwardSecondary = forwardButton
+  .findAllByType("span")
+  .find((span) => classNameOf(span).includes("text-current/75"));
+assert.ok(forwardSecondary);
+assert.match(classNameOf(forwardSecondary), /group-enabled:group-hover:text-heritage-green!/);
+assert.match(classNameOf(forwardSecondary), /group-focus-visible:text-heritage-green!/);
 
 const review = render(
   <DesignStudioForwardButton label="Review Order" icon="package" ariaLabel="Review Order" />,
@@ -144,11 +164,12 @@ assert.match(classNameOf(pair[0]), /sm:flex-1/);
 assert.match(classNameOf(pair[0]), /sm:max-w-xs/);
 assert.equal(pair[1].props.disabled, true);
 assert.match(classNameOf(pair[1]), /disabled:bg-heritage-green\/35/);
-assert.match(classNameOf(pair[1]), /enabled:hover:bg-heritage-forest/);
+assert.match(classNameOf(pair[1]), /enabled:hover:bg-white/);
 assert.equal(
-  /(?:^|\s)hover:bg-heritage-forest(?:\s|$)/.test(classNameOf(pair[1])),
+  /(?:^|\s)hover:bg-white(?:\s|$)/.test(classNameOf(pair[1])),
   false,
 );
+assert.equal(classNameOf(pair[1]).includes("enabled:hover:bg-heritage-forest"), false);
 
 const outlinedNavSources = [
   "src/components/DormantFutureAiTryOnStep.tsx",
@@ -161,6 +182,13 @@ for (const sourcePath of outlinedNavSources) {
   assert.match(source, /studioOutlinedNavInteractionClass/);
   assert.equal(source.includes("hover:bg-heritage-gold/10"), false);
   assert.equal(/(?:^|\s)hover:bg-heritage-green(?:\s|$)/.test(source), false);
+}
+for (const sourcePath of [
+  "src/components/DormantFutureAiTryOnStep.tsx",
+  "src/components/FutureRemainingFabricCapacityOffer.tsx",
+]) {
+  const source = readFileSync(sourcePath, "utf8");
+  assert.match(source, /studioContinueNavInteractionClass/);
 }
 
 console.log("PASS: studio step navigation labels stay in one wrapping line");
