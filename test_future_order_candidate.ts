@@ -311,7 +311,7 @@ const buildSummaryAuthority = ({
     measurementState = setFutureMeasurementInput({
       state: measurementState,
       requirement,
-      displayValue: 10,
+      displayValue: 40,
     });
   }
   measurementState = reconcileFutureMeasurementState({
@@ -549,7 +549,7 @@ const buildUploadedJourneyCandidateInput = ({
     measurementState = setFutureMeasurementInput({
       state: measurementState,
       requirement,
-      displayValue: 10,
+      displayValue: 40,
     });
   }
   measurementState = reconcileFutureMeasurementState({
@@ -2778,7 +2778,7 @@ const baseShirtOnlyFabric: FabricAllocationState = {
     measurementState = setFutureMeasurementInput({
       state: measurementState,
       requirement,
-      displayValue: 10,
+      displayValue: 40,
     });
   }
   measurementState = reconcileFutureMeasurementState({

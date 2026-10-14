@@ -22,6 +22,8 @@ interface HomepageOrderGatewayProps {
   state: HomepageOrderGatewayState;
   isLoading?: boolean;
   onStartIndividualOrder: () => void;
+  unfinishedOrderLabel?: string | null;
+  onResumeUnfinishedOrder?: () => void;
   onJoinBatch: (batch: Batch) => void;
   onCreatePrivateBatch: () => void;
   onBrowseGallery: () => void;
@@ -51,6 +53,8 @@ export default function HomepageOrderGateway({
   state,
   isLoading = false,
   onStartIndividualOrder,
+  unfinishedOrderLabel = null,
+  onResumeUnfinishedOrder,
   onJoinBatch,
   onCreatePrivateBatch,
   onBrowseGallery,
@@ -192,15 +196,27 @@ export default function HomepageOrderGateway({
               Independent order | Higher direct shipping cost
             </p>
 
-            <button
-              id="btn-start-individual-order"
-              type="button"
-              onClick={onStartIndividualOrder}
-              className={primaryCtaClassName}
-            >
-              Start Individual Order
-              <ArrowRight size={15} aria-hidden="true" className="shrink-0" />
-            </button>
+            <div className="flex flex-col gap-2 self-end">
+              <button
+                id="btn-start-individual-order"
+                type="button"
+                onClick={onStartIndividualOrder}
+                className={primaryCtaClassName}
+              >
+                Start Individual Order
+                <ArrowRight size={15} aria-hidden="true" className="shrink-0" />
+              </button>
+              {unfinishedOrderLabel && onResumeUnfinishedOrder && (
+                <button
+                  id="btn-resume-unfinished-order"
+                  type="button"
+                  onClick={onResumeUnfinishedOrder}
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border-2 border-heritage-green bg-white px-4 py-2.5 text-center text-[11px] font-bold uppercase leading-snug text-heritage-green transition-colors hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  Resume unfinished order
+                </button>
+              )}
+            </div>
           </article>
 
           <article className={orderCardClassName}>

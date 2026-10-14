@@ -1116,6 +1116,7 @@ export type FutureMeasurementDiagnosticCode =
   | "calculation_configuration_pending"
   | "required_measurement_missing"
   | "measurement_range_recheck"
+  | "implausible_measurement_value"
   | "stale_derived_value";
 
 export interface FutureMeasurementDiagnostic {

@@ -469,7 +469,7 @@ for (const requirement of measurementPlan.requirements.filter(
   measurementState = setFutureMeasurementInput({
     state: measurementState,
     requirement,
-    displayValue: 10,
+    displayValue: 40,
   });
 }
 measurementState = reconcileFutureMeasurementState({
