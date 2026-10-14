@@ -18,6 +18,7 @@ import {
   getFutureOrderV2CartLineTotalCents,
 } from "../utils/futureOrderV2CartBag";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
 import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
 
 const moneyFromCents = (amountCents: number): string =>
@@ -44,6 +45,10 @@ export const FutureOrderV2CartPayPanel = ({
 
   const totalCents = getFutureOrderV2CartLineTotalCents(item);
   const label = getFutureOrderV2CartLineLabel(item);
+  const includedInbound = resolveIndividualInboundShippingDisplay({
+    orderType: item.candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: item.candidate.garments.length,
+  });
 
   const requireSignIn = () => {
     setCheckoutIntent(true);
@@ -142,6 +147,15 @@ export const FutureOrderV2CartPayPanel = ({
           <p className="mt-1 font-mono text-sm font-semibold text-heritage-gold">
             {totalCents === null ? "Unavailable" : moneyFromCents(totalCents)}
           </p>
+          {includedInbound ? (
+            <p
+              data-testid="future-order-v2-included-inbound"
+              data-excluded-from-total="true"
+              className="mt-1 text-[11px] leading-relaxed text-heritage-ink/70"
+            >
+              Lagos → Eindhoven {moneyFromCents(includedInbound.amountCents)} included
+            </p>
+          ) : null}
           <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/70">
             Complete made-to-measure order. Pay with the same Stripe test
             checkout used in Design Studio.

@@ -2015,10 +2015,18 @@ assert.match(
 );
 const renderSummaryMarkup = (
   shippingResolution: ReturnType<typeof reconcileFutureShippingState>,
+  orderContext?: {
+    kind: "community" | "individual" | "private";
+    studioLabel: "Community Order" | "Individual Order" | "Private Batch";
+    detailsOrderType: "Community Batch" | "Individual Order" | "Private Batch";
+    batchName: string | null;
+    role: "Organizer" | "Member" | null;
+  },
 ) =>
   renderToStaticMarkup(
     createElement(DormantFutureSummaryStep, {
       summary: exactSummary,
+      ...(orderContext ? { orderContext } : {}),
       onBack: () => {},
       onEditGarments: () => {},
       onEditFabrics: () => {},
@@ -2078,6 +2086,26 @@ assert.match(
   destinationDeliveryMarkup,
   new RegExp(`>Total</dt>[\\s\\S]*?>${projectedTotalText}</dd>`),
   "Summary Total must render the shipping authority's projectedTotalCents",
+);
+assert.match(destinationDeliveryMarkup, /Lagos → Eindhoven shipping/);
+assert.match(destinationDeliveryMarkup, /data-summary-included-inbound="true"/);
+assert.match(destinationDeliveryMarkup, /data-excluded-from-total="true"/);
+assert.match(destinationDeliveryMarkup, /data-included-cents="1400"/);
+assert.match(destinationDeliveryMarkup, /€14\.00/);
+assert.equal(exactSummary.garmentSummary.length, 1);
+const communitySummaryMarkup = renderSummaryMarkup(destinationDeliveryResolution, {
+  kind: "community",
+  studioLabel: "Community Order",
+  detailsOrderType: "Community Batch",
+  batchName: "Avatars",
+  role: null,
+});
+assert.equal(communitySummaryMarkup.includes("Lagos → Eindhoven shipping"), false);
+assert.equal(communitySummaryMarkup.includes("data-summary-included-inbound"), false);
+assert.match(
+  communitySummaryMarkup,
+  new RegExp(`>Total</dt>[\\s\\S]*?>${projectedTotalText}</dd>`),
+  "Community Summary keeps the same payable total with no inbound band",
 );
 
 const pickupResolution = reconcileFutureShippingState({

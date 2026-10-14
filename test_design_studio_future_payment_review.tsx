@@ -334,6 +334,47 @@ assert.deepEqual(
   ],
   "the presentation helper preserves every authoritative monetary value",
 );
+const individualPricingRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
+  orderType: "Individual",
+  physicalGarmentCount: 1,
+});
+assert.deepEqual(
+  individualPricingRows.map((row) => [row.id, row.label, row.amountCents, row.presentation]),
+  [
+    ["garment_construction", "Garment Construction Subtotal", 30000, "amount"],
+    ["included_components", FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE, null, "supporting_note"],
+    ["lagos_eindhoven_included", "Lagos → Eindhoven shipping", 1400, "included"],
+    ["custom_details", "Custom Details Subtotal", 2400, "amount"],
+    ["post_eindhoven", "Shipping", 2660, "amount"],
+  ],
+  "Individual payment review shows the included Lagos band without changing other rows",
+);
+assert.equal(candidate.pricing.exactTotalCents, 35060);
+for (const [pieceCount, amountCents] of [
+  [1, 1400],
+  [5, 3500],
+  [13, 7000],
+  [25, 14000],
+  [49, 21000],
+] as const) {
+  assert.equal(
+    getFuturePaymentReviewPricingRows(candidate.pricing, {
+      orderType: "Individual",
+      physicalGarmentCount: pieceCount,
+    }).find((row) => row.id === "lagos_eindhoven_included")?.amountCents,
+    amountCents,
+    `Individual ${pieceCount} pieces display the live band`,
+  );
+}
+const communityPricingRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
+  orderType: "Community",
+  physicalGarmentCount: 5,
+});
+assert.equal(
+  communityPricingRows.some((row) => row.id === "lagos_eindhoven_included"),
+  false,
+  "Community payment review has no Lagos band row",
+);
 const pickupPricingRows = getFuturePaymentReviewPricingRows({
   ...candidate.pricing,
   postEindhovenAdjustmentCents: 0,
@@ -411,7 +452,7 @@ assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Nam
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));
 assert.ok(reviewMarkup.includes("Assigned to: Shirt, Long shirt"));
 assert.ok(reviewMarkup.includes("Assigned to: Agbada"));
-assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
+assert.equal((reviewMarkup.match(/>Included</g) || []).length, 3);
 assert.equal(reviewMarkup.includes("Material price"), false);
 assert.equal(reviewMarkup.includes("€10.00"), false);
 assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
@@ -421,7 +462,12 @@ const priceBreakdownMarkup = reviewMarkup.slice(
 );
 assert.ok(priceBreakdownMarkup.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE));
 assert.equal(priceBreakdownMarkup.includes("Included in Garment Construction"), false);
-assert.equal((priceBreakdownMarkup.match(/>Included</g) || []).length, 0);
+assert.equal((priceBreakdownMarkup.match(/>Included</g) || []).length, 1);
+assert.ok(priceBreakdownMarkup.includes("Lagos → Eindhoven shipping"));
+assert.equal((priceBreakdownMarkup.match(/€14\.00/g) || []).length, 1);
+assert.ok(priceBreakdownMarkup.includes('data-pricing-row="lagos_eindhoven_included"'));
+assert.ok(priceBreakdownMarkup.includes('data-excluded-from-total="true"'));
+assert.ok(priceBreakdownMarkup.includes('data-included-cents="1400"'));
 assert.ok(
   priceBreakdownMarkup.indexOf("Garment Construction Subtotal") <
     priceBreakdownMarkup.indexOf(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE) &&
@@ -436,6 +482,27 @@ assert.equal((priceBreakdownMarkup.match(/€350\.60/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/data-pricing-final-total/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/>Total</g) || []).length, 1);
 assert.ok(priceBreakdownMarkup.indexOf("Shipping") < priceBreakdownMarkup.indexOf(">Total"));
+const communityReviewMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={reviewableResult}
+    orderContext={{
+      kind: "community",
+      studioLabel: "Community Order",
+      detailsOrderType: "Community Batch",
+      batchName: "Avatars",
+      role: null,
+    }}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+  />,
+);
+const communityPriceBreakdown = communityReviewMarkup.slice(
+  communityReviewMarkup.indexOf("Price breakdown"),
+  communityReviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
+);
+assert.equal(communityPriceBreakdown.includes("Lagos → Eindhoven shipping"), false);
+assert.equal(communityPriceBreakdown.includes("data-pricing-row=\"lagos_eindhoven_included\""), false);
+assert.equal((communityPriceBreakdown.match(/€350\.60/g) || []).length, 1);
 assert.ok(reviewMarkup.includes("disabled=\"\""));
 assert.ok(
   reviewMarkup.includes(
