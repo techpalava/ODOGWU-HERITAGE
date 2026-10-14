@@ -844,7 +844,7 @@ export const DormantFutureFabricStep = ({
       ),
     ),
   );
-  const shouldDockContinueAction =
+  const showContinueAction =
     completion.isComplete && !isCatalogueOpen && !pendingStep1FabricAssignment;
   const catalogueNotice = resolveFabricCatalogueNotice({
     loadState: fabricsCatalogueState,
@@ -2174,10 +2174,9 @@ export const DormantFutureFabricStep = ({
   return (
     <section
       aria-labelledby="future-fabric-step-title"
-      className="space-y-6 pb-28 font-sans sm:pb-32"
+      className="space-y-6 font-sans"
       data-stage-id="fabric"
       data-stage-complete={completion.isComplete}
-      data-bottom-action-reserved="true"
     >
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-6">
         <div className="min-w-0 space-y-6">
@@ -2186,7 +2185,7 @@ export const DormantFutureFabricStep = ({
           backDestination="Garment Type"
           onBack={onBack}
           className="mb-5"
-          forward={shouldDockContinueAction ? {
+          forward={showContinueAction ? {
             destination: "Design Style",
             onClick: onContinue,
             ariaLabel: "Continue to Design Style",
@@ -2959,17 +2958,16 @@ export const DormantFutureFabricStep = ({
         />
       ) : null}
 
-      <DesignStudioStepActions
-        backDestination="Garment Type"
-        onBack={onBack}
-      />
-      {shouldDockContinueAction && (
-        <div
-          data-testid="future-fabric-continue-action"
-          data-docked="true"
-          className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
-        >
-          <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5">
+      <div className="space-y-4">
+        <DesignStudioStepActions
+          backDestination="Garment Type"
+          onBack={onBack}
+        />
+        {showContinueAction && (
+          <div
+            data-testid="future-fabric-continue-action"
+            className="flex justify-end"
+          >
             <DesignStudioForwardButton
               destination="Design Style"
               onClick={onContinue}
@@ -2977,8 +2975,8 @@ export const DormantFutureFabricStep = ({
               className="w-full sm:w-auto"
             />
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {pendingOrphanRepair &&
         typeof document !== "undefined" &&
