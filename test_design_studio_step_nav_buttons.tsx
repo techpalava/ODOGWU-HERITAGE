@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { ReactElement } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
   DesignStudioBackButton,
   DesignStudioForwardButton,
   DesignStudioStepActions,
+  studioOutlinedNavInteractionClass,
 } from "./src/components/DesignStudioBackButton";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -46,6 +48,31 @@ for (const span of backButton.findAllByType("span")) {
 const backIcon = backButton.findByType("svg");
 assert.equal(String(backIcon.props["aria-hidden"]), "true");
 assert.match(String(backIcon.props.className), /shrink-0/);
+assert.match(studioOutlinedNavInteractionClass, /duration-200/);
+assert.match(studioOutlinedNavInteractionClass, /ease-out/);
+assert.match(studioOutlinedNavInteractionClass, /enabled:hover:bg-heritage-green/);
+assert.match(studioOutlinedNavInteractionClass, /enabled:hover:text-white/);
+assert.match(studioOutlinedNavInteractionClass, /focus-visible:bg-heritage-green/);
+assert.match(studioOutlinedNavInteractionClass, /focus-visible:text-white/);
+assert.equal(
+  /(?:^|\s)hover:bg-heritage-green(?:\s|$)/.test(studioOutlinedNavInteractionClass),
+  false,
+);
+assert.match(classNameOf(backButton), /enabled:hover:bg-heritage-green/);
+assert.match(classNameOf(backButton), /enabled:hover:text-white/);
+assert.match(classNameOf(backButton), /focus-visible:bg-heritage-green/);
+assert.match(classNameOf(backButton), /focus-visible:text-white/);
+assert.match(classNameOf(backButton), /duration-200/);
+assert.equal(
+  /(?:^|\s)hover:(?:border|bg|text)-/.test(classNameOf(backButton)),
+  false,
+);
+const backSecondary = backButton
+  .findAllByType("span")
+  .find((span) => classNameOf(span).includes("text-current/75"));
+assert.ok(backSecondary);
+assert.match(classNameOf(backSecondary), /group-enabled:group-hover:text-white/);
+assert.match(classNameOf(backSecondary), /group-focus-visible:text-white/);
 
 const lockedBack = render(<DesignStudioBackButton disabled />);
 const lockedBackButton = lockedBack.root.findByType("button");
@@ -55,6 +82,12 @@ assert.equal(
 );
 assert.equal(textOf(lockedBackButton).includes("to "), false);
 assert.equal(lockedBackButton.props.disabled, true);
+assert.match(classNameOf(lockedBackButton), /disabled:bg-heritage-cream\/50/);
+assert.match(classNameOf(lockedBackButton), /disabled:text-heritage-ink\/45/);
+assert.equal(
+  /(?:^|\s)hover:(?:border|bg|text)-/.test(classNameOf(lockedBackButton)),
+  false,
+);
 
 const forward = render(
   <DesignStudioForwardButton
@@ -70,6 +103,11 @@ assert.match(textOf(forwardButton), /to Delivery & Pickup/);
 assert.equal(classNameOf(forwardButton).includes("whitespace-nowrap"), false);
 const forwardIcon = forwardButton.findAllByType("svg").at(-1)!;
 assert.equal(String(forwardIcon.props["aria-hidden"]), "true");
+assert.match(classNameOf(forwardButton), /enabled:hover:bg-heritage-forest/);
+assert.equal(
+  /(?:^|\s)hover:bg-heritage-forest(?:\s|$)/.test(classNameOf(forwardButton)),
+  false,
+);
 
 const review = render(
   <DesignStudioForwardButton label="Review Order" icon="package" ariaLabel="Review Order" />,
@@ -104,5 +142,25 @@ for (const button of pair) {
 }
 assert.match(classNameOf(pair[0]), /sm:flex-1/);
 assert.match(classNameOf(pair[0]), /sm:max-w-xs/);
+assert.equal(pair[1].props.disabled, true);
+assert.match(classNameOf(pair[1]), /disabled:bg-heritage-green\/35/);
+assert.match(classNameOf(pair[1]), /enabled:hover:bg-heritage-forest/);
+assert.equal(
+  /(?:^|\s)hover:bg-heritage-forest(?:\s|$)/.test(classNameOf(pair[1])),
+  false,
+);
+
+const outlinedNavSources = [
+  "src/components/DormantFutureAiTryOnStep.tsx",
+  "src/components/FutureRemainingFabricCapacityOffer.tsx",
+  "src/components/DormantFutureDesignStyleStep.tsx",
+  "src/components/FutureAdditionalGarmentDesignStyleDialog.tsx",
+];
+for (const sourcePath of outlinedNavSources) {
+  const source = readFileSync(sourcePath, "utf8");
+  assert.match(source, /studioOutlinedNavInteractionClass/);
+  assert.equal(source.includes("hover:bg-heritage-gold/10"), false);
+  assert.equal(/(?:^|\s)hover:bg-heritage-green(?:\s|$)/.test(source), false);
+}
 
 console.log("PASS: studio step navigation labels stay in one wrapping line");

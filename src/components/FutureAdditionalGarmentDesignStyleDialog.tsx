@@ -4,6 +4,7 @@ import { Check, X } from "lucide-react";
 import type { CanonicalPhysicalGarmentType, StyleCategory } from "../types";
 import type { DesignStyleStepCatalogueEntry } from "../utils/designStyleStepRuntime";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
+import { studioOutlinedNavInteractionClass } from "./DesignStudioBackButton";
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
   return String(style.name ?? "").trim() || "Design Style";
@@ -201,7 +202,7 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
               <button
                 type="button"
                 onClick={onCancel}
-                className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green"
+                className={`mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green ${studioOutlinedNavInteractionClass}`}
               >
                 Return to Personalized Additions
               </button>

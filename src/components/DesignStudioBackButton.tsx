@@ -2,7 +2,11 @@ import { ArrowLeft, ArrowRight, LockKeyhole, PackageCheck } from "lucide-react";
 import type { ReactNode } from "react";
 
 const studioNavButtonClass =
-  "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-center text-xs font-bold leading-snug [overflow-wrap:normal] [word-break:normal] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+  "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-center text-xs font-bold leading-snug [overflow-wrap:normal] [word-break:normal] transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+
+/** Outlined Continue, Back, and skip controls fill heritage green with white text and icons. */
+export const studioOutlinedNavInteractionClass =
+  "transition duration-200 ease-out enabled:hover:border-heritage-green enabled:hover:bg-heritage-green enabled:hover:text-white focus-visible:border-heritage-green focus-visible:bg-heritage-green focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
 const StudioNavLabel = ({
   primary,
@@ -14,7 +18,7 @@ const StudioNavLabel = ({
   <span className="min-w-0 text-balance text-center leading-snug [overflow-wrap:normal] [word-break:normal]">
     <span className="uppercase tracking-wide">{primary}</span>
     {secondary ? (
-      <span className="font-semibold normal-case tracking-normal text-current/75">
+      <span className="font-semibold normal-case tracking-normal text-current/75 group-enabled:group-hover:text-white group-focus-visible:text-white">
         {" "}
         {secondary}
       </span>
@@ -47,7 +51,7 @@ export const DesignStudioBackButton = ({
       disabled={disabled}
       aria-label={label}
       data-studio-nav="back"
-      className={`${studioNavButtonClass} border-2 border-heritage-green/75 bg-white text-heritage-ink shadow-sm hover:border-heritage-green hover:bg-heritage-green hover:text-white disabled:cursor-not-allowed disabled:border-heritage-ink/20 disabled:bg-heritage-cream/50 disabled:text-heritage-ink/45 disabled:shadow-none ${className}`}
+      className={`${studioNavButtonClass} group border-2 border-heritage-green/75 bg-white text-heritage-ink shadow-sm ${studioOutlinedNavInteractionClass} disabled:cursor-not-allowed disabled:border-heritage-ink/20 disabled:bg-heritage-cream/50 disabled:text-heritage-ink/45 disabled:shadow-none ${className}`}
     >
       <ArrowLeft aria-hidden="true" size={16} className="shrink-0" />
       <StudioNavLabel
@@ -102,7 +106,7 @@ export const DesignStudioForwardButton = ({
       aria-label={accessible}
       aria-describedby={ariaDescribedBy || describedBy}
       data-studio-nav="forward"
-      className={`${studioNavButtonClass} bg-heritage-green text-white shadow-sm hover:bg-heritage-forest disabled:cursor-not-allowed disabled:bg-heritage-green/35 disabled:shadow-none ${className}`}
+      className={`${studioNavButtonClass} group bg-heritage-green text-white shadow-sm enabled:hover:bg-heritage-forest disabled:cursor-not-allowed disabled:bg-heritage-green/35 disabled:shadow-none ${className}`}
     >
       <StudioNavLabel primary={primary} secondary={secondary} />
       <Icon aria-hidden="true" size={16} className="shrink-0" />
