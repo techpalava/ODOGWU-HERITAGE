@@ -424,7 +424,7 @@ const buildAuthority = ({
       measurementState = setFutureMeasurementInput({
         state: measurementState,
         requirement,
-        displayValue: 10,
+        displayValue: 40,
       });
     }
   }

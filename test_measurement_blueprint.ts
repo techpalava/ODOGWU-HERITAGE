@@ -260,7 +260,7 @@ const assertUnresolvedKaftanConstruction = (optionId: string) => {
       profileACompleteState = setFutureMeasurementInput({
         state: profileACompleteState,
         requirement,
-        displayValue: 10,
+        displayValue: 100,
       });
     }
     profileACompleteState = reconcileFutureMeasurementState({
@@ -492,7 +492,7 @@ assert.deepEqual(
 
 let state = createEmptyFutureMeasurementState("low_risk", "inch");
 for (const requirement of lowPlan.requirements.filter(({ directInput }) => directInput)) {
-  state = setFutureMeasurementInput({ state, requirement, displayValue: 10 });
+  state = setFutureMeasurementInput({ state, requirement, displayValue: 40 });
 }
 state = reconcileFutureMeasurementState({ state, plan: lowPlan });
 assert.equal(state.calculationStatus, "complete");
@@ -523,7 +523,7 @@ const mediumPlan = planMeasurementRequirements({
 });
 let mediumState = createEmptyFutureMeasurementState("medium_risk", "cm");
 for (const requirement of mediumPlan.requirements.filter(({ directInput }) => directInput)) {
-  mediumState = setFutureMeasurementInput({ state: mediumState, requirement, displayValue: 10 });
+  mediumState = setFutureMeasurementInput({ state: mediumState, requirement, displayValue: 100 });
 }
 mediumState = reconcileFutureMeasurementState({ state: mediumState, plan: mediumPlan });
 assert.equal(mediumState.calculationStatus, "complete");
@@ -543,7 +543,7 @@ const highPlan = planMeasurementRequirements({
 });
 let highState = createEmptyFutureMeasurementState("high_risk", "cm");
 for (const requirement of highPlan.requirements.filter(({ directInput }) => directInput)) {
-  highState = setFutureMeasurementInput({ state: highState, requirement, displayValue: 10 });
+  highState = setFutureMeasurementInput({ state: highState, requirement, displayValue: 100 });
 }
 highState = reconcileFutureMeasurementState({ state: highState, plan: highPlan });
 assert.equal(highState.calculationStatus, "complete");
@@ -565,7 +565,7 @@ for (const requirement of kaftanMidlongPlan.requirements.filter(({ directInput }
   completeKaftanState = setFutureMeasurementInput({
     state: completeKaftanState,
     requirement,
-    displayValue: 10,
+    displayValue: 100,
   });
 }
 completeKaftanState = reconcileFutureMeasurementState({
@@ -590,7 +590,7 @@ for (const route of ["medium_risk", "high_risk"] as const) {
   );
   let kaftanState = createEmptyFutureMeasurementState(route, "cm");
   for (const requirement of kaftanPlan.requirements.filter(({ directInput }) => directInput)) {
-    kaftanState = setFutureMeasurementInput({ state: kaftanState, requirement, displayValue: 10 });
+    kaftanState = setFutureMeasurementInput({ state: kaftanState, requirement, displayValue: 100 });
   }
   kaftanState = reconcileFutureMeasurementState({ state: kaftanState, plan: kaftanPlan });
   assert.equal(kaftanState.calculationStatus, "complete", `Profile D ${route} completes normally.`);

@@ -6,6 +6,7 @@ import {
   SQUARE_NECK_OPTION_IDS,
   type CanonicalMeasurementId,
   type MeasurementDefinition,
+  type MeasurementKind,
   type MeasurementProfile,
   type MeasurementProfileField,
   type MeasurementProfileId,
@@ -203,6 +204,7 @@ export const MEASUREMENT_RISK_SELECTION_NOTICE =
 const PATH_INPUT_BLOCKING_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
   "required_measurement_missing",
   "invalid_measurement_value",
+  "implausible_measurement_value",
   "applicability_unresolved",
   "invalid_state",
   "invalid_measurement_id",
@@ -1058,6 +1060,65 @@ export const fromCanonicalCentimetres = (
 export const roundMeasurementDisplayValue = (value: number): number =>
   Math.round(value * 100) / 100;
 
+/** New empty Measurement forms use centimetres. Saved drafts keep their stored unit. */
+export const DEFAULT_CUSTOMER_MEASUREMENT_UNIT: MeasurementUnit = "cm";
+
+type MeasurementCmBounds = Readonly<{ minCm: number; maxCm: number }>;
+
+const MEASUREMENT_CM_BOUNDS_BY_ID: Partial<
+  Record<CanonicalMeasurementId, MeasurementCmBounds>
+> = {
+  total_height: { minCm: 40, maxCm: 230 },
+  chest_bust_circumference: { minCm: 30, maxCm: 200 },
+};
+
+const MEASUREMENT_CM_BOUNDS_BY_KIND: Record<MeasurementKind, MeasurementCmBounds> = {
+  circumference: { minCm: 8, maxCm: 220 },
+  vertical_length: { minCm: 4, maxCm: 220 },
+  horizontal_length: { minCm: 4, maxCm: 120 },
+  total_height: { minCm: 40, maxCm: 230 },
+  finished_garment_preference: { minCm: 1, maxCm: 300 },
+};
+
+export const getPlausibleMeasurementBoundsCm = (
+  measurementId: CanonicalMeasurementId,
+  kind: MeasurementKind,
+): MeasurementCmBounds =>
+  MEASUREMENT_CM_BOUNDS_BY_ID[measurementId] ?? MEASUREMENT_CM_BOUNDS_BY_KIND[kind];
+
+/** Absolute centimetre bounds. Ratio checks alone accept inch-sized numbers typed as inches. */
+export const isImplausibleCanonicalMeasurement = (
+  valueCm: number,
+  measurementId: CanonicalMeasurementId,
+  kind: MeasurementKind,
+  sampleGeometry?: SampleClothGeometry,
+): boolean => {
+  if (!Number.isFinite(valueCm) || valueCm <= 0) return false;
+  const comparableCm = sampleGeometry === "laid_flat_half_width"
+    ? getSampleClothProductionEquivalentCm(valueCm)
+    : valueCm;
+  const bounds = getPlausibleMeasurementBoundsCm(measurementId, kind);
+  return comparableCm < bounds.minCm || comparableCm > bounds.maxCm;
+};
+
+export const formatImplausibleMeasurementMessage = (
+  measurementId: CanonicalMeasurementId,
+  kind: MeasurementKind,
+  unit: MeasurementUnit,
+  sampleGeometry?: SampleClothGeometry,
+): string => {
+  const bounds = getPlausibleMeasurementBoundsCm(measurementId, kind);
+  const scale = sampleGeometry === "laid_flat_half_width" ? SAMPLE_CLOTH_PRODUCTION_SCALE : 1;
+  const min = roundMeasurementDisplayValue(
+    fromCanonicalCentimetres(bounds.minCm / scale, unit),
+  );
+  const max = roundMeasurementDisplayValue(
+    fromCanonicalCentimetres(bounds.maxCm / scale, unit),
+  );
+  const unitWord = unit === "inch" ? "inches" : "centimetres";
+  return `This value is outside the plausible range for this measurement (${min}–${max} ${unitWord}). Check the unit, then enter the measurement again.`;
+};
+
 const measurementDisplayUnitLabel = (unit: MeasurementUnit): "in" | "cm" =>
   unit === "inch" ? "in" : "cm";
 
@@ -1163,7 +1224,7 @@ const ensureInvalidKeysByRoute = (
 
 export const createEmptyFutureMeasurementState = (
   route: SelectedMeasurementMethod = null,
-  unit: MeasurementUnit = "inch",
+  unit: MeasurementUnit = DEFAULT_CUSTOMER_MEASUREMENT_UNIT,
 ): FutureMeasurementStateV1 => ({
   schemaVersion: 1,
   route,
@@ -1544,10 +1605,19 @@ export const isRequiredAlternativeGroupSatisfied = ({
   entered: FutureMeasurementEnteredBagV1;
   invalidInputKeys: readonly string[];
 }): boolean =>
-  members.some((requirement) =>
-    !invalidInputKeys.includes(requirement.key) &&
-    isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
-  );
+  members.some((requirement) => {
+    const value = getEnteredMeasurementValue(entered, requirement);
+    return (
+      !invalidInputKeys.includes(requirement.key) &&
+      isPositiveMeasurementValue(value) &&
+      !isImplausibleCanonicalMeasurement(
+        value.valueCm,
+        requirement.measurementId,
+        requirement.definition.kind,
+        requirement.sampleGeometry,
+      )
+    );
+  });
 
 const uniqueDirectInputRequirements = (
   requirements: readonly PlannedMeasurementRequirement[],
@@ -1578,9 +1648,19 @@ export const countSatisfiedRequiredMeasurementUnits = ({
   invalidInputKeys: readonly string[];
 }): number => {
   const individualSatisfied = uniqueDirectInputRequirements(requirements).filter(
-    (requirement) =>
-      !invalidInputKeys.includes(requirement.key) &&
-      isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
+    (requirement) => {
+      const value = getEnteredMeasurementValue(entered, requirement);
+      return (
+        !invalidInputKeys.includes(requirement.key) &&
+        isPositiveMeasurementValue(value) &&
+        !isImplausibleCanonicalMeasurement(
+          value.valueCm,
+          requirement.measurementId,
+          requirement.definition.kind,
+          requirement.sampleGeometry,
+        )
+      );
+    },
   ).length;
   const satisfiedGroups = [...collectRequiredAlternativeGroups(requirements).values()]
     .filter((members) => isRequiredAlternativeGroupSatisfied({
@@ -1818,6 +1898,28 @@ export const reconcileFutureMeasurementState = ({
       });
     }
   });
+  plan.requirements.forEach((requirement) => {
+    if (requirement.inputSource === "calculated_average_factor") return;
+    const value = getEnteredMeasurementValue(entered, requirement);
+    if (!isPositiveMeasurementValue(value)) return;
+    if (
+      !isImplausibleCanonicalMeasurement(
+        value.valueCm,
+        requirement.measurementId,
+        requirement.definition.kind,
+        requirement.sampleGeometry,
+      )
+    ) {
+      return;
+    }
+    diagnostics.push({
+      code: "implausible_measurement_value",
+      garmentKey: requirement.garmentKey,
+      garmentType: requirement.garmentType,
+      measurementId: requirement.measurementId,
+      profileId: requirement.profileId,
+    });
+  });
   collectRequiredAlternativeGroups(plan.requirements).forEach((members) => {
     if (isRequiredAlternativeGroupSatisfied({
       members,
@@ -1860,6 +1962,7 @@ export const reconcileFutureMeasurementState = ({
   const invalid = blockingDiagnostics.some(
     (diagnostic) =>
       diagnostic.code === "invalid_measurement_value" ||
+      diagnostic.code === "implausible_measurement_value" ||
       diagnostic.code === "invalid_state" ||
       diagnostic.code === "invalid_measurement_id",
   );

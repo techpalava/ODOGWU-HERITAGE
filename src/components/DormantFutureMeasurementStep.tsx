@@ -25,6 +25,8 @@ import {
   CRITICAL_RISK_UNAVAILABLE_COPY,
   criticalRiskUnavailableCopy,
   FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
+  formatDualUnitMeasurementDisplay,
+  formatImplausibleMeasurementMessage,
   fromCanonicalCentimetres,
   getActiveFutureMeasurementEntered,
   getEnteredMeasurementValue,
@@ -276,7 +278,14 @@ const MeasurementField = ({
     : "";
   const inputId = `measurement-${requirement.key.replace(/[^a-z0-9_-]/gi, "-")}`;
   const hasInvalidValue = state.invalidInputKeys.includes(requirement.key);
+  const implausible = state.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "implausible_measurement_value" &&
+      diagnostic.measurementId === requirement.measurementId &&
+      (requirement.scope === "shared" || diagnostic.garmentKey === requirement.garmentKey),
+  );
   const errorId = `${inputId}-error`;
+  const unitWord = state.unit === "inch" ? "inches" : "centimetres";
   const calculated = requirement.inputSource === "calculated_average_factor";
   const optionalManual = requirement.inputSource === "optional_manual";
   const oneOfAlternative = Boolean(getRequiredAlternativeGroupId(requirement));
@@ -321,7 +330,7 @@ const MeasurementField = ({
       data-measurement-calculated={calculated ? "true" : "false"}
       data-sample-geometry={sampleGeometry || undefined}
       className={`block min-w-0 rounded-xl border p-4 transition ${
-        hasInvalidValue
+        hasInvalidValue || implausible
           ? "border-red-400/70 bg-red-50/40"
           : calculated
             ? "border-heritage-green/10 bg-heritage-cream/35"
@@ -333,6 +342,9 @@ const MeasurementField = ({
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="min-w-0 break-words text-sm font-bold text-heritage-green">
           {fieldLabel}
+          <span className="ml-1 font-sans text-[11px] font-bold uppercase tracking-wider text-heritage-ink/50">
+            ({unitWord})
+          </span>
         </span>
         <span
           data-measurement-badge={badge}
@@ -368,8 +380,9 @@ const MeasurementField = ({
             min="0.01"
             step="0.01"
             inputMode="decimal"
-            aria-invalid={hasInvalidValue || undefined}
-            aria-describedby={hasInvalidValue ? errorId : undefined}
+            aria-invalid={hasInvalidValue || implausible || undefined}
+            aria-describedby={hasInvalidValue || implausible ? errorId : undefined}
+            aria-label={`${fieldLabel} in ${unitWord}`}
             value={displayValue}
             onChange={(event) => {
               const raw = event.target.value;
@@ -400,14 +413,34 @@ const MeasurementField = ({
           Enter a positive measurement value.
         </span>
       )}
-      {rangeRecheck && !hasInvalidValue && (
+      {implausible && !hasInvalidValue && (
+        <span
+          id={errorId}
+          data-measurement-implausible="true"
+          className="mt-2 block text-xs font-semibold text-red-700"
+        >
+          {formatImplausibleMeasurementMessage(
+            requirement.measurementId,
+            requirement.definition.kind,
+            state.unit,
+            requirement.sampleGeometry,
+          )}
+          {stored
+            ? ` Entered as ${formatDualUnitMeasurementDisplay(stored.valueCm, state.unit)}.`
+            : ""}
+        </span>
+      )}
+      {rangeRecheck && !hasInvalidValue && !implausible && (
         <span className="mt-2 block text-xs font-semibold text-heritage-gold">
           {RANGE_RECHECK_MESSAGE}
         </span>
       )}
-      {stored && !hasInvalidValue && !calculated && !rangeRecheck && (
-        <span className="mt-2 block text-xs font-semibold text-heritage-green/75">
-          Saved
+      {stored && !hasInvalidValue && !implausible && !calculated && !rangeRecheck && (
+        <span
+          data-measurement-dual-unit="true"
+          className="mt-2 block text-xs font-semibold text-heritage-green/75"
+        >
+          Saved · {formatDualUnitMeasurementDisplay(stored.valueCm, state.unit)}
         </span>
       )}
     </label>
@@ -988,8 +1021,9 @@ export const DormantFutureMeasurementStep = ({
           Dimension / Measurement
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          Add the measurements needed for your selected garments. Your values stay
-          consistent when you switch between inches and centimetres.
+          Add the measurements needed for your selected garments. Numbers you type
+          use the unit selected below. Switching between centimetres and inches
+          converts saved values.
         </p>
         {activeWearerLabel ? (
           <div className="mt-3 space-y-2">
@@ -1369,12 +1403,19 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-        <fieldset>
+        <fieldset data-measurement-unit={state.unit}>
           <legend className="text-xs font-bold uppercase tracking-wider text-heritage-green">
             Measurement unit
           </legend>
+          <p
+            data-measurement-entry-unit={state.unit}
+            className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70"
+          >
+            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
+            Each field shows that unit. Switching units converts what you already saved.
+          </p>
           <div className="mt-3 inline-flex max-w-full rounded-xl border border-heritage-green/20 bg-heritage-cream/30 p-1">
-            {(["inch", "cm"] as const).map((unit) => (
+            {(["cm", "inch"] as const).map((unit) => (
               <button
                 key={unit}
                 type="button"
