@@ -889,7 +889,7 @@ const draft: GuestDesignDraft = {
     fabricSewingCost: decoratedPricing.fabricSewingCost,
     constructionSewingCost: decoratedPricing.constructionSewingCost,
     customDetailsPrice: decoratedPricing.customDetailsPrice,
-    lagosToEindhovenShipping: 131.25,
+    lagosToEindhovenShipping: 14,
     eindhovenToDestinationShipping: 0,
     total: decoratedCartPricing.total || 0,
   },

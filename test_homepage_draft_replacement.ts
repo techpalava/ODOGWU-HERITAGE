@@ -97,7 +97,7 @@ const avatarsDraft = (): GuestDesignDraft => ({
     fabricSewingCost: 4.06,
     constructionSewingCost: 65,
     customDetailsPrice: 0,
-    lagosToEindhovenShipping: 131.25,
+    lagosToEindhovenShipping: 14,
     eindhovenToDestinationShipping: null,
     total: 200.31,
   },

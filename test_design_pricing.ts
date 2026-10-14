@@ -779,10 +779,10 @@ const cartItem = {
 } as CartItem;
 const fullDeposit = calculateCartPricing([cartItem], 2);
 assert.equal(fullDeposit.garmentSubtotal, 10.01);
-assert.equal(fullDeposit.depositDueNow, 141.26);
+assert.equal(fullDeposit.depositDueNow, 24.01);
 assert.equal(fullDeposit.remainingDue, 0);
 const zeroDeposit = calculateCartPricing([cartItem], -1);
-assert.equal(zeroDeposit.depositDueNow, 131.25);
+assert.equal(zeroDeposit.depositDueNow, 14);
 assert.equal(zeroDeposit.remainingDue, 10.01);
 
 assert.deepEqual(

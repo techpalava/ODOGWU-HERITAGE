@@ -294,9 +294,9 @@ const guestDraft = {
     fabricSewingCost: 4.06,
     constructionSewingCost: 0,
     customDetailsPrice: 0,
-    lagosToEindhovenShipping: 131.25,
+    lagosToEindhovenShipping: 14,
     eindhovenToDestinationShipping: 0,
-    total: 139.22,
+    total: 21.97,
   },
   shippingSnapshot: {},
   updatedAt: "2026-07-30T10:00:00.000Z",
@@ -482,11 +482,11 @@ assert.equal(
 );
 assert.equal(
   taxInclusiveValidation.pricing.lagosToEindhovenShipping,
-  131.25,
+  14,
 );
 assert.equal(
   taxInclusiveValidation.pricing.total,
-  140.89,
+  23.64,
   "checkout adds tax and inbound shipping exactly once",
 );
 
