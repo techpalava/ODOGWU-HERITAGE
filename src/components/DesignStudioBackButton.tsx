@@ -1,6 +1,43 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, PackageCheck } from "lucide-react";
 import type { ReactNode } from "react";
 
+const studioNavButtonClass =
+  "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-center text-xs font-bold leading-snug [overflow-wrap:normal] [word-break:normal] transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+
+/** Back and other secondary controls: white at rest, heritage green fill with white text on hover and focus. */
+export const studioOutlinedNavInteractionClass =
+  "transition duration-200 ease-out enabled:hover:border-heritage-green enabled:hover:bg-heritage-green enabled:hover:text-white focus-visible:border-heritage-green focus-visible:bg-heritage-green focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+
+/** Forward Continue controls: solid heritage green at rest, white with green text and border on hover and focus. */
+export const studioContinueNavInteractionClass =
+  "border-2 border-heritage-green bg-heritage-green text-white shadow-sm transition duration-200 ease-out enabled:hover:border-heritage-green enabled:hover:bg-white enabled:hover:text-heritage-green focus-visible:border-heritage-green focus-visible:bg-white focus-visible:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+
+const StudioNavLabel = ({
+  primary,
+  secondary,
+  emphasis = "fill",
+}: {
+  primary: string;
+  secondary?: string | null;
+  emphasis?: "fill" | "outline";
+}) => (
+  <span className="min-w-0 text-balance text-center leading-snug [overflow-wrap:normal] [word-break:normal]">
+    <span className="uppercase tracking-wide">{primary}</span>
+    {secondary ? (
+      <span
+        className={`font-semibold normal-case tracking-normal text-current/75 ${
+          emphasis === "outline"
+            ? "group-enabled:group-hover:text-heritage-green! group-focus-visible:text-heritage-green!"
+            : "group-enabled:group-hover:text-white! group-focus-visible:text-white!"
+        }`}
+      >
+        {" "}
+        {secondary}
+      </span>
+    ) : null}
+  </span>
+);
+
 interface DesignStudioBackButtonProps {
   destination?: string;
   disabled?: boolean;
@@ -25,17 +62,14 @@ export const DesignStudioBackButton = ({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className={`inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border-2 border-heritage-green/75 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-ink shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border-heritage-ink/20 disabled:bg-heritage-cream/50 disabled:text-heritage-ink/45 disabled:shadow-none ${className}`}
+      data-studio-nav="back"
+      className={`${studioNavButtonClass} group border-2 border-heritage-green/75 bg-white text-heritage-ink shadow-sm ${studioOutlinedNavInteractionClass} disabled:cursor-not-allowed disabled:border-heritage-ink/20 disabled:bg-heritage-cream/50 disabled:text-heritage-ink/45 disabled:shadow-none ${className}`}
     >
       <ArrowLeft aria-hidden="true" size={16} className="shrink-0" />
-      <span className="flex flex-col items-start text-left leading-tight">
-        <span className="whitespace-nowrap">Back one step{showDestination ? " " : ""}</span>
-        {showDestination && (
-          <span className="whitespace-nowrap font-semibold normal-case tracking-normal text-current/75">
-            to {destination}
-          </span>
-        )}
-      </span>
+      <StudioNavLabel
+        primary="Back one step"
+        secondary={showDestination ? `to ${destination}` : null}
+      />
     </button>
   );
 };
@@ -83,16 +117,10 @@ export const DesignStudioForwardButton = ({
       disabled={disabled}
       aria-label={accessible}
       aria-describedby={ariaDescribedBy || describedBy}
-      className={`inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 disabled:shadow-none ${className}`}
+      data-studio-nav="forward"
+      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none ${className}`}
     >
-      <span className="flex flex-col items-start text-left leading-tight">
-        <span className="whitespace-nowrap">{primary}{secondary ? " " : ""}</span>
-        {secondary && (
-          <span className="whitespace-nowrap font-semibold normal-case tracking-normal text-white/80">
-            {secondary}
-          </span>
-        )}
-      </span>
+      <StudioNavLabel primary={primary} secondary={secondary} emphasis="outline" />
       <Icon aria-hidden="true" size={16} className="shrink-0" />
     </button>
   );
@@ -113,20 +141,23 @@ export const DesignStudioStepActions = ({
   note?: ReactNode;
   className?: string;
 }) => (
-  <div className={`flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${className}`}>
+  <div
+    data-studio-step-actions="true"
+    className={`flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${className}`}
+  >
     <DesignStudioBackButton
       destination={backDestination}
       onClick={onBack}
       disabled={backDisabled}
-      className="w-full lg:w-auto"
+      className="w-full sm:max-w-xs sm:flex-1"
     />
     {(forward || note) && (
-      <div className="flex w-full min-w-0 flex-col gap-2 lg:w-auto lg:items-end">
+      <div className="flex w-full min-w-0 flex-col gap-2 sm:max-w-xs sm:flex-1">
         {note}
         {forward && (
           <DesignStudioForwardButton
             {...forward}
-            className={`w-full lg:w-auto ${forward.className || ""}`}
+            className={`w-full ${forward.className || ""}`}
           />
         )}
       </div>

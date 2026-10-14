@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Ruler, ShieldAlert } from "lucide-react";
-import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
@@ -1644,17 +1644,16 @@ export const DormantFutureMeasurementStep = ({
               >
                 {MEASUREMENT_RISK_SELECTION_NOTICE}
               </p>
-              <DesignStudioForwardButton
-                destination="Summary"
-                onClick={onContinue}
-                disabled={!canContinueToSummary}
-                locked={!canContinueToSummary}
-                ariaLabel="Continue to Summary"
-                aria-describedby="measurement-risk-selection-notice"
-                className="w-full lg:w-auto"
-              />
             </>
           )}
+          forward={{
+            destination: "Summary",
+            onClick: onContinue,
+            disabled: !canContinueToSummary,
+            locked: !canContinueToSummary,
+            ariaLabel: "Continue to Summary",
+            "aria-describedby": "measurement-risk-selection-notice",
+          }}
         />
       </footer>
     </section>
