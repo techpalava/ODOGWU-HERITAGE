@@ -72,7 +72,7 @@ const fillDirectRequirements = (
     state = setFutureMeasurementInput({
       state,
       requirement,
-      displayValue: 10,
+      displayValue: 40,
     });
   }
   state = reconcileFutureMeasurementState({ state, plan });

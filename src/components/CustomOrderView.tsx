@@ -39,6 +39,9 @@ interface CustomOrderViewProps {
     >,
   ) => void;
   onSelectOrderContext: (context: OrderContext) => void;
+  onStartIndividualOrder?: () => void;
+  unfinishedOrderLabel?: string | null;
+  onResumeUnfinishedOrder?: () => void;
   currentUser?: { name: string; email?: string } | null;
   onJoinCustomGroup?: (batchId: string) => void;
 }
@@ -48,6 +51,9 @@ export default function CustomOrderView({
   batches,
   onCreateCustomGroup,
   onSelectOrderContext,
+  onStartIndividualOrder,
+  unfinishedOrderLabel = null,
+  onResumeUnfinishedOrder,
   currentUser,
   onJoinCustomGroup,
 }: CustomOrderViewProps) {
@@ -141,6 +147,10 @@ export default function CustomOrderView({
   };
 
   const handleStartIndividualOrder = () => {
+    if (onStartIndividualOrder) {
+      onStartIndividualOrder();
+      return;
+    }
     onSelectOrderContext({
       orderType: "Individual",
       deliveryWindow: "Within 2-3 weeks (Express Air Priority)",
@@ -243,6 +253,7 @@ export default function CustomOrderView({
               </ul>
             </div>
 
+            <div className="flex flex-col items-start gap-3">
             <button
               id="btn-start-individual-order"
               onClick={handleStartIndividualOrder}
@@ -250,6 +261,17 @@ export default function CustomOrderView({
             >
               Start Individual Order <ArrowRight size={14} />
             </button>
+            {unfinishedOrderLabel && onResumeUnfinishedOrder && (
+              <button
+                id="btn-resume-unfinished-order"
+                type="button"
+                onClick={onResumeUnfinishedOrder}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green bg-white px-6 py-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/5"
+              >
+                Resume unfinished order
+              </button>
+            )}
+            </div>
           </section>
 
           {/* OPTION 2: CREATE YOUR OWN GROUP */}

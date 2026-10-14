@@ -33,6 +33,10 @@ import {
   type LoadedHomepageMutableDraft,
 } from "./services/homepageDraftReplacement";
 import {
+  classifyIndividualOrderStart,
+  describeUnfinishedOrder,
+} from "./utils/individualOrderStart";
+import {
   resolvePersistedDraftOrderContext,
 } from "./utils/orderContextIdentity";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -93,6 +97,7 @@ import Footer from "./components/Footer";
 
 import { AdminAuthGuard } from "./components/AdminAuthGuard";
 import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
+import { IndividualOrderStartDialog } from "./components/IndividualOrderStartDialog";
 import PrivateBatchSetupView, {
   type PrivateBatchSetupSubmission,
   type PrivateBatchSetupValues,
@@ -107,6 +112,14 @@ type HomepageDraftReplacementRequest = Readonly<{
   clickedBatchName: string;
   isIndividualDraft: boolean;
   canContinueExisting: boolean;
+}>;
+
+type IndividualOrderStartRequest = Readonly<{
+  decisionGeneration: number;
+  existing: LoadedHomepageMutableDraft;
+  label: string;
+  canResume: boolean;
+  resumeContext: OrderContext | null;
 }>;
 
 type PrivateBatchDraftReplacementRequest = Readonly<{
@@ -318,9 +331,14 @@ export default function App() {
   const homepageDraftDecisionGenerationRef = React.useRef(0);
   const homepageDraftOperationGenerationRef = React.useRef(0);
   const homepageDraftOperationInFlightRef = React.useRef(false);
-  const [, setHomepageAuthEpoch] = useState(0);
+  const [homepageAuthEpoch, setHomepageAuthEpoch] = useState(0);
   const [homepageDraftReplacement, setHomepageDraftReplacement] =
     useState<HomepageDraftReplacementRequest | null>(null);
+  const [individualOrderStartRequest, setIndividualOrderStartRequest] =
+    useState<IndividualOrderStartRequest | null>(null);
+  const [unfinishedOrderLabel, setUnfinishedOrderLabel] = useState<string | null>(
+    null,
+  );
   const [privateBatchDraftReplacement, setPrivateBatchDraftReplacement] =
     useState<PrivateBatchDraftReplacementRequest | null>(null);
   const [privateBatchSetupError, setPrivateBatchSetupError] = useState<string | null>(null);
@@ -351,6 +369,7 @@ export default function App() {
     setIsHomepageDraftOperationBusy(false);
     setHomepageDraftReplacement(null);
     setPrivateBatchDraftReplacement(null);
+    setIndividualOrderStartRequest(null);
   };
 
   const getHomepageDraftReplacementService = () => {
@@ -417,6 +436,259 @@ export default function App() {
     setPresetFabricCode(null);
     setOrderContext(context);
     setActiveTab("design");
+  };
+
+  const freshIndividualOrderContext = (): OrderContext => ({
+    orderType: "Individual",
+    deliveryWindow: "Within 2-3 weeks (Express Air Priority)",
+  });
+
+  const openDesignStudioForOrder = (context: OrderContext) => {
+    setPresetStyleId(null);
+    setPresetFabricCode(null);
+    setOrderContext(context);
+    setActiveTab("design");
+  };
+
+  React.useEffect(() => {
+    if (activeTab !== "home" && activeTab !== "custom-order") return;
+    let cancelled = false;
+    void (async () => {
+      if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
+        if (!cancelled) setUnfinishedOrderLabel(null);
+        return;
+      }
+      try {
+        const inspected = await getHomepageDraftReplacementService().inspect();
+        if (cancelled) return;
+        setUnfinishedOrderLabel(
+          inspected.status === "valid"
+            ? describeUnfinishedOrder(inspected.existing.draft)
+            : null,
+        );
+      } catch (error) {
+        console.error("Unable to look up an unfinished order.", error);
+        if (!cancelled) setUnfinishedOrderLabel(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, homepageAuthEpoch]);
+
+  const handleRequestFreshIndividualOrder = () => {
+    void (async () => {
+      if (homepageDraftEntryRequestInFlight.current) return;
+      homepageDraftEntryRequestInFlight.current = true;
+      try {
+        const authority = getHomepageDraftReplacementService();
+        if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
+          // The bag already holds this design. Clear only the Studio copy so a
+          // new Individual Order does not resume it, and leave the bag intact.
+          const inspected = await authority.inspect();
+          if (inspected.status === "valid") {
+            const discarded = await authority.discard(inspected.existing);
+            if (discarded.status !== "discarded") {
+              triggerNotification(
+                "We could not start a new order without touching your bagged design. Please try again.",
+                "info",
+              );
+              return;
+            }
+          } else if (inspected.status !== "empty") {
+            triggerNotification(
+              "We could not safely check your unfinished order. Please try again.",
+              "info",
+            );
+            return;
+          } else {
+            GuestOrderSessionService.clearFutureDesignDraft();
+          }
+          useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+          setUnfinishedOrderLabel(null);
+          openDesignStudioForOrder(freshIndividualOrderContext());
+          return;
+        }
+
+        const requestAuthEpoch = homepageAuthEpochRef.current;
+        const inspected = await authority.inspect();
+        if (homepageAuthEpochRef.current !== requestAuthEpoch) {
+          triggerNotification(
+            "Your sign-in state changed. Please try again.",
+            "info",
+          );
+          return;
+        }
+        const decision = classifyIndividualOrderStart(inspected);
+        if (decision.kind === "start_fresh") {
+          setUnfinishedOrderLabel(null);
+          openDesignStudioForOrder(freshIndividualOrderContext());
+          return;
+        }
+        if (decision.kind === "blocked") {
+          triggerNotification(
+            "We could not safely check your unfinished order. Please try again.",
+            "info",
+          );
+          return;
+        }
+        const resumeContext = resolvePersistedDraftOrderContext(
+          decision.existing.draft,
+          homepageCurrentBatchesRef.current,
+          homepageDefaultPickupLocationRef.current,
+        );
+        const label = describeUnfinishedOrder(decision.existing.draft);
+        setUnfinishedOrderLabel(label);
+        setIndividualOrderStartRequest({
+          decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+          existing: decision.existing,
+          label,
+          canResume: Boolean(resumeContext),
+          resumeContext,
+        });
+      } catch (error) {
+        console.error("Unable to start an Individual Order.", error);
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+      } finally {
+        homepageDraftEntryRequestInFlight.current = false;
+      }
+    })();
+  };
+
+  const resumePersistedDraft = async (
+    draft: LoadedHomepageMutableDraft["draft"],
+  ): Promise<boolean> => {
+    const resumeContext = resolvePersistedDraftOrderContext(
+      draft,
+      homepageCurrentBatchesRef.current,
+      homepageDefaultPickupLocationRef.current,
+    );
+    if (!resumeContext) {
+      triggerNotification(
+        "This saved order cannot be reopened from here. It has not been changed.",
+        "info",
+      );
+      return false;
+    }
+    openDesignStudioForOrder(resumeContext);
+    return true;
+  };
+
+  const handleResumeUnfinishedOrder = () => {
+    void (async () => {
+      if (
+        homepageDraftEntryRequestInFlight.current ||
+        homepageDraftOperationInFlightRef.current
+      ) {
+        return;
+      }
+      homepageDraftEntryRequestInFlight.current = true;
+      try {
+        const inspected = await getHomepageDraftReplacementService().inspect();
+        if (inspected.status !== "valid") {
+          setUnfinishedOrderLabel(null);
+          triggerNotification(
+            "Your unfinished order is no longer available.",
+            "info",
+          );
+          return;
+        }
+        await resumePersistedDraft(inspected.existing.draft);
+      } catch (error) {
+        console.error("Unable to resume an unfinished order.", error);
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+      } finally {
+        homepageDraftEntryRequestInFlight.current = false;
+      }
+    })();
+  };
+
+  const handleResumeIndividualOrderFromDialog = async () => {
+    const request = individualOrderStartRequest;
+    if (
+      !request ||
+      !request.canResume ||
+      request.decisionGeneration !== homepageDraftDecisionGenerationRef.current ||
+      homepageDraftOperationInFlightRef.current
+    ) {
+      return;
+    }
+    const decisionGeneration = request.decisionGeneration;
+    const operationGeneration = ++homepageDraftOperationGenerationRef.current;
+    homepageDraftOperationInFlightRef.current = true;
+    setIsHomepageDraftOperationBusy(true);
+    const isOperationCurrent = () =>
+      homepageDraftDecisionGenerationRef.current === decisionGeneration &&
+      homepageDraftOperationGenerationRef.current === operationGeneration;
+    try {
+      const verification = await getHomepageDraftReplacementService().revalidate(
+        request.existing,
+      );
+      if (!isOperationCurrent()) return;
+      if (verification.status !== "valid") {
+        setIndividualOrderStartRequest(null);
+        triggerNotification(
+          "Your unfinished order changed. Please choose again.",
+          "info",
+        );
+        return;
+      }
+      const resumed = await resumePersistedDraft(verification.existing.draft);
+      if (!isOperationCurrent()) return;
+      if (resumed) setIndividualOrderStartRequest(null);
+    } finally {
+      if (homepageDraftOperationGenerationRef.current === operationGeneration) {
+        homepageDraftOperationInFlightRef.current = false;
+        setIsHomepageDraftOperationBusy(false);
+      }
+    }
+  };
+
+  const handleConfirmFreshIndividualOrder = async () => {
+    const request = individualOrderStartRequest;
+    if (
+      !request ||
+      request.decisionGeneration !== homepageDraftDecisionGenerationRef.current ||
+      homepageDraftOperationInFlightRef.current
+    ) {
+      return;
+    }
+    const operationGeneration = ++homepageDraftOperationGenerationRef.current;
+    homepageDraftOperationInFlightRef.current = true;
+    setIsHomepageDraftOperationBusy(true);
+    const isOperationCurrent = () =>
+      request.decisionGeneration === homepageDraftDecisionGenerationRef.current &&
+      operationGeneration === homepageDraftOperationGenerationRef.current;
+    try {
+      const discarded = await getHomepageDraftReplacementService().discard(
+        request.existing,
+        () =>
+          isOperationCurrent() ? { status: "authorized" } : { status: "stale" },
+      );
+      if (!isOperationCurrent()) return;
+      if (discarded.status !== "discarded") {
+        setIndividualOrderStartRequest(null);
+        triggerNotification(
+          "We could not replace your unfinished order safely. It has not been changed.",
+          "info",
+        );
+        return;
+      }
+      setUnfinishedOrderLabel(null);
+      setIndividualOrderStartRequest(null);
+      openDesignStudioForOrder(freshIndividualOrderContext());
+    } finally {
+      if (homepageDraftOperationGenerationRef.current === operationGeneration) {
+        homepageDraftOperationInFlightRef.current = false;
+        setIsHomepageDraftOperationBusy(false);
+      }
+    }
   };
 
   const createPrivateBatchFromSetup = async (
@@ -1466,45 +1738,9 @@ export default function App() {
                     | "custom-order"
                     | "login",
                 ) => setActiveTab(tabId)}
-                onStartIndividualOrder={() => {
-                  void (async () => {
-                    if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
-                      const authority = getHomepageDraftReplacementService();
-                      const inspected = await authority.inspect();
-                      if (inspected.status === "valid") {
-                        const discarded = await authority.discard(
-                          inspected.existing,
-                        );
-                        if (discarded.status !== "discarded") {
-                          triggerNotification(
-                            "We could not start a new order without touching your bagged design. Please try again.",
-                            "info",
-                          );
-                          return;
-                        }
-                      } else if (inspected.status !== "empty") {
-                        triggerNotification(
-                          "We could not safely check your unfinished order. Please try again.",
-                          "info",
-                        );
-                        return;
-                      } else {
-                        GuestOrderSessionService.clearFutureDesignDraft();
-                      }
-                      useAppStore
-                        .getState()
-                        .setStudioParkedInFutureOrderV2Cart(false);
-                    }
-                    setPresetStyleId(null);
-                    setPresetFabricCode(null);
-                    setOrderContext({
-                      orderType: "Individual",
-                      deliveryWindow:
-                        "Within 2-3 weeks (Express Air Priority)",
-                    });
-                    setActiveTab("design");
-                  })();
-                }}
+                onStartIndividualOrder={handleRequestFreshIndividualOrder}
+                unfinishedOrderLabel={unfinishedOrderLabel}
+                onResumeUnfinishedOrder={handleResumeUnfinishedOrder}
                 onJoinCommunityBatch={handleJoinCommunityBatch}
                 joinBatch={
                   activeCommunityBatch ? registrationBatch ?? null : null
@@ -1621,6 +1857,9 @@ export default function App() {
                     "success",
                   );
                 }}
+                onStartIndividualOrder={handleRequestFreshIndividualOrder}
+                unfinishedOrderLabel={unfinishedOrderLabel}
+                onResumeUnfinishedOrder={handleResumeUnfinishedOrder}
                 currentUser={currentUser}
                 onJoinCustomGroup={handleJoinCustomGroup}
               />
@@ -1751,6 +1990,21 @@ export default function App() {
 
       {/* SHOPPING CART SLIDE-OVER DRAWER */}
       <CartDrawer />
+
+      {individualOrderStartRequest && (
+        <IndividualOrderStartDialog
+          unfinishedOrderLabel={individualOrderStartRequest.label}
+          canResume={individualOrderStartRequest.canResume}
+          busy={isHomepageDraftOperationBusy}
+          onResume={handleResumeIndividualOrderFromDialog}
+          onStartNew={handleConfirmFreshIndividualOrder}
+          onCancel={() => {
+            if (!homepageDraftOperationInFlightRef.current) {
+              setIndividualOrderStartRequest(null);
+            }
+          }}
+        />
+      )}
 
       {homepageDraftReplacement && (
         <HomepageDraftReplacementDialog

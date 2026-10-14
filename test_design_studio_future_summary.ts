@@ -240,7 +240,11 @@ const buildSummaryInput = ({
     measurementState = setFutureMeasurementInput({
       state: measurementState,
       requirement,
-      displayValue: 10,
+      displayValue:
+        requirement.measurementId === "total_height" ||
+        requirement.measurementId === "chest_bust_circumference"
+          ? 40
+          : 10,
     });
   }
   measurementState = reconcileFutureMeasurementState({
@@ -388,7 +392,11 @@ const buildUploadedSummaryInput = ({
     measurementState = setFutureMeasurementInput({
       state: measurementState,
       requirement,
-      displayValue: 10,
+      displayValue:
+        requirement.measurementId === "total_height" ||
+        requirement.measurementId === "chest_bust_circumference"
+          ? 40
+          : 10,
     });
   }
   measurementState = reconcileFutureMeasurementState({

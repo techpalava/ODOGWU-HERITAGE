@@ -752,7 +752,7 @@ for (const requirement of lowDraft.requirements.filter((item) => item.directInpu
   lowState = setFutureMeasurementInput({
     state: lowState,
     requirement,
-    displayValue: 20,
+    displayValue: 100,
   });
 }
 lowState = reconcileFutureMeasurementState({ state: lowState, plan: lowDraft });
