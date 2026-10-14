@@ -1105,7 +1105,7 @@ export const DormantFutureDesignStyleStep = ({
 
   return (
     <>
-      <section aria-labelledby="future-design-style-title" data-stage-id="design_style" data-stage-complete={exactSetComplete} className={`min-w-0 space-y-6 font-sans [overflow-wrap:anywhere] ${exactSetComplete ? "pb-28 sm:pb-32" : ""}`}>
+      <section aria-labelledby="future-design-style-title" data-stage-id="design_style" data-stage-complete={exactSetComplete} className="min-w-0 space-y-6 font-sans [overflow-wrap:anywhere]">
         <p className="sr-only" aria-live="polite">
           {highlightedOccurrence
             ? `Design assigned to ${yourGarmentsDisplayLabel(highlightedOccurrence, constructionDisplayLabelByGarmentKey)}.`
@@ -1242,18 +1242,15 @@ export const DormantFutureDesignStyleStep = ({
         <div
           ref={continueActionRef}
           data-testid="future-design-style-continue-action"
-          data-docked={exactSetComplete}
-          className={exactSetComplete ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3" : ""}
+          className={exactSetComplete ? "flex justify-end" : undefined}
         >
           {exactSetComplete && (
-            <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm">
-              <DesignStudioForwardButton
-                destination="Custom Details"
-                onClick={onContinue}
-                ariaLabel="Continue to Custom Details"
-                className="w-full sm:w-auto"
-              />
-            </div>
+            <DesignStudioForwardButton
+              destination="Custom Details"
+              onClick={onContinue}
+              ariaLabel="Continue to Custom Details"
+              className="w-full sm:w-auto"
+            />
           )}
         </div>
       </section>

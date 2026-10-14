@@ -620,10 +620,22 @@ const continueEnabledMarkup = renderToStaticMarkup(
 );
 assert.ok(
   continueEnabledMarkup.includes('data-testid="future-garment-type-continue-action"'),
-  "a complete Step 1 docks Continue to Fabric",
+  "a complete Step 1 shows Continue to Fabric under the demographic cards",
 );
-assert.ok(continueEnabledMarkup.includes('data-docked="true"'));
-assert.ok(continueEnabledMarkup.includes("fixed inset-x-0 bottom-0"));
+const demographicCardsAt = continueEnabledMarkup.indexOf("Unisex / Family");
+const inlineContinueAt = continueEnabledMarkup.indexOf(
+  'data-testid="future-garment-type-continue-action"',
+);
+const orderSummaryAt = continueEnabledMarkup.indexOf("Order Summary");
+assert.ok(demographicCardsAt > 0 && inlineContinueAt > demographicCardsAt);
+assert.ok(
+  orderSummaryAt > inlineContinueAt,
+  "Continue sits immediately after the demographic cards",
+);
+assert.equal(continueEnabledMarkup.includes('data-docked="true"'), false);
+assert.equal(continueEnabledMarkup.includes("fixed inset-x-0 bottom-0"), false);
+assert.equal(continueEnabledMarkup.includes("pb-28"), false);
+assert.ok(continueEnabledMarkup.includes('aria-label="Continue to Fabric"'));
 assert.equal(
   continueEnabledMarkup.includes('data-testid="step1-still-needed"'),
   false,

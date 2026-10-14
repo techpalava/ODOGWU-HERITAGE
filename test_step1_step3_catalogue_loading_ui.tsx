@@ -118,11 +118,19 @@ const renderStep3 = async ({
     stageComplete: renderer.root.findByProps({
       "data-stage-id": "design_style",
     }).props["data-stage-complete"],
-    continueDocked: Boolean(
+    continueFixed: /fixed/.test(
       renderer.root.findByProps({
         "data-testid": "future-design-style-continue-action",
-      }).props["data-docked"],
+      }).props.className || "",
     ),
+    continueAfterContent: renderer.root
+      .findAll((node) =>
+        node.props?.["data-testid"] === "step3-assignment-progress" ||
+        node.props?.["data-testid"] === "future-design-style-continue-action",
+      )
+      .map((node) => node.props["data-testid"])
+      .join(">")
+      .endsWith("step3-assignment-progress>future-design-style-continue-action"),
     selectedStyleIdProp: selectedStyleId,
   };
 };
@@ -211,7 +219,7 @@ const renderStep3 = async ({
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
     stylesLoadState: "ready",
   });
-  assert.match(step3.text, /All Designs/);
+  assert.match(step3.text, /Choose design styles you like/);
   assert.match(step3.text, /Use This Design/);
   assert.equal(step3.text.includes("No matching design styles are available yet"), false);
 }
@@ -310,7 +318,7 @@ const renderStep3 = async ({
   assert.equal(whileLoading.text.includes("Selected"), false);
   assert.equal(whileLoading.continueDisabled, true);
   assert.equal(whileLoading.stageComplete, false);
-  assert.equal(whileLoading.continueDocked, false);
+  assert.equal(whileLoading.continueFixed, false);
 
   const whenReady = await renderStep3({
     styles: [compatibleStyle],
@@ -336,7 +344,8 @@ const renderStep3 = async ({
   assert.match(explicitV2.text, /Use Again/);
   assert.equal(explicitV2.continueDisabled, false);
   assert.equal(explicitV2.stageComplete, true);
-  assert.equal(explicitV2.continueDocked, true);
+  assert.equal(explicitV2.continueFixed, false);
+  assert.equal(explicitV2.continueAfterContent, true);
 }
 
 // 6–7. demographic flip unsupported ↔ supported

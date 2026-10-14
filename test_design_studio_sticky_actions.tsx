@@ -109,12 +109,19 @@ assert.equal(
   0,
   "Fabric must expose its forward action only when completion permits it.",
 );
+const isViewportFixed = (className: string | undefined) =>
+  /fixed/.test(className || "") && /bottom-0/.test(className || "");
+const documentOrder = (root: ReactTestInstance, testIds: string[]) =>
+  root
+    .findAll((node) => testIds.includes(node.props?.["data-testid"]))
+    .map((node) => node.props["data-testid"] as string);
+
 const incompleteFabricSection = fabricRenderer.root.findByProps({
   "data-stage-id": "fabric",
 });
-assert.equal(incompleteFabricSection.props["data-bottom-action-reserved"], "true");
-assert.match(incompleteFabricSection.props.className, /pb-28/);
-assert.match(incompleteFabricSection.props.className, /sm:pb-32/);
+assert.equal(incompleteFabricSection.props["data-bottom-action-reserved"], undefined);
+assert.doesNotMatch(incompleteFabricSection.props.className, /pb-28/);
+assert.doesNotMatch(incompleteFabricSection.props.className, /sm:pb-32/);
 
 await act(async () => {
   fabricRenderer.update(renderFabricStep(completeFabricState));
@@ -122,8 +129,22 @@ await act(async () => {
 const completeFabricAction = fabricRenderer.root.findByProps({
   "data-testid": "future-fabric-continue-action",
 });
-assert.equal(completeFabricAction.props["data-docked"], "true");
-assert.match(completeFabricAction.props.className, /fixed inset-x-0 bottom-0/);
+assert.equal(completeFabricAction.props["data-docked"], undefined);
+assert.equal(isViewportFixed(completeFabricAction.props.className), false);
+assert.ok(
+  completeFabricAction.findAllByType("button").some((button) =>
+    textContent(button).includes("Continue to Design Style"),
+  ),
+  "An unlocked Fabric step shows Continue in the bottom action area.",
+);
+assert.deepEqual(
+  documentOrder(fabricRenderer.root, [
+    "future-fabric-inline-catalogue",
+    "future-fabric-continue-action",
+  ]),
+  ["future-fabric-inline-catalogue", "future-fabric-continue-action"],
+  "Fabric Continue sits after the catalogue content.",
+);
 const completeFabricSection = fabricRenderer.root.findByProps({
   "data-stage-id": "fabric",
 });
@@ -141,13 +162,15 @@ await act(async () => {
     .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
     .props.onClick({ currentTarget: {} });
 });
+const fabricContinueWhileEditing = fabricRenderer.root.findByProps({
+  "data-testid": "future-fabric-continue-action",
+});
 assert.equal(
-  fabricRenderer.root.findByProps({
-    "data-testid": "future-fabric-continue-action",
-  }).props["data-docked"],
-  "true",
+  fabricContinueWhileEditing.props["data-docked"],
+  undefined,
   "Inline Fabric targeting must not hide the completed-step action.",
 );
+assert.equal(isViewportFixed(fabricContinueWhileEditing.props.className), false);
 assert.match(
   textContent(fabricRenderer.root),
   /Changing Fabric for Fabric Selection 1/,
@@ -173,7 +196,7 @@ assert.equal(
 assert.equal(
   fabricRenderer.root.findByProps({ "data-stage-id": "fabric" }).props.className,
   completeFabricSection.props.className,
-  "Completion changes must not collapse Step 2's bottom layout reservation.",
+  "Completion changes must not add a viewport dock spacer under Fabric.",
 );
 
 const compatibleStyle: StyleCategory = {
@@ -211,14 +234,19 @@ let styleRenderer!: ReturnType<typeof create>;
 await act(async () => {
   styleRenderer = create(renderStyleStep(false));
 });
+const incompleteStyleAction = styleRenderer.root.findByProps({
+  "data-testid": "future-design-style-continue-action",
+});
 assert.equal(
-  Boolean(
-    styleRenderer.root.findByProps({
-      "data-testid": "future-design-style-continue-action",
-    }).props["data-docked"],
-  ),
+  Boolean(incompleteStyleAction.props["data-docked"]),
   false,
   "Design Style must not dock before a catalogue style is selected.",
+);
+assert.equal(isViewportFixed(incompleteStyleAction.props.className), false);
+assert.equal(
+  incompleteStyleAction.findAllByType("button").length,
+  0,
+  "An incomplete Design Style step keeps Continue locked outside the unlocked action.",
 );
 
 await act(async () => {
@@ -227,8 +255,26 @@ await act(async () => {
 const completeStyleAction = styleRenderer.root.findByProps({
   "data-testid": "future-design-style-continue-action",
 });
-assert.equal(completeStyleAction.props["data-docked"], true);
-assert.match(completeStyleAction.props.className, /fixed inset-x-0 bottom-0/);
+assert.equal(completeStyleAction.props["data-docked"], undefined);
+assert.equal(isViewportFixed(completeStyleAction.props.className), false);
+assert.doesNotMatch(
+  styleRenderer.root.findByProps({ "data-stage-id": "design_style" }).props.className,
+  /pb-28/,
+);
+assert.ok(
+  completeStyleAction.findAllByType("button").some((button) =>
+    textContent(button).includes("Continue to Custom Details"),
+  ),
+  "An unlocked Design Style step shows Continue in the bottom action region.",
+);
+assert.deepEqual(
+  documentOrder(styleRenderer.root, [
+    "step3-assignment-progress",
+    "future-design-style-continue-action",
+  ]),
+  ["step3-assignment-progress", "future-design-style-continue-action"],
+  "Design Style Continue sits after the garment assignment content.",
+);
 const styleForwardButton = findForwardButtons(
   styleRenderer.root,
   "Continue to Custom Details",
@@ -237,4 +283,4 @@ assert.equal(styleForwardButton.length, 2);
 styleForwardButton[0].props.onClick();
 assert.equal(styleContinueCalls, 1, "The existing Style handler must remain intact.");
 
-console.log("PASS: sticky completed Fabric and Design Style actions");
+console.log("PASS: inline completed Fabric and Design Style actions");
