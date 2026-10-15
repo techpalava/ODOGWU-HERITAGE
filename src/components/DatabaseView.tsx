@@ -161,6 +161,7 @@ import {
   FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
   listPersonalizedEvaluationSeeds,
   listTailorPricablePersonalizedLines,
+  personalizedAdditionOpsStatusLabel,
   parseEuroAmountToCents,
   parseFutureOrderV2PersonalizedPrice,
   type FutureOrderV2PersonalizedPriceRecord,
@@ -1387,7 +1388,9 @@ export default function DatabaseView({
         createdAt: serverTimestamp(),
       });
       await batch.commit();
-      triggerStatus(`Personalized price saved for ${orderId}. The customer email is queued.`);
+      triggerStatus(
+        `Personalized price saved for ${orderId}. Contact script saved for staff. Nothing is sent automatically.`,
+      );
       setEditingType(null);
     } catch {
       triggerStatus("Failed to save the personalized price", "error");
@@ -3437,6 +3440,10 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       />
                     </div>
+                    <p className="sm:col-span-2 text-heritage-ink/70">
+                      Saves the price and a contact script for staff to send by email or WhatsApp.
+                      Nothing is sent automatically. If the customer does not reply, follow up once after a few days, then mark the addition declined so it is left off. Do not charge it.
+                    </p>
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
                       <button
                         type="button"
@@ -3449,7 +3456,7 @@ export default function DatabaseView({
                         type="submit"
                         className="px-4 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg border border-heritage-gold/20"
                       >
-                        Save price and email customer
+                        Save price and contact script
                       </button>
                     </div>
                   </form>
@@ -5897,6 +5904,14 @@ export default function DatabaseView({
                                       return (
                                         <div className="flex flex-col items-end gap-2">
                                           {pending.length > 0 && candidate && (
+                                            <>
+                                            <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">
+                                              {personalizedAdditionOpsStatusLabel(
+                                                priceRecord?.lines.find(
+                                                  (line) => line.occurrenceKey === pending[0].occurrenceKey,
+                                                )?.status ?? "evaluation_pending",
+                                              )}
+                                            </p>
                                             <button
                                               type="button"
                                               data-admin-v2-personalized-price={history.orderId}
@@ -5925,6 +5940,7 @@ export default function DatabaseView({
                                             >
                                               Price addition
                                             </button>
+                                            </>
                                           )}
                                           {paid ? (
                                             <button

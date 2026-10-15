@@ -202,12 +202,12 @@ export const DormantFutureShippingStep = ({
           />
           <div className="min-w-0">
             <h3 className="font-serif text-lg font-bold text-heritage-green">
-              Price evaluation required
+              Evaluation pending
             </h3>
             <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
               {canContinueToReview
-                ? "One or more personalised requirements still need a price evaluation before an exact total can be confirmed. Review Order is available."
-                : "One or more personalised requirements still need a price evaluation before an exact total can be confirmed. Complete delivery or pickup to continue."}
+                ? "The total today is the base garment. Personalized additions are reviewed after you order. Review Order is available."
+                : "The total today is the base garment. Personalized additions are reviewed after you order. Complete delivery or pickup to continue."}
             </p>
             {onEditPersonalizedAdditions ? (
               <button
@@ -819,7 +819,7 @@ export const DormantFutureShippingStep = ({
           note={(
             <p id="future-payment-lock-reason" className="w-full text-xs leading-relaxed text-heritage-ink/60">
               {priceEvaluationPending && canContinueToReview
-                ? "Your order review is ready. The personalised portion still needs a price evaluation before an exact total can be confirmed."
+                ? "Your order review is ready. The total today is the base garment. Personalized additions are reviewed after you order."
                 : canContinueToReview
                   ? "Your order review is ready. Online payment remains unavailable."
                   : resolution.quoteRequired

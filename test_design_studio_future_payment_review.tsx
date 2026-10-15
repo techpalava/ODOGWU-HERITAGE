@@ -637,7 +637,7 @@ const describedEvaluationMarkup = renderToStaticMarkup(
 assert.ok(describedEvaluationMarkup.includes("Your order review is ready"));
 assert.ok(
   describedEvaluationMarkup.includes(
-    "This payment is your known base total. Personalized requirements will be evaluated later, and any extra is paid only after you accept it.",
+    "The total today is the base garment. Personalized additions are reviewed after you order. We contact you by email or WhatsApp with the evaluated price, and you pay that extra only if you accept it. If you do not reply, we follow up once after a few days, then leave the addition off. We never charge it automatically.",
   ),
 );
 assert.equal(

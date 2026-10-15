@@ -33,6 +33,7 @@ import {
 import {
   formatPersonalizedPriceEuros,
   PERSONALIZED_BASE_PAYMENT_NOTICE,
+  personalizedAdditionCustomerStatusLabel,
   presentPersonalizedAdditionLines,
   readAcceptedPersonalizedDifferenceCents,
   readFutureOrderV2ChargeableCents,
@@ -475,17 +476,22 @@ export const CustomerFutureOrderV2Details = ({
                       <p className="font-semibold text-heritage-green">What you asked for</p>
                       <p className="mt-1">{line.requirementText}</p>
                       {line.status === "evaluation_pending" && (
-                        <p className="mt-2 text-amber-800">Waiting for a price evaluation.</p>
+                        <p className="mt-2 text-amber-800">
+                          {personalizedAdditionCustomerStatusLabel(line.status)}. We review this after your order and contact you by email or WhatsApp.
+                        </p>
                       )}
                       {line.status === "price_ready" && line.amountCents !== null && (
                         <>
-                          <p className="mt-2 font-semibold">
+                          <p className="mt-2 font-semibold text-heritage-green">
+                            {personalizedAdditionCustomerStatusLabel(line.status)}
+                          </p>
+                          <p className="mt-1 font-semibold">
                             Evaluated price: {formatPersonalizedPriceEuros(line.amountCents)}
                           </p>
                           {line.tailorNote ? <p className="mt-1">Tailor note: {line.tailorNote}</p> : null}
                           <p className="mt-2 text-heritage-ink/70">
-                            Accept to pay this addition later, or decline to keep the base garment only.
-                            Accepting does not charge you.
+                            You pay this extra only if you accept. Accepting does not charge you.
+                            If you do not reply, we follow up once after a few days, then leave the addition off.
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2 print:hidden">
                             <button
@@ -511,7 +517,8 @@ export const CustomerFutureOrderV2Details = ({
                       )}
                       {line.status === "accepted" && line.amountCents !== null && (
                         <p className="mt-2 text-heritage-green">
-                          Accepted {formatPersonalizedPriceEuros(line.amountCents)}.
+                          {personalizedAdditionCustomerStatusLabel(line.status)}{" "}
+                          {formatPersonalizedPriceEuros(line.amountCents)}.
                           {differenceCents !== null
                             ? " Pay the difference for this addition when you are ready. You have not been charged for it."
                             : " This addition is paid."}
@@ -519,7 +526,7 @@ export const CustomerFutureOrderV2Details = ({
                       )}
                       {line.status === "declined" && (
                         <p className="mt-2 text-heritage-ink/70">
-                          Declined. This personalized line is dropped. Your base garment stays.
+                          {personalizedAdditionCustomerStatusLabel(line.status)}. This addition is left off. Your base garment stays.
                         </p>
                       )}
                     </li>

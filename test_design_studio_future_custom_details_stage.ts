@@ -2316,7 +2316,7 @@ assert.equal(
 );
 assert.match(
   textContent(describedPersonalizedFieldset.findByType("legend")),
-  /Price pending/,
+  /Evaluation pending/,
 );
 assert.equal(
   textContent(describedPersonalizedFieldset).includes(

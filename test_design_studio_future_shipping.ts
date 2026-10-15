@@ -813,7 +813,7 @@ assert.match(
 );
 assert.match(
   shippingSource,
-  /id="future-payment-lock-reason"[\s\S]*priceEvaluationPending && canContinueToReview\s*\?\s*"Your order review is ready\. The personalised portion still needs a price evaluation before an exact total can be confirmed\."/,
+  /id="future-payment-lock-reason"[\s\S]*priceEvaluationPending && canContinueToReview\s*\?\s*"Your order review is ready\. The total today is the base garment\. Personalized additions are reviewed after you order\."/,
   "a pending personalised price evaluation must not be described as locking Review Order",
 );
 assert.match(shippingSource, /disabled/);
@@ -934,7 +934,7 @@ assert.ok(
 );
 
 const evaluationPendingMarkup = renderShippingStep(pickup, true, true);
-assert.match(evaluationPendingMarkup, /Price evaluation required/);
+assert.match(evaluationPendingMarkup, /Evaluation pending/);
 assert.match(
   evaluationPendingMarkup,
   /Review Order is available\./,
@@ -947,7 +947,7 @@ assert.equal(
 );
 assert.match(
   evaluationPendingMarkup,
-  /The personalised portion still needs a price evaluation before an exact total can be confirmed\./,
+  /The total today is the base garment\. Personalized additions are reviewed after you order\./,
 );
 const evaluationPendingReviewButtons = reviewOrderButtons(evaluationPendingMarkup);
 assert.ok(evaluationPendingReviewButtons.length >= 1);

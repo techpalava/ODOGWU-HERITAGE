@@ -2008,10 +2008,10 @@ assert.match(
   summarySource,
   /Review your selections below\. You can return to any completed step to make changes\./,
 );
-assert.match(summarySource, /Price evaluation required/);
+assert.match(summarySource, /Evaluation pending/);
 assert.match(
   summarySource,
-  /One or more personalised requirements must be evaluated before an exact total can be confirmed\./,
+  /The total today is the base garment\. Personalized additions are reviewed after you order\./,
 );
 const renderSummaryMarkup = (
   shippingResolution: ReturnType<typeof reconcileFutureShippingState>,

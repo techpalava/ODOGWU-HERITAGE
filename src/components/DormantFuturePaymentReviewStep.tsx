@@ -1192,7 +1192,11 @@ export const DormantFuturePaymentReviewStep = ({
                 data-pricing-final-total
                 className="flex min-w-0 flex-wrap justify-between gap-3 border-t-2 border-heritage-green/25 pt-4 text-base"
               >
-                <dt className="font-bold uppercase tracking-wide text-heritage-green">Total</dt>
+                <dt className="font-bold uppercase tracking-wide text-heritage-green">
+                  {awaitingPersonalizedEvaluation && payableNowCents !== null
+                    ? "Total today"
+                    : "Total"}
+                </dt>
                 <dd className="min-w-0 max-w-full break-words text-right font-mono text-xl font-bold text-heritage-green sm:text-2xl">
                   {candidate.pricing.status === "exact" &&
                   candidate.pricing.exactTotalCents !== null ? (
@@ -1312,8 +1316,8 @@ export const DormantFuturePaymentReviewStep = ({
                 {awaitingPersonalizedEvaluation && onSubmitForPriceReview ? (
                   <div className="mb-4 space-y-2">
                     <p className="text-xs leading-relaxed text-white/80">
-                      Submit this order so the tailor can price the addition. Submitting does not charge you.
-                      You can pay the known base total now. Any extra is charged only after you accept the evaluated price.
+                      Submit this order so the addition can be priced. Submitting does not charge you.
+                      The total today is the base garment. We contact you by email or WhatsApp with any extra, and you pay it only if you accept.
                     </p>
                     <button
                       type="button"
@@ -1330,7 +1334,7 @@ export const DormantFuturePaymentReviewStep = ({
                     </button>
                     {preparation?.status === "prepared" ? (
                       <p className="text-xs leading-relaxed text-white/80">
-                        Order #{preparation.orderId}. We will email you when the addition is priced.
+                        Order #{preparation.orderId}. We will contact you by email or WhatsApp when the addition is priced. If you do not reply, we follow up once, then leave it off.
                       </p>
                     ) : null}
                   </div>

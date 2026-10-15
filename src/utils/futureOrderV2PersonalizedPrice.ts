@@ -15,7 +15,39 @@ export const PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS = 50;
 
 /** Shown wherever the customer can pay while an addition is still unevaluated. */
 export const PERSONALIZED_BASE_PAYMENT_NOTICE =
-  "This payment is your known base total. Personalized requirements will be evaluated later, and any extra is paid only after you accept it.";
+  "The total today is the base garment. Personalized additions are reviewed after you order. We contact you by email or WhatsApp with the evaluated price, and you pay that extra only if you accept it. If you do not reply, we follow up once after a few days, then leave the addition off. We never charge it automatically.";
+
+/** Customer-facing status. No extra enum: no reply is left off by declining it. */
+export const personalizedAdditionCustomerStatusLabel = (
+  status: PersonalizedAdditionPriceStatus,
+): string => {
+  switch (status) {
+    case "evaluation_pending":
+      return "Evaluation pending";
+    case "price_ready":
+      return "Price ready — awaiting your reply";
+    case "accepted":
+      return "Accepted";
+    case "declined":
+      return "Declined";
+  }
+};
+
+/** Ops-facing status. A priced line is waiting on the customer, not on a mailer. */
+export const personalizedAdditionOpsStatusLabel = (
+  status: PersonalizedAdditionPriceStatus,
+): string => {
+  switch (status) {
+    case "evaluation_pending":
+      return "Evaluation pending";
+    case "price_ready":
+      return "Price ready — awaiting customer";
+    case "accepted":
+      return "Accepted";
+    case "declined":
+      return "Declined — left off";
+  }
+};
 
 export const PERSONALIZED_ADDITION_PRICE_STATUSES = [
   "evaluation_pending",
@@ -430,9 +462,10 @@ const emailBody = ({
     note.trimEnd(),
     "",
     "Next steps:",
-    "- Accept and pay the difference from your order. Accepting does not charge you; payment is a separate step.",
-    "- Decline the addition. Your base garment stays, and this personalized line is dropped.",
-    "- Reply to this email if you have a question.",
+    "- Accept and pay the difference from your order only if you want this addition. Accepting does not charge you.",
+    "- Decline the addition to leave it off. Your base garment stays.",
+    "- Reply by email or WhatsApp if you have a question.",
+    "- If we do not hear back, we follow up once after a few days, then leave this addition off. We never charge it automatically.",
     "",
     `Open your order: ${orderLink}`,
   ].join("\n");
@@ -448,8 +481,8 @@ export type EvaluatePersonalizedAdditionResult =
 
 /**
  * One tailor save: clear the pending flag, store the euro amount, mark the
- * line price_ready, and build the customer email queued with that same result.
- * This does not charge the customer.
+ * line price_ready, and store a contact script for staff. Nothing is sent
+ * automatically, and this does not charge the customer.
  */
 export const evaluatePersonalizedAddition = ({
   existing,
