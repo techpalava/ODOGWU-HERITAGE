@@ -816,7 +816,7 @@ export const DormantFutureShippingStep = ({
           backDestination="Summary"
           onBack={onBack}
           note={(
-            <p id="future-payment-lock-reason" className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right">
+            <p id="future-payment-lock-reason" className="w-full text-xs leading-relaxed text-heritage-ink/60">
               {priceEvaluationPending
                 ? "Review Order is locked until personalised price evaluation is resolved (or the personalized addition is removed)."
                 : canContinueToReview

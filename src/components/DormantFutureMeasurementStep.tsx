@@ -1679,7 +1679,7 @@ export const DormantFutureMeasurementStep = ({
                   data-measurement-fit-conflict-status="true"
                   data-measurement-guide-beam="true"
                   className={withMeasurementGuideBeam(
-                    "font-serif text-sm font-bold text-heritage-green lg:text-right",
+                    "font-serif text-sm font-bold text-heritage-green",
                     true,
                   )}
                 >
@@ -1689,7 +1689,7 @@ export const DormantFutureMeasurementStep = ({
               <p
                 id="measurement-risk-selection-notice"
                 data-measurement-risk-notice="true"
-                className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right"
+                className="w-full text-xs leading-relaxed text-heritage-ink/60"
               >
                 {MEASUREMENT_RISK_SELECTION_NOTICE}
               </p>

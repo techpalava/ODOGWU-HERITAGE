@@ -38,7 +38,7 @@ export function DesignStudioStepGuide({
   const showBeam = active && Children.count(children) > 0;
   const densityClass =
     density === "compact"
-      ? "w-full rounded-xl px-3 py-2 text-xs leading-relaxed lg:max-w-sm"
+      ? "w-full rounded-xl px-3 py-2 text-xs leading-relaxed"
       : "min-w-0 rounded-2xl p-4";
 
   return (
