@@ -841,8 +841,13 @@ assert.match(shippingSource, /data-delivery-address-check="true"/);
 assert.match(shippingSource, /Check this matches the courier address before continuing\./);
 assert.match(
   shippingSource,
-  /projectedTotalCents === null\s*\?\s*"min-w-0 font-serif text-sm font-semibold sm:text-base"/,
+  /displayedTotalCents === null\s*\?\s*"min-w-0 font-serif text-sm font-semibold sm:text-base"/,
   "pending total copy must be smaller than the euro Total",
+);
+assert.match(
+  studioSource,
+  /<DormantFutureShippingStep[\s\S]*?orderType=\{futureOrderIdentity\?\.orderType \?\? ctx\.orderType\}/,
+  "Delivery & Pickup receives the same order type as the other total surfaces",
 );
 assert.match(shippingSource, /"shrink-0 font-serif text-2xl font-bold sm:text-3xl"/);
 assert.doesNotMatch(shippingSource, /Destination region/);
@@ -965,5 +970,102 @@ const deliveryMarkup = renderShippingStep(deliveryClearsPickup, true);
 assert.match(deliveryMarkup, /placeholder="\+31 6 12345678"/);
 assert.equal(deliveryMarkup.includes("Include country code for WhatsApp."), false);
 assert.equal(deliveryMarkup.includes('id="future-shipping-phone-hint"'), false);
+assert.match(
+  pickupMarkup,
+  /Garment construction already includes fabric, tax, Standard Shipping to Eindhoven, and sewing\./,
+);
+assert.equal(pickupMarkup.includes("data-shipping-lagos-inbound"), false);
+assert.match(pickupMarkup, /€500\.00/);
+
+const renderPricedShippingStep = (
+  resolution: ReturnType<typeof reconcileFutureShippingState>,
+  orderType: string,
+) =>
+  renderToStaticMarkup(
+    createElement(DormantFutureShippingStep, {
+      state: resolution.state,
+      resolution,
+      selectedDesignPrice: 65,
+      garmentCount: 1,
+      orderType,
+      onChange: () => undefined,
+      onRefreshQuote: () => undefined,
+      onBack: () => undefined,
+      canContinueToReview: true,
+      onContinueToReview: () => undefined,
+    }),
+  );
+
+const individualPickupQuote = reconcileFutureShippingState({
+  state: pickupState,
+  garmentCount: 1,
+  selectedDesignPrice: 65,
+});
+assert.equal(individualPickupQuote.postEindhovenAdjustmentCents, 0);
+assert.equal(individualPickupQuote.projectedTotalCents, 6500);
+const individualPickupMarkup = renderPricedShippingStep(
+  individualPickupQuote,
+  "Individual",
+);
+assert.match(individualPickupMarkup, /data-shipping-lagos-inbound="true"/);
+assert.match(individualPickupMarkup, /data-amount-cents="1400"/);
+assert.match(individualPickupMarkup, /Lagos → Eindhoven shipping/);
+assert.match(individualPickupMarkup, /€14\.00/);
+assert.match(individualPickupMarkup, /€65\.00/);
+assert.match(individualPickupMarkup, /data-shipping-displayed-total-cents="7900"/);
+assert.match(individualPickupMarkup, /€79\.00/);
+assert.match(individualPickupMarkup, /Includes fabric, tax, and sewing\./);
+assert.match(
+  individualPickupMarkup,
+  /Lagos → Eindhoven shipping is added to the total\./,
+);
+assert.equal(individualPickupMarkup.includes(">Included<"), false);
+assert.equal(
+  individualPickupMarkup.includes("already included"),
+  false,
+);
+assert.equal(
+  individualPickupMarkup.includes("already includes"),
+  false,
+);
+assert.equal(
+  individualPickupMarkup.includes(
+    "Garment construction already includes fabric, tax, Standard Shipping to Eindhoven, and sewing.",
+  ),
+  false,
+);
+
+const parisDelivery = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "FR", "Paris"),
+  garmentCount: 1,
+  selectedDesignPrice: 65,
+});
+assert.equal(parisDelivery.postEindhovenAdjustmentCents, 1900);
+assert.equal(parisDelivery.projectedTotalCents, 8400);
+const parisMarkup = renderPricedShippingStep(parisDelivery, "Individual");
+assert.match(parisMarkup, /data-amount-cents="1400"/);
+assert.match(parisMarkup, /€14\.00/);
+assert.match(parisMarkup, /€19\.00/);
+assert.match(parisMarkup, /data-shipping-displayed-total-cents="9800"/);
+assert.match(parisMarkup, /€98\.00/);
+assert.equal(parisMarkup.includes(">Included<"), false);
+assert.equal(parisMarkup.includes("already included"), false);
+
+const communityPickupMarkup = renderPricedShippingStep(
+  individualPickupQuote,
+  "Community",
+);
+assert.equal(communityPickupMarkup.includes("data-shipping-lagos-inbound"), false);
+assert.equal(communityPickupMarkup.includes("€14.00"), false);
+assert.match(communityPickupMarkup, /data-shipping-displayed-total-cents="6500"/);
+assert.match(communityPickupMarkup, /€65\.00/);
+assert.match(
+  communityPickupMarkup,
+  /Garment construction already includes fabric, tax, Standard Shipping to Eindhoven, and sewing\./,
+);
+assert.match(
+  communityPickupMarkup,
+  /Standard Shipping to Eindhoven is already included\./,
+);
 
 console.log("PASS: Step 8 Delivery & Pickup state, completion, and UI contracts");

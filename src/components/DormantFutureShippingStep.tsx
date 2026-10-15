@@ -27,6 +27,8 @@ import {
 } from "../utils/designStudioFutureShipping";
 import { formatStep8CustomerDestination } from "../utils/step8AdditionalDelivery";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
+import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
 interface DormantFutureShippingStepProps {
@@ -34,6 +36,7 @@ interface DormantFutureShippingStepProps {
   resolution: FutureShippingStageResolution;
   selectedDesignPrice: number | null;
   garmentCount: number;
+  orderType?: string | null;
   onChange: (state: FutureShippingStateV1) => void;
   onRefreshQuote: () => void;
   onBack: () => void;
@@ -57,6 +60,7 @@ export const DormantFutureShippingStep = ({
   resolution,
   selectedDesignPrice,
   garmentCount,
+  orderType = null,
   onChange,
   onBack,
   canContinueToReview,
@@ -119,6 +123,22 @@ export const DormantFutureShippingStep = ({
   };
   const isDelivery = state.fulfilmentMethod === "destination_delivery";
   const isPickup = state.fulfilmentMethod === "eindhoven_pickup";
+  const inboundShipping = resolveIndividualInboundShippingDisplay({
+    orderType,
+    physicalGarmentCount: garmentCount,
+  });
+  const displayedTotalCents =
+    resolution.projectedTotalCents === null
+      ? null
+      : resolution.projectedTotalCents + (inboundShipping?.amountCents ?? 0);
+  const constructionNote =
+    orderType === "Individual"
+      ? garmentConstructionInclusionNote(orderType)
+      : "Garment construction already includes fabric, tax, Standard Shipping to Eindhoven, and sewing.";
+  const shippingIntro =
+    orderType === "Individual"
+      ? "Lagos → Eindhoven shipping is added to the total. This step adds pickup or additional delivery from Eindhoven."
+      : "Standard Shipping to Eindhoven is already included. This step only adds pickup or additional delivery from Eindhoven.";
   const isOtherDestination =
     isDelivery && state.destinationSelectionMode === "other_destination";
   const regionRequired = isDelivery;
@@ -144,7 +164,9 @@ export const DormantFutureShippingStep = ({
   const statusMessage =
     resolution.status === "quote_ready"
       ? isPickup
-        ? "Pickup contact details are complete. No additional shipping charge applies."
+        ? inboundShipping
+          ? "Pickup contact details are complete. Pickup adds no further delivery charge."
+          : "Pickup contact details are complete. No additional shipping charge applies."
         : `Shipping is ready for ${resolution.destinationLabel}.`
       : resolution.status === "quote_pending" || resolution.quoteRequired
         ? isOtherDestination
@@ -225,8 +247,7 @@ export const DormantFutureShippingStep = ({
       <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-green/20 bg-heritage-green/5 p-4 sm:p-5">
         <Info aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-green" size={19} />
         <p className="min-w-0 text-sm font-semibold leading-relaxed text-heritage-green">
-          Standard Shipping to Eindhoven is already included. This step only adds
-          pickup or additional delivery from Eindhoven.
+          {shippingIntro}
         </p>
       </div>
 
@@ -774,9 +795,20 @@ export const DormantFutureShippingStep = ({
               {selectedDesignPrice === null ? "Pending" : money(selectedDesignPrice)}
             </dd>
           </div>
+          {inboundShipping ? (
+            <div
+              data-shipping-lagos-inbound="true"
+              data-amount-cents={inboundShipping.amountCents}
+              className="flex min-w-0 flex-wrap justify-between gap-2 text-white/80"
+            >
+              <dt className="min-w-0 break-words">{inboundShipping.label}</dt>
+              <dd className="shrink-0 font-mono font-medium text-white">
+                {money(inboundShipping.priceEur)}
+              </dd>
+            </div>
+          ) : null}
           <p className="text-xs leading-relaxed text-white/70">
-            Garment construction already includes fabric, tax, Standard Shipping
-            to Eindhoven, and sewing.
+            {constructionNote}
           </p>
           {isDelivery && (
           <div className="border-t border-white/15 pt-3">
@@ -794,18 +826,19 @@ export const DormantFutureShippingStep = ({
           )}
           <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t-2 border-white/35 pt-3 text-base">
             <dt className="font-bold uppercase tracking-wide">
-              {resolution.projectedTotalCents === null ? "Current Subtotal" : "Total"}
+              {displayedTotalCents === null ? "Current Subtotal" : "Total"}
             </dt>
             <dd
+              data-shipping-displayed-total-cents={displayedTotalCents ?? undefined}
               className={
-                resolution.projectedTotalCents === null
+                displayedTotalCents === null
                   ? "min-w-0 font-serif text-sm font-semibold sm:text-base"
                   : "shrink-0 font-serif text-2xl font-bold sm:text-3xl"
               }
             >
-              {resolution.projectedTotalCents === null
+              {displayedTotalCents === null
                 ? "Available after delivery is resolved"
-                : moneyFromCents(resolution.projectedTotalCents)}
+                : moneyFromCents(displayedTotalCents)}
             </dd>
           </div>
         </dl>
