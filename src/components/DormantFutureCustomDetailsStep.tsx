@@ -9,6 +9,7 @@ import {
 } from "../config/GarmentDetailsConfig";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import type {
   CanonicalPhysicalGarmentType,
@@ -1597,10 +1598,13 @@ export const DormantFutureCustomDetailsStep = ({
       </div>
 
       {completion.blockers.length > 0 && (
-        <div role="alert" className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4">
-          <p className="text-sm font-bold text-heritage-green">{stageTitle} need attention</p>
+        <DesignStudioStepGuide
+          role="alert"
+          title={`${stageTitle} need attention`}
+          titleClassName="text-sm"
+        >
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{Array.from(new Set(completion.blockers.map((blocker) => blocker.message))).map((message) => <li key={message}>{message}</li>)}</ul>
-        </div>
+        </DesignStudioStepGuide>
       )}
       {garmentFabricContexts.length > 0 && (
         <section
