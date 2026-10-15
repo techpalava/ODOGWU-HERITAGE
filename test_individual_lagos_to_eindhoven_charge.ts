@@ -72,14 +72,12 @@ const deliveryQuote = quoteFutureOrderPayableTotal(deliveryCandidate);
 assert.ok(deliveryQuote);
 assert.equal(deliveryQuote.garmentConstructionSubtotalCents, 6500);
 assert.equal(deliveryQuote.lagosToEindhovenShippingCents, 1400);
-assert.ok(
-  deliveryQuote.postEindhovenAdjustmentCents > 0,
-  "destination delivery adds a final-mile fee",
-);
 assert.equal(
-  deliveryQuote.exactTotalCents,
-  6500 + deliveryQuote.postEindhovenAdjustmentCents + 1400,
+  deliveryQuote.postEindhovenAdjustmentCents,
+  1900,
+  "Paris final-mile is €19",
 );
+assert.equal(deliveryQuote.exactTotalCents, 9800);
 
 const communityOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "community-unchanged",
