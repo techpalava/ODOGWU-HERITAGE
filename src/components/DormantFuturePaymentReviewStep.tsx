@@ -40,6 +40,7 @@ import {
   getFuturePaymentReviewMeasurementHeader,
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
+  isAwaitingPersonalizedPriceEvaluation,
   isFuturePaymentReviewStageUnlocked,
   type FuturePaymentReviewCandidate,
   type FuturePaymentReviewResult,
@@ -615,7 +616,12 @@ export const DormantFuturePaymentReviewStep = ({
   initialPaymentMethod = "card",
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
-  const isReviewable = isFuturePaymentReviewStageUnlocked(result);
+  const reviewStageOpen = isFuturePaymentReviewStageUnlocked(result);
+  const awaitingPersonalizedEvaluation = Boolean(
+    candidate &&
+      reviewStageOpen &&
+      isAwaitingPersonalizedPriceEvaluation(candidate),
+  );
   const measurementGroups = candidate
     ? getFuturePaymentReviewMeasurementGroups(candidate)
     : [];
@@ -656,6 +662,10 @@ export const DormantFuturePaymentReviewStep = ({
   const payIsBusy = preparationIsPending || paymentIsProcessing;
   const reviewedTotalCents =
     candidate?.pricing.status === "exact" ? candidate.pricing.exactTotalCents : null;
+  const canSettleReviewedOrder =
+    reviewStageOpen &&
+    candidate?.contentStatus === "reviewable" &&
+    reviewedTotalCents !== null;
   const [stripePaymentReady, setStripePaymentReady] = useState(false);
   const [paymentMethod, setPaymentMethod] =
     useState<FutureOrderV2PaymentMethod>(initialPaymentMethod);
@@ -745,13 +755,13 @@ export const DormantFuturePaymentReviewStep = ({
         role="status"
         aria-live="polite"
         className={`min-w-0 rounded-2xl border p-4 sm:p-5 ${
-          isReviewable
+          canSettleReviewedOrder
             ? "border-heritage-green/20 bg-heritage-green/5"
             : "border-heritage-gold/35 bg-heritage-gold/8"
         }`}
       >
         <div className="flex min-w-0 items-start gap-3">
-          {isReviewable ? (
+          {canSettleReviewedOrder ? (
             <CheckCircle2
               aria-hidden="true"
               className="mt-0.5 shrink-0 text-heritage-green"
@@ -766,12 +776,16 @@ export const DormantFuturePaymentReviewStep = ({
           )}
           <div className="min-w-0">
             <h2 className="font-serif text-lg font-bold text-heritage-green">
-              {isReviewable ? "Your order review is ready" : "Review is currently locked"}
+              {canSettleReviewedOrder || awaitingPersonalizedEvaluation
+                ? "Your order review is ready"
+                : "Review is currently locked"}
             </h2>
             <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
-              {isReviewable
+              {canSettleReviewedOrder
                 ? "Your selections and authoritative total are ready to review."
-                : "Complete the highlighted requirement before opening this stage through normal navigation."}
+                : awaitingPersonalizedEvaluation
+                  ? "Personalised requirements still need a price evaluation before an exact total can be confirmed."
+                  : "Complete the highlighted requirement before opening this stage through normal navigation."}
             </p>
           </div>
         </div>
@@ -1297,7 +1311,7 @@ export const DormantFuturePaymentReviewStep = ({
                     <button
                     type="button"
                     data-future-order-v2-pay={true}
-                    disabled={!isReviewable || payIsBusy || !stripePaymentReady}
+                    disabled={!canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"
                     onClick={onPay}
@@ -1310,7 +1324,7 @@ export const DormantFuturePaymentReviewStep = ({
                       <button
                         type="button"
                         data-testid="future-order-v2-add-to-cart"
-                        disabled={!isReviewable || payIsBusy}
+                        disabled={!canSettleReviewedOrder || payIsBusy}
                         onClick={onParkCompleteOrder}
                         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-gold/50 bg-heritage-forest px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-gold hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                       >

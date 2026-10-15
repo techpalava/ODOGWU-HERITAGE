@@ -205,8 +205,9 @@ export const DormantFutureShippingStep = ({
               Price evaluation required
             </h3>
             <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-              One or more personalised requirements must be evaluated before
-              Review Order and an exact total can be confirmed.
+              {canContinueToReview
+                ? "One or more personalised requirements still need a price evaluation before an exact total can be confirmed. Review Order is available."
+                : "One or more personalised requirements still need a price evaluation before an exact total can be confirmed. Complete delivery or pickup to continue."}
             </p>
             {onEditPersonalizedAdditions ? (
               <button
@@ -817,8 +818,8 @@ export const DormantFutureShippingStep = ({
           onBack={onBack}
           note={(
             <p id="future-payment-lock-reason" className="w-full text-xs leading-relaxed text-heritage-ink/60">
-              {priceEvaluationPending
-                ? "Review Order is locked until personalised price evaluation is resolved (or the personalized addition is removed)."
+              {priceEvaluationPending && canContinueToReview
+                ? "Your order review is ready. The personalised portion still needs a price evaluation before an exact total can be confirmed."
                 : canContinueToReview
                   ? "Your order review is ready. Online payment remains unavailable."
                   : resolution.quoteRequired

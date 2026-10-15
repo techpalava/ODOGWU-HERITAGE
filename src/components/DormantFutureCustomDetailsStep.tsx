@@ -940,7 +940,9 @@ export const DormantFutureCustomDetailsStep = ({
     const garmentKey = occurrence.subject.garmentKey;
     const groupId = `future-custom-detail-${garmentKey}-${group.selectionGroup}`;
     const groupBlocker = completion.blockers.find((blocker) =>
-      blocker.garmentKey === occurrence.subject.garmentKey && blocker.selectionGroup === group.selectionGroup,
+      blocker.garmentKey === occurrence.subject.garmentKey &&
+      blocker.selectionGroup === group.selectionGroup &&
+      blocker.code !== "pricing_evaluation_required",
     );
     const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
@@ -1190,19 +1192,31 @@ export const DormantFutureCustomDetailsStep = ({
     () => partitionCatalogueGroupsByRole([catalogue.personalizedGroup], "main"),
     [catalogue.personalizedGroup],
   );
-  const getGroupStatus = (group: FutureCustomDetailsCatalogueGroup) =>
-    group.occurrences.some((occurrence) => occurrence.construction?.status !== "resolved")
-      ? "Price pending"
-      : group.occurrences.some((occurrence) =>
-          completion.blockers.some((blocker) =>
-            blocker.garmentKey === occurrence.subject.garmentKey &&
-            blocker.selectionGroup === group.selectionGroup,
-          ),
-        )
-        ? "Incomplete"
-        : group.isConstruction
-          ? "Complete"
-          : "Optional";
+  const blockersForGroup = (group: FutureCustomDetailsCatalogueGroup) =>
+    completion.blockers.filter((blocker) =>
+      group.occurrences.some(
+        (occurrence) =>
+          blocker.garmentKey === occurrence.subject.garmentKey &&
+          blocker.selectionGroup === group.selectionGroup,
+      ),
+    );
+  const getGroupStatus = (group: FutureCustomDetailsCatalogueGroup) => {
+    const blockers = blockersForGroup(group);
+    const customerBlockers = blockers.filter(
+      (blocker) => blocker.code !== "pricing_evaluation_required",
+    );
+    if (
+      group.occurrences.some(
+        (occurrence) => occurrence.construction?.status !== "resolved",
+      ) ||
+      (customerBlockers.length === 0 &&
+        blockers.some((blocker) => blocker.code === "pricing_evaluation_required"))
+    ) {
+      return "Price pending";
+    }
+    if (customerBlockers.length > 0) return "Incomplete";
+    return group.isConstruction ? "Complete" : "Optional";
+  };
   const renderGroupFieldset = (
     group: FutureCustomDetailsCatalogueGroup,
     headingMode: "base" | "added",
@@ -1533,11 +1547,31 @@ export const DormantFutureCustomDetailsStep = ({
     const visibleCompanions = companionGroups.filter((group) => group.occurrences.length > 0);
     if (visibleGroups.length === 0 && visibleCompanions.length === 0) return null;
     const occurrences = [...visibleGroups, ...visibleCompanions].flatMap((group) => group.occurrences);
-    const hasPricingPending = occurrences.some((occurrence) => occurrence.construction?.status !== "resolved");
-    const hasIncompleteOccurrence = occurrences.some((occurrence) =>
-      completion.blockers.some((blocker) => blocker.garmentKey === occurrence.subject.garmentKey),
+    const sectionGroups = new Set(
+      [...visibleGroups, ...visibleCompanions].map((group) => group.selectionGroup),
     );
-    const sectionBadge = hasPricingPending
+    const blockersForOccurrence = (garmentKey: string) =>
+      completion.blockers.filter((blocker) => {
+        if (blocker.garmentKey !== garmentKey) return false;
+        return (
+          !blocker.selectionGroup ||
+          sectionGroups.has(blocker.selectionGroup)
+        );
+      });
+    const hasPricingPending = occurrences.some(
+      (occurrence) => occurrence.construction?.status !== "resolved",
+    );
+    const hasIncompleteOccurrence = occurrences.some((occurrence) =>
+      blockersForOccurrence(occurrence.subject.garmentKey).some(
+        (blocker) => blocker.code !== "pricing_evaluation_required",
+      ),
+    );
+    const hasEvaluationPending = occurrences.some((occurrence) =>
+      blockersForOccurrence(occurrence.subject.garmentKey).some(
+        (blocker) => blocker.code === "pricing_evaluation_required",
+      ),
+    );
+    const sectionBadge = hasPricingPending || (hasEvaluationPending && !hasIncompleteOccurrence)
       ? "Price pending"
       : hasIncompleteOccurrence
         ? "Incomplete"

@@ -614,6 +614,42 @@ assert.ok(blockedMarkup.includes("Edit Custom Details"));
 assert.equal(blockedMarkup.includes("€350.60"), false);
 assert.ok(blockedMarkup.includes("Available after all prices are confirmed"));
 
+const describedEvaluationReview: FutureOrderCandidateBuildResult = {
+  status: "reviewable",
+  paymentStatus: "payment_provider_unavailable",
+  candidate: {
+    ...evaluationCandidate,
+    blockers: evaluationCandidate.blockers.filter(
+      (blocker) => blocker.code !== "CUSTOM_DETAILS_EVALUATION_REQUIRED",
+    ),
+  },
+  blockers: [],
+};
+assert.equal(isFuturePaymentReviewStageUnlocked(describedEvaluationReview), true);
+assert.equal(isFuturePaymentReviewStageUnlocked(blockedResult), false);
+const describedEvaluationMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={describedEvaluationReview}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+  />,
+);
+assert.ok(describedEvaluationMarkup.includes("Your order review is ready"));
+assert.ok(
+  describedEvaluationMarkup.includes(
+    "Personalised requirements still need a price evaluation before an exact total can be confirmed.",
+  ),
+);
+assert.equal(
+  describedEvaluationMarkup.includes("Review is currently locked"),
+  false,
+);
+assert.equal(
+  describedEvaluationMarkup.includes("Your order needs attention"),
+  false,
+);
+assert.ok(describedEvaluationMarkup.includes("Price requires evaluation."));
+
 const componentSource = readFileSync(
   "src/components/DormantFuturePaymentReviewStep.tsx",
   "utf8",

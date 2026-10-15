@@ -2290,6 +2290,11 @@ assert.ok(
     personalizedDetail.parent!.children.indexOf(personalizedOptionGrid()),
   "the conditional detail must follow the entire option grid",
 );
+assert.match(
+  textContent(personalizedFieldset().findByType("legend")),
+  /Incomplete/,
+  "a selected personalized requirement without a description stays Incomplete",
+);
 const personalizedTextarea = personalizedDetail.findByType("textarea");
 act(() => {
   personalizedTextarea.props.onChange({ target: { value: "Add a family crest on the left chest." } });
@@ -2302,6 +2307,23 @@ assert.equal(
     .findByType("textarea").props.value,
   "Add a family crest on the left chest.",
   "the displayed conditional detail must retain the selected option's persisted text",
+);
+const describedPersonalizedFieldset = personalizedFieldset();
+assert.equal(
+  textContent(describedPersonalizedFieldset.findByType("legend")).includes("Incomplete"),
+  false,
+  "a described personalized requirement must not be marked Incomplete",
+);
+assert.match(
+  textContent(describedPersonalizedFieldset.findByType("legend")),
+  /Price pending/,
+);
+assert.equal(
+  textContent(describedPersonalizedFieldset).includes(
+    "This personalized detail requires a price evaluation.",
+  ),
+  false,
+  "price evaluation stays a price state and is not an error on a filled requirement",
 );
 assert.equal(
   neckLayoutReconciliation.state.selectionsByGarmentKey["base:shirt"]?.[
@@ -2320,6 +2342,11 @@ assert.equal(
   }).length,
   0,
   "selecting None must hide the personalized detail without changing the option catalogue",
+);
+assert.match(
+  textContent(personalizedFieldset().findByType("legend")),
+  /Optional/,
+  "clearing Personalized Additional returns the group to optional",
 );
 
 let constructionBreakdownRenderer!: ReturnType<typeof create>;
