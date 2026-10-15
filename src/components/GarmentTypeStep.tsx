@@ -4,6 +4,7 @@ import {
   DesignStudioForwardButton,
   DesignStudioStepActions,
 } from "./DesignStudioBackButton";
+import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import type {
   CustomDetailDemographic,
   CustomDetailOption,
@@ -437,18 +438,16 @@ export const GarmentTypeStep = ({
           className="mb-5"
           note={
             showStillNeeded ? (
-              <div
+              <DesignStudioStepGuide
                 id={stillNeededId}
                 role="status"
+                density="compact"
                 data-testid="step1-still-needed"
                 data-step1-still-needed={stillNeeded
                   .map((item) => item.code)
                   .join(" ")}
-                className="w-full rounded-xl border border-heritage-gold/50 bg-heritage-cream/70 px-3 py-2 text-left text-xs leading-relaxed text-heritage-ink"
+                title="Still needed before Fabric"
               >
-                <p className="font-bold text-heritage-green">
-                  Still needed before Fabric
-                </p>
                 <ul className="mt-1 list-disc space-y-1 pl-4">
                   {stillNeeded.map((item) => {
                     const targetId = stillNeededTarget(item.code);
@@ -472,7 +471,7 @@ export const GarmentTypeStep = ({
                     );
                   })}
                 </ul>
-              </div>
+              </DesignStudioStepGuide>
             ) : null
           }
           forward={onContinue ? {

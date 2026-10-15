@@ -6,6 +6,31 @@ import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { CANONICAL_PHYSICAL_GARMENT_TYPES, STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 
+const fabricSource = readFileSync(
+  "src/components/DormantFutureFabricStep.tsx",
+  "utf8",
+);
+const stepperSource = readFileSync(
+  "src/components/DesignStudioJourneyStepper.tsx",
+  "utf8",
+);
+const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+const guideSource = readFileSync(
+  "src/components/DesignStudioStepGuide.tsx",
+  "utf8",
+);
+
+assert.match(fabricSource, /getFutureGarmentLabel\(assignment\.garmentType\)/);
+assert.match(fabricSource, /aria-label=\{`Change fabric for \$\{garmentLabel\}`\}/);
+assert.match(fabricSource, /aria-label=\{`Add fabric for \$\{garmentLabel\}`\}/);
+assert.match(fabricSource, /aria-label=\{`Assign fabric for \$\{garmentLabel\}`\}/);
+assert.match(fabricSource, /Fabric needs attention/);
+assert.match(fabricSource, /data-testid="fabric-needs-attention"/);
+assert.match(fabricSource, /data-fabric-needs-attention="true"/);
+assert.match(fabricSource, /DesignStudioStepGuide/);
+assert.match(guideSource, />\s*Guide\s*</);
+assert.match(guideSource, /motion-safe:animate-step-guide-beam/);
+
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const presentation = getGarmentTypeStepPresentation({
   selectedGarmentTypes: [],
@@ -40,21 +65,6 @@ assert.deepEqual(
   ],
 );
 
-const fabricSource = readFileSync(
-  "src/components/DormantFutureFabricStep.tsx",
-  "utf8",
-);
-const stepperSource = readFileSync(
-  "src/components/DesignStudioJourneyStepper.tsx",
-  "utf8",
-);
-const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-
-assert.match(fabricSource, /getFutureGarmentLabel\(assignment\.garmentType\)/);
-assert.match(fabricSource, /aria-label=\{`Change fabric for \$\{garmentLabel\}`\}/);
-assert.match(fabricSource, /aria-label=\{`Add fabric for \$\{garmentLabel\}`\}/);
-assert.match(fabricSource, /aria-label=\{`Assign fabric for \$\{garmentLabel\}`\}/);
-assert.match(fabricSource, /Fabric needs attention/);
 assert.match(stepperSource, /aria-current=\{isCurrent \? "step" : undefined\}/);
 assert.match(stepperSource, /disabled=\{!isClickable\}/);
 assert.match(stepperSource, /min-h-11/);
