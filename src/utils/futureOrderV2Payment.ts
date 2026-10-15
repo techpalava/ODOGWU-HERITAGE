@@ -3,6 +3,10 @@ import { parseFutureOrderMasterOrderV2 } from "./futureOrderV2Storage";
 import type { FutureOrderV2PreparationAttempt } from "./futureOrderV2Preparation";
 import type { Batch } from "../types";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
+import {
+  readFutureOrderV2ChargeableCents,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "./futureOrderV2PersonalizedPrice";
 
 export type FutureOrderV2PaymentMethod = "card" | "ideal" | "klarna";
 
@@ -261,8 +265,12 @@ export const readFutureOrderV2ReviewedTotalCents = (
  */
 export const authorizeFutureOrderV2Payment = async (
   attempt: FutureOrderV2PaymentAttempt,
+  personalizedPrice: FutureOrderV2PersonalizedPriceRecord | null = null,
 ): Promise<FutureOrderV2PaymentAuthorizationResult> => {
-  const amountCents = readFutureOrderV2ReviewedTotalCents(attempt);
+  const amountCents = readFutureOrderV2ChargeableCents(
+    attempt.masterOrder.cartItem.candidate,
+    personalizedPrice,
+  );
   if (
     amountCents === null ||
     attempt.paymentReference !== `future-v2-payment-${attempt.orderId}`

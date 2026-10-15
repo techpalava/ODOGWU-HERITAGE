@@ -201,6 +201,14 @@ assert.match(
 );
 assert.match(
   rules,
+  /match \/future_order_v2_personalized_prices\/\{orderId\} \{[\s\S]*?allow read: if isAdmin\(\) \|\| ownsExistingDocument\(\);[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?allow delete: if false;/,
+);
+assert.match(
+  rules,
+  /match \/future_order_v2_notification_outbox\/\{notificationId\} \{[\s\S]*?allow read: if isAdmin\(\);[\s\S]*?allow create: if isAdmin\(\)[\s\S]*?kind == "personalized_price_ready"[\s\S]*?status == "queued"[\s\S]*?allow update, delete: if false;/,
+);
+assert.match(
+  rules,
   /request\.auth\.token\.firebase\.sign_in_provider != "anonymous"/,
 );
 assert.match(rules, /request\.auth\.token\.admin == true/);

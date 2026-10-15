@@ -5,10 +5,12 @@ import type {
 } from "./futureOrderV2Payment";
 import type { FutureOrderV2PaymentRecord } from "./futureOrderV2PaymentRecord";
 import type { PersistedFutureOrderV2 } from "./futureOrderV2PersistenceContract";
+import type { FutureOrderV2PersonalizedPriceRecord } from "./futureOrderV2PersonalizedPrice";
 
 export interface FutureOrderV2DashboardPaymentActions {
   readonly authorize: (
     attempt: FutureOrderV2PaymentAttempt,
+    personalizedPrice?: FutureOrderV2PersonalizedPriceRecord | null,
   ) => Promise<FutureOrderV2PaymentAuthorizationResult>;
   readonly record: (input: {
     orderId: string;
@@ -53,14 +55,20 @@ export const retryFutureOrderV2DashboardRecord = async ({
 
 export const payFutureOrderV2FromDashboard = async ({
   order,
+  personalizedPrice = null,
   authorize,
   record,
 }: {
   order: PersistedFutureOrderV2;
+  /** Accepted additions included in the charge. Omitted when the snapshot total is exact. */
+  personalizedPrice?: FutureOrderV2PersonalizedPriceRecord | null;
 } & FutureOrderV2DashboardPaymentActions): Promise<FutureOrderV2DashboardPaymentOutcome> => {
   let authorization: FutureOrderV2PaymentAuthorizationResult;
   try {
-    authorization = await authorize(createFutureOrderV2DashboardPaymentAttempt(order));
+    authorization = await authorize(
+      createFutureOrderV2DashboardPaymentAttempt(order),
+      personalizedPrice,
+    );
   } catch {
     return {
       status: "failed",

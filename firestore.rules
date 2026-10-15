@@ -850,6 +850,43 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /future_order_v2_personalized_prices/{orderId} {
+      // Tailor price for a personalized addition. The V2 order snapshot stays immutable.
+      // Customers accept or decline through the server, which does not charge.
+      allow read: if isAdmin() || ownsExistingDocument();
+      allow create, update: if isAdmin()
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.orderId == orderId
+        && request.resource.data.ownerUid is string
+        && request.resource.data.ownerUid.size() > 0
+        && request.resource.data.lines is list
+        && request.resource.data.lines.size() >= 1
+        && request.resource.data.lines.size() <= 12
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /future_order_v2_notification_outbox/{notificationId} {
+      // Queued with the tailor price save. Customers cannot forge mail.
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.kind == "personalized_price_ready"
+        && request.resource.data.status == "queued"
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.ownerUid is string
+        && request.resource.data.ownerUid.size() > 0
+        && request.resource.data.toEmail is string
+        && request.resource.data.subject is string
+        && request.resource.data.body is string
+        && request.resource.data.occurrenceKey is string
+        && request.resource.data.amountCents is int
+        && request.resource.data.amountCents >= 1
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
     match /businessSettings/{document=**} {
       allow read: if true;
       allow write: if isAdmin();

@@ -12,6 +12,11 @@ import {
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord.js";
+import {
+  FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  parseFutureOrderV2PersonalizedPrice,
+  readFutureOrderV2ChargeableCents,
+} from "../utils/futureOrderV2PersonalizedPrice.js";
 
 interface VerifiedPaymentRecordToken {
   readonly uid: string;
@@ -38,6 +43,7 @@ export interface FutureOrderV2PaymentRecordTransaction {
 
 export interface FutureOrderV2PaymentRecordStore {
   readOrder(orderId: string): Promise<unknown | null>;
+  readPersonalizedPrice?(orderId: string): Promise<unknown | null>;
   runTransaction<T>(
     operation: (transaction: FutureOrderV2PaymentRecordTransaction) => Promise<T>,
   ): Promise<T>;
@@ -105,6 +111,13 @@ export const createAdminFutureOrderV2PaymentRecordStore = (
     async readOrder(orderId) {
       const snapshot = await db.collection(FUTURE_ORDER_V2_COLLECTION).doc(orderId).get();
       return snapshot.exists ? snapshot.data() : null;
+    },
+    async readPersonalizedPrice(orderId) {
+      const snapshot = await db
+        .collection(FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION)
+        .doc(orderId)
+        .get();
+      return snapshot.exists ? snapshot.data() ?? null : null;
     },
     runTransaction: (operation) =>
       db.runTransaction((adminTransaction) =>
@@ -261,8 +274,12 @@ export const saveVerifiedFutureOrderV2Payment = async ({
   if (expectedOwnerUid !== null && ownerUid !== expectedOwnerUid) {
     return { status: "owner_mismatch" };
   }
-  const pricing = order.value.masterOrder.cartItem.candidate.pricing;
-  if (pricing.status !== "exact" || !Number.isSafeInteger(pricing.exactTotalCents)) {
+  const candidate = order.value.masterOrder.cartItem.candidate;
+  const personalizedPrice = store.readPersonalizedPrice
+    ? parseFutureOrderV2PersonalizedPrice(await store.readPersonalizedPrice(orderId))
+    : null;
+  const chargeableCents = readFutureOrderV2ChargeableCents(candidate, personalizedPrice);
+  if (chargeableCents === null) {
     return { status: "not_payable" };
   }
 
@@ -281,7 +298,7 @@ export const saveVerifiedFutureOrderV2Payment = async ({
     paymentIntent.metadata.orderId !== orderId ||
     paymentIntent.metadata.paymentReference !== `future-v2-payment-${orderId}` ||
     paymentIntent.currency !== "eur" ||
-    paymentIntent.amount !== pricing.exactTotalCents
+    paymentIntent.amount !== chargeableCents
   ) {
     return { status: "mismatch" };
   }

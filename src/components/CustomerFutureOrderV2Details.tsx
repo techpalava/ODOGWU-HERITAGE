@@ -29,6 +29,13 @@ import {
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import {
+  formatPersonalizedPriceEuros,
+  presentPersonalizedAdditionLines,
+  readFutureOrderV2ChargeableCents,
+  resolvePersonalizedAdditionPayable,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "../utils/futureOrderV2PersonalizedPrice";
 
 interface CustomerFutureOrderV2DetailsProps {
   order: PersistedFutureOrderV2;
@@ -36,6 +43,15 @@ interface CustomerFutureOrderV2DetailsProps {
   workshop?: FutureOrderV2WorkshopProgress;
   onClose: () => void;
   paymentActions?: FutureOrderV2DashboardPaymentActions;
+  personalizedPrice?: FutureOrderV2PersonalizedPriceRecord | null;
+  onDecidePersonalizedPrice?: (input: {
+    orderId: string;
+    occurrenceKey: string;
+    decision: "accepted" | "declined";
+  }) => Promise<
+    | { readonly status: "updated"; readonly record: FutureOrderV2PersonalizedPriceRecord }
+    | { readonly status: "failed"; readonly message: string }
+  >;
   initialPayOutcome?: Exclude<
     FutureOrderV2DashboardPaymentOutcome,
     { status: "paid" } | { status: "redirecting" }
@@ -57,6 +73,8 @@ export const CustomerFutureOrderV2Details = ({
   workshop,
   onClose,
   paymentActions,
+  personalizedPrice = null,
+  onDecidePersonalizedPrice,
   initialPayOutcome = null,
 }: CustomerFutureOrderV2DetailsProps) => {
   const [localPayment, setLocalPayment] = useState<FutureOrderV2PaymentRecord | null>(null);
@@ -68,6 +86,9 @@ export const CustomerFutureOrderV2Details = ({
   const [paymentMethod, setPaymentMethod] =
     useState<FutureOrderV2PaymentMethod>("card");
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [localPrice, setLocalPrice] = useState<FutureOrderV2PersonalizedPriceRecord | null>(null);
+  const [decisionMessage, setDecisionMessage] = useState<string | null>(null);
+  const [decidingKey, setDecidingKey] = useState<string | null>(null);
   const payInFlightRef = useRef(false);
   const payment = subscribedPayment ?? localPayment ?? undefined;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -100,10 +121,13 @@ export const CustomerFutureOrderV2Details = ({
   const address = customer.deliveryAddress;
   const isDelivery = shipping.fulfilmentMethod === "destination_delivery";
   const headingId = `customer-v2-order-details-${order.orderId}`;
-  const totalCents = candidate.pricing.exactTotalCents;
+  const priceRecord = localPrice ?? personalizedPrice;
+  const additionLines = presentPersonalizedAdditionLines(candidate, priceRecord);
+  const additionPayable = resolvePersonalizedAdditionPayable(candidate, priceRecord);
+  const payableCents = readFutureOrderV2ChargeableCents(candidate, priceRecord);
   const payBusy = payPhase !== "idle";
   const canPay =
-    Boolean(paymentActions) && totalCents !== null && !localPayment && (!payment || payBusy);
+    Boolean(paymentActions) && payableCents !== null && !localPayment && (!payment || payBusy);
   const successPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!localPayment) return;
@@ -135,7 +159,32 @@ export const CustomerFutureOrderV2Details = ({
     }
   };
   const handlePay = () =>
-    runPayment((actions) => payFutureOrderV2FromDashboard({ order, ...actions }));
+    runPayment((actions) =>
+      payFutureOrderV2FromDashboard({
+        order,
+        personalizedPrice: priceRecord,
+        ...actions,
+      }),
+    );
+  const handleDecide = async (
+    occurrenceKey: string,
+    decision: "accepted" | "declined",
+  ) => {
+    if (!onDecidePersonalizedPrice || decidingKey) return;
+    setDecidingKey(occurrenceKey);
+    setDecisionMessage(null);
+    try {
+      const result = await onDecidePersonalizedPrice({
+        orderId: order.orderId,
+        occurrenceKey,
+        decision,
+      });
+      if (result.status === "failed") setDecisionMessage(result.message);
+      else setLocalPrice(result.record);
+    } finally {
+      setDecidingKey(null);
+    }
+  };
   const handleRetrySaving = () => {
     if (payOutcome?.status !== "record_failed") return;
     const { paymentIntentId } = payOutcome;
@@ -156,7 +205,7 @@ export const CustomerFutureOrderV2Details = ({
         ? "Confirming payment..."
         : isRedirecting
           ? redirectingPayLabel
-          : `Pay ${formatFutureOrderV2PaidAmount(totalCents ?? 0)}`;
+          : `Pay ${formatFutureOrderV2PaidAmount(payableCents ?? 0)}`;
   const payStatusMessage =
     payPhase === "processing"
       ? "Processing your payment..."
@@ -366,8 +415,84 @@ export const CustomerFutureOrderV2Details = ({
                     <dd className="font-mono">{formatFutureOrderV2PaidAmount(candidate.pricing.exactTotalCents)}</dd>
                   </div>
                 )}
+                {candidate.pricing.exactTotalCents === null && payableCents !== null && (
+                  <div className="flex justify-between gap-3 border-t border-heritage-green/15 pt-1 font-bold text-heritage-green">
+                    <dt>Total</dt>
+                    <dd className="font-mono">{formatFutureOrderV2PaidAmount(payableCents)}</dd>
+                  </div>
+                )}
               </dl>
             </DetailsSection>
+
+            {additionLines.length > 0 && (
+              <DetailsSection title="Personalized addition">
+                <ul className="space-y-3">
+                  {additionLines.map((line) => (
+                    <li
+                      key={line.occurrenceKey}
+                      data-personalized-addition={line.occurrenceKey}
+                      className="rounded-xl border border-heritage-gold/20 p-3 text-xs"
+                    >
+                      <p className="font-semibold text-heritage-green">What you asked for</p>
+                      <p className="mt-1">{line.requirementText}</p>
+                      {line.status === "evaluation_pending" && (
+                        <p className="mt-2 text-amber-800">Waiting for a price evaluation.</p>
+                      )}
+                      {line.status === "price_ready" && line.amountCents !== null && (
+                        <>
+                          <p className="mt-2 font-semibold">
+                            Evaluated price: {formatPersonalizedPriceEuros(line.amountCents)}
+                          </p>
+                          {line.tailorNote ? <p className="mt-1">Tailor note: {line.tailorNote}</p> : null}
+                          <p className="mt-2 text-heritage-ink/70">
+                            Accept to include this in your payable total, or decline to keep the base garment only.
+                            Accepting does not charge you.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                            <button
+                              type="button"
+                              data-personalized-addition-accept={line.occurrenceKey}
+                              disabled={!onDecidePersonalizedPrice || decidingKey !== null}
+                              onClick={() => handleDecide(line.occurrenceKey, "accepted")}
+                              className="rounded-lg bg-heritage-green px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white disabled:opacity-50"
+                            >
+                              {decidingKey === line.occurrenceKey ? "Saving..." : "Accept"}
+                            </button>
+                            <button
+                              type="button"
+                              data-personalized-addition-decline={line.occurrenceKey}
+                              disabled={!onDecidePersonalizedPrice || decidingKey !== null}
+                              onClick={() => handleDecide(line.occurrenceKey, "declined")}
+                              className="rounded-lg border border-heritage-green/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green disabled:opacity-50"
+                            >
+                              Decline addition
+                            </button>
+                          </div>
+                        </>
+                      )}
+                      {line.status === "accepted" && line.amountCents !== null && (
+                        <p className="mt-2 text-heritage-green">
+                          Accepted {formatPersonalizedPriceEuros(line.amountCents)}. Pay when you are ready. You have not been charged yet.
+                        </p>
+                      )}
+                      {line.status === "declined" && (
+                        <p className="mt-2 text-heritage-ink/70">
+                          Declined. This personalized line is dropped. Your base garment stays.
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {additionPayable.status === "locked" && (
+                  <p className="text-xs text-amber-800">
+                    {additionPayable.reason === "awaiting_acceptance"
+                      ? "Payment stays locked until you accept or decline the priced addition."
+                      : "Payment stays locked until the personalized addition is priced."}
+                  </p>
+                )}
+                {decisionMessage && <p className="text-xs text-red-700">{decisionMessage}</p>}
+              </DetailsSection>
+            )}
 
             <DetailsSection title="Payment">
               {localPayment ? (
@@ -450,7 +575,7 @@ export const CustomerFutureOrderV2Details = ({
                         disabled={payBusy || isRedirecting}
                         orderId={order.orderId}
                         returnSurface="dashboard"
-                        amountCents={totalCents}
+                        amountCents={payableCents ?? 0}
                         onExpressCheckoutConfirm={handlePay}
                         onReadyChange={setPaymentReady}
                         onMethodChange={setPaymentMethod}

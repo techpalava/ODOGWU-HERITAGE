@@ -72,6 +72,8 @@ interface DormantFuturePaymentReviewStepProps {
     trigger: HTMLButtonElement,
   ) => void;
   onPay?: () => void;
+  /** Persists the order for tailor pricing. Does not charge. */
+  onSubmitForPriceReview?: () => void;
   onParkCompleteOrder?: () => void;
   parkCompleteOrderStatus?: "idle" | "added" | "already_present";
   onStartAnotherOrder?: () => void;
@@ -607,6 +609,7 @@ export const DormantFuturePaymentReviewStep = ({
   removalTargets = [],
   onRequestGarmentRemoval,
   onPay,
+  onSubmitForPriceReview,
   onParkCompleteOrder,
   parkCompleteOrderStatus = "idle",
   onStartAnotherOrder,
@@ -1288,8 +1291,34 @@ export const DormantFuturePaymentReviewStep = ({
             )}
             {v2Payable && !paymentIsAuthorized && payment?.status !== "redirecting" && (
               <>
+                {awaitingPersonalizedEvaluation && onSubmitForPriceReview ? (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-xs leading-relaxed text-white/80">
+                      Submit this order so the tailor can price the addition. Submitting does not charge you.
+                      Payment and add to cart stay locked until you accept the evaluated price.
+                    </p>
+                    <button
+                      type="button"
+                      data-future-order-v2-submit-price-review
+                      disabled={payIsBusy || preparationIsComplete}
+                      onClick={onSubmitForPriceReview}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-white/40 px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white hover:text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {preparationIsPending
+                        ? "Submitting..."
+                        : preparationIsComplete
+                          ? "Submitted for price review"
+                          : "Submit for price review"}
+                    </button>
+                    {preparation?.status === "prepared" ? (
+                      <p className="text-xs leading-relaxed text-white/80">
+                        Order #{preparation.orderId}. We will email you when the addition is priced.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <FutureOrderV2StripeCard
-                  disabled={payIsBusy}
+                  disabled={!canSettleReviewedOrder || payIsBusy}
                   orderId={
                     preparation?.status === "prepared" ? preparation.orderId : ""
                   }
