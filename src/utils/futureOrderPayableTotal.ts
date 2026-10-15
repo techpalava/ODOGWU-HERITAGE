@@ -20,6 +20,7 @@ import {
   resolveGarmentConstructionPricing,
 } from "./garmentConstructionPricing.js";
 import { reconcileGarmentConstructionResolution } from "./garmentTypeStepState.js";
+import { individualLagosToEindhovenChargeCents } from "./individualInboundShippingDisplay.js";
 import { resolveStep8AdditionalDelivery } from "./step8AdditionalDelivery.js";
 
 const NON_AUTHORITATIVE_TOTAL_MESSAGE =
@@ -59,6 +60,8 @@ export interface FutureOrderPayableQuote {
   readonly customDetailsCents: number;
   readonly selectedDesignTotalCents: number;
   readonly postEindhovenAdjustmentCents: number;
+  /** Individual Lagos→Eindhoven band. Null when that leg stays inside construction. */
+  readonly lagosToEindhovenShippingCents: number | null;
   readonly exactTotalCents: number;
   readonly garments: readonly {
     readonly totalPriceCents: number;
@@ -200,12 +203,20 @@ export const quoteFutureOrderPayableTotal = (
     return null;
   }
   const postEindhovenAdjustmentCents = delivery.additionalDeliveryFeeCents;
+  const lagosToEindhovenShippingCents = individualLagosToEindhovenChargeCents({
+    orderType: candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: candidate.garments.length,
+  });
   return {
     garmentConstructionSubtotalCents,
     customDetailsCents,
     selectedDesignTotalCents,
     postEindhovenAdjustmentCents,
-    exactTotalCents: selectedDesignTotalCents + postEindhovenAdjustmentCents,
+    lagosToEindhovenShippingCents,
+    exactTotalCents:
+      selectedDesignTotalCents +
+      postEindhovenAdjustmentCents +
+      (lagosToEindhovenShippingCents ?? 0),
     garments,
     customDetailPriceCents,
   };
@@ -236,9 +247,9 @@ const sameComponentPrices = (
     (detail, index) => detail.priceCents === quote.customDetailPriceCents[index],
   );
 
-const includedComponentsMatch = (candidate: FutureOrderCandidateV2): boolean =>
-  (
-    ["fabric", "sewing", "tax", "lagosToEindhovenShipping"] as const
+const includedComponentsMatch = (candidate: FutureOrderCandidateV2): boolean => {
+  const constructionIncluded = (
+    ["fabric", "sewing", "tax"] as const
   ).every((key) => {
     const component = candidate.pricing.components[key];
     return (
@@ -246,6 +257,19 @@ const includedComponentsMatch = (candidate: FutureOrderCandidateV2): boolean =>
       component.amountCents === null
     );
   });
+  const lagos = candidate.pricing.components.lagosToEindhovenShipping;
+  const lagosChargeCents = individualLagosToEindhovenChargeCents({
+    orderType: candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: candidate.garments.length,
+  });
+  const lagosMatches =
+    lagosChargeCents === null
+      ? lagos.status === "included_in_garment_construction" &&
+        lagos.amountCents === null
+      : lagos.status === "separately_charged" &&
+        lagos.amountCents === lagosChargeCents;
+  return constructionIncluded && lagosMatches;
+};
 
 /**
  * Accepts an exact client ledger only when every payable cent matches the

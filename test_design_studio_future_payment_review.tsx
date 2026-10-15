@@ -6,6 +6,7 @@ import type {
   FutureOrderCandidateBuildResult,
   FutureOrderCandidateV1,
 } from "./src/utils/futureOrderCandidate";
+import { INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE } from "./src/utils/individualInboundShippingDisplay";
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
@@ -342,12 +343,12 @@ assert.deepEqual(
   individualPricingRows.map((row) => [row.id, row.label, row.amountCents, row.presentation]),
   [
     ["garment_construction", "Garment Construction Subtotal", 30000, "amount"],
-    ["included_components", FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE, null, "supporting_note"],
-    ["lagos_eindhoven_included", "Lagos → Eindhoven shipping", 1400, "included"],
+    ["included_components", INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE, null, "supporting_note"],
+    ["lagos_eindhoven_included", "Lagos → Eindhoven shipping", 1400, "amount"],
     ["custom_details", "Custom Details Subtotal", 2400, "amount"],
     ["post_eindhoven", "Shipping", 2660, "amount"],
   ],
-  "Individual payment review shows the included Lagos band without changing other rows",
+  "Individual payment review shows the Lagos band as a priced line",
 );
 assert.equal(candidate.pricing.exactTotalCents, 35060);
 for (const [pieceCount, amountCents] of [
@@ -399,9 +400,26 @@ assert.deepEqual(
   "pending shipping remains pending rather than becoming €0",
 );
 
+const individualChargedResult: FutureOrderCandidateBuildResult = {
+  ...reviewableResult,
+  candidate: {
+    ...candidate,
+    pricing: {
+      ...candidate.pricing,
+      exactTotalCents: 36460,
+      components: {
+        ...candidate.pricing.components,
+        lagosToEindhovenShipping: {
+          status: "separately_charged",
+          amountCents: 1400,
+        },
+      },
+    },
+  },
+};
 const reviewMarkup = renderToStaticMarkup(
   <DormantFuturePaymentReviewStep
-    result={reviewableResult}
+    result={individualChargedResult}
     onBack={() => undefined}
     onEditStage={() => undefined}
   />,
@@ -452,7 +470,7 @@ assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Nam
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));
 assert.ok(reviewMarkup.includes("Assigned to: Shirt, Long shirt"));
 assert.ok(reviewMarkup.includes("Assigned to: Agbada"));
-assert.equal((reviewMarkup.match(/>Included</g) || []).length, 3);
+assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
 assert.equal(reviewMarkup.includes("Material price"), false);
 assert.equal(reviewMarkup.includes("€10.00"), false);
 assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
@@ -460,25 +478,28 @@ const priceBreakdownMarkup = reviewMarkup.slice(
   reviewMarkup.indexOf("Price breakdown"),
   reviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
 );
-assert.ok(priceBreakdownMarkup.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE));
+assert.ok(priceBreakdownMarkup.includes(INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE));
+assert.equal(priceBreakdownMarkup.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE), false);
 assert.equal(priceBreakdownMarkup.includes("Included in Garment Construction"), false);
-assert.equal((priceBreakdownMarkup.match(/>Included</g) || []).length, 1);
+assert.equal(reviewMarkup.includes("included in Garment Construction"), false);
+assert.ok(reviewMarkup.includes("Lagos → Eindhoven shipping is added to the total."));
+assert.equal((priceBreakdownMarkup.match(/>Included</g) || []).length, 0);
 assert.ok(priceBreakdownMarkup.includes("Lagos → Eindhoven shipping"));
 assert.equal((priceBreakdownMarkup.match(/€14\.00/g) || []).length, 1);
 assert.ok(priceBreakdownMarkup.includes('data-pricing-row="lagos_eindhoven_included"'));
-assert.ok(priceBreakdownMarkup.includes('data-excluded-from-total="true"'));
-assert.ok(priceBreakdownMarkup.includes('data-included-cents="1400"'));
+assert.equal(priceBreakdownMarkup.includes("data-excluded-from-total"), false);
 assert.ok(
   priceBreakdownMarkup.indexOf("Garment Construction Subtotal") <
-    priceBreakdownMarkup.indexOf(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE) &&
-    priceBreakdownMarkup.indexOf(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE) <
+    priceBreakdownMarkup.indexOf(INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE) &&
+    priceBreakdownMarkup.indexOf(INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE) <
       priceBreakdownMarkup.indexOf("Custom Details Subtotal"),
-  "the included note immediately follows the construction subtotal",
+  "the construction note immediately follows the construction subtotal",
 );
 assert.equal((priceBreakdownMarkup.match(/€300\.00/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/€24\.00/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/€26\.60/g) || []).length, 1);
-assert.equal((priceBreakdownMarkup.match(/€350\.60/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€364\.60/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€350\.60/g) || []).length, 0);
 assert.equal((priceBreakdownMarkup.match(/data-pricing-final-total/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/>Total</g) || []).length, 1);
 assert.ok(priceBreakdownMarkup.indexOf("Shipping") < priceBreakdownMarkup.indexOf(">Total"));
@@ -502,7 +523,9 @@ const communityPriceBreakdown = communityReviewMarkup.slice(
 );
 assert.equal(communityPriceBreakdown.includes("Lagos → Eindhoven shipping"), false);
 assert.equal(communityPriceBreakdown.includes("data-pricing-row=\"lagos_eindhoven_included\""), false);
+assert.ok(communityPriceBreakdown.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE));
 assert.equal((communityPriceBreakdown.match(/€350\.60/g) || []).length, 1);
+assert.ok(communityReviewMarkup.includes("Standard Shipping to Eindhoven is included in Garment Construction."));
 assert.ok(reviewMarkup.includes("disabled=\"\""));
 assert.ok(
   reviewMarkup.includes(

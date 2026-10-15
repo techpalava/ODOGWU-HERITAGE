@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL,
   INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL,
+  individualLagosToEindhovenChargeCents,
   resolveIndividualInboundShippingDisplay,
 } from "./src/utils/individualInboundShippingDisplay";
 import { calculateIndividualShipping } from "./src/utils/shippingPricing";
@@ -28,6 +29,13 @@ for (const [pieceCount, priceEur, weightBand] of bands) {
   assert.equal(display.physicalGarmentCount, pieceCount);
   assert.equal(display.priceEur, calculateIndividualShipping(pieceCount).priceEur);
   assert.equal(
+    individualLagosToEindhovenChargeCents({
+      orderType: "Individual",
+      physicalGarmentCount: pieceCount,
+    }),
+    priceEur * 100,
+  );
+  assert.equal(
     resolveIndividualInboundShippingDisplay({
       batchType: "alone",
       physicalGarmentCount: pieceCount,
@@ -44,6 +52,13 @@ for (const orderType of ["Community", "Group Organizer", "Group Member"]) {
     }),
     null,
     `${orderType} does not display the individual band`,
+  );
+  assert.equal(
+    individualLagosToEindhovenChargeCents({
+      orderType,
+      physicalGarmentCount: 13,
+    }),
+    null,
   );
 }
 

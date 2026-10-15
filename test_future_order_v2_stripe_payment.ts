@@ -74,7 +74,7 @@ assert.equal(readFutureOrderV2ReviewedTotalCents({
   cartItemId: prepared.cartItemId,
   paymentReference,
   masterOrder: prepared.masterOrder,
-}), 30000);
+}), 31400);
 
 const persisted = createPersistedFutureOrderV2({
   masterOrder: prepared.masterOrder,
@@ -316,7 +316,7 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
   );
   assert.equal(state.statusCode, 200);
   assert.deepEqual(created, {
-    amountCents: 30000,
+    amountCents: 31400,
     orderId: prepared.orderId,
     paymentReference,
     shipping: PICKUP_STRIPE_SHIPPING,

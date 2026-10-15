@@ -342,17 +342,13 @@ export const CustomerFutureOrderV2Details = ({
                     <div
                       key={row.id}
                       data-pricing-row={row.id}
-                      data-excluded-from-total="true"
                       className="flex justify-between gap-3"
                     >
                       <dt>{row.label}</dt>
                       <dd className="font-mono">
                         {row.amountCents === null
                           ? "Pending"
-                          : formatFutureOrderV2PaidAmount(row.amountCents)}{" "}
-                        <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-                          Included
-                        </span>
+                          : formatFutureOrderV2PaidAmount(row.amountCents)}
                       </dd>
                     </div>
                   ) : (

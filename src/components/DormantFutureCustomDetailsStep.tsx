@@ -7,6 +7,8 @@ import {
   NECK_DESIGN_SUBCATEGORY_ORDER,
   isCompanionCustomerAdditionalClothesCostGroup,
 } from "../config/GarmentDetailsConfig";
+import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
+import { individualLagosToEindhovenChargeCents } from "../utils/individualInboundShippingDisplay";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
@@ -89,6 +91,7 @@ interface DormantFutureCustomDetailsStepProps {
   orderLevelCustomDetailsPrice: number;
   constructionBreakdown: CustomerGarmentConstructionBreakdownProjection;
   constructionSubtotal: number | null;
+  orderType?: string | null;
   designSelections: DesignSelections;
   showAdditionalClothesCosts?: boolean;
   selectedStyle: StyleCategory | null;
@@ -420,6 +423,7 @@ export const DormantFutureCustomDetailsStep = ({
   orderLevelCustomDetailsPrice,
   constructionBreakdown,
   constructionSubtotal,
+  orderType = null,
   designSelections,
   showAdditionalClothesCosts,
   selectedStyle,
@@ -527,11 +531,16 @@ export const DormantFutureCustomDetailsStep = ({
   const customDetailsSubtotal =
     (pricing.status === "exact" ? pricing.subtotal : pricing.exactSubtotalCents / 100) +
     orderLevelCustomDetailsPrice;
+  const inboundChargeEuros =
+    (individualLagosToEindhovenChargeCents({
+      orderType,
+      physicalGarmentCount: reconciliation.subjects.length,
+    }) ?? 0) / 100;
   const estimatedTotal =
     pricing.status === "exact" &&
     constructionBreakdown.status === "complete" &&
     constructionSubtotal !== null
-      ? constructionSubtotal + customDetailsSubtotal
+      ? constructionSubtotal + customDetailsSubtotal + inboundChargeEuros
       : null;
   const parentOccurrenceLabels = useMemo(() => {
     const seen = new Set<string>();
@@ -2196,7 +2205,7 @@ export const DormantFutureCustomDetailsStep = ({
             {constructionBreakdownRows.length > 0 && <dl data-construction-price-breakdown className="space-y-3 border-b border-heritage-gold/15 pb-3">{constructionBreakdownRows.map((row) => <div key={row.garmentKey} data-construction-price-row={row.garmentKey} className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/10 pb-3 last:border-0 last:pb-0"><dt className="min-w-0 flex-1"><span className="block break-words text-[10px] font-bold uppercase tracking-wide text-heritage-green">{row.occurrenceLabel}</span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{row.constructionLabel || "Price pending"}</span>{row.role === "additional" && <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-heritage-gold">Added garment</span>}</dt><dd className="shrink-0 font-mono text-xs font-bold text-heritage-green">{row.priceCents === null ? "Price pending" : money(row.priceCents / 100)}</dd></div>)}</dl>}
             {constructionBreakdown.status === "pending" && <p data-construction-price-breakdown-status="pending" className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">Construction pricing needs review before an exact total is available.</p>}
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{constructionBreakdown.status === "complete" && constructionSubtotal !== null ? money(constructionSubtotal) : "Price pending"}</span></div>
-            <p className="text-xs leading-relaxed text-heritage-ink/60">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.</p>
+            <p className="text-xs leading-relaxed text-heritage-ink/60">{garmentConstructionInclusionNote(orderType)}</p>
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
             {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.garmentKey === "order" ? line.feature : `${line.garmentLabel}: ${line.feature}`}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}

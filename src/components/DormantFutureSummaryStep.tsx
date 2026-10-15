@@ -8,7 +8,10 @@ import { useEffect, useState } from "react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type React from "react";
-import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
+import {
+  garmentConstructionInclusionNote,
+  SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
+} from "../utils/designPriceBreakdownPresentation";
 import {
   formatCompactWearerRouteLabel,
   type FutureDesignStudioSummary,
@@ -257,18 +260,24 @@ export const DormantFutureSummaryStep = ({
     summary.pricingSummary.selectedDesignPrice
       ? summary.pricingSummary.selectedDesignPrice.selectedDesignPrice
       : knownConfirmedPrice;
+  const summaryOrderType =
+    inboundOrderType ??
+    (orderContext.kind === "individual"
+      ? "Individual"
+      : orderContext.kind === "community"
+        ? "Community"
+        : orderContext.role === "Member"
+          ? "Group Member"
+          : "Group Organizer");
   const includedInbound = resolveIndividualInboundShippingDisplay({
-    orderType:
-      inboundOrderType ??
-      (orderContext.kind === "individual"
-        ? "Individual"
-        : orderContext.kind === "community"
-          ? "Community"
-          : orderContext.role === "Member"
-            ? "Group Member"
-            : "Group Organizer"),
+    orderType: summaryOrderType,
     physicalGarmentCount: summary.garmentSummary.length,
   });
+  const constructionInclusionNote =
+    garmentConstructionInclusionNote(summaryOrderType) ===
+    SELECTED_DESIGN_PRICE_SUPPORTING_TEXT
+      ? SELECTED_DESIGN_PRICE_SUPPORTING_TEXT
+      : garmentConstructionInclusionNote(summaryOrderType);
   const deliveryMethod = shippingResolution?.state.fulfilmentMethod || null;
   const isDestinationDelivery = deliveryMethod === "destination_delivery";
   const shippingAmountCents =
@@ -279,13 +288,16 @@ export const DormantFutureSummaryStep = ({
       ? "Pending"
       : money(shippingAmountCents / 100);
   const projectedTotalCents = shippingResolution?.projectedTotalCents ?? null;
-  const totalLabel = projectedTotalCents === null ? "Current Subtotal" : "Total";
-  const totalValue =
+  const inboundChargeCents = includedInbound?.amountCents ?? 0;
+  const payableTotalCents =
     projectedTotalCents === null
       ? orderSubtotal === null
-        ? "Pending"
-        : money(orderSubtotal)
-      : money(projectedTotalCents / 100);
+        ? null
+        : Math.round(orderSubtotal * 100) + inboundChargeCents
+      : projectedTotalCents + inboundChargeCents;
+  const totalLabel = projectedTotalCents === null ? "Current Subtotal" : "Total";
+  const totalValue =
+    payableTotalCents === null ? "Pending" : money(payableTotalCents / 100);
   const garmentKeys = new Set(
     summary.garmentSummary.map((garment) => garment.garmentKey),
   );
@@ -969,7 +981,7 @@ export const DormantFutureSummaryStep = ({
           Cost Breakdown
         </p>
         <p className="mt-2 max-w-2xl text-xs leading-relaxed text-white/75">
-          {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
+          {constructionInclusionNote}
         </p>
         <dl className="mt-4 space-y-2 text-sm">
           <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
@@ -981,16 +993,12 @@ export const DormantFutureSummaryStep = ({
           {includedInbound ? (
             <div
               data-summary-included-inbound="true"
-              data-excluded-from-total="true"
-              data-included-cents={includedInbound.amountCents}
-              className="flex min-w-0 flex-wrap items-center justify-between gap-3 text-white/80"
+              data-amount-cents={includedInbound.amountCents}
+              className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80"
             >
               <dt className="min-w-0">{includedInbound.label}</dt>
-              <dd className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 text-right font-mono font-medium text-white">
-                <span>{money(includedInbound.priceEur)}</span>
-                <span className="rounded-full border border-white/40 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-white">
-                  Included
-                </span>
+              <dd className="shrink-0 text-right font-mono font-medium text-white">
+                {money(includedInbound.priceEur)}
               </dd>
             </div>
           ) : null}
