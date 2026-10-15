@@ -144,25 +144,64 @@ const actions = render(
       ariaLabel: "Review Order",
       locked: true,
       disabled: true,
+      describedBy: "studio-step-guide",
     }}
-    note={<p>Review Order is locked until personalised price evaluation is resolved.</p>}
+    note={
+      <>
+        <p id="studio-step-guide" data-testid="studio-step-guide">
+          Review Order is locked until personalised price evaluation is resolved.
+        </p>
+        <p>
+          Complete delivery or pickup before reviewing your order. A second
+          line must stay under both buttons.
+        </p>
+      </>
+    }
   />,
 );
+const elementChildren = (node: ReactTestInstance) =>
+  node.children.filter(
+    (child): child is ReactTestInstance => typeof child !== "string",
+  );
 const row = actions.root.findByProps({ "data-studio-step-actions": "true" });
 assert.match(classNameOf(row), /flex-col/);
-assert.match(classNameOf(row), /sm:flex-row/);
-assert.match(classNameOf(row), /sm:items-center/);
-assert.match(classNameOf(row), /sm:justify-between/);
-const pair = row.findAllByType("button");
+assert.equal(classNameOf(row).includes("sm:flex-row"), false);
+assert.equal(classNameOf(row).includes("sm:items-center"), false);
+assert.equal(classNameOf(row).includes("items-center"), false);
+const rowChildren = elementChildren(row);
+assert.equal(rowChildren.length, 2);
+const buttonRow = rowChildren[0];
+const noteRegion = rowChildren[1];
+assert.equal(buttonRow.props["data-studio-step-actions-buttons"], "true");
+assert.equal(noteRegion.props["data-studio-step-actions-note"], "true");
+assert.match(classNameOf(buttonRow), /flex-col/);
+assert.match(classNameOf(buttonRow), /sm:flex-row/);
+assert.match(classNameOf(buttonRow), /sm:items-center/);
+assert.match(classNameOf(buttonRow), /sm:justify-between/);
+assert.match(classNameOf(noteRegion), /w-full/);
+const buttonRowChildren = elementChildren(buttonRow);
+assert.equal(buttonRowChildren.length, 2);
+assert.equal(
+  buttonRow.findAll(
+    (node) => node.props?.["data-testid"] === "studio-step-guide",
+  ).length,
+  0,
+);
+const pair = buttonRow.findAllByType("button");
 assert.equal(pair.length, 2);
+assert.equal(pair[0].props["data-studio-nav"], "back");
+assert.equal(pair[1].props["data-studio-nav"], "forward");
 for (const button of pair) {
   assert.match(classNameOf(button), /w-full/);
-  assert.match(classNameOf(button), /min-w-0|max-w-full/);
+  assert.match(classNameOf(button), /min-w-0|max-w-full|sm:max-w-xs/);
   assert.equal(classNameOf(button).includes("whitespace-nowrap"), false);
 }
 assert.match(classNameOf(pair[0]), /sm:flex-1/);
 assert.match(classNameOf(pair[0]), /sm:max-w-xs/);
+assert.match(classNameOf(pair[1]), /sm:flex-1/);
+assert.match(classNameOf(pair[1]), /sm:max-w-xs/);
 assert.equal(pair[1].props.disabled, true);
+assert.equal(pair[1].props["aria-describedby"], "studio-step-guide");
 assert.match(classNameOf(pair[1]), /disabled:bg-heritage-green\/35/);
 assert.match(classNameOf(pair[1]), /enabled:hover:bg-white/);
 assert.equal(
@@ -170,6 +209,68 @@ assert.equal(
   false,
 );
 assert.equal(classNameOf(pair[1]).includes("enabled:hover:bg-heritage-forest"), false);
+const guide = noteRegion.findByProps({ id: "studio-step-guide" });
+assert.equal(guide.props["data-testid"], "studio-step-guide");
+const flatHosts: ReactTestInstance[] = [];
+const visitHosts = (node: ReactTestInstance) => {
+  flatHosts.push(node);
+  for (const child of node.children) {
+    if (typeof child !== "string") visitHosts(child);
+  }
+};
+visitHosts(row);
+const backIndex = flatHosts.findIndex(
+  (node) => node.props?.["data-studio-nav"] === "back",
+);
+const forwardIndex = flatHosts.findIndex(
+  (node) => node.props?.["data-studio-nav"] === "forward",
+);
+const guideIndex = flatHosts.findIndex(
+  (node) => node.props?.["data-testid"] === "studio-step-guide",
+);
+assert.ok(backIndex >= 0 && forwardIndex > backIndex && guideIndex > forwardIndex);
+
+const actionsWithoutNote = render(
+  <DesignStudioStepActions
+    backDestination="Summary"
+    forward={{ label: "Continue", ariaLabel: "Continue" }}
+  />,
+);
+const bare = actionsWithoutNote.root.findByProps({
+  "data-studio-step-actions": "true",
+});
+assert.equal(elementChildren(bare).length, 1);
+assert.equal(elementChildren(bare)[0].props["data-studio-step-actions-buttons"], "true");
+assert.equal(
+  actionsWithoutNote.root.findAll(
+    (node) => node.props?.["data-studio-step-actions-note"] === "true",
+  ).length,
+  0,
+);
+
+const noteCallSites = [
+  "src/components/GarmentTypeStep.tsx",
+  "src/components/DormantFutureDesignStyleStep.tsx",
+  "src/components/DormantFutureMeasurementStep.tsx",
+  "src/components/DormantFutureSummaryStep.tsx",
+  "src/components/DormantFutureShippingStep.tsx",
+];
+for (const sourcePath of noteCallSites) {
+  const source = readFileSync(sourcePath, "utf8");
+  const noteAt = source.indexOf("note={");
+  assert.ok(noteAt >= 0, `${sourcePath} passes note`);
+  const forwardAt = source.indexOf("forward=", noteAt);
+  assert.ok(forwardAt > noteAt, `${sourcePath} keeps forward as its own prop`);
+  const noteSource = source.slice(noteAt, forwardAt);
+  assert.equal(
+    noteSource.includes("DesignStudioForwardButton"),
+    false,
+    `${sourcePath} must not nest Forward inside note`,
+  );
+  assert.equal(noteSource.includes("lg:text-right"), false, sourcePath);
+  assert.equal(noteSource.includes("lg:max-w-sm"), false, sourcePath);
+  assert.equal(noteSource.includes("max-w-sm"), false, sourcePath);
+}
 
 const outlinedNavSources = [
   "src/components/DormantFutureAiTryOnStep.tsx",

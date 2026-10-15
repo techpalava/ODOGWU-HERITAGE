@@ -1632,7 +1632,7 @@ export const DormantFutureMeasurementStep = ({
               {fitConflictBlocksContinue ? (
                 <p
                   data-measurement-fit-conflict-status="true"
-                  className="font-serif text-sm font-bold text-heritage-green lg:text-right"
+                  className="font-serif text-sm font-bold text-heritage-green"
                 >
                   Fit conflict
                 </p>
@@ -1640,7 +1640,7 @@ export const DormantFutureMeasurementStep = ({
               <p
                 id="measurement-risk-selection-notice"
                 data-measurement-risk-notice="true"
-                className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right"
+                className="w-full text-xs leading-relaxed text-heritage-ink/60"
               >
                 {MEASUREMENT_RISK_SELECTION_NOTICE}
               </p>

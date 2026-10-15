@@ -444,7 +444,7 @@ export const GarmentTypeStep = ({
                 data-step1-still-needed={stillNeeded
                   .map((item) => item.code)
                   .join(" ")}
-                className="w-full rounded-xl border border-heritage-gold/50 bg-heritage-cream/70 px-3 py-2 text-left text-xs leading-relaxed text-heritage-ink lg:max-w-sm"
+                className="w-full rounded-xl border border-heritage-gold/50 bg-heritage-cream/70 px-3 py-2 text-left text-xs leading-relaxed text-heritage-ink"
               >
                 <p className="font-bold text-heritage-green">
                   Still needed before Fabric

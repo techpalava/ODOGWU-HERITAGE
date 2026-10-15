@@ -1231,7 +1231,7 @@ export const DormantFutureDesignStyleStep = ({
           backDestination="Fabric"
           onBack={onBack}
           note={!exactSetComplete && firstIncompleteOccurrence ? (
-            <p role="status" className="max-w-sm text-xs font-semibold text-amber-800 lg:text-right">
+            <p role="status" className="w-full text-xs font-semibold text-amber-800">
               Choose a design reference for {firstIncompleteOccurrence.label} to continue.
             </p>
           ) : null}
