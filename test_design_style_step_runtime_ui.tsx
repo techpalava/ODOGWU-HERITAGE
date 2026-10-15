@@ -75,7 +75,10 @@ const renderModel = async (
 const continueButton = (root: ReactTestInstance) => {
   const docked = root
     .findByProps({ "data-testid": "future-design-style-continue-action" })
-    .findAllByType("button");
+    .findAll(
+      (node) =>
+        node.type === "button" && node.props["data-studio-nav"] === "forward",
+    );
   if (docked[0]) return docked[0];
   const labelled = root.findAll(
     (node) =>
@@ -1483,7 +1486,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
             if (element.props?.["data-testid"] === "future-design-style-continue-action") {
               return {
                 querySelector: (selector: string) =>
-                  selector === "button" ? continueButtonNode : null,
+                  selector === '[data-studio-nav="forward"]' ? continueButtonNode : null,
               };
             }
             if (

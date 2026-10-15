@@ -112,7 +112,8 @@ const progress = () =>
 const continueButton = () =>
   renderer.root
     .findByProps({ "data-testid": "future-design-style-continue-action" })
-    .findByType("button");
+    .findAllByType("button")
+    .find((button) => button.props["data-studio-nav"] === "forward")!;
 
 assert.match(progress(), /0 of 3 garments assigned/);
 let dialog = await openDialog();
