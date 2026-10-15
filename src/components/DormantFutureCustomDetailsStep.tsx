@@ -37,6 +37,7 @@ import {
 } from "../utils/step1GarmentReferenceImages";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import type { TraditionalAccessory } from "../utils/decorativePricing";
+import { TRADITIONAL_ACCESSORY_IMAGES } from "../utils/traditionalAccessoryImages";
 import {
   DECORATIVE_FEATURE_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_DESCRIPTIONS,
@@ -412,6 +413,34 @@ const MAIN_GARMENT_FAMILY_PRESENTATION_ORDER: Readonly<Record<string, number>> =
 
 const getMainGarmentFamilyPresentationOrder = (familyId: string): number =>
   MAIN_GARMENT_FAMILY_PRESENTATION_ORDER[familyId] ?? 100;
+
+const TraditionalAccessoryPhoto = ({
+  accessory,
+}: {
+  accessory: TraditionalAccessory;
+}) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span
+        aria-hidden="true"
+        data-accessory-image-fallback={accessory}
+        className="size-16 shrink-0 self-center rounded-lg bg-heritage-gold/10"
+      />
+    );
+  }
+  return (
+    <img
+      src={TRADITIONAL_ACCESSORY_IMAGES[accessory].src}
+      alt={accessory}
+      width={640}
+      height={640}
+      decoding="async"
+      onError={() => setFailed(true)}
+      className="size-16 shrink-0 self-center rounded-lg object-cover"
+    />
+  );
+};
 
 export const DormantFutureCustomDetailsStep = ({
   stage = "custom_details",
@@ -1940,7 +1969,7 @@ export const DormantFutureCustomDetailsStep = ({
             <p className="mt-1 text-xs text-heritage-ink/60">Optional accessories remain separate from garment construction.</p>
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <label className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border-2 p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedAccessories.size === 0 ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="radio" name="future-accessories-none" checked={selectedAccessories.size === 0} onChange={onClearAccessories} className="size-5 shrink-0 accent-heritage-green" /><span className="min-w-0"><span className="block text-sm font-bold text-heritage-green">None</span><span className="mt-1 block text-xs text-heritage-ink/65">No selection for this category</span></span></label>
-              {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => <label key={accessory} className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedAccessories.has(accessory) ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="checkbox" checked={selectedAccessories.has(accessory)} onChange={() => onAccessoryToggle(accessory)} className="mt-0.5 size-5 shrink-0 accent-heritage-green" /><span className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{accessory}</span><span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">+{money(getTraditionalAccessoryPrice(selectedStyle, accessory))}</span></span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{TRADITIONAL_ACCESSORY_DESCRIPTIONS[accessory]}</span></span></label>)}
+              {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => <label key={accessory} className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedAccessories.has(accessory) ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="checkbox" checked={selectedAccessories.has(accessory)} onChange={() => onAccessoryToggle(accessory)} className="mt-0.5 size-5 shrink-0 accent-heritage-green" /><span className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{accessory}</span><span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">+{money(getTraditionalAccessoryPrice(selectedStyle, accessory))}</span></span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{TRADITIONAL_ACCESSORY_DESCRIPTIONS[accessory]}</span></span><TraditionalAccessoryPhoto accessory={accessory} /></label>)}
             </div>
           </section>
           )}

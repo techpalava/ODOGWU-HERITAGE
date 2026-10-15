@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createElement, useRef, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
@@ -33,6 +33,13 @@ import {
 import {
   reconcileAdditionalGarmentConstructionState,
 } from "./src/utils/additionalGarmentConstructionState";
+import type { TraditionalAccessory } from "./src/utils/decorativePricing";
+import {
+  TRADITIONAL_ACCESSORY_DESCRIPTIONS,
+  TRADITIONAL_ACCESSORY_OPTIONS,
+  getTraditionalAccessoryPrice,
+} from "./src/utils/decorativePricing";
+import { TRADITIONAL_ACCESSORY_IMAGES } from "./src/utils/traditionalAccessoryImages";
 import type {
   DecorativeFeature,
   DesignSelections,
@@ -264,6 +271,8 @@ const createNeckStep = ({
   onDecorativeFeatureDisable = () => undefined,
   onDecorativeFeatureGarmentAssign = () => undefined,
   onClearDecorativeFeatures = () => undefined,
+  onAccessoryToggle = () => undefined,
+  onClearAccessories = () => undefined,
 }: {
   stage?: "custom_details" | "personalized_additions";
   constructionBreakdown?: Parameters<typeof DormantFutureCustomDetailsStep>[0]["constructionBreakdown"];
@@ -278,6 +287,8 @@ const createNeckStep = ({
     assigned: boolean,
   ) => void;
   onClearDecorativeFeatures?: () => void;
+  onAccessoryToggle?: (accessory: TraditionalAccessory) => void;
+  onClearAccessories?: () => void;
 } = {}) =>
   createElement(DormantFutureCustomDetailsStep, {
     stage,
@@ -340,8 +351,8 @@ const createNeckStep = ({
     onDecorativeFeatureGarmentAssign,
     onClearDecorativeFeatures,
     onMonogramPlacementChange: () => undefined,
-    onAccessoryToggle: () => undefined,
-    onClearAccessories: () => undefined,
+    onAccessoryToggle,
+    onClearAccessories,
     onAddAdditionalGarment: () => undefined,
     onRemoveAdditionalGarment: () => undefined,
     onBack: () => undefined,
@@ -389,6 +400,132 @@ assert.match(
   /(?:^|\s)lg:col-span-2(?:\s|$)/,
   "Personalized Additional must span the available Custom Details width",
 );
+
+assert.equal(
+  neckRenderer.root.findAllByProps({
+    "data-custom-detail-section": "accessories",
+  }).length,
+  0,
+  "Step 4 must not render accessory photos",
+);
+const toggledAccessories: TraditionalAccessory[] = [];
+let clearedAccessories = 0;
+let accessoryImageRenderer!: ReturnType<typeof create>;
+act(() => {
+  accessoryImageRenderer = create(
+    createNeckStep({
+      stage: "personalized_additions",
+      designSelections: { accessories: ["Traditional Bead"] },
+      onAccessoryToggle: (accessory) => {
+        toggledAccessories.push(accessory);
+      },
+      onClearAccessories: () => {
+        clearedAccessories += 1;
+      },
+    }),
+  );
+});
+const accessorySection = accessoryImageRenderer.root.findByProps({
+  "data-custom-detail-section": "accessories",
+});
+const accessoryLabels = accessorySection.findAllByType("label");
+const accessoryNone = accessoryLabels.find((label) =>
+  label.findAllByType("input").some((input) => input.props.type === "radio"),
+);
+assert.ok(accessoryNone, "Accessories must still render the None card");
+assert.equal(
+  accessoryNone.findAllByType("img").length,
+  0,
+  "None stays text-only",
+);
+assert.equal(accessoryNone.findByType("input").props.checked, false);
+assert.equal(textContent(accessoryNone).includes("None"), true);
+const accessorySrcs = new Set<string>();
+for (const accessory of TRADITIONAL_ACCESSORY_OPTIONS) {
+  const label = accessoryLabels.find((node) =>
+    textContent(node).includes(accessory),
+  );
+  assert.ok(label, `${accessory} card must render`);
+  const img = label.findByType("img");
+  const expectedSrc = TRADITIONAL_ACCESSORY_IMAGES[accessory].src;
+  assert.equal(img.props.alt, accessory);
+  assert.equal(img.props.src, expectedSrc);
+  assert.match(String(img.props.className), /\bsize-16\b/);
+  assert.match(String(img.props.className), /\bobject-cover\b/);
+  assert.ok(expectedSrc.startsWith("/images/accessories/"));
+  assert.ok(expectedSrc.endsWith(".webp"));
+  accessorySrcs.add(expectedSrc);
+  const filename = expectedSrc.slice("/images/accessories/".length);
+  const diskPath = `public/images/accessories/${filename}`;
+  assert.equal(existsSync(diskPath), true, diskPath);
+  const bytes = readFileSync(diskPath);
+  assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+  assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+  const children = label.children.filter(
+    (child): child is ReactTestInstance => typeof child !== "string",
+  );
+  const textColumn = children.find((child) =>
+    String(child.props.className).includes("flex-1"),
+  );
+  const photoHost = children.find((child) => child.findAllByType("img").includes(img));
+  assert.ok(textColumn, `${accessory} keeps the text column`);
+  assert.ok(photoHost, `${accessory} photo is inside the card`);
+  assert.ok(
+    children.indexOf(photoHost) > children.indexOf(textColumn),
+    `${accessory} photo sits after the text column`,
+  );
+  assert.equal(
+    label.findAllByType("input").find((input) => input.props.type === "checkbox")
+      ?.props.checked,
+    accessory === "Traditional Bead",
+  );
+  assert.ok(textContent(label).includes(TRADITIONAL_ACCESSORY_DESCRIPTIONS[accessory]));
+  assert.ok(
+    textContent(label).includes(
+      `+€${getTraditionalAccessoryPrice(null, accessory).toFixed(2)}`,
+    ),
+    `${accessory} price label stays on the card`,
+  );
+}
+assert.equal(accessorySrcs.size, TRADITIONAL_ACCESSORY_OPTIONS.length);
+const hatCheckbox = accessoryLabels
+  .find((node) => textContent(node).includes("Traditional Hat"))
+  ?.findAllByType("input")
+  .find((input) => input.props.type === "checkbox");
+assert.ok(hatCheckbox);
+act(() => {
+  hatCheckbox.props.onChange();
+});
+assert.deepEqual(toggledAccessories, ["Traditional Hat"]);
+act(() => {
+  accessoryNone.findByType("input").props.onChange();
+});
+assert.equal(clearedAccessories, 1);
+const stickLabel = accessoryLabels.find((node) =>
+  textContent(node).includes("Traditional Stick"),
+);
+assert.ok(stickLabel);
+act(() => {
+  stickLabel.findByType("img").props.onError();
+});
+const stickAfterError = accessoryImageRenderer.root
+  .findByProps({ "data-custom-detail-section": "accessories" })
+  .findAllByType("label")
+  .find((node) => textContent(node).includes("Traditional Stick"));
+assert.ok(stickAfterError);
+assert.equal(stickAfterError.findAllByType("img").length, 0);
+assert.match(
+  String(
+    stickAfterError.findByProps({
+      "data-accessory-image-fallback": "Traditional Stick",
+    }).props.className,
+  ),
+  /\bsize-16\b/,
+  "A failed accessory photo keeps its card space",
+);
+act(() => {
+  accessoryImageRenderer.unmount();
+});
 
 const enabledDecorativeFeatures: DecorativeFeature[] = [];
 const assignedDecorativeEvents: Array<{
