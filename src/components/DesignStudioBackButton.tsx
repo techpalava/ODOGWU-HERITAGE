@@ -143,24 +143,29 @@ export const DesignStudioStepActions = ({
 }) => (
   <div
     data-studio-step-actions="true"
-    className={`flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${className}`}
+    className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
   >
-    <DesignStudioBackButton
-      destination={backDestination}
-      onClick={onBack}
-      disabled={backDisabled}
-      className="w-full sm:max-w-xs sm:flex-1"
-    />
-    {(forward || note) && (
-      <div className="flex w-full min-w-0 flex-col gap-2 sm:max-w-xs sm:flex-1">
+    <div
+      data-studio-step-actions-buttons="true"
+      className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <DesignStudioBackButton
+        destination={backDestination}
+        onClick={onBack}
+        disabled={backDisabled}
+        className="w-full sm:max-w-xs sm:flex-1"
+      />
+      {forward ? (
+        <DesignStudioForwardButton
+          {...forward}
+          className={`w-full sm:max-w-xs sm:flex-1 ${forward.className || ""}`}
+        />
+      ) : null}
+    </div>
+    {note ? (
+      <div data-studio-step-actions-note="true" className="w-full min-w-0">
         {note}
-        {forward && (
-          <DesignStudioForwardButton
-            {...forward}
-            className={`w-full ${forward.className || ""}`}
-          />
-        )}
       </div>
-    )}
+    ) : null}
   </div>
 );

@@ -1042,7 +1042,7 @@ export const DormantFutureSummaryStep = ({
           backDestination="Measurement"
           onBack={onBack}
           note={(
-            <p id="summary-shipping-lock-reason" className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right">
+            <p id="summary-shipping-lock-reason" className="w-full text-xs leading-relaxed text-heritage-ink/60">
               {canContinueToShipping
                 ? summary.status === "pricing_pending"
                   ? "Continue to choose pickup or additional delivery. Exact totals update after personalised evaluation."
