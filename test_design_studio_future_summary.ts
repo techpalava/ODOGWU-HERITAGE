@@ -2082,16 +2082,26 @@ assert.match(destinationDeliveryMarkup, /<dt[^>]*>Shipping<\/dt>/);
 const projectedTotalText = `€${(
   destinationDeliveryResolution.projectedTotalCents / 100
 ).toFixed(2)}`;
+const individualTotalText = `€${(
+  (destinationDeliveryResolution.projectedTotalCents + 1400) / 100
+).toFixed(2)}`;
 assert.match(
   destinationDeliveryMarkup,
-  new RegExp(`>Total</dt>[\\s\\S]*?>${projectedTotalText}</dd>`),
-  "Summary Total must render the shipping authority's projectedTotalCents",
+  new RegExp(`>Total</dt>[\\s\\S]*?>${individualTotalText}</dd>`),
+  "Individual Summary Total adds the Lagos band on top of projected delivery",
 );
 assert.match(destinationDeliveryMarkup, /Lagos → Eindhoven shipping/);
 assert.match(destinationDeliveryMarkup, /data-summary-included-inbound="true"/);
-assert.match(destinationDeliveryMarkup, /data-excluded-from-total="true"/);
-assert.match(destinationDeliveryMarkup, /data-included-cents="1400"/);
+assert.equal(destinationDeliveryMarkup.includes("data-excluded-from-total"), false);
+assert.match(destinationDeliveryMarkup, /data-amount-cents="1400"/);
+assert.equal(
+  destinationDeliveryMarkup.match(
+    /data-summary-included-inbound="true"[\s\S]*?<\/div>/,
+  )?.[0].includes("Included"),
+  false,
+);
 assert.match(destinationDeliveryMarkup, /€14\.00/);
+assert.match(destinationDeliveryMarkup, /Includes fabric, tax, and sewing\./);
 assert.equal(exactSummary.garmentSummary.length, 1);
 const communitySummaryMarkup = renderSummaryMarkup(destinationDeliveryResolution, {
   kind: "community",
@@ -2102,6 +2112,10 @@ const communitySummaryMarkup = renderSummaryMarkup(destinationDeliveryResolution
 });
 assert.equal(communitySummaryMarkup.includes("Lagos → Eindhoven shipping"), false);
 assert.equal(communitySummaryMarkup.includes("data-summary-included-inbound"), false);
+assert.match(
+  communitySummaryMarkup,
+  /Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing\./,
+);
 assert.match(
   communitySummaryMarkup,
   new RegExp(`>Total</dt>[\\s\\S]*?>${projectedTotalText}</dd>`),

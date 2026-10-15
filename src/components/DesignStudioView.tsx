@@ -10275,6 +10275,7 @@ export default function DesignStudioView({
             futureGarmentFabricPlanning.selectedFabricQuantity
           }
           constructionPrice={futureConstructionPrice}
+          orderType={futureOrderIdentity?.orderType ?? ctx.orderType}
           contextualReentryGuidance={
             activeContextualReentryGuidance?.destinationStageId === "fabric"
               ? activeContextualReentryGuidance
@@ -10367,6 +10368,7 @@ export default function DesignStudioView({
             futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
             null
           }
+          orderType={futureOrderIdentity?.orderType ?? ctx.orderType}
           isCatalogueLoading={stylesLoadState === "loading"}
           stylesLoadState={stylesLoadState}
           additionalGarmentOptions={futureAdditionalGarmentConstructionOptions}
@@ -10455,6 +10457,7 @@ export default function DesignStudioView({
           constructionSubtotal={
             futureSummary.pricingSummary.garmentConstructionSubtotal
           }
+          orderType={futureOrderIdentity?.orderType ?? ctx.orderType}
           designSelections={activeCustomerDesignSelections}
           showAdditionalClothesCosts={showAdditionalClothesCosts}
           selectedStyle={futureDesignStyleSelection.selectedStyle}

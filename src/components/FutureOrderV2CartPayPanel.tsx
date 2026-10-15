@@ -150,10 +150,10 @@ export const FutureOrderV2CartPayPanel = ({
           {includedInbound ? (
             <p
               data-testid="future-order-v2-included-inbound"
-              data-excluded-from-total="true"
+              data-amount-cents={includedInbound.amountCents}
               className="mt-1 text-[11px] leading-relaxed text-heritage-ink/70"
             >
-              Lagos → Eindhoven {moneyFromCents(includedInbound.amountCents)} included
+              Lagos → Eindhoven shipping {moneyFromCents(includedInbound.amountCents)}
             </p>
           ) : null}
           <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/70">

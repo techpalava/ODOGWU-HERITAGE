@@ -634,7 +634,7 @@ assert.equal(
 assert.equal(earlyIndividual.view.costBreakdown?.subtotal.label, "Order Subtotal");
 assert.equal(
   earlyIndividual.view.costBreakdown?.subtotal.amountCents,
-  earlyIndividual.view.totalAmountCents,
+  early.view.totalAmountCents,
 );
 assert.equal(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.label,
@@ -648,19 +648,23 @@ assert.equal(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.amountCents,
   1400,
 );
-assert.equal(
+assert.notEqual(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.included,
   true,
 );
 assert.equal(earlyIndividual.view.costBreakdown?.shipping, null);
 assert.equal(
   earlyIndividual.view.totalAmountCents,
-  early.view.totalAmountCents,
-  "the early included band does not change the live total",
+  (early.view.totalAmountCents || 0) + 1400,
+  "Step 1 adds the Individual Lagos band to the live total",
 );
-assert.notEqual(
+assert.equal(
   (earlyIndividual.view.costBreakdown?.subtotal.amountCents || 0) + 1400,
   earlyIndividual.view.totalAmountCents,
+);
+assert.equal(
+  section(earlyIndividual.view, "construction").footer?.note,
+  "Includes fabric, tax, and sewing.",
 );
 
 const earlyCommunity = buildAuthority({
@@ -674,6 +678,10 @@ assert.equal(earlyCommunity.view.costBreakdown ?? null, null);
 assert.equal(
   earlyCommunity.view.totalAmountCents,
   early.view.totalAmountCents,
+);
+assert.equal(
+  section(earlyCommunity.view, "construction").footer?.note,
+  "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
 );
 
 const emptyStep1 = buildAuthority({
@@ -1529,17 +1537,21 @@ assert.equal(
   individualPickup.view.costBreakdown?.includedInboundShipping?.amountCents,
   1400,
 );
-assert.equal(
+assert.notEqual(
   individualPickup.view.costBreakdown?.includedInboundShipping?.included,
   true,
 );
 assert.equal(
   individualPickup.view.totalAmountCents,
-  pickup.view.totalAmountCents,
-  "the included inbound band is not added to the live total",
+  (pickup.view.totalAmountCents || 0) + 1400,
+  "pickup adds the Individual Lagos band and no final-mile fee",
 );
 assert.equal(
   individualPickup.view.costBreakdown?.subtotal.amountCents,
+  pickup.view.totalAmountCents,
+);
+assert.equal(
+  (individualPickup.view.costBreakdown?.subtotal.amountCents || 0) + 1400,
   individualPickup.view.totalAmountCents,
 );
 assert.equal(
@@ -1599,7 +1611,11 @@ for (const [pieceCount, amountCents] of [
     banded.costBreakdown?.includedInboundShipping?.amountCents,
     amountCents,
   );
-  assert.equal(banded.totalAmountCents, individualPickup.view.totalAmountCents);
+  assert.equal(
+    banded.totalAmountCents,
+    (individualPickup.candidateResult.candidate?.pricing.exactTotalCents || 0) +
+      amountCents,
+  );
 }
 
 const courier = buildAuthority({

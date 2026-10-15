@@ -10,6 +10,7 @@ import {
   type DesignStyleStepOccurrencePresentation,
   type DesignStyleStepRuntimeStatus,
 } from "../utils/designStyleStepRuntime";
+import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import type {
   CanonicalPhysicalGarmentType,
@@ -82,6 +83,7 @@ interface DormantFutureDesignStyleStepProps {
   /** Private uploaded-image previews keyed by exact physical occurrence token. */
   selectedDesignPreviewByOccurrenceToken?: Readonly<Record<string, string>>;
   stagePrice: number | null;
+  orderType?: string | null;
   isCatalogueLoading?: boolean;
   stylesLoadState?: "loading" | "ready" | "error";
   additionalGarmentOptions?: readonly {
@@ -225,6 +227,7 @@ export const DormantFutureDesignStyleStep = ({
   uploadOperationBusy = false,
   selectedDesignPreviewByOccurrenceToken = {},
   stagePrice,
+  orderType = null,
   isCatalogueLoading = false,
   stylesLoadState = "ready",
   additionalGarmentOptions = [],
@@ -1227,7 +1230,7 @@ export const DormantFutureDesignStyleStep = ({
           )}
         </div>
 
-        <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-sm"><span className="min-w-0 text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{stagePrice === null ? "Pending" : `${PRICING_CURRENCY_SYMBOL}${stagePrice.toFixed(2)}`}</span></div><p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing. Design Style does not add another charge.</p></aside>
+        <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-sm"><span className="min-w-0 text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{stagePrice === null ? "Pending" : `${PRICING_CURRENCY_SYMBOL}${stagePrice.toFixed(2)}`}</span></div><p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">{garmentConstructionInclusionNote(orderType)} Design Style does not add another charge.</p></aside>
         <div
           ref={continueActionRef}
           data-testid="future-design-style-continue-action"

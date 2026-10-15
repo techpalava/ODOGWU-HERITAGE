@@ -18,7 +18,10 @@ import {
   type FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
 import type { FutureOrderV2PaymentMethod } from "./futureOrderV2Payment";
-import { resolveIndividualInboundShippingDisplay } from "./individualInboundShippingDisplay";
+import {
+  INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE,
+  resolveIndividualInboundShippingDisplay,
+} from "./individualInboundShippingDisplay";
 import {
   formatDualUnitMeasurementDisplay,
   fromCanonicalCentimetres,
@@ -526,6 +529,14 @@ export const getFuturePaymentReviewPricingRows = (
     physicalGarmentCount?: number | null;
   } | null,
 ): readonly FuturePaymentReviewPricingRow[] => {
+  const includedInbound =
+    typeof display?.physicalGarmentCount === "number"
+      ? resolveIndividualInboundShippingDisplay({
+          orderType: display.orderType,
+          batchType: display.batchType,
+          physicalGarmentCount: display.physicalGarmentCount,
+        })
+      : null;
   const rows: FuturePaymentReviewPricingRow[] = [
     {
       id: "garment_construction",
@@ -535,25 +546,19 @@ export const getFuturePaymentReviewPricingRows = (
     },
     {
       id: "included_components",
-      label: FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE,
+      label: includedInbound
+        ? INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE
+        : FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE,
       amountCents: null,
       presentation: "supporting_note",
     },
   ];
-  const includedInbound =
-    typeof display?.physicalGarmentCount === "number"
-      ? resolveIndividualInboundShippingDisplay({
-          orderType: display.orderType,
-          batchType: display.batchType,
-          physicalGarmentCount: display.physicalGarmentCount,
-        })
-      : null;
   if (includedInbound) {
     rows.push({
       id: "lagos_eindhoven_included",
       label: includedInbound.label,
       amountCents: includedInbound.amountCents,
-      presentation: "included",
+      presentation: "amount",
     });
   }
   rows.push({

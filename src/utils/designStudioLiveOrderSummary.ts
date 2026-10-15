@@ -7,7 +7,10 @@ import type {
   FutureMeasurementStateV1,
 } from "../types";
 import type { CustomDetailCatalogInspection } from "./catalogHelpers";
-import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "./designPriceBreakdownPresentation";
+import {
+  garmentConstructionInclusionNote,
+  SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
+} from "./designPriceBreakdownPresentation";
 import { resolveIndividualInboundShippingDisplay } from "./individualInboundShippingDisplay";
 import type { FutureShippingStageResolution } from "./designStudioFutureShipping";
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
@@ -150,7 +153,7 @@ export interface LiveOrderSummaryCostBreakdownLine {
   readonly label: string;
   readonly valueLabel: string;
   readonly amountCents: number | null;
-  /** Display-only included amount. Never added to the payable total. */
+  /** @deprecated The Lagos band is a priced line and is part of the total. */
   readonly included?: boolean;
 }
 
@@ -513,28 +516,67 @@ const knownSubtotalCents = ({
   return authoritativeConstructionSubtotalCents(summary);
 };
 
+/**
+ * Cents to add for the Individual Lagos band.
+ * An exact candidate that already records the same separately charged amount
+ * already contains it in `exactTotalCents`.
+ */
+const individualInboundChargeToAddCents = ({
+  summary,
+  candidatePricing,
+  orderType,
+}: {
+  summary: FutureDesignStudioSummary;
+  candidatePricing: FutureOrderCandidatePricingV1 | null;
+  orderType?: string | null;
+}): number => {
+  const inbound = resolveIndividualInboundShippingDisplay({
+    orderType,
+    physicalGarmentCount: summary.garmentSummary.length,
+  });
+  if (!inbound) return 0;
+  const lagos = candidatePricing?.components.lagosToEindhovenShipping;
+  if (
+    candidatePricing?.status === "exact" &&
+    candidatePricing.exactTotalCents !== null &&
+    lagos?.status === "separately_charged" &&
+    lagos.amountCents === inbound.amountCents
+  ) {
+    return 0;
+  }
+  return inbound.amountCents;
+};
+
 const resolveTotal = ({
   summary,
   candidatePricing,
   shippingResolution,
+  orderType = null,
 }: {
   summary: FutureDesignStudioSummary;
   candidatePricing: FutureOrderCandidatePricingV1 | null;
   shippingResolution: FutureShippingStageResolution | null;
+  orderType?: string | null;
 }): Pick<
   LiveOrderSummaryView,
   "totalStatus" | "totalLabel" | "totalValueLabel" | "totalAmountCents" | "quoteRequired"
 > => {
   const quoteRequired = Boolean(shippingResolution?.quoteRequired);
+  const inboundCents = individualInboundChargeToAddCents({
+    summary,
+    candidatePricing,
+    orderType,
+  });
   if (
     candidatePricing?.status === "exact" &&
     candidatePricing.exactTotalCents !== null
   ) {
+    const totalAmountCents = candidatePricing.exactTotalCents + inboundCents;
     return {
       totalStatus: "exact",
       totalLabel: LIVE_ORDER_SUMMARY_TOTAL_LABEL,
-      totalValueLabel: moneyFromCents(candidatePricing.exactTotalCents),
-      totalAmountCents: candidatePricing.exactTotalCents,
+      totalValueLabel: moneyFromCents(totalAmountCents),
+      totalAmountCents,
       quoteRequired,
     };
   }
@@ -546,20 +588,22 @@ const resolveTotal = ({
       ? shippingResolution.projectedTotalCents
       : null;
   if (projectedTotalCents !== null) {
+    const totalAmountCents = projectedTotalCents + inboundCents;
     return {
       totalStatus: "current",
       totalLabel: LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
-      totalValueLabel: moneyFromCents(projectedTotalCents),
-      totalAmountCents: projectedTotalCents,
+      totalValueLabel: moneyFromCents(totalAmountCents),
+      totalAmountCents,
       quoteRequired,
     };
   }
   if (subtotalCents !== null) {
+    const totalAmountCents = subtotalCents + inboundCents;
     return {
       totalStatus: quoteRequired ? "quote_required" : "subtotal",
       totalLabel: LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
-      totalValueLabel: moneyFromCents(subtotalCents),
-      totalAmountCents: subtotalCents,
+      totalValueLabel: moneyFromCents(totalAmountCents),
+      totalAmountCents,
       quoteRequired,
     };
   }
@@ -612,13 +656,12 @@ const resolveCostBreakdown = ({
         label: includedInbound.label,
         valueLabel: moneyFromCents(includedInbound.amountCents),
         amountCents: includedInbound.amountCents,
-        included: true as const,
       }
     : null;
 
   // Before Step 8 chooses a delivery method, only an Individual order with a
-  // known subtotal shows the included Lagos band. Community stays without a
-  // cost breakdown. The band is display-only and is not part of the total.
+  // known subtotal shows the Lagos band. Community stays without a cost
+  // breakdown. The band is added to the displayed total.
   if (!method) {
     if (!subtotal || !includedInboundShipping) return null;
     return {
@@ -810,7 +853,7 @@ export const projectDesignStudioLiveOrderSummary = ({
       label: LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
       amountLabel: moneyFromCents(constructionSubtotalCents),
       amountCents: constructionSubtotalCents,
-      note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+      note: garmentConstructionInclusionNote(orderType),
     });
   }
   const constructionFooter = constructionFooters[0] || null;
@@ -846,6 +889,7 @@ export const projectDesignStudioLiveOrderSummary = ({
     summary,
     candidatePricing,
     shippingResolution,
+    orderType,
   });
   const costBreakdown = resolveCostBreakdown({
     summary,

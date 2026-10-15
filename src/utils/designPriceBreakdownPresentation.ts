@@ -14,6 +14,13 @@ import type { FutureCustomDetailPhysicalSubject } from "./garmentScopedCustomDet
 export const SELECTED_DESIGN_PRICE_SUPPORTING_TEXT =
   "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.";
 
+export const garmentConstructionInclusionNote = (
+  orderType?: string | null,
+): string =>
+  orderType === "Individual"
+    ? "Includes fabric, tax, and sewing."
+    : SELECTED_DESIGN_PRICE_SUPPORTING_TEXT;
+
 /**
  * Presentation-only mapping of the pricing engine's explanatory garment rows.
  * It deliberately owns no monetary arithmetic.

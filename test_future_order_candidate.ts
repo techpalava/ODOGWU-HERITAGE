@@ -18,6 +18,7 @@ import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConf
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { calculateDesignPricing } from "./src/utils/designPricing";
+import { individualLagosToEindhovenChargeCents } from "./src/utils/individualInboundShippingDisplay";
 import {
   getFutureFabricCapacityComposition,
   getFutureFabricStageCompletion,
@@ -2944,6 +2945,39 @@ const baseShirtOnlyFabric: FabricAllocationState = {
     orderType: "Individual",
   });
   assert.equal("batchId" in individualV2.candidate.orderIdentity!, false);
+  const individualChargeCents = individualLagosToEindhovenChargeCents({
+    orderType: "Individual",
+    physicalGarmentCount: individualV2.candidate.garments.length,
+  });
+  assert.ok(individualChargeCents && individualChargeCents > 0);
+  assert.equal(
+    individualV2.candidate.pricing.components.lagosToEindhovenShipping.status,
+    "separately_charged",
+  );
+  assert.equal(
+    individualV2.candidate.pricing.components.lagosToEindhovenShipping.amountCents,
+    individualChargeCents,
+  );
+  assert.equal(
+    individualV2.candidate.pricing.selectedDesignTotalCents,
+    v1.candidate.pricing.selectedDesignTotalCents,
+  );
+  assert.equal(
+    individualV2.candidate.pricing.postEindhovenAdjustmentCents,
+    v1.candidate.pricing.postEindhovenAdjustmentCents,
+  );
+  assert.equal(
+    individualV2.candidate.pricing.exactTotalCents,
+    (v1.candidate.pricing.exactTotalCents || 0) + individualChargeCents,
+  );
+  assert.equal(
+    v2.candidate.pricing.components.lagosToEindhovenShipping.status,
+    "included_in_garment_construction",
+  );
+  assert.equal(
+    v2.candidate.pricing.exactTotalCents,
+    v1.candidate.pricing.exactTotalCents,
+  );
 
   const invalidMeasurement = buildFutureOrderCandidateV2({
     coreInput: {
