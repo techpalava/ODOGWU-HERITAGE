@@ -614,6 +614,67 @@ assert.equal(
   JSON.stringify(early.view).includes("Pending"),
   false,
 );
+assert.equal(
+  early.view.costBreakdown ?? null,
+  null,
+  "an early card without an order type still has no cost breakdown",
+);
+
+const earlyIndividual = buildAuthority({
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+  orderType: "Individual",
+});
+assert.equal(earlyIndividual.summary.garmentSummary.length, 1);
+assert.equal(
+  earlyIndividual.shippingResolution.state.fulfilmentMethod,
+  null,
+);
+assert.equal(earlyIndividual.view.costBreakdown?.subtotal.label, "Order Subtotal");
+assert.equal(
+  earlyIndividual.view.costBreakdown?.subtotal.amountCents,
+  earlyIndividual.view.totalAmountCents,
+);
+assert.equal(
+  earlyIndividual.view.costBreakdown?.includedInboundShipping?.label,
+  "Lagos → Eindhoven shipping",
+);
+assert.equal(
+  earlyIndividual.view.costBreakdown?.includedInboundShipping?.valueLabel,
+  "€14.00",
+);
+assert.equal(
+  earlyIndividual.view.costBreakdown?.includedInboundShipping?.amountCents,
+  1400,
+);
+assert.equal(
+  earlyIndividual.view.costBreakdown?.includedInboundShipping?.included,
+  true,
+);
+assert.equal(earlyIndividual.view.costBreakdown?.shipping, null);
+assert.equal(
+  earlyIndividual.view.totalAmountCents,
+  early.view.totalAmountCents,
+  "the early included band does not change the live total",
+);
+assert.notEqual(
+  (earlyIndividual.view.costBreakdown?.subtotal.amountCents || 0) + 1400,
+  earlyIndividual.view.totalAmountCents,
+);
+
+const earlyCommunity = buildAuthority({
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+  orderType: "Community",
+});
+assert.equal(earlyCommunity.shippingResolution.state.fulfilmentMethod, null);
+assert.equal(earlyCommunity.view.costBreakdown ?? null, null);
+assert.equal(
+  earlyCommunity.view.totalAmountCents,
+  early.view.totalAmountCents,
+);
 
 const emptyStep1 = buildAuthority({
   garmentTypes: [],

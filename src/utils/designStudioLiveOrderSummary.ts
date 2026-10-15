@@ -593,12 +593,42 @@ const resolveCostBreakdown = ({
   orderType?: string | null;
 }): LiveOrderSummaryCostBreakdown | null => {
   const method = shippingResolution?.state.fulfilmentMethod;
-  if (!method) return null;
-
   const subtotalCents =
     candidatePricing?.selectedDesignTotalCents ??
     knownSubtotalCents({ summary, candidatePricing });
-  if (subtotalCents === null) return null;
+  const includedInbound = resolveIndividualInboundShippingDisplay({
+    orderType,
+    physicalGarmentCount: summary.garmentSummary.length,
+  });
+  const subtotal = subtotalCents === null
+    ? null
+    : {
+        label: "Order Subtotal",
+        valueLabel: moneyFromCents(subtotalCents),
+        amountCents: subtotalCents,
+      };
+  const includedInboundShipping = includedInbound
+    ? {
+        label: includedInbound.label,
+        valueLabel: moneyFromCents(includedInbound.amountCents),
+        amountCents: includedInbound.amountCents,
+        included: true as const,
+      }
+    : null;
+
+  // Before Step 8 chooses a delivery method, only an Individual order with a
+  // known subtotal shows the included Lagos band. Community stays without a
+  // cost breakdown. The band is display-only and is not part of the total.
+  if (!method) {
+    if (!subtotal || !includedInboundShipping) return null;
+    return {
+      subtotal,
+      includedInboundShipping,
+      shipping: null,
+    };
+  }
+
+  if (!subtotal) return null;
 
   const shippingCents =
     candidatePricing?.postEindhovenAdjustmentCents ??
@@ -618,25 +648,9 @@ const resolveCostBreakdown = ({
           amountCents: shippingCents,
         };
 
-  const includedInbound = resolveIndividualInboundShippingDisplay({
-    orderType,
-    physicalGarmentCount: summary.garmentSummary.length,
-  });
-
   return {
-    subtotal: {
-      label: "Order Subtotal",
-      valueLabel: moneyFromCents(subtotalCents),
-      amountCents: subtotalCents,
-    },
-    includedInboundShipping: includedInbound
-      ? {
-          label: includedInbound.label,
-          valueLabel: moneyFromCents(includedInbound.amountCents),
-          amountCents: includedInbound.amountCents,
-          included: true,
-        }
-      : null,
+    subtotal,
+    includedInboundShipping,
     shipping,
   };
 };
