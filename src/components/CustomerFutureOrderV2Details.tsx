@@ -6,6 +6,7 @@ import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { PersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract";
 import {
   payFutureOrderV2FromDashboard,
+  payPersonalizedAdditionDifference,
   retryFutureOrderV2DashboardRecord,
   type FutureOrderV2DashboardPaymentActions,
   type FutureOrderV2DashboardPaymentOutcome,
@@ -31,9 +32,10 @@ import {
 } from "../utils/futureOrderV2PaymentRecord";
 import {
   formatPersonalizedPriceEuros,
+  PERSONALIZED_BASE_PAYMENT_NOTICE,
   presentPersonalizedAdditionLines,
+  readAcceptedPersonalizedDifferenceCents,
   readFutureOrderV2ChargeableCents,
-  resolvePersonalizedAdditionPayable,
   type FutureOrderV2PersonalizedPriceRecord,
 } from "../utils/futureOrderV2PersonalizedPrice";
 
@@ -123,11 +125,12 @@ export const CustomerFutureOrderV2Details = ({
   const headingId = `customer-v2-order-details-${order.orderId}`;
   const priceRecord = localPrice ?? personalizedPrice;
   const additionLines = presentPersonalizedAdditionLines(candidate, priceRecord);
-  const additionPayable = resolvePersonalizedAdditionPayable(candidate, priceRecord);
   const payableCents = readFutureOrderV2ChargeableCents(candidate, priceRecord);
+  const differenceCents = readAcceptedPersonalizedDifferenceCents(candidate, priceRecord);
   const payBusy = payPhase !== "idle";
   const canPay =
     Boolean(paymentActions) && payableCents !== null && !localPayment && (!payment || payBusy);
+  const canPayDifference = Boolean(paymentActions) && differenceCents !== null;
   const successPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!localPayment) return;
@@ -166,6 +169,35 @@ export const CustomerFutureOrderV2Details = ({
         ...actions,
       }),
     );
+  const handlePayDifference = async () => {
+    if (!paymentActions || payInFlightRef.current || differenceCents === null) return;
+    payInFlightRef.current = true;
+    setPayOutcome(null);
+    setPayPhase("processing");
+    try {
+      const outcome = await payPersonalizedAdditionDifference({
+        order,
+        personalizedPrice: priceRecord,
+        authorize: paymentActions.authorize,
+        record: (input) => {
+          setPayPhase("recording");
+          return paymentActions.record(input);
+        },
+      });
+      if (outcome.status === "paid") {
+        if (priceRecord) {
+          setLocalPrice({
+            ...priceRecord,
+            additionPaidCents: (priceRecord.additionPaidCents ?? 0) + outcome.record.amountCents,
+          });
+        }
+      } else if (outcome.status === "redirecting") setIsRedirecting(true);
+      else setPayOutcome(outcome);
+    } finally {
+      payInFlightRef.current = false;
+      setPayPhase("idle");
+    }
+  };
   const handleDecide = async (
     occurrenceKey: string,
     decision: "accepted" | "declined",
@@ -215,7 +247,11 @@ export const CustomerFutureOrderV2Details = ({
           ? "Your payment went through."
           : isRedirecting
             ? redirectingMessage
-            : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order.";
+            : canPay
+              ? additionLines.length > 0
+                ? PERSONALIZED_BASE_PAYMENT_NOTICE
+                : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order."
+              : "Pay only the accepted addition. Accepting did not charge you.";
 
   const dialog = (
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
@@ -417,7 +453,7 @@ export const CustomerFutureOrderV2Details = ({
                 )}
                 {candidate.pricing.exactTotalCents === null && payableCents !== null && (
                   <div className="flex justify-between gap-3 border-t border-heritage-green/15 pt-1 font-bold text-heritage-green">
-                    <dt>Total</dt>
+                    <dt>Base total</dt>
                     <dd className="font-mono">{formatFutureOrderV2PaidAmount(payableCents)}</dd>
                   </div>
                 )}
@@ -426,6 +462,9 @@ export const CustomerFutureOrderV2Details = ({
 
             {additionLines.length > 0 && (
               <DetailsSection title="Personalized addition">
+                <p className="text-xs leading-relaxed text-heritage-ink/75">
+                  {PERSONALIZED_BASE_PAYMENT_NOTICE}
+                </p>
                 <ul className="space-y-3">
                   {additionLines.map((line) => (
                     <li
@@ -445,7 +484,7 @@ export const CustomerFutureOrderV2Details = ({
                           </p>
                           {line.tailorNote ? <p className="mt-1">Tailor note: {line.tailorNote}</p> : null}
                           <p className="mt-2 text-heritage-ink/70">
-                            Accept to include this in your payable total, or decline to keep the base garment only.
+                            Accept to pay this addition later, or decline to keep the base garment only.
                             Accepting does not charge you.
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2 print:hidden">
@@ -472,7 +511,10 @@ export const CustomerFutureOrderV2Details = ({
                       )}
                       {line.status === "accepted" && line.amountCents !== null && (
                         <p className="mt-2 text-heritage-green">
-                          Accepted {formatPersonalizedPriceEuros(line.amountCents)}. Pay when you are ready. You have not been charged yet.
+                          Accepted {formatPersonalizedPriceEuros(line.amountCents)}.
+                          {differenceCents !== null
+                            ? " Pay the difference for this addition when you are ready. You have not been charged for it."
+                            : " This addition is paid."}
                         </p>
                       )}
                       {line.status === "declined" && (
@@ -483,13 +525,6 @@ export const CustomerFutureOrderV2Details = ({
                     </li>
                   ))}
                 </ul>
-                {additionPayable.status === "locked" && (
-                  <p className="text-xs text-amber-800">
-                    {additionPayable.reason === "awaiting_acceptance"
-                      ? "Payment stays locked until you accept or decline the priced addition."
-                      : "Payment stays locked until the personalized addition is priced."}
-                  </p>
-                )}
                 {decisionMessage && <p className="text-xs text-red-700">{decisionMessage}</p>}
               </DetailsSection>
             )}
@@ -538,7 +573,7 @@ export const CustomerFutureOrderV2Details = ({
                   <p>Your order is saved but has not been paid yet.</p>
                 </div>
               )}
-              {canPay && (
+              {(canPay || canPayDifference) && (
                 <div
                   data-customer-v2-order-pay-section
                   className="space-y-3 rounded-2xl bg-heritage-green p-4 text-white print:hidden"
@@ -575,8 +610,8 @@ export const CustomerFutureOrderV2Details = ({
                         disabled={payBusy || isRedirecting}
                         orderId={order.orderId}
                         returnSurface="dashboard"
-                        amountCents={payableCents ?? 0}
-                        onExpressCheckoutConfirm={handlePay}
+                        amountCents={canPay ? payableCents ?? 0 : differenceCents ?? 0}
+                        onExpressCheckoutConfirm={canPay ? handlePay : handlePayDifference}
                         onReadyChange={setPaymentReady}
                         onMethodChange={setPaymentMethod}
                         shippingState={shipping}
@@ -609,18 +644,36 @@ export const CustomerFutureOrderV2Details = ({
                           </button>
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          data-customer-v2-order-pay
-                          disabled={!paymentReady || payBusy}
-                          aria-busy={payBusy}
-                          aria-describedby={`${headingId}-pay-status`}
-                          onClick={handlePay}
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                        >
-                          <LockKeyhole size={14} aria-hidden="true" />
-                          {payLabel}
-                        </button>
+                        <>
+                          {canPay ? (
+                            <button
+                              type="button"
+                              data-customer-v2-order-pay
+                              disabled={!paymentReady || payBusy}
+                              aria-busy={payBusy}
+                              aria-describedby={`${headingId}-pay-status`}
+                              onClick={handlePay}
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              <LockKeyhole size={14} aria-hidden="true" />
+                              {payLabel}
+                            </button>
+                          ) : null}
+                          {canPayDifference ? (
+                            <button
+                              type="button"
+                              data-customer-v2-order-pay-difference
+                              disabled={!paymentReady || payBusy}
+                              aria-busy={payBusy}
+                              onClick={handlePayDifference}
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              {payBusy
+                                ? "Processing payment..."
+                                : `Pay the difference ${formatFutureOrderV2PaidAmount(differenceCents ?? 0)}`}
+                            </button>
+                          ) : null}
+                        </>
                       )}
                     </>
                   )}

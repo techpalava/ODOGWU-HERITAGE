@@ -13,6 +13,10 @@ export const PERSONALIZED_PRICE_READY_NOTIFICATION_KIND =
 /** Stripe's minimum charge. Matches the reviewed-total payment gate. */
 export const PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS = 50;
 
+/** Shown wherever the customer can pay while an addition is still unevaluated. */
+export const PERSONALIZED_BASE_PAYMENT_NOTICE =
+  "This payment is your known base total. Personalized requirements will be evaluated later, and any extra is paid only after you accept it.";
+
 export const PERSONALIZED_ADDITION_PRICE_STATUSES = [
   "evaluation_pending",
   "price_ready",
@@ -48,6 +52,8 @@ export interface FutureOrderV2PersonalizedPriceRecord {
   readonly orderId: string;
   readonly ownerUid: string;
   readonly lines: readonly PersonalizedAdditionPriceLine[];
+  /** Cents already charged for accepted additions. The base payment is separate. */
+  readonly additionPaidCents: number | null;
 }
 
 export interface PersonalizedPriceReadyNotification {
@@ -71,13 +77,11 @@ export interface PersonalizedPriceReadyNotification {
 export type PersonalizedAdditionPayable =
   | {
       readonly status: "payable";
+      /** Known base only. Accepted additions are paid separately. */
       readonly amountCents: number;
       readonly baseCents: number;
       readonly acceptedCents: number;
-    }
-  | {
-      readonly status: "locked";
-      readonly reason: "evaluation_pending" | "awaiting_acceptance";
+      readonly differenceDueCents: number;
     }
   | { readonly status: "unavailable" };
 
@@ -220,13 +224,27 @@ export const parseFutureOrderV2PersonalizedPrice = (
   const parsed = lines as PersonalizedAdditionPriceLine[];
   const keys = new Set(parsed.map((line) => line.occurrenceKey));
   if (keys.size !== parsed.length) return null;
+  const additionPaidCents =
+    value.additionPaidCents == null ? null : value.additionPaidCents;
+  if (additionPaidCents !== null && !isCents(additionPaidCents)) return null;
   return {
     schemaVersion: 1,
     orderId: value.orderId,
     ownerUid: value.ownerUid,
     lines: parsed,
+    additionPaidCents,
   };
 };
+
+export const personalizedAdditionPaymentReference = (
+  orderId: string,
+  amountCents: number,
+): string => `future-v2-addition-${orderId}-${amountCents}`;
+
+export const isPersonalizedAdditionPaymentReference = (
+  orderId: string,
+  paymentReference: string,
+): boolean => paymentReference.startsWith(`future-v2-addition-${orderId}-`);
 
 const knownBaseCents = (order: PersonalizedPriceChargeableOrder): number | null => {
   const pricing = order.pricing;
@@ -264,10 +282,19 @@ const lineByKey = (
 ): PersonalizedAdditionPriceLine | undefined =>
   record?.lines.find((line) => line.occurrenceKey === occurrenceKey);
 
+const acceptedAdditionCents = (
+  order: PersonalizedPriceChargeableOrder,
+  record: FutureOrderV2PersonalizedPriceRecord | null,
+): number =>
+  listPersonalizedEvaluationSeeds(order).reduce((total, seed) => {
+    const line = lineByKey(record, seed.occurrenceKey);
+    return total + (line?.status === "accepted" ? line.amountCents ?? 0 : 0);
+  }, 0);
+
 /**
- * Payable total after every personalized line is accepted or declined.
- * `price_ready` is known but not accepted, so it stays locked and is never charged.
- * Declined lines contribute nothing and leave the base garment payable.
+ * The base garment stays payable while a personalized addition is pending,
+ * priced, or already decided. Pending and price-ready amounts are excluded.
+ * Accepted amounts are not added here; they are a separate difference charge.
  */
 export const resolvePersonalizedAdditionPayable = (
   order: PersonalizedPriceChargeableOrder,
@@ -275,57 +302,45 @@ export const resolvePersonalizedAdditionPayable = (
 ): PersonalizedAdditionPayable => {
   const seeds = listPersonalizedEvaluationSeeds(order);
   if (seeds.length === 0) return { status: "unavailable" };
-  if (
-    !record ||
-    seeds.some((seed) => !lineByKey(record, seed.occurrenceKey))
-  ) {
-    return { status: "locked", reason: "evaluation_pending" };
-  }
-  const lines = seeds.map((seed) => lineByKey(record, seed.occurrenceKey)!);
-  if (lines.some((line) => line.status === "evaluation_pending" || line.pricingEvaluationRequired)) {
-    return { status: "locked", reason: "evaluation_pending" };
-  }
-  if (lines.some((line) => line.status === "price_ready")) {
-    return { status: "locked", reason: "awaiting_acceptance" };
-  }
-  if (lines.some((line) => line.status !== "accepted" && line.status !== "declined")) {
-    return { status: "unavailable" };
-  }
   const baseCents = knownBaseCents(order);
   if (baseCents === null) return { status: "unavailable" };
-  const acceptedCents = lines.reduce(
-    (total, line) => total + (line.status === "accepted" ? line.amountCents ?? 0 : 0),
-    0,
-  );
+  const acceptedCents = acceptedAdditionCents(order, record);
+  const paidCents = record?.additionPaidCents ?? 0;
+  const differenceDueCents = Math.max(0, acceptedCents - paidCents);
   return {
     status: "payable",
-    amountCents: baseCents + acceptedCents,
+    amountCents: baseCents,
     baseCents,
     acceptedCents,
+    differenceDueCents,
   };
 };
 
+const chargeableExactCents = (amountCents: number | null, status: string): number | null => {
+  if (
+    status !== "exact" ||
+    !Number.isSafeInteger(amountCents) ||
+    amountCents < PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS
+  ) {
+    return null;
+  }
+  return amountCents;
+};
+
 /**
- * Cents the server may charge. Exact orders with no personalized evaluation
- * keep the snapshot total. A priced-but-unaccepted addition returns null.
+ * Cents the base payment may charge. Exact orders keep the snapshot total.
+ * A personalized addition never increases this amount until it is accepted,
+ * and even then it is charged as a separate difference.
  */
 export const readFutureOrderV2ChargeableCents = (
   order: PersonalizedPriceChargeableOrder,
-  record: FutureOrderV2PersonalizedPriceRecord | null,
+  _record: FutureOrderV2PersonalizedPriceRecord | null,
 ): number | null => {
   const seeds = listPersonalizedEvaluationSeeds(order);
   if (seeds.length === 0) {
-    const amountCents = order.pricing.exactTotalCents;
-    if (
-      order.pricing.status !== "exact" ||
-      !Number.isSafeInteger(amountCents) ||
-      amountCents < PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS
-    ) {
-      return null;
-    }
-    return amountCents;
+    return chargeableExactCents(order.pricing.exactTotalCents, order.pricing.status);
   }
-  const payable = resolvePersonalizedAdditionPayable(order, record);
+  const payable = resolvePersonalizedAdditionPayable(order, null);
   if (
     payable.status !== "payable" ||
     payable.amountCents < PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS
@@ -333,6 +348,46 @@ export const readFutureOrderV2ChargeableCents = (
     return null;
   }
   return payable.amountCents;
+};
+
+/** Accepted addition cents still unpaid. Null when there is nothing to charge. */
+export const readAcceptedPersonalizedDifferenceCents = (
+  order: PersonalizedPriceChargeableOrder,
+  record: FutureOrderV2PersonalizedPriceRecord | null,
+): number | null => {
+  const payable = resolvePersonalizedAdditionPayable(order, record);
+  if (
+    payable.status !== "payable" ||
+    payable.differenceDueCents < PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS
+  ) {
+    return null;
+  }
+  return payable.differenceDueCents;
+};
+
+/**
+ * Server charge for one payment reference. The base reference charges the
+ * known base. An addition reference charges only the unpaid accepted difference.
+ */
+export const readPersonalizedStripeChargeCents = ({
+  orderId,
+  order,
+  record,
+  paymentReference,
+}: {
+  orderId: string;
+  order: PersonalizedPriceChargeableOrder;
+  record: FutureOrderV2PersonalizedPriceRecord | null;
+  paymentReference: string;
+}): number | null => {
+  if (paymentReference === `future-v2-payment-${orderId}`) {
+    return readFutureOrderV2ChargeableCents(order, record);
+  }
+  if (!isPersonalizedAdditionPaymentReference(orderId, paymentReference)) return null;
+  const requested = Number(paymentReference.slice(`future-v2-addition-${orderId}-`.length));
+  const due = readAcceptedPersonalizedDifferenceCents(order, record);
+  if (!Number.isSafeInteger(requested) || due === null || requested !== due) return null;
+  return due;
 };
 
 export const personalizedPriceNotificationId = (
@@ -466,6 +521,7 @@ export const evaluatePersonalizedAddition = ({
     orderId,
     ownerUid,
     lines,
+    additionPaidCents: existing?.additionPaidCents ?? null,
   };
   const parsed = parseFutureOrderV2PersonalizedPrice(record);
   if (!parsed) {

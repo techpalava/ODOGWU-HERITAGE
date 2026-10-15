@@ -12,9 +12,10 @@ import {
 } from "../utils/futureOrderV2StripeShipping.js";
 import {
   FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  isPersonalizedAdditionPaymentReference,
   listPersonalizedEvaluationSeeds,
   parseFutureOrderV2PersonalizedPrice,
-  readFutureOrderV2ChargeableCents,
+  readPersonalizedStripeChargeCents,
 } from "../utils/futureOrderV2PersonalizedPrice.js";
 
 const MINIMUM_EUR_CENTS = 50;
@@ -346,7 +347,8 @@ export const handleFutureOrderV2StripePayment = async (
     typeof body?.paymentReference === "string" ? body.paymentReference : "";
   if (
     !SAFE_ORDER_ID.test(orderId) ||
-    paymentReference !== `future-v2-payment-${orderId}`
+    (paymentReference !== `future-v2-payment-${orderId}` &&
+      !isPersonalizedAdditionPaymentReference(orderId, paymentReference))
   ) {
     return sendError(
       res,
@@ -392,7 +394,10 @@ export const handleFutureOrderV2StripePayment = async (
 
   const candidate = order.value.masterOrder.cartItem.candidate;
   let personalizedPrice = null;
-  if (listPersonalizedEvaluationSeeds(candidate).length > 0) {
+  if (
+    listPersonalizedEvaluationSeeds(candidate).length > 0 ||
+    isPersonalizedAdditionPaymentReference(orderId, paymentReference)
+  ) {
     const readPersonalizedPrice =
       dependencies.readPersonalizedPrice ??
       ((id: string) => readPersonalizedPriceFromAdmin(services.db, id));
@@ -409,9 +414,14 @@ export const handleFutureOrderV2StripePayment = async (
       );
     }
   }
-  // Amount is the snapshot total, or the base plus accepted additions only.
-  // A pending or price-ready addition is not chargeable. The client amount is ignored.
-  const amountCents = readFutureOrderV2ChargeableCents(candidate, personalizedPrice);
+  // Base payments charge the known base total. An addition reference charges
+  // only the unpaid accepted difference. Pending and price-ready amounts are excluded.
+  const amountCents = readPersonalizedStripeChargeCents({
+    orderId,
+    order: candidate,
+    record: personalizedPrice,
+    paymentReference,
+  });
   if (amountCents === null || amountCents < MINIMUM_EUR_CENTS) {
     return sendError(
       res,

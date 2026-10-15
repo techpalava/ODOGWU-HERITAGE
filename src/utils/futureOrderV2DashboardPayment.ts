@@ -5,7 +5,11 @@ import type {
 } from "./futureOrderV2Payment";
 import type { FutureOrderV2PaymentRecord } from "./futureOrderV2PaymentRecord";
 import type { PersistedFutureOrderV2 } from "./futureOrderV2PersistenceContract";
-import type { FutureOrderV2PersonalizedPriceRecord } from "./futureOrderV2PersonalizedPrice";
+import {
+  personalizedAdditionPaymentReference,
+  readAcceptedPersonalizedDifferenceCents,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "./futureOrderV2PersonalizedPrice";
 
 export interface FutureOrderV2DashboardPaymentActions {
   readonly authorize: (
@@ -60,7 +64,7 @@ export const payFutureOrderV2FromDashboard = async ({
   record,
 }: {
   order: PersistedFutureOrderV2;
-  /** Accepted additions included in the charge. Omitted when the snapshot total is exact. */
+  /** Unused for the base charge. Accepted additions are a separate difference payment. */
   personalizedPrice?: FutureOrderV2PersonalizedPriceRecord | null;
 } & FutureOrderV2DashboardPaymentActions): Promise<FutureOrderV2DashboardPaymentOutcome> => {
   let authorization: FutureOrderV2PaymentAuthorizationResult;
@@ -78,6 +82,49 @@ export const payFutureOrderV2FromDashboard = async ({
   if (authorization.status === "redirecting") {
     return { status: "redirecting" };
   }
+  if (authorization.status !== "authorized") {
+    return { status: "failed", message: authorization.message };
+  }
+  return retryFutureOrderV2DashboardRecord({
+    orderId: order.orderId,
+    paymentIntentId: authorization.providerTransactionReference,
+    record,
+  });
+};
+
+/** Charges only the unpaid accepted addition. Does not replace the base payment. */
+export const payPersonalizedAdditionDifference = async ({
+  order,
+  personalizedPrice,
+  authorize,
+  record,
+}: {
+  order: PersistedFutureOrderV2;
+  personalizedPrice: FutureOrderV2PersonalizedPriceRecord | null;
+} & FutureOrderV2DashboardPaymentActions): Promise<FutureOrderV2DashboardPaymentOutcome> => {
+  const dueCents = readAcceptedPersonalizedDifferenceCents(
+    order.masterOrder.cartItem.candidate,
+    personalizedPrice,
+  );
+  if (dueCents === null) {
+    return { status: "failed", message: "There is no accepted addition to pay." };
+  }
+  let authorization: FutureOrderV2PaymentAuthorizationResult;
+  try {
+    authorization = await authorize(
+      {
+        ...createFutureOrderV2DashboardPaymentAttempt(order),
+        paymentReference: personalizedAdditionPaymentReference(order.orderId, dueCents),
+      },
+      personalizedPrice,
+    );
+  } catch {
+    return {
+      status: "failed",
+      message: "The payment could not be confirmed. Retry this same order safely.",
+    };
+  }
+  if (authorization.status === "redirecting") return { status: "redirecting" };
   if (authorization.status !== "authorized") {
     return { status: "failed", message: authorization.message };
   }

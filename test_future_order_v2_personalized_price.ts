@@ -9,7 +9,9 @@ import {
   evaluatePersonalizedAddition,
   formatPersonalizedPriceEuros,
   parseFutureOrderV2PersonalizedPrice,
+  readAcceptedPersonalizedDifferenceCents,
   readFutureOrderV2ChargeableCents,
+  readPersonalizedStripeChargeCents,
   resolvePersonalizedAdditionPayable,
   type FutureOrderV2PersonalizedPriceRecord,
   type PersonalizedPriceChargeableOrder,
@@ -84,12 +86,15 @@ assert.match(evaluated.notification.body, /Decline the addition/);
 assert.match(evaluated.notification.body, /Reply to this email/);
 assert.equal(evaluated.notification.status, "queued");
 assert.equal("paymentIntentId" in evaluated.notification, false);
-assert.equal(
-  resolvePersonalizedAdditionPayable(order, evaluated.record).status,
-  "locked",
-);
-assert.equal(readFutureOrderV2ChargeableCents(order, evaluated.record), null);
-assert.equal(readFutureOrderV2ChargeableCents(order, null), null);
+const pendingPayable = resolvePersonalizedAdditionPayable(order, evaluated.record);
+assert.equal(pendingPayable.status, "payable");
+if (pendingPayable.status !== "payable") throw new Error("expected a base payable");
+assert.equal(pendingPayable.amountCents, 12000);
+assert.equal(pendingPayable.differenceDueCents, 0);
+assert.equal(readFutureOrderV2ChargeableCents(order, evaluated.record), 12000);
+assert.equal(readFutureOrderV2ChargeableCents(order, null), 12000);
+assert.equal(readAcceptedPersonalizedDifferenceCents(order, evaluated.record), null);
+assert.equal(readAcceptedPersonalizedDifferenceCents(order, null), null);
 
 const accepted = decidePersonalizedAddition(
   evaluated.record,
@@ -103,11 +108,40 @@ assert.equal(accepted.record.lines[0].amountCents, 2500);
 const acceptedPayable = resolvePersonalizedAdditionPayable(order, accepted.record);
 assert.deepEqual(acceptedPayable, {
   status: "payable",
-  amountCents: 14500,
+  amountCents: 12000,
   baseCents: 12000,
   acceptedCents: 2500,
+  differenceDueCents: 2500,
 });
-assert.equal(readFutureOrderV2ChargeableCents(order, accepted.record), 14500);
+assert.equal(readFutureOrderV2ChargeableCents(order, accepted.record), 12000);
+assert.equal(readAcceptedPersonalizedDifferenceCents(order, accepted.record), 2500);
+assert.equal(
+  readPersonalizedStripeChargeCents({
+    orderId: "future-order-crest",
+    order,
+    record: accepted.record,
+    paymentReference: "future-v2-payment-future-order-crest",
+  }),
+  12000,
+);
+assert.equal(
+  readPersonalizedStripeChargeCents({
+    orderId: "future-order-crest",
+    order,
+    record: accepted.record,
+    paymentReference: "future-v2-addition-future-order-crest-2500",
+  }),
+  2500,
+);
+assert.equal(
+  readPersonalizedStripeChargeCents({
+    orderId: "future-order-crest",
+    order,
+    record: accepted.record,
+    paymentReference: "future-v2-addition-future-order-crest-9999",
+  }),
+  null,
+);
 assert.equal(decidePersonalizedAddition(accepted.record, seeds[0].occurrenceKey, "accepted").status, "unchanged");
 
 const declined = decidePersonalizedAddition(
@@ -123,6 +157,9 @@ if (declinedPayable.status !== "payable") throw new Error("expected a base payab
 assert.equal(declinedPayable.acceptedCents, 0);
 assert.equal(declinedPayable.amountCents, 12000);
 assert.equal(declinedPayable.amountCents, declinedPayable.baseCents);
+assert.equal(declinedPayable.differenceDueCents, 0);
+assert.equal(readAcceptedPersonalizedDifferenceCents(order, declined.record), null);
+assert.equal(readFutureOrderV2ChargeableCents(order, declined.record), 12000);
 
 const exactOrder: PersonalizedPriceChargeableOrder = {
   pricing: {
@@ -227,7 +264,7 @@ assert.match(
 );
 assert.match(
   readFileSync("src/server/futureOrderV2StripePayment.ts", "utf8"),
-  /readFutureOrderV2ChargeableCents/,
+  /readPersonalizedStripeChargeCents/,
 );
 
 console.log("personalized price evaluation flow ok");

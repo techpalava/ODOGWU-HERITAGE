@@ -8,6 +8,8 @@ import {
   parseFutureOrderCartItemV2,
   type FutureOrderCartItemV2,
 } from "./futureOrderV2Storage";
+import { isAwaitingPersonalizedPriceEvaluation } from "./designStudioFuturePaymentReview";
+import { readFutureOrderV2ChargeableCents } from "./futureOrderV2PersonalizedPrice";
 
 export type ParkFutureOrderV2CandidateResult =
   | {
@@ -28,10 +30,17 @@ export type ParkFutureOrderV2CandidateResult =
 
 export const isReviewableFutureOrderV2CandidateForCart = (
   candidate: FutureOrderCandidateV2,
-): boolean =>
-  candidate.schemaVersion === 2 &&
-  candidate.contentStatus === "reviewable" &&
-  candidate.pricing.status === "exact";
+): boolean => {
+  if (candidate.schemaVersion !== 2) return false;
+  if (candidate.contentStatus === "reviewable" && candidate.pricing.status === "exact") {
+    return true;
+  }
+  return (
+    candidate.contentStatus === "blocked" &&
+    isAwaitingPersonalizedPriceEvaluation(candidate) &&
+    readFutureOrderV2ChargeableCents(candidate, null) !== null
+  );
+};
 
 export const sanitizeFutureOrderV2CartItems = (
   value: unknown,
@@ -163,4 +172,4 @@ export const getFutureOrderV2CartLineTotalCents = (
 ): number | null =>
   item.candidate.pricing.status === "exact"
     ? item.candidate.pricing.exactTotalCents
-    : null;
+    : readFutureOrderV2ChargeableCents(item.candidate, null);

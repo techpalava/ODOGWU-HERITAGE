@@ -14,8 +14,9 @@ import {
 } from "../utils/futureOrderV2PaymentRecord.js";
 import {
   FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  isPersonalizedAdditionPaymentReference,
   parseFutureOrderV2PersonalizedPrice,
-  readFutureOrderV2ChargeableCents,
+  readPersonalizedStripeChargeCents,
 } from "../utils/futureOrderV2PersonalizedPrice.js";
 
 interface VerifiedPaymentRecordToken {
@@ -44,6 +45,10 @@ export interface FutureOrderV2PaymentRecordTransaction {
 export interface FutureOrderV2PaymentRecordStore {
   readOrder(orderId: string): Promise<unknown | null>;
   readPersonalizedPrice?(orderId: string): Promise<unknown | null>;
+  recordAdditionPayment?(
+    orderId: string,
+    input: { readonly amountCents: number; readonly paymentIntentId: string },
+  ): Promise<"recorded" | "already_recorded">;
   runTransaction<T>(
     operation: (transaction: FutureOrderV2PaymentRecordTransaction) => Promise<T>,
   ): Promise<T>;
@@ -118,6 +123,25 @@ export const createAdminFutureOrderV2PaymentRecordStore = (
         .doc(orderId)
         .get();
       return snapshot.exists ? snapshot.data() ?? null : null;
+    },
+    async recordAdditionPayment(orderId, input) {
+      const reference = db.collection(FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION).doc(orderId);
+      return db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(reference);
+        if (!snapshot.exists) {
+          throw new Error("Personalized price record is missing.");
+        }
+        const data = snapshot.data() ?? {};
+        if (data.additionPaymentIntentId === input.paymentIntentId) {
+          return "already_recorded" as const;
+        }
+        const paid = typeof data.additionPaidCents === "number" ? data.additionPaidCents : 0;
+        transaction.update(reference, {
+          additionPaidCents: paid + input.amountCents,
+          additionPaymentIntentId: input.paymentIntentId,
+        });
+        return "recorded" as const;
+      });
     },
     runTransaction: (operation) =>
       db.runTransaction((adminTransaction) =>
@@ -278,11 +302,6 @@ export const saveVerifiedFutureOrderV2Payment = async ({
   const personalizedPrice = store.readPersonalizedPrice
     ? parseFutureOrderV2PersonalizedPrice(await store.readPersonalizedPrice(orderId))
     : null;
-  const chargeableCents = readFutureOrderV2ChargeableCents(candidate, personalizedPrice);
-  if (chargeableCents === null) {
-    return { status: "not_payable" };
-  }
-
   let paymentIntent: StripePaymentIntentSummary;
   try {
     paymentIntent = await readPaymentIntent();
@@ -292,13 +311,28 @@ export const saveVerifiedFutureOrderV2Payment = async ({
       message: error instanceof Error ? error.message : "Unknown Stripe error",
     };
   }
+  const paymentReference =
+    typeof paymentIntent.metadata.paymentReference === "string"
+      ? paymentIntent.metadata.paymentReference
+      : "";
+  const chargeableCents = readPersonalizedStripeChargeCents({
+    orderId,
+    order: candidate,
+    record: personalizedPrice,
+    paymentReference,
+  });
+  if (chargeableCents === null) {
+    return { status: "not_payable" };
+  }
+  const additionPayment = isPersonalizedAdditionPaymentReference(orderId, paymentReference);
   if (paymentIntent.status !== "succeeded") return { status: "not_succeeded" };
   if (
     paymentIntent.id !== paymentIntentId ||
     paymentIntent.metadata.orderId !== orderId ||
-    paymentIntent.metadata.paymentReference !== `future-v2-payment-${orderId}` ||
     paymentIntent.currency !== "eur" ||
-    paymentIntent.amount !== chargeableCents
+    paymentIntent.amount !== chargeableCents ||
+    (!additionPayment &&
+      paymentIntent.metadata.paymentReference !== `future-v2-payment-${orderId}`)
   ) {
     return { status: "mismatch" };
   }
@@ -314,6 +348,18 @@ export const saveVerifiedFutureOrderV2Payment = async ({
     testMode: true,
     recordedAt: now().toISOString(),
   };
+  if (additionPayment) {
+    if (!store.recordAdditionPayment) return { status: "not_payable" };
+    try {
+      const additionStatus = await store.recordAdditionPayment(orderId, {
+        amountCents: chargeableCents,
+        paymentIntentId,
+      });
+      return { status: additionStatus, record: proposed };
+    } catch {
+      return { status: "not_payable" };
+    }
+  }
   return store.runTransaction(async (transaction) => {
     const existingValue = await transaction.getPayment(orderId);
     if (existingValue === null) {

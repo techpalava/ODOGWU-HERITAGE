@@ -17,6 +17,7 @@ import {
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentFutureOrderV2WorkshopCard, type FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
 import {
+  PERSONALIZED_BASE_PAYMENT_NOTICE,
   readFutureOrderV2ChargeableCents,
   type FutureOrderV2PersonalizedPriceRecord,
 } from "../utils/futureOrderV2PersonalizedPrice";
@@ -166,9 +167,15 @@ export const CustomerFutureOrderV2List = ({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {chargeableCents !== null ? (
                   <div className="text-[10px] text-heritage-ink/75">
-                    Total: <span className="font-bold text-heritage-green">
+                    {persisted.masterOrder.cartItem.candidate.pricing.status === "exact"
+                      ? "Total"
+                      : "Base total"}
+                    : <span className="font-bold text-heritage-green">
                       {formatFutureOrderV2PaidAmount(chargeableCents)}
                     </span>
+                    {persisted.masterOrder.cartItem.candidate.pricing.status !== "exact" ? (
+                      <p>{PERSONALIZED_BASE_PAYMENT_NOTICE}</p>
+                    ) : null}
                   </div>
                 ) : (
                   <span />

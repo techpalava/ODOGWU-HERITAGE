@@ -48,6 +48,10 @@ import {
   type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import {
+  PERSONALIZED_BASE_PAYMENT_NOTICE,
+  readFutureOrderV2ChargeableCents,
+} from "../utils/futureOrderV2PersonalizedPrice";
 import { formatFutureOrderV2PaidAmount } from "../utils/futureOrderV2PaymentRecord";
 import {
   formatCustomerFacingFabricCapacityAmount,
@@ -665,10 +669,17 @@ export const DormantFuturePaymentReviewStep = ({
   const payIsBusy = preparationIsPending || paymentIsProcessing;
   const reviewedTotalCents =
     candidate?.pricing.status === "exact" ? candidate.pricing.exactTotalCents : null;
+  const personalizedBaseCents =
+    candidate && isV2PaymentReviewCandidate(candidate)
+      ? readFutureOrderV2ChargeableCents(candidate, null)
+      : null;
+  const payableNowCents =
+    reviewedTotalCents ??
+    (awaitingPersonalizedEvaluation ? personalizedBaseCents : null);
   const canSettleReviewedOrder =
     reviewStageOpen &&
-    candidate?.contentStatus === "reviewable" &&
-    reviewedTotalCents !== null;
+    payableNowCents !== null &&
+    (candidate?.contentStatus === "reviewable" || awaitingPersonalizedEvaluation);
   const [stripePaymentReady, setStripePaymentReady] = useState(false);
   const [paymentMethod, setPaymentMethod] =
     useState<FutureOrderV2PaymentMethod>(initialPaymentMethod);
@@ -678,9 +689,9 @@ export const DormantFuturePaymentReviewStep = ({
     ? "Saving your order..."
     : paymentIsProcessing
       ? "Processing payment..."
-      : reviewedTotalCents === null
+      : payableNowCents === null
         ? "Pay"
-        : `Pay ${moneyFromCents(reviewedTotalCents)}`;
+        : `Pay ${moneyFromCents(payableNowCents)}`;
   const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
   const paymentIsConfirmed = payment?.status === "confirmed";
   useEffect(() => {
@@ -784,10 +795,10 @@ export const DormantFuturePaymentReviewStep = ({
                 : "Review is currently locked"}
             </h2>
             <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
-              {canSettleReviewedOrder
-                ? "Your selections and authoritative total are ready to review."
-                : awaitingPersonalizedEvaluation
-                  ? "Personalised requirements still need a price evaluation before an exact total can be confirmed."
+              {awaitingPersonalizedEvaluation
+                ? PERSONALIZED_BASE_PAYMENT_NOTICE
+                : canSettleReviewedOrder
+                  ? "Your selections and authoritative total are ready to review."
                   : "Complete the highlighted requirement before opening this stage through normal navigation."}
             </p>
           </div>
@@ -1186,11 +1197,18 @@ export const DormantFuturePaymentReviewStep = ({
                   {candidate.pricing.status === "exact" &&
                   candidate.pricing.exactTotalCents !== null ? (
                     moneyFromCents(candidate.pricing.exactTotalCents)
+                  ) : awaitingPersonalizedEvaluation && payableNowCents !== null ? (
+                    moneyFromCents(payableNowCents)
                   ) : (
                     "Available after all prices are confirmed"
                   )}
                 </dd>
               </div>
+              {awaitingPersonalizedEvaluation && payableNowCents !== null ? (
+                <p className="text-xs leading-relaxed text-heritage-ink/70">
+                  {PERSONALIZED_BASE_PAYMENT_NOTICE}
+                </p>
+              ) : null}
             </dl>
           </ReviewSection>
         </>
@@ -1295,7 +1313,7 @@ export const DormantFuturePaymentReviewStep = ({
                   <div className="mb-4 space-y-2">
                     <p className="text-xs leading-relaxed text-white/80">
                       Submit this order so the tailor can price the addition. Submitting does not charge you.
-                      Payment and add to cart stay locked until you accept the evaluated price.
+                      You can pay the known base total now. Any extra is charged only after you accept the evaluated price.
                     </p>
                     <button
                       type="button"
@@ -1323,7 +1341,7 @@ export const DormantFuturePaymentReviewStep = ({
                     preparation?.status === "prepared" ? preparation.orderId : ""
                   }
                   returnSurface="design-studio"
-                  amountCents={reviewedTotalCents}
+                  amountCents={payableNowCents}
                   onExpressCheckoutConfirm={onPay}
                   onReadyChange={setStripePaymentReady}
                   onMethodChange={setPaymentMethod}

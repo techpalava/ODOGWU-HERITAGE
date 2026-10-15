@@ -194,8 +194,8 @@ const humanizeIdentifier = (value: string): string =>
 
 /**
  * The customer described a personalized requirement whose euro amount is
- * still waiting on tailoring review. The order can be reviewed; the exact
- * total cannot be charged yet.
+ * still waiting on tailoring review. The base total can be paid now.
+ * Any extra is charged only after the customer accepts the evaluated price.
  */
 export const isAwaitingPersonalizedPriceEvaluation = (
   candidate: FuturePaymentReviewCandidate,

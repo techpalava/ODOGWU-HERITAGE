@@ -4,7 +4,8 @@ import type { FutureOrderV2PreparationAttempt } from "./futureOrderV2Preparation
 import type { Batch } from "../types";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
 import {
-  readFutureOrderV2ChargeableCents,
+  isPersonalizedAdditionPaymentReference,
+  readPersonalizedStripeChargeCents,
   type FutureOrderV2PersonalizedPriceRecord,
 } from "./futureOrderV2PersonalizedPrice";
 
@@ -267,14 +268,16 @@ export const authorizeFutureOrderV2Payment = async (
   attempt: FutureOrderV2PaymentAttempt,
   personalizedPrice: FutureOrderV2PersonalizedPriceRecord | null = null,
 ): Promise<FutureOrderV2PaymentAuthorizationResult> => {
-  const amountCents = readFutureOrderV2ChargeableCents(
-    attempt.masterOrder.cartItem.candidate,
-    personalizedPrice,
-  );
-  if (
-    amountCents === null ||
-    attempt.paymentReference !== `future-v2-payment-${attempt.orderId}`
-  ) {
+  const amountCents = readPersonalizedStripeChargeCents({
+    orderId: attempt.orderId,
+    order: attempt.masterOrder.cartItem.candidate,
+    record: personalizedPrice,
+    paymentReference: attempt.paymentReference,
+  });
+  const referenceAllowed =
+    attempt.paymentReference === `future-v2-payment-${attempt.orderId}` ||
+    isPersonalizedAdditionPaymentReference(attempt.orderId, attempt.paymentReference);
+  if (amountCents === null || !referenceAllowed) {
     return {
       status: "failed",
       message: "The reviewed total is not ready to charge.",

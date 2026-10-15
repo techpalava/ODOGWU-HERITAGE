@@ -637,7 +637,7 @@ const describedEvaluationMarkup = renderToStaticMarkup(
 assert.ok(describedEvaluationMarkup.includes("Your order review is ready"));
 assert.ok(
   describedEvaluationMarkup.includes(
-    "Personalised requirements still need a price evaluation before an exact total can be confirmed.",
+    "This payment is your known base total. Personalized requirements will be evaluated later, and any extra is paid only after you accept it.",
   ),
 );
 assert.equal(
