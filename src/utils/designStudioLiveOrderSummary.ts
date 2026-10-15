@@ -12,6 +12,7 @@ import { resolveIndividualInboundShippingDisplay } from "./individualInboundShip
 import type { FutureShippingStageResolution } from "./designStudioFutureShipping";
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
+import { CUSTOM_DETAILS_CONSTRUCTION_GROUPS } from "./futureCustomDetailsCatalogue";
 import type { FutureOrderCandidatePricingV1 } from "./futureOrderCandidate";
 import type { WearerOrderMeasurementCompletion } from "./wearerOrder";
 import {
@@ -238,30 +239,51 @@ const amountLabelForCustomDetail = (
   return priceCents && priceCents > 0 ? moneyFromCents(priceCents) : "Included";
 };
 
+/**
+ * Clothing-price construction groups: shirt and dress length/sleeve,
+ * fastening, and skirt length.
+ */
+const isMainGarmentConstructionGroup = (selectionGroup: string): boolean =>
+  (CUSTOM_DETAILS_CONSTRUCTION_GROUPS as ReadonlySet<string>).has(selectionGroup);
+
+/**
+ * Selected main-construction option labels, in catalogue component order.
+ * Multiple clothing-price parts of one garment (for example Agbada shirt and
+ * trouser) stay one identity. Empty when construction is unresolved.
+ */
+const mainConstructionIdentityLabel = (
+  garment: FutureDesignStudioSummary["garmentSummary"][number],
+): string | null => {
+  const labels = garment.construction.flatMap((component) => {
+    if (!isMainGarmentConstructionGroup(component.selectionGroup)) return [];
+    const label = component.label.trim();
+    return label.length > 0 ? [label] : [];
+  });
+  return labels.length > 0 ? labels.join(" + ") : null;
+};
+
 const constructionOptionsForGarment = (
   summary: FutureDesignStudioSummary,
   garment: FutureDesignStudioSummary["garmentSummary"][number],
   showAdditionalClothesCosts: boolean | undefined,
 ): LiveOrderSummaryConstructionOption[] => {
-  const baseSelectionKeys = new Set<string>();
-  const baseOptions = garment.construction.map((component) => {
-    const selectionKey = `${component.selectionGroup}:${component.optionId}`;
-    baseSelectionKeys.add(selectionKey);
-    return {
-      id: `construction-option:${garment.garmentKey}:${component.componentKey}`,
-      label: component.label,
-      // Base construction belongs in Garment Construction. These selected
-      // base options add no second charge in Construction Options.
-      amountLabel: "Included",
-    };
-  });
-  const selectedCustomDetails =
+  // Main construction is the Garments Ordered identity. Do not repeat those
+  // clothing-price choices here, including when custom details echo them.
+  const baseConstructionKeys = new Set(
+    garment.construction
+      .filter((component) =>
+        isMainGarmentConstructionGroup(component.selectionGroup),
+      )
+      .map((component) => `${component.selectionGroup}:${component.optionId}`),
+  );
+  return (
     summary.customDetailsSummary
       .find((group) => group.garmentKey === garment.garmentKey)
       ?.occurrences.filter(
         (occurrence) =>
           occurrence.selectionGroup !== "order_optional_detail" &&
-          !baseSelectionKeys.has(
+          !isMainGarmentConstructionGroup(occurrence.selectionGroup) &&
+          !baseConstructionKeys.has(
             `${occurrence.selectionGroup}:${occurrence.optionId}`,
           ) &&
           isCustomerAvailableCustomDetailSelectionGroup(
@@ -276,8 +298,8 @@ const constructionOptionsForGarment = (
           occurrence.priceCents,
           occurrence.priceStatus,
         ),
-      })) || [];
-  return [...baseOptions, ...selectedCustomDetails];
+      })) || []
+  );
 };
 
 const constructionOptionsForOrder = (
@@ -720,7 +742,12 @@ export const projectDesignStudioLiveOrderSummary = ({
   ): LiveOrderSummaryLine => {
     return {
       id: `construction-${garment.garmentKey}`,
-      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      // The selected clothing-price construction is this line's identity.
+      // Step 1 garment.label remains only when that choice is unresolved.
+      label:
+        mainConstructionIdentityLabel(garment) ||
+        garmentLabels.get(garment.garmentKey) ||
+        garment.label,
       detail: null,
       ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
       ...(garment.fitLabel ? { fitLabel: garment.fitLabel } : {}),
