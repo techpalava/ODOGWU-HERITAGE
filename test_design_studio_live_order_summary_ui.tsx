@@ -22,8 +22,8 @@ const sampleView: LiveOrderSummaryView = {
       lines: [
         {
           id: "construction-base:shirt",
-          label: "Shirt",
-          detail: "Standard Length Shirt, Mid-Long Sleeve",
+          label: "Standard Length Shirt, Mid-Long Sleeve",
+          detail: null,
           amountLabel: "€70.00",
         },
       ],
@@ -36,8 +36,8 @@ const sampleView: LiveOrderSummaryView = {
           lines: [
             {
               id: "construction-additional:shirt:1",
-              label: "Shirt 2",
-              detail: "Standard Length Shirt, Short Sleeve",
+              label: "Standard Length Shirt, Short Sleeve",
+              detail: null,
               supportingDetail: "Fabric: Needs fabric",
               amountLabel: "€65.00",
               focusGarmentKey: "additional:shirt:1",
@@ -107,8 +107,6 @@ const sampleView: LiveOrderSummaryView = {
           detail: "Casual Native",
           imageUrl: "https://example.invalid/casual-native.jpg",
           constructionOptions: [
-            { id: "base-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
-            { id: "base-shirt-sleeve", label: "Short Sleeve", amountLabel: "Included" },
             { id: "base-shirt-pocket", label: "No Pockets", amountLabel: "Included" },
             { id: "base-shirt-cuff", label: "Detailed Cuff", amountLabel: "€12.50" },
           ],
@@ -119,9 +117,6 @@ const sampleView: LiveOrderSummaryView = {
           label: "Trouser",
           detail: "Casual Native",
           imageUrl: "https://example.invalid/casual-native-trouser.jpg",
-          constructionOptions: [
-            { id: "base-trouser-fit", label: "Straight Trouser Fit", amountLabel: "Included" },
-          ],
           amountLabel: null,
         },
         {
@@ -129,9 +124,6 @@ const sampleView: LiveOrderSummaryView = {
           label: "Standard Shirt 2",
           detail: "Geometric Print Shirt Set",
           imageUrl: "https://example.invalid/geometric-shirt.jpg",
-          constructionOptions: [
-            { id: "additional-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
-          ],
           amountLabel: null,
         },
       ],
@@ -255,19 +247,19 @@ const architectureView: LiveOrderSummaryView = {
       title: "Garments Ordered",
       editStage: "garment_type",
       lines: [
-        { id: "construction-base:shirt", label: "Standard Shirt", detail: null, amountLabel: "€65.00" },
-        { id: "construction-base:trouser", label: "Trouser", detail: null, amountLabel: "€75.00" },
+        { id: "construction-base:shirt", label: "Standard Length Shirt, Mid-Long Sleeve", detail: null, amountLabel: "€70.00" },
+        { id: "construction-base:trouser", label: "With Rope", detail: null, amountLabel: "€75.00" },
       ],
       subsections: [{
         id: "additional_garments",
         title: "Additional Garments",
         editStage: "personalized_additions",
         focusGarmentKey: "additional:shirt:1",
-        lines: [{ id: "construction-additional:shirt:1", label: "Standard Shirt 2", detail: null, amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
+        lines: [{ id: "construction-additional:shirt:1", label: "Standard Length Shirt, Short Sleeve", detail: null, amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
       }],
-      footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
+      footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€215.00", amountCents: 21500, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
       footers: [
-        { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
+        { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€215.00", amountCents: 21500, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
       ],
     },
     {
@@ -309,7 +301,6 @@ const architectureView: LiveOrderSummaryView = {
           imageUrl: "https://example.invalid/casual-native.jpg",
           amountLabel: null,
           constructionOptions: [
-            { id: "shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
             { id: "shirt-pocket", label: "No Pockets", amountLabel: "Included" },
             { id: "shirt-cuff", label: "Detailed Cuff", amountLabel: "€12.50" },
           ],
@@ -320,9 +311,6 @@ const architectureView: LiveOrderSummaryView = {
           detail: "Casual Native",
           imageUrl: "https://example.invalid/casual-native-trouser.jpg",
           amountLabel: null,
-          constructionOptions: [
-            { id: "trouser-rope", label: "With Rope", amountLabel: "Included" },
-          ],
         },
         {
           id: "style-and-options-additional:shirt:1",
@@ -330,9 +318,6 @@ const architectureView: LiveOrderSummaryView = {
           detail: "Geometric Print Shirt Set",
           imageUrl: "https://example.invalid/geometric-shirt.jpg",
           amountLabel: null,
-          constructionOptions: [
-            { id: "additional-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
-          ],
         },
       ],
     },
@@ -375,7 +360,7 @@ assert.deepEqual(
 );
 {
   const t = textOf(architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-construction")[0]);
-  assert.ok(t.includes("Standard Shirt") && t.includes("€65.00") && t.includes("Trouser") && t.includes("€75.00"));
+  assert.ok(t.includes("Mid-Long") && t.includes("€70.00") && t.includes("With Rope") && t.includes("€75.00"));
   assert.ok(t.includes("Garments Ordered"));
 }
 assert.equal(architectureRenderer.root.findAllByProps({ "data-line-id": "construction-additional:shirt:1" }).length, 1, "an Additional Garment is shown once in Garments Ordered");
@@ -419,12 +404,18 @@ const styleSection = architectureRenderer.root.findAll((n) => n.props?.["data-te
 assert.equal(styleSection.length, 1);
 assert.ok(textOf(styleSection[0]).includes("Included"));
 assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repeat the garment base price");
+assert.equal(
+  (textOf(styleSection[0]).match(/Standard Length Shirt/g) || []).length,
+  0,
+  "construction choices are not Included rows under Style & Options",
+);
+assert.ok(!textOf(styleSection[0]).includes("With Rope"));
 {
   const constructionNodes = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-construction");
   assert.equal(constructionNodes.length, 1);
   const constructionText = textOf(constructionNodes[0]);
   assert.ok(constructionText.includes("Garment Subtotal"));
-  assert.ok(constructionText.includes("€210.00"));
+  assert.ok(constructionText.includes("€215.00"));
   assert.ok(!constructionText.includes("Personalized Additions Subtotal"));
   assert.ok(!constructionText.includes("€36.00"));
   const personalizedNodes = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-personalized_additions");
@@ -554,6 +545,13 @@ assert.ok(textOf(renderer.root).includes("Total"));
 assert.ok(textOf(renderer.root).includes("Shirt"));
 assert.ok(textOf(renderer.root).includes("Royal Forest Mosaic"));
 assert.ok(textOf(renderer.root).includes("€70.00"));
+const garmentsOrdered = textOf(
+  oneByTestId(renderer.root, "live-order-summary-section-construction"),
+);
+assert.ok(
+  garmentsOrdered.includes("Mid-Long") && garmentsOrdered.includes("€70.00"),
+  "Garments Ordered shows the Mid-Long construction identity and its €70 price",
+);
 const selectedDesignRow = oneByLineId(renderer.root, "style-and-options-base:shirt");
 assert.equal(
   textOf(selectedDesignRow).includes("Standard Shirt"),
@@ -562,12 +560,14 @@ assert.equal(
 );
 assert.ok(textOf(selectedDesignRow).includes("Casual Native"));
 assert.ok(!textOf(selectedDesignRow).includes("Kaftan + Shirt"));
-assert.ok(textOf(selectedDesignRow).includes("Standard Length Shirt") && textOf(selectedDesignRow).includes("Short Sleeve") && textOf(selectedDesignRow).includes("No Pockets") && textOf(selectedDesignRow).includes("Detailed Cuff") && textOf(selectedDesignRow).includes("€12.50"));
+assert.ok(textOf(selectedDesignRow).includes("No Pockets") && textOf(selectedDesignRow).includes("Detailed Cuff") && textOf(selectedDesignRow).includes("€12.50"));
 assert.equal(
   (textOf(selectedDesignRow).match(/Standard Length Shirt/g) || []).length,
-  1,
-  "the mounted Summary renders each selected base construction option once",
+  0,
+  "construction choices are not Included rows under Style & Options",
 );
+assert.ok(!textOf(selectedDesignRow).includes("Short Sleeve"));
+assert.ok(!textOf(selectedDesignRow).includes("Mid-Long"));
 assert.equal(
   oneByTestId(renderer.root, "live-order-summary-design-image-style-and-options-base:shirt").props.src,
   "https://example.invalid/casual-native.jpg",
@@ -596,18 +596,33 @@ assert.equal(
   "the base garment identity, selected Design, and construction options share one group",
 );
 assert.equal(
+  oneByLineId(renderer.root, "style-and-options-additional:shirt:1").props["data-line-id"],
+  "style-and-options-additional:shirt:1",
+  "the repeated Additional Garment stays its own Style & Options row",
+);
+assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "live-order-summary-garment-group-style-and-options-additional:shirt:1",
   }).length,
-  1,
-  "the repeated Additional Garment uses the same exact-occurrence group structure",
+  0,
+  "a design-only occurrence does not invent a construction option group",
+);
+assert.ok(
+  !textOf(oneByLineId(renderer.root, "style-and-options-additional:shirt:1")).includes(
+    "Standard Length Shirt",
+  ),
+);
+assert.equal(
+  oneByLineId(renderer.root, "style-and-options-base:trouser").props["data-line-id"],
+  "style-and-options-base:trouser",
+  "another base garment stays its own Style & Options row",
 );
 assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "live-order-summary-garment-group-style-and-options-base:trouser",
   }).length,
-  1,
-  "another base garment uses the same compact group structure",
+  0,
+  "a design-only garment does not invent a construction option group",
 );
   assert.equal(
     renderer.root.findAllByProps({

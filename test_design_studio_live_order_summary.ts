@@ -61,7 +61,10 @@ import {
   createEmptyGarmentScopedCustomDetailsState,
   setGarmentScopedCustomDetailSelection,
 } from "./src/utils/garmentScopedCustomDetailsState";
-import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
+import {
+  reconcileGarmentTypeStepSelection,
+  selectGarmentConstructionOption,
+} from "./src/utils/garmentTypeStepState";
 import {
   createEmptyFutureMeasurementState,
   getMeasurementPhysicalGarments,
@@ -307,6 +310,7 @@ const buildAuthority = ({
   styleOverrides = {} as Partial<StyleCategory>,
   wearerOrder = null as WearerOrderStateV2 | null,
   orderType = null as string | null,
+  garmentTypeSelection: garmentTypeSelectionOverride = null as GarmentTypeStepSelection | null,
 }: {
   garmentTypes?: GarmentTypeStepSelection["garmentTypes"];
   demographic?: NonNullable<GarmentTypeStepSelection["demographic"]>;
@@ -323,8 +327,10 @@ const buildAuthority = ({
   styleOverrides?: Partial<StyleCategory>;
   wearerOrder?: WearerOrderStateV2 | null;
   orderType?: string | null;
+  garmentTypeSelection?: GarmentTypeStepSelection | null;
 }) => {
-  const garmentTypeSelection = buildSelection(garmentTypes, demographic);
+  const garmentTypeSelection =
+    garmentTypeSelectionOverride || buildSelection(garmentTypes, demographic);
   let allocation =
     fabricAllocationState ||
     (fabricByGarment
@@ -789,10 +795,10 @@ hiddenSection(step1Only.view, "measurements");
 hiddenSection(step1Only.view, "delivery");
 hiddenSection(step1Only.view, "optional_extras");
 hiddenSection(step1Only.view, "additional_clothes");
-assert.ok(
-  section(step1Only.view, "construction").lines.some(
-    (line) => line.label === "Shirt" || line.label === "Trouser",
-  ),
+assert.deepEqual(
+  section(step1Only.view, "construction").lines.map((line) => line.label),
+  ["Standard Length Shirt, Short Sleeve", "With Rope"],
+  "Garments Ordered names the selected construction, not the Step 1 garment",
 );
 hiddenSection(step1Only.view, "standard_shipping");
 assert.equal(
@@ -975,17 +981,25 @@ assert.deepEqual(
     (option) => `${option.label} — ${option.amountLabel}`,
   ),
   [
-    ...presentationGarment.construction.map((option) => `${option.label} — Included`),
     "No Pockets — Included",
     "Detailed Sleeve — €12.50",
   ],
-  "the live projection retains selected options only, with base rows deduped by group and option id",
+  "Style & Options keeps non-construction custom details and omits base construction",
 );
 assert.equal(
-  presentationLine.constructionOptions?.filter(
-    (option) => option.label === baseConstruction.label,
-  ).length,
-  1,
+  presentationLine.constructionOptions?.some(
+    (option) =>
+      option.amountLabel === "Included" &&
+      (option.label === baseConstruction.label ||
+        option.label.includes("Standard Length Shirt")),
+  ),
+  false,
+  "construction choices are not Included rows under Style & Options",
+);
+assert.equal(
+  constructionLine(presentationView, presentationGarment.garmentKey)?.label,
+  baseConstruction.label,
+  "Garments Ordered uses the selected construction option as its identity",
 );
 assert.equal(
   section(presentationView, "construction").footer?.amountCents,
@@ -993,6 +1007,65 @@ assert.equal(
   "separating construction prices from selected options must not alter subtotal authority",
 );
 assert.equal(presentationView.totalAmountCents, preDelivery.view.totalAmountCents);
+
+const shirtSelection = buildSelection(["shirt"], "male");
+const midLongPick = selectGarmentConstructionOption({
+  resolution: shirtSelection.constructionByGarment.shirt!,
+  selectionGroup: "shirt_construction",
+  optionId: "shirt_std_midlong",
+  normalizedCustomDetailCatalog: catalog,
+});
+assert.equal(midLongPick.status, "selected");
+if (midLongPick.status !== "selected") {
+  throw new Error("expected Mid-Long construction");
+}
+const midLongPockets = setGarmentScopedCustomDetailSelection(
+  createEmptyGarmentScopedCustomDetailsState(),
+  "base:shirt",
+  "shirt_pockets",
+  "shirt_pocket_0",
+);
+const midLongOrder = buildAuthority({
+  garmentTypeSelection: {
+    ...shirtSelection,
+    constructionByGarment: {
+      ...shirtSelection.constructionByGarment,
+      shirt: midLongPick.resolution,
+    },
+  },
+  styleOverrides: { name: "Casual Native" },
+  customState: midLongPockets,
+});
+const midLongLine = constructionLine(midLongOrder.view, "base:shirt");
+assert.ok(midLongLine);
+assert.equal(
+  midLongLine.label,
+  "Standard Length Shirt, Mid-Long Sleeve",
+);
+assert.match(midLongLine.label, /Mid-Long/);
+assert.equal(midLongLine.amountLabel, "€70.00");
+assert.equal(
+  midLongOrder.summary.garmentSummary[0]?.constructionTotalCents,
+  7000,
+);
+const midLongStyle = section(midLongOrder.view, "style_and_options").lines[0]!;
+assert.equal(midLongStyle.label, "Standard Shirt");
+assert.equal(midLongStyle.detail, "Casual Native");
+assert.deepEqual(
+  (midLongStyle.constructionOptions || []).map(
+    (option) => `${option.label} — ${option.amountLabel}`,
+  ),
+  ["No Pockets — Included"],
+  "Style & Options shows the design style plus pockets, not the construction choice",
+);
+assert.equal(
+  (midLongStyle.constructionOptions || []).some(
+    (option) =>
+      option.amountLabel === "Included" &&
+      /Standard Length Shirt|Short Sleeve|Mid-Long/.test(option.label),
+  ),
+  false,
+);
 
 const multiFabric = buildAuthority({
   garmentTypes: ["shirt", "trouser", "dress"],
@@ -2369,11 +2442,11 @@ const namedWearers = buildAuthority({
 });
 const nolLine = constructionLine(namedWearers.view, "base:shirt");
 const pioLine = constructionLine(namedWearers.view, "base:kaftan");
-assert.equal(nolLine?.label, "Standard Shirt");
+assert.equal(nolLine?.label, "Standard Length Shirt, Short Sleeve");
 assert.equal(nolLine?.wearerLabel, "Nol");
 assert.equal(nolLine?.fitLabel, "Male fit");
 assert.equal(nolLine?.supportingDetail, undefined);
-assert.equal(pioLine?.label, "Long Shirt");
+assert.equal(pioLine?.label, "Long Length Shirt, Short Sleeve");
 assert.equal(pioLine?.wearerLabel, "Pio");
 assert.equal(pioLine?.fitLabel, "Male fit");
 assert.equal(
@@ -2408,8 +2481,14 @@ assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, "Pe
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, "Male fit");
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, "Person 2");
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, "Male fit");
-assert.equal(constructionLine(blankWearers.view, "base:shirt")?.label, "Standard Shirt");
-assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.label, "Long Shirt");
+assert.equal(
+  constructionLine(blankWearers.view, "base:shirt")?.label,
+  "Standard Length Shirt, Short Sleeve",
+);
+assert.equal(
+  constructionLine(blankWearers.view, "base:kaftan")?.label,
+  "Long Length Shirt, Short Sleeve",
+);
 
 const soloWearer = buildAuthority({
   garmentTypes: ["shirt"],
@@ -2425,7 +2504,10 @@ const soloWearer = buildAuthority({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(constructionLine(soloWearer.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(
+  constructionLine(soloWearer.view, "base:shirt")?.label,
+  "Standard Length Shirt, Short Sleeve",
+);
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, "Amaka");
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, "Female fit");
 assert.equal(
