@@ -26,7 +26,6 @@ import {
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import {
-  DesignStudioForwardButton,
   DesignStudioStepActions,
   studioOutlinedNavInteractionClass,
 } from "./DesignStudioBackButton";
@@ -370,7 +369,9 @@ export const DormantFutureDesignStyleStep = ({
       if (savedScroll !== null && typeof window !== "undefined") {
         window.scrollTo({ top: savedScroll, behavior: "auto" });
       }
-      const continueButton = continueActionRef.current?.querySelector("button");
+      const continueButton = continueActionRef.current?.querySelector(
+        '[data-studio-nav="forward"]',
+      );
       if (continueButton && "focus" in continueButton) {
         (continueButton as HTMLElement).focus();
       }
@@ -1227,35 +1228,26 @@ export const DormantFutureDesignStyleStep = ({
         </div>
 
         <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-sm"><span className="min-w-0 text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{stagePrice === null ? "Pending" : `${PRICING_CURRENCY_SYMBOL}${stagePrice.toFixed(2)}`}</span></div><p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing. Design Style does not add another charge.</p></aside>
-        <DesignStudioStepActions
-          backDestination="Fabric"
-          onBack={onBack}
-          note={!exactSetComplete && firstIncompleteOccurrence ? (
-            <p role="status" className="w-full text-xs font-semibold text-amber-800">
-              Choose a design reference for {firstIncompleteOccurrence.label} to continue.
-            </p>
-          ) : null}
-          forward={exactSetComplete ? undefined : {
-            destination: "Custom Details",
-            onClick: onContinue,
-            disabled: true,
-            locked: true,
-            ariaLabel: "Continue to Custom Details",
-          }}
-        />
         <div
           ref={continueActionRef}
           data-testid="future-design-style-continue-action"
-          className={exactSetComplete ? "flex justify-end" : undefined}
         >
-          {exactSetComplete && (
-            <DesignStudioForwardButton
-              destination="Custom Details"
-              onClick={onContinue}
-              ariaLabel="Continue to Custom Details"
-              className="w-full sm:w-auto"
-            />
-          )}
+          <DesignStudioStepActions
+            backDestination="Fabric"
+            onBack={onBack}
+            note={!exactSetComplete && firstIncompleteOccurrence ? (
+              <p role="status" className="w-full text-xs font-semibold text-amber-800">
+                Choose a design reference for {firstIncompleteOccurrence.label} to continue.
+              </p>
+            ) : null}
+            forward={{
+              destination: "Custom Details",
+              onClick: onContinue,
+              disabled: !exactSetComplete,
+              locked: !exactSetComplete,
+              ariaLabel: "Continue to Custom Details",
+            }}
+          />
         </div>
       </section>
       {mappingDialog ? (typeof document !== "undefined" && document.body ? createPortal(mappingDialog, document.body) : mappingDialog) : null}

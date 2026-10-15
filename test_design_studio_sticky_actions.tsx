@@ -243,10 +243,17 @@ assert.equal(
   "Design Style must not dock before a catalogue style is selected.",
 );
 assert.equal(isViewportFixed(incompleteStyleAction.props.className), false);
-assert.equal(
-  incompleteStyleAction.findAllByType("button").length,
-  0,
-  "An incomplete Design Style step keeps Continue locked outside the unlocked action.",
+const incompleteFooterButtons = incompleteStyleAction
+  .findByProps({ "data-studio-step-actions-buttons": "true" })
+  .findAllByType("button");
+assert.deepEqual(
+  incompleteFooterButtons.map((button) => button.props["data-studio-nav"]),
+  ["back", "forward"],
+  "An incomplete Design Style footer keeps Back and locked Continue on one row.",
+);
+assert.equal(incompleteFooterButtons[1].props.disabled, true);
+assert.ok(
+  incompleteStyleAction.findByProps({ "data-studio-step-actions-note": "true" }),
 );
 
 await act(async () => {
@@ -261,11 +268,24 @@ assert.doesNotMatch(
   styleRenderer.root.findByProps({ "data-stage-id": "design_style" }).props.className,
   /pb-28/,
 );
+const completeFooterButtons = completeStyleAction
+  .findByProps({ "data-studio-step-actions-buttons": "true" })
+  .findAllByType("button");
+assert.deepEqual(
+  completeFooterButtons.map((button) => button.props["data-studio-nav"]),
+  ["back", "forward"],
+  "A complete Design Style footer keeps Back and enabled Continue on one row.",
+);
+assert.equal(completeFooterButtons[1].props.disabled, false);
+assert.equal(
+  completeStyleAction.findAll(
+    (node) => node.props?.["data-studio-step-actions-note"] === "true",
+  ).length,
+  0,
+);
 assert.ok(
-  completeStyleAction.findAllByType("button").some((button) =>
-    textContent(button).includes("Continue to Custom Details"),
-  ),
-  "An unlocked Design Style step shows Continue in the bottom action region.",
+  textContent(completeFooterButtons[1]).includes("Continue to Custom Details"),
+  "An unlocked Design Style step shows Continue in the bottom action row.",
 );
 assert.deepEqual(
   documentOrder(styleRenderer.root, [
