@@ -74,7 +74,7 @@ import {
   BATCH_FLAT_RATE_EUR_PER_GARMENT,
   BATCH_MINIMUM_GARMENTS,
 } from "../utils/shippingPricing";
-import { presentFutureOrderV2History } from "../utils/futureOrderV2History";
+import { presentFutureOrderV2History, unwrapDocumentProjection } from "../utils/futureOrderV2History";
 import {
   adminOrderPaymentState,
   matchesAdminPaymentFilter,
@@ -136,7 +136,7 @@ import { DesignStylePublicationError } from "../utils/designStylePublication";
 import { getNextDesignStyleId } from "../utils/designStyleId";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
-import { collection, onSnapshot, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, deleteDoc, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
   FUTURE_ORDER_V2_PAYMENT_COLLECTION,
@@ -153,6 +153,20 @@ import {
   workshopStageStatus,
   type FutureOrderV2WorkshopProgress,
 } from "../utils/futureOrderV2WorkshopProgress";
+import { parsePersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract";
+import {
+  buildPersonalizedPriceOrderLink,
+  evaluatePersonalizedAddition,
+  FUTURE_ORDER_V2_NOTIFICATION_OUTBOX_COLLECTION,
+  FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  listPersonalizedEvaluationSeeds,
+  listTailorPricablePersonalizedLines,
+  personalizedAdditionOpsStatusLabel,
+  parseEuroAmountToCents,
+  parseFutureOrderV2PersonalizedPrice,
+  type FutureOrderV2PersonalizedPriceRecord,
+  type PersonalizedEvaluationSeed,
+} from "../utils/futureOrderV2PersonalizedPrice";
 import { BatchManagementPanel } from "./BatchManagementPanel";
 import AdminReviewsPanel from "./AdminReviewsPanel";
 import {
@@ -276,6 +290,27 @@ export default function DatabaseView({
       },
     );
   }, [activeTab]);
+  const [futureOrderV2PersonalizedPricesByOrderId, setFutureOrderV2PersonalizedPricesByOrderId] =
+    useState<ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>>(new Map());
+  useEffect(() => {
+    if (activeTab !== "orders") return;
+    return onSnapshot(
+      collection(db, FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION),
+      (snapshot) => {
+        const records = new Map<string, FutureOrderV2PersonalizedPriceRecord>();
+        snapshot.docs.forEach((priceDoc) => {
+          const record = parseFutureOrderV2PersonalizedPrice(priceDoc.data());
+          if (record && record.orderId === priceDoc.id) {
+            records.set(record.orderId, record);
+          }
+        });
+        setFutureOrderV2PersonalizedPricesByOrderId(records);
+      },
+      (error) => {
+        console.error("Error subscribing to personalized prices:", error);
+      },
+    );
+  }, [activeTab]);
   const [settingsSubTab, setSettingsSubTab] = useState<
     "rules" | "discounts" | "pricing_engine"
   >("rules");
@@ -359,6 +394,7 @@ export default function DatabaseView({
     | "photo"
     | "catalog_option"
     | "v2-workshop"
+    | "v2-personalized-price"
     | null
   >(null);
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
@@ -1309,6 +1345,58 @@ export default function DatabaseView({
     }
   };
 
+  const handleSaveV2PersonalizedPrice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const orderId = typeof editingItem?.orderId === "string" ? editingItem.orderId : "";
+    const ownerUid = typeof editingItem?.ownerUid === "string" ? editingItem.ownerUid : "";
+    const occurrenceKey = typeof editingItem?.occurrenceKey === "string" ? editingItem.occurrenceKey : "";
+    const amountCents = parseEuroAmountToCents(String(editingItem?.amountEuros ?? ""));
+    const seeds = Array.isArray(editingItem?.seeds)
+      ? (editingItem.seeds as PersonalizedEvaluationSeed[])
+      : [];
+    if (!orderId || !ownerUid || !occurrenceKey || amountCents === null) {
+      alert("Enter the evaluated euro amount.");
+      return;
+    }
+    const outcome = evaluatePersonalizedAddition({
+      existing: futureOrderV2PersonalizedPricesByOrderId.get(orderId) ?? null,
+      orderId,
+      ownerUid,
+      seeds,
+      occurrenceKey,
+      amountCents,
+      tailorNote: typeof editingItem?.tailorNote === "string" ? editingItem.tailorNote : "",
+      toEmail: typeof editingItem?.customerEmail === "string" ? editingItem.customerEmail : "",
+      orderLink: buildPersonalizedPriceOrderLink(
+        typeof window !== "undefined" ? window.location.origin : "",
+        orderId,
+      ),
+    });
+    if (outcome.status !== "ready") {
+      alert(outcome.message);
+      return;
+    }
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION, orderId), {
+        ...outcome.record,
+        updatedAt: serverTimestamp(),
+      });
+      const { notificationId, ...notification } = outcome.notification;
+      batch.set(doc(db, FUTURE_ORDER_V2_NOTIFICATION_OUTBOX_COLLECTION, notificationId), {
+        ...notification,
+        createdAt: serverTimestamp(),
+      });
+      await batch.commit();
+      triggerStatus(
+        `Personalized price saved for ${orderId}. Contact script saved for staff. Nothing is sent automatically.`,
+      );
+      setEditingType(null);
+    } catch {
+      triggerStatus("Failed to save the personalized price", "error");
+    }
+  };
+
   const handleDeleteOrder = async (trackingId: string) => {
     try {
       await StorageService.deleteDocument("orders", trackingId);
@@ -1652,6 +1740,7 @@ export default function DatabaseView({
                         batch: "Sourcing Batch",
                         order: "Master Order",
                         "v2-workshop": "Workshop Progress",
+                        "v2-personalized-price": "Personalized Price",
                         showpiece: "Gallery Showpiece",
                         photo: "Community Photo",
                         catalog_option: "Custom Detail Option",
@@ -3277,6 +3366,97 @@ export default function DatabaseView({
                         className="px-4 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg border border-heritage-gold/20"
                       >
                         Save progress
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {editingType === "v2-personalized-price" && (
+                  <form
+                    onSubmit={handleSaveV2PersonalizedPrice}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans"
+                  >
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-bold text-heritage-green">Order</label>
+                      <p className="font-mono text-heritage-ink/70">{editingItem.orderId}</p>
+                    </div>
+                    {Array.isArray(editingItem.seeds) && editingItem.seeds.length > 1 && (
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="font-bold text-heritage-green">Requirement</label>
+                        <select
+                          value={editingItem.occurrenceKey}
+                          onChange={(e) => {
+                            const seed = (editingItem.seeds as PersonalizedEvaluationSeed[]).find(
+                              (item) => item.occurrenceKey === e.target.value,
+                            );
+                            setEditingItem({
+                              ...editingItem,
+                              occurrenceKey: e.target.value,
+                              requirementText: seed?.requirementText ?? "",
+                            });
+                          }}
+                          className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                        >
+                          {(editingItem.seeds as PersonalizedEvaluationSeed[]).map((seed) => (
+                            <option key={seed.occurrenceKey} value={seed.occurrenceKey}>
+                              {seed.requirementText}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-bold text-heritage-green">What they asked for</label>
+                      <p className="text-heritage-ink/80">{editingItem.requirementText}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green" htmlFor="personalized-price-euros">
+                        Evaluated price (EUR)
+                      </label>
+                      <input
+                        id="personalized-price-euros"
+                        type="text"
+                        inputMode="decimal"
+                        required
+                        value={editingItem.amountEuros || ""}
+                        onChange={(e) =>
+                          setEditingItem({ ...editingItem, amountEuros: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                        placeholder="25.00"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green" htmlFor="personalized-price-note">
+                        Tailor note
+                      </label>
+                      <input
+                        id="personalized-price-note"
+                        type="text"
+                        value={editingItem.tailorNote || ""}
+                        onChange={(e) =>
+                          setEditingItem({ ...editingItem, tailorNote: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <p className="sm:col-span-2 text-heritage-ink/70">
+                      Saves the price and a contact script for staff to send by email or WhatsApp.
+                      Nothing is sent automatically. If the customer does not reply, follow up once after a few days, then mark the addition declined so it is left off. Do not charge it.
+                    </p>
+                    <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setEditingType(null)}
+                        className="px-4 py-2 bg-gray-100 rounded-lg font-bold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg border border-heritage-gold/20"
+                      >
+                        Save price and contact script
                       </button>
                     </div>
                   </form>
@@ -5707,29 +5887,87 @@ export default function DatabaseView({
                                     {history.persistedAt}
                                   </td>
                                   <td className="px-4 py-3 text-right text-[10px] text-gray-400">
-                                    {futureOrderV2PaymentsByOrderId.has(history.orderId) ? (
-                                      <button
-                                        type="button"
-                                        data-admin-v2-workshop-progress={history.orderId}
-                                        onClick={() => {
-                                          const progress = futureOrderV2WorkshopByOrderId.get(history.orderId);
-                                          setIsNewRecord(false);
-                                          setEditingItem({
-                                            orderId: history.orderId,
-                                            ownerUid: history.customer.ownerUid,
-                                            currentStage: progress?.currentStage || 1,
-                                            estimatedDeliveryDate: progress?.estimatedDeliveryDate || "",
-                                            dispatchStatus: progress?.dispatchStatus || "not_dispatched",
-                                          });
-                                          setEditingType("v2-workshop");
-                                        }}
-                                        className="rounded-lg border border-heritage-green/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green hover:bg-heritage-green hover:text-white"
-                                      >
-                                        Update progress
-                                      </button>
-                                    ) : (
-                                      "Read-only"
-                                    )}
+                                    {(() => {
+                                      const parsedOrder = parsePersistedFutureOrderV2(
+                                        unwrapDocumentProjection(o),
+                                      );
+                                      const candidate =
+                                        parsedOrder.status === "valid"
+                                          ? parsedOrder.value.masterOrder.cartItem.candidate
+                                          : null;
+                                      const priceRecord =
+                                        futureOrderV2PersonalizedPricesByOrderId.get(history.orderId) ?? null;
+                                      const pending = candidate
+                                        ? listTailorPricablePersonalizedLines(candidate, priceRecord)
+                                        : [];
+                                      const paid = futureOrderV2PaymentsByOrderId.has(history.orderId);
+                                      return (
+                                        <div className="flex flex-col items-end gap-2">
+                                          {pending.length > 0 && candidate && (
+                                            <>
+                                            <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">
+                                              {personalizedAdditionOpsStatusLabel(
+                                                priceRecord?.lines.find(
+                                                  (line) => line.occurrenceKey === pending[0].occurrenceKey,
+                                                )?.status ?? "evaluation_pending",
+                                              )}
+                                            </p>
+                                            <button
+                                              type="button"
+                                              data-admin-v2-personalized-price={history.orderId}
+                                              onClick={() => {
+                                                const first = pending[0];
+                                                const priced = priceRecord?.lines.find(
+                                                  (line) => line.occurrenceKey === first.occurrenceKey,
+                                                );
+                                                setIsNewRecord(false);
+                                                setEditingItem({
+                                                  orderId: history.orderId,
+                                                  ownerUid: history.customer.ownerUid,
+                                                  customerEmail: history.customer.email,
+                                                  occurrenceKey: first.occurrenceKey,
+                                                  requirementText: first.requirementText,
+                                                  amountEuros:
+                                                    priced?.amountCents != null
+                                                      ? (priced.amountCents / 100).toFixed(2)
+                                                      : "",
+                                                  tailorNote: priced?.tailorNote ?? "",
+                                                  seeds: listPersonalizedEvaluationSeeds(candidate),
+                                                });
+                                                setEditingType("v2-personalized-price");
+                                              }}
+                                              className="rounded-lg border border-heritage-gold/40 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green hover:bg-heritage-green hover:text-white"
+                                            >
+                                              Price addition
+                                            </button>
+                                            </>
+                                          )}
+                                          {paid ? (
+                                            <button
+                                              type="button"
+                                              data-admin-v2-workshop-progress={history.orderId}
+                                              onClick={() => {
+                                                const progress = futureOrderV2WorkshopByOrderId.get(history.orderId);
+                                                setIsNewRecord(false);
+                                                setEditingItem({
+                                                  orderId: history.orderId,
+                                                  ownerUid: history.customer.ownerUid,
+                                                  currentStage: progress?.currentStage || 1,
+                                                  estimatedDeliveryDate: progress?.estimatedDeliveryDate || "",
+                                                  dispatchStatus: progress?.dispatchStatus || "not_dispatched",
+                                                });
+                                                setEditingType("v2-workshop");
+                                              }}
+                                              className="rounded-lg border border-heritage-green/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green hover:bg-heritage-green hover:text-white"
+                                            >
+                                              Update progress
+                                            </button>
+                                          ) : pending.length === 0 ? (
+                                            "Read-only"
+                                          ) : null}
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                 </tr>
                               );

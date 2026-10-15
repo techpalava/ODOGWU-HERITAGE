@@ -940,7 +940,9 @@ export const DormantFutureCustomDetailsStep = ({
     const garmentKey = occurrence.subject.garmentKey;
     const groupId = `future-custom-detail-${garmentKey}-${group.selectionGroup}`;
     const groupBlocker = completion.blockers.find((blocker) =>
-      blocker.garmentKey === occurrence.subject.garmentKey && blocker.selectionGroup === group.selectionGroup,
+      blocker.garmentKey === occurrence.subject.garmentKey &&
+      blocker.selectionGroup === group.selectionGroup &&
+      blocker.code !== "pricing_evaluation_required",
     );
     const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
@@ -1190,19 +1192,31 @@ export const DormantFutureCustomDetailsStep = ({
     () => partitionCatalogueGroupsByRole([catalogue.personalizedGroup], "main"),
     [catalogue.personalizedGroup],
   );
-  const getGroupStatus = (group: FutureCustomDetailsCatalogueGroup) =>
-    group.occurrences.some((occurrence) => occurrence.construction?.status !== "resolved")
-      ? "Price pending"
-      : group.occurrences.some((occurrence) =>
-          completion.blockers.some((blocker) =>
-            blocker.garmentKey === occurrence.subject.garmentKey &&
-            blocker.selectionGroup === group.selectionGroup,
-          ),
-        )
-        ? "Incomplete"
-        : group.isConstruction
-          ? "Complete"
-          : "Optional";
+  const blockersForGroup = (group: FutureCustomDetailsCatalogueGroup) =>
+    completion.blockers.filter((blocker) =>
+      group.occurrences.some(
+        (occurrence) =>
+          blocker.garmentKey === occurrence.subject.garmentKey &&
+          blocker.selectionGroup === group.selectionGroup,
+      ),
+    );
+  const getGroupStatus = (group: FutureCustomDetailsCatalogueGroup) => {
+    const blockers = blockersForGroup(group);
+    const customerBlockers = blockers.filter(
+      (blocker) => blocker.code !== "pricing_evaluation_required",
+    );
+    if (
+      group.occurrences.some(
+        (occurrence) => occurrence.construction?.status !== "resolved",
+      ) ||
+      (customerBlockers.length === 0 &&
+        blockers.some((blocker) => blocker.code === "pricing_evaluation_required"))
+    ) {
+      return "Evaluation pending";
+    }
+    if (customerBlockers.length > 0) return "Incomplete";
+    return group.isConstruction ? "Complete" : "Optional";
+  };
   const renderGroupFieldset = (
     group: FutureCustomDetailsCatalogueGroup,
     headingMode: "base" | "added",
@@ -1533,12 +1547,32 @@ export const DormantFutureCustomDetailsStep = ({
     const visibleCompanions = companionGroups.filter((group) => group.occurrences.length > 0);
     if (visibleGroups.length === 0 && visibleCompanions.length === 0) return null;
     const occurrences = [...visibleGroups, ...visibleCompanions].flatMap((group) => group.occurrences);
-    const hasPricingPending = occurrences.some((occurrence) => occurrence.construction?.status !== "resolved");
-    const hasIncompleteOccurrence = occurrences.some((occurrence) =>
-      completion.blockers.some((blocker) => blocker.garmentKey === occurrence.subject.garmentKey),
+    const sectionGroups = new Set(
+      [...visibleGroups, ...visibleCompanions].map((group) => group.selectionGroup),
     );
-    const sectionBadge = hasPricingPending
-      ? "Price pending"
+    const blockersForOccurrence = (garmentKey: string) =>
+      completion.blockers.filter((blocker) => {
+        if (blocker.garmentKey !== garmentKey) return false;
+        return (
+          !blocker.selectionGroup ||
+          sectionGroups.has(blocker.selectionGroup)
+        );
+      });
+    const hasPricingPending = occurrences.some(
+      (occurrence) => occurrence.construction?.status !== "resolved",
+    );
+    const hasIncompleteOccurrence = occurrences.some((occurrence) =>
+      blockersForOccurrence(occurrence.subject.garmentKey).some(
+        (blocker) => blocker.code !== "pricing_evaluation_required",
+      ),
+    );
+    const hasEvaluationPending = occurrences.some((occurrence) =>
+      blockersForOccurrence(occurrence.subject.garmentKey).some(
+        (blocker) => blocker.code === "pricing_evaluation_required",
+      ),
+    );
+    const sectionBadge = hasPricingPending || (hasEvaluationPending && !hasIncompleteOccurrence)
+      ? "Evaluation pending"
       : hasIncompleteOccurrence
         ? "Incomplete"
         : headingMode === "added"
@@ -2209,7 +2243,7 @@ export const DormantFutureCustomDetailsStep = ({
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
             {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.garmentKey === "order" ? line.feature : `${line.garmentLabel}: ${line.feature}`}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
-            {pricing.status === "pending" && <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">A personalized requirement needs price evaluation before an exact total is available.</p>}
+            {pricing.status === "pending" && <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">A personalized addition is reviewed after you order. The garment total today does not include it.</p>}
             {pricing.status === "invalid" && <p className="rounded-lg bg-red-50 p-2 text-xs leading-relaxed text-red-700">A saved Custom Details price needs review.</p>}
             <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green"><span className="min-w-0 break-words">Estimated total so far</span><span className="shrink-0 font-mono">{estimatedTotal === null ? "Pending" : money(estimatedTotal)}</span></div>
           </div>

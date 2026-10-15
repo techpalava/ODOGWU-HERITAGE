@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, Suspense, lazy } from "react";
+import React, { useState, useEffect, Suspense, lazy } from "react";
 
 import {
   Check,
@@ -103,6 +103,7 @@ import PrivateBatchSetupView, {
   type PrivateBatchSetupValues,
 } from "./components/PrivateBatchSetupView";
 import { createPrivateBatch } from "./services/privateBatchService";
+import { stashFutureOrderV2OpenOrderId } from "./utils/futureOrderV2StripeReturn";
 
 type HomepageDraftReplacementRequest = Readonly<{
   decisionGeneration: number;
@@ -173,6 +174,16 @@ export default function App() {
     businessSettings,
     setBusinessSettings,
   } = store;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("future_order_v2_stripe_return") === "1") return;
+    const orderId = (params.get("future_order_v2_order_id") ?? "").trim();
+    if (!orderId) return;
+    stashFutureOrderV2OpenOrderId(orderId);
+    setActiveTab("dashboard");
+  }, [setActiveTab]);
 
   // Replacement confirmation can outlive a render. Keep the authoritative
   // batch collection in a ref so no async continuation validates against the

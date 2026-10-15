@@ -1045,6 +1045,13 @@ const pending = buildFutureOrderCandidate(
   }),
 );
 assert.equal(pending.status, "blocked");
+assert.equal(
+  pending.blockers.some(
+    (blocker) => blocker.code === "CUSTOM_DETAIL_PRICE_EVALUATION_REQUIRED",
+  ),
+  false,
+  "a described personalized requirement must not be a review blocker",
+);
 assert.ok(pending.candidate);
 const personalized = pending.candidate.customDetails.find(
   (detail) => detail.optionId === "personalized_additional_evaluation",

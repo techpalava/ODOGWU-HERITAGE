@@ -239,7 +239,7 @@ export const DormantFutureSummaryStep = ({
   const statusTitle = isReady
     ? "Your design summary is ready"
     : summary.status === "pricing_pending"
-      ? "Price evaluation required"
+      ? "Evaluation pending"
       : summary.status === "measurement_calculation_pending"
         ? "Measurement calculation pending"
         : summary.status === "profile_mapping_pending"
@@ -248,7 +248,7 @@ export const DormantFutureSummaryStep = ({
   const statusDescription = isReady
     ? "Review your selections below. You can return to any completed step to make changes."
     : summary.status === "pricing_pending"
-      ? "One or more personalised requirements must be evaluated before an exact total can be confirmed."
+      ? "The total today is the base garment. Personalized additions are reviewed after you order."
       : firstBlocker?.message || "Review the first incomplete selection before continuing.";
   const knownConfirmedPrice =
     summary.pricingSummary.garmentConstructionSubtotal === null
