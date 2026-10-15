@@ -10857,6 +10857,7 @@ export default function DesignStudioView({
             resolution={futureShippingResolution}
             selectedDesignPrice={futureSelectedDesignPrice}
             garmentCount={futureGarmentPieceCount}
+            orderType={futureOrderIdentity?.orderType ?? ctx.orderType}
             onChange={setFutureShippingState}
             onRefreshQuote={handleRefreshDormantShippingQuote}
             onBack={() => navigateToFutureStage("summary")}
