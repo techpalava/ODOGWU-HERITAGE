@@ -164,6 +164,33 @@ assert.match(pageText, /Medium Risk/);
 assert.match(pageText, /High Risk/);
 assert.match(pageText, /Critical Risk/);
 assert.equal(radios.filter((radio) => radio.props.checked).length, 0);
+for (const option of optionLabels) {
+  const disabled = option.props["data-measurement-risk-disabled"] === "true";
+  assert.equal(
+    option.props["data-measurement-guide-beam"],
+    disabled ? undefined : "true",
+    `enabled risk option ${option.props["data-measurement-risk-option"]} beams before a method is chosen`,
+  );
+  assert.equal(
+    String(option.props.className).includes("motion-safe:animate-step-guide-beam"),
+    !disabled,
+  );
+}
+const sampleOption = renderer.root.findByProps({
+  "data-measurement-sample-option": "sample_cloth",
+});
+assert.equal(sampleOption.props["data-measurement-guide-beam"], "true");
+assert.match(sampleOption.props.className, /motion-safe:animate-step-guide-beam/);
+for (const sectionId of ["alternate_contact", "ai_measurements"]) {
+  const section = renderer.root.findByProps({
+    "data-measurement-option-section": sectionId,
+  });
+  assert.equal(
+    section.findAll((node) => node.props?.["data-measurement-guide-beam"] === "true").length,
+    0,
+    `${sectionId} stays unlit`,
+  );
+}
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "high_risk" }).length, 0);
@@ -177,6 +204,16 @@ assert.equal(
 assert.equal(pageText.includes("Your completed Low Risk measurements are ready for review."), false);
 
 selectRoute(renderer, "low_risk");
+assert.equal(
+  renderer.root.findAll(
+    (node) =>
+      node.props?.["data-measurement-guide-beam"] === "true" &&
+      (node.props["data-measurement-risk-option"] ||
+        node.props["data-measurement-sample-option"]),
+  ).length,
+  0,
+  "choosing a method clears the method-choice beams",
+);
 assert.equal(
   renderer.root.findByProps({ type: "radio", value: "low_risk" }).props.checked,
   true,

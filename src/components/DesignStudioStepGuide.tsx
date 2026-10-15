@@ -19,7 +19,7 @@ type DesignStudioStepGuideProps = Omit<
 const PANEL_CLASS =
   "border border-heritage-gold/50 bg-heritage-cream/70 text-left text-heritage-ink";
 
-const ACTIVE_BEAM_CLASS =
+export const DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS =
   "border-l-4 border-l-heritage-gold motion-safe:animate-step-guide-beam";
 
 export function DesignStudioStepGuide({
@@ -48,7 +48,7 @@ export function DesignStudioStepGuide({
       role={role}
       aria-labelledby={titleId || undefined}
       data-step-guide={showBeam ? "active" : "idle"}
-      className={[PANEL_CLASS, densityClass, showBeam ? ACTIVE_BEAM_CLASS : "", className]
+      className={[PANEL_CLASS, densityClass, showBeam ? DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS : "", className]
         .filter(Boolean)
         .join(" ")}
     >
