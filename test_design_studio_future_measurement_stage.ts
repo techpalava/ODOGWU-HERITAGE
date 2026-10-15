@@ -789,6 +789,19 @@ const renderPickerHarness = ({
   });
   assert.equal(baseChip.props["data-measurement-garment-chip"], "remaining");
   assert.equal(secondChip.props["data-measurement-garment-chip"], "remaining");
+  assert.equal(baseChip.props["data-measurement-guide-beam"], "true");
+  assert.equal(secondChip.props["data-measurement-guide-beam"], undefined);
+  assert.match(baseChip.props.className, /motion-safe:animate-step-guide-beam/);
+  assert.equal(
+    badgeHarness.renderer.root.findAll(
+      (node) =>
+        node.props?.["data-measurement-guide-beam"] === "true" &&
+        (node.props["data-measurement-risk-option"] ||
+          node.props["data-measurement-sample-option"]),
+    ).length,
+    0,
+    "a selected method does not keep the method-choice beams",
+  );
   assert.ok(Number(baseChip.props["data-measurement-garment-remaining"]) > 0);
   assert.ok(headingText(badgeHarness.renderer.root).includes("left"));
 
@@ -820,6 +833,11 @@ const renderPickerHarness = ({
     "done",
   );
   assert.ok(headingText(doneHarness.renderer.root).includes("Done"));
+  assert.equal(
+    doneHarness.renderer.root.findAllByProps({ "data-measurement-guide-beam": "true" }).length,
+    0,
+    "a complete Measurement order does not beam a card",
+  );
 }
 
 // Unassigned chip is not the default selection when a measurable incomplete garment exists.
@@ -1232,6 +1250,8 @@ console.log("PASS: multi-garment shared-then-advance and Go-to next garment");
   const goPerson = personRenderer.root.findByProps({
     "data-measurement-go-to-wearer": "wearer-b",
   });
+  assert.equal(goPerson.props["data-measurement-guide-beam"], "true");
+  assert.match(goPerson.props.className, /motion-safe:animate-step-guide-beam/);
   assert.match(headingText(goPerson), /Go to Person 2/i);
   assert.ok(headingText(personRenderer.root).includes("Person 2"));
   act(() => {

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import {
+  DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS,
+  DesignStudioStepGuide,
+} from "./DesignStudioStepGuide";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
@@ -963,8 +967,25 @@ export const DormantFutureMeasurementStep = ({
   const routeSaveMessage = progressPresentation.statusMessage;
   const routeStatusLabel = progressPresentation.statusLabel;
   const fitConflictBlocksContinue = Boolean(fitConflictMessage) && !canContinueToSummary;
+  const beamMethodChoices =
+    !canContinueToSummary && !selectedMethod && !hydrationInvalid;
+  const nextRemainingGarmentKey =
+    chipProjection.chips.find((chip) => chip.kind === "remaining")?.garmentKey ?? null;
+  const beamNextWearer = showGoToNextWearer;
+  const beamNextRemainingGarment =
+    !canContinueToSummary &&
+    Boolean(selectedMethod) &&
+    !hydrationInvalid &&
+    !beamNextWearer &&
+    Boolean(nextRemainingGarmentKey);
+  const withMeasurementGuideBeam = (className: string, active: boolean) =>
+    active ? `${className} ${DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS}` : className;
   const fitConflictStatus = fitConflictBlocksContinue ? (
-    <div data-measurement-fit-conflict-status="true" className="mt-3 min-w-0">
+    <div
+      data-measurement-fit-conflict-status="true"
+      data-measurement-guide-beam="true"
+      className={withMeasurementGuideBeam("mt-3 min-w-0", true)}
+    >
       <h3 className="font-serif text-lg font-bold text-heritage-green">Fit conflict</h3>
       <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
         {fitConflictMessage}
@@ -1173,13 +1194,19 @@ export const DormantFutureMeasurementStep = ({
                   data-measurement-risk-option={route.id}
                   data-measurement-risk-selected={selected ? "true" : "false"}
                   data-measurement-risk-disabled={unavailable ? "true" : "false"}
-                  className={`flex min-w-0 gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                    unavailable ? "cursor-not-allowed lg:col-span-3" : "cursor-pointer"
-                  } ${
-                    selected
-                      ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
-                      : "border-heritage-green/15 hover:border-heritage-gold/45"
-                  }`}
+                  data-measurement-guide-beam={
+                    beamMethodChoices && !unavailable ? "true" : undefined
+                  }
+                  className={withMeasurementGuideBeam(
+                    `flex min-w-0 gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                      unavailable ? "cursor-not-allowed lg:col-span-3" : "cursor-pointer"
+                    } ${
+                      selected
+                        ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                        : "border-heritage-green/15 hover:border-heritage-gold/45"
+                    }`,
+                    beamMethodChoices && !unavailable,
+                  )}
                 >
                   <input
                     type="radio"
@@ -1246,11 +1273,15 @@ export const DormantFutureMeasurementStep = ({
             <label
               data-measurement-sample-option={MEASUREMENT_SAMPLE_CLOTH_METHOD}
               data-measurement-sample-selected={sampleSelected ? "true" : "false"}
-              className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                sampleSelected
-                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
-                  : "border-heritage-green/15 hover:border-heritage-gold/45"
-              }`}
+              data-measurement-guide-beam={beamMethodChoices ? "true" : undefined}
+              className={withMeasurementGuideBeam(
+                `flex min-w-0 cursor-pointer gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  sampleSelected
+                    ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                    : "border-heritage-green/15 hover:border-heritage-gold/45"
+                }`,
+                beamMethodChoices,
+              )}
             >
               <input
                 type="radio"
@@ -1343,21 +1374,17 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       {hydrationInvalid && (
-        <section
+        <DesignStudioStepGuide
           role="alert"
+          title="Measurement review needed"
+          titleAs="h3"
+          titleClassName="font-serif"
           data-measurement-hydration-error="true"
-          className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4"
         >
-          <div className="flex min-w-0 items-start gap-3">
-            <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
-            <div className="min-w-0">
-              <h3 className="font-serif font-bold text-heritage-green">Measurement review needed</h3>
-              <p className="mt-2 text-sm text-heritage-ink/70">
-                {FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE}
-              </p>
-            </div>
-          </div>
-        </section>
+          <p className="mt-2 text-sm text-heritage-ink/70">
+            {FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE}
+          </p>
+        </DesignStudioStepGuide>
       )}
 
       {selectedMethod && !hydrationInvalid && (
@@ -1373,9 +1400,17 @@ export const DormantFutureMeasurementStep = ({
               {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
             </p>
             <h3
-              className="mt-1 font-serif text-lg font-bold text-heritage-green"
+              className={withMeasurementGuideBeam(
+                "mt-1 font-serif text-lg font-bold text-heritage-green",
+                routeStatusLabel === "Fit conflict" && fitConflictBlocksContinue,
+              )}
               data-measurement-fit-conflict-status={
                 routeStatusLabel === "Fit conflict" ? "true" : undefined
+              }
+              data-measurement-guide-beam={
+                routeStatusLabel === "Fit conflict" && fitConflictBlocksContinue
+                  ? "true"
+                  : undefined
               }
             >
               {routeStatusLabel}
@@ -1394,7 +1429,11 @@ export const DormantFutureMeasurementStep = ({
               type="button"
               data-measurement-go-to-wearer={nextIncompleteWearer.wearerId}
               onClick={() => onGoToWearer(nextIncompleteWearer.wearerId)}
-              className="inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green/75 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              data-measurement-guide-beam={beamNextWearer ? "true" : undefined}
+              className={withMeasurementGuideBeam(
+                "inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green/75 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2",
+                beamNextWearer,
+              )}
             >
               Go to {nextIncompleteWearer.label}
             </button>
@@ -1483,12 +1522,20 @@ export const DormantFutureMeasurementStep = ({
                   data-measurement-garment-remaining={
                     kind === "remaining" ? String(chip?.remainingCount ?? 0) : "0"
                   }
+                  data-measurement-guide-beam={
+                    beamNextRemainingGarment && garment.garmentKey === nextRemainingGarmentKey
+                      ? "true"
+                      : undefined
+                  }
                   onClick={() => selectGarmentKey(garment.garmentKey)}
-                  className={`inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
-                    selected
-                      ? "border-heritage-green bg-heritage-green text-white"
-                      : "border-heritage-green/20 bg-white text-heritage-green hover:border-heritage-gold/45"
-                  }`}
+                  className={withMeasurementGuideBeam(
+                    `inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                      selected
+                        ? "border-heritage-green bg-heritage-green text-white"
+                        : "border-heritage-green/20 bg-white text-heritage-green hover:border-heritage-gold/45"
+                    }`,
+                    beamNextRemainingGarment && garment.garmentKey === nextRemainingGarmentKey,
+                  )}
                 >
                   <span className="break-words">{label}</span>
                   <span
@@ -1562,17 +1609,15 @@ export const DormantFutureMeasurementStep = ({
       )}
 
       {blockerMessages.length > 0 && (
-        <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
-            <div className="min-w-0">
-              <h3 className="font-serif font-bold text-heritage-green">Measurement review needed</h3>
-              <ul className="mt-2 space-y-1 text-sm text-heritage-ink/70">
-                {blockerMessages.map((message) => <li key={message}>{message}</li>)}
-              </ul>
-            </div>
-          </div>
-        </section>
+        <DesignStudioStepGuide
+          title="Measurement review needed"
+          titleAs="h3"
+          titleClassName="font-serif"
+        >
+          <ul className="mt-2 space-y-1 text-sm text-heritage-ink/70">
+            {blockerMessages.map((message) => <li key={message}>{message}</li>)}
+          </ul>
+        </DesignStudioStepGuide>
       )}
 
       {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
@@ -1632,7 +1677,11 @@ export const DormantFutureMeasurementStep = ({
               {fitConflictBlocksContinue ? (
                 <p
                   data-measurement-fit-conflict-status="true"
-                  className="font-serif text-sm font-bold text-heritage-green lg:text-right"
+                  data-measurement-guide-beam="true"
+                  className={withMeasurementGuideBeam(
+                    "font-serif text-sm font-bold text-heritage-green lg:text-right",
+                    true,
+                  )}
                 >
                   Fit conflict
                 </p>

@@ -440,8 +440,13 @@ const soleNotice = (order: WearerOrderStateV2) => {
     });
     const text = textOf(renderer.root);
     const headings = headingCount(renderer.root);
+    const fitConflictBeams = renderer.root.findAll(
+      (node) =>
+        node.props?.["data-measurement-guide-beam"] === "true" &&
+        node.props?.["data-measurement-fit-conflict-status"] === "true",
+    ).length;
     act(() => renderer.unmount());
-    return { text, headings };
+    return { text, headings, fitConflictBeams };
   };
   assert.match(renderStep(false).text, /earlier steps/, "control: without the conflict props the old copy shows");
   assert.equal(renderStep(false).headings, 0, "no Fit conflict heading when the gate is clear");
@@ -449,9 +454,11 @@ const soleNotice = (order: WearerOrderStateV2) => {
   assert.equal(fixed.text.includes("earlier steps"), false, "fit conflict never says earlier steps");
   assert.ok(fixed.text.includes(message), "status names the ineligible garment and the fix");
   assert.ok(fixed.headings > 0, "Fit conflict heading is visible while Continue is blocked");
+  assert.ok(fixed.fitConflictBeams > 0, "Fit conflict status beams while it blocks Continue");
   assert.ok(fixed.text.includes("Fit conflict"), "the heading reads Fit conflict");
   const unlocked = renderStep(true, { orderMeasurementsComplete: true });
   assert.equal(unlocked.headings, 0, "heading is absent once Continue is no longer blocked");
+  assert.equal(unlocked.fitConflictBeams, 0, "Fit conflict beam stops once Continue is open");
   const beforeMethod = renderStep(true, { route: null });
   assert.ok(beforeMethod.headings > 0, "heading is visible before a measurement method is chosen");
   assert.equal(renderStep(false, { route: null }).headings, 0);

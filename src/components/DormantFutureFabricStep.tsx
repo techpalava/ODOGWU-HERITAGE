@@ -12,6 +12,7 @@ import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
   AssignedFabricPreview,
@@ -2704,21 +2705,22 @@ export const DormantFutureFabricStep = ({
       </div>
 
       {uniqueBlockers.length > 0 && (
-        <div
+        <DesignStudioStepGuide
           role="alert"
-          className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
+          title="Fabric needs attention"
+          titleClassName="text-sm"
+          data-testid="fabric-needs-attention"
           data-fabric-needs-attention="true"
           data-fabric-quantity-over-allocated={
             isOverAllocated ? "true" : undefined
           }
         >
-          <p className="text-sm font-bold text-heritage-green">Fabric needs attention</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">
             {uniqueBlockers.map((message) => (
               <li key={message}>{message}</li>
             ))}
           </ul>
-        </div>
+        </DesignStudioStepGuide>
       )}
 
       {fabricAllocationState.pendingFabricGarment &&
