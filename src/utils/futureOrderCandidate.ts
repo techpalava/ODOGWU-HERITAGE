@@ -34,6 +34,7 @@ import {
   getCanonicalOrderIdentity,
   type CanonicalOrderIdentity,
 } from "./orderContextIdentity";
+import { individualLagosToEindhovenChargeCents } from "./individualInboundShippingDisplay";
 import {
   isStep8CustomerSelectableCountry,
   isStep8DestinationZone,
@@ -1248,6 +1249,27 @@ export const buildFutureOrderCandidateV2 = (
   if (blockers.length > 0 || styleResult.status === "blocked") {
     return deepFreeze({ status: "blocked", candidate: null, blockers });
   }
+  const lagosChargeCents = individualLagosToEindhovenChargeCents({
+    orderType: orderIdentity.orderType,
+    physicalGarmentCount: coreResult.core.garments.length,
+  });
+  const pricedCore = coreResult.core.pricing;
+  const pricing: FutureOrderCandidatePricingV1 = lagosChargeCents === null
+    ? pricedCore
+    : {
+        ...pricedCore,
+        exactTotalCents:
+          pricedCore.exactTotalCents === null
+            ? null
+            : pricedCore.exactTotalCents + lagosChargeCents,
+        components: {
+          ...pricedCore.components,
+          lagosToEindhovenShipping: {
+            status: "separately_charged",
+            amountCents: lagosChargeCents,
+          },
+        },
+      };
   const candidate: FutureOrderCandidateV2 = {
     schemaVersion: 2,
     orderIdentity,
@@ -1259,7 +1281,7 @@ export const buildFutureOrderCandidateV2 = (
     aiTryOn: coreResult.core.aiTryOn,
     measurements: coreResult.core.measurements,
     shipping: coreResult.core.shipping,
-    pricing: coreResult.core.pricing,
+    pricing,
     contentStatus: coreResult.core.contentStatus,
     paymentStatus: coreResult.core.paymentStatus,
     blockers: coreResult.core.blockers,
@@ -1793,18 +1815,23 @@ export const normalizeFutureOrderCandidate = (
   const selectedTotalCents = parsed.pricing.selectedDesignTotalCents;
   const finalMileCents = parsed.pricing.postEindhovenAdjustmentCents;
   const exactTotalCents = parsed.pricing.exactTotalCents;
-  const includedComponentKeys = [
-    "fabric",
-    "sewing",
-    "tax",
-    "lagosToEindhovenShipping",
-  ];
+  const includedComponentKeys = ["fabric", "sewing", "tax"];
+  const lagosComponent = pricingComponents.lagosToEindhovenShipping;
+  const lagosIsIncluded =
+    isRecord(lagosComponent) &&
+    lagosComponent.status === "included_in_garment_construction" &&
+    lagosComponent.amountCents === null;
+  const lagosIsCharged =
+    isRecord(lagosComponent) &&
+    lagosComponent.status === "separately_charged" &&
+    isMoneyCents(lagosComponent.amountCents);
   const includedComponentsAreValid = includedComponentKeys.every((key) => {
     const component = pricingComponents[key];
     return isRecord(component) &&
       component.status === "included_in_garment_construction" &&
       component.amountCents === null;
-  });
+  }) && (lagosIsIncluded || lagosIsCharged);
+  const lagosChargeCents = lagosIsCharged ? Number(lagosComponent.amountCents) : 0;
   const customDetailsComponent = pricingComponents.customDetails;
   const finalMileComponent = pricingComponents.postEindhovenDelivery;
   const separatelyTrackedComponentsAreValid =
@@ -1852,7 +1879,7 @@ export const normalizeFutureOrderCandidate = (
     garmentConstructionCents === Number(constructionCents) &&
     Number(constructionCents) + Number(customDetailsCents) ===
       Number(selectedTotalCents) &&
-    Number(selectedTotalCents) + Number(finalMileCents) ===
+    Number(selectedTotalCents) + Number(finalMileCents) + lagosChargeCents ===
       Number(exactTotalCents);
   if (
     (pricingStatus === "exact" && !exactPricingReconciles) ||

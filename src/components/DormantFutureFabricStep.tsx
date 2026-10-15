@@ -10,6 +10,7 @@ import type {
 } from "../types";
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
@@ -123,6 +124,7 @@ interface DormantFutureFabricStepProps {
   requiredFabricQuantity: number;
   selectedFabricQuantity: number;
   constructionPrice: number;
+  orderType?: string | null;
   onAssignFabricToGarment: (
     fabric: Fabric,
     garmentKey: string,
@@ -365,6 +367,7 @@ export const DormantFutureFabricStep = ({
   requiredFabricQuantity,
   selectedFabricQuantity,
   constructionPrice,
+  orderType = null,
   onAssignFabricToGarment,
   onChangeFabricAllocationProduct,
   onRemoveFabricFromGarment,
@@ -2802,7 +2805,7 @@ export const DormantFutureFabricStep = ({
               </span>
             </div>
             <p className="text-xs leading-relaxed text-heritage-ink/60">
-              Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.
+              {garmentConstructionInclusionNote(orderType)}
             </p>
             {pricing.status === "resolved" && pricing.allocationLines.map((line, index) => (
               <div

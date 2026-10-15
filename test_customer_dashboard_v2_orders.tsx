@@ -268,7 +268,7 @@ const recordFor = (orderId: string, paymentIntentId: string): FutureOrderV2Payme
   ...paidRecord,
   orderId,
   paymentIntentId,
-  amountCents: 30000,
+  amountCents: 31400,
 });
 const fakeActions = (
   authorizations: Awaited<ReturnType<FutureOrderV2DashboardPaymentActions["authorize"]>>[],
@@ -299,7 +299,7 @@ const payableDetails = renderToStaticMarkup(
 );
 assert.ok(payableDetails.includes("data-future-order-v2-card"));
 assert.equal((payableDetails.match(/data-customer-v2-order-pay="true"/g) || []).length, 1, "exactly one Pay button");
-assert.match(payableDetails, /Pay €300\.00/);
+assert.match(payableDetails, /Pay €314\.00/);
 assert.equal(unpaidDetails.includes("data-future-order-v2-card"), false, "read-only without payment actions");
 const paidWithActions = renderToStaticMarkup(
   <CustomerFutureOrderV2Details order={paidOrder} payment={paidRecord} onClose={() => undefined} paymentActions={idleActions} />,
@@ -354,7 +354,7 @@ assert.match(happyView.text(), /Paid \(test\) /);
 assert.equal(happyView.payButtons().length, 0, "a paid order cannot be paid again");
 assert.equal(happyView.successPanels().length, 1, "a clear success panel replaces the pay controls");
 assert.match(happyView.text(), /Payment successful/);
-assert.match(happyView.text(), /€300\.00/);
+assert.match(happyView.text(), /€314\.00/);
 assert.match(happyView.text(), /paid\. Reference/);
 assert.equal(happyView.events.successFocused, 1, "the success panel receives focus");
 assert.equal(happyView.alerts().length, 0);

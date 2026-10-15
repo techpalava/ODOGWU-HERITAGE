@@ -3,6 +3,7 @@ import { normalizeCustomDetailCatalog } from "../src/utils/catalogHelpers.js";
 import type {
   FutureOrderCandidateV2,
 } from "../src/utils/futureOrderCandidate.js";
+import { individualLagosToEindhovenChargeCents } from "../src/utils/individualInboundShippingDisplay.js";
 import { quoteFutureOrderPayableTotal } from "../src/utils/futureOrderPayableTotal.js";
 import { resolveGarmentConstructionPricing } from "../src/utils/garmentConstructionPricing.js";
 import type { CanonicalOrderIdentity } from "../src/utils/orderContextIdentity.js";
@@ -52,6 +53,11 @@ const createCandidate = (
     uploadedStyle("additional:shirt:2", "token-shirt-3", "Shirt 3"),
   ];
   styles[0]!.catalogue!.name = styleName;
+  const garmentCount = 3;
+  const lagosChargeCents = individualLagosToEindhovenChargeCents({
+    orderType: orderIdentity.orderType,
+    physicalGarmentCount: garmentCount,
+  });
   return {
     schemaVersion: 2,
     orderIdentity,
@@ -149,7 +155,7 @@ const createCandidate = (
       customDetailsCents: 0,
       selectedDesignTotalCents: 30000,
       postEindhovenAdjustmentCents: 0,
-      exactTotalCents: 30000,
+      exactTotalCents: 30000 + (lagosChargeCents ?? 0),
       components: {
         fabric: {
           status: "included_in_garment_construction",
@@ -163,10 +169,16 @@ const createCandidate = (
           status: "included_in_garment_construction",
           amountCents: null,
         },
-        lagosToEindhovenShipping: {
-          status: "included_in_garment_construction",
-          amountCents: null,
-        },
+        lagosToEindhovenShipping:
+          lagosChargeCents === null
+            ? {
+                status: "included_in_garment_construction",
+                amountCents: null,
+              }
+            : {
+                status: "separately_charged",
+                amountCents: lagosChargeCents,
+              },
         customDetails: { status: "separately_charged", amountCents: 0 },
         postEindhovenDelivery: {
           status: "separately_charged",
@@ -226,6 +238,10 @@ interface CatalogueFixtureCandidate {
     components: {
       customDetails: { amountCents: number | null };
       postEindhovenDelivery: { amountCents: number | null };
+      lagosToEindhovenShipping: {
+        status: "included_in_garment_construction" | "separately_charged";
+        amountCents: number | null;
+      };
     };
   };
   shipping: { additionalDeliveryFeeCents: number | null };
@@ -275,6 +291,16 @@ export const createCatalogueAuthoritativeFutureOrderV2Fixture = (
   pricing.components.customDetails.amountCents = quoted.customDetailsCents;
   pricing.components.postEindhovenDelivery.amountCents =
     quoted.postEindhovenAdjustmentCents;
+  pricing.components.lagosToEindhovenShipping =
+    quoted.lagosToEindhovenShippingCents === null
+      ? {
+          status: "included_in_garment_construction",
+          amountCents: null,
+        }
+      : {
+          status: "separately_charged",
+          amountCents: quoted.lagosToEindhovenShippingCents,
+        };
   candidate.shipping.additionalDeliveryFeeCents =
     quoted.postEindhovenAdjustmentCents;
   return order as FutureOrderMasterOrderV2;

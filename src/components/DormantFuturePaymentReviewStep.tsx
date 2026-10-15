@@ -1101,7 +1101,9 @@ export const DormantFuturePaymentReviewStep = ({
               </div>
             )}
             <p className="mt-4 break-words text-sm font-semibold text-heritage-green">
-              Standard Shipping to Eindhoven is included in Garment Construction.
+              {pricingRows.some((row) => row.id === "lagos_eindhoven_included")
+                ? "Lagos → Eindhoven shipping is added to the total."
+                : "Standard Shipping to Eindhoven is included in Garment Construction."}
             </p>
             <p className="mt-2 text-xs leading-relaxed text-heritage-ink/60">
               {candidate.shipping.quoteRequired
@@ -1128,16 +1130,12 @@ export const DormantFuturePaymentReviewStep = ({
                   <div
                     key={row.id}
                     data-pricing-row={row.id}
-                    data-excluded-from-total="true"
-                    data-included-cents={row.amountCents ?? undefined}
-                    className="flex min-w-0 flex-wrap items-center justify-between gap-2"
+                    data-amount-cents={row.amountCents ?? undefined}
+                    className="flex min-w-0 flex-wrap justify-between gap-2"
                   >
                     <dt className="min-w-0 break-words text-heritage-ink/70">{row.label}</dt>
-                    <dd className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 text-right font-mono font-medium text-heritage-green">
-                      <span>{row.amountCents === null ? <PendingAmount /> : moneyFromCents(row.amountCents)}</span>
-                      <span className="rounded-full border border-heritage-green/20 bg-heritage-cream px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-                        Included
-                      </span>
+                    <dd className="min-w-0 max-w-full break-words text-right font-mono font-medium text-heritage-green">
+                      {row.amountCents === null ? <PendingAmount /> : moneyFromCents(row.amountCents)}
                     </dd>
                   </div>
                 ) : (

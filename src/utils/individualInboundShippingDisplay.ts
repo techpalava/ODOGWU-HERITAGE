@@ -6,6 +6,21 @@ export const INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL =
 
 export const INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL = "Included";
 
+/** Individual construction no longer absorbs the Lagos → Eindhoven band. */
+export const INDIVIDUAL_GARMENT_CONSTRUCTION_INCLUSION_NOTE =
+  "Includes fabric, tax, and sewing.";
+
+export const INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE =
+  "Fabric, tax, and sewing included.";
+
+/** Cents to add for an Individual order, or null when the band is not charged. */
+export const individualLagosToEindhovenChargeCents = (input: {
+  orderType?: string | null;
+  batchType?: string | null;
+  physicalGarmentCount: number;
+}): number | null =>
+  resolveIndividualInboundShippingDisplay(input)?.amountCents ?? null;
+
 export interface IndividualInboundShippingDisplay {
   readonly label: typeof INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL;
   readonly includedLabel: typeof INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL;
@@ -34,8 +49,9 @@ const isIndividualOrder = (input: {
   (input.orderType === "Individual" || input.batchType === "alone");
 
 /**
- * Display-only Individual Lagos→Eindhoven band.
- * Community and other batch routes return null. The amount is not a charge.
+ * Individual Lagos→Eindhoven band.
+ * Community and other batch routes return null. Callers add `amountCents`
+ * to the payable total once.
  */
 export const resolveIndividualInboundShippingDisplay = (input: {
   orderType?: string | null;
