@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -55,6 +56,43 @@ const money = (amount: number): string =>
 const inputClassName =
   "min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 py-2.5 text-sm text-heritage-ink outline-none transition placeholder:text-heritage-ink/35 focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/25";
 
+const SHIPPING_FIELD_FOCUS_ORDER: readonly FutureShippingFieldId[] = [
+  "fulfilmentMethod",
+  "fullName",
+  "phone",
+  "email",
+  "countryCode",
+  "otherDestinationCountry",
+  "addressLine1",
+  "city",
+  "stateRegion",
+  "postalCode",
+];
+
+const SHIPPING_FIELD_ELEMENT_ID: Partial<Record<FutureShippingFieldId, string>> = {
+  fulfilmentMethod: "future-shipping-fulfilment",
+  fullName: "future-shipping-full-name",
+  phone: "future-shipping-phone",
+  email: "future-shipping-email",
+  countryCode: "future-shipping-country",
+  otherDestinationCountry: "future-shipping-other-destination",
+  addressLine1: "future-shipping-address",
+  city: "future-shipping-city",
+  stateRegion: "future-shipping-region",
+  postalCode: "future-shipping-postal",
+};
+
+const focusShippingField = (field: FutureShippingFieldId) => {
+  if (typeof document === "undefined") return;
+  const id = SHIPPING_FIELD_ELEMENT_ID[field];
+  const node = id ? document.getElementById(id) : null;
+  if (!node || typeof node.focus !== "function") return;
+  node.focus();
+  if (typeof node.scrollIntoView === "function") {
+    node.scrollIntoView({ block: "center" });
+  }
+};
+
 export const DormantFutureShippingStep = ({
   state,
   resolution,
@@ -70,8 +108,35 @@ export const DormantFutureShippingStep = ({
 }: DormantFutureShippingStepProps) => {
   const customer = state.customerInformation;
   const address = customer.deliveryAddress;
-  const errorFor = (field: FutureShippingFieldId) =>
+  const [touchedFields, setTouchedFields] = useState<ReadonlySet<FutureShippingFieldId>>(
+    () => new Set(),
+  );
+  const [reviewAttempted, setReviewAttempted] = useState(false);
+  const diagnosticFor = (field: FutureShippingFieldId) =>
     resolution.diagnostics.find((diagnostic) => diagnostic.field === field);
+  const shownError = (field: FutureShippingFieldId) => {
+    const diagnostic = diagnosticFor(field);
+    if (!diagnostic) return undefined;
+    if (reviewAttempted || touchedFields.has(field)) return diagnostic;
+    return undefined;
+  };
+  const revealField = (field: FutureShippingFieldId) => {
+    setTouchedFields((current) => {
+      if (current.has(field)) return current;
+      const next = new Set(current);
+      next.add(field);
+      return next;
+    });
+  };
+  const attemptReview = () => {
+    if (canContinueToReview) {
+      onContinueToReview();
+      return;
+    }
+    setReviewAttempted(true);
+    const firstInvalid = SHIPPING_FIELD_FOCUS_ORDER.find((field) => diagnosticFor(field));
+    if (firstInvalid) focusShippingField(firstInvalid);
+  };
   const updateCustomer = (
     patch: Partial<FutureShippingStateV1["customerInformation"]>,
   ) =>
@@ -172,7 +237,10 @@ export const DormantFutureShippingStep = ({
         ? isOtherDestination
           ? "Shipping to this destination requires a custom quote."
           : "Custom shipping quote required"
-        : resolution.diagnostics[0]?.message ||
+        : resolution.diagnostics.find(
+            (diagnostic) =>
+              reviewAttempted || touchedFields.has(diagnostic.field),
+          )?.message ||
           "Complete the delivery details below.";
 
   return (
@@ -190,7 +258,8 @@ export const DormantFutureShippingStep = ({
           className="mb-5"
           forward={{
             label: "Review Order",
-            onClick: onContinueToReview,
+            onClick: attemptReview,
+            onLockedClick: attemptReview,
             disabled: !canContinueToReview,
             locked: !canContinueToReview,
             icon: canContinueToReview ? "package" : "lock",
@@ -254,8 +323,10 @@ export const DormantFutureShippingStep = ({
       </div>
 
       <fieldset
+        id="future-shipping-fulfilment"
+        tabIndex={-1}
         aria-describedby={
-          errorFor("fulfilmentMethod")
+          shownError("fulfilmentMethod")
             ? "future-shipping-fulfilment-error"
             : undefined
         }
@@ -321,9 +392,9 @@ export const DormantFutureShippingStep = ({
             </span>
           </label>
         </div>
-        {errorFor("fulfilmentMethod") && (
+        {shownError("fulfilmentMethod") && (
           <p id="future-shipping-fulfilment-error" className="mt-2 text-xs text-red-700">
-            {errorFor("fulfilmentMethod")!.message}
+            {shownError("fulfilmentMethod")!.message}
           </p>
         )}
       </fieldset>
@@ -337,33 +408,37 @@ export const DormantFutureShippingStep = ({
             <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
               {isPickup ? "Full name" : "Recipient name"}
               <input
+                id="future-shipping-full-name"
                 value={customer.fullName}
                 onChange={(event) => updateCustomer({ fullName: event.target.value })}
-                aria-invalid={Boolean(errorFor("fullName"))}
-                aria-describedby={errorFor("fullName") ? "future-shipping-full-name-error" : undefined}
+                onBlur={() => revealField("fullName")}
+                aria-invalid={Boolean(shownError("fullName"))}
+                aria-describedby={shownError("fullName") ? "future-shipping-full-name-error" : undefined}
                 autoComplete="name"
                 className={`${inputClassName} mt-1.5`}
               />
-              {errorFor("fullName") && (
+              {shownError("fullName") && (
                 <span id="future-shipping-full-name-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                  {errorFor("fullName")!.message}
+                  {shownError("fullName")!.message}
                 </span>
               )}
             </label>
             <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
               {isPickup ? "Phone No. (Whatsapp Preferred)" : "Phone"}
               <input
+                id="future-shipping-phone"
                 type="tel"
                 value={customer.phone}
                 onChange={(event) => updateCustomer({ phone: event.target.value })}
+                onBlur={() => revealField("phone")}
                 placeholder="+31 6 12345678"
-                aria-invalid={Boolean(errorFor("phone"))}
+                aria-invalid={Boolean(shownError("phone"))}
                 aria-describedby={
                   isPickup
-                    ? errorFor("phone")
+                    ? shownError("phone")
                       ? "future-shipping-phone-hint future-shipping-phone-error"
                       : "future-shipping-phone-hint"
-                    : errorFor("phone")
+                    : shownError("phone")
                       ? "future-shipping-phone-error"
                       : undefined
                 }
@@ -378,26 +453,28 @@ export const DormantFutureShippingStep = ({
                   Include country code for WhatsApp.
                 </span>
               )}
-              {errorFor("phone") && (
+              {shownError("phone") && (
                 <span id="future-shipping-phone-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                  {errorFor("phone")!.message}
+                  {shownError("phone")!.message}
                 </span>
               )}
             </label>
             <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65 md:col-span-2">
               Email
               <input
+                id="future-shipping-email"
                 type="email"
                 value={customer.email}
                 onChange={(event) => updateCustomer({ email: event.target.value })}
-                aria-invalid={Boolean(errorFor("email"))}
-                aria-describedby={errorFor("email") ? "future-shipping-email-error" : undefined}
+                onBlur={() => revealField("email")}
+                aria-invalid={Boolean(shownError("email"))}
+                aria-describedby={shownError("email") ? "future-shipping-email-error" : undefined}
                 autoComplete="email"
                 className={`${inputClassName} mt-1.5`}
               />
-              {errorFor("email") && (
+              {shownError("email") && (
                 <span id="future-shipping-email-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                  {errorFor("email")!.message}
+                  {shownError("email")!.message}
                 </span>
               )}
             </label>
@@ -453,11 +530,13 @@ export const DormantFutureShippingStep = ({
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65 md:col-span-2">
                   Delivery Country
                   <select
+                    id="future-shipping-country"
                     value={countrySelectValue}
                     onChange={(event) => selectDeliveryCountry(event.target.value)}
-                    aria-invalid={Boolean(errorFor("countryCode") || errorFor("otherDestinationCountry"))}
+                    onBlur={() => revealField("countryCode")}
+                    aria-invalid={Boolean(shownError("countryCode") || shownError("otherDestinationCountry"))}
                     aria-describedby={
-                      errorFor("countryCode")
+                      shownError("countryCode")
                         ? "future-shipping-country-error"
                         : "future-shipping-country-help"
                     }
@@ -486,9 +565,9 @@ export const DormantFutureShippingStep = ({
                   >
                     Select a supported delivery country or request a custom shipping quote for another destination.
                   </span>
-                  {errorFor("countryCode") && (
+                  {shownError("countryCode") && (
                     <span id="future-shipping-country-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                      {errorFor("countryCode")!.message}
+                      {shownError("countryCode")!.message}
                     </span>
                   )}
                 </label>
@@ -500,6 +579,7 @@ export const DormantFutureShippingStep = ({
                     <label className="mt-3 block min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
                       Destination country / territory
                       <input
+                        id="future-shipping-other-destination"
                         value={state.otherDestinationCountry}
                         onChange={(event) =>
                           onChange({
@@ -507,20 +587,21 @@ export const DormantFutureShippingStep = ({
                             otherDestinationCountry: event.target.value,
                           })
                         }
-                        aria-invalid={Boolean(errorFor("otherDestinationCountry"))}
+                        onBlur={() => revealField("otherDestinationCountry")}
+                        aria-invalid={Boolean(shownError("otherDestinationCountry"))}
                         aria-describedby={
-                          errorFor("otherDestinationCountry")
+                          shownError("otherDestinationCountry")
                             ? "future-shipping-other-destination-error"
                             : undefined
                         }
                         className={`${inputClassName} mt-1.5`}
                       />
-                      {errorFor("otherDestinationCountry") && (
+                      {shownError("otherDestinationCountry") && (
                         <span
                           id="future-shipping-other-destination-error"
                           className="mt-1 block normal-case tracking-normal text-red-700"
                         >
-                          {errorFor("otherDestinationCountry")!.message}
+                          {shownError("otherDestinationCountry")!.message}
                         </span>
                       )}
                     </label>
@@ -529,16 +610,18 @@ export const DormantFutureShippingStep = ({
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65 md:col-span-2">
                   Address line 1
                   <input
+                    id="future-shipping-address"
                     value={address.addressLine1}
                     onChange={(event) => updateAddress({ addressLine1: event.target.value })}
-                    aria-invalid={Boolean(errorFor("addressLine1"))}
-                    aria-describedby={errorFor("addressLine1") ? "future-shipping-address-error" : undefined}
+                    onBlur={() => revealField("addressLine1")}
+                    aria-invalid={Boolean(shownError("addressLine1"))}
+                    aria-describedby={shownError("addressLine1") ? "future-shipping-address-error" : undefined}
                     autoComplete="address-line1"
                     className={`${inputClassName} mt-1.5`}
                   />
-                  {errorFor("addressLine1") && (
+                  {shownError("addressLine1") && (
                     <span id="future-shipping-address-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                      {errorFor("addressLine1")!.message}
+                      {shownError("addressLine1")!.message}
                     </span>
                   )}
                 </label>
@@ -554,11 +637,13 @@ export const DormantFutureShippingStep = ({
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
                   City
                   <input
+                    id="future-shipping-city"
                     value={address.city}
                     onChange={(event) => updateAddress({ city: event.target.value })}
-                    aria-invalid={Boolean(errorFor("city"))}
+                    onBlur={() => revealField("city")}
+                    aria-invalid={Boolean(shownError("city"))}
                     aria-describedby={
-                      errorFor("city")
+                      shownError("city")
                         ? "future-shipping-city-hint future-shipping-city-error"
                         : "future-shipping-city-hint"
                     }
@@ -574,47 +659,51 @@ export const DormantFutureShippingStep = ({
                     {isNetherlandsDelivery &&
                       " Writing \"Eindhoven\" exactly selects the local Eindhoven shipping rate."}
                   </span>
-                  {errorFor("city") && (
+                  {shownError("city") && (
                     <span id="future-shipping-city-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                      {errorFor("city")!.message}
+                      {shownError("city")!.message}
                     </span>
                   )}
                 </label>
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
                   State / Province / Region
                   <input
+                    id="future-shipping-region"
                     value={address.stateRegion || ""}
                     onChange={(event) => updateAddress({ stateRegion: event.target.value })}
+                    onBlur={() => revealField("stateRegion")}
                     aria-required={regionRequired}
-                    aria-invalid={Boolean(errorFor("stateRegion"))}
+                    aria-invalid={Boolean(shownError("stateRegion"))}
                     aria-describedby={
-                      errorFor("stateRegion") ? "future-shipping-region-error" : undefined
+                      shownError("stateRegion") ? "future-shipping-region-error" : undefined
                     }
                     autoComplete="address-level1"
                     className={`${inputClassName} mt-1.5`}
                   />
-                  {errorFor("stateRegion") && (
+                  {shownError("stateRegion") && (
                     <span
                       id="future-shipping-region-error"
                       className="mt-1 block normal-case tracking-normal text-red-700"
                     >
-                      {errorFor("stateRegion")!.message}
+                      {shownError("stateRegion")!.message}
                     </span>
                   )}
                 </label>
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
                   Postal / ZIP code
                   <input
+                    id="future-shipping-postal"
                     value={address.postalCode}
                     onChange={(event) => updateAddress({ postalCode: event.target.value })}
-                    aria-invalid={Boolean(errorFor("postalCode"))}
-                    aria-describedby={errorFor("postalCode") ? "future-shipping-postal-error" : undefined}
+                    onBlur={() => revealField("postalCode")}
+                    aria-invalid={Boolean(shownError("postalCode"))}
+                    aria-describedby={shownError("postalCode") ? "future-shipping-postal-error" : undefined}
                     autoComplete="postal-code"
                     className={`${inputClassName} mt-1.5`}
                   />
-                  {errorFor("postalCode") && (
+                  {shownError("postalCode") && (
                     <span id="future-shipping-postal-error" className="mt-1 block normal-case tracking-normal text-red-700">
-                      {errorFor("postalCode")!.message}
+                      {shownError("postalCode")!.message}
                     </span>
                   )}
                 </label>
@@ -864,7 +953,8 @@ export const DormantFutureShippingStep = ({
           )}
           forward={{
             label: "Review Order",
-            onClick: onContinueToReview,
+            onClick: attemptReview,
+            onLockedClick: attemptReview,
             disabled: !canContinueToReview,
             locked: !canContinueToReview,
             icon: canContinueToReview ? "package" : "lock",
