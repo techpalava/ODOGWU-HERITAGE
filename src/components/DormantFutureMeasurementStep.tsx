@@ -1070,6 +1070,7 @@ export const DormantFutureMeasurementStep = ({
     >
       <header className="rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
+          slot="header"
           backDestination="AI Try-on"
           onBack={onBack}
           className="mb-3"
@@ -1765,6 +1766,7 @@ export const DormantFutureMeasurementStep = ({
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
+          slot="footer"
           backDestination="AI Try-on"
           onBack={onBack}
           note={(
