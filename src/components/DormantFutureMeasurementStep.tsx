@@ -1524,18 +1524,22 @@ export const DormantFutureMeasurementStep = ({
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
       >
-        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       {measurementGarments.length > 1 && (
-        <div className="min-w-0 flex-1 basis-72" data-measurement-garment-picker="true">
-          <h3 className="font-serif text-lg font-bold text-heritage-green">
+        <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
             Choose a garment
           </h3>
-          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+          <p
+            className="mt-1 text-xs leading-snug text-heritage-ink/60"
+            title="Shared body measurements stay saved when you switch."
+          >
             {activeWearerLabel
-              ? `Add measurements for one of ${activeWearerLabel}'s garments at a time. Shared body measurements stay saved when you switch.`
-              : "Add the measurements for one garment at a time. Shared body measurements stay saved when you switch."}
+              ? `One of ${activeWearerLabel}'s garments at a time.`
+              : "One garment at a time."}{" "}
+            Shared measurements stay saved.
           </p>
-          <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Choose a garment to measure">
+          <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Choose a garment to measure">
             {measurementGarments.map((garment) => {
               const label = formatGarmentLabel(
                 occurrenceLabels,
@@ -1581,22 +1585,22 @@ export const DormantFutureMeasurementStep = ({
                   }
                   onClick={() => selectGarmentKey(garment.garmentKey)}
                   className={withMeasurementGuideBeam(
-                    `inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                    `inline-flex min-h-10 min-w-0 items-center gap-2 rounded-full border py-1.5 pl-4 pr-1.5 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                       selected
-                        ? "border-heritage-green bg-heritage-green text-white"
-                        : "border-heritage-green/20 bg-white text-heritage-green hover:border-heritage-gold/45"
+                        ? "border-heritage-green bg-heritage-green text-white shadow-sm"
+                        : "border-heritage-green/20 bg-white text-heritage-green hover:border-heritage-green/45 hover:bg-heritage-cream/30"
                     }`,
                     beamNextRemainingGarment && garment.garmentKey === nextRemainingGarmentKey,
                   )}
                 >
                   <span className="break-words">{label}</span>
                   <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ${
                       selected
-                        ? "bg-white/15 text-white"
+                        ? "bg-white/20 text-white"
                         : kind === "done"
                           ? "bg-heritage-green/10 text-heritage-green"
-                          : "bg-heritage-gold/15 text-heritage-gold"
+                          : "bg-heritage-gold/15 text-heritage-ink/75"
                     }`}
                   >
                     {badgeLabel}
@@ -1619,25 +1623,33 @@ export const DormantFutureMeasurementStep = ({
           )}
         </div>
       )}
-        <fieldset data-measurement-unit={state.unit} className="ml-auto min-w-0 max-w-sm">
-          <legend className="text-xs font-bold uppercase tracking-wider text-heritage-green">
+        <fieldset
+          data-measurement-unit={state.unit}
+          className={`min-w-0 shrink-0 sm:ml-auto sm:max-w-xs ${
+            measurementGarments.length > 1
+              ? "border-t border-heritage-green/10 pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
+              : ""
+          }`}
+        >
+          <legend className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
             Measurement unit
           </legend>
           <p
             data-measurement-entry-unit={state.unit}
-            className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70"
+            className="mt-1 text-xs leading-snug text-heritage-ink/60"
+            title="Each field shows that unit. Switching units converts what you already saved."
           >
             Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
-            Each field shows that unit. Switching units converts what you already saved.
+            <span className="sr-only"> Each field shows that unit.</span> Switching converts saved values.
           </p>
-          <div className="mt-3 inline-flex max-w-full rounded-xl border border-heritage-green/20 bg-heritage-cream/30 p-1">
+          <div className="mt-3 inline-flex max-w-full rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5">
             {(["cm", "inch"] as const).map((unit) => (
               <button
                 key={unit}
                 type="button"
                 aria-pressed={state.unit === unit}
                 onClick={() => onChange(setFutureMeasurementUnit(resolvedState, unit))}
-                className={`min-h-11 rounded-lg px-4 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold sm:px-5 ${
+                className={`min-h-9 rounded-full px-4 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
                   state.unit === unit
                     ? "bg-heritage-green text-white shadow-sm"
                     : "text-heritage-green hover:bg-white"
