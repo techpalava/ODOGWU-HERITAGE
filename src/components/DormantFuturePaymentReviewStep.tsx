@@ -10,7 +10,7 @@ import {
   Trash2,
   Truck,
 } from "lucide-react";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioBackButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -1447,10 +1447,9 @@ export const DormantFuturePaymentReviewStep = ({
       )}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-        <DesignStudioBackButton
-          destination="Delivery & Pickup"
-          onClick={onBack}
-          className="w-full sm:w-auto"
+        <DesignStudioStepActions
+          backDestination="Delivery & Pickup"
+          onBack={onBack}
         />
       </footer>
     </main>
