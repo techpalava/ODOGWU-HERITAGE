@@ -7,9 +7,7 @@ export const TRADITIONAL_ACCESSORY_IMAGE_DIR = "/images/accessories";
  * public/images/accessories/ so img-src 'self' can load them.
  *
  * Owner-supplied brand images, not stock photographs.
- * Traditional Hat — fila. The cap cloth is the Step 1 kaftan textile
- * public/images/garments/ankara-kaftan-short-sleeve.webp, shaded by the
- * original folds.
+ * Traditional Hat — owner fila photo, cropped only. No pattern is applied.
  * Traditional Bead — coral bead sets. The wooden stand bases use that
  * same Step 1 textile.
  * Traditional Stick — gold horse-head walking cane, unchanged.
