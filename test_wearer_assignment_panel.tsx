@@ -1551,8 +1551,10 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
   add = addAnotherButton(root());
   assert.equal(add.props.disabled, false, "blur with a name unlocks Add another person");
   assert.equal(add.props.title, undefined);
-  assert.equal(add.props["aria-describedby"], undefined);
   assert.equal(addAnotherReason(root()), "");
+  const addHint = root().findByProps({ "data-wearer-add-person-hint": "true" });
+  assert.equal(textContent(addHint), "Ordering for someone else? Add them here.");
+  assert.equal(add.props["aria-describedby"], addHint.props.id, "enabled button is described by the hint");
 
   // Any edit clears confirmation until Save again; clearing clears it too.
   await typeName(root(), "Ada", "Adaeze");
