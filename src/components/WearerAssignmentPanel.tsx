@@ -137,6 +137,7 @@ export const WearerAssignmentPanel = ({
     () => new Set(),
   );
   const addAnotherReasonId = useId();
+  const addAnotherHintId = useId();
   const nameInputByWearerId = useRef(new Map<string, HTMLInputElement>());
   const knownWearerIds = useRef<string[] | null>(null);
   /**
@@ -422,7 +423,7 @@ export const WearerAssignmentPanel = ({
           className="inline-flex min-h-10 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-1.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
           disabled={addAnotherDisabledReason !== null}
           title={addAnotherDisabledReason ?? undefined}
-          aria-describedby={addAnotherDisabledReason ? addAnotherReasonId : undefined}
+          aria-describedby={addAnotherDisabledReason ? addAnotherReasonId : addAnotherHintId}
           onClick={() => {
             if (addAnotherDisabledReason !== null) return;
             onAddWearer("", null);
@@ -449,7 +450,15 @@ export const WearerAssignmentPanel = ({
         >
           {addAnotherDisabledReason}
         </p>
-      ) : null}
+      ) : (
+        <p
+          id={addAnotherHintId}
+          data-wearer-add-person-hint="true"
+          className="mt-2 text-xs text-heritage-ink/60"
+        >
+          Ordering for someone else? Add them here.
+        </p>
+      )}
     </div>
   );
   const showPeopleUi =
