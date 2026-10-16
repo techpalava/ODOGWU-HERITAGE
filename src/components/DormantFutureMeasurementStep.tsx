@@ -1327,13 +1327,13 @@ export const DormantFutureMeasurementStep = ({
         data-measurement-option-section="sample_cloth"
       >
         <fieldset data-measurement-sample-selector="true">
-          <legend className="font-serif text-lg font-bold text-heritage-green">
+          <legend className="block w-full font-serif text-lg font-bold leading-snug text-heritage-green">
             Option 2: Sample Cloth Measurements
           </legend>
-          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+          <p className="mt-2 font-sans text-sm leading-relaxed text-heritage-ink/70">
             {MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION}
           </p>
-          <div className="mt-3">
+          <div className="mt-4">
             <label
               data-measurement-sample-option={MEASUREMENT_SAMPLE_CLOTH_METHOD}
               data-measurement-sample-selected={sampleSelected ? "true" : "false"}
@@ -1384,23 +1384,23 @@ export const DormantFutureMeasurementStep = ({
       >
         <h3
           data-measurement-option-heading="onsite"
-          className="font-serif text-lg font-bold text-heritage-green"
+          className="font-serif text-lg font-bold leading-snug text-heritage-green"
         >
           Option 3: Onsite Physical Measurements
         </h3>
-        <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+        <p className="mt-2 font-sans text-sm leading-relaxed text-heritage-ink/70">
           Information only. These do not complete your measurements.
         </p>
         <div
           data-measurement-onsite-info="true"
-          className="mt-2 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3"
+          className="mt-4 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
         >
-          <p className="break-words text-xs leading-relaxed text-heritage-ink/65">
+          <p className="break-words text-sm leading-relaxed text-heritage-ink/70">
             Reach out to the contact to arrange a measurement
           </p>
           <p
             data-measurement-onsite-booking-window="true"
-            className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65"
+            className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70"
           >
             Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
           </p>
@@ -1409,7 +1409,7 @@ export const DormantFutureMeasurementStep = ({
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-            className="mt-2 inline-block text-sm font-semibold text-heritage-green underline underline-offset-2"
+            className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
           >
             {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
           </a>
@@ -1423,16 +1423,16 @@ export const DormantFutureMeasurementStep = ({
       >
         <h3
           data-measurement-option-heading="ai_measurements"
-          className="font-serif text-lg font-bold text-heritage-green"
+          className="font-serif text-lg font-bold leading-snug text-heritage-green"
         >
           Option 4: AI Photo Measurements
         </h3>
         <div
           data-measurement-ai-coming-soon="true"
           aria-disabled="true"
-          className="mt-2 min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-3 opacity-70"
+          className="mt-4 min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-3 font-sans opacity-70"
         >
-          <p className="break-words text-sm font-semibold text-heritage-green/80">
+          <p className="break-words text-sm font-semibold leading-relaxed text-heritage-green/80">
             Coming soon
           </p>
         </div>

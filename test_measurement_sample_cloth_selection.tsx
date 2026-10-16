@@ -141,7 +141,7 @@ assert.doesNotMatch(collectText(aiSection), /Information only/);
 const onsiteCard = alternateSection.findByProps({ "data-measurement-onsite-info": "true" });
 const onsiteHeading = alternateSection.findByProps({ "data-measurement-option-heading": "onsite" });
 assert.equal(onsiteHeading.type, "h3");
-assert.equal(onsiteHeading.props.className, "font-serif text-lg font-bold text-heritage-green");
+assert.equal(onsiteHeading.props.className, "font-serif text-lg font-bold leading-snug text-heritage-green");
 assert.equal(collectText(onsiteHeading), "Option 3: Onsite Physical Measurements");
 assert.equal(onsiteCard.findAll((node) => node.type === "h3").length, 0);
 assert.match(collectText(onsiteCard), /Reach out to the contact to arrange a measurement/);
@@ -165,7 +165,7 @@ const aiCard = aiSection.findByProps({ "data-measurement-ai-coming-soon": "true"
 assert.equal(aiCard.props["aria-disabled"], "true");
 const aiHeading = aiSection.findByProps({ "data-measurement-option-heading": "ai_measurements" });
 assert.equal(aiHeading.type, "h3");
-assert.equal(aiHeading.props.className, "font-serif text-lg font-bold text-heritage-green");
+assert.equal(aiHeading.props.className, "font-serif text-lg font-bold leading-snug text-heritage-green");
 assert.equal(collectText(aiHeading), "Option 4: AI Photo Measurements");
 assert.match(collectText(aiCard), /Coming soon/);
 assert.equal(aiCard.findAll((node) => node.type === "a" || node.type === "button").length, 0);
@@ -212,7 +212,7 @@ const sampleLegend = renderer.root
   .findByProps({ "data-measurement-sample-selector": "true" })
   .findByType("legend");
 assert.equal(collectText(sampleLegend), "Option 2: Sample Cloth Measurements");
-assert.equal(sampleLegend.props.className, "font-serif text-lg font-bold text-heritage-green");
+assert.equal(sampleLegend.props.className, "block w-full font-serif text-lg font-bold leading-snug text-heritage-green");
 assert.equal(
   renderer.root.findAll(
     (node) =>
