@@ -1121,6 +1121,7 @@ export const DormantFutureDesignStyleStep = ({
         </p>
         <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
           <DesignStudioStepActions
+            slot="header"
             backDestination="Fabric"
             onBack={onBack}
             className="mb-5"
@@ -1236,6 +1237,7 @@ export const DormantFutureDesignStyleStep = ({
           data-testid="future-design-style-continue-action"
         >
           <DesignStudioStepActions
+            slot="footer"
             backDestination="Fabric"
             onBack={onBack}
             note={!exactSetComplete && firstIncompleteOccurrence ? (

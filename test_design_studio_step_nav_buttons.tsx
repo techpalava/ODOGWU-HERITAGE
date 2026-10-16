@@ -150,6 +150,7 @@ assert.equal(reviewButton.props["aria-label"], "Review Order");
 
 const actions = render(
   <DesignStudioStepActions
+    slot="footer"
     backDestination="Summary"
     forward={{
       label: "Review Order",
@@ -247,8 +248,28 @@ const guideIndex = flatHosts.findIndex(
 );
 assert.ok(backIndex >= 0 && forwardIndex > backIndex && guideIndex > forwardIndex);
 
+const headerActions = render(
+  <DesignStudioStepActions
+    slot="header"
+    backDestination="Fabric"
+    forward={{ destination: "Design Style", ariaLabel: "Continue to Design Style" }}
+  />,
+);
+const headerRow = headerActions.root.findByProps({
+  "data-studio-step-actions-slot": "header",
+});
+assert.equal(headerRow.props["data-studio-step-actions"], "true");
+const headerButtons = headerRow.findByProps({
+  "data-studio-step-actions-buttons": "true",
+});
+assert.equal(classNameOf(headerButtons), classNameOf(buttonRow));
+const headerPair = headerButtons.findAllByType("button");
+assert.equal(headerPair[0].props["data-studio-nav"], "back");
+assert.equal(headerPair[1].props["data-studio-nav"], "forward");
+
 const actionsWithoutNote = render(
   <DesignStudioStepActions
+    slot="header"
     backDestination="Summary"
     forward={{ label: "Continue", ariaLabel: "Continue" }}
   />,
@@ -318,6 +339,27 @@ for (const fileName of readdirSync(componentDir)) {
     false,
     `${fileName} must use DesignStudioStepActions instead of its own Continue button`,
   );
+  assert.equal(
+    source.includes("<DesignStudioBackButton"),
+    false,
+    `${fileName} must use DesignStudioStepActions instead of its own Back button`,
+  );
+}
+const stepActionSources = [
+  "src/components/GarmentTypeStep.tsx",
+  "src/components/DormantFutureFabricStep.tsx",
+  "src/components/DormantFutureDesignStyleStep.tsx",
+  "src/components/DormantFutureCustomDetailsStep.tsx",
+  "src/components/DormantFutureAiTryOnStep.tsx",
+  "src/components/DormantFutureMeasurementStep.tsx",
+  "src/components/DormantFutureSummaryStep.tsx",
+  "src/components/DormantFutureShippingStep.tsx",
+  "src/components/DormantFuturePaymentReviewStep.tsx",
+];
+for (const sourcePath of stepActionSources) {
+  const source = readFileSync(sourcePath, "utf8");
+  assert.ok(source.includes('slot="header"'), `${sourcePath} header must use the shared row`);
+  assert.ok(source.includes('slot="footer"'), `${sourcePath} footer must use the shared row`);
 }
 const fabricSource = readFileSync("src/components/DormantFutureFabricStep.tsx", "utf8");
 const fabricFooterAt = fabricSource.lastIndexOf('backDestination="Garment Type"');
