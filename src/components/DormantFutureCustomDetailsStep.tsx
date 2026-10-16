@@ -473,6 +473,11 @@ const TraditionalAccessoryPhoto = ({
   );
 };
 
+/** Shown under the personalized textarea, so the group and stage lists must not repeat it. */
+const isFieldOwnedCustomDetailBlocker = (code: string): boolean =>
+  code === "personalized_requirement_missing" ||
+  code === "personalized_requirement_invalid";
+
 export const DormantFutureCustomDetailsStep = ({
   stage = "custom_details",
   reconciliation,
@@ -1038,7 +1043,8 @@ export const DormantFutureCustomDetailsStep = ({
     const groupBlocker = completion.blockers.find((blocker) =>
       blocker.garmentKey === occurrence.subject.garmentKey &&
       blocker.selectionGroup === group.selectionGroup &&
-      blocker.code !== "pricing_evaluation_required",
+      blocker.code !== "pricing_evaluation_required" &&
+      !isFieldOwnedCustomDetailBlocker(blocker.code),
     );
     const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
@@ -1706,6 +1712,14 @@ export const DormantFutureCustomDetailsStep = ({
     );
   };
 
+  const stageAttentionMessages = Array.from(
+    new Set(
+      completion.blockers
+        .filter((blocker) => !isFieldOwnedCustomDetailBlocker(blocker.code))
+        .map((blocker) => blocker.message),
+    ),
+  );
+
   return (
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
@@ -1737,13 +1751,13 @@ export const DormantFutureCustomDetailsStep = ({
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">{isPersonalizedAdditionsStage ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record." : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}</p>
       </div>
 
-      {completion.blockers.length > 0 && (
+      {stageAttentionMessages.length > 0 && (
         <DesignStudioStepGuide
           role="alert"
           title={`${stageTitle} need attention`}
           titleClassName="text-sm"
         >
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{Array.from(new Set(completion.blockers.map((blocker) => blocker.message))).map((message) => <li key={message}>{message}</li>)}</ul>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{stageAttentionMessages.map((message) => <li key={message}>{message}</li>)}</ul>
         </DesignStudioStepGuide>
       )}
       {garmentFabricContexts.length > 0 && (
