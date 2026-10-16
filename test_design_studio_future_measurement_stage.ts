@@ -987,7 +987,7 @@ const renderPickerHarness = ({
   });
   assert.ok(continueButtons.length > 0);
   assert.ok(
-    continueButtons.every((button) => button.props.disabled === true),
+    continueButtons.every((button) => button.props.disabled === true || button.props["aria-disabled"] === "true"),
     "Continue must stay locked until the next garment is complete",
   );
   assert.ok(
@@ -1116,7 +1116,7 @@ console.log("PASS: measurement garment picker badges, default, and auto-advance"
   assert.ok(
     sharedHarness.renderer.root
       .findAllByProps({ "aria-label": "Continue to Summary" })
-      .every((button) => button.props.disabled === true),
+      .every((button) => button.props.disabled === true || button.props["aria-disabled"] === "true"),
   );
 }
 
@@ -1196,7 +1196,7 @@ console.log("PASS: measurement garment picker badges, default, and auto-advance"
   assert.ok(
     goHarness.renderer.root
       .findAllByProps({ "aria-label": "Continue to Summary" })
-      .every((button) => button.props.disabled === true),
+      .every((button) => button.props.disabled === true || button.props["aria-disabled"] === "true"),
   );
 }
 

@@ -626,6 +626,23 @@ const MeasurementSection = ({
   );
 };
 
+const MEASUREMENT_GUIDE_FLASH_MS = 800;
+const MEASUREMENT_GUIDE_FLASH_CLASS =
+  "ring-4 ring-heritage-gold border-heritage-gold motion-safe:animate-measurement-guide-flash";
+
+const measurementGuidePrefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const isTypingIntoField = (): boolean => {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement as HTMLElement | null;
+  if (!active) return false;
+  if (active.tagName === "TEXTAREA" || active.isContentEditable) return true;
+  return active.tagName === "INPUT" && (active as HTMLInputElement).type !== "radio";
+};
+
 export const DormantFutureMeasurementStep = ({
   plan,
   state,
@@ -665,6 +682,39 @@ export const DormantFutureMeasurementStep = ({
   const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
   const previousSelectedRemainingRef = useRef<number | null>(null);
   const previousSharedRemainingRef = useRef<number | null>(null);
+  // Guide cue: only a customer click on an Option 1 / Option 2 radio requests it (never mount/restore).
+  const [guideCueRequest, setGuideCueRequest] = useState(0);
+  const [guideCuePhase, setGuideCuePhase] = useState<"idle" | "flash" | "beam">("idle");
+  const [guideCueTarget, setGuideCueTarget] = useState<"form" | "options">("form");
+  const measurementGuideRef = useRef<HTMLElement | null>(null);
+  const measurementOptionsRef = useRef<HTMLElement | null>(null);
+  const requestGuideCue = (target: "form" | "options") => {
+    setGuideCueTarget(target);
+    setGuideCueRequest((count) => count + 1);
+  };
+  useEffect(() => {
+    if (guideCueRequest === 0) return;
+    const guide =
+      guideCueTarget === "options" ? measurementOptionsRef.current : measurementGuideRef.current;
+    const reducedMotion = measurementGuidePrefersReducedMotion();
+    if (guide && typeof guide.scrollIntoView === "function") {
+      guide.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    }
+    if (guide && typeof guide.focus === "function" && !isTypingIntoField()) {
+      try {
+        guide.focus({ preventScroll: true });
+      } catch {
+        // Focus is a courtesy; never block the cue.
+      }
+    }
+    if (reducedMotion) {
+      setGuideCuePhase("idle");
+      return;
+    }
+    setGuideCuePhase("flash");
+    const timer = setTimeout(() => setGuideCuePhase("beam"), MEASUREMENT_GUIDE_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [guideCueRequest, guideCueTarget]);
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
@@ -1028,6 +1078,8 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToSummary,
             locked: !canContinueToSummary,
+            onLockedClick: () =>
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
             ariaLabel: "Continue to Summary",
           }}
         />
@@ -1155,8 +1207,18 @@ export const DormantFutureMeasurementStep = ({
       </header>
 
       <section
-        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
+        ref={measurementOptionsRef}
+        tabIndex={-1}
+        className={withMeasurementGuideBeam(
+          `scroll-mt-24 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm outline-none transition sm:p-5${
+            guideCueTarget === "options" && guideCuePhase === "flash" ? ` ${MEASUREMENT_GUIDE_FLASH_CLASS}` : ""
+          }`,
+          guideCueTarget === "options" && guideCuePhase === "beam",
+        )}
         data-measurement-option-section="risk"
+        data-measurement-guide-flash={
+          guideCueTarget === "options" && guideCuePhase === "flash" ? "true" : undefined
+        }
       >
         <header data-measurement-risk-heading="true">
           <h3
@@ -1217,6 +1279,7 @@ export const DormantFutureMeasurementStep = ({
                     onChange={() => {
                       if (hydrationInvalid || unavailable) return;
                       onRouteChange(route.id);
+                      requestGuideCue("form");
                     }}
                     className="mt-1 size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                   />
@@ -1258,6 +1321,7 @@ export const DormantFutureMeasurementStep = ({
         </fieldset>
       </section>
 
+      <div className="grid gap-4 md:grid-cols-3" data-measurement-option-grid="true">
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="sample_cloth"
@@ -1292,6 +1356,7 @@ export const DormantFutureMeasurementStep = ({
                 onChange={() => {
                   if (hydrationInvalid) return;
                   onRouteChange(MEASUREMENT_SAMPLE_CLOTH_METHOD);
+                  requestGuideCue("form");
                 }}
                 className="mt-1 size-4 shrink-0 accent-heritage-green"
               />
@@ -1372,6 +1437,7 @@ export const DormantFutureMeasurementStep = ({
           </p>
         </div>
       </section>
+      </div>
 
       {hydrationInvalid && (
         <DesignStudioStepGuide
@@ -1392,7 +1458,20 @@ export const DormantFutureMeasurementStep = ({
       <section
         aria-live="polite"
         data-measurement-form={selectedMethod}
-        className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 sm:p-5"
+        ref={measurementGuideRef}
+        tabIndex={-1}
+        data-measurement-guide-flash={
+          guideCueTarget === "form" && guideCuePhase === "flash" ? "true" : undefined
+        }
+        data-measurement-guide-beam={
+          guideCueTarget === "form" && guideCuePhase === "beam" ? "true" : undefined
+        }
+        className={withMeasurementGuideBeam(
+          `scroll-mt-24 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 outline-none transition sm:p-5${
+            guideCueTarget === "form" && guideCuePhase === "flash" ? ` ${MEASUREMENT_GUIDE_FLASH_CLASS}` : ""
+          }`,
+          guideCueTarget === "form" && guideCuePhase === "beam",
+        )}
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -1441,40 +1520,13 @@ export const DormantFutureMeasurementStep = ({
         )}
       </section>
 
-      <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-        <fieldset data-measurement-unit={state.unit}>
-          <legend className="text-xs font-bold uppercase tracking-wider text-heritage-green">
-            Measurement unit
-          </legend>
-          <p
-            data-measurement-entry-unit={state.unit}
-            className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70"
-          >
-            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
-            Each field shows that unit. Switching units converts what you already saved.
-          </p>
-          <div className="mt-3 inline-flex max-w-full rounded-xl border border-heritage-green/20 bg-heritage-cream/30 p-1">
-            {(["cm", "inch"] as const).map((unit) => (
-              <button
-                key={unit}
-                type="button"
-                aria-pressed={state.unit === unit}
-                onClick={() => onChange(setFutureMeasurementUnit(resolvedState, unit))}
-                className={`min-h-11 rounded-lg px-4 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold sm:px-5 ${
-                  state.unit === unit
-                    ? "bg-heritage-green text-white shadow-sm"
-                    : "text-heritage-green hover:bg-white"
-                }`}
-              >
-                {unit === "inch" ? "Inches" : "Centimetres"}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-      </section>
-
+      <section
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
+        data-measurement-unit-garment-row="true"
+      >
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
       {measurementGarments.length > 1 && (
-        <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
+        <div className="min-w-0 flex-1 basis-72" data-measurement-garment-picker="true">
           <h3 className="font-serif text-lg font-bold text-heritage-green">
             Choose a garment
           </h3>
@@ -1565,8 +1617,39 @@ export const DormantFutureMeasurementStep = ({
               </button>
             </div>
           )}
-        </section>
+        </div>
       )}
+        <fieldset data-measurement-unit={state.unit} className="ml-auto min-w-0 max-w-sm">
+          <legend className="text-xs font-bold uppercase tracking-wider text-heritage-green">
+            Measurement unit
+          </legend>
+          <p
+            data-measurement-entry-unit={state.unit}
+            className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70"
+          >
+            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
+            Each field shows that unit. Switching units converts what you already saved.
+          </p>
+          <div className="mt-3 inline-flex max-w-full rounded-xl border border-heritage-green/20 bg-heritage-cream/30 p-1">
+            {(["cm", "inch"] as const).map((unit) => (
+              <button
+                key={unit}
+                type="button"
+                aria-pressed={state.unit === unit}
+                onClick={() => onChange(setFutureMeasurementUnit(resolvedState, unit))}
+                className={`min-h-11 rounded-lg px-4 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold sm:px-5 ${
+                  state.unit === unit
+                    ? "bg-heritage-green text-white shadow-sm"
+                    : "text-heritage-green hover:bg-white"
+                }`}
+              >
+                {unit === "inch" ? "Inches" : "Centimetres"}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        </div>
+      </section>
 
       {selectedGarmentUnassigned && (
         <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5">
@@ -1700,6 +1783,8 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToSummary,
             locked: !canContinueToSummary,
+            onLockedClick: () =>
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
             ariaLabel: "Continue to Summary",
             "aria-describedby": "measurement-risk-selection-notice",
           }}
