@@ -134,7 +134,7 @@ assert.match(measurementSource, /Measuring for/);
 assert.match(measurementSource, /data-measurement-active-wearer=\{activeWearerLabel\}/);
 assert.match(
   measurementSource,
-  /Add measurements for one of \$\{activeWearerLabel\}'s garments at a time/,
+  /One of \$\{activeWearerLabel\}'s garments at a time\./,
 );
 assert.match(
   measurementSource,
@@ -1302,7 +1302,7 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
   assert.ok(matchText.includes("Standard Shirt"));
   assert.ok(matchText.includes("Standard Shirt 2"));
   assert.ok(
-    matchText.includes("Add measurements for one of Person 2's garments at a time"),
+    matchText.includes("One of Person 2's garments at a time."),
   );
   assert.equal(
     matchRenderer.root.findAll(
