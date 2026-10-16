@@ -265,7 +265,9 @@ assert.match(customDetailsSource, /onContinue/);
 assert.match(customDetailsSource, /Continue to AI Try-on/);
 assert.match(tryOnSource, /formatDesignStudioStepCounter\("try_on"\)/);
 assert.match(tryOnSource, /DesignStudioBackButton/);
-assert.match(tryOnSource, /backDestination="Custom Details"/);
+assert.match(tryOnSource, /const previousStageLabel = "Personalized Additions"/);
+assert.equal((tryOnSource.match(/backDestination=\{previousStageLabel\}/g) || []).length, 2);
+assert.equal(tryOnSource.includes('backDestination="Custom Details"'), false);
 assert.match(tryOnSource, /Continue to Measurement is locked/);
 assert.match(tryOnSource, /aria-live="polite"/);
 assert.match(tryOnSource, /Continue without AI Try-on/);
@@ -284,7 +286,10 @@ assert.match(stepperSource, /canEnterTryOn/);
 assert.match(stepperSource, /canEnterMeasurement/);
 assert.match(stepperSource, /data-step-state=\{state\}/);
 assert.match(studioSource, /handleOpenDormantAiTryOnStage/);
-assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("custom_details"\)\}/);
+assert.match(
+  studioSource,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
+);
 assert.match(studioSource, /gatewayAvailable: false/);
 assert.match(legacyCardSource, /Coming Soon/);
 assert.equal(appSource.includes("future_nine_stage"), false);
