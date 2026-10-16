@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createElement, useState } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -238,6 +238,15 @@ assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" 
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "sample_cloth" }).length, 0);
 
 selectMethod(renderer, "low_risk");
+// Single garment: unit block fills the card (no empty garment column, no divider).
+const unitRow = renderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
+assert.equal(unitRow.props["data-measurement-unit-garment-layout"], "unit-only");
+assert.equal(unitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 0);
+const unitFieldset = unitRow.find((node) => node.type === "fieldset");
+assert.doesNotMatch(unitFieldset.props.className, /border-l|border-t|max-w-xs|ml-auto/);
+assert.match(unitFieldset.props.className, /w-full/);
+assert.match(unitFieldset.props.className, /sm:grid-cols-\[minmax\(0,1fr\)_auto\]/);
+assert.doesNotMatch((unitRow.children[0] as ReactTestInstance).props.className, /sm:flex-row|justify-between/);
 assert.equal(renderer.root.findByProps({ type: "radio", value: "low_risk" }).props.checked, true);
 assert.equal(renderer.root.findByProps({ type: "radio", value: "sample_cloth" }).props.checked, false);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 1);
