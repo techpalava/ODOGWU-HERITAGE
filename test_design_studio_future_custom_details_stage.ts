@@ -2437,6 +2437,12 @@ assert.match(
   /Incomplete/,
   "a selected personalized requirement without a description stays Incomplete",
 );
+const emptyRequirementMessage = "Describe your personalized requirement before continuing.";
+assert.equal(
+  textContent(personalizedLayoutRenderer!.root).split(emptyRequirementMessage).length - 1,
+  1,
+  "an empty personalized requirement shows that error once, under the textarea",
+);
 const personalizedTextarea = personalizedDetail.findByType("textarea");
 act(() => {
   personalizedTextarea.props.onChange({ target: { value: "Add a family crest on the left chest." } });
