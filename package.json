@@ -13,7 +13,7 @@
     "test:api-routes": "tsx test_api_routes.ts",
     "test:shipping": "tsx test_shipping.ts",
     "test:design-pricing": "tsx test_design_pricing.ts",
-    "test:monogram-pricing": "tsx test_monogram_pricing.ts",
+    "test:monogram-pricing": "tsx test_monogram_pricing.ts && tsx test_monogram_text.ts",
     "test:custom-details": "tsx test_custom_detail_applicability.ts",
     "test:custom-detail-catalog-provenance": "tsx test_custom_detail_catalog_provenance.ts",
     "test:garment-scoped-custom-details-domain": "tsx test_garment_scoped_custom_details_domain.ts",

@@ -1684,6 +1684,31 @@ assert.equal(
   "base:shirt:decorative:Name Monogram",
 );
 assert.equal(
+  decorativeMonogramOccurrences[0]?.personalizedText,
+  null,
+  "a Name Monogram without a stored name keeps the existing summary line",
+);
+const namedDecorativeSummary = projectFutureDesignStudioSummary({
+  ...decorativeInput,
+  designSelections: {
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram"],
+    },
+    monogramTextByGarmentKey: {
+      "base:shirt": "ADEBAYO",
+    },
+    monogramPlacementByGarmentKey: {
+      "base:shirt": "left_chest",
+    },
+  },
+});
+const namedDecorativeOccurrence = namedDecorativeSummary.customDetailsSummary
+  .flatMap((group) => group.occurrences)
+  .find((occurrence) => occurrence.optionLabel === "Name Monogram");
+assert.equal(namedDecorativeOccurrence?.personalizedText, "ADEBAYO");
+assert.equal(namedDecorativeOccurrence?.monogramPlacementLabel, "Left Chest");
+assert.equal(namedDecorativeOccurrence?.priceCents, 1200);
+assert.equal(
   decorativeSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice,
   exactSummary.pricingSummary.selectedDesignPrice!.selectedDesignPrice! + 12,
 );

@@ -17,6 +17,7 @@ import type {
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
+import { clearDecorativeFeaturesForGarment } from "./src/utils/decorativePricing";
 import { calculateDesignPricing } from "./src/utils/designPricing";
 import { individualLagosToEindhovenChargeCents } from "./src/utils/individualInboundShippingDisplay";
 import {
@@ -807,6 +808,109 @@ assert.deepEqual(
     presentation: "amount",
   },
   "Payment receives the same decorative subtotal projected by Summary",
+);
+
+const namedMonogramDesign = {
+  decorativeFeaturesByGarmentKey: {
+    "base:shirt": ["Name Monogram" as const],
+  },
+  decorativeFeatures: ["Name Monogram" as const],
+  monogramPlacementByGarmentKey: {
+    "base:shirt": "left_chest" as const,
+  },
+  monogramTextByGarmentKey: {
+    "base:shirt": "ADEBAYO",
+  },
+  monogramPlacement: "left_chest" as const,
+  monogramText: "ADEBAYO",
+};
+const namedMonogramBaseInput = buildInput();
+if (namedMonogramBaseInput.materialPricing.status !== "resolved") {
+  throw new Error("Named monogram fixture requires resolved material pricing");
+}
+const namedMonogramPricing = calculateDesignPricing({
+  route: "alone",
+  design: namedMonogramDesign,
+  materialPricing: namedMonogramBaseInput.materialPricing,
+  decorativeFeatureApplicabilityStyle:
+    namedMonogramBaseInput.designStyleSelection.selectedStyle,
+  baseGarmentComposition: getFutureFabricCapacityComposition(
+    namedMonogramBaseInput.garmentTypeSelection,
+  ),
+  catalog: inspection.activeOptions,
+  businessSettings,
+  garmentConstructionSelectionMode: "garment_type_locked",
+  garmentTypeSelection: namedMonogramBaseInput.garmentTypeSelection,
+});
+assert.ok(namedMonogramPricing);
+const namedMonogramSummaryInput = {
+  ...namedMonogramBaseInput,
+  basePricing: namedMonogramPricing,
+  designSelections: namedMonogramDesign,
+};
+const namedMonogramSummary = projectFutureDesignStudioSummary(
+  namedMonogramSummaryInput,
+);
+const namedMonogramCandidate = buildFutureOrderCandidate({
+  ...namedMonogramSummaryInput,
+  shippingResolution: reconcileFutureShippingState({
+    state: namedMonogramBaseInput.shippingResolution.state,
+    garmentCount: namedMonogramSummary.garmentSummary.length,
+    selectedDesignPrice:
+      namedMonogramSummary.pricingSummary.selectedDesignPrice
+        ?.selectedDesignPrice ?? null,
+  }),
+});
+assert.ok(namedMonogramCandidate.candidate);
+const namedMonogramDetail = namedMonogramCandidate.candidate.customDetails.find(
+  (detail) => detail.optionId === "Name Monogram",
+);
+assert.equal(namedMonogramDetail?.personalizedText, "ADEBAYO");
+assert.equal(namedMonogramDetail?.monogramPlacementLabel, "Left Chest");
+assert.equal(namedMonogramDetail?.priceCents, 1200);
+const clearedMonogramDesign = clearDecorativeFeaturesForGarment(
+  namedMonogramDesign,
+  "base:shirt",
+);
+const clearedMonogramPricing = calculateDesignPricing({
+  route: "alone",
+  design: clearedMonogramDesign,
+  materialPricing: namedMonogramBaseInput.materialPricing,
+  decorativeFeatureApplicabilityStyle:
+    namedMonogramBaseInput.designStyleSelection.selectedStyle,
+  baseGarmentComposition: getFutureFabricCapacityComposition(
+    namedMonogramBaseInput.garmentTypeSelection,
+  ),
+  catalog: inspection.activeOptions,
+  businessSettings,
+  garmentConstructionSelectionMode: "garment_type_locked",
+  garmentTypeSelection: namedMonogramBaseInput.garmentTypeSelection,
+});
+assert.ok(clearedMonogramPricing);
+const clearedMonogramCandidate = buildFutureOrderCandidate({
+  ...namedMonogramSummaryInput,
+  basePricing: clearedMonogramPricing,
+  designSelections: clearedMonogramDesign,
+  shippingResolution: reconcileFutureShippingState({
+    state: namedMonogramBaseInput.shippingResolution.state,
+    garmentCount: namedMonogramSummary.garmentSummary.length,
+    selectedDesignPrice:
+      projectFutureDesignStudioSummary({
+        ...namedMonogramSummaryInput,
+        basePricing: clearedMonogramPricing,
+        designSelections: clearedMonogramDesign,
+      }).pricingSummary.selectedDesignPrice?.selectedDesignPrice ?? null,
+  }),
+});
+assert.ok(clearedMonogramCandidate.candidate);
+assert.equal(
+  clearedMonogramCandidate.candidate.customDetails.some(
+    (detail) =>
+      detail.optionId === "Name Monogram" &&
+      detail.personalizedText === "ADEBAYO",
+  ),
+  false,
+  "removing the garment drops the embroidered name from the saved order candidate",
 );
 assert.equal(candidate.journey.schemaVersion, 2);
 assert.equal(

@@ -5825,6 +5825,16 @@ export default function DatabaseView({
                                           ))}
                                         </div>
                                       ))}
+                                      {history.monogramLines.map((line) => (
+                                        <p
+                                          key={`${line.garmentKey}:${line.text}`}
+                                          data-admin-v2-monogram-name={line.garmentKey}
+                                          className="text-[10px] text-heritage-ink"
+                                        >
+                                          {line.garmentLabel}: Name Monogram “{line.text}”
+                                          {line.placementLabel ? ` · ${line.placementLabel}` : ""}
+                                        </p>
+                                      ))}
                                       {history.occurrences.map((occurrence) => (
                                         <div
                                           key={`${occurrence.garmentKey}:${occurrence.occurrenceToken}`}

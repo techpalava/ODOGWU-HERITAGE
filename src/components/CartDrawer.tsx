@@ -31,6 +31,7 @@ import {
 } from "../utils/catalogHelpers";
 import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
 import {
+  formatCartMonogramLines,
   getMonogramPlacementLabel,
   filterDesignSelectionsForDecorativeFeatures,
 } from "../utils/decorativePricing";
@@ -432,6 +433,7 @@ export function CartDrawer() {
                     item.style,
                     item.garment,
                   );
+                  const cartMonogramLines = formatCartMonogramLines(item.design);
                   return (
                     <div
                       key={item.id}
@@ -574,7 +576,13 @@ export function CartDrawer() {
                               </strong>
                             </p>
                           )}
-                        {normalizedDesign.monogramPlacement && (
+                        {cartMonogramLines.length > 0
+                          ? cartMonogramLines.map((line, index) => (
+                              <p key={`monogram-${item.id}-${index}`} data-cart-monogram-name={index}>
+                                Name Monogram: <strong>{line}</strong>
+                              </p>
+                            ))
+                          : normalizedDesign.monogramPlacement && (
                           <p>
                             Monogram placement:{" "}
                             <strong>

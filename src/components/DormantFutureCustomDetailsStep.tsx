@@ -47,12 +47,22 @@ import {
   getAvailableMonogramPlacements,
   getCustomerSelectableDecorativeFeatures,
   getDecorativeFeaturePrice,
+  areAssignedMonogramNamesComplete,
   getDecorativeFeaturesForGarment,
   getGarmentKeysForDecorativeFeature,
   getMonogramPlacementForGarment,
+  getMonogramPlacementLabel,
+  getMonogramTextForGarment,
   getTraditionalAccessoryPrice,
   hasGarmentScopedDecorativeFeatureSelections,
 } from "../utils/decorativePricing";
+import {
+  MONOGRAM_TEXT_MAX_LENGTH,
+  monogramTextErrorMessage,
+  normalizeMonogramText,
+  presentMonogramDraft,
+  validateMonogramText,
+} from "../utils/monogramText";
 import type {
   GarmentScopedCustomDetailsCompletionResult,
   GarmentScopedCustomDetailsPricingResult,
@@ -80,6 +90,22 @@ import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+
+const formatStepMonogramDetail = (
+  selections: DesignSelections,
+  garmentKey: string,
+  garmentLabel: string,
+  feature: DecorativeFeature,
+): string => {
+  const base = garmentKey === "order" ? feature : `${garmentLabel}: ${feature}`;
+  if (feature !== "Name Monogram") return base;
+  const name = getMonogramTextForGarment(selections, garmentKey)?.trim();
+  const placement = getMonogramPlacementLabel(
+    getMonogramPlacementForGarment(selections, garmentKey),
+  )?.trim();
+  if (!name && !placement) return base;
+  return `${base}${name ? ` “${name}”` : ""}${placement ? `, ${placement}` : ""}`;
+};
 
 interface DormantFutureCustomDetailsStepProps {
   /** Defaults to the retained Step 4 surface for existing consumers. */
@@ -118,6 +144,7 @@ interface DormantFutureCustomDetailsStepProps {
     garmentKey: string,
     placement: MonogramPlacement,
   ) => void;
+  onMonogramTextChange: (garmentKey: string, text: string) => void;
   onAccessoryToggle: (accessory: TraditionalAccessory) => void;
   onClearAccessories: () => void;
   onAddAdditionalGarment: (
@@ -468,6 +495,7 @@ export const DormantFutureCustomDetailsStep = ({
   onDecorativeFeatureGarmentAssign,
   onClearDecorativeFeatures,
   onMonogramPlacementChange,
+  onMonogramTextChange,
   onAccessoryToggle,
   onClearAccessories,
   onAddAdditionalGarment,
@@ -508,6 +536,23 @@ export const DormantFutureCustomDetailsStep = ({
     : "Personalized Additions";
   const stepCounterLabel = formatDesignStudioStepCounter(stage);
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
+  const [monogramNameDrafts, setMonogramNameDrafts] = useState<
+    Record<string, string>
+  >({});
+  useEffect(() => {
+    const assigned = new Set(
+      getGarmentKeysForDecorativeFeature(designSelections, "Name Monogram"),
+    );
+    setMonogramNameDrafts((current) => {
+      const keys = Object.keys(current);
+      if (keys.every((key) => assigned.has(key))) return current;
+      const next: Record<string, string> = {};
+      keys.forEach((key) => {
+        if (assigned.has(key)) next[key] = current[key];
+      });
+      return next;
+    });
+  }, [designSelections]);
   void showAdditionalClothesCosts;
   const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<
     AdditionalGarmentCustomDetailsRequest & {
@@ -616,7 +661,10 @@ export const DormantFutureCustomDetailsStep = ({
       getSubjectLabel(subject, parentOccurrenceLabels),
     ]),
   );
-  const canContinue = isFutureCustomDetailsContentReady(completion);
+  const canContinue =
+    isFutureCustomDetailsContentReady(completion) &&
+    (!isPersonalizedAdditionsStage ||
+      areAssignedMonogramNamesComplete(designSelections));
   const decorativeParentGarments = useMemo(() => {
     const seen = new Set<string>();
     const parents: {
@@ -654,6 +702,12 @@ export const DormantFutureCustomDetailsStep = ({
           garmentKey: parent.garmentKey,
           garmentLabel: parent.label.replace(/ - (Base|Added) garment$/, ""),
           feature,
+          detail: formatStepMonogramDetail(
+            designSelections,
+            parent.garmentKey,
+            parent.label.replace(/ - (Base|Added) garment$/, ""),
+            feature,
+          ),
         })),
       );
     }
@@ -661,6 +715,12 @@ export const DormantFutureCustomDetailsStep = ({
       garmentKey: "order",
       garmentLabel: "Order",
       feature,
+      detail: formatStepMonogramDetail(
+        designSelections,
+        "order",
+        "Order",
+        feature,
+      ),
     }));
   }, [designSelections, decorativeParentGarments]);
   const customerSelectableDecorativeFeatures =
@@ -1951,6 +2011,78 @@ export const DormantFutureCustomDetailsStep = ({
                                     </span>
                                   ) : null}
                                 </label>
+                                {feature === "Name Monogram" && assigned ? (
+                                  (() => {
+                                    const savedName =
+                                      getMonogramTextForGarment(
+                                        designSelections,
+                                        parent.garmentKey,
+                                      ) || "";
+                                    const shown =
+                                      monogramNameDrafts[parent.garmentKey] ??
+                                      savedName;
+                                    const validation = validateMonogramText(shown);
+                                    const nameError =
+                                      monogramTextErrorMessage(validation);
+                                    const nameInputId = `monogram-name-${parent.garmentKey}`;
+                                    return (
+                                      <div className="mt-2 border-t border-heritage-gold/15 pt-2">
+                                        <label
+                                          htmlFor={nameInputId}
+                                          className="block text-[11px] font-bold text-heritage-green"
+                                        >
+                                          Name
+                                        </label>
+                                        <input
+                                          id={nameInputId}
+                                          type="text"
+                                          value={shown}
+                                          data-monogram-name-input={parent.garmentKey}
+                                          autoComplete="off"
+                                          autoCapitalize="characters"
+                                          spellCheck={false}
+                                          aria-invalid={Boolean(nameError)}
+                                          aria-describedby={
+                                            nameError
+                                              ? `${nameInputId}-error`
+                                              : undefined
+                                          }
+                                          onChange={(event) => {
+                                            const presented = presentMonogramDraft(
+                                              event.target.value,
+                                            );
+                                            setMonogramNameDrafts((current) => ({
+                                              ...current,
+                                              [parent.garmentKey]: presented,
+                                            }));
+                                            const nextValidation =
+                                              validateMonogramText(presented);
+                                            onMonogramTextChange(
+                                              parent.garmentKey,
+                                              nextValidation.status === "valid"
+                                                ? nextValidation.text
+                                                : "",
+                                            );
+                                          }}
+                                          className="mt-1.5 w-full rounded-xl border border-heritage-green/20 bg-white px-3 py-2 font-serif text-sm uppercase tracking-wide text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+                                        />
+                                        <div className="mt-1 flex min-w-0 items-start justify-between gap-3 text-[11px]">
+                                          <span
+                                            id={`${nameInputId}-error`}
+                                            data-monogram-name-error={parent.garmentKey}
+                                            className="min-w-0 break-words text-red-700"
+                                          >
+                                            {nameError}
+                                          </span>
+                                          <span className="shrink-0 text-heritage-ink/55">
+                                            {normalizeMonogramText(shown).length}/
+                                            {MONOGRAM_TEXT_MAX_LENGTH}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()
+                                ) : null}
                                 {feature === "Name Monogram" &&
                                   assigned &&
                                   availableMonogramPlacements.length > 0 && (
@@ -2271,7 +2403,7 @@ export const DormantFutureCustomDetailsStep = ({
             <p className="text-xs leading-relaxed text-heritage-ink/60">{garmentConstructionInclusionNote(orderType)}</p>
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
-            {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.garmentKey === "order" ? line.feature : `${line.garmentLabel}: ${line.feature}`}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
+            {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.detail}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
             {pricing.status === "pending" && <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">A personalized addition is reviewed after you order. The garment total today does not include it.</p>}
             {pricing.status === "invalid" && <p className="rounded-lg bg-red-50 p-2 text-xs leading-relaxed text-red-700">A saved Custom Details price needs review.</p>}
             <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green"><span className="min-w-0 break-words">Estimated total so far</span><span className="shrink-0 font-mono">{estimatedTotal === null ? "Pending" : money(estimatedTotal)}</span></div>
