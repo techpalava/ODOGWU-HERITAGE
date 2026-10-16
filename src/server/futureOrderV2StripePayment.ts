@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import type { Firestore } from "firebase-admin/firestore";
+import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
+import { pendingPersonalizedKnownBaseIsAuthoritative } from "../utils/futureOrderPayableTotal.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import {
@@ -58,6 +60,8 @@ export interface FutureOrderV2StripePaymentDependencies {
   readPersistedOrder?: (orderId: string) => Promise<unknown | null>;
   /** Sidecar written when a tailor prices a personalized addition. */
   readPersonalizedPrice?: (orderId: string) => Promise<unknown | null>;
+  /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
+  readCatalog?: () => Promise<unknown>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -108,6 +112,16 @@ const readPersistedOrderFromAdmin = async (
     .doc(orderId)
     .get();
   return snapshot.exists ? snapshot.data() : null;
+};
+
+const readCustomDetailCatalog = async (db: unknown): Promise<unknown[]> => {
+  if (!db || typeof (db as { collection?: unknown }).collection !== "function") {
+    return [];
+  }
+  const snapshot = await (db as Firestore).collection("custom_detail_catalog").get();
+  return snapshot.docs.map((entry) =>
+    attachCustomDetailCatalogDocumentId(entry.id, entry.data()),
+  );
 };
 
 const readPersonalizedPriceFromAdmin = async (
@@ -429,6 +443,34 @@ export const handleFutureOrderV2StripePayment = async (
       "INVALID_EXACT_TOTAL",
       "The reviewed total is not ready to charge.",
     );
+  }
+  if (
+    paymentReference === `future-v2-payment-${orderId}` &&
+    candidate.customDetails.some(
+      (detail) => detail.priceStatus === "evaluation_required",
+    )
+  ) {
+    let catalog: unknown = [];
+    try {
+      catalog = dependencies.readCatalog
+        ? await dependencies.readCatalog()
+        : await readCustomDetailCatalog(services.db);
+    } catch {
+      return sendError(
+        res,
+        503,
+        "ORDER_LOOKUP_UNAVAILABLE",
+        "The prepared order could not be loaded right now. Retry this same order.",
+      );
+    }
+    if (!pendingPersonalizedKnownBaseIsAuthoritative(candidate, catalog)) {
+      return sendError(
+        res,
+        400,
+        "INVALID_EXACT_TOTAL",
+        "The reviewed total is not ready to charge.",
+      );
+    }
   }
 
   try {
