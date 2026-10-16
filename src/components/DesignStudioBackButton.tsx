@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, LockKeyhole, PackageCheck } from "lucide-react";
 import type { ReactNode } from "react";
 
 const studioNavButtonClass =
-  "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-center text-xs font-bold leading-snug [overflow-wrap:normal] [word-break:normal] transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+  "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[11px] font-bold leading-tight sm:gap-2 sm:px-3 sm:text-xs [overflow-wrap:normal] [word-break:normal] transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
 /** Back and other secondary controls: white at rest, heritage green fill with white text on hover and focus. */
 export const studioOutlinedNavInteractionClass =
@@ -21,18 +21,20 @@ const StudioNavLabel = ({
   secondary?: string | null;
   emphasis?: "fill" | "outline";
 }) => (
-  <span className="min-w-0 text-balance text-center leading-snug [overflow-wrap:normal] [word-break:normal]">
-    <span className="uppercase tracking-wide">{primary}</span>
+  <span
+    data-studio-nav-label="stack"
+    className="flex min-w-0 flex-1 flex-col items-center justify-center text-center leading-none"
+  >
+    <span className="max-w-full truncate uppercase tracking-wide">{primary}</span>
     {secondary ? (
       <span
-        className={`font-semibold normal-case tracking-normal text-current/75 ${
+        className={`mt-0.5 max-w-full text-[10px] font-semibold normal-case leading-tight tracking-normal text-current/75 ${
           emphasis === "outline"
             ? "group-enabled:group-hover:text-heritage-green! group-focus-visible:text-heritage-green!"
             : "group-enabled:group-hover:text-white! group-focus-visible:text-white!"
         }`}
       >
-        {" "}
-        {secondary}
+        {` ${secondary}`}
       </span>
     ) : null}
   </span>
@@ -152,18 +154,18 @@ export const DesignStudioStepActions = ({
   >
     <div
       data-studio-step-actions-buttons="true"
-      className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3"
     >
       <DesignStudioBackButton
         destination={backDestination}
         onClick={onBack}
         disabled={backDisabled}
-        className="w-full sm:max-w-xs sm:flex-1"
+        className="min-w-0 flex-1 basis-0 sm:max-w-xs"
       />
       {forward ? (
         <DesignStudioForwardButton
           {...forward}
-          className={`w-full sm:max-w-xs sm:flex-1 ${forward.className || ""}`}
+          className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
         />
       ) : null}
     </div>

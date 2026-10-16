@@ -1,9 +1,6 @@
 import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
-import {
-  DesignStudioForwardButton,
-  DesignStudioStepActions,
-} from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import type {
   CustomDetailDemographic,
@@ -707,13 +704,15 @@ export const GarmentTypeStep = ({
         {showInlineContinue && (
           <div
             data-testid="future-garment-type-continue-action"
-            className="mt-6 flex justify-end"
+            className="mt-6"
           >
-            <DesignStudioForwardButton
-              destination="Fabric"
-              onClick={onContinue}
-              ariaLabel="Continue to Fabric"
-              className="w-full sm:w-auto"
+            <DesignStudioStepActions
+              backDisabled
+              forward={{
+                destination: "Fabric",
+                onClick: onContinue,
+                ariaLabel: "Continue to Fabric",
+              }}
             />
           </div>
         )}

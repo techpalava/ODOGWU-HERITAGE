@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import type { ReactElement } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
@@ -42,9 +42,17 @@ assert.match(classNameOf(backButton), /max-w-full/);
 assert.match(classNameOf(backButton), /text-heritage-ink/);
 assert.equal(classNameOf(backButton).includes("whitespace-nowrap"), false);
 assert.equal(classNameOf(backButton).includes("shrink-0"), false);
+const backLabel = backButton.findByProps({ "data-studio-nav-label": "stack" });
+assert.match(classNameOf(backLabel), /flex-col/);
+const backPrimary = backLabel.findAllByType("span").find((span) =>
+  classNameOf(span).includes("uppercase"),
+);
+assert.ok(backPrimary);
+assert.match(classNameOf(backPrimary), /truncate/);
 for (const span of backButton.findAllByType("span")) {
+  if (span === backPrimary) continue;
   assert.equal(classNameOf(span).includes("whitespace-nowrap"), false);
-  assert.match(classNameOf(span), /overflow-wrap:normal|min-w-0|tracking-wide|tracking-normal/);
+  assert.match(classNameOf(span), /flex-col|min-w-0|tracking-wide|tracking-normal|text-current\/75/);
 }
 const backIcon = backButton.findByType("svg");
 assert.equal(String(backIcon.props["aria-hidden"]), "true");
@@ -102,6 +110,10 @@ assert.equal(forwardButton.props["data-studio-nav"], "forward");
 assert.match(textOf(forwardButton), /Continue/);
 assert.match(textOf(forwardButton), /to Delivery & Pickup/);
 assert.equal(classNameOf(forwardButton).includes("whitespace-nowrap"), false);
+assert.match(
+  classNameOf(forwardButton.findByProps({ "data-studio-nav-label": "stack" })),
+  /flex-col/,
+);
 const forwardIcon = forwardButton.findAllByType("svg").at(-1)!;
 assert.equal(String(forwardIcon.props["aria-hidden"]), "true");
 assert.match(studioContinueNavInteractionClass, /bg-heritage-green/);
@@ -174,10 +186,12 @@ const buttonRow = rowChildren[0];
 const noteRegion = rowChildren[1];
 assert.equal(buttonRow.props["data-studio-step-actions-buttons"], "true");
 assert.equal(noteRegion.props["data-studio-step-actions-note"], "true");
-assert.match(classNameOf(buttonRow), /flex-col/);
-assert.match(classNameOf(buttonRow), /sm:flex-row/);
-assert.match(classNameOf(buttonRow), /sm:items-center/);
-assert.match(classNameOf(buttonRow), /sm:justify-between/);
+assert.match(classNameOf(buttonRow), /flex-row/);
+assert.match(classNameOf(buttonRow), /flex-nowrap/);
+assert.match(classNameOf(buttonRow), /items-stretch/);
+assert.match(classNameOf(buttonRow), /justify-between/);
+assert.equal(classNameOf(buttonRow).includes("flex-col"), false);
+assert.equal(classNameOf(buttonRow).includes("sm:flex-row"), false);
 assert.match(classNameOf(noteRegion), /w-full/);
 const buttonRowChildren = elementChildren(buttonRow);
 assert.equal(buttonRowChildren.length, 2);
@@ -192,14 +206,17 @@ assert.equal(pair.length, 2);
 assert.equal(pair[0].props["data-studio-nav"], "back");
 assert.equal(pair[1].props["data-studio-nav"], "forward");
 for (const button of pair) {
-  assert.match(classNameOf(button), /w-full/);
-  assert.match(classNameOf(button), /min-w-0|max-w-full|sm:max-w-xs/);
+  assert.match(classNameOf(button), /min-w-0/);
+  assert.match(classNameOf(button), /flex-1/);
+  assert.match(classNameOf(button), /basis-0/);
+  assert.match(classNameOf(button), /sm:max-w-xs/);
+  assert.equal(/(?:^|\s)w-full(?:\s|$)/.test(classNameOf(button)), false);
   assert.equal(classNameOf(button).includes("whitespace-nowrap"), false);
+  assert.match(
+    classNameOf(button.findByProps({ "data-studio-nav-label": "stack" })),
+    /flex-col/,
+  );
 }
-assert.match(classNameOf(pair[0]), /sm:flex-1/);
-assert.match(classNameOf(pair[0]), /sm:max-w-xs/);
-assert.match(classNameOf(pair[1]), /sm:flex-1/);
-assert.match(classNameOf(pair[1]), /sm:max-w-xs/);
 assert.equal(pair[1].props.disabled, true);
 assert.equal(pair[1].props["aria-describedby"], "studio-step-guide");
 assert.match(classNameOf(pair[1]), /disabled:bg-heritage-green\/35/);
@@ -292,4 +309,27 @@ for (const sourcePath of [
   assert.match(source, /studioContinueNavInteractionClass/);
 }
 
-console.log("PASS: studio step navigation labels stay in one wrapping line");
+const componentDir = "src/components";
+for (const fileName of readdirSync(componentDir)) {
+  if (!fileName.endsWith(".tsx") || fileName === "DesignStudioBackButton.tsx") continue;
+  const source = readFileSync(`${componentDir}/${fileName}`, "utf8");
+  assert.equal(
+    source.includes("<DesignStudioForwardButton"),
+    false,
+    `${fileName} must use DesignStudioStepActions instead of its own Continue button`,
+  );
+}
+const fabricSource = readFileSync("src/components/DormantFutureFabricStep.tsx", "utf8");
+const fabricFooterAt = fabricSource.lastIndexOf('backDestination="Garment Type"');
+assert.ok(fabricFooterAt > 0);
+const fabricFooter = fabricSource.slice(fabricFooterAt, fabricFooterAt + 500);
+assert.match(fabricFooter, /forward=\{showContinueAction \?/);
+assert.equal(fabricFooter.includes("justify-end"), false);
+const garmentSource = readFileSync("src/components/GarmentTypeStep.tsx", "utf8");
+const garmentContinueAt = garmentSource.indexOf('data-testid="future-garment-type-continue-action"');
+assert.ok(garmentContinueAt > 0);
+const garmentContinue = garmentSource.slice(garmentContinueAt, garmentContinueAt + 500);
+assert.match(garmentContinue, /<DesignStudioStepActions/);
+assert.equal(garmentContinue.includes("justify-end"), false);
+
+console.log("PASS: studio step navigation stays on one row at every width");
