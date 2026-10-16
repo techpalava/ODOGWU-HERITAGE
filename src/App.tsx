@@ -33,8 +33,10 @@ import {
   type LoadedHomepageMutableDraft,
 } from "./services/homepageDraftReplacement";
 import {
+  classifyDesignStudioNavEntry,
   classifyIndividualOrderStart,
   describeUnfinishedOrder,
+  designStudioNavResumeActionLabel,
 } from "./utils/individualOrderStart";
 import {
   resolvePersistedDraftOrderContext,
@@ -121,6 +123,8 @@ type IndividualOrderStartRequest = Readonly<{
   label: string;
   canResume: boolean;
   resumeContext: OrderContext | null;
+  entry: "individual" | "design-studio";
+  resumeActionLabel?: string;
 }>;
 
 type PrivateBatchDraftReplacementRequest = Readonly<{
@@ -487,6 +491,107 @@ export default function App() {
     };
   }, [activeTab, homepageAuthEpoch]);
 
+  const designStudioNavRequest = useAppStore(
+    (state) => state.designStudioNavRequest,
+  );
+
+  const handleRequestDesignStudioFromNav = () => {
+    void (async () => {
+      if (useAppStore.getState().activeTab === "design") return;
+      if (
+        homepageDraftEntryRequestInFlight.current ||
+        individualOrderStartRequest
+      ) {
+        return;
+      }
+      homepageDraftEntryRequestInFlight.current = true;
+      try {
+        const authority = getHomepageDraftReplacementService();
+        if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
+          // The bag already holds this design. Clear only the Studio copy so
+          // Design Studio does not reopen it, and leave the bag intact.
+          const inspected = await authority.inspect();
+          if (inspected.status === "valid") {
+            const discarded = await authority.discard(inspected.existing);
+            if (discarded.status !== "discarded") {
+              triggerNotification(
+                "We could not open Design Studio without touching your bagged design. Please try again.",
+                "info",
+              );
+              return;
+            }
+          } else if (inspected.status !== "empty") {
+            triggerNotification(
+              "We could not safely check your unfinished order. Please try again.",
+              "info",
+            );
+            return;
+          } else {
+            GuestOrderSessionService.clearFutureDesignDraft();
+          }
+          useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+          setUnfinishedOrderLabel(null);
+          openDesignStudioForOrder(freshIndividualOrderContext());
+          return;
+        }
+
+        const requestAuthEpoch = homepageAuthEpochRef.current;
+        const inspected = await authority.inspect();
+        if (homepageAuthEpochRef.current !== requestAuthEpoch) {
+          triggerNotification(
+            "Your sign-in state changed. Please try again.",
+            "info",
+          );
+          return;
+        }
+        const decision = classifyDesignStudioNavEntry(inspected);
+        if (decision.kind === "start_fresh") {
+          setUnfinishedOrderLabel(null);
+          openDesignStudioForOrder(freshIndividualOrderContext());
+          return;
+        }
+        if (decision.kind === "blocked") {
+          triggerNotification(
+            "We could not safely check your unfinished order. Please try again.",
+            "info",
+          );
+          return;
+        }
+        const resumeContext = resolvePersistedDraftOrderContext(
+          decision.existing.draft,
+          homepageCurrentBatchesRef.current,
+          homepageDefaultPickupLocationRef.current,
+        );
+        const label = describeUnfinishedOrder(decision.existing.draft);
+        setUnfinishedOrderLabel(label);
+        setIndividualOrderStartRequest({
+          decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+          existing: decision.existing,
+          label,
+          canResume: Boolean(resumeContext),
+          resumeContext,
+          entry: "design-studio",
+          resumeActionLabel: designStudioNavResumeActionLabel(
+            decision.existing.draft,
+          ),
+        });
+      } catch (error) {
+        console.error("Unable to open Design Studio.", error);
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+      } finally {
+        homepageDraftEntryRequestInFlight.current = false;
+      }
+    })();
+  };
+
+  useEffect(() => {
+    if (designStudioNavRequest === 0) return;
+    handleRequestDesignStudioFromNav();
+  }, [designStudioNavRequest]);
+
   const handleRequestFreshIndividualOrder = () => {
     void (async () => {
       if (homepageDraftEntryRequestInFlight.current) return;
@@ -556,6 +661,7 @@ export default function App() {
           label,
           canResume: Boolean(resumeContext),
           resumeContext,
+          entry: "individual",
         });
       } catch (error) {
         console.error("Unable to start an Individual Order.", error);
@@ -2007,6 +2113,8 @@ export default function App() {
           unfinishedOrderLabel={individualOrderStartRequest.label}
           canResume={individualOrderStartRequest.canResume}
           busy={isHomepageDraftOperationBusy}
+          entry={individualOrderStartRequest.entry}
+          resumeLabel={individualOrderStartRequest.resumeActionLabel}
           onResume={handleResumeIndividualOrderFromDialog}
           onStartNew={handleConfirmFreshIndividualOrder}
           onCancel={() => {

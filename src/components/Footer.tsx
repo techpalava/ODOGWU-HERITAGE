@@ -20,7 +20,7 @@ import {
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 export default function Footer() {
-  const { activeTab, setActiveTab, businessSettings, batches } = useAppStore();
+  const { activeTab, setActiveTab, requestDesignStudioFromNav, businessSettings, batches } = useAppStore();
   const primaryEmail =
     businessSettings?.applicationSettings?.primaryEmail?.trim() || "";
   const secondaryEmail =
@@ -28,7 +28,11 @@ export default function Footer() {
 
   const handleNavigation = (e: React.MouseEvent, tab: string) => {
     e.preventDefault();
-    setActiveTab(tab as any);
+    if (tab === "design") {
+      requestDesignStudioFromNav();
+    } else {
+      setActiveTab(tab as any);
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
