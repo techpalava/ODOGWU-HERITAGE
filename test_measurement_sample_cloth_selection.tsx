@@ -111,6 +111,15 @@ assert.deepEqual(
   ["risk", "sample_cloth", "alternate_contact", "ai_measurements"],
 );
 assert.equal(optionSections.length, 4);
+// Options 2-4 share one md:grid-cols-3 grid; Option 1 stays full width above it.
+const optionGrid = renderer.root.findByProps({ "data-measurement-option-grid": "true" });
+assert.match(optionGrid.props.className, /md:grid-cols-3/);
+assert.deepEqual(
+  optionGrid
+    .findAll((node) => node.props && node.props["data-measurement-option-section"])
+    .map((node) => node.props["data-measurement-option-section"]),
+  ["sample_cloth", "alternate_contact", "ai_measurements"],
+);
 
 // Onsite / AI sections are display-only: no radio, no route, shared atelier WhatsApp contact.
 const alternateSection = renderer.root.findByProps({
