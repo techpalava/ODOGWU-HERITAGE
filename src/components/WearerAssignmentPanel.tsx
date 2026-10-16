@@ -332,9 +332,9 @@ export const WearerAssignmentPanel = ({
 
   /**
    * Only for me / For me: remove extra people, then return to the solo strip
-   * and keep the remaining person's name and fit.
+   * and keep the remaining person's name.
    * Remove on the last card uses the same collapse and also clears that
-   * person's name and fit (`clearSoleIdentity`).
+   * person's name (`clearSoleIdentity`).
    */
   const collapseToSolo = (options?: { clearSoleIdentity?: boolean }) => {
     for (let index = wearers.length - 1; index >= 1; index -= 1) {
