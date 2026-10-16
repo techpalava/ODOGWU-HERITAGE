@@ -97,6 +97,7 @@ const rejected = (): FutureOrderPayableTotalResult => ({
 export const quoteFutureOrderPayableTotal = (
   candidate: FutureOrderCandidateV2,
   catalog: unknown = [],
+  options: { readonly skipEvaluationRequired?: boolean } = {},
 ): FutureOrderPayableQuote | null => {
   const normalizedCatalog = normalizeCustomDetailCatalog(
     Array.isArray(catalog) ? catalog : [],
@@ -163,6 +164,21 @@ export const quoteFutureOrderPayableTotal = (
   const customDetailPriceCents: number[] = [];
   for (const detail of candidate.customDetails) {
     if (CLOTHING_PRICE_GROUPS.has(detail.selectionGroup)) return null;
+    if (
+      options.skipEvaluationRequired &&
+      detail.priceStatus === "evaluation_required"
+    ) {
+      if (detail.selectionGroup === "order_optional_detail") return null;
+      const evaluationOption = optionsById.get(detail.optionId);
+      if (
+        evaluationOption?.active &&
+        evaluationOption.requiresEvaluation &&
+        evaluationOption.selectionGroup === detail.selectionGroup
+      ) {
+        continue;
+      }
+      return null;
+    }
     if (detail.selectionGroup === "order_optional_detail") {
       const cents = decorativeOrAccessoryCents(detail.optionId);
       if (cents === null) return null;
@@ -222,7 +238,7 @@ export const quoteFutureOrderPayableTotal = (
   };
 };
 
-const sameComponentPrices = (
+const garmentConstructionMatches = (
   candidate: FutureOrderCandidateV2,
   quote: FutureOrderPayableQuote,
 ): boolean =>
@@ -241,11 +257,48 @@ const sameComponentPrices = (
         );
       })
     );
-  }) &&
+  });
+
+const sameComponentPrices = (
+  candidate: FutureOrderCandidateV2,
+  quote: FutureOrderPayableQuote,
+): boolean =>
+  garmentConstructionMatches(candidate, quote) &&
   candidate.customDetails.length === quote.customDetailPriceCents.length &&
   candidate.customDetails.every(
     (detail, index) => detail.priceCents === quote.customDetailPriceCents[index],
   );
+
+/**
+ * Construction, exact custom details, post-Eindhoven, and the Individual
+ * Lagos→Eindhoven band. Evaluation-required lines are absent from the quote.
+ */
+const knownBaseMatches = (
+  candidate: FutureOrderCandidateV2,
+  quote: FutureOrderPayableQuote,
+): boolean => {
+  const exactDetails = candidate.customDetails.filter(
+    (detail) => detail.priceStatus !== "evaluation_required",
+  );
+  return (
+    garmentConstructionMatches(candidate, quote) &&
+    includedComponentsMatch(candidate) &&
+    candidate.pricing.garmentConstructionSubtotalCents ===
+      quote.garmentConstructionSubtotalCents &&
+    exactDetails.length === quote.customDetailPriceCents.length &&
+    exactDetails.every(
+      (detail, index) => detail.priceCents === quote.customDetailPriceCents[index],
+    ) &&
+    candidate.pricing.postEindhovenAdjustmentCents ===
+      quote.postEindhovenAdjustmentCents &&
+    candidate.shipping.additionalDeliveryFeeCents ===
+      quote.postEindhovenAdjustmentCents &&
+    candidate.pricing.components.postEindhovenDelivery.status ===
+      "separately_charged" &&
+    candidate.pricing.components.postEindhovenDelivery.amountCents ===
+      quote.postEindhovenAdjustmentCents
+  );
+};
 
 const includedComponentsMatch = (candidate: FutureOrderCandidateV2): boolean => {
   const constructionIncluded = (
@@ -271,16 +324,34 @@ const includedComponentsMatch = (candidate: FutureOrderCandidateV2): boolean => 
   return constructionIncluded && lagosMatches;
 };
 
+const hasEvaluationRequiredDetail = (
+  candidate: FutureOrderCandidateV2,
+): boolean =>
+  candidate.customDetails.some(
+    (detail) => detail.priceStatus === "evaluation_required",
+  );
+
 /**
  * Accepts an exact client ledger only when every payable cent matches the
- * catalogue and Step 8 quote. Non-exact orders are not chargeable and are
- * left unchanged.
+ * catalogue and Step 8 quote. A pending personalized addition stays payable
+ * at the known base only when construction, exact custom details,
+ * post-Eindhoven, and the Individual Lagos→Eindhoven band match that quote.
+ * Other non-exact orders are left unchanged.
  */
 export const recomputeFutureOrderPayableTotal = (
   candidate: FutureOrderCandidateV2,
   catalog: unknown = [],
 ): FutureOrderPayableTotalResult => {
-  if (candidate.pricing.status !== "exact") return { status: "not_exact" };
+  if (candidate.pricing.status !== "exact") {
+    if (!hasEvaluationRequiredDetail(candidate)) return { status: "not_exact" };
+    const knownBaseQuote = quoteFutureOrderPayableTotal(candidate, catalog, {
+      skipEvaluationRequired: true,
+    });
+    if (!knownBaseQuote || !knownBaseMatches(candidate, knownBaseQuote)) {
+      return rejected();
+    }
+    return { status: "not_exact" };
+  }
   const quote = quoteFutureOrderPayableTotal(candidate, catalog);
   const pricing = candidate.pricing;
   if (
@@ -302,4 +373,16 @@ export const recomputeFutureOrderPayableTotal = (
     return rejected();
   }
   return { status: "exact", ...quote };
+};
+
+/**
+ * True when a pending personalized base can be charged. Orders without an
+ * evaluation-required detail keep the exact-total charge path.
+ */
+export const pendingPersonalizedKnownBaseIsAuthoritative = (
+  candidate: FutureOrderCandidateV2,
+  catalog: unknown = [],
+): boolean => {
+  if (!hasEvaluationRequiredDetail(candidate)) return true;
+  return recomputeFutureOrderPayableTotal(candidate, catalog).status === "not_exact";
 };

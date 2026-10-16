@@ -85,11 +85,8 @@ assert.match(studioSource, /initialPeopleExpanded=\{measurementResumePeopleExpan
   );
   assert.doesNotMatch(handler, /Dialog|Modal|garment_type/, "no new modal stack or Step 1 fork");
 }
-assert.match(
-  studioSource,
-  /showSoleFitControl=\{\s*wearerOrderForPlan\.wearers\.length === 1 && !measurementPeopleUiOpen\s*\}/,
-  "Dimension sole fit is solo-only: one wearer AND the people panel closed",
-);
+// Fit retired on Step 7: no Dimension sole-fit control, no fit conflict, no fit setter.
+assert.doesNotMatch(studioSource, /showSoleFitControl=|onSetSoleFitContext=|onSetFitContext=|resolveMeasurementFitConflict/);
 assert.match(studioSource, /onCollapseToSolo/);
 // Assign / unassign sync the live form after the strip, to the person selected
 // right now (ref), never a stale one (B1).
@@ -482,100 +479,29 @@ assert.equal(
 );
 
 {
-  let soleFitChoice: "male" | "female" | null = null;
-  let soleFitContext: "male" | "female" | null = null;
-  let soleFitRenderer!: ReturnType<typeof create>;
-  const soleFitProps = () => ({
-    plan: shirtOnlyPlan,
-    state: completeShirt,
-    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
-    multiPersonAssignmentActive: false,
-    showSoleFitControl: true,
-    soleFitContext,
-    onSetSoleFitContext: (fitContext: "male" | "female") => {
-      soleFitChoice = fitContext;
-      soleFitContext = fitContext;
-    },
-    orderMeasurementsComplete: false,
-    onChange: () => undefined,
-    onRouteChange: () => undefined,
-    onBack: () => undefined,
-    onContinue: () => undefined,
-  });
+  // Fit retired: the Dimension card never shows a sole-fit control, even if a
+  // legacy caller still passes the old props.
+  let noFitRenderer!: ReturnType<typeof create>;
   act(() => {
-    soleFitRenderer = create(createElement(DormantFutureMeasurementStep, soleFitProps()));
-  });
-  assert.equal(
-    soleFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
-    1,
-    "compact sole-fit UI appears for solo orders",
-  );
-  assert.match(headingText(soleFitRenderer.root), /Fit for measurements/);
-  act(() => {
-    soleFitRenderer.root
-      .findByProps({ "data-measurement-sole-fit-option": "female" })
-      .props.onClick();
-  });
-  assert.equal(soleFitChoice, "female");
-  act(() => {
-    soleFitRenderer.update(createElement(DormantFutureMeasurementStep, soleFitProps()));
-  });
-  assert.equal(
-    soleFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
-    1,
-    "compact sole-fit UI stays after a fit is chosen",
-  );
-  assert.equal(
-    soleFitRenderer.root.findByProps({ "data-measurement-sole-fit-option": "female" }).props[
-      "data-measurement-sole-fit-selected"
-    ],
-    "true",
-  );
-  assert.equal(
-    soleFitRenderer.root.findByProps({ "data-measurement-sole-fit-option": "male" }).props[
-      "data-measurement-sole-fit-selected"
-    ],
-    "false",
-  );
-  act(() => {
-    soleFitRenderer.root
-      .findByProps({ "data-measurement-sole-fit-option": "male" })
-      .props.onClick();
-  });
-  assert.equal(soleFitChoice, "male");
-  act(() => {
-    soleFitRenderer.update(createElement(DormantFutureMeasurementStep, soleFitProps()));
-  });
-  assert.equal(
-    soleFitRenderer.root.findByProps({ "data-measurement-sole-fit-option": "male" }).props[
-      "data-measurement-sole-fit-selected"
-    ],
-    "true",
-  );
-
-  let hiddenFitRenderer!: ReturnType<typeof create>;
-  act(() => {
-    hiddenFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+    noFitRenderer = create(createElement(DormantFutureMeasurementStep, {
       plan: shirtOnlyPlan,
       state: completeShirt,
       physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
-      multiPersonAssignmentActive: true,
-      showSoleFitControl: false,
-      soleFitContext: "female",
-      orderMeasurementsComplete: true,
+      multiPersonAssignmentActive: false,
+      showSoleFitControl: true,
+      soleFitContext: null,
+      onSetSoleFitContext: () => undefined,
+      orderMeasurementsComplete: false,
       onChange: () => undefined,
       onRouteChange: () => undefined,
       onBack: () => undefined,
       onContinue: () => undefined,
     }));
   });
-  assert.equal(
-    hiddenFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
-    0,
-    "compact sole-fit UI stays hidden for multi-person orders",
-  );
+  assert.equal(noFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length, 0);
+  assert.equal(/Fit for measurements|Male fit|Female fit|Fit conflict/.test(headingText(noFitRenderer.root)), false);
 }
-console.log("PASS: measurement step compact sole-fit UI");
+console.log("PASS: measurement step has no sole-fit UI");
 
 {
   // Dimension "Fit for measurements" is solo-only: hidden once Add a person opens the
@@ -647,34 +573,27 @@ console.log("PASS: measurement step compact sole-fit UI");
     soloFitRenderer.root
       .findAll((node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string")
       .every((node) => node.props["data-measurement-sole-fit-selected"] === "false");
-  assert.equal(soleFitCount(), 1, "solo strip shows the Dimension sole fit");
-  assert.equal(soleFitNoneSelected(), true, "no fit pre-selected");
+  assert.equal(soleFitCount(), 0, "solo strip shows no Dimension sole fit");
+  assert.equal(soleFitNoneSelected(), true);
   assert.equal(peopleUiReports.at(-1), false);
 
   act(() => {
     soloFitRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
   });
   assert.equal(peopleUiReports.at(-1), true);
-  assert.equal(soleFitCount(), 0, "Add a person hides the Dimension sole fit, even with one wearer");
+  assert.equal(soleFitCount(), 0);
   const cardRadios = soloFitRenderer.root
     .findByProps({ "data-wearer-people": "true" })
     .findAll((node) => node.type === "input" && node.props.type === "radio");
-  assert.equal(cardRadios.length, 2, "the person card's Male/Female is the fit UI now");
+  assert.equal(cardRadios.length, 0, "the person card has no Male/Female fit");
   const expandedText = headingText(soloFitRenderer.root as unknown as { children?: unknown });
-  assert.match(expandedText, /Fit for measurements/);
-  assert.match(expandedText, /Select a fit for You to see the right measurements\./);
-  assert.equal(
-    expandedText.includes("before assigning garments"),
-    false,
-    "one wearer has no garment checkboxes, so the fit hint does not mention them",
-  );
+  assert.equal(/Fit for measurements|Select a fit/.test(expandedText), false);
 
   act(() => {
     soloFitRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
   });
   assert.equal(peopleUiReports.at(-1), false);
-  assert.equal(soleFitCount(), 1, "Only for me brings the Dimension sole fit back");
-  assert.equal(soleFitNoneSelected(), true, "still nothing pre-selected after collapse");
+  assert.equal(soleFitCount(), 0, "Only for me shows no fit control");
 
   act(() => {
     soloFitRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
@@ -687,7 +606,7 @@ console.log("PASS: measurement step compact sole-fit UI");
   act(() => {
     removeSole.props.onClick({ stopPropagation() {} });
   });
-  assert.equal(soleFitCount(), 1, "sole Remove person (= For me) brings the Dimension sole fit back");
+  assert.equal(soleFitCount(), 0, "sole Remove person shows no fit control");
   act(() => {
     soloFitRenderer.unmount();
   });

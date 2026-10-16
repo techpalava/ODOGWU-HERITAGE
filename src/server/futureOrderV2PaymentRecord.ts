@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
+import { pendingPersonalizedKnownBaseIsAuthoritative } from "../utils/futureOrderPayableTotal.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import {
@@ -77,9 +79,21 @@ export interface FutureOrderV2PaymentRecordDependencies {
   ) => StripeEventSummary;
   /** Stripe TEST endpoint signing secret. Blank means webhooks fail closed. */
   readWebhookSecret?: () => string;
+  /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
+  readCatalog?: (db: unknown) => Promise<unknown>;
   now?: () => Date;
   log?: (message: string) => void;
 }
+
+const readCustomDetailCatalog = async (db: unknown): Promise<unknown[]> => {
+  if (!db || typeof (db as { collection?: unknown }).collection !== "function") {
+    return [];
+  }
+  const snapshot = await (db as Firestore).collection("custom_detail_catalog").get();
+  return snapshot.docs.map((entry) =>
+    attachCustomDetailCatalogDocumentId(entry.id, entry.data()),
+  );
+};
 
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const PAYMENT_INTENT_ID = /^pi_[A-Za-z0-9_]{1,255}$/;
@@ -284,6 +298,7 @@ export const saveVerifiedFutureOrderV2Payment = async ({
   readPaymentIntent,
   expectedOwnerUid,
   now,
+  catalog = [],
 }: {
   store: FutureOrderV2PaymentRecordStore;
   orderId: string;
@@ -291,6 +306,7 @@ export const saveVerifiedFutureOrderV2Payment = async ({
   readPaymentIntent: () => Promise<StripePaymentIntentSummary>;
   expectedOwnerUid: string | null;
   now: () => Date;
+  catalog?: unknown;
 }): Promise<FutureOrderV2PaymentSaveOutcome> => {
   const order = parsePersistedFutureOrderV2(await store.readOrder(orderId), orderId);
   if (order.status !== "valid") return { status: "order_not_found" };
@@ -325,6 +341,12 @@ export const saveVerifiedFutureOrderV2Payment = async ({
     return { status: "not_payable" };
   }
   const additionPayment = isPersonalizedAdditionPaymentReference(orderId, paymentReference);
+  if (
+    !additionPayment &&
+    !pendingPersonalizedKnownBaseIsAuthoritative(candidate, catalog ?? [])
+  ) {
+    return { status: "not_payable" };
+  }
   if (paymentIntent.status !== "succeeded") return { status: "not_succeeded" };
   if (
     paymentIntent.id !== paymentIntentId ||
@@ -401,6 +423,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
   const constructEvent = dependencies.constructEvent || constructStripeWebhookEvent;
   const now = dependencies.now || (() => new Date());
   const log = dependencies.log || ((message: string) => console.info(message));
+  const readCatalog = dependencies.readCatalog ?? readCustomDetailCatalog;
   const readSecret = () =>
     (dependencies.readSecretKey?.() ?? process.env.STRIPE_SECRET_KEY ?? "").trim();
   const readWebhookSecret = () =>
@@ -458,13 +481,15 @@ export const createFutureOrderV2PaymentRecordHandler = (
 
     let outcome: FutureOrderV2PaymentSaveOutcome;
     try {
+      const db = getServices().db;
       outcome = await saveVerifiedFutureOrderV2Payment({
-        store: createStore(getServices().db),
+        store: createStore(db),
         orderId,
         paymentIntentId: paymentIntent.id,
         readPaymentIntent: async () => paymentIntent,
         expectedOwnerUid: null,
         now,
+        catalog: await readCatalog(db),
       });
     } catch {
       return reply(500, {
@@ -554,6 +579,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
         readPaymentIntent: () => retrievePaymentIntent(paymentIntentId),
         expectedOwnerUid: token.uid,
         now,
+        catalog: await readCatalog(services.db),
       });
     } catch {
       log("future-order-v2-payment-record error=PAYMENT_RECORD_UNAVAILABLE");
