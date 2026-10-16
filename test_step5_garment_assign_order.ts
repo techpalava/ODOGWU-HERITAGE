@@ -15,10 +15,14 @@ import { createEmptyGarmentScopedCustomDetailInputs } from "./src/utils/garmentS
 import { projectFutureCustomDetailsCatalogue } from "./src/utils/futureCustomDetailsCatalogue";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
+  STEP_1_SELECTABLE_GARMENT_TYPES,
   getStep1GarmentDisplayLabel,
   orderByCustomerSelectableGarmentType,
+  orderByStep1GarmentDisplayOrder,
   resolveGarmentConstructionPricing,
 } from "./src/utils/garmentConstructionPricing";
+import { getCustomDetailsGarmentLabel } from "./src/utils/optionalShortsPresentation";
+import { PRICING_CURRENCY_SYMBOL } from "./src/utils/money";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import type { FabricGarmentType, StyleCategory } from "./src/types";
 
@@ -72,6 +76,51 @@ assert.ok(
 assert.deepEqual(
   CATALOGUE_ADDITIONAL_GARMENT_TYPES,
   CUSTOMER_SELECTABLE_GARMENT_TYPES.filter(isAdditionalGarmentType),
+);
+
+const step1Scrambled = [
+  { id: "skirt-b", garmentType: "skirt" as const },
+  { id: "other", garmentType: "other" as const },
+  { id: "shirt-b", garmentType: "shirt" as const },
+  { id: "long-skirt", garmentType: "long_skirt" as const },
+  { id: "dress", garmentType: "dress" as const },
+  { id: "shirt-a", garmentType: "shirt" as const },
+  { id: "kaftan", garmentType: "kaftan" as const },
+  { id: "gown", garmentType: "full_length_gown" as const },
+  { id: "nikka", garmentType: "standard_shorts" as const },
+  { id: "bum", garmentType: "bum_shorts" as const },
+  { id: "trouser", garmentType: "trouser" as const },
+];
+assert.deepEqual(
+  orderByStep1GarmentDisplayOrder(step1Scrambled, (item) => item.garmentType).map(
+    (item) => item.id,
+  ),
+  [
+    "shirt-b",
+    "shirt-a",
+    "kaftan",
+    "dress",
+    "gown",
+    "nikka",
+    "bum",
+    "trouser",
+    "skirt-b",
+    "long-skirt",
+    "other",
+  ],
+);
+assert.deepEqual(
+  STEP_1_SELECTABLE_GARMENT_TYPES.filter(isAdditionalGarmentType),
+  [
+    "shirt",
+    "kaftan",
+    "dress",
+    "full_length_gown",
+    "standard_shorts",
+    "bum_shorts",
+    "trouser",
+    "skirt",
+  ],
 );
 
 const style: StyleCategory = {
@@ -135,6 +184,16 @@ const selections = setDecorativeFeatureGarmentAssignment(
   true,
 );
 
+const additionalGarmentConstructionOptions = CATALOGUE_ADDITIONAL_GARMENT_TYPES.map(
+  (garmentType) => ({
+    garmentType,
+    construction: resolveGarmentConstructionPricing(
+      garmentType,
+      catalogInspection.activeOptions,
+    ),
+  }),
+);
+const addedGarmentTypes: string[] = [];
 let renderer!: ReturnType<typeof create>;
 act(() => {
   renderer = create(
@@ -151,7 +210,7 @@ act(() => {
       designSelections: selections,
       selectedStyle: style,
       additionalGarments: [],
-      additionalGarmentConstructionOptions: [],
+      additionalGarmentConstructionOptions,
       onSingleSelect: () => undefined,
       onClearSelection: () => undefined,
       onConstructionSelect: () => undefined,
@@ -165,7 +224,9 @@ act(() => {
       onMonogramTextChange: () => undefined,
       onAccessoryToggle: () => undefined,
       onClearAccessories: () => undefined,
-      onAddAdditionalGarment: () => undefined,
+      onAddAdditionalGarment: (garmentType) => {
+        addedGarmentTypes.push(garmentType);
+      },
       onBack: () => undefined,
       onContinue: () => undefined,
     }),
@@ -233,4 +294,42 @@ assert.match(monogramRows[1] || "", /Standard Shirt 2 - Added garment/);
 assert.match(monogramRows[0] || "", /1 × €12\.00/);
 assert.equal((monogramRows[1] || "").includes("€12.00"), false);
 
+const additionalSection = renderer.root.findByProps({
+  "data-custom-detail-section": "add-additional-garment",
+});
+const additionalButtons = additionalSection.findAll(
+  (node) => node.type === "button",
+);
+const additionalButtonText = (node: ReactTestInstance): string =>
+  textContent(node).replace(/\s+/g, " ").trim();
+const step1ButtonTypes = STEP_1_SELECTABLE_GARMENT_TYPES.filter(
+  isAdditionalGarmentType,
+);
+assert.deepEqual(
+  additionalButtons.map(additionalButtonText),
+  step1ButtonTypes.map((garmentType) => {
+    const construction = additionalGarmentConstructionOptions.find(
+      (option) => option.garmentType === garmentType,
+    )!.construction;
+    const price =
+      construction.status === "resolved"
+        ? `${PRICING_CURRENCY_SYMBOL}${construction.totalPrice.toFixed(2)}`
+        : "Price pending";
+    return `Add ${getCustomDetailsGarmentLabel(garmentType)}${price}`;
+  }),
+);
+assert.equal(
+  additionalButtons.some((button) => additionalButtonText(button).includes("Long Skirt")),
+  false,
+);
+const trouserButton = additionalButtons.find((button) =>
+  additionalButtonText(button).startsWith("Add Trouser"),
+);
+assert.ok(trouserButton);
+act(() => {
+  trouserButton.props.onClick({ currentTarget: trouserButton });
+});
+assert.deepEqual(addedGarmentTypes, ["trouser"]);
+
 console.log("PASS: Step 5 assign lists follow the Step 1 garment order");
+console.log("PASS: Add Additional Garment buttons follow the Step 1 card order");
