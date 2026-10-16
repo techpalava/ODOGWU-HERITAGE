@@ -81,6 +81,9 @@ export const DormantFutureAiTryOnStep = ({
     state: workflow,
     skipAllowed,
   });
+  // Personalized Additions is step 5 for every order path. It is not skipped.
+  const previousStageLabel = "Personalized Additions";
+  const nextStageLabel = "Measurement";
 
   return (
     <section
@@ -92,11 +95,11 @@ export const DormantFutureAiTryOnStep = ({
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioStepActions
           slot="header"
-          backDestination="Custom Details"
+          backDestination={previousStageLabel}
           onBack={onBack}
           className="mb-5"
           forward={{
-            destination: "Measurement",
+            destination: nextStageLabel,
             onClick: onContinue,
             disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
             locked: !(workflow.status === "completed" || workflow.status === "skipped"),
@@ -189,10 +192,10 @@ export const DormantFutureAiTryOnStep = ({
 
       <DesignStudioStepActions
         slot="footer"
-        backDestination="Custom Details"
+        backDestination={previousStageLabel}
         onBack={onBack}
         forward={{
-          destination: "Measurement",
+          destination: nextStageLabel,
           onClick: onContinue,
           disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
           locked: !(workflow.status === "completed" || workflow.status === "skipped"),
