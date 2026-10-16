@@ -1185,14 +1185,10 @@ const chiefAdaAgain = projectFutureDesignStudioSummary({
   additionalGarmentConstructionState: repeatedShirtConstruction.state,
   wearerRuntimes: chiefAdaRuntimes,
 });
-assert.equal(
-  chiefAdaSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")?.demographic,
-  "male",
-);
-assert.equal(
-  chiefAdaSummary.garmentSummary.find((row) => row.garmentKey === "additional:shirt:1")?.demographic,
-  "female",
-);
+// Measurement gender follows the Studio garment demographic, never a per-person fit.
+for (const row of chiefAdaSummary.garmentSummary) {
+  assert.equal(row.demographic, exactInput.garmentTypeSelection.demographic);
+}
 assert.deepEqual(
   chiefAdaAgain.garmentSummary.map((row) => [row.garmentKey, row.demographic, row.label]),
   chiefAdaSummary.garmentSummary.map((row) => [row.garmentKey, row.demographic, row.label]),
@@ -1233,8 +1229,8 @@ const chiefAdaMarkup = renderToStaticMarkup(
 );
 const standardShirtCard = chiefAdaMarkup.split(">Standard Shirt 2</h4>")[0] || "";
 const standardShirt2Card = chiefAdaMarkup.split(">Standard Shirt 2</h4>")[1] || "";
-assert.match(standardShirtCard, />Fit pending \|/);
-assert.match(standardShirt2Card, />Fit pending \|/);
+assert.doesNotMatch(standardShirtCard, /Fit pending/);
+assert.doesNotMatch(standardShirt2Card, /Fit pending/);
 assert.doesNotMatch(chiefAdaMarkup, />male \|/);
 assert.doesNotMatch(chiefAdaMarkup, />female \|/);
 assert.equal(chiefAdaMarkup.includes(">base:shirt<"), false);
@@ -2650,7 +2646,7 @@ assert.equal(
 );
 assert.equal(
   namedWearerSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")?.fitLabel,
-  "Male fit",
+  null,
 );
 assert.equal(
   namedWearerSummary.garmentSummary.find((row) => row.garmentKey === "additional:shirt:1")?.wearerLabel,
@@ -2658,7 +2654,7 @@ assert.equal(
 );
 assert.equal(
   namedWearerSummary.garmentSummary.find((row) => row.garmentKey === "additional:shirt:1")?.fitLabel,
-  "Female fit",
+  null,
 );
 const namedCards = renderSummaryGarmentCards(namedWearerSummary, {
   onEditGarment: () => {},
@@ -2708,15 +2704,9 @@ assert.deepEqual(
     chip.props["data-summary-garment-fit"],
     directText(chip),
   ]),
-  [
-    ["base:shirt", "Male fit"],
-    ["additional:shirt:1", "Female fit"],
-  ],
+  [],
 );
-assert.deepEqual(
-  namedCards.cards.map((card) => fabricCapacityMeta(card).split(" | ")[0]),
-  ["Male fit", "Female fit"],
-);
+assert.equal(namedCards.cards.every((card) => !/fit/i.test(fabricCapacityMeta(card))), true);
 assert.equal(
   namedCards.headings.some((heading) =>
     heading.findAll(
@@ -2774,8 +2764,8 @@ assert.deepEqual(
     row.fitLabel,
   ]),
   [
-    ["base:shirt", "Person 1", "Male fit"],
-    ["additional:shirt:1", "Person 2", "Male fit"],
+    ["base:shirt", "Person 1", null],
+    ["additional:shirt:1", "Person 2", null],
   ],
 );
 const blankCards = renderSummaryGarmentCards(blankNameSummary);
@@ -2794,10 +2784,7 @@ assert.deepEqual(
     chip.props["data-summary-garment-fit"],
     directText(chip),
   ]),
-  [
-    ["base:shirt", "Male fit"],
-    ["additional:shirt:1", "Male fit"],
-  ],
+  [],
 );
 assert.deepEqual(
   blankCards.headings.map((heading) => directText(heading)),
@@ -2820,7 +2807,7 @@ const soloWearerSummary = projectFutureDesignStudioSummary({
   ),
 });
 assert.equal(soloWearerSummary.garmentSummary[0]?.wearerLabel, "Amaka");
-assert.equal(soloWearerSummary.garmentSummary[0]?.fitLabel, "Female fit");
+assert.equal(soloWearerSummary.garmentSummary[0]?.fitLabel, null);
 const soloCards = renderSummaryGarmentCards(soloWearerSummary);
 assert.equal(soloCards.cards.length, 1);
 assert.deepEqual(
@@ -2835,9 +2822,9 @@ assert.deepEqual(
     chip.props["data-summary-garment-fit"],
     directText(chip),
   ]),
-  [["base:shirt", "Female fit"]],
+  [],
 );
-assert.equal(fabricCapacityMeta(soloCards.cards[0]).split(" | ")[0], "Female fit");
+assert.equal(/fit/i.test(fabricCapacityMeta(soloCards.cards[0])), false);
 assert.equal(directText(soloCards.headings[0]), "Standard Shirt");
 act(() => {
   soloCards.renderer.unmount();
@@ -2851,7 +2838,7 @@ const soloBlankNameSummary = projectFutureDesignStudioSummary({
   ),
 });
 assert.equal(soloBlankNameSummary.garmentSummary[0]?.wearerLabel, "Person 1");
-assert.equal(soloBlankNameSummary.garmentSummary[0]?.fitLabel, "Male fit");
+assert.equal(soloBlankNameSummary.garmentSummary[0]?.fitLabel, null);
 const soloBlankCards = renderSummaryGarmentCards(soloBlankNameSummary);
 assert.deepEqual(
   soloBlankCards.wearerChips.map((chip) => directText(chip)),
@@ -2859,7 +2846,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   soloBlankCards.fitChips.map((chip) => directText(chip)),
-  ["Male fit"],
+  [],
 );
 act(() => {
   soloBlankCards.renderer.unmount();
@@ -2880,7 +2867,7 @@ assert.deepEqual(
   ["Amaka"],
 );
 assert.equal(soloFitUnsetCards.fitChips.length, 0);
-assert.equal(fabricCapacityMeta(soloFitUnsetCards.cards[0]).split(" | ")[0], "Fit pending");
+assert.equal(/fit/i.test(fabricCapacityMeta(soloFitUnsetCards.cards[0])), false);
 act(() => {
   soloFitUnsetCards.renderer.unmount();
 });
@@ -2892,7 +2879,7 @@ const soloUnisexSummary = projectFutureDesignStudioSummary({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(soloUnisexSummary.garmentSummary[0]?.fitLabel, "Unisex fit");
+assert.equal(soloUnisexSummary.garmentSummary[0]?.fitLabel, null);
 
 const unassignedSoloSummary = projectFutureDesignStudioSummary({
   ...exactInput,
@@ -2906,7 +2893,7 @@ assert.equal(unassignedSoloSummary.garmentSummary[0]?.fitLabel, null);
 const unassignedSoloCards = renderSummaryGarmentCards(unassignedSoloSummary);
 assert.equal(unassignedSoloCards.wearerChips.length, 0);
 assert.equal(unassignedSoloCards.fitChips.length, 0);
-assert.equal(fabricCapacityMeta(unassignedSoloCards.cards[0]).split(" | ")[0], "Fit pending");
+assert.equal(/fit/i.test(fabricCapacityMeta(unassignedSoloCards.cards[0])), false);
 act(() => {
   unassignedSoloCards.renderer.unmount();
 });
@@ -2928,7 +2915,7 @@ assert.equal(
 assert.equal(
   partialAssignmentSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")
     ?.fitLabel,
-  "Male fit",
+  null,
 );
 assert.equal(
   partialAssignmentSummary.garmentSummary.find(
@@ -2955,18 +2942,9 @@ assert.deepEqual(
     chip.props["data-summary-garment-fit"],
     directText(chip),
   ]),
-  [["base:shirt", "Male fit"]],
+  [],
 );
-assert.deepEqual(
-  partialCards.cards.map((card) => [
-    card.props["data-summary-garment-card"],
-    fabricCapacityMeta(card).split(" | ")[0],
-  ]),
-  [
-    ["base:shirt", "Male fit"],
-    ["additional:shirt:1", "Fit pending"],
-  ],
-);
+assert.equal(partialCards.cards.every((card) => !/fit/i.test(fabricCapacityMeta(card))), true);
 act(() => {
   partialCards.renderer.unmount();
 });
