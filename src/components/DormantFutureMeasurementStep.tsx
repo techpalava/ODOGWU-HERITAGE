@@ -626,6 +626,23 @@ const MeasurementSection = ({
   );
 };
 
+const MEASUREMENT_GUIDE_FLASH_MS = 800;
+const MEASUREMENT_GUIDE_FLASH_CLASS =
+  "ring-4 ring-heritage-gold border-heritage-gold motion-safe:animate-measurement-guide-flash";
+
+const measurementGuidePrefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const isTypingIntoField = (): boolean => {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement as HTMLElement | null;
+  if (!active) return false;
+  if (active.tagName === "TEXTAREA" || active.isContentEditable) return true;
+  return active.tagName === "INPUT" && (active as HTMLInputElement).type !== "radio";
+};
+
 export const DormantFutureMeasurementStep = ({
   plan,
   state,
@@ -665,6 +682,39 @@ export const DormantFutureMeasurementStep = ({
   const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
   const previousSelectedRemainingRef = useRef<number | null>(null);
   const previousSharedRemainingRef = useRef<number | null>(null);
+  // Guide cue: only a customer click on an Option 1 / Option 2 radio requests it (never mount/restore).
+  const [guideCueRequest, setGuideCueRequest] = useState(0);
+  const [guideCuePhase, setGuideCuePhase] = useState<"idle" | "flash" | "beam">("idle");
+  const [guideCueTarget, setGuideCueTarget] = useState<"form" | "options">("form");
+  const measurementGuideRef = useRef<HTMLElement | null>(null);
+  const measurementOptionsRef = useRef<HTMLElement | null>(null);
+  const requestGuideCue = (target: "form" | "options") => {
+    setGuideCueTarget(target);
+    setGuideCueRequest((count) => count + 1);
+  };
+  useEffect(() => {
+    if (guideCueRequest === 0) return;
+    const guide =
+      guideCueTarget === "options" ? measurementOptionsRef.current : measurementGuideRef.current;
+    const reducedMotion = measurementGuidePrefersReducedMotion();
+    if (guide && typeof guide.scrollIntoView === "function") {
+      guide.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    }
+    if (guide && typeof guide.focus === "function" && !isTypingIntoField()) {
+      try {
+        guide.focus({ preventScroll: true });
+      } catch {
+        // Focus is a courtesy; never block the cue.
+      }
+    }
+    if (reducedMotion) {
+      setGuideCuePhase("idle");
+      return;
+    }
+    setGuideCuePhase("flash");
+    const timer = setTimeout(() => setGuideCuePhase("beam"), MEASUREMENT_GUIDE_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [guideCueRequest, guideCueTarget]);
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
@@ -1028,6 +1078,8 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToSummary,
             locked: !canContinueToSummary,
+            onLockedClick: () =>
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
             ariaLabel: "Continue to Summary",
           }}
         />
@@ -1155,8 +1207,18 @@ export const DormantFutureMeasurementStep = ({
       </header>
 
       <section
-        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
+        ref={measurementOptionsRef}
+        tabIndex={-1}
+        className={withMeasurementGuideBeam(
+          `scroll-mt-24 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm outline-none transition sm:p-5${
+            guideCueTarget === "options" && guideCuePhase === "flash" ? ` ${MEASUREMENT_GUIDE_FLASH_CLASS}` : ""
+          }`,
+          guideCueTarget === "options" && guideCuePhase === "beam",
+        )}
         data-measurement-option-section="risk"
+        data-measurement-guide-flash={
+          guideCueTarget === "options" && guideCuePhase === "flash" ? "true" : undefined
+        }
       >
         <header data-measurement-risk-heading="true">
           <h3
@@ -1217,6 +1279,7 @@ export const DormantFutureMeasurementStep = ({
                     onChange={() => {
                       if (hydrationInvalid || unavailable) return;
                       onRouteChange(route.id);
+                      requestGuideCue("form");
                     }}
                     className="mt-1 size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                   />
@@ -1293,6 +1356,7 @@ export const DormantFutureMeasurementStep = ({
                 onChange={() => {
                   if (hydrationInvalid) return;
                   onRouteChange(MEASUREMENT_SAMPLE_CLOTH_METHOD);
+                  requestGuideCue("form");
                 }}
                 className="mt-1 size-4 shrink-0 accent-heritage-green"
               />
@@ -1394,7 +1458,20 @@ export const DormantFutureMeasurementStep = ({
       <section
         aria-live="polite"
         data-measurement-form={selectedMethod}
-        className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 sm:p-5"
+        ref={measurementGuideRef}
+        tabIndex={-1}
+        data-measurement-guide-flash={
+          guideCueTarget === "form" && guideCuePhase === "flash" ? "true" : undefined
+        }
+        data-measurement-guide-beam={
+          guideCueTarget === "form" && guideCuePhase === "beam" ? "true" : undefined
+        }
+        className={withMeasurementGuideBeam(
+          `scroll-mt-24 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 outline-none transition sm:p-5${
+            guideCueTarget === "form" && guideCuePhase === "flash" ? ` ${MEASUREMENT_GUIDE_FLASH_CLASS}` : ""
+          }`,
+          guideCueTarget === "form" && guideCuePhase === "beam",
+        )}
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -1706,6 +1783,8 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToSummary,
             locked: !canContinueToSummary,
+            onLockedClick: () =>
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
             ariaLabel: "Continue to Summary",
             "aria-describedby": "measurement-risk-selection-notice",
           }}

@@ -334,8 +334,110 @@ assert.equal(invalidRenderer.root.findAllByProps({ "data-measurement-form": "sam
 const continueButton = invalidRenderer.root.findAllByType("button").find((button) =>
   collectText(button).includes("Continue to Summary"),
 );
-assert.equal(continueButton?.props.disabled, true);
+assert.equal(continueButton?.props["aria-disabled"], "true");
 assert.equal(invalidRenderer.root.findByProps({ type: "radio", value: "low_risk" }).props.disabled, true);
 assert.equal(invalidRenderer.root.findByProps({ type: "radio", value: "sample_cloth" }).props.disabled, true);
 
+
+// Guide cue: clicking an Option 1 / Option 2 radio (or locked Continue) scrolls to the guide,
+// flashes its gold border, then starts the existing beam. Nothing fires on mount.
+const cueCalls: string[] = [];
+const createNodeMock = (element: { props: Record<string, unknown> }) => {
+  const name = element.props["data-measurement-form"]
+    ? "form"
+    : element.props["data-measurement-option-section"] === "risk"
+      ? "options"
+      : "other";
+  return {
+    scrollIntoView: (options: ScrollIntoViewOptions) => cueCalls.push(`scroll:${name}:${options.behavior}`),
+    focus: () => cueCalls.push(`focus:${name}`),
+  };
+};
+const findLockedContinue = (target: ReactTestRenderer) =>
+  target.root.findAllByType("button").filter((button) =>
+    button.props["aria-label"] === "Continue to Summary",
+  );
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+let cueRenderer!: ReactTestRenderer;
+act(() => {
+  cueRenderer = create(createElement(Harness, {}), { createNodeMock } as never);
+});
+assert.deepEqual(cueCalls, [], "no scroll or focus on mount");
+assert.equal(cueRenderer.root.findAllByProps({ "data-measurement-guide-flash": "true" }).length, 0);
+
+// Locked Continue with no method: jump to Option 1 options area.
+const lockedButtons = findLockedContinue(cueRenderer);
+assert.ok(lockedButtons.length > 0);
+for (const button of lockedButtons) {
+  assert.equal(button.props.disabled, undefined);
+  assert.equal(button.props["aria-disabled"], "true");
+}
+act(() => {
+  lockedButtons[0].props.onClick();
+});
+assert.deepEqual(cueCalls, ["scroll:options:smooth", "focus:options"]);
+assert.equal(
+  cueRenderer.root.findByProps({ "data-measurement-option-section": "risk" })
+    .props["data-measurement-guide-flash"],
+  "true",
+);
+
+// Option click: scroll to the revealed form, flash first, then beam.
+cueCalls.length = 0;
+selectMethod(cueRenderer, "low_risk");
+assert.deepEqual(cueCalls, ["scroll:form:smooth", "focus:form"]);
+const flashingForm = cueRenderer.root.findByProps({ "data-measurement-form": "low_risk" });
+assert.equal(flashingForm.props["data-measurement-guide-flash"], "true");
+assert.equal(flashingForm.props["data-measurement-guide-beam"], undefined);
+assert.match(flashingForm.props.className, /ring-heritage-gold/);
+await act(async () => {
+  await sleep(900);
+});
+const beamingForm = cueRenderer.root.findByProps({ "data-measurement-form": "low_risk" });
+assert.equal(beamingForm.props["data-measurement-guide-flash"], undefined);
+assert.equal(beamingForm.props["data-measurement-guide-beam"], "true");
+assert.match(beamingForm.props.className, /animate-step-guide-beam/);
+
+// Locked Continue after a method is chosen: back to the form guide.
+cueCalls.length = 0;
+act(() => {
+  findLockedContinue(cueRenderer)[0].props.onClick();
+});
+assert.deepEqual(cueCalls, ["scroll:form:smooth", "focus:form"]);
+
+// Restored state with a method: no cue on mount.
+cueCalls.length = 0;
+act(() => {
+  create(
+    createElement(Harness, {
+      initialState: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "sample_cloth"),
+    }),
+    { createNodeMock } as never,
+  );
+});
+assert.deepEqual(cueCalls, [], "restored method must not scroll or flash");
+
+// Reduced motion: instant scroll, focus, no flash/beam.
+const originalWindow = (globalThis as { window?: unknown }).window;
+(globalThis as { window?: unknown }).window = {
+  matchMedia: (query: string) => ({ matches: query.includes("reduce") }),
+};
+try {
+  let reducedRenderer!: ReactTestRenderer;
+  act(() => {
+    reducedRenderer = create(createElement(Harness, {}), { createNodeMock } as never);
+  });
+  cueCalls.length = 0;
+  selectMethod(reducedRenderer, "medium_risk");
+  assert.deepEqual(cueCalls, ["scroll:form:auto", "focus:form"]);
+  const reducedForm = reducedRenderer.root.findByProps({ "data-measurement-form": "medium_risk" });
+  assert.equal(reducedForm.props["data-measurement-guide-flash"], undefined);
+  assert.equal(reducedForm.props["data-measurement-guide-beam"], undefined);
+} finally {
+  (globalThis as { window?: unknown }).window = originalWindow;
+}
+
+act(() => {
+  cueRenderer.unmount();
+});
 console.log("PASS: sample cloth two-section layout, laid-flat labels, and single active method");

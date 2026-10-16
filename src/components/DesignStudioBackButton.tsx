@@ -81,6 +81,8 @@ export interface DesignStudioForwardButtonProps {
   onClick?: () => void;
   disabled?: boolean;
   locked?: boolean;
+  /** When locked, keep the button clickable (aria-disabled) and call this instead of onClick. */
+  onLockedClick?: () => void;
   icon?: DesignStudioForwardIcon;
   ariaLabel?: string;
   describedBy?: string;
@@ -94,6 +96,7 @@ export const DesignStudioForwardButton = ({
   onClick,
   disabled = false,
   locked = false,
+  onLockedClick,
   icon = "arrow",
   ariaLabel,
   describedBy,
@@ -104,6 +107,7 @@ export const DesignStudioForwardButton = ({
   const secondary = label || !destination ? null : `to ${destination}`;
   const primary = label ?? "Continue";
   const accessible = ariaLabel ?? (destination ? `Continue to ${destination}` : primary);
+  const lockedClickable = locked && disabled && Boolean(onLockedClick);
   const Icon = locked || icon === "lock"
     ? LockKeyhole
     : icon === "package"
@@ -113,12 +117,13 @@ export const DesignStudioForwardButton = ({
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
+      onClick={lockedClickable ? onLockedClick : onClick}
+      disabled={lockedClickable ? undefined : disabled}
+      aria-disabled={lockedClickable ? "true" : undefined}
       aria-label={accessible}
       aria-describedby={ariaDescribedBy || describedBy}
       data-studio-nav="forward"
-      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none ${className}`}
+      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${className}`}
     >
       <StudioNavLabel primary={primary} secondary={secondary} emphasis="outline" />
       <Icon aria-hidden="true" size={16} className="shrink-0" />
