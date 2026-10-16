@@ -78,10 +78,13 @@ export interface AppState {
       | "design"
       | "dashboard"
       | "about"
-    | "gallery"
-    | "database"
-    | "custom-order" | "private-batch-setup" | "login" | "reviews",
+      | "gallery"
+      | "database"
+      | "custom-order" | "private-batch-setup" | "login" | "reviews",
   ) => void;
+  /** Incremented by the site nav. App decides whether Design Studio may open. */
+  designStudioNavRequest: number;
+  requestDesignStudioFromNav: () => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
   notification: { message: string; type: "success" | "info" } | null;
@@ -345,6 +348,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessionStorage.removeItem(`asml_scroll_position_${tab}`);
     }
     set({ activeTab: tab });
+  },
+  designStudioNavRequest: 0,
+  requestDesignStudioFromNav: () => {
+    set({ designStudioNavRequest: get().designStudioNavRequest + 1 });
   },
   pendingRedirect: null,
   setPendingRedirect: (redirect) => set({ pendingRedirect: redirect }),
