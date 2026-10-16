@@ -1705,6 +1705,7 @@ export const DormantFutureCustomDetailsStep = ({
         <div className="min-w-0 space-y-4">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
+          slot="header"
           backDestination={previousStageLabel}
           onBack={onBack}
           className="mb-3"
@@ -2413,6 +2414,7 @@ export const DormantFutureCustomDetailsStep = ({
       </div>
 
       <DesignStudioStepActions
+        slot="footer"
         backDestination={previousStageLabel}
         onBack={onBack}
         forward={{

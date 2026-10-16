@@ -91,6 +91,7 @@ export const DormantFutureAiTryOnStep = ({
     >
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioStepActions
+          slot="header"
           backDestination="Custom Details"
           onBack={onBack}
           className="mb-5"
@@ -187,6 +188,7 @@ export const DormantFutureAiTryOnStep = ({
       </div>
 
       <DesignStudioStepActions
+        slot="footer"
         backDestination="Custom Details"
         onBack={onBack}
         forward={{

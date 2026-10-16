@@ -431,6 +431,7 @@ export const GarmentTypeStep = ({
     >
       <div className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7 lg:col-span-8">
         <DesignStudioStepActions
+          slot="header"
           backDisabled
           className="mb-5"
           note={
@@ -707,6 +708,7 @@ export const GarmentTypeStep = ({
             className="mt-6"
           >
             <DesignStudioStepActions
+              slot="footer"
               backDisabled
               forward={{
                 destination: "Fabric",

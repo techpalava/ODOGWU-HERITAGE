@@ -10,7 +10,7 @@ import {
   Trash2,
   Truck,
 } from "lucide-react";
-import { DesignStudioBackButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -724,9 +724,10 @@ export const DormantFuturePaymentReviewStep = ({
       className="mx-auto min-w-0 max-w-6xl space-y-5 font-sans [overflow-wrap:anywhere]"
     >
       <header className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="Delivery & Pickup"
-          onClick={onBack}
+        <DesignStudioStepActions
+          slot="header"
+          backDestination="Delivery & Pickup"
+          onBack={onBack}
           className="mb-5"
         />
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1448,6 +1449,7 @@ export const DormantFuturePaymentReviewStep = ({
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
+          slot="footer"
           backDestination="Delivery & Pickup"
           onBack={onBack}
         />

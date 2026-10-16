@@ -2186,6 +2186,7 @@ export const DormantFutureFabricStep = ({
         <div className="min-w-0 space-y-6">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioStepActions
+          slot="header"
           backDestination="Garment Type"
           onBack={onBack}
           className="mb-5"
@@ -2968,6 +2969,7 @@ export const DormantFutureFabricStep = ({
         data-testid={showContinueAction ? "future-fabric-continue-action" : undefined}
       >
         <DesignStudioStepActions
+          slot="footer"
           backDestination="Garment Type"
           onBack={onBack}
           forward={showContinueAction ? {
