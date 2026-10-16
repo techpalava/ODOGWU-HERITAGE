@@ -838,7 +838,11 @@ assert.equal(
     null,
     "male demographic must not pre-select the sole fit",
   );
-  assert.equal(softLockPrevented.assignmentByGarmentKey["base:shirt"], undefined);
+  assert.equal(
+    softLockPrevented.assignmentByGarmentKey["base:shirt"],
+    "wearer-soft-lock",
+    "fit retired: the sole person auto-assigns without any fit choice",
+  );
   const soleFitChosen = setWearerFitContext(softLockPrevented, "wearer-soft-lock", "male");
   if (soleFitChosen.status !== "updated") throw new Error("expected sole fit choice");
   const afterSoleFitChoice = reconcileWearerOrder({
@@ -862,9 +866,13 @@ assert.equal(
     garmentTypeSelection: shirtSelection,
   });
   assert.equal(nullDemographic.wearers[0]?.fitContext, null);
-  assert.equal(nullDemographic.assignmentByGarmentKey["base:shirt"], undefined);
+  assert.equal(
+    nullDemographic.assignmentByGarmentKey["base:shirt"],
+    nullDemographic.wearers[0]?.wearerId,
+    "fit retired: null demographic still auto-assigns the sole person",
+  );
 }
-console.log("PASS: sole wearer fit waits for the customer, then auto-assigns");
+console.log("PASS: sole wearer auto-assigns without a fit choice (fit retired)");
 
 const twoGarmentPlan = planMeasurementRequirements({
   route: "low_risk",

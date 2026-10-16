@@ -2497,11 +2497,11 @@ const nolLine = constructionLine(namedWearers.view, "base:shirt");
 const pioLine = constructionLine(namedWearers.view, "base:kaftan");
 assert.equal(nolLine?.label, "Standard Length Shirt, Short Sleeve");
 assert.equal(nolLine?.wearerLabel, "Nol");
-assert.equal(nolLine?.fitLabel, "Male fit");
+assert.equal(nolLine?.fitLabel, undefined);
 assert.equal(nolLine?.supportingDetail, undefined);
 assert.equal(pioLine?.label, "Long Length Shirt, Short Sleeve");
 assert.equal(pioLine?.wearerLabel, "Pio");
-assert.equal(pioLine?.fitLabel, "Male fit");
+assert.equal(pioLine?.fitLabel, undefined);
 assert.equal(
   section(namedWearers.view, "fabrics").lines.every(
     (line) => line.wearerLabel == null && line.fitLabel == null,
@@ -2531,9 +2531,9 @@ const blankWearers = buildAuthority({
   ),
 });
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, "Person 1");
-assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, "Male fit");
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, "Person 2");
-assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, "Male fit");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, undefined);
 assert.equal(
   constructionLine(blankWearers.view, "base:shirt")?.label,
   "Standard Length Shirt, Short Sleeve",
@@ -2562,7 +2562,7 @@ assert.equal(
   "Standard Length Shirt, Short Sleeve",
 );
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, "Amaka");
-assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, "Female fit");
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, undefined);
 assert.equal(
   section(soloWearer.view, "fabrics").lines.every(
     (line) => line.wearerLabel == null && line.fitLabel == null,
@@ -2606,7 +2606,7 @@ const unassignedSecond = buildAuthority({
   ),
 });
 assert.equal(constructionLine(unassignedSecond.view, "base:shirt")?.wearerLabel, "Nol");
-assert.equal(constructionLine(unassignedSecond.view, "base:shirt")?.fitLabel, "Male fit");
+assert.equal(constructionLine(unassignedSecond.view, "base:shirt")?.fitLabel, undefined);
 assert.equal(constructionLine(unassignedSecond.view, "base:kaftan")?.wearerLabel, undefined);
 assert.equal(constructionLine(unassignedSecond.view, "base:kaftan")?.fitLabel, undefined);
 

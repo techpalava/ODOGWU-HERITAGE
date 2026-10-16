@@ -324,7 +324,6 @@ import {
   removeGarmentFromWearerOrder,
   renameWearer,
   reorderWearers,
-  resolveMeasurementFitConflict,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
   wearerAssignmentLabel,
@@ -1098,8 +1097,8 @@ export default function DesignStudioView({
   const [futureMeasurementState, setFutureMeasurementState] =
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
-  /** People panel open (Add a person / 2+ people). The Dimension sole fit is solo-only. */
-  const [measurementPeopleUiOpen, setMeasurementPeopleUiOpen] = useState(false);
+  /** People panel open (Add a person / 2+ people). */
+  const [, setMeasurementPeopleUiOpen] = useState(false);
   /**
    * Set when Step 7 Add Garment leaves Measurement for the Step 5 Additional
    * Garment chooser, so the remounted people panel opens expanded on return.
@@ -3620,7 +3619,6 @@ export default function DesignStudioView({
   const measurementWearerAssignmentPresentation =
     resolveWearerAssignmentPresentation({
       wearerCount: wearerOrderForPlan.wearers.length,
-      soleWearerFitContext: wearerOrderForPlan.wearers[0]?.fitContext ?? null,
     });
   const measurementActiveWearerLabel =
     activeWearer &&
@@ -3638,17 +3636,6 @@ export default function DesignStudioView({
       yourGarmentsConstructionDisplayLabelByGarmentKey[garmentKey] ||
       (garment ? getStep1GarmentDisplayLabel(garment.garmentType) : garmentKey)
     );
-  });
-  const measurementFitConflict = resolveMeasurementFitConflict({
-    order: wearerOrderForPlan,
-    garments: futureMeasurementPhysicalGarments,
-    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-    additionalGarmentConstructions: designSelections.additionalGarmentConstructions,
-    garmentLabel: (garment) =>
-      yourGarmentsConstructionDisplayLabelByGarmentKey[garment.garmentKey] ||
-      getStep1GarmentDisplayLabel(garment.garmentType),
-    wearerLabel: (wearer) =>
-      labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
   });
   // Measuring-for chips: every person, in card order, with the card labels.
   const measurementWearerChips = measurementActiveWearerLabel
@@ -10640,10 +10627,6 @@ export default function DesignStudioView({
             const result = reorderWearers(wearerOrderForPlan, wearerIds);
             if (result.status === "updated") setWearerOrder(result.order);
           }}
-          onSetFitContext={(wearerId, fitContext) => {
-            // Unassigns garments the new fit cannot wear (fields stripped, body kept).
-            measurementGarmentToggleHandlers.setFit(wearerId, fitContext);
-          }}
           onDeleteWearer={(wearerId) => {
             const result = deleteWearer(wearerOrderForPlanRef.current, wearerId);
             if (result.status === "updated") {
@@ -10737,19 +10720,6 @@ export default function DesignStudioView({
           activeWearerId={activeWearer?.wearerId || null}
           onSelectWearer={handleSelectMeasurementWearer}
           nextIncompleteWearer={measurementNextIncompleteWearer}
-          fitConflictMessage={measurementFitConflict?.message ?? null}
-          fitConflictGarmentKeys={measurementFitConflict?.garmentKeys ?? []}
-          showSoleFitControl={
-            wearerOrderForPlan.wearers.length === 1 && !measurementPeopleUiOpen
-          }
-          soleFitContext={wearerOrderForPlan.wearers[0]?.fitContext ?? null}
-          onSetSoleFitContext={(fitContext) => {
-            const sole = wearerOrderForPlan.wearers[0];
-            if (!sole) return;
-            // Same path as the person-card Fit: ineligible garments are released,
-            // then Sole auto-assign re-runs for the still-eligible ones.
-            measurementGarmentToggleHandlers.setFit(sole.wearerId, fitContext);
-          }}
           onGoToWearer={handleSelectMeasurementWearer}
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
