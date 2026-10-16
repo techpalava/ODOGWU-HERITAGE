@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { DormantFutureShippingStep } from "./src/components/DormantFutureShippingStep";
 import type { FutureShippingStateV1 } from "./src/types";
 import {
@@ -795,8 +796,12 @@ assert.match(stepperSource, /canEnterShipping/);
 assert.match(shippingSource, /placeholder="\+31 6 12345678"/);
 assert.match(shippingSource, /Include country code for WhatsApp\./);
 assert.match(shippingSource, /future-shipping-phone-hint/);
-assert.match(shippingSource, /errorFor\("phone"\)/);
-assert.match(shippingSource, /errorFor\("email"\)/);
+assert.match(shippingSource, /shownError\("phone"\)/);
+assert.match(shippingSource, /shownError\("email"\)/);
+assert.match(shippingSource, /revealField\("phone"\)/);
+assert.match(shippingSource, /revealField\("email"\)/);
+assert.match(shippingSource, /reviewAttempted/);
+assert.match(shippingSource, /focusShippingField\(firstInvalid\)/);
 assert.match(shippingSource, /Delivery &amp; Pickup/);
 assert.match(shippingSource, /Pick Up in Eindhoven/);
 assert.match(shippingSource, /Deliver to an Address/);
@@ -965,30 +970,32 @@ const invalidPhoneMarkup = renderShippingStep(
   reconcilePickupContact({ phone: "abc" }),
   false,
 );
-assert.match(invalidPhoneMarkup, /id="future-shipping-phone-error"/);
-assert.match(
-  invalidPhoneMarkup,
-  /aria-describedby="future-shipping-phone-hint future-shipping-phone-error"/,
+assert.equal(invalidPhoneMarkup.includes("future-shipping-phone-error"), false);
+assert.equal(invalidPhoneMarkup.includes('aria-invalid="true"'), false);
+assert.equal(
+  invalidPhoneMarkup.includes("Enter a valid WhatsApp number"),
+  false,
 );
-assert.match(invalidPhoneMarkup, /aria-invalid="true"/);
-assert.match(
-  invalidPhoneMarkup,
-  /Enter a valid WhatsApp number with country code \(e\.g\. \+31 6 12345678\)\./,
-);
+assert.match(invalidPhoneMarkup, /id="future-shipping-phone-hint"/);
 const blockedPhoneReviewButtons = reviewOrderButtons(invalidPhoneMarkup);
 assert.ok(blockedPhoneReviewButtons.length >= 1);
 assert.ok(
-  blockedPhoneReviewButtons.every((button) => button.includes('disabled=""')),
+  blockedPhoneReviewButtons.every((button) => button.includes('aria-disabled="true"')),
+);
+assert.ok(
+  blockedPhoneReviewButtons.every(
+    (button) => !/(^|\s)disabled(=|\s|>)/.test(button),
+  ),
+  "a locked Review Order stays clickable so the attempt can reveal errors",
 );
 
 const invalidEmailMarkup = renderShippingStep(invalidEmail, false);
-assert.match(invalidEmailMarkup, /id="future-shipping-email-error"/);
-assert.match(invalidEmailMarkup, /aria-describedby="future-shipping-email-error"/);
-assert.match(invalidEmailMarkup, /Enter a valid email address\./);
+assert.equal(invalidEmailMarkup.includes("future-shipping-email-error"), false);
+assert.equal(invalidEmailMarkup.includes("Enter a valid email address."), false);
 const blockedEmailReviewButtons = reviewOrderButtons(invalidEmailMarkup);
 assert.ok(blockedEmailReviewButtons.length >= 1);
 assert.ok(
-  blockedEmailReviewButtons.every((button) => button.includes('disabled=""')),
+  blockedEmailReviewButtons.every((button) => button.includes('aria-disabled="true"')),
 );
 
 const deliveryMarkup = renderShippingStep(deliveryClearsPickup, true);
@@ -1092,5 +1099,128 @@ assert.match(
   communityPickupMarkup,
   /Standard Shipping to Eindhoven is already included\./,
 );
+
+const focusedShippingFields: string[] = [];
+const previousDocument = globalThis.document;
+globalThis.document = {
+  getElementById(id: string) {
+    return {
+      focus() {
+        focusedShippingFields.push(id);
+      },
+      scrollIntoView() {
+        return undefined;
+      },
+    } as unknown as HTMLElement;
+  },
+} as unknown as Document;
+
+const mountShipping = (
+  resolution: ReturnType<typeof reconcileFutureShippingState>,
+  canContinueToReview: boolean,
+) => {
+  let continued = false;
+  let renderer: ReactTestRenderer | null = null;
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureShippingStep, {
+        state: resolution.state,
+        resolution,
+        selectedDesignPrice: 65,
+        garmentCount: 1,
+        orderType: "Individual",
+        onChange: () => undefined,
+        onRefreshQuote: () => undefined,
+        onBack: () => undefined,
+        canContinueToReview,
+        onContinueToReview: () => {
+          continued = true;
+        },
+      }),
+    );
+  });
+  if (!renderer) throw new Error("Expected the shipping step to render.");
+  const view = renderer;
+  const text = () => JSON.stringify(view.toJSON());
+  const reviewButtons = () =>
+    view.root.findAll((node) => node.props?.["aria-label"] === "Review Order");
+  return {
+    text,
+    reviewButtons,
+    continued: () => continued,
+    blur(id: string) {
+      const field = view.root.findAll((node) => node.props?.id === id)[0];
+      if (!field) throw new Error(`Missing shipping field ${id}`);
+      act(() => {
+        field.props.onBlur();
+      });
+    },
+  };
+};
+
+const freshShipping = mountShipping(empty, false);
+assert.equal(freshShipping.text().includes("Choose pickup or delivery."), false);
+assert.equal(freshShipping.text().includes("Enter the recipient's full name."), false);
+focusedShippingFields.length = 0;
+act(() => {
+  freshShipping.reviewButtons()[0]?.props.onClick();
+});
+assert.match(freshShipping.text(), /Choose pickup or delivery\./);
+assert.equal(focusedShippingFields[0], "future-shipping-fulfilment");
+assert.equal(freshShipping.continued(), false);
+
+const untouchedPickup = mountShipping(incompletePickup, false);
+assert.equal(untouchedPickup.text().includes("Enter the recipient's full name."), false);
+assert.equal(untouchedPickup.text().includes("Enter a phone contact."), false);
+assert.equal(untouchedPickup.text().includes("Enter an email address."), false);
+focusedShippingFields.length = 0;
+act(() => {
+  untouchedPickup.reviewButtons()[0]?.props.onClick();
+});
+assert.match(untouchedPickup.text(), /Enter the recipient's full name\./);
+assert.match(untouchedPickup.text(), /Enter a phone contact\./);
+assert.match(untouchedPickup.text(), /Enter an email address\./);
+assert.equal(focusedShippingFields[0], "future-shipping-full-name");
+assert.equal(untouchedPickup.continued(), false);
+
+const blurredPhone = mountShipping(reconcilePickupContact({ phone: "abc" }), false);
+assert.equal(blurredPhone.text().includes("Enter a valid WhatsApp number"), false);
+blurredPhone.blur("future-shipping-phone");
+assert.match(
+  blurredPhone.text(),
+  /Enter a valid WhatsApp number with country code \(e\.g\. \+31 6 12345678\)\./,
+);
+assert.equal(blurredPhone.continued(), false);
+
+const blurredEmail = mountShipping(invalidEmail, false);
+assert.equal(blurredEmail.text().includes("Enter a valid email address."), false);
+blurredEmail.blur("future-shipping-email");
+assert.match(blurredEmail.text(), /Enter a valid email address\./);
+
+const emptyDelivery = reconcileFutureShippingState({
+  state: {
+    ...createEmptyFutureShippingState(),
+    fulfilmentMethod: "destination_delivery",
+  },
+  garmentCount: 1,
+  selectedDesignPrice: 65,
+});
+const untouchedDelivery = mountShipping(emptyDelivery, false);
+assert.equal(untouchedDelivery.text().includes("Enter the delivery address."), false);
+assert.equal(untouchedDelivery.text().includes("Select a destination country."), false);
+act(() => {
+  untouchedDelivery.reviewButtons()[0]?.props.onClick();
+});
+assert.match(untouchedDelivery.text(), /Enter the delivery address\./);
+assert.match(untouchedDelivery.text(), /Select a destination country\./);
+
+const readyPickup = mountShipping(pickup, true);
+act(() => {
+  readyPickup.reviewButtons()[0]?.props.onClick();
+});
+assert.equal(readyPickup.continued(), true);
+assert.equal(readyPickup.text().includes("Enter the recipient's full name."), false);
+
+globalThis.document = previousDocument;
 
 console.log("PASS: Step 8 Delivery & Pickup state, completion, and UI contracts");
