@@ -20,6 +20,9 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 export function Header() {
   const activeTab = useAppStore((state) => state.activeTab);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const requestDesignStudioFromNav = useAppStore(
+    (state) => state.requestDesignStudioFromNav,
+  );
   const setIsMobileMenuOpen = useAppStore((state) => state.setIsMobileMenuOpen);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
   const cartItemsCount = useAppStore(
@@ -105,7 +108,13 @@ export function Header() {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => {
+                      if (tab.id === "design") {
+                        requestDesignStudioFromNav();
+                        return;
+                      }
+                      setActiveTab(tab.id as any);
+                    }}
                     className={`flex items-center gap-2 px-3.5 py-1.5 min-h-[38px] text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
                       isActive
                         ? "bg-heritage-green text-heritage-gold border border-heritage-gold/25 shadow-md font-extrabold"

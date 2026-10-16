@@ -25,6 +25,22 @@ export const classifyIndividualOrderStart = (
   return { kind: "blocked", reason: inspection.reason };
 };
 
+/**
+ * The Design Studio nav uses the same rule as Start Individual Order.
+ * A saved Community, Individual, or group draft is never opened silently.
+ */
+export const classifyDesignStudioNavEntry = classifyIndividualOrderStart;
+
+/** Resume action that names the saved draft, so a Community draft is not offered as an Individual resume. */
+export const designStudioNavResumeActionLabel = (
+  draft: Pick<GuestDesignDraft, "batchType">,
+): string => {
+  if (draft.batchType === "community") return "Resume community order";
+  if (draft.batchType === "personalized") return "Resume group order";
+  if (draft.batchType === "alone") return "Resume individual order";
+  return "Resume unfinished order";
+};
+
 const orderKindLabel = (
   draft: Pick<GuestDesignDraft, "batchName" | "batchType">,
 ): string => {
