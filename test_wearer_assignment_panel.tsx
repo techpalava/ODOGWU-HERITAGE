@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Fragment, useRef, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
-import { FIT_CONFLICT_PULSE_MS, NAME_SAVED_FLASH_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
+import { NAME_SAVED_FLASH_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import type { GarmentTypeStepSelection, WearerOrderStateV2 } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
@@ -468,7 +468,7 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   assert.match(body, /Add people/);
   assert.equal(body.includes("1. Add people"), false);
   assert.match(body, /Name or nickname/);
-  assert.match(body, /Fit for measurements/);
+  assert.equal(body.includes("Fit for measurements"), false, "no fit block on person cards");
   assert.match(body, /Garments for this person/);
   assert.match(body, /tick the\s+garments each person will wear on their card/);
   assert.equal(body.includes("2. Assign garments"), false, "step-2 assign block is gone");
@@ -486,10 +486,9 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   }
   const youCardText = textContent(cardFor(root(), "You"));
   assert.ok(youCardText.indexOf("Name or nickname") < youCardText.indexOf("Move up"));
-  assert.ok(youCardText.indexOf("Remove person") < youCardText.indexOf("Fit for measurements"));
   assert.ok(
-    youCardText.indexOf("Fit for measurements") < youCardText.indexOf("Garments for this person"),
-    "fit comes before garments on the card",
+    youCardText.indexOf("Remove person") < youCardText.indexOf("Garments for this person"),
+    "garments follow the name row on the card",
   );
   const addButton = root().findAllByType("button").find(
     (button) => textContent(button) === "+ Add another person",
@@ -627,10 +626,8 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
     garment: shirtGarments[1],
     garmentTypeSelection: dressSelection(),
   });
-  assert.equal(rejected.status, "blocked");
-  if (rejected.status === "blocked") {
-    assert.equal(rejected.code, "GARMENT_INELIGIBLE_FOR_WEARER");
-  }
+  // Fit no longer gates garments: a legacy male fit can take the dress.
+  assert.equal(rejected.status, "updated");
   assert.deepEqual(authority.assignmentByGarmentKey, beforeRejectAssign.assignmentByGarmentKey);
 
   const unfitted = reconcileWearerOrder({
@@ -647,9 +644,8 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
     garment: { garmentKey: "base:shirt", garmentType: "shirt" },
     garmentTypeSelection: selection(),
   });
-  assert.equal(missingFit.status, "blocked");
-  if (missingFit.status === "blocked") assert.equal(missingFit.code, "WEARER_FIT_REQUIRED");
-  assert.equal(missingFit.order.assignmentByGarmentKey["base:shirt"], undefined);
+  assert.equal(missingFit.status, "updated", "no fit is required to assign");
+  assert.equal(missingFit.order.assignmentByGarmentKey["base:shirt"], unfitted.wearers[0].wearerId);
 
   let rejectionAuthority: WearerOrderStateV2 = maleFriend.order;
   const RejectionHarness = ({
@@ -738,49 +734,25 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
     0,
     "owned-by-other rows show Assigned to only, never the fit guide",
   );
-  // The owner unticks: the dress is unassigned, and Chike's male fit cannot wear it.
+  // The owner unticks: the dress is unassigned, and Chike (legacy male fit) can tick it.
   await toggleGarment(rejectionRenderer.root, dressOwnerLabel, "base:dress");
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
-  const unfitBox = garmentBox(rejectionRenderer.root, "Chike", "base:dress");
-  assert.equal(unfitBox.props.disabled, true, "fit eligibility is decided before any click");
-  assert.equal(unfitBox.props.checked, false);
-  assert.ok(unfitBox.props["aria-describedby"]);
+  const openBox = garmentBox(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(openBox.props.disabled, false, "fit never locks a garment");
   const chikeDressRow = garmentRowIn(rejectionRenderer.root, "Chike", "base:dress");
-  assert.equal(chikeDressRow.props["data-wearer-garment-unfit"], "true");
-  const unfitNotes = chikeDressRow
-    .findAllByProps({ "data-wearer-garment-unfit-note": "true" })
-    .filter((node) => typeof node.type === "string");
-  assert.deepEqual(unfitNotes.map((node) => textContent(node)), [
-    "Not available for Chike's selected fit.",
-  ]);
-  assert.equal(unfitNotes[0].props.role, undefined, "quiet guide, not an alert");
-  assert.equal(String(unfitNotes[0].props.className).includes("red"), false);
-  assert.ok(assertGarmentNotesInsideTheirPill(rejectionRenderer.root) >= 1);
-  assert.ok(
-    textContent(chikeDressRow.findByType("label")).includes("Not available for Chike's selected fit."),
-    "the unfit note trails the dress name inside the dress pill",
-  );
-  assert.equal(textContent(chikeDressRow).includes("Assigned to"), false);
+  assert.equal(chikeDressRow.props["data-wearer-garment-unfit"], undefined);
+  assert.equal(textContent(chikeDressRow).includes("Not available"), false);
+  await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], chike.wearerId);
+  assertNoGarmentListAlerts(rejectionRenderer.root);
+  assert.equal(alerts(rejectionRenderer.root).length, 0);
   await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
-  assertNoGarmentListAlerts(rejectionRenderer.root);
-  assert.equal(alerts(rejectionRenderer.root).length, 0, "no red alert anywhere for an unfit row");
-  const chikeName = rejectionRenderer.root.findByProps({
-    "aria-label": "Name or nickname for Chike",
-  });
-  await act(async () => {
-    chikeName.props.onChange({ currentTarget: { value: "Chief" } });
-  });
-  assert.match(
-    textContent(garmentRowIn(rejectionRenderer.root, "Chief", "base:dress")),
-    /Not available for Chief's selected fit\./,
-  );
   await toggleGarment(rejectionRenderer.root, "You", "base:dress");
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], you.wearerId);
-  const chiefDressRow = garmentRowIn(rejectionRenderer.root, "Chief", "base:dress");
-  assert.match(textContent(chiefDressRow), /Assigned to You/);
-  assert.equal(textContent(chiefDressRow).includes("Not available"), false, "owned-by-other wins over unfit");
-  assert.equal(garmentBox(rejectionRenderer.root, "Chief", "base:dress").props.disabled, true);
+  const chikeOwnedRow = garmentRowIn(rejectionRenderer.root, "Chike", "base:dress");
+  assert.match(textContent(chikeOwnedRow), /Assigned to You/);
+  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.disabled, true);
   assertNoGarmentListAlerts(rejectionRenderer.root);
 
   const withUnfittedPerson = addWearer({
@@ -803,23 +775,11 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   });
   const person3Card = cardFor(unfittedCardRenderer.root, "Person 3");
   const person3Group = person3Card.findByProps({ "data-wearer-garment-assign": "true" });
-  assert.equal(person3Group.props.disabled, true, "fit is required before garments");
-  const person3Boxes = person3Group.findAll(
-    (node) => node.type === "input" && node.props.type === "checkbox",
-  );
-  assert.equal(person3Boxes.length, shirtKeys.length);
-  assert.equal(person3Boxes.every((box) => box.props.disabled === true), true);
-  assert.match(
-    textContent(person3Card),
-    /Select a fit for Person 3 before assigning garments\./,
-  );
-  const beforeDisabledToggle = structuredClone(rejectionAuthority.assignmentByGarmentKey);
-  await toggleGarment(unfittedCardRenderer.root, "Person 3", "base:shirt");
-  assert.deepEqual(rejectionAuthority.assignmentByGarmentKey, beforeDisabledToggle);
+  assert.equal(person3Group.props.disabled, undefined, "no fit gate before garments");
+  assert.equal(textContent(person3Card).includes("Select a fit"), false);
   assert.equal(
     garmentBox(unfittedCardRenderer.root, "You", "base:shirt").props.disabled,
     false,
-    "a fitted person's checkboxes stay enabled",
   );
 
   let missingFitRenderer!: ReturnType<typeof create>;
@@ -880,7 +840,8 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   );
   assert.equal(
     cardFor(root(), "Person 3").findByProps({ "data-wearer-garment-assign": "true" }).props.disabled,
-    true,
+    undefined,
+    "a new person with no fit can tick garments right away",
   );
 }
 
@@ -994,8 +955,8 @@ console.log("PASS: wearer assignment panel in-card garment assignment");
   );
   assert.match(expandedBody, /Add people/);
   assert.equal(expandedBody.includes("1. Add people"), false);
-  assert.match(expandedBody, /Fit for measurements/);
-  assert.match(expandedBody, /Male fit/);
+  assert.equal(expandedBody.includes("Fit for measurements"), false);
+  assert.equal(expandedBody.includes("Male fit"), false);
   assert.equal(expandedBody.includes("Person 1"), false);
   const youNameInput = soloRenderer.root.findByProps({
     "aria-label": "Name or nickname for You",
@@ -1033,8 +994,8 @@ console.log("PASS: wearer assignment panel in-card garment assignment");
   assert.equal(textContent(soloRenderer.root).includes("2. Assign garments"), false);
   assert.equal(
     garmentBox(soloRenderer.root, "Person 2", "base:shirt").props.disabled,
-    true,
-    "Person 2 has no fit yet",
+    false,
+    "Person 2 can tick garments with no fit",
   );
   assert.equal(garmentBox(soloRenderer.root, "Ada", "base:shirt").props.disabled, false);
 
@@ -1230,8 +1191,12 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
     garmentTypeSelection: selection(),
   });
   assert.equal(freshSolo.wearers.length, 1);
-  assert.equal(freshSolo.wearers[0].fitContext, null, "fresh solo must not pre-select a fit");
-  assert.deepEqual(freshSolo.assignmentByGarmentKey, {});
+  assert.equal(freshSolo.wearers[0].fitContext, null, "fresh solo stores no fit");
+  assert.equal(
+    Object.keys(freshSolo.assignmentByGarmentKey).length,
+    forMeGarments.length,
+    "the sole person gets every garment with no fit",
+  );
 
   let forMeOrder = freshSolo;
   let addCalls = 0;
@@ -1341,8 +1306,7 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
   const soleFitRadios = forMeRenderer.root.findAll(
     (node) => node.type === "input" && node.props.type === "radio",
   );
-  assert.equal(soleFitRadios.length, 2);
-  assert.equal(soleFitRadios.some((radio) => radio.props.checked), false, "no fit pre-selected");
+  assert.equal(soleFitRadios.length, 0, "no fit radios on the sole card");
 
   await typeName(forMeRenderer.root, "You", "Ada");
   await blurName(forMeRenderer.root, "Ada");
@@ -1604,15 +1568,8 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
   });
   assert.equal(capOrder.wearers.length, 2, "a capped Add another person does nothing");
 
-  // 2 garments + 2 people: checkboxes still work (fit before garments).
-  assert.equal(garmentBox(root(), "Bola", "base:shirt").props.disabled, true);
-  const bolaFemale = cardFor(root(), "Bola").findAll(
-    (node) => node.type === "input" && node.props.type === "radio",
-  )[1];
-  await act(async () => {
-    bolaFemale.props.onChange();
-  });
-  assert.equal(capOrder.wearers[1].fitContext, "female");
+  // 2 garments + 2 people: checkboxes work straight away (no fit step).
+  assert.equal(garmentBox(root(), "Bola", "base:shirt").props.disabled, false);
   // Sole -> Split cleared every tick: the customer now owns the split.
   assert.deepEqual(capOrder.assignmentByGarmentKey, {}, "adding a 2nd person unticks everything");
   assert.equal(garmentBox(root(), "Ada", "base:shirt").props.checked, false);
@@ -1875,8 +1832,8 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
       </Fragment>
     );
   };
-  const fitSelected = (root: ReactTestInstance, fit: "male" | "female") =>
-    root.findByProps({ "data-measurement-sole-fit-option": fit }).props["data-measurement-sole-fit-selected"];
+  const soleFitOptionCount = (root: ReactTestInstance) =>
+    root.findAll((node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string").length;
   const cardRadios = (root: ReactTestInstance) =>
     root.findAll((node) => node.type === "input" && node.props.type === "radio");
   const nameInput = (root: ReactTestInstance) =>
@@ -1891,7 +1848,7 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
   await act(async () => {
     removeRenderer = create(<IdentityHarness />);
   });
-  assert.equal(fitSelected(removeRenderer.root, "female"), "true", "saved fit shows on the For me strip");
+  assert.equal(soleFitOptionCount(removeRenderer.root), 0, "the For me strip has no fit control");
   await act(async () => {
     removeRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
   });
@@ -1900,8 +1857,7 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
     removeRenderer.root.findByProps({ "data-wearer-remove": "true" }).props.onClick({ stopPropagation() {} });
   });
   assert.equal(removeRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
-  assert.equal(fitSelected(removeRenderer.root, "male"), "false", "Remove clears Male on the For me strip");
-  assert.equal(fitSelected(removeRenderer.root, "female"), "false", "Remove clears Female on the For me strip");
+  assert.equal(soleFitOptionCount(removeRenderer.root), 0);
   await act(async () => {
     removeRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
   });
@@ -1976,15 +1932,11 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
   });
   const keptCard = onlyRenderer.root.findByType("article");
   assert.equal(nameInput(keptCard).props.value, "Ada", "Only for me keeps the name");
-  const keptRadios = cardRadios(keptCard);
-  assert.equal(keptRadios[0].props.checked, false, "Only for me does not switch to Male");
-  assert.equal(keptRadios[1].props.checked, true, "Only for me keeps Female fit");
+  assert.equal(cardRadios(keptCard).length, 0, "no fit radios on the kept card");
   assert.equal(
-    keptCard.findAll(
-      (node) => node.type === "input" && node.props.type === "radio" && node.props.checked === true,
-    )[0].props.name,
-    `wearer-fit-${wearerId}`,
-    "Only for me keeps the same wearer",
+    onlyRenderer.root.findAllByType("article").length,
+    1,
+    "Only for me keeps one card (the same wearer)",
   );
   await act(async () => {
     onlyRenderer.unmount();
@@ -2273,7 +2225,7 @@ console.log("PASS: wearer assignment panel Add Garment at the cap unlocks anothe
 console.log("PASS: wearer assignment panel Add Garment follows spare capacity and the ceiling");
 
 {
-  // Sole expanded card is simplified: Name + Save, Fit, Remove only (no Move up,
+  // Sole expanded card is simplified: Name + Save, Remove only (no Move up,
   // no garment checkboxes). A second person brings back the full card chrome.
   const soleGarments: MeasurementPhysicalGarment[] = [
     { garmentKey: "base:shirt", garmentType: "shirt" },
@@ -2329,11 +2281,11 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
     const text = textContent(card);
     assert.match(text, /Name or nickname/);
     assert.equal(hostButtons(card, "data-wearer-name-save").length, 1, "Save is on the sole card");
-    assert.match(text, /Fit for measurements/);
+    assert.equal(text.includes("Fit for measurements"), false);
     assert.equal(
       card.findAll((node) => node.type === "input" && node.props.type === "radio").length,
-      2,
-      "Male / Female fit on the sole card",
+      0,
+      "no fit radios on the sole card",
     );
     assert.equal(hostButtons(card, "data-wearer-remove").length, 1, "Remove person is on the sole card");
     assert.equal(hostButtons(card, "data-wearer-move-up").length, 0, "Move up is hidden, not disabled");
@@ -2345,7 +2297,7 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
       0,
       "Sole: no garment checkboxes",
     );
-    // Sole notice under Fit: the system owns the split.
+    // Sole notice: the system owns the split.
     const notice = hostButtons(card, "data-wearer-sole-all-assigned");
     assert.equal(notice.length, 1, "Sole notice is shown");
     const noticeText = textContent(notice[0]);
@@ -2353,7 +2305,6 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
     assert.match(noticeText, /Add another person to split garments between people\./);
     assert.match(noticeText, /Standard Shirt, Standard Shirt 2/);
     assert.equal(notice[0].props.role, undefined, "a quiet notice, not an alert");
-    assert.ok(text.indexOf("Fit for measurements") < text.indexOf("All garments are for this person"));
     assert.equal(text.includes("Used to determine"), false, "card fit helper dropped");
   };
 
@@ -2383,7 +2334,7 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
     assert.equal(hostButtons(card, "data-wearer-remove").length, 1);
     assert.equal(hostButtons(card, "data-wearer-name-save").length, 1);
     assert.equal(hostButtons(card, "data-wearer-garment-assign").length, 1, "garment checkboxes return");
-    assert.match(textContent(card), /Fit for measurements/);
+    assert.equal(textContent(card).includes("Fit for measurements"), false);
   }
   assert.equal(hostButtons(cards[0], "data-wearer-move-up")[0].props.disabled, true, "first card cannot move up");
   assert.equal(hostButtons(cards[1], "data-wearer-move-up")[0].props.disabled, false);
@@ -2540,214 +2491,8 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
 
 console.log("PASS: wearer assignment panel owned-by-other rows are locked with an owner guide");
 
-{
-  // Fit-conflict attention: resting gold beam on unfit pills; pulse + scroll + focus
-  // only when a Fit change makes a garment newly unfit on a Split card.
-  const fcSelection = (): GarmentTypeStepSelection => ({
-    ...selection(),
-    garmentTypes: ["shirt", "dress"],
-    constructionByGarment: {
-      ...selection().constructionByGarment,
-      dress: {
-        status: "resolved",
-        garmentType: "dress",
-        components: [{
-          componentKey: "dress:dress_construction:dress_std_short",
-          optionId: "dress_std_short",
-          selectionGroup: "dress_construction",
-          priceCents: 1,
-          price: 0.01,
-        }],
-        totalPriceCents: 1,
-        totalPrice: 0.01,
-      },
-    },
-  });
-  const fcGarments: MeasurementPhysicalGarment[] = [
-    { garmentKey: "base:shirt", garmentType: "shirt" },
-    { garmentKey: "base:dress", garmentType: "dress" },
-    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
-  ];
-  const build = (fredFit: "male" | "female"): WearerOrderStateV2 => ({
-    ...createEmptyWearerOrder(),
-    wearers: [
-      createWearerProfile({ wearerId: "w-fred", displayName: "fred", fitContext: fredFit, presentationOrder: 0 }),
-      createWearerProfile({ wearerId: "w-nol", displayName: "nol", fitContext: "female", presentationOrder: 1 }),
-    ],
-    assignmentByGarmentKey: { "base:shirt": "w-nol" },
-  });
-  const focused: string[] = [];
-  const scrolled: unknown[] = [];
-  const nodeMock = (element: { type: unknown; props: Record<string, unknown> }) =>
-    element.type === "li"
-      ? {
-          focus: () => {
-            focused.push(String(element.props["data-wearer-garment-unfit-focus"] ?? ""));
-          },
-          scrollIntoView: (options: unknown) => {
-            scrolled.push(options);
-          },
-        }
-      : null;
-  let fcOrder = build("female");
-  let selectCalls = 0;
-  const FitConflictHarness = ({ initial }: { initial: WearerOrderStateV2 }) => {
-    const [order, setOrder] = useState(initial);
-    return (
-      <WearerAssignmentPanel
-        order={order}
-        activeWearerId="w-fred"
-        garments={fcGarments}
-        garmentLabels={{ "base:shirt": "Standard Shirt", "base:dress": "Standard Dress", "additional:shirt:1": "Long Shirt" }}
-        garmentTypeSelection={fcSelection()}
-        onSelectWearer={() => {
-          selectCalls += 1;
-        }}
-        onAddWearer={() => {}}
-        onRenameWearer={() => {}}
-        onReorderWearers={() => {}}
-        onSetFitContext={(wearerId, fitContext) => {
-          const result = setWearerFitContext(order, wearerId, fitContext);
-          if (result.status === "updated") {
-            fcOrder = result.order;
-            setOrder(result.order);
-          }
-        }}
-        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
-        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
-        onUnassignGarment={() => {}}
-      />
-    );
-  };
-  const fitRadio = (root: ReactTestInstance, wearerLabel: string, fit: "male" | "female") =>
-    cardFor(root, wearerLabel).findAll(
-      (node) => node.type === "input" && node.props.type === "radio",
-    )[fit === "male" ? 0 : 1];
-  const beams = (root: ReactTestInstance) =>
-    root.findAll((node) => node.type === "label" && node.props["data-wearer-garment-unfit-beam"] === "true");
-  const marked = (root: ReactTestInstance, marker: string) =>
-    root.findAll((node) => typeof node.type === "string" && node.props[marker] === "true");
-  const liveText = (root: ReactTestInstance) =>
-    textContent(root.findByProps({ "data-wearer-fit-attention-live": "true" }));
-
-  // Mount with fred already on Male fit: resting beam, but no pulse/scroll/focus.
-  let resting!: ReturnType<typeof create>;
-  await act(async () => {
-    resting = create(<FitConflictHarness initial={build("male")} />, { createNodeMock: nodeMock as never });
-  });
-  const restingDress = garmentRowIn(resting.root, "fred", "base:dress");
-  assert.equal(restingDress.props["data-wearer-garment-unfit"], "true");
-  const restingPill = restingDress.findByType("label");
-  assert.equal(restingPill.props["data-wearer-garment-unfit-beam"], "true");
-  assert.match(String(restingPill.props.className), /border-l-4 border-l-heritage-gold/);
-  assert.equal(String(restingPill.props.className).includes("opacity-50"), false, "no half-opacity wash on the unfit pill");
-  assert.match(String(garmentBox(resting.root, "fred", "base:dress").props.className), /opacity-50/, "muting stays on the checkbox");
-  assert.match(textContent(restingPill), /Not available for fred's selected fit\./);
-  const assertBeamsOnlyOnUnfitRows = (root: ReactTestInstance) => {
-    for (const row of root.findAllByType("li")) {
-      const pill = row.findAllByType("label")[0];
-      if (!pill) continue;
-      const beamed = pill.props["data-wearer-garment-unfit-beam"] === "true";
-      assert.equal(beamed, row.props["data-wearer-garment-unfit"] === "true", "beam iff unfit row");
-      if (row.props["data-wearer-garment-owned-by-other"]) {
-        assert.equal(beamed, false, "owner-note rows never get the beam");
-        assert.match(String(pill.props.className), /opacity-50/, "Assigned-to rows keep their muted look");
-      }
-    }
-  };
-  assertBeamsOnlyOnUnfitRows(resting.root);
-  assert.ok(beams(resting.root).length >= 1);
-  const fredShirtPill = garmentRowIn(resting.root, "fred", "base:shirt").findByType("label");
-  assert.match(textContent(fredShirtPill), /Assigned to nol/);
-  assert.equal(fredShirtPill.props["data-wearer-garment-unfit-beam"], undefined);
-  assert.deepEqual(focused, [], "no focus on mount");
-  assert.deepEqual(scrolled, [], "no scroll on mount");
-  assert.equal(marked(resting.root, "data-wearer-garment-unfit-pulse").length, 0, "no pulse on mount");
-  assert.equal(marked(resting.root, "data-wearer-garment-unfit-focus").length, 0);
-  assert.equal(liveText(resting.root), "");
-  // Selecting a person card does not trigger either.
-  expandCollapsedCard(resting.root, "nol");
-  await act(async () => {
-    cardFor(resting.root, "nol").props.onClick();
-  });
-  assert.equal(selectCalls, 2, "nol's Edit row and card click each select nol");
-  assert.deepEqual(focused, []);
-  // Male -> Female on fred: nothing becomes newly unfit, so no scroll / pulse / focus.
-  expandCollapsedCard(resting.root, "fred");
-  await act(async () => {
-    fitRadio(resting.root, "fred", "female").props.onChange();
-  });
-  assert.equal(fcOrder.wearers.find((wearer) => wearer.wearerId === "w-fred")?.fitContext, "female");
-  assert.deepEqual(focused, [], "no new unfit rows: no focus");
-  assert.deepEqual(scrolled, [], "no new unfit rows: no scroll");
-  assert.equal(marked(resting.root, "data-wearer-garment-unfit-pulse").length, 0);
-  assert.equal(garmentRowIn(resting.root, "fred", "base:dress").props["data-wearer-garment-unfit"], undefined);
-  await act(async () => {
-    resting.unmount();
-  });
-
-  // Female -> Male on fred: the dress becomes newly unfit -> pulse, scroll, focus, live.
-  focused.length = 0;
-  scrolled.length = 0;
-  let trigger!: ReturnType<typeof create>;
-  await act(async () => {
-    trigger = create(<FitConflictHarness initial={build("female")} />, { createNodeMock: nodeMock as never });
-  });
-  assert.equal(beams(trigger.root).length, 0, "Female fit: nothing unfit yet");
-  expandCollapsedCard(trigger.root, "fred");
-  await act(async () => {
-    fitRadio(trigger.root, "fred", "male").props.onChange();
-  });
-  assert.equal(fcOrder.wearers.find((wearer) => wearer.wearerId === "w-fred")?.fitContext, "male");
-  const newlyUnfit = garmentRowIn(trigger.root, "fred", "base:dress");
-  assert.equal(newlyUnfit.props["data-wearer-garment-unfit"], "true");
-  assert.equal(newlyUnfit.props["data-wearer-garment-unfit-focus"], "true", "first newly unfit row is marked");
-  assert.equal(newlyUnfit.props.tabIndex, -1);
-  assert.equal(newlyUnfit.props["data-wearer-garment-unfit-pulse"], "true");
-  assert.match(String(newlyUnfit.findByType("label").props.className), /motion-safe:animate-step2-next-unassigned/);
-  assert.deepEqual(focused, ["true"], "focus lands on the first newly unfit row");
-  assert.deepEqual(scrolled, [{ block: "nearest" }]);
-  const focusRows = marked(trigger.root, "data-wearer-garment-unfit-focus");
-  assert.equal(focusRows.length, 1);
-  for (const row of marked(trigger.root, "data-wearer-garment-unfit-pulse")) {
-    assert.equal(row.props["data-wearer-garment-unfit"], "true", "only unfit rows pulse");
-    assert.equal(row.props["data-wearer-garment-owned-by-other"], undefined, "owner rows never pulse");
-  }
-  assert.equal(liveText(trigger.root), "Some garments are not available for this fit.");
-  assertBeamsOnlyOnUnfitRows(trigger.root);
-  assert.equal(
-    garmentRowIn(trigger.root, "fred", "base:shirt").findByType("label").props["data-wearer-garment-unfit-beam"],
-    undefined,
-  );
-  // The pulse and announcement clear after ~1.3s; the resting beam stays.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, FIT_CONFLICT_PULSE_MS + 100));
-  });
-  assert.equal(marked(trigger.root, "data-wearer-garment-unfit-pulse").length, 0, "pulse removed by the timeout");
-  assert.equal(liveText(trigger.root), "");
-  assert.equal(
-    garmentRowIn(trigger.root, "fred", "base:dress").findByType("label").props["data-wearer-garment-unfit-beam"],
-    "true",
-  );
-  assert.equal(focused.length, 1, "no extra focus after the pulse");
-  // Unmount mid-pulse: the timer is cleaned up (no state update after unmount).
-  expandCollapsedCard(trigger.root, "fred");
-  await act(async () => {
-    fitRadio(trigger.root, "fred", "female").props.onChange();
-  });
-  expandCollapsedCard(trigger.root, "fred");
-  await act(async () => {
-    fitRadio(trigger.root, "fred", "male").props.onChange();
-  });
-  assert.equal(focused.length, 2, "a later Female -> Male flip triggers again");
-  await act(async () => {
-    trigger.unmount();
-  });
-  await new Promise((resolve) => setTimeout(resolve, FIT_CONFLICT_PULSE_MS + 100));
-}
-
-console.log("PASS: wearer assignment panel fit-conflict attention");
-
+// The #541 fit-conflict attention block (Fit change -> released rows, beam, pulse,
+// focus) was retired with the fit choice; see test_wearer_fit_conflict_release.tsx.
 {
   // Saved reads as success; Remove person is a visible bordered button (sole + multi cards).
   const svGarments: MeasurementPhysicalGarment[] = [
@@ -2923,7 +2668,7 @@ console.log("PASS: wearer assignment panel Saved success state and visible Remov
   await act(async () => {
     cp = create(<CollapseHarness />);
   });
-  // Ada is complete (saved name, fit, garments) and collapses; Bola owns nothing and stays open.
+  // Ada is complete (saved name, garments; no fit needed) and collapses; Bola owns nothing and stays open.
   const adaRow = collapsedRows(cp.root);
   assert.equal(adaRow.length, 1, "only the complete card collapses");
   const adaButton = adaRow[0].findByProps({ "data-wearer-card-expand": "true" });

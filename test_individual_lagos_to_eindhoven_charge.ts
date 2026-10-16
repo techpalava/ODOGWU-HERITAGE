@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { quoteFutureOrderPayableTotal, recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import { readFutureOrderV2ChargeableCents } from "./src/utils/futureOrderV2PersonalizedPrice";
 import { getFutureOrderV2CartLineTotalCents } from "./src/utils/futureOrderV2CartBag";
 import {
   createCatalogueAuthoritativeFutureOrderV2Fixture,
@@ -126,4 +127,115 @@ assert.equal(
   simpleCommunity.cartItem.candidate.pricing.components.lagosToEindhovenShipping
     .status,
   "included_in_garment_construction",
+);
+
+const pendingPersonalized = (
+  candidate: FutureOrderCandidateV2,
+): FutureOrderCandidateV2 => {
+  const pending = structuredClone(candidate) as FutureOrderCandidateV2;
+  pending.pricing = {
+    ...pending.pricing,
+    status: "pending",
+    customDetailsCents: null,
+    selectedDesignTotalCents: null,
+    exactTotalCents: null,
+    components: {
+      ...pending.pricing.components,
+      customDetails: { status: "pricing_pending", amountCents: null },
+    },
+  };
+  pending.customDetails = [
+    {
+      occurrenceKey:
+        "base:shirt:personalized_additional:personalized_additional_evaluation",
+      garmentKey: "base:shirt",
+      garmentLabel: "Shirt",
+      selectionGroup: "personalized_additional",
+      selectionGroupTitle: "Personalized",
+      optionId: "personalized_additional_evaluation",
+      optionLabel: "Personalized Additional Requirement",
+      priceStatus: "evaluation_required",
+      priceCents: null,
+      personalizedText: "Add a small family emblem on the chest.",
+      snapshot: {
+        label: "Personalized Additional Requirement",
+        description: "Additional cost will depend on evaluation of personalized needs.",
+        garmentGroup: "personalized",
+        informational: false,
+        requiresEvaluation: true,
+      },
+    },
+  ];
+  return pending;
+};
+
+const alignToQuote = (candidate: FutureOrderCandidateV2) => {
+  const quote = quoteFutureOrderPayableTotal(candidate);
+  assert.ok(quote);
+  if (!quote) throw new Error("Expected a catalogue quote.");
+  candidate.pricing = {
+    ...candidate.pricing,
+    garmentConstructionSubtotalCents: quote.garmentConstructionSubtotalCents,
+    customDetailsCents: quote.customDetailsCents,
+    selectedDesignTotalCents: quote.selectedDesignTotalCents,
+    postEindhovenAdjustmentCents: quote.postEindhovenAdjustmentCents,
+    exactTotalCents: quote.exactTotalCents,
+    components: {
+      ...candidate.pricing.components,
+      customDetails: {
+        status: "separately_charged",
+        amountCents: quote.customDetailsCents,
+      },
+      postEindhovenDelivery: {
+        status: "separately_charged",
+        amountCents: quote.postEindhovenAdjustmentCents,
+      },
+      lagosToEindhovenShipping:
+        quote.lagosToEindhovenShippingCents === null
+          ? { status: "included_in_garment_construction", amountCents: null }
+          : {
+              status: "separately_charged",
+              amountCents: quote.lagosToEindhovenShippingCents,
+            },
+    },
+  };
+  candidate.shipping = {
+    ...candidate.shipping,
+    additionalDeliveryFeeCents: quote.postEindhovenAdjustmentCents,
+  };
+  return quote;
+};
+
+const pickupAligned = structuredClone(oneGarment) as FutureOrderCandidateV2;
+alignToQuote(pickupAligned);
+const pickupPending = pendingPersonalized(pickupAligned);
+const pickupPendingResult = recomputeFutureOrderPayableTotal(pickupPending);
+assert.equal(pickupPendingResult.status, "not_exact");
+assert.equal(readFutureOrderV2ChargeableCents(pickupPending, null), 7900);
+
+const parisAligned = structuredClone(deliveryCandidate) as FutureOrderCandidateV2;
+alignToQuote(parisAligned);
+const parisPending = pendingPersonalized(parisAligned);
+assert.equal(recomputeFutureOrderPayableTotal(parisPending).status, "not_exact");
+assert.equal(readFutureOrderV2ChargeableCents(parisPending, null), 9800);
+
+const omittedLagos = structuredClone(pickupPending) as FutureOrderCandidateV2;
+omittedLagos.pricing = {
+  ...omittedLagos.pricing,
+  components: {
+    ...omittedLagos.pricing.components,
+    lagosToEindhovenShipping: {
+      status: "included_in_garment_construction",
+      amountCents: null,
+    },
+  },
+};
+assert.equal(recomputeFutureOrderPayableTotal(omittedLagos).status, "rejected");
+assert.equal(readFutureOrderV2ChargeableCents(omittedLagos, null), 6500);
+
+const communityPending = pendingPersonalized(structuredClone(communityCandidate));
+assert.equal(recomputeFutureOrderPayableTotal(communityPending).status, "not_exact");
+assert.equal(
+  readFutureOrderV2ChargeableCents(communityPending, null),
+  communityCandidate.pricing.exactTotalCents,
 );
