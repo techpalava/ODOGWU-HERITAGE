@@ -168,13 +168,44 @@ export const isGarmentEligibleForWearer = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): boolean => {
-  if (fitContext === null) return false;
-  return isGarmentMeasurementEligibleForDemographic({
-    garment,
-    garmentTypeSelection,
-    demographic: fitContext,
-    additionalGarmentConstructions,
-  });
+  // Fit no longer gates garment assignment: any person can take any garment.
+  // Measurement fields follow the Studio's own garment demographic instead
+  // (see resolveWearerMeasurementDemographic). Kept so legacy callers compile.
+  void garment;
+  void fitContext;
+  void garmentTypeSelection;
+  void additionalGarmentConstructions;
+  return true;
+};
+
+/**
+ * Demographic used to pick a person's measurement fields. It comes from the
+ * Step 1 Garment Type audience (compatibility demographic: one picked gender,
+ * or "unisex" when several were picked), never from a per-person fit. When
+ * Step 1 has no demographic, or it cannot resolve a profile for one of these
+ * garments (for example a dress with a Male audience), the default "unisex"
+ * blueprint is used, which every measurement profile supports.
+ */
+export const resolveWearerMeasurementDemographic = ({
+  garments,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+}: {
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): CustomDetailDemographic => {
+  const studio = garmentTypeSelection.demographic;
+  if (!studio) return "unisex";
+  const allResolve = garments.every((garment) =>
+    isGarmentMeasurementEligibleForDemographic({
+      garment,
+      garmentTypeSelection,
+      demographic: studio,
+      additionalGarmentConstructions,
+    }),
+  );
+  return allResolve ? studio : "unisex";
 };
 
 const wearerOwnsGarment = (
@@ -455,80 +486,17 @@ export type MeasurementFitConflict = {
 };
 
 /**
- * Fit conflict that blocks Measurement Continue.
- * Sole: garments this fit cannot wear (left unassigned by sole auto-assign),
- * or any garment still assigned to someone whose fit cannot wear it.
- * Split: the same assigned case, plus an unassigned garment a chosen fit
- * cannot wear (the in-row "Not available for … selected fit" note). Merely
- * unassigned garments that every chosen fit can wear stay on the assignment gate.
+ * Retired: fit no longer gates garments, so nothing is ever a fit conflict.
+ * Kept (always null) so older call sites and tests compile.
  */
-export const resolveMeasurementFitConflict = ({
-  order,
-  garments,
-  garmentTypeSelection,
-  additionalGarmentConstructions,
-  garmentLabel,
-  wearerLabel,
-}: {
+export const resolveMeasurementFitConflict = (_input: {
   order: WearerOrderStateV2;
   garments: readonly MeasurementPhysicalGarment[];
   garmentTypeSelection: GarmentTypeStepSelection;
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   garmentLabel: (garment: MeasurementPhysicalGarment) => string;
   wearerLabel: (wearer: WearerProfileV1) => string;
-}): MeasurementFitConflict | null => {
-  const isUnfit = (
-    garment: MeasurementPhysicalGarment,
-    fitContext: WearerProfileV1["fitContext"],
-  ) =>
-    fitContext !== null &&
-    !isGarmentEligibleForWearer({
-      garment,
-      fitContext,
-      garmentTypeSelection,
-      additionalGarmentConstructions,
-    });
-  const sole = order.wearers.length === 1;
-  const sorted = [...order.wearers].sort(
-    (left, right) => left.presentationOrder - right.presentationOrder,
-  );
-  for (const wearer of sorted) {
-    const conflicts = garments.filter((garment) => {
-      const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
-      return (
-        (ownerId === wearer.wearerId || (sole && !ownerId)) &&
-        isUnfit(garment, wearer.fitContext)
-      );
-    });
-    if (conflicts.length === 0) continue;
-    return {
-      garmentKeys: conflicts.map((garment) => garment.garmentKey),
-      message: wearerFitConflictCopy({
-        wearerLabel: wearerLabel(wearer),
-        garmentLabels: conflicts.map(garmentLabel),
-        sole,
-      }),
-    };
-  }
-  if (sole) return null;
-  for (const wearer of sorted) {
-    if (wearer.fitContext === null) continue;
-    const conflicts = garments.filter((garment) => {
-      const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
-      return !ownerId && isUnfit(garment, wearer.fitContext);
-    });
-    if (conflicts.length === 0) continue;
-    return {
-      garmentKeys: conflicts.map((garment) => garment.garmentKey),
-      message: wearerFitConflictCopy({
-        wearerLabel: wearerLabel(wearer),
-        garmentLabels: conflicts.map(garmentLabel),
-        sole: false,
-      }),
-    };
-  }
-  return null;
-};
+}): MeasurementFitConflict | null => null;
 
 export const deleteWearer = (
   order: WearerOrderStateV2,
@@ -563,17 +531,10 @@ export const assignGarmentToWearer = ({
 }): WearerMutationResult => {
   const wearer = order.wearers.find((candidate) => candidate.wearerId === wearerId);
   if (!wearer) return blocked(order, "WEARER_NOT_FOUND");
-  if (wearer.fitContext === null) return blocked(order, "WEARER_FIT_REQUIRED");
-  if (
-    !isGarmentEligibleForWearer({
-      garment,
-      fitContext: wearer.fitContext,
-      garmentTypeSelection,
-      additionalGarmentConstructions,
-    })
-  ) {
-    return blocked(order, "GARMENT_INELIGIBLE_FOR_WEARER");
-  }
+  // No fit gate: any person can take any garment.
+  void garment;
+  void garmentTypeSelection;
+  void additionalGarmentConstructions;
   const previousWearerId = order.assignmentByGarmentKey[garmentKey];
   const assignmentChanged = previousWearerId !== wearerId;
   const wearers = order.wearers.map((candidate) => {
@@ -670,10 +631,9 @@ export const setWearerMeasurementRoute = (
 /**
  * Reconcile wearers with the live physical garments.
  *
- * The sole wearer's fit is never inferred from `compatibilityDemographic`:
- * Measurement starts with no fit selected until the customer picks one (or a
- * saved draft already carries an explicit fit). The field stays on the input
- * type so existing call sites keep compiling.
+ * A sole wearer is auto-assigned every garment (fit no longer gates garments).
+ * `compatibilityDemographic` stays on the input type so existing call sites
+ * keep compiling; measurement fields read the Step 1 demographic at plan time.
  */
 export const reconcileWearerOrder = ({
   order,
@@ -926,7 +886,11 @@ export const planWearerOrderMeasurements = ({
       route: wearer.measurement.route,
       garmentTypeSelection: {
         ...garmentTypeSelection,
-        demographic: wearer.fitContext,
+        demographic: resolveWearerMeasurementDemographic({
+          garments: subset,
+          garmentTypeSelection,
+          additionalGarmentConstructions,
+        }),
       },
       physicalGarments: subset,
       garmentScopedCustomDetails,

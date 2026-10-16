@@ -101,18 +101,17 @@ interface DormantFutureMeasurementStepProps {
   activeWearerId?: string | null;
   onSelectWearer?: (wearerId: string) => void;
   /**
-   * Solo order — compact fit control in this card so fit can be set or changed
-   * without opening Add people. Multi-person uses person-card fit instead.
+   * @deprecated Ignored. Step 7 no longer shows a fit control or a fit
+   * conflict; measurement fields follow the Studio garment demographic.
    */
   showSoleFitControl?: boolean;
-  /**
-   * Measurement fit conflict (garments a person's selected fit cannot wear):
-   * the status copy, and the garments it covers. Those garments are never
-   * reported as needing setup in earlier steps.
-   */
+  /** @deprecated Ignored (see showSoleFitControl). */
   fitConflictMessage?: string | null;
+  /** @deprecated Ignored (see showSoleFitControl). */
   fitConflictGarmentKeys?: readonly string[];
+  /** @deprecated Ignored (see showSoleFitControl). */
   soleFitContext?: "male" | "female" | null;
+  /** @deprecated Ignored (see showSoleFitControl). */
   onSetSoleFitContext?: (fitContext: "male" | "female") => void;
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
@@ -662,11 +661,6 @@ export const DormantFutureMeasurementStep = ({
   wearerChips = [],
   activeWearerId = null,
   onSelectWearer,
-  showSoleFitControl = false,
-  fitConflictMessage = null,
-  fitConflictGarmentKeys = [],
-  soleFitContext = null,
-  onSetSoleFitContext,
   onChange,
   onRouteChange,
   onBack,
@@ -964,7 +958,6 @@ export const DormantFutureMeasurementStep = ({
     formatGarmentLabel(occurrenceLabels, garment.garmentType, garment.garmentKey),
   );
   const profilePendingLabels = profilePendingGarmentKeys
-    .filter((garmentKey) => !fitConflictGarmentKeys.includes(garmentKey))
     .map((garmentKey) =>
     formatGarmentLabel(
       occurrenceLabels,
@@ -1010,13 +1003,13 @@ export const DormantFutureMeasurementStep = ({
     nextIncompleteGarmentLabel: statusNextGarmentLabel,
     otherWearerIncompleteLabels,
     emptyWearerLabels,
-    fitConflictMessage,
+    // Fit no longer gates garments, so there is never a fit conflict.
+    fitConflictMessage: null,
     riskSelectionNotice: MEASUREMENT_RISK_SELECTION_NOTICE,
     sampleFormTitle: MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE,
   });
   const routeSaveMessage = progressPresentation.statusMessage;
   const routeStatusLabel = progressPresentation.statusLabel;
-  const fitConflictBlocksContinue = Boolean(fitConflictMessage) && !canContinueToSummary;
   const beamMethodChoices =
     !canContinueToSummary && !selectedMethod && !hydrationInvalid;
   const nextRemainingGarmentKey =
@@ -1030,18 +1023,6 @@ export const DormantFutureMeasurementStep = ({
     Boolean(nextRemainingGarmentKey);
   const withMeasurementGuideBeam = (className: string, active: boolean) =>
     active ? `${className} ${DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS}` : className;
-  const fitConflictStatus = fitConflictBlocksContinue ? (
-    <div
-      data-measurement-fit-conflict-status="true"
-      data-measurement-guide-beam="true"
-      className={withMeasurementGuideBeam("mt-3 min-w-0", true)}
-    >
-      <h3 className="font-serif text-lg font-bold text-heritage-green">Fit conflict</h3>
-      <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
-        {fitConflictMessage}
-      </p>
-    </div>
-  ) : null;
   const sampleStatus = getStatusLabel(
     MEASUREMENT_SAMPLE_CLOTH_METHOD,
     selectedMethod,
@@ -1084,7 +1065,6 @@ export const DormantFutureMeasurementStep = ({
             ariaLabel: "Continue to Summary",
           }}
         />
-        {fitConflictStatus}
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           {formatDesignStudioStepCounter("measurement")}
         </p>
@@ -1163,45 +1143,6 @@ export const DormantFutureMeasurementStep = ({
                   No garments assigned to {activeWearerLabel} yet.
                 </p>
               )}
-            </div>
-          </div>
-        ) : null}
-        {showSoleFitControl && onSetSoleFitContext ? (
-          <div
-            className="mt-3 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-3"
-            data-measurement-sole-fit="true"
-            role="group"
-            aria-labelledby="measurement-sole-fit-heading"
-          >
-            <h3
-              id="measurement-sole-fit-heading"
-              className="text-sm font-semibold text-heritage-ink"
-            >
-              Fit for measurements
-            </h3>
-            <p className="mt-1 text-xs text-heritage-ink/60">
-              Used to determine the correct measurement requirements.
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-              {(["male", "female"] as const).map((fitContext) => {
-                const selected = soleFitContext === fitContext;
-                return (
-                  <button
-                    key={fitContext}
-                    type="button"
-                    data-measurement-sole-fit-option={fitContext}
-                    data-measurement-sole-fit-selected={selected ? "true" : "false"}
-                    className={`flex min-h-10 items-center justify-center rounded-xl border px-3 font-semibold ${
-                      selected
-                        ? "border-heritage-green bg-heritage-green text-white"
-                        : "border-heritage-gold/30 bg-white text-heritage-green"
-                    }`}
-                    onClick={() => onSetSoleFitContext(fitContext)}
-                  >
-                    {fitContext === "male" ? "Male fit" : "Female fit"}
-                  </button>
-                );
-              })}
             </div>
           </div>
         ) : null}
@@ -1479,20 +1420,7 @@ export const DormantFutureMeasurementStep = ({
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
               {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
             </p>
-            <h3
-              className={withMeasurementGuideBeam(
-                "mt-1 font-serif text-lg font-bold text-heritage-green",
-                routeStatusLabel === "Fit conflict" && fitConflictBlocksContinue,
-              )}
-              data-measurement-fit-conflict-status={
-                routeStatusLabel === "Fit conflict" ? "true" : undefined
-              }
-              data-measurement-guide-beam={
-                routeStatusLabel === "Fit conflict" && fitConflictBlocksContinue
-                  ? "true"
-                  : undefined
-              }
-            >
+            <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
               {routeStatusLabel}
             </h3>
             <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
@@ -1524,8 +1452,15 @@ export const DormantFutureMeasurementStep = ({
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
+        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "split" : "unit-only"}
       >
-        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+        <div
+          className={
+            measurementGarments.length > 1
+              ? "flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+              : "min-w-0"
+          }
+        >
       {measurementGarments.length > 1 && (
         <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
           <h3 className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
@@ -1626,11 +1561,11 @@ export const DormantFutureMeasurementStep = ({
       )}
         <fieldset
           data-measurement-unit={state.unit}
-          className={`min-w-0 shrink-0 sm:ml-auto sm:max-w-xs ${
+          className={
             measurementGarments.length > 1
-              ? "border-t border-heritage-green/10 pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
-              : ""
-          }`}
+              ? "min-w-0 shrink-0 border-t border-heritage-green/10 pt-4 sm:ml-auto sm:max-w-xs sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
+              : "grid min-w-0 w-full grid-cols-1 gap-x-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+          }
         >
           <legend className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
             Measurement unit
@@ -1643,7 +1578,12 @@ export const DormantFutureMeasurementStep = ({
             Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
             <span className="sr-only"> Each field shows that unit.</span> Switching converts saved values.
           </p>
-          <div className="mt-3 inline-flex max-w-full rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5">
+          <div
+            data-measurement-unit-toggle="true"
+            className={`inline-flex max-w-full justify-self-start rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5 ${
+              measurementGarments.length > 1 ? "mt-3" : "mt-3 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:justify-self-end"
+            }`}
+          >
             {(["cm", "inch"] as const).map((unit) => (
               <button
                 key={unit}
@@ -1771,18 +1711,6 @@ export const DormantFutureMeasurementStep = ({
           onBack={onBack}
           note={(
             <>
-              {fitConflictBlocksContinue ? (
-                <p
-                  data-measurement-fit-conflict-status="true"
-                  data-measurement-guide-beam="true"
-                  className={withMeasurementGuideBeam(
-                    "font-serif text-sm font-bold text-heritage-green",
-                    true,
-                  )}
-                >
-                  Fit conflict
-                </p>
-              ) : null}
               <p
                 id="measurement-risk-selection-notice"
                 data-measurement-risk-notice="true"

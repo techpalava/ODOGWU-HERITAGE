@@ -96,8 +96,12 @@ const freshSolo = reconcileWearerOrder({
   garmentTypeSelection: selection("male"),
 });
 assert.equal(freshSolo.wearers.length, 1);
-assert.equal(freshSolo.wearers[0].fitContext, null, "fresh solo starts with no fit selected");
-assert.deepEqual(freshSolo.assignmentByGarmentKey, {});
+assert.equal(freshSolo.wearers[0].fitContext, null, "fresh solo stores no fit");
+assert.deepEqual(
+  Object.keys(freshSolo.assignmentByGarmentKey).sort(),
+  [...keys].sort(),
+  "fit no longer gates garments: the sole person gets every garment with no fit",
+);
 
 const maleOrder = reconcileWithChosenSoleFit({
   order: createEmptyWearerOrder(),
@@ -110,7 +114,11 @@ assert.equal(maleOrder.wearers.length, 1);
 assert.equal(maleOrder.wearers[0].displayName, "");
 assert.equal(maleOrder.wearers[0].fitContext, "male");
 assert.equal(maleOrder.assignmentByGarmentKey["base:shirt"], maleOrder.wearers[0].wearerId);
-assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
+assert.equal(
+  maleOrder.assignmentByGarmentKey["base:dress"],
+  maleOrder.wearers[0].wearerId,
+  "a legacy male fit no longer blocks a dress",
+);
 
 {
   const nullFitSolo = reconcileWearerOrder({
@@ -138,8 +146,8 @@ assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
   );
   assert.equal(
     nullFitSolo.assignmentByGarmentKey["base:shirt"],
-    undefined,
-    "sole garments wait for the customer's fit choice",
+    "wearer-sole-null-fit",
+    "sole garments are assigned with no fit choice",
   );
   const chosenFemale = setWearerFitContext(nullFitSolo, "wearer-sole-null-fit", "female");
   if (chosenFemale.status !== "updated") throw new Error("expected fit choice");
@@ -154,7 +162,7 @@ assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
   assert.equal(
     afterChoice.assignmentByGarmentKey["base:shirt"],
     "wearer-sole-null-fit",
-    "customer fit choice unlocks sole auto-assign",
+    "a legacy stored fit keeps sole auto-assign",
   );
 
   const stillNull = reconcileWearerOrder({
@@ -176,7 +184,7 @@ assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
     garmentTypeSelection: selection("male"),
   });
   assert.equal(stillNull.wearers[0]?.fitContext, null);
-  assert.equal(stillNull.assignmentByGarmentKey["base:shirt"], undefined);
+  assert.equal(stillNull.assignmentByGarmentKey["base:shirt"], "wearer-sole-null-fit");
 }
 
 const renamed = renameWearer(maleOrder, maleOrder.wearers[0].wearerId, "Amaka");
@@ -229,7 +237,7 @@ const blockedDress = assignGarmentToWearer({
   garment: garments[2],
   garmentTypeSelection: selection("male"),
 });
-assert.equal(blockedDress.status, "blocked");
+assert.equal(blockedDress.status, "updated", "any person can take any garment");
 const assignedDress = assignGarmentToWearer({
   order: splitOrder,
   garmentKey: "base:dress",
@@ -822,43 +830,31 @@ const continueButton = continueRenderer.root.findAllByType("button").find(
   (node) => node.props["aria-label"] === "Continue to Summary",
 );
 assert.ok(continueButton, "expected Continue to Summary control");
-assert.equal(continueButton.props.disabled, !selectChief.completion.complete);
+// Since #729 a locked Continue stays clickable (jump to guide) and is marked aria-disabled.
+assert.equal(continueButton.props["aria-disabled"] === "true", !selectChief.completion.complete);
 assert.equal(selectChief.completion.complete, false);
 
 {
-  const chosenSoleFits: Array<"male" | "female"> = [];
-  let soleFitRenderer!: ReturnType<typeof create>;
+  let soleRenderer!: ReturnType<typeof create>;
   act(() => {
-    soleFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+    soleRenderer = create(createElement(DormantFutureMeasurementStep, {
       plan: chiefSeed.plan,
       state: chiefComplete,
-      showSoleFitControl: true,
-      soleFitContext: null,
-      onSetSoleFitContext: (fitContext: "male" | "female") => {
-        chosenSoleFits.push(fitContext);
-      },
       onChange: () => undefined,
       onRouteChange: () => undefined,
       onBack: () => undefined,
       onContinue: () => undefined,
     }));
   });
-  const soleFitOptions = soleFitRenderer.root.findAll(
-    (node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string",
-  );
-  assert.deepEqual(
-    soleFitOptions.map((node) => node.props["data-measurement-sole-fit-option"]),
-    ["male", "female"],
+  assert.equal(
+    soleRenderer.root.findAll((node) => node.props?.["data-measurement-sole-fit"] === "true").length,
+    0,
+    "Dimension card no longer shows a Male/Female fit control",
   );
   assert.equal(
-    soleFitOptions.every((node) => node.props["data-measurement-sole-fit-selected"] === "false"),
-    true,
-    "Dimension card shows Male/Female with neither selected until the customer picks",
+    soleRenderer.root.findAll((node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string").length,
+    0,
   );
-  act(() => {
-    soleFitOptions[1].props.onClick();
-  });
-  assert.deepEqual(chosenSoleFits, ["female"]);
 }
 
 console.log("multiple wearers domain tests passed");

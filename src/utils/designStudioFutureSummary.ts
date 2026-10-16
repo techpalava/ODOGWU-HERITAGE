@@ -99,7 +99,7 @@ export interface FutureSummaryGarment {
   constructionTotalCents: number | null;
   /** Public name beside the role badge. Null when the garment is unassigned or its wearer is missing. */
   wearerLabel: string | null;
-  /** Assigned wearer's fit. Null when unassigned, the wearer is missing, or fit is not chosen. */
+  /** Retired per-person fit label. Always null: Step 7 no longer asks for a fit. */
   fitLabel: string | null;
 }
 
@@ -377,17 +377,6 @@ const wearerLabelForAssignedGarment = (
   return wearerPublicLabel(wearer.displayName, wearer.presentationOrder);
 };
 
-const fitLabelForAssignedGarment = (
-  wearerOrder: WearerOrderStateV2 | null | undefined,
-  garmentKey: string,
-): string | null => {
-  const fitContext = assignedWearerForGarment(wearerOrder, garmentKey)?.fitContext;
-  if (fitContext === "male") return "Male fit";
-  if (fitContext === "female") return "Female fit";
-  if (fitContext === "unisex") return "Unisex fit";
-  return null;
-};
-
 const mapGarments = ({
   step1GarmentTypeSelection,
   garmentTypeSelection,
@@ -397,7 +386,6 @@ const mapGarments = ({
   catalogInspection,
   fabricAllocationState,
   wearerOrder,
-  wearerRuntimes,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
@@ -479,12 +467,8 @@ const mapGarments = ({
         occurrenceLabels.get(garmentKey)?.conciseLabel ||
         getStep1GarmentDisplayLabel(garmentType),
       role: allocationAssignment?.sourceRole || sourceRole,
-      demographic:
-        wearerRuntimes && wearerRuntimes.length > 0
-          ? wearerRuntimes.find((runtime) =>
-              runtime.garmentKeys.includes(garmentKey),
-            )?.fitContext ?? null
-          : garmentTypeSelection.demographic,
+      // Measurement gender follows the Studio garment demographic, not a per-person fit.
+      demographic: garmentTypeSelection.demographic,
       fabricUnits:
         allocationAssignment?.fabricUnits || fabricUnits,
       physicalComponents:
@@ -499,7 +483,7 @@ const mapGarments = ({
       constructionTotalCents:
         construction?.status === "resolved" ? construction.totalPriceCents : null,
       wearerLabel: wearerLabelForAssignedGarment(wearerOrder, garmentKey),
-      fitLabel: fitLabelForAssignedGarment(wearerOrder, garmentKey),
+      fitLabel: null,
     };
   });
 };

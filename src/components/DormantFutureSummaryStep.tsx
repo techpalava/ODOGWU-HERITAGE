@@ -530,7 +530,7 @@ export const DormantFutureSummaryStep = ({
                   </div>
                 </div>
               <p className="mt-1 text-xs text-heritage-ink/60">
-                {garment.fitLabel || "Fit pending"} | {formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
+                {garment.fitLabel ? `${garment.fitLabel} | ` : ""}{formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
               </p>
               {garment.physicalComponents.length > 1 && (
                 <p className="mt-2 text-xs text-heritage-ink/70">

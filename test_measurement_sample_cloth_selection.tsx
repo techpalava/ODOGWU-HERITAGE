@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createElement, useState } from "react";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -74,6 +74,7 @@ const Harness = ({
   return createElement(DormantFutureMeasurementStep, {
     plan,
     state: reconciled,
+    physicalGarments,
     onChange: setState,
     onRouteChange: (route) => {
       setState((current) => setFutureMeasurementRoute(current, route));
@@ -238,6 +239,26 @@ assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" 
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "sample_cloth" }).length, 0);
 
 selectMethod(renderer, "low_risk");
+// Single garment: unit block fills the card (no empty garment column, no divider).
+const unitRow = renderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
+assert.equal(unitRow.props["data-measurement-unit-garment-layout"], "unit-only");
+assert.equal(unitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 0);
+const unitFieldset = unitRow.find((node) => node.type === "fieldset");
+assert.doesNotMatch(unitFieldset.props.className, /border-l|border-t|max-w-xs|ml-auto/);
+assert.match(unitFieldset.props.className, /w-full/);
+assert.match(unitFieldset.props.className, /sm:grid-cols-\[minmax\(0,1fr\)_auto\]/);
+assert.doesNotMatch((unitRow.children[0] as ReactTestInstance).props.className, /sm:flex-row|justify-between/);
+const unitToggle = unitRow.findByProps({ "data-measurement-unit-toggle": "true" });
+assert.match(unitToggle.props.className, /sm:justify-self-end/);
+assert.equal(
+  unitRow.find((node) => node.type === "fieldset").props["data-measurement-unit"],
+  "cm",
+);
+for (const buttonRow of renderer.root.findAllByProps({ "data-studio-step-actions-buttons": "true" })) {
+  assert.match(buttonRow.props.className, /flex-row/);
+  assert.match(buttonRow.props.className, /flex-nowrap/);
+  assert.equal(buttonRow.props.className.includes("sm:flex-row"), false);
+}
 assert.equal(renderer.root.findByProps({ type: "radio", value: "low_risk" }).props.checked, true);
 assert.equal(renderer.root.findByProps({ type: "radio", value: "sample_cloth" }).props.checked, false);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 1);
@@ -440,4 +461,49 @@ try {
 act(() => {
   cueRenderer.unmount();
 });
+
+const TwoGarmentHarness = () => {
+  const [state, setState] = useState(createEmptyFutureMeasurementState());
+  const twoPhysical = [
+    { garmentKey: "shirt:1", garmentType: "shirt" as const },
+    { garmentKey: "shirt:2", garmentType: "shirt" as const },
+  ];
+  const plan = planMeasurementRequirements({
+    route: state.route,
+    garmentTypeSelection: selection,
+    physicalGarments: twoPhysical,
+  });
+  const reconciled = reconcileFutureMeasurementState({ state, plan });
+  return createElement(DormantFutureMeasurementStep, {
+    plan,
+    state: reconciled,
+    physicalGarments: twoPhysical,
+    onChange: setState,
+    onRouteChange: (route) => {
+      setState((current) => setFutureMeasurementRoute(current, route));
+    },
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  });
+};
+let twoRenderer!: ReactTestRenderer;
+act(() => {
+  twoRenderer = create(createElement(TwoGarmentHarness));
+});
+selectMethod(twoRenderer, "low_risk");
+const splitRow = twoRenderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
+assert.equal(splitRow.props["data-measurement-unit-garment-layout"], "split");
+assert.equal(splitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 1);
+const splitFieldset = splitRow.find((node) => node.type === "fieldset");
+assert.match(splitFieldset.props.className, /sm:border-l/);
+assert.match(splitFieldset.props.className, /sm:max-w-xs/);
+assert.equal(
+  splitFieldset.props["data-measurement-unit"],
+  "cm",
+);
+for (const buttonRow of twoRenderer.root.findAllByProps({ "data-studio-step-actions-buttons": "true" })) {
+  assert.match(buttonRow.props.className, /flex-nowrap/);
+  assert.equal(buttonRow.props.className.includes("sm:flex-row"), false);
+}
+
 console.log("PASS: sample cloth two-section layout, laid-flat labels, and single active method");
