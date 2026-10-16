@@ -56,10 +56,59 @@ const malformed = presentFutureOrderV2History({
 });
 assert.equal(malformed.status, "invalid_history");
 assert.equal(presentFutureOrderV2History({ id: "legacy" }).status, "not_v2");
+assert.deepEqual(presentation.value.monogramLines, []);
+
+const monogramDetail = {
+  occurrenceKey: "base:shirt:decorative:Name Monogram",
+  garmentKey: "base:shirt",
+  garmentLabel: "Shirt",
+  selectionGroup: "order_optional_detail",
+  selectionGroupTitle: "Monogram and Embroidery",
+  optionId: "Name Monogram",
+  optionLabel: "Name Monogram",
+  priceStatus: "exact" as const,
+  priceCents: 1200,
+  personalizedText: "ADEBAYO",
+  monogramPlacementLabel: "Left Chest",
+  snapshot: null,
+};
+const withMonogram = {
+  ...persisted.value,
+  masterOrder: {
+    ...persisted.value.masterOrder,
+    cartItem: {
+      ...persisted.value.masterOrder.cartItem,
+      candidate: {
+        ...persisted.value.masterOrder.cartItem.candidate,
+        customDetails: [
+          ...persisted.value.masterOrder.cartItem.candidate.customDetails,
+          monogramDetail,
+        ],
+      },
+    },
+  },
+};
+const monogramPresentation = presentFutureOrderV2History({
+  id: masterOrder.orderId,
+  ...withMonogram,
+});
+assert.equal(monogramPresentation.status, "valid");
+if (monogramPresentation.status !== "valid") {
+  throw new Error("Expected the monogram history presentation.");
+}
+assert.deepEqual(monogramPresentation.value.monogramLines, [
+  {
+    garmentKey: "base:shirt",
+    garmentLabel: "Shirt",
+    text: "ADEBAYO",
+    placementLabel: "Left Chest",
+  },
+]);
 
 const adminSource = readFileSync("src/components/DatabaseView.tsx", "utf8");
 assert.match(adminSource, /presentFutureOrderV2History/);
 assert.match(adminSource, /data-future-order-v2-occurrences/);
+assert.match(adminSource, /data-admin-v2-monogram-name/);
 assert.match(adminSource, /Submitted V2 snapshot/);
 assert.match(adminSource, /Read-only/);
 

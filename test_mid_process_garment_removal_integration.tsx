@@ -211,6 +211,47 @@ assert.equal(prepared.status, "removed");
 if (prepared.status !== "removed") {
   throw new Error("Expected the integration transaction to remove Skirt.");
 }
+{
+  const namedSelections: DesignSelections = {
+    ...currentDesignSelections,
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram"],
+      "base:skirt": ["Name Monogram"],
+    },
+    monogramTextByGarmentKey: {
+      "base:shirt": "ADEBAYO",
+      "base:skirt": "CHIOMA",
+    },
+    monogramPlacementByGarmentKey: {
+      "base:shirt": "left_chest",
+      "base:skirt": "left_chest",
+    },
+  };
+  const namedRemoval = prepareFuturePhysicalGarmentRemovalTransaction({
+    input: baseInput,
+    currentDesignSelections: namedSelections,
+    currentPriceActivatedFabricCode: "FAB-A",
+  });
+  assert.equal(namedRemoval.status, "removed");
+  if (namedRemoval.status !== "removed") {
+    throw new Error("Expected the named monogram removal to remove Skirt.");
+  }
+  assert.equal(
+    namedRemoval.commit.designSelections.decorativeFeaturesByGarmentKey?.[
+      "base:skirt"
+    ],
+    undefined,
+  );
+  assert.equal(
+    namedRemoval.commit.designSelections.monogramTextByGarmentKey?.["base:skirt"],
+    undefined,
+  );
+  assert.equal(
+    namedRemoval.commit.designSelections.monogramTextByGarmentKey?.["base:shirt"],
+    "ADEBAYO",
+  );
+  assert.equal(currentDesignSelections.monogramTextByGarmentKey, undefined);
+}
 assert.deepEqual(prepared.commit.garmentTypeSelection.garmentTypes, ["shirt"]);
 assert.deepEqual(
   prepared.commit.fabricAllocationState.fabricAllocations[0]
@@ -686,6 +727,14 @@ assert.equal(
           },
         },
       },
+      decorativeFeaturesByGarmentKey: {
+        [pendingKey]: ["Name Monogram"],
+        [siblingKey]: ["Name Monogram"],
+      },
+      monogramTextByGarmentKey: {
+        [pendingKey]: "CHIOMA",
+        [siblingKey]: "ADEBAYO",
+      },
     },
   });
   assert.equal(
@@ -728,6 +777,18 @@ assert.equal(
   assert.ok(
     cancellation.designSelections.garmentScopedCustomDetailInputs
       ?.textByGarmentKey[siblingKey],
+  );
+  assert.equal(
+    cancellation.designSelections.monogramTextByGarmentKey?.[pendingKey],
+    undefined,
+  );
+  assert.equal(
+    cancellation.designSelections.decorativeFeaturesByGarmentKey?.[pendingKey],
+    undefined,
+  );
+  assert.equal(
+    cancellation.designSelections.monogramTextByGarmentKey?.[siblingKey],
+    "ADEBAYO",
   );
 }
 

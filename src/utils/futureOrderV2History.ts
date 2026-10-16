@@ -35,6 +35,13 @@ export interface FutureOrderV2HistoricalOccurrencePresentation {
   readonly style: FutureOrderV2HistoricalStylePresentation;
 }
 
+export interface FutureOrderV2MonogramLinePresentation {
+  readonly garmentKey: string;
+  readonly garmentLabel: string;
+  readonly text: string;
+  readonly placementLabel: string | null;
+}
+
 export interface FutureOrderV2HistoryPresentation {
   readonly orderId: string;
   readonly persistedAt: string;
@@ -43,6 +50,7 @@ export interface FutureOrderV2HistoryPresentation {
   readonly paymentStatus: string;
   readonly exactTotalCents: number | null;
   readonly occurrences: readonly FutureOrderV2HistoricalOccurrencePresentation[];
+  readonly monogramLines: readonly FutureOrderV2MonogramLinePresentation[];
   readonly tailoringMeasurements: readonly TailoringWearerReadout[] | null;
 }
 
@@ -75,6 +83,24 @@ export const presentFutureOrderV2History = (
   }
 
   const candidate = parsed.value.masterOrder.cartItem.candidate;
+  const monogramLines = candidate.customDetails.flatMap((detail) => {
+    if (detail.optionId !== "Name Monogram") return [];
+    const text = detail.personalizedText?.trim() ?? "";
+    if (!text) return [];
+    const placementLabel =
+      typeof detail.monogramPlacementLabel === "string" &&
+      detail.monogramPlacementLabel.trim()
+        ? detail.monogramPlacementLabel.trim()
+        : null;
+    return [
+      {
+        garmentKey: detail.garmentKey,
+        garmentLabel: detail.garmentLabel,
+        text,
+        placementLabel,
+      },
+    ];
+  });
   return {
     status: "valid",
     value: {
@@ -84,6 +110,7 @@ export const presentFutureOrderV2History = (
       shippingStatus: candidate.shipping.status,
       paymentStatus: candidate.paymentStatus,
       exactTotalCents: candidate.pricing.exactTotalCents,
+      monogramLines,
       tailoringMeasurements: projectTailoringMeasurementReadout(
         candidate.measurements,
       ),

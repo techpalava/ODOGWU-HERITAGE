@@ -6,6 +6,7 @@ import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
   CanonicalPhysicalGarmentType,
+  DesignSelections,
   FabricAllocationState,
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
@@ -42,6 +43,11 @@ import {
   type GarmentScopedCustomDetailsReconciliationResult,
 } from "./garmentScopedCustomDetailsDomain";
 import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
+import {
+  getMonogramPlacementForGarment,
+  getMonogramPlacementLabel,
+  getMonogramTextForGarment,
+} from "./decorativePricing";
 import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
 
 export type FutureDesignStudioSummaryStatus =
@@ -146,6 +152,8 @@ export interface FutureSummaryCustomDetailOccurrence {
   priceStatus: "exact" | "evaluation_required" | "invalid";
   priceCents: number | null;
   personalizedText: string | null;
+  /** Present for Name Monogram when a placement is stored. */
+  monogramPlacementLabel?: string | null;
 }
 
 export interface FutureSummaryAiTryOn {
@@ -242,6 +250,7 @@ export interface FutureDesignStudioSummaryInput {
   customDetailsCompletion: GarmentScopedCustomDetailsCompletionResult | null;
   customDetailsPricing: GarmentScopedCustomDetailsPricingResult | null;
   personalizedInputs: GarmentScopedCustomDetailInputsV1 | null;
+  designSelections?: DesignSelections | null;
   aiTryOnWorkflow: AiTryOnWorkflowStateV1;
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
@@ -623,12 +632,29 @@ const mapOccurrenceStyles = ({
   return rows;
 };
 
+const monogramPresentationForGarment = (
+  designSelections: DesignSelections | null | undefined,
+  garmentKey: string,
+  label: string,
+): { personalizedText: string | null; monogramPlacementLabel: string | null } => {
+  if (label !== "Name Monogram" || !designSelections) {
+    return { personalizedText: null, monogramPlacementLabel: null };
+  }
+  return {
+    personalizedText: getMonogramTextForGarment(designSelections, garmentKey) || null,
+    monogramPlacementLabel: getMonogramPlacementLabel(
+      getMonogramPlacementForGarment(designSelections, garmentKey),
+    ),
+  };
+};
+
 const mapCustomDetails = ({
   customDetailsReconciliation,
   customDetailsCompletion,
   customDetailsPricing,
   personalizedInputs,
   basePricing,
+  designSelections,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
@@ -637,6 +663,7 @@ const mapCustomDetails = ({
   | "customDetailsPricing"
   | "personalizedInputs"
   | "basePricing"
+  | "designSelections"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureDesignStudioSummary["customDetailsSummary"] => {
   if (!customDetailsReconciliation || !customDetailsCompletion || !customDetailsPricing) {
     blockers.push({
@@ -768,7 +795,11 @@ const mapCustomDetails = ({
       optionLabel: item.label,
       priceStatus: "exact",
       priceCents: Math.round(item.price * 100),
-      personalizedText: null,
+      ...monogramPresentationForGarment(
+        designSelections,
+        garmentKey,
+        item.label,
+      ),
     };
     const existingIndex = scopedGroups.findIndex(
       (group) => group.garmentKey === garmentKey,
@@ -809,7 +840,11 @@ const mapCustomDetails = ({
     optionLabel: item.label,
     priceStatus: "exact",
     priceCents: Math.round(item.price * 100),
-    personalizedText: null,
+    ...monogramPresentationForGarment(
+      designSelections,
+      "order",
+      item.label,
+    ),
   }));
   return orderLevelOccurrences.length > 0
     ? [
@@ -1139,6 +1174,7 @@ export const projectFutureDesignStudioSummary = (
     customDetailsPricing: input.customDetailsPricing,
     personalizedInputs: input.personalizedInputs,
     basePricing: input.basePricing,
+    designSelections: input.designSelections,
     blockers,
   });
   const aiTryOnSummary = getAiTryOnSummary(input.aiTryOnWorkflow);

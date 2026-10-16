@@ -304,6 +304,7 @@ const customDetailsProps: Parameters<typeof DormantFutureCustomDetailsStep>[0] =
   onDecorativeFeatureGarmentAssign: noOp,
   onClearDecorativeFeatures: noOp,
   onMonogramPlacementChange: noOp,
+  onMonogramTextChange: noOp,
   onAccessoryToggle: noOp,
   onClearAccessories: noOp,
   onAddAdditionalGarment: noOp,

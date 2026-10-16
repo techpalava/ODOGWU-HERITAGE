@@ -500,6 +500,7 @@ const buildAuthority = ({
     customDetailsCompletion,
     customDetailsPricing,
     personalizedInputs: personalizedReconciliation?.state || null,
+    designSelections,
     aiTryOnWorkflow: skipWorkflow,
     measurementPlan,
     measurementState,
@@ -2208,6 +2209,42 @@ assert.deepEqual(
     { label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
   ],
   "exact personalized addition rows show each euro price; the subtotal remains the rollup",
+);
+const namedPersonalizedAdditions = buildAuthority({
+  fabricByGarment: { shirt: fabricA },
+  measurementRoute: "low_risk",
+  designSelections: {
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram"],
+    },
+    decorativeFeatures: ["Name Monogram"],
+    monogramTextByGarmentKey: { "base:shirt": "ADEBAYO" },
+    monogramPlacementByGarmentKey: { "base:shirt": "left_chest" },
+    monogramText: "ADEBAYO",
+    monogramPlacement: "left_chest",
+  },
+  styleOverrides: {
+    customDetailConfig: {
+      representedGenders: ["male"],
+      featuresMaleAndFemale: false,
+      supportedGarmentGroups: ["shirt"],
+      requiredSelectionGroups: [],
+      enabled: true,
+    },
+  },
+});
+assert.deepEqual(
+  section(namedPersonalizedAdditions.view, "personalized_additions").lines.map(
+    ({ label, detail, amountLabel }) => ({ label, detail, amountLabel }),
+  ),
+  [
+    {
+      label: "Monogram",
+      detail: "Standard Shirt: Name Monogram “ADEBAYO”, Left Chest",
+      amountLabel: "€12.00",
+    },
+  ],
+  "the live Order Summary shows the embroidered name and placement",
 );
 const constructionSection = section(personalizedAdditions.view, "construction");
 assert.equal(

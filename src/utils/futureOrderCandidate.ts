@@ -123,6 +123,8 @@ export interface FutureOrderCandidateCustomDetailV1 {
   readonly priceStatus: "exact" | "evaluation_required" | "invalid";
   readonly priceCents: number | null;
   readonly personalizedText: string | null;
+  /** Placement label for a Name Monogram line, when one is stored. */
+  readonly monogramPlacementLabel?: string | null;
   readonly snapshot: Readonly<{
     label: string;
     description: string;
