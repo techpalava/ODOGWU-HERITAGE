@@ -7,10 +7,11 @@ export const TRADITIONAL_ACCESSORY_IMAGE_DIR = "/images/accessories";
  * public/images/accessories/ so img-src 'self' can load them.
  *
  * Owner-supplied brand images, not stock photographs.
- * Traditional Hat — maroon and gold fila. The cap cloth carries the crest
- * from src/assets/images/odogwu_logo_1782556303014.jpg.
- * Traditional Bead — coral bead sets on wooden stands. The wooden bases
- * carry the same crest.
+ * Traditional Hat — fila. The cap cloth is the Step 1 kaftan textile
+ * public/images/garments/ankara-kaftan-short-sleeve.webp, shaded by the
+ * original folds.
+ * Traditional Bead — coral bead sets. The wooden stand bases use that
+ * same Step 1 textile.
  * Traditional Stick — gold horse-head walking cane, unchanged.
  */
 export const TRADITIONAL_ACCESSORY_IMAGES: Record<
