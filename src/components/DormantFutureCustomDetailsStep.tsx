@@ -35,7 +35,11 @@ import {
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
-import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
+import {
+  getStep1GarmentDisplayLabel,
+  orderByCustomerSelectableGarmentType,
+  orderByStep1GarmentDisplayOrder,
+} from "../utils/garmentConstructionPricing";
 import type { TraditionalAccessory } from "../utils/decorativePricing";
 import { TRADITIONAL_ACCESSORY_IMAGES } from "../utils/traditionalAccessoryImages";
 import {
@@ -469,6 +473,11 @@ const TraditionalAccessoryPhoto = ({
   );
 };
 
+/** Shown under the personalized textarea, so the group and stage lists must not repeat it. */
+const isFieldOwnedCustomDetailBlocker = (code: string): boolean =>
+  code === "personalized_requirement_missing" ||
+  code === "personalized_requirement_invalid";
+
 export const DormantFutureCustomDetailsStep = ({
   stage = "custom_details",
   reconciliation,
@@ -690,7 +699,10 @@ export const DormantFutureCustomDetailsStep = ({
         )} - ${role === "additional" ? "Added garment" : "Base garment"}`,
       });
     });
-    return parents;
+    return orderByCustomerSelectableGarmentType(
+      parents,
+      (parent) => parent.garmentType,
+    );
   }, [reconciliation.subjects, parentOccurrenceLabels]);
   const decorativeFeatureLines = useMemo(() => {
     if (hasGarmentScopedDecorativeFeatureSelections(designSelections)) {
@@ -1031,7 +1043,8 @@ export const DormantFutureCustomDetailsStep = ({
     const groupBlocker = completion.blockers.find((blocker) =>
       blocker.garmentKey === occurrence.subject.garmentKey &&
       blocker.selectionGroup === group.selectionGroup &&
-      blocker.code !== "pricing_evaluation_required",
+      blocker.code !== "pricing_evaluation_required" &&
+      !isFieldOwnedCustomDetailBlocker(blocker.code),
     );
     const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
@@ -1699,12 +1712,21 @@ export const DormantFutureCustomDetailsStep = ({
     );
   };
 
+  const stageAttentionMessages = Array.from(
+    new Set(
+      completion.blockers
+        .filter((blocker) => !isFieldOwnedCustomDetailBlocker(blocker.code))
+        .map((blocker) => blocker.message),
+    ),
+  );
+
   return (
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div className="min-w-0 space-y-4">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
+          slot="header"
           backDestination={previousStageLabel}
           onBack={onBack}
           className="mb-3"
@@ -1729,13 +1751,13 @@ export const DormantFutureCustomDetailsStep = ({
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">{isPersonalizedAdditionsStage ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record." : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}</p>
       </div>
 
-      {completion.blockers.length > 0 && (
+      {stageAttentionMessages.length > 0 && (
         <DesignStudioStepGuide
           role="alert"
           title={`${stageTitle} need attention`}
           titleClassName="text-sm"
         >
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{Array.from(new Set(completion.blockers.map((blocker) => blocker.message))).map((message) => <li key={message}>{message}</li>)}</ul>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{stageAttentionMessages.map((message) => <li key={message}>{message}</li>)}</ul>
         </DesignStudioStepGuide>
       )}
       {garmentFabricContexts.length > 0 && (
@@ -2157,7 +2179,7 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             ) : null}
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; onAddAdditionalGarment(garmentType, event.currentTarget); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getCustomDetailsGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
+              {orderByStep1GarmentDisplayOrder(additionalGarmentConstructionOptions, (option) => option.garmentType).map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; onAddAdditionalGarment(garmentType, event.currentTarget); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getCustomDetailsGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
             </div>
             {additionalGarments.length > 0 && (
               <div className="mt-5 space-y-4 border-t border-heritage-gold/20 pt-4">
@@ -2413,6 +2435,7 @@ export const DormantFutureCustomDetailsStep = ({
       </div>
 
       <DesignStudioStepActions
+        slot="footer"
         backDestination={previousStageLabel}
         onBack={onBack}
         forward={{

@@ -150,6 +150,7 @@ assert.equal(reviewButton.props["aria-label"], "Review Order");
 
 const actions = render(
   <DesignStudioStepActions
+    slot="footer"
     backDestination="Summary"
     forward={{
       label: "Review Order",
@@ -247,8 +248,28 @@ const guideIndex = flatHosts.findIndex(
 );
 assert.ok(backIndex >= 0 && forwardIndex > backIndex && guideIndex > forwardIndex);
 
+const headerActions = render(
+  <DesignStudioStepActions
+    slot="header"
+    backDestination="Fabric"
+    forward={{ destination: "Design Style", ariaLabel: "Continue to Design Style" }}
+  />,
+);
+const headerRow = headerActions.root.findByProps({
+  "data-studio-step-actions-slot": "header",
+});
+assert.equal(headerRow.props["data-studio-step-actions"], "true");
+const headerButtons = headerRow.findByProps({
+  "data-studio-step-actions-buttons": "true",
+});
+assert.equal(classNameOf(headerButtons), classNameOf(buttonRow));
+const headerPair = headerButtons.findAllByType("button");
+assert.equal(headerPair[0].props["data-studio-nav"], "back");
+assert.equal(headerPair[1].props["data-studio-nav"], "forward");
+
 const actionsWithoutNote = render(
   <DesignStudioStepActions
+    slot="header"
     backDestination="Summary"
     forward={{ label: "Continue", ariaLabel: "Continue" }}
   />,
@@ -318,6 +339,27 @@ for (const fileName of readdirSync(componentDir)) {
     false,
     `${fileName} must use DesignStudioStepActions instead of its own Continue button`,
   );
+  assert.equal(
+    source.includes("<DesignStudioBackButton"),
+    false,
+    `${fileName} must use DesignStudioStepActions instead of its own Back button`,
+  );
+}
+const stepActionSources = [
+  "src/components/GarmentTypeStep.tsx",
+  "src/components/DormantFutureFabricStep.tsx",
+  "src/components/DormantFutureDesignStyleStep.tsx",
+  "src/components/DormantFutureCustomDetailsStep.tsx",
+  "src/components/DormantFutureAiTryOnStep.tsx",
+  "src/components/DormantFutureMeasurementStep.tsx",
+  "src/components/DormantFutureSummaryStep.tsx",
+  "src/components/DormantFutureShippingStep.tsx",
+  "src/components/DormantFuturePaymentReviewStep.tsx",
+];
+for (const sourcePath of stepActionSources) {
+  const source = readFileSync(sourcePath, "utf8");
+  assert.ok(source.includes('slot="header"'), `${sourcePath} header must use the shared row`);
+  assert.ok(source.includes('slot="footer"'), `${sourcePath} footer must use the shared row`);
 }
 const fabricSource = readFileSync("src/components/DormantFutureFabricStep.tsx", "utf8");
 const fabricFooterAt = fabricSource.lastIndexOf('backDestination="Garment Type"');
@@ -331,5 +373,81 @@ assert.ok(garmentContinueAt > 0);
 const garmentContinue = garmentSource.slice(garmentContinueAt, garmentContinueAt + 500);
 assert.match(garmentContinue, /<DesignStudioStepActions/);
 assert.equal(garmentContinue.includes("justify-end"), false);
+
+const count = (source: string, pattern: RegExp) =>
+  (source.match(pattern) || []).length;
+const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+const customDetailsSource = readFileSync(
+  "src/components/DormantFutureCustomDetailsStep.tsx",
+  "utf8",
+);
+const tryOnSource = readFileSync(
+  "src/components/DormantFutureAiTryOnStep.tsx",
+  "utf8",
+);
+
+assert.match(customDetailsSource, /const previousStageLabel = isPersonalizedAdditionsStage\s*\?\s*"Custom Details"\s*:\s*"Design Style"/);
+assert.match(customDetailsSource, /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"AI Try-on"\s*:\s*"Personalized Additions"/);
+assert.equal(count(customDetailsSource, /backDestination=\{previousStageLabel\}/g), 2);
+assert.equal(count(customDetailsSource, /destination: nextStageLabel/g), 2);
+assert.match(
+  studioSource,
+  /futureStageId === "custom_details"\s*\?\s*"design_style"\s*:\s*"custom_details"/,
+);
+assert.match(
+  studioSource,
+  /futureStageId === "custom_details"\s*\?\s*handleOpenDormantPersonalizedAdditionsStage\s*:\s*handleOpenDormantAiTryOnStage/,
+);
+
+assert.match(tryOnSource, /const previousStageLabel = "Personalized Additions"/);
+assert.match(tryOnSource, /const nextStageLabel = "Measurement"/);
+assert.equal(count(tryOnSource, /backDestination=\{previousStageLabel\}/g), 2);
+assert.equal(count(tryOnSource, /destination: nextStageLabel/g), 2);
+assert.equal(tryOnSource.includes('backDestination="Custom Details"'), false);
+assert.match(
+  studioSource,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
+);
+
+const labeledSteps: Array<[string, string, string | null]> = [
+  ["src/components/DormantFutureFabricStep.tsx", "Garment Type", "Design Style"],
+  ["src/components/DormantFutureDesignStyleStep.tsx", "Fabric", "Custom Details"],
+  ["src/components/DormantFutureMeasurementStep.tsx", "AI Try-on", "Summary"],
+  ["src/components/DormantFutureSummaryStep.tsx", "Measurement", "Delivery"],
+  ["src/components/DormantFutureShippingStep.tsx", "Summary", null],
+  ["src/components/DormantFuturePaymentReviewStep.tsx", "Delivery & Pickup", null],
+];
+for (const [sourcePath, backLabel, forwardLabel] of labeledSteps) {
+  const source = readFileSync(sourcePath, "utf8");
+  assert.equal(
+    count(source, new RegExp(`backDestination="${backLabel}"`, "g")),
+    2,
+    `${sourcePath} header and footer Back must both name ${backLabel}`,
+  );
+  if (forwardLabel) {
+    assert.equal(
+      count(source, new RegExp(`destination: "${forwardLabel}"`, "g")),
+      2,
+      `${sourcePath} header and footer Continue must both name ${forwardLabel}`,
+    );
+  }
+}
+const shippingSource = readFileSync("src/components/DormantFutureShippingStep.tsx", "utf8");
+assert.equal(count(shippingSource, /label: "Review Order"/g), 2);
+assert.equal(count(garmentSource, /destination: "Fabric"/g), 2);
+assert.equal(count(garmentSource, /backDisabled/g), 2);
+assert.match(studioSource, /onContinue=\{handleOpenDormantFabricStage\}/);
+assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("garment_type"\)\}/);
+assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
+assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("fabric"\)\}/);
+assert.match(studioSource, /onContinue=\{handleOpenDormantCustomDetailsStage\}/);
+assert.match(studioSource, /onContinue=\{handleOpenDormantMeasurementStage\}/);
+assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("try_on"\)\}/);
+assert.match(studioSource, /onContinue=\{handleOpenDormantSummaryStage\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("measurement"\)\}/);
+assert.match(studioSource, /onContinueToShipping=\{handleOpenDormantShippingStage\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("summary"\)\}/);
+assert.match(studioSource, /onContinueToReview=\{handleOpenDormantPaymentReviewStage\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("shipping"\)\}/);
 
 console.log("PASS: studio step navigation stays on one row at every width");

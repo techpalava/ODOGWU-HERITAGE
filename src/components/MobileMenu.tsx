@@ -22,6 +22,9 @@ export function MobileMenu() {
   const activeTab = useAppStore((state) => state.activeTab);
   const currentUser = useAppStore((state) => state.currentUser);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const requestDesignStudioFromNav = useAppStore(
+    (state) => state.requestDesignStudioFromNav,
+  );
   const businessSettings = useAppStore((state) => state.businessSettings);
 
   // Keyboard accessibility and body scroll block for mobile menu
@@ -129,6 +132,11 @@ export function MobileMenu() {
                     <button
                       key={tab.id}
                       onClick={() => {
+                        if (tab.id === "design") {
+                          requestDesignStudioFromNav();
+                          setIsMobileMenuOpen(false);
+                          return;
+                        }
                         setActiveTab(tab.id as any);
                         setIsMobileMenuOpen(false);
                       }}

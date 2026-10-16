@@ -43,6 +43,35 @@ export const CUSTOMER_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmen
     (garmentType) => garmentType !== "agbada",
   );
 
+const customerSelectableGarmentTypeRank = (
+  garmentType: FabricGarmentType,
+): number => {
+  const index = CUSTOMER_SELECTABLE_GARMENT_TYPES.indexOf(
+    garmentType as CanonicalPhysicalGarmentType,
+  );
+  return index === -1 ? CUSTOMER_SELECTABLE_GARMENT_TYPES.length : index;
+};
+
+/**
+ * Stable order for customer garment rows such as Step 5 assign lists.
+ * Rank comes from CUSTOMER_SELECTABLE_GARMENT_TYPES. Repeated instances of
+ * one type keep the order they already had. Types outside that list stay
+ * at the end.
+ */
+export const orderByCustomerSelectableGarmentType = <T>(
+  items: readonly T[],
+  garmentTypeOf: (item: T) => FabricGarmentType,
+): T[] =>
+  items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const byType =
+        customerSelectableGarmentTypeRank(garmentTypeOf(left.item)) -
+        customerSelectableGarmentTypeRank(garmentTypeOf(right.item));
+      return byType || left.index - right.index;
+    })
+    .map(({ item }) => item);
+
 /** Approved Step 1 display order; canonical selection ordering remains unchanged. */
 export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] = [
   "shirt",
@@ -55,6 +84,34 @@ export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentT
   "skirt",
   "long_skirt",
 ];
+
+const step1GarmentDisplayRank = (garmentType: FabricGarmentType): number => {
+  const index = STEP_1_SELECTABLE_GARMENT_TYPES.indexOf(
+    garmentType as CanonicalPhysicalGarmentType,
+  );
+  return index === -1 ? STEP_1_SELECTABLE_GARMENT_TYPES.length : index;
+};
+
+/**
+ * Stable order matching the Step 1 Garment Type cards.
+ * Rank comes from STEP_1_SELECTABLE_GARMENT_TYPES, the same list those cards
+ * render. The Add Additional Garment buttons use this so their order stays
+ * tied to that screen. Repeated instances of one type keep the order they
+ * already had. Types outside that list stay at the end.
+ */
+export const orderByStep1GarmentDisplayOrder = <T>(
+  items: readonly T[],
+  garmentTypeOf: (item: T) => FabricGarmentType,
+): T[] =>
+  items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const byType =
+        step1GarmentDisplayRank(garmentTypeOf(left.item)) -
+        step1GarmentDisplayRank(garmentTypeOf(right.item));
+      return byType || left.index - right.index;
+    })
+    .map(({ item }) => item);
 
 /**
  * The Step 1 catalogue owns the customer-facing name of a physical garment.

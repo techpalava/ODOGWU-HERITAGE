@@ -134,6 +134,7 @@ export const DesignStudioForwardButton = ({
 };
 
 export const DesignStudioStepActions = ({
+  slot,
   backDestination,
   onBack,
   backDisabled = false,
@@ -141,6 +142,8 @@ export const DesignStudioStepActions = ({
   note,
   className = "",
 }: {
+  /** Header and footer must both use this component so their rows cannot diverge. */
+  slot: "header" | "footer";
   backDestination?: string;
   onBack?: () => void;
   backDisabled?: boolean;
@@ -150,6 +153,7 @@ export const DesignStudioStepActions = ({
 }) => (
   <div
     data-studio-step-actions="true"
+    data-studio-step-actions-slot={slot}
     className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
   >
     <div

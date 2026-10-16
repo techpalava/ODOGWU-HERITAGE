@@ -16,6 +16,8 @@ export const IndividualOrderStartDialog = ({
   onResume,
   onStartNew,
   onCancel,
+  entry = "individual",
+  resumeLabel = "Resume unfinished order",
 }: {
   unfinishedOrderLabel: string;
   canResume: boolean;
@@ -23,7 +25,25 @@ export const IndividualOrderStartDialog = ({
   onResume: () => void;
   onStartNew: () => void;
   onCancel: () => void;
+  entry?: "individual" | "design-studio";
+  resumeLabel?: string;
 }) => {
+  const designStudioNav = entry === "design-studio";
+  const title = designStudioNav
+    ? "Open Design Studio?"
+    : "Start a new Individual Order?";
+  const startLabel = designStudioNav
+    ? "Start fresh"
+    : "Start new Individual Order";
+  const cancelLabel = designStudioNav
+    ? "Cancel opening Design Studio"
+    : "Cancel starting a new Individual Order";
+  const description = designStudioNav
+    ? `You already have an unfinished order: ${unfinishedOrderLabel}. Design Studio will not open that saved order unless you resume it. Starting fresh begins a new Individual Order at Step 1 and replaces that draft only after you confirm. Cancel leaves it unchanged.`
+    : `You already have an unfinished order: ${unfinishedOrderLabel}. Starting a new Individual Order begins at Step 1 and replaces that draft only after you confirm. Resume keeps the saved order. Cancel leaves it unchanged.`;
+  const blockedNote = designStudioNav
+    ? "This saved order cannot be reopened from here. You can still start fresh, which replaces it, or cancel to leave it unchanged."
+    : "This saved order cannot be reopened from here. You can still start a new Individual Order, which replaces it, or cancel to leave it unchanged.";
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -92,7 +112,7 @@ export const IndividualOrderStartDialog = ({
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Cancel starting a new Individual Order"
+        aria-label={cancelLabel}
         disabled={busy}
         onClick={() => {
           if (!busy) onCancel();
@@ -109,6 +129,7 @@ export const IndividualOrderStartDialog = ({
         tabIndex={-1}
         className="relative z-[101] flex max-h-[min(92dvh,42rem)] w-full min-w-0 max-w-xl flex-col overflow-hidden rounded-t-3xl border border-heritage-gold/30 bg-white shadow-2xl outline-none sm:rounded-3xl"
         data-individual-order-start-dialog="true"
+        data-order-start-entry={entry}
       >
         <header className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/20 px-4 py-4 sm:px-6 sm:py-5">
           <div className="min-w-0">
@@ -119,7 +140,7 @@ export const IndividualOrderStartDialog = ({
               id={titleId}
               className="mt-1 break-words font-serif text-xl font-bold text-heritage-green sm:text-2xl"
             >
-              Start a new Individual Order?
+              {title}
             </h2>
           </div>
           <button
@@ -128,7 +149,7 @@ export const IndividualOrderStartDialog = ({
               if (!busy) onCancel();
             }}
             disabled={busy}
-            aria-label="Cancel starting a new Individual Order"
+            aria-label={cancelLabel}
             className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green transition hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <X aria-hidden="true" size={18} />
@@ -145,16 +166,12 @@ export const IndividualOrderStartDialog = ({
               id={descriptionId}
               className="min-w-0 break-words text-sm leading-relaxed text-heritage-ink/85"
             >
-              You already have an unfinished order: {unfinishedOrderLabel}. Starting
-              a new Individual Order begins at Step 1 and replaces that draft only
-              after you confirm. Resume keeps the saved order. Cancel leaves it
-              unchanged.
+              {description}
             </p>
           </div>
           {!canResume && (
             <p className="mt-4 break-words text-sm leading-relaxed text-heritage-ink/70">
-              This saved order cannot be reopened from here. You can still start a
-              new Individual Order, which replaces it, or cancel to leave it unchanged.
+              {blockedNote}
             </p>
           )}
         </div>
@@ -170,7 +187,7 @@ export const IndividualOrderStartDialog = ({
               data-individual-order-resume="true"
               className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border-2 border-heritage-green px-4 text-sm font-bold text-heritage-green transition hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              Resume unfinished order
+              {resumeLabel}
             </button>
           )}
           <button
@@ -182,7 +199,7 @@ export const IndividualOrderStartDialog = ({
             data-individual-order-start-fresh="true"
             className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-gold px-4 text-sm font-bold text-heritage-forest transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            Start new Individual Order
+            {startLabel}
           </button>
           <button
             ref={cancelRef}

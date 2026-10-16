@@ -443,6 +443,7 @@ import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSel
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
   getStep1GarmentDisplayLabel,
+  orderByCustomerSelectableGarmentType,
   resolveGarmentConstructionPricing,
 } from "../utils/garmentConstructionPricing";
 import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
@@ -8711,13 +8712,19 @@ export default function DesignStudioView({
   };
   const futureDecorativeParentGarmentKeys = useMemo(() => {
     const seen = new Set<string>();
-    const keys: string[] = [];
+    const parents: { garmentKey: string; garmentType: FabricGarmentType }[] = [];
     futureScopedCustomDetailsReconciliation.subjects.forEach((subject) => {
       if (seen.has(subject.parentGarmentKey)) return;
       seen.add(subject.parentGarmentKey);
-      keys.push(subject.parentGarmentKey);
+      parents.push({
+        garmentKey: subject.parentGarmentKey,
+        garmentType: subject.parentGarmentType,
+      });
     });
-    return keys;
+    return orderByCustomerSelectableGarmentType(
+      parents,
+      (parent) => parent.garmentType,
+    ).map((parent) => parent.garmentKey);
   }, [futureScopedCustomDetailsReconciliation.subjects]);
   useEffect(() => {
     if (futureDecorativeParentGarmentKeys.length === 0) return;

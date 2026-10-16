@@ -356,8 +356,8 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
-  /additionalGarmentConstructionOptions\.map\(\(\{ garmentType, construction \}\) =>/,
-  "the additional-garment section must offer canonical physical garments",
+  /orderByStep1GarmentDisplayOrder\(additionalGarmentConstructionOptions, \(option\) => option\.garmentType\)\.map\(\(\{ garmentType, construction \}\) =>/,
+  "the additional-garment section must offer canonical physical garments in Step 1 display order",
 );
 assert.match(
   customDetailsSource,
