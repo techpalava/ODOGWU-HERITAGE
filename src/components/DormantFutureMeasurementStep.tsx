@@ -1452,8 +1452,15 @@ export const DormantFutureMeasurementStep = ({
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
+        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "split" : "unit-only"}
       >
-        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+        <div
+          className={
+            measurementGarments.length > 1
+              ? "flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+              : "min-w-0"
+          }
+        >
       {measurementGarments.length > 1 && (
         <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
           <h3 className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
@@ -1554,11 +1561,11 @@ export const DormantFutureMeasurementStep = ({
       )}
         <fieldset
           data-measurement-unit={state.unit}
-          className={`min-w-0 shrink-0 sm:ml-auto sm:max-w-xs ${
+          className={
             measurementGarments.length > 1
-              ? "border-t border-heritage-green/10 pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
-              : ""
-          }`}
+              ? "min-w-0 shrink-0 border-t border-heritage-green/10 pt-4 sm:ml-auto sm:max-w-xs sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
+              : "grid min-w-0 w-full grid-cols-1 gap-x-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+          }
         >
           <legend className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
             Measurement unit
@@ -1571,7 +1578,12 @@ export const DormantFutureMeasurementStep = ({
             Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
             <span className="sr-only"> Each field shows that unit.</span> Switching converts saved values.
           </p>
-          <div className="mt-3 inline-flex max-w-full rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5">
+          <div
+            data-measurement-unit-toggle="true"
+            className={`inline-flex max-w-full justify-self-start rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5 ${
+              measurementGarments.length > 1 ? "mt-3" : "mt-3 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:justify-self-end"
+            }`}
+          >
             {(["cm", "inch"] as const).map((unit) => (
               <button
                 key={unit}
