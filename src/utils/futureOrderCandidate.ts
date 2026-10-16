@@ -918,6 +918,15 @@ export const projectAuthoritativeOrderMeasurements = (
   });
 };
 
+/**
+ * A described personalized requirement can still need a tailor price.
+ * That pending price stays on the pricing ledger. It is not a missing
+ * selection, so it must not fail order review.
+ */
+const NON_BLOCKING_CONTENT_CODES = new Set([
+  "CUSTOM_DETAIL_PRICE_EVALUATION_REQUIRED",
+]);
+
 const buildFutureOrderCandidateCore = ({
   input,
   summary,
@@ -927,7 +936,9 @@ const buildFutureOrderCandidateCore = ({
   summary: ReturnType<typeof projectFutureDesignStudioSummary>;
   initialBlockers: readonly FutureOrderCandidateBlocker[];
 }): FutureOrderCandidateCoreBuildResult => {
-  const blockers = [...initialBlockers];
+  const blockers = initialBlockers.filter(
+    (blocker) => !NON_BLOCKING_CONTENT_CODES.has(blocker.code),
+  );
   const physicalGarmentCount = summary.garmentSummary.length;
   const shippingGarmentCount =
     input.shippingResolution.state.quoteReference?.garmentCount;

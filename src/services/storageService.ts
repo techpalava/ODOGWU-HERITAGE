@@ -63,6 +63,11 @@ import {
   parseFutureOrderV2WorkshopProgress,
   type FutureOrderV2WorkshopProgress,
 } from "../utils/futureOrderV2WorkshopProgress";
+import {
+  FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  parseFutureOrderV2PersonalizedPrice,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "../utils/futureOrderV2PersonalizedPrice";
 
 const GUEST_ORDER_SESSION_KEY = GUEST_ORDER_SESSION_STORAGE_NAMESPACE;
 const ACCOUNT_CART_KEY_PREFIX = "odogwu_account_cart_v1:";
@@ -827,6 +832,36 @@ export const StorageService = {
       },
       (error) => {
         console.error("Error subscribing to customer workshop progress:", error);
+        callback(new Map());
+      },
+    );
+  },
+
+  subscribeToCustomerFutureOrderV2PersonalizedPrices: (
+    callback: (pricesByOrderId: ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>) => void,
+  ) => {
+    const ownerUid = auth.currentUser?.uid;
+    if (!ownerUid) {
+      callback(new Map());
+      return () => undefined;
+    }
+    return onSnapshot(
+      query(
+        collection(db, FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION),
+        where("ownerUid", "==", ownerUid),
+      ),
+      (snapshot) => {
+        const records = new Map<string, FutureOrderV2PersonalizedPriceRecord>();
+        snapshot.docs.forEach((priceDocument) => {
+          const record = parseFutureOrderV2PersonalizedPrice(priceDocument.data());
+          if (record && record.orderId === priceDocument.id) {
+            records.set(record.orderId, record);
+          }
+        });
+        callback(records);
+      },
+      (error) => {
+        console.error("Error subscribing to personalized prices:", error);
         callback(new Map());
       },
     );

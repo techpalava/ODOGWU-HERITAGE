@@ -20,6 +20,8 @@ import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
 import { presentCustomerDashboardBanner } from "../utils/customerDashboardBanner";
 import type { FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
+import type { FutureOrderV2PersonalizedPriceRecord } from "../utils/futureOrderV2PersonalizedPrice";
+import { decideFutureOrderV2PersonalizedPrice } from "../services/futureOrderV2PersonalizedPriceClient";
 import {
   consumeFutureOrderV2OpenOrderId,
   resumeFutureOrderV2StripeReturn,
@@ -85,9 +87,17 @@ export default function DashboardView({
   const [openV2OrderId, setOpenV2OrderId] = useState<string | null>(null);
   const [futureOrderV2WorkshopByOrderId, setFutureOrderV2WorkshopByOrderId] =
     useState<ReadonlyMap<string, FutureOrderV2WorkshopProgress>>(new Map());
+  const [futureOrderV2PersonalizedPricesByOrderId, setFutureOrderV2PersonalizedPricesByOrderId] =
+    useState<ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>>(new Map());
   useEffect(() => {
     const pendingOpen = consumeFutureOrderV2OpenOrderId();
-    if (pendingOpen) setOpenV2OrderId(pendingOpen);
+    const params = new URLSearchParams(window.location.search);
+    const linkedOrderId =
+      params.get("future_order_v2_stripe_return") === "1"
+        ? ""
+        : (params.get("future_order_v2_order_id") ?? "").trim();
+    const orderId = pendingOpen || linkedOrderId;
+    if (orderId) setOpenV2OrderId(orderId);
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +146,13 @@ export default function DashboardView({
   }, []);
   useEffect(
     () => StorageService.subscribeToCustomerFutureOrderV2Workshop(setFutureOrderV2WorkshopByOrderId),
+    [currentUser?.email],
+  );
+  useEffect(
+    () =>
+      StorageService.subscribeToCustomerFutureOrderV2PersonalizedPrices(
+        setFutureOrderV2PersonalizedPricesByOrderId,
+      ),
     [currentUser?.email],
   );
   const v2Banner = presentCustomerDashboardBanner(
@@ -237,6 +254,8 @@ export default function DashboardView({
               openOrderId={openV2OrderId}
               onOpenOrderChange={setOpenV2OrderId}
               workshopByOrderId={futureOrderV2WorkshopByOrderId}
+              personalizedPricesByOrderId={futureOrderV2PersonalizedPricesByOrderId}
+              onDecidePersonalizedPrice={decideFutureOrderV2PersonalizedPrice}
             />
 
             {/* 1. MY DRAFT DESIGNS */}

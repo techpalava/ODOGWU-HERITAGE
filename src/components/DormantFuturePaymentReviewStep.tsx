@@ -40,6 +40,7 @@ import {
   getFuturePaymentReviewMeasurementHeader,
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
+  isAwaitingPersonalizedPriceEvaluation,
   isFuturePaymentReviewStageUnlocked,
   type FuturePaymentReviewCandidate,
   type FuturePaymentReviewResult,
@@ -47,6 +48,10 @@ import {
   type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import {
+  PERSONALIZED_BASE_PAYMENT_NOTICE,
+  readFutureOrderV2ChargeableCents,
+} from "../utils/futureOrderV2PersonalizedPrice";
 import { formatFutureOrderV2PaidAmount } from "../utils/futureOrderV2PaymentRecord";
 import {
   formatCustomerFacingFabricCapacityAmount,
@@ -71,6 +76,8 @@ interface DormantFuturePaymentReviewStepProps {
     trigger: HTMLButtonElement,
   ) => void;
   onPay?: () => void;
+  /** Persists the order for tailor pricing. Does not charge. */
+  onSubmitForPriceReview?: () => void;
   onParkCompleteOrder?: () => void;
   parkCompleteOrderStatus?: "idle" | "added" | "already_present";
   onStartAnotherOrder?: () => void;
@@ -606,6 +613,7 @@ export const DormantFuturePaymentReviewStep = ({
   removalTargets = [],
   onRequestGarmentRemoval,
   onPay,
+  onSubmitForPriceReview,
   onParkCompleteOrder,
   parkCompleteOrderStatus = "idle",
   onStartAnotherOrder,
@@ -615,7 +623,12 @@ export const DormantFuturePaymentReviewStep = ({
   initialPaymentMethod = "card",
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
-  const isReviewable = isFuturePaymentReviewStageUnlocked(result);
+  const reviewStageOpen = isFuturePaymentReviewStageUnlocked(result);
+  const awaitingPersonalizedEvaluation = Boolean(
+    candidate &&
+      reviewStageOpen &&
+      isAwaitingPersonalizedPriceEvaluation(candidate),
+  );
   const measurementGroups = candidate
     ? getFuturePaymentReviewMeasurementGroups(candidate)
     : [];
@@ -656,6 +669,17 @@ export const DormantFuturePaymentReviewStep = ({
   const payIsBusy = preparationIsPending || paymentIsProcessing;
   const reviewedTotalCents =
     candidate?.pricing.status === "exact" ? candidate.pricing.exactTotalCents : null;
+  const personalizedBaseCents =
+    candidate && isV2PaymentReviewCandidate(candidate)
+      ? readFutureOrderV2ChargeableCents(candidate, null)
+      : null;
+  const payableNowCents =
+    reviewedTotalCents ??
+    (awaitingPersonalizedEvaluation ? personalizedBaseCents : null);
+  const canSettleReviewedOrder =
+    reviewStageOpen &&
+    payableNowCents !== null &&
+    (candidate?.contentStatus === "reviewable" || awaitingPersonalizedEvaluation);
   const [stripePaymentReady, setStripePaymentReady] = useState(false);
   const [paymentMethod, setPaymentMethod] =
     useState<FutureOrderV2PaymentMethod>(initialPaymentMethod);
@@ -665,9 +689,9 @@ export const DormantFuturePaymentReviewStep = ({
     ? "Saving your order..."
     : paymentIsProcessing
       ? "Processing payment..."
-      : reviewedTotalCents === null
+      : payableNowCents === null
         ? "Pay"
-        : `Pay ${moneyFromCents(reviewedTotalCents)}`;
+        : `Pay ${moneyFromCents(payableNowCents)}`;
   const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
   const paymentIsConfirmed = payment?.status === "confirmed";
   useEffect(() => {
@@ -745,13 +769,13 @@ export const DormantFuturePaymentReviewStep = ({
         role="status"
         aria-live="polite"
         className={`min-w-0 rounded-2xl border p-4 sm:p-5 ${
-          isReviewable
+          canSettleReviewedOrder
             ? "border-heritage-green/20 bg-heritage-green/5"
             : "border-heritage-gold/35 bg-heritage-gold/8"
         }`}
       >
         <div className="flex min-w-0 items-start gap-3">
-          {isReviewable ? (
+          {canSettleReviewedOrder ? (
             <CheckCircle2
               aria-hidden="true"
               className="mt-0.5 shrink-0 text-heritage-green"
@@ -766,12 +790,16 @@ export const DormantFuturePaymentReviewStep = ({
           )}
           <div className="min-w-0">
             <h2 className="font-serif text-lg font-bold text-heritage-green">
-              {isReviewable ? "Your order review is ready" : "Review is currently locked"}
+              {canSettleReviewedOrder || awaitingPersonalizedEvaluation
+                ? "Your order review is ready"
+                : "Review is currently locked"}
             </h2>
             <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
-              {isReviewable
-                ? "Your selections and authoritative total are ready to review."
-                : "Complete the highlighted requirement before opening this stage through normal navigation."}
+              {awaitingPersonalizedEvaluation
+                ? PERSONALIZED_BASE_PAYMENT_NOTICE
+                : canSettleReviewedOrder
+                  ? "Your selections and authoritative total are ready to review."
+                  : "Complete the highlighted requirement before opening this stage through normal navigation."}
             </p>
           </div>
         </div>
@@ -1164,16 +1192,27 @@ export const DormantFuturePaymentReviewStep = ({
                 data-pricing-final-total
                 className="flex min-w-0 flex-wrap justify-between gap-3 border-t-2 border-heritage-green/25 pt-4 text-base"
               >
-                <dt className="font-bold uppercase tracking-wide text-heritage-green">Total</dt>
+                <dt className="font-bold uppercase tracking-wide text-heritage-green">
+                  {awaitingPersonalizedEvaluation && payableNowCents !== null
+                    ? "Total today"
+                    : "Total"}
+                </dt>
                 <dd className="min-w-0 max-w-full break-words text-right font-mono text-xl font-bold text-heritage-green sm:text-2xl">
                   {candidate.pricing.status === "exact" &&
                   candidate.pricing.exactTotalCents !== null ? (
                     moneyFromCents(candidate.pricing.exactTotalCents)
+                  ) : awaitingPersonalizedEvaluation && payableNowCents !== null ? (
+                    moneyFromCents(payableNowCents)
                   ) : (
                     "Available after all prices are confirmed"
                   )}
                 </dd>
               </div>
+              {awaitingPersonalizedEvaluation && payableNowCents !== null ? (
+                <p className="text-xs leading-relaxed text-heritage-ink/70">
+                  {PERSONALIZED_BASE_PAYMENT_NOTICE}
+                </p>
+              ) : null}
             </dl>
           </ReviewSection>
         </>
@@ -1274,13 +1313,39 @@ export const DormantFuturePaymentReviewStep = ({
             )}
             {v2Payable && !paymentIsAuthorized && payment?.status !== "redirecting" && (
               <>
+                {awaitingPersonalizedEvaluation && onSubmitForPriceReview ? (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-xs leading-relaxed text-white/80">
+                      Submit this order so the addition can be priced. Submitting does not charge you.
+                      The total today is the base garment. We contact you by email or WhatsApp with any extra, and you pay it only if you accept.
+                    </p>
+                    <button
+                      type="button"
+                      data-future-order-v2-submit-price-review
+                      disabled={payIsBusy || preparationIsComplete}
+                      onClick={onSubmitForPriceReview}
+                      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-white/40 px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-white hover:text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {preparationIsPending
+                        ? "Submitting..."
+                        : preparationIsComplete
+                          ? "Submitted for price review"
+                          : "Submit for price review"}
+                    </button>
+                    {preparation?.status === "prepared" ? (
+                      <p className="text-xs leading-relaxed text-white/80">
+                        Order #{preparation.orderId}. We will contact you by email or WhatsApp when the addition is priced. If you do not reply, we follow up once, then leave it off.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <FutureOrderV2StripeCard
-                  disabled={payIsBusy}
+                  disabled={!canSettleReviewedOrder || payIsBusy}
                   orderId={
                     preparation?.status === "prepared" ? preparation.orderId : ""
                   }
                   returnSurface="design-studio"
-                  amountCents={reviewedTotalCents}
+                  amountCents={payableNowCents}
                   onExpressCheckoutConfirm={onPay}
                   onReadyChange={setStripePaymentReady}
                   onMethodChange={setPaymentMethod}
@@ -1297,7 +1362,7 @@ export const DormantFuturePaymentReviewStep = ({
                     <button
                     type="button"
                     data-future-order-v2-pay={true}
-                    disabled={!isReviewable || payIsBusy || !stripePaymentReady}
+                    disabled={!canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"
                     onClick={onPay}
@@ -1310,7 +1375,7 @@ export const DormantFuturePaymentReviewStep = ({
                       <button
                         type="button"
                         data-testid="future-order-v2-add-to-cart"
-                        disabled={!isReviewable || payIsBusy}
+                        disabled={!canSettleReviewedOrder || payIsBusy}
                         onClick={onParkCompleteOrder}
                         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-gold/50 bg-heritage-forest px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-gold hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                       >

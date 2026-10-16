@@ -16,6 +16,11 @@ import {
 } from "../utils/futureOrderV2PaymentRecord";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentFutureOrderV2WorkshopCard, type FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
+import {
+  PERSONALIZED_BASE_PAYMENT_NOTICE,
+  readFutureOrderV2ChargeableCents,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "../utils/futureOrderV2PersonalizedPrice";
 import { CustomerFutureOrderV2Details } from "./CustomerFutureOrderV2Details";
 import { WorkshopStageList } from "./WorkshopStageList";
 
@@ -26,6 +31,15 @@ interface CustomerFutureOrderV2ListProps {
   openOrderId?: string | null;
   onOpenOrderChange?: (orderId: string | null) => void;
   workshopByOrderId?: ReadonlyMap<string, FutureOrderV2WorkshopProgress>;
+  personalizedPricesByOrderId?: ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>;
+  onDecidePersonalizedPrice?: (input: {
+    orderId: string;
+    occurrenceKey: string;
+    decision: "accepted" | "declined";
+  }) => Promise<
+    | { readonly status: "updated"; readonly record: FutureOrderV2PersonalizedPriceRecord }
+    | { readonly status: "failed"; readonly message: string }
+  >;
 }
 
 interface CustomerFutureOrderV2Entry {
@@ -40,6 +54,8 @@ export const CustomerFutureOrderV2List = ({
   openOrderId: controlledOpenOrderId,
   onOpenOrderChange,
   workshopByOrderId = new Map(),
+  personalizedPricesByOrderId = new Map(),
+  onDecidePersonalizedPrice,
 }: CustomerFutureOrderV2ListProps) => {
   const [internalOpenOrderId, setInternalOpenOrderId] = useState<string | null>(null);
   const openOrderId = controlledOpenOrderId !== undefined ? controlledOpenOrderId : internalOpenOrderId;
@@ -74,8 +90,13 @@ export const CustomerFutureOrderV2List = ({
         </h3>
       </div>
       <div className="space-y-4">
-        {entries.map(({ presentation: order }) => {
+        {entries.map(({ persisted, presentation: order }) => {
           const payment = paymentsByOrderId.get(order.orderId);
+          const personalizedPrice = personalizedPricesByOrderId.get(order.orderId) ?? null;
+          const chargeableCents = readFutureOrderV2ChargeableCents(
+            persisted.masterOrder.cartItem.candidate,
+            personalizedPrice,
+          );
           return (
             <div
               key={order.orderId}
@@ -144,17 +165,23 @@ export const CustomerFutureOrderV2List = ({
                 );
               })()}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                {order.exactTotalCents !== null ? (
+                {chargeableCents !== null ? (
                   <div className="text-[10px] text-heritage-ink/75">
-                    Total: <span className="font-bold text-heritage-green">
-                      {formatFutureOrderV2PaidAmount(order.exactTotalCents)}
+                    {persisted.masterOrder.cartItem.candidate.pricing.status === "exact"
+                      ? "Total"
+                      : "Base total"}
+                    : <span className="font-bold text-heritage-green">
+                      {formatFutureOrderV2PaidAmount(chargeableCents)}
                     </span>
+                    {persisted.masterOrder.cartItem.candidate.pricing.status !== "exact" ? (
+                      <p>{PERSONALIZED_BASE_PAYMENT_NOTICE}</p>
+                    ) : null}
                   </div>
                 ) : (
                   <span />
                 )}
                 <div className="flex flex-wrap gap-2">
-                  {!payment && paymentActions && order.exactTotalCents !== null && (
+                  {!payment && paymentActions && chargeableCents !== null && (
                     <button
                       type="button"
                       data-customer-v2-order-pay-now={order.orderId}
@@ -183,6 +210,8 @@ export const CustomerFutureOrderV2List = ({
           order={openEntry.persisted}
           payment={paymentsByOrderId.get(openEntry.persisted.orderId)}
           workshop={workshopByOrderId.get(openEntry.persisted.orderId)}
+          personalizedPrice={personalizedPricesByOrderId.get(openEntry.persisted.orderId) ?? null}
+          onDecidePersonalizedPrice={onDecidePersonalizedPrice}
           onClose={() => setOpenOrderId(null)}
           paymentActions={paymentActions}
         />

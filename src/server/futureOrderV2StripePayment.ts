@@ -10,6 +10,13 @@ import {
   resolveFutureOrderV2StripeShipping,
   type FutureOrderV2StripeShipping,
 } from "../utils/futureOrderV2StripeShipping.js";
+import {
+  FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  isPersonalizedAdditionPaymentReference,
+  listPersonalizedEvaluationSeeds,
+  parseFutureOrderV2PersonalizedPrice,
+  readPersonalizedStripeChargeCents,
+} from "../utils/futureOrderV2PersonalizedPrice.js";
 
 const MINIMUM_EUR_CENTS = 50;
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -49,6 +56,8 @@ export interface FutureOrderV2StripePaymentDependencies {
   readPublishableKey?: () => string;
   getServices?: () => StripePaymentAdminServices;
   readPersistedOrder?: (orderId: string) => Promise<unknown | null>;
+  /** Sidecar written when a tailor prices a personalized addition. */
+  readPersonalizedPrice?: (orderId: string) => Promise<unknown | null>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -99,6 +108,17 @@ const readPersistedOrderFromAdmin = async (
     .doc(orderId)
     .get();
   return snapshot.exists ? snapshot.data() : null;
+};
+
+const readPersonalizedPriceFromAdmin = async (
+  db: unknown,
+  orderId: string,
+): Promise<unknown | null> => {
+  const snapshot = await (db as Firestore)
+    .collection(FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION)
+    .doc(orderId)
+    .get();
+  return snapshot.exists ? snapshot.data() ?? null : null;
 };
 
 let stripeTestClient: Stripe | null = null;
@@ -327,7 +347,8 @@ export const handleFutureOrderV2StripePayment = async (
     typeof body?.paymentReference === "string" ? body.paymentReference : "";
   if (
     !SAFE_ORDER_ID.test(orderId) ||
-    paymentReference !== `future-v2-payment-${orderId}`
+    (paymentReference !== `future-v2-payment-${orderId}` &&
+      !isPersonalizedAdditionPaymentReference(orderId, paymentReference))
   ) {
     return sendError(
       res,
@@ -371,13 +392,37 @@ export const handleFutureOrderV2StripePayment = async (
     );
   }
 
-  const pricing = order.value.masterOrder.cartItem.candidate.pricing;
-  const amountCents = pricing.exactTotalCents;
+  const candidate = order.value.masterOrder.cartItem.candidate;
+  let personalizedPrice = null;
   if (
-    pricing.status !== "exact" ||
-    !Number.isSafeInteger(amountCents) ||
-    amountCents < MINIMUM_EUR_CENTS
+    listPersonalizedEvaluationSeeds(candidate).length > 0 ||
+    isPersonalizedAdditionPaymentReference(orderId, paymentReference)
   ) {
+    const readPersonalizedPrice =
+      dependencies.readPersonalizedPrice ??
+      ((id: string) => readPersonalizedPriceFromAdmin(services.db, id));
+    try {
+      personalizedPrice = parseFutureOrderV2PersonalizedPrice(
+        await readPersonalizedPrice(orderId),
+      );
+    } catch {
+      return sendError(
+        res,
+        503,
+        "ORDER_LOOKUP_UNAVAILABLE",
+        "The prepared order could not be loaded right now. Retry this same order.",
+      );
+    }
+  }
+  // Base payments charge the known base total. An addition reference charges
+  // only the unpaid accepted difference. Pending and price-ready amounts are excluded.
+  const amountCents = readPersonalizedStripeChargeCents({
+    orderId,
+    order: candidate,
+    record: personalizedPrice,
+    paymentReference,
+  });
+  if (amountCents === null || amountCents < MINIMUM_EUR_CENTS) {
     return sendError(
       res,
       400,

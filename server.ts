@@ -18,6 +18,7 @@ import {
   handleFutureOrderV2StripeConfig,
   handleFutureOrderV2StripePayment,
 } from "./src/server/futureOrderV2StripePayment";
+import { handleFutureOrderV2PersonalizedPriceDecision } from "./src/server/futureOrderV2PersonalizedPriceDecision";
 import {
   handleFutureOrderV2PayPalCapture,
   handleFutureOrderV2PayPalConfig,
@@ -99,6 +100,9 @@ app.get("/api/future-order-v2/payment-intent", (req, res) =>
 );
 app.post("/api/future-order-v2/payment-intent", (req, res) =>
   handleFutureOrderV2StripePayment(req, res),
+);
+app.post("/api/future-order-v2/personalized-price-decision", (req, res) =>
+  handleFutureOrderV2PersonalizedPriceDecision(req, res),
 );
 app.get("/api/future-order-v2/paypal", (req, res) =>
   handleFutureOrderV2PayPalConfig(req, res),

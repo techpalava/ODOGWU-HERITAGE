@@ -762,8 +762,8 @@ const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(studioSource, /isFutureShippingStepComplete/);
 assert.match(
   studioSource,
-  /canContinueToReview=\{\s*isFutureShippingStepComplete\(futureShippingResolution\) &&\s*futureSummary\.status !== "pricing_pending"\s*\}/,
-  "Review Order stays locked while the summary is pricing_pending",
+  /canContinueToReview=\{isFutureShippingStepComplete\(\s*futureShippingResolution,\s*\)\}/,
+  "Review Order follows delivery completion and does not lock for personalised price evaluation",
 );
 assert.match(
   studioSource,
@@ -813,8 +813,8 @@ assert.match(
 );
 assert.match(
   shippingSource,
-  /id="future-payment-lock-reason"[\s\S]*priceEvaluationPending\s*\?\s*"Review Order is locked until personalised price evaluation is resolved \(or the personalized addition is removed\)\."/,
-  "the payment lock reason must explain a pending personalised price evaluation",
+  /id="future-payment-lock-reason"[\s\S]*priceEvaluationPending && canContinueToReview\s*\?\s*"Your order review is ready\. The total today is the base garment\. Personalized additions are reviewed after you order\."/,
+  "a pending personalised price evaluation must not be described as locking Review Order",
 );
 assert.match(shippingSource, /disabled/);
 assert.match(shippingSource, /aria-live="polite"/);
@@ -899,6 +899,7 @@ for (const countryCode of STEP8_QUOTE_REQUIRED_COUNTRY_CODES) {
 const renderShippingStep = (
   resolution: ReturnType<typeof reconcileFutureShippingState>,
   canContinueToReview: boolean,
+  priceEvaluationPending = false,
 ) =>
   renderToStaticMarkup(
     createElement(DormantFutureShippingStep, {
@@ -910,6 +911,7 @@ const renderShippingStep = (
       onRefreshQuote: () => undefined,
       onBack: () => undefined,
       canContinueToReview,
+      priceEvaluationPending,
       onContinueToReview: () => undefined,
     }),
   );
@@ -934,6 +936,29 @@ const enabledReviewButtons = reviewOrderButtons(pickupMarkup);
 assert.ok(enabledReviewButtons.length >= 1);
 assert.ok(
   enabledReviewButtons.every((button) => !button.includes('disabled=""')),
+);
+
+const evaluationPendingMarkup = renderShippingStep(pickup, true, true);
+assert.match(evaluationPendingMarkup, /Evaluation pending/);
+assert.match(
+  evaluationPendingMarkup,
+  /Review Order is available\./,
+);
+assert.equal(
+  evaluationPendingMarkup.includes(
+    "Review Order is locked until personalised price evaluation is resolved",
+  ),
+  false,
+);
+assert.match(
+  evaluationPendingMarkup,
+  /The total today is the base garment\. Personalized additions are reviewed after you order\./,
+);
+const evaluationPendingReviewButtons = reviewOrderButtons(evaluationPendingMarkup);
+assert.ok(evaluationPendingReviewButtons.length >= 1);
+assert.ok(
+  evaluationPendingReviewButtons.every((button) => !button.includes('disabled=""')),
+  "a described personalised requirement must not disable Review Order when delivery is complete",
 );
 
 const invalidPhoneMarkup = renderShippingStep(

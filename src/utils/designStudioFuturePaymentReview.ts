@@ -192,11 +192,20 @@ const humanizeIdentifier = (value: string): string =>
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-export const isFuturePaymentReviewStageUnlocked = (
-  result: FuturePaymentReviewResult,
+/**
+ * The customer described a personalized requirement whose euro amount is
+ * still waiting on tailoring review. The base total can be paid now.
+ * Any extra is charged only after the customer accepts the evaluated price.
+ */
+export const isAwaitingPersonalizedPriceEvaluation = (
+  candidate: FuturePaymentReviewCandidate,
 ): boolean =>
-  result.status === "reviewable" &&
-  result.candidate?.contentStatus === "reviewable";
+  candidate.contentStatus !== "reviewable" &&
+  candidate.pricing.status === "pending" &&
+  candidate.pricing.components.customDetails.status === "pricing_pending" &&
+  candidate.customDetails.some(
+    (detail) => detail.priceStatus === "evaluation_required",
+  );
 
 export const getFuturePaymentReviewContentBlockers = (
   result: FuturePaymentReviewResult,
@@ -207,6 +216,17 @@ export const getFuturePaymentReviewContentBlockers = (
       blocker.code !== "FUTURE_ORDER_V2_PERSISTENCE_PENDING" &&
       blocker.code !== "FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING",
   );
+
+export const isFuturePaymentReviewStageUnlocked = (
+  result: FuturePaymentReviewResult,
+): boolean => {
+  if (result.status !== "reviewable" || !result.candidate) return false;
+  if (result.candidate.contentStatus === "reviewable") return true;
+  return (
+    isAwaitingPersonalizedPriceEvaluation(result.candidate) &&
+    getFuturePaymentReviewContentBlockers(result).length === 0
+  );
+};
 
 export const getFuturePaymentReviewContentStatusLabel = (
   candidate: FuturePaymentReviewCandidate,

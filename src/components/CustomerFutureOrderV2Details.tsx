@@ -6,6 +6,7 @@ import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { PersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract";
 import {
   payFutureOrderV2FromDashboard,
+  payPersonalizedAdditionDifference,
   retryFutureOrderV2DashboardRecord,
   type FutureOrderV2DashboardPaymentActions,
   type FutureOrderV2DashboardPaymentOutcome,
@@ -29,6 +30,15 @@ import {
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import {
+  formatPersonalizedPriceEuros,
+  PERSONALIZED_BASE_PAYMENT_NOTICE,
+  personalizedAdditionCustomerStatusLabel,
+  presentPersonalizedAdditionLines,
+  readAcceptedPersonalizedDifferenceCents,
+  readFutureOrderV2ChargeableCents,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "../utils/futureOrderV2PersonalizedPrice";
 
 interface CustomerFutureOrderV2DetailsProps {
   order: PersistedFutureOrderV2;
@@ -36,6 +46,15 @@ interface CustomerFutureOrderV2DetailsProps {
   workshop?: FutureOrderV2WorkshopProgress;
   onClose: () => void;
   paymentActions?: FutureOrderV2DashboardPaymentActions;
+  personalizedPrice?: FutureOrderV2PersonalizedPriceRecord | null;
+  onDecidePersonalizedPrice?: (input: {
+    orderId: string;
+    occurrenceKey: string;
+    decision: "accepted" | "declined";
+  }) => Promise<
+    | { readonly status: "updated"; readonly record: FutureOrderV2PersonalizedPriceRecord }
+    | { readonly status: "failed"; readonly message: string }
+  >;
   initialPayOutcome?: Exclude<
     FutureOrderV2DashboardPaymentOutcome,
     { status: "paid" } | { status: "redirecting" }
@@ -57,6 +76,8 @@ export const CustomerFutureOrderV2Details = ({
   workshop,
   onClose,
   paymentActions,
+  personalizedPrice = null,
+  onDecidePersonalizedPrice,
   initialPayOutcome = null,
 }: CustomerFutureOrderV2DetailsProps) => {
   const [localPayment, setLocalPayment] = useState<FutureOrderV2PaymentRecord | null>(null);
@@ -68,6 +89,9 @@ export const CustomerFutureOrderV2Details = ({
   const [paymentMethod, setPaymentMethod] =
     useState<FutureOrderV2PaymentMethod>("card");
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [localPrice, setLocalPrice] = useState<FutureOrderV2PersonalizedPriceRecord | null>(null);
+  const [decisionMessage, setDecisionMessage] = useState<string | null>(null);
+  const [decidingKey, setDecidingKey] = useState<string | null>(null);
   const payInFlightRef = useRef(false);
   const payment = subscribedPayment ?? localPayment ?? undefined;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -100,10 +124,14 @@ export const CustomerFutureOrderV2Details = ({
   const address = customer.deliveryAddress;
   const isDelivery = shipping.fulfilmentMethod === "destination_delivery";
   const headingId = `customer-v2-order-details-${order.orderId}`;
-  const totalCents = candidate.pricing.exactTotalCents;
+  const priceRecord = localPrice ?? personalizedPrice;
+  const additionLines = presentPersonalizedAdditionLines(candidate, priceRecord);
+  const payableCents = readFutureOrderV2ChargeableCents(candidate, priceRecord);
+  const differenceCents = readAcceptedPersonalizedDifferenceCents(candidate, priceRecord);
   const payBusy = payPhase !== "idle";
   const canPay =
-    Boolean(paymentActions) && totalCents !== null && !localPayment && (!payment || payBusy);
+    Boolean(paymentActions) && payableCents !== null && !localPayment && (!payment || payBusy);
+  const canPayDifference = Boolean(paymentActions) && differenceCents !== null;
   const successPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!localPayment) return;
@@ -135,7 +163,61 @@ export const CustomerFutureOrderV2Details = ({
     }
   };
   const handlePay = () =>
-    runPayment((actions) => payFutureOrderV2FromDashboard({ order, ...actions }));
+    runPayment((actions) =>
+      payFutureOrderV2FromDashboard({
+        order,
+        personalizedPrice: priceRecord,
+        ...actions,
+      }),
+    );
+  const handlePayDifference = async () => {
+    if (!paymentActions || payInFlightRef.current || differenceCents === null) return;
+    payInFlightRef.current = true;
+    setPayOutcome(null);
+    setPayPhase("processing");
+    try {
+      const outcome = await payPersonalizedAdditionDifference({
+        order,
+        personalizedPrice: priceRecord,
+        authorize: paymentActions.authorize,
+        record: (input) => {
+          setPayPhase("recording");
+          return paymentActions.record(input);
+        },
+      });
+      if (outcome.status === "paid") {
+        if (priceRecord) {
+          setLocalPrice({
+            ...priceRecord,
+            additionPaidCents: (priceRecord.additionPaidCents ?? 0) + outcome.record.amountCents,
+          });
+        }
+      } else if (outcome.status === "redirecting") setIsRedirecting(true);
+      else setPayOutcome(outcome);
+    } finally {
+      payInFlightRef.current = false;
+      setPayPhase("idle");
+    }
+  };
+  const handleDecide = async (
+    occurrenceKey: string,
+    decision: "accepted" | "declined",
+  ) => {
+    if (!onDecidePersonalizedPrice || decidingKey) return;
+    setDecidingKey(occurrenceKey);
+    setDecisionMessage(null);
+    try {
+      const result = await onDecidePersonalizedPrice({
+        orderId: order.orderId,
+        occurrenceKey,
+        decision,
+      });
+      if (result.status === "failed") setDecisionMessage(result.message);
+      else setLocalPrice(result.record);
+    } finally {
+      setDecidingKey(null);
+    }
+  };
   const handleRetrySaving = () => {
     if (payOutcome?.status !== "record_failed") return;
     const { paymentIntentId } = payOutcome;
@@ -156,7 +238,7 @@ export const CustomerFutureOrderV2Details = ({
         ? "Confirming payment..."
         : isRedirecting
           ? redirectingPayLabel
-          : `Pay ${formatFutureOrderV2PaidAmount(totalCents ?? 0)}`;
+          : `Pay ${formatFutureOrderV2PaidAmount(payableCents ?? 0)}`;
   const payStatusMessage =
     payPhase === "processing"
       ? "Processing your payment..."
@@ -166,7 +248,11 @@ export const CustomerFutureOrderV2Details = ({
           ? "Your payment went through."
           : isRedirecting
             ? redirectingMessage
-            : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order.";
+            : canPay
+              ? additionLines.length > 0
+                ? PERSONALIZED_BASE_PAYMENT_NOTICE
+                : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order."
+              : "Pay only the accepted addition. Accepting did not charge you.";
 
   const dialog = (
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
@@ -366,8 +452,89 @@ export const CustomerFutureOrderV2Details = ({
                     <dd className="font-mono">{formatFutureOrderV2PaidAmount(candidate.pricing.exactTotalCents)}</dd>
                   </div>
                 )}
+                {candidate.pricing.exactTotalCents === null && payableCents !== null && (
+                  <div className="flex justify-between gap-3 border-t border-heritage-green/15 pt-1 font-bold text-heritage-green">
+                    <dt>Base total</dt>
+                    <dd className="font-mono">{formatFutureOrderV2PaidAmount(payableCents)}</dd>
+                  </div>
+                )}
               </dl>
             </DetailsSection>
+
+            {additionLines.length > 0 && (
+              <DetailsSection title="Personalized addition">
+                <p className="text-xs leading-relaxed text-heritage-ink/75">
+                  {PERSONALIZED_BASE_PAYMENT_NOTICE}
+                </p>
+                <ul className="space-y-3">
+                  {additionLines.map((line) => (
+                    <li
+                      key={line.occurrenceKey}
+                      data-personalized-addition={line.occurrenceKey}
+                      className="rounded-xl border border-heritage-gold/20 p-3 text-xs"
+                    >
+                      <p className="font-semibold text-heritage-green">What you asked for</p>
+                      <p className="mt-1">{line.requirementText}</p>
+                      {line.status === "evaluation_pending" && (
+                        <p className="mt-2 text-amber-800">
+                          {personalizedAdditionCustomerStatusLabel(line.status)}. We review this after your order and contact you by email or WhatsApp.
+                        </p>
+                      )}
+                      {line.status === "price_ready" && line.amountCents !== null && (
+                        <>
+                          <p className="mt-2 font-semibold text-heritage-green">
+                            {personalizedAdditionCustomerStatusLabel(line.status)}
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            Evaluated price: {formatPersonalizedPriceEuros(line.amountCents)}
+                          </p>
+                          {line.tailorNote ? <p className="mt-1">Tailor note: {line.tailorNote}</p> : null}
+                          <p className="mt-2 text-heritage-ink/70">
+                            You pay this extra only if you accept. Accepting does not charge you.
+                            If you do not reply, we follow up once after a few days, then leave the addition off.
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                            <button
+                              type="button"
+                              data-personalized-addition-accept={line.occurrenceKey}
+                              disabled={!onDecidePersonalizedPrice || decidingKey !== null}
+                              onClick={() => handleDecide(line.occurrenceKey, "accepted")}
+                              className="rounded-lg bg-heritage-green px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white disabled:opacity-50"
+                            >
+                              {decidingKey === line.occurrenceKey ? "Saving..." : "Accept"}
+                            </button>
+                            <button
+                              type="button"
+                              data-personalized-addition-decline={line.occurrenceKey}
+                              disabled={!onDecidePersonalizedPrice || decidingKey !== null}
+                              onClick={() => handleDecide(line.occurrenceKey, "declined")}
+                              className="rounded-lg border border-heritage-green/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green disabled:opacity-50"
+                            >
+                              Decline addition
+                            </button>
+                          </div>
+                        </>
+                      )}
+                      {line.status === "accepted" && line.amountCents !== null && (
+                        <p className="mt-2 text-heritage-green">
+                          {personalizedAdditionCustomerStatusLabel(line.status)}{" "}
+                          {formatPersonalizedPriceEuros(line.amountCents)}.
+                          {differenceCents !== null
+                            ? " Pay the difference for this addition when you are ready. You have not been charged for it."
+                            : " This addition is paid."}
+                        </p>
+                      )}
+                      {line.status === "declined" && (
+                        <p className="mt-2 text-heritage-ink/70">
+                          {personalizedAdditionCustomerStatusLabel(line.status)}. This addition is left off. Your base garment stays.
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {decisionMessage && <p className="text-xs text-red-700">{decisionMessage}</p>}
+              </DetailsSection>
+            )}
 
             <DetailsSection title="Payment">
               {localPayment ? (
@@ -413,7 +580,7 @@ export const CustomerFutureOrderV2Details = ({
                   <p>Your order is saved but has not been paid yet.</p>
                 </div>
               )}
-              {canPay && (
+              {(canPay || canPayDifference) && (
                 <div
                   data-customer-v2-order-pay-section
                   className="space-y-3 rounded-2xl bg-heritage-green p-4 text-white print:hidden"
@@ -450,8 +617,8 @@ export const CustomerFutureOrderV2Details = ({
                         disabled={payBusy || isRedirecting}
                         orderId={order.orderId}
                         returnSurface="dashboard"
-                        amountCents={totalCents}
-                        onExpressCheckoutConfirm={handlePay}
+                        amountCents={canPay ? payableCents ?? 0 : differenceCents ?? 0}
+                        onExpressCheckoutConfirm={canPay ? handlePay : handlePayDifference}
                         onReadyChange={setPaymentReady}
                         onMethodChange={setPaymentMethod}
                         shippingState={shipping}
@@ -484,18 +651,36 @@ export const CustomerFutureOrderV2Details = ({
                           </button>
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          data-customer-v2-order-pay
-                          disabled={!paymentReady || payBusy}
-                          aria-busy={payBusy}
-                          aria-describedby={`${headingId}-pay-status`}
-                          onClick={handlePay}
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                        >
-                          <LockKeyhole size={14} aria-hidden="true" />
-                          {payLabel}
-                        </button>
+                        <>
+                          {canPay ? (
+                            <button
+                              type="button"
+                              data-customer-v2-order-pay
+                              disabled={!paymentReady || payBusy}
+                              aria-busy={payBusy}
+                              aria-describedby={`${headingId}-pay-status`}
+                              onClick={handlePay}
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              <LockKeyhole size={14} aria-hidden="true" />
+                              {payLabel}
+                            </button>
+                          ) : null}
+                          {canPayDifference ? (
+                            <button
+                              type="button"
+                              data-customer-v2-order-pay-difference
+                              disabled={!paymentReady || payBusy}
+                              aria-busy={payBusy}
+                              onClick={handlePayDifference}
+                              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                            >
+                              {payBusy
+                                ? "Processing payment..."
+                                : `Pay the difference ${formatFutureOrderV2PaidAmount(differenceCents ?? 0)}`}
+                            </button>
+                          ) : null}
+                        </>
                       )}
                     </>
                   )}
