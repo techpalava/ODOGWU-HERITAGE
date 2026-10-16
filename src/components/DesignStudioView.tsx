@@ -10906,9 +10906,6 @@ export default function DesignStudioView({
               navigateToFutureStage(stage);
             }}
             onPay={handlePayFutureOrderV2}
-            onSubmitForPriceReview={() => {
-              void handlePrepareFutureOrderV2();
-            }}
             onParkCompleteOrder={handleParkFutureOrderV2InCart}
             parkCompleteOrderStatus={futureOrderV2AddToCartStatus}
             onStartAnotherOrder={handleStartAnotherOrderAfterCartPark}
