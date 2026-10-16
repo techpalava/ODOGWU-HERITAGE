@@ -1149,6 +1149,77 @@ assert.doesNotMatch(clientSource, /firebase\/firestore|runTransaction|\bdoc\(/);
 assert.match(clientSource, /getIdToken\(true\)/);
 assert.match(clientSource, /persist-future-order-v2/);
 
+const pendingSource = createCatalogueAuthoritativeFutureOrderV2Fixture(
+  "pending-personalized-base",
+);
+const pendingOrder = structuredClone(pendingSource);
+const pendingCandidate = pendingOrder.cartItem.candidate as {
+  pricing: {
+    status: string;
+    customDetailsCents: number | null;
+    selectedDesignTotalCents: number | null;
+    exactTotalCents: number | null;
+    components: {
+      customDetails: { status: string; amountCents: number | null };
+      lagosToEindhovenShipping: { status: string; amountCents: number | null };
+    };
+  };
+  customDetails: unknown[];
+};
+pendingCandidate.pricing.status = "pending";
+pendingCandidate.pricing.customDetailsCents = null;
+pendingCandidate.pricing.selectedDesignTotalCents = null;
+pendingCandidate.pricing.exactTotalCents = null;
+pendingCandidate.pricing.components.customDetails = {
+  status: "pricing_pending",
+  amountCents: null,
+};
+pendingCandidate.customDetails = [
+  {
+    occurrenceKey:
+      "base:shirt:personalized_additional:personalized_additional_evaluation",
+    garmentKey: "base:shirt",
+    garmentLabel: "Shirt",
+    selectionGroup: "personalized_additional",
+    selectionGroupTitle: "Personalized",
+    optionId: "personalized_additional_evaluation",
+    optionLabel: "Personalized Additional Requirement",
+    priceStatus: "evaluation_required",
+    priceCents: null,
+    personalizedText: "Add a small family emblem on the chest.",
+    snapshot: {
+      label: "Personalized Additional Requirement",
+      description: "Additional cost will depend on evaluation of personalized needs.",
+      garmentGroup: "personalized",
+      informational: false,
+      requiresEvaluation: true,
+    },
+  },
+];
+const pendingAdapter = new MemoryAdapter();
+const pendingPersisted = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: { masterOrder: pendingOrder, customerOwnerUid: OWNER_UID },
+  adapter: pendingAdapter,
+  now: () => NOW,
+});
+assert.equal(pendingPersisted.status, "created");
+const omittedLagosOrder = structuredClone(pendingOrder);
+omittedLagosOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+  status: "included_in_garment_construction",
+  amountCents: null,
+};
+const omittedPersisted = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: { masterOrder: omittedLagosOrder, customerOwnerUid: OWNER_UID },
+  adapter: new MemoryAdapter(),
+  now: () => NOW,
+});
+assert.equal(omittedPersisted.status, "invalid");
+if (omittedPersisted.status === "invalid") {
+  assert.equal(omittedPersisted.code, "NON_AUTHORITATIVE_TOTAL");
+}
+
 console.log(
   "PASS: future order V2 server authority, HTTP boundary, and client transport",
 );

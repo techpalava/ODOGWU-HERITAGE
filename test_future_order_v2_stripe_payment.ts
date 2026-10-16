@@ -30,6 +30,7 @@ import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
 import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import { readFutureOrderV2ChargeableCents } from "./src/utils/futureOrderV2PersonalizedPrice";
 import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
 import {
   createEmptyFutureShippingState,
@@ -1114,6 +1115,135 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
     }
     globalThis.fetch = previousFetch;
   }
+}
+
+{
+  const pendingSource = createCatalogueAuthoritativeFutureOrderV2Fixture(
+    "stripe-pending-personalized",
+  );
+  const pendingOrder = structuredClone(pendingSource);
+  const pendingCandidate = pendingOrder.cartItem.candidate;
+  pendingCandidate.pricing = {
+    ...pendingCandidate.pricing,
+    status: "pending",
+    customDetailsCents: null,
+    selectedDesignTotalCents: null,
+    exactTotalCents: null,
+    components: {
+      ...pendingCandidate.pricing.components,
+      customDetails: { status: "pricing_pending", amountCents: null },
+    },
+  };
+  pendingCandidate.customDetails = [
+    {
+      occurrenceKey:
+        "base:shirt:personalized_additional:personalized_additional_evaluation",
+      garmentKey: "base:shirt",
+      garmentLabel: "Shirt",
+      selectionGroup: "personalized_additional",
+      selectionGroupTitle: "Personalized",
+      optionId: "personalized_additional_evaluation",
+      optionLabel: "Personalized Additional Requirement",
+      priceStatus: "evaluation_required",
+      priceCents: null,
+      personalizedText: "Add a small family emblem on the chest.",
+      snapshot: {
+        label: "Personalized Additional Requirement",
+        description: "Additional cost will depend on evaluation of personalized needs.",
+        garmentGroup: "personalized",
+        informational: false,
+        requiresEvaluation: true,
+      },
+    },
+  ];
+  const knownBaseCents = readFutureOrderV2ChargeableCents(pendingCandidate, null);
+  assert.equal(
+    knownBaseCents,
+    (pendingCandidate.pricing.garmentConstructionSubtotalCents ?? 0) +
+      (pendingCandidate.pricing.postEindhovenAdjustmentCents ?? 0) +
+      (pendingCandidate.pricing.components.lagosToEindhovenShipping.amountCents ?? 0),
+  );
+  assert.ok((knownBaseCents ?? 0) > (pendingCandidate.pricing.garmentConstructionSubtotalCents ?? 0));
+  const pendingStored = createPersistedFutureOrderV2({
+    masterOrder: pendingOrder,
+    owner: { uid: OWNER_UID, isAnonymous: false },
+    customerOwnerUid: OWNER_UID,
+    persistedAt: "2026-10-16T18:00:00.000Z",
+  });
+  assert.equal(pendingStored.status, "valid");
+  if (pendingStored.status !== "valid") throw new Error("Expected a pending order.");
+  const pendingReference = `future-v2-payment-${pendingStored.value.orderId}`;
+  const { res, state } = response();
+  let chargedAmount: number | null = null;
+  await handleFutureOrderV2StripePayment(
+    {
+      method: "POST",
+      headers: ownerAuthHeaders,
+      body: {
+        orderId: pendingStored.value.orderId,
+        paymentReference: pendingReference,
+        masterOrder: pendingOrder,
+      },
+    },
+    res,
+    {
+      ...authDependencies({ order: pendingStored.value }),
+      readPersistedOrder: async (orderId: string) =>
+        orderId === pendingStored.value.orderId ? pendingStored.value : null,
+      readPersonalizedPrice: async () => null,
+      readCatalog: async () => [],
+      async createPaymentIntent(input) {
+        chargedAmount = input.amountCents;
+        return {
+          id: "pi_test_pending_base",
+          clientSecret: "pi_test_pending_base_secret",
+          paymentMethodTypes: ["card", "ideal", "klarna"],
+        };
+      },
+    },
+  );
+  assert.equal(state.statusCode, 200);
+  assert.equal(chargedAmount, knownBaseCents);
+
+  const tampered = structuredClone(pendingStored.value);
+  tampered.masterOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+    status: "included_in_garment_construction",
+    amountCents: null,
+  };
+  const tamperedResponse = response();
+  let tamperedCharged = false;
+  await handleFutureOrderV2StripePayment(
+    {
+      method: "POST",
+      headers: ownerAuthHeaders,
+      body: {
+        orderId: pendingStored.value.orderId,
+        paymentReference: pendingReference,
+        masterOrder: pendingOrder,
+      },
+    },
+    tamperedResponse.res,
+    {
+      ...authDependencies({ order: tampered }),
+      readPersistedOrder: async () => tampered,
+      readPersonalizedPrice: async () => null,
+      readCatalog: async () => [],
+      async createPaymentIntent() {
+        tamperedCharged = true;
+        return {
+          id: "pi_test_tampered",
+          clientSecret: "secret",
+          paymentMethodTypes: ["card", "ideal"],
+        };
+      },
+    },
+  );
+  assert.equal(tamperedResponse.state.statusCode, 400);
+  assert.equal(tamperedCharged, false);
+  assert.equal(
+    recomputeFutureOrderPayableTotal(tampered.masterOrder.cartItem.candidate).status,
+    "rejected",
+  );
 }
 
 console.log(
