@@ -35,7 +35,10 @@ import {
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
-import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
+import {
+  getStep1GarmentDisplayLabel,
+  orderByCustomerSelectableGarmentType,
+} from "../utils/garmentConstructionPricing";
 import type { TraditionalAccessory } from "../utils/decorativePricing";
 import { TRADITIONAL_ACCESSORY_IMAGES } from "../utils/traditionalAccessoryImages";
 import {
@@ -690,7 +693,10 @@ export const DormantFutureCustomDetailsStep = ({
         )} - ${role === "additional" ? "Added garment" : "Base garment"}`,
       });
     });
-    return parents;
+    return orderByCustomerSelectableGarmentType(
+      parents,
+      (parent) => parent.garmentType,
+    );
   }, [reconciliation.subjects, parentOccurrenceLabels]);
   const decorativeFeatureLines = useMemo(() => {
     if (hasGarmentScopedDecorativeFeatureSelections(designSelections)) {

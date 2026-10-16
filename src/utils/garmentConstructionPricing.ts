@@ -43,6 +43,35 @@ export const CUSTOMER_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmen
     (garmentType) => garmentType !== "agbada",
   );
 
+const customerSelectableGarmentTypeRank = (
+  garmentType: FabricGarmentType,
+): number => {
+  const index = CUSTOMER_SELECTABLE_GARMENT_TYPES.indexOf(
+    garmentType as CanonicalPhysicalGarmentType,
+  );
+  return index === -1 ? CUSTOMER_SELECTABLE_GARMENT_TYPES.length : index;
+};
+
+/**
+ * Stable order for customer garment rows. Rank comes from
+ * CUSTOMER_SELECTABLE_GARMENT_TYPES, the customer garment list behind Step 1
+ * and the Add Additional Garment grid. Repeated instances of one type keep
+ * the order they already had. Types outside that list stay at the end.
+ */
+export const orderByCustomerSelectableGarmentType = <T>(
+  items: readonly T[],
+  garmentTypeOf: (item: T) => FabricGarmentType,
+): T[] =>
+  items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const byType =
+        customerSelectableGarmentTypeRank(garmentTypeOf(left.item)) -
+        customerSelectableGarmentTypeRank(garmentTypeOf(right.item));
+      return byType || left.index - right.index;
+    })
+    .map(({ item }) => item);
+
 /** Approved Step 1 display order; canonical selection ordering remains unchanged. */
 export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] = [
   "shirt",
