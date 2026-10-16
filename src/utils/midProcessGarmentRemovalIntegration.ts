@@ -16,6 +16,7 @@ import {
   createEmptyAdditionalGarmentConstructionState,
   removeAdditionalGarmentConstruction,
 } from "./additionalGarmentConstructionState";
+import { clearDecorativeFeaturesForGarment } from "./decorativePricing";
 import { removeGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
 import { removeGarmentScopedCustomDetails } from "./garmentScopedCustomDetailsState";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
@@ -81,7 +82,10 @@ export const prepareFuturePhysicalGarmentRemovalTransaction = ({
         result.state.uploadedAdditionalGarmentTypes,
       fabricAllocationState: result.state.fabricAllocationState,
       designSelections: {
-        ...currentDesignSelections,
+        ...clearDecorativeFeaturesForGarment(
+          currentDesignSelections,
+          result.removedOccurrence.garmentKey,
+        ),
         additionalGarmentConstructions:
           result.state.additionalGarmentConstructionState,
         garmentScopedCustomDetails:
@@ -237,7 +241,7 @@ export const preparePendingAdditionalGarmentCancellationCommit = ({
       [garmentKey],
     ),
   designSelections: {
-    ...designSelections,
+    ...clearDecorativeFeaturesForGarment(designSelections, garmentKey),
     additionalGarmentConstructions: removeAdditionalGarmentConstruction(
       designSelections.additionalGarmentConstructions ||
         createEmptyAdditionalGarmentConstructionState(),

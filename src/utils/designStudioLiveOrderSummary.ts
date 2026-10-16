@@ -356,6 +356,8 @@ type PersonalizedAdditionOccurrence = {
   optionLabel: string;
   priceStatus: "exact" | "evaluation_required" | "invalid";
   priceCents: number | null;
+  personalizedText: string | null;
+  monogramPlacementLabel: string | null;
 };
 
 const collectPersonalizedAdditionOccurrences = (
@@ -377,6 +379,8 @@ const collectPersonalizedAdditionOccurrences = (
           optionLabel: occurrence.optionLabel,
           priceStatus: occurrence.priceStatus,
           priceCents: occurrence.priceCents,
+          personalizedText: occurrence.personalizedText,
+          monogramPlacementLabel: occurrence.monogramPlacementLabel ?? null,
         })),
     );
   const orderLevelSelections =
@@ -393,6 +397,8 @@ const collectPersonalizedAdditionOccurrences = (
         optionLabel: occurrence.optionLabel,
         priceStatus: occurrence.priceStatus,
         priceCents: occurrence.priceCents,
+        personalizedText: occurrence.personalizedText,
+        monogramPlacementLabel: occurrence.monogramPlacementLabel ?? null,
       })) || [];
   return [...garmentScopedSelections, ...orderLevelSelections];
 };
@@ -406,6 +412,22 @@ const personalizedAdditionsSubtotalCents = (
     }
     return total + occurrence.priceCents;
   }, 0);
+
+const formatPersonalizedAdditionDetail = (
+  occurrence: PersonalizedAdditionOccurrence,
+): string => {
+  const base =
+    occurrence.garmentKey === "order"
+      ? occurrence.optionLabel
+      : `${occurrence.garmentLabel}: ${occurrence.optionLabel}`;
+  if (occurrence.optionId !== "Name Monogram") return base;
+  const name = occurrence.personalizedText?.trim();
+  const placement = occurrence.monogramPlacementLabel?.trim();
+  if (!name && !placement) return base;
+  const namePart = name ? ` “${name}”` : "";
+  const placementPart = placement ? `, ${placement}` : "";
+  return `${base}${namePart}${placementPart}`;
+};
 
 /**
  * Embroidery/monogram rows are garment-scoped; accessories remain order-level.
@@ -426,10 +448,7 @@ const personalizedAdditionLines = (
       .map((occurrence) => ({
         id: `personalized-addition:${occurrence.occurrenceKey}`,
         label: category,
-        detail:
-          occurrence.garmentKey === "order"
-            ? occurrence.optionLabel
-            : `${occurrence.garmentLabel}: ${occurrence.optionLabel}`,
+        detail: formatPersonalizedAdditionDetail(occurrence),
         amountLabel: amountLabelForCustomDetail(
           occurrence.priceCents,
           occurrence.priceStatus,

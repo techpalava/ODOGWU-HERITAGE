@@ -6,6 +6,7 @@ import type {
   MonogramPlacement,
   StyleCategory,
 } from "../types";
+import { validateMonogramText } from "./monogramText";
 import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig.js";
 import {
   calculateCustomDetailsPrice,
@@ -388,6 +389,7 @@ export const filterDesignSelectionsForDecorativeFeatures = (
         ? selections.monogramPlacement
         : DEFAULT_MONOGRAM_PLACEMENT
       : undefined,
+    monogramText: nameMonogramSelected ? selections.monogramText : undefined,
   };
 };
 
@@ -483,6 +485,48 @@ export const getMonogramPlacementForGarment = (
   return selections.monogramPlacement;
 };
 
+export const getMonogramTextForGarment = (
+  selections: DesignSelections | null | undefined,
+  garmentKey: string,
+): string | undefined => {
+  if (!selections) return undefined;
+  if (hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    return selections.monogramTextByGarmentKey?.[garmentKey];
+  }
+  if (garmentKey === "order") return selections.monogramText;
+  return selections.monogramTextByGarmentKey?.[garmentKey] || selections.monogramText;
+};
+
+const firstMonogramText = (
+  textByGarmentKey: Readonly<Record<string, string | undefined>>,
+): string | undefined =>
+  Object.keys(textByGarmentKey)
+    .sort((left, right) => left.localeCompare(right))
+    .map((garmentKey) => textByGarmentKey[garmentKey])
+    .find((text) => typeof text === "string" && text.length > 0);
+
+export const areAssignedMonogramNamesComplete = (
+  selections: DesignSelections | null | undefined,
+): boolean => {
+  if (!selections) return true;
+  const garmentKeys = getGarmentKeysForDecorativeFeature(
+    selections,
+    "Name Monogram",
+  ).filter((garmentKey) => garmentKey !== "order");
+  if (garmentKeys.length === 0) {
+    const legacySelected = (selections.decorativeFeatures || []).includes(
+      "Name Monogram",
+    );
+    if (!legacySelected) return true;
+    return validateMonogramText(selections.monogramText).status === "valid";
+  }
+  return garmentKeys.every(
+    (garmentKey) =>
+      validateMonogramText(getMonogramTextForGarment(selections, garmentKey))
+        .status === "valid",
+  );
+};
+
 export const enumerateGarmentScopedDecorativeFeatureSelections = (
   selections: DesignSelections | null | undefined,
 ): readonly {
@@ -523,7 +567,8 @@ export const enumerateGarmentScopedDecorativeFeatureSelections = (
 const syncLegacyDecorativeFeatureMirror = (
   byGarmentKey: Readonly<Record<string, readonly DecorativeFeature[]>>,
   placementByGarmentKey: Readonly<Record<string, MonogramPlacement | undefined>>,
-): Pick<DesignSelections, "decorativeFeatures" | "monogramPlacement"> => {
+  textByGarmentKey: Readonly<Record<string, string | undefined>>,
+): Pick<DesignSelections, "decorativeFeatures" | "monogramPlacement" | "monogramText"> => {
   const union = sortDecorativeFeatures(
     Object.values(byGarmentKey).flatMap((features) => [...features]),
   );
@@ -531,9 +576,11 @@ const syncLegacyDecorativeFeatureMirror = (
     Object.values(placementByGarmentKey).find(
       (value): value is MonogramPlacement => Boolean(value),
     ) || undefined;
+  const text = firstMonogramText(textByGarmentKey);
   return {
     decorativeFeatures: union,
     monogramPlacement: union.includes("Name Monogram") ? placement : undefined,
+    monogramText: union.includes("Name Monogram") ? text : undefined,
   };
 };
 
@@ -566,13 +613,24 @@ export const expandLegacyDecorativeFeaturesOntoGarments = (
           ]),
         )
       : {};
+  const monogramTextByGarmentKey =
+    legacyFeatures.includes("Name Monogram") && selections.monogramText
+      ? Object.fromEntries(
+          activeParentGarmentKeys.map((garmentKey) => [
+            garmentKey,
+            selections.monogramText,
+          ]),
+        )
+      : { ...(selections.monogramTextByGarmentKey || {}) };
   return {
     ...selections,
     decorativeFeaturesByGarmentKey,
     monogramPlacementByGarmentKey,
+    monogramTextByGarmentKey,
     ...syncLegacyDecorativeFeatureMirror(
       decorativeFeaturesByGarmentKey,
       monogramPlacementByGarmentKey,
+      monogramTextByGarmentKey,
     ),
   };
 };
@@ -589,13 +647,18 @@ export const setDecorativeFeaturesForGarment = (
   const monogramPlacementByGarmentKey = {
     ...(selections.monogramPlacementByGarmentKey || {}),
   };
+  const monogramTextByGarmentKey = {
+    ...(selections.monogramTextByGarmentKey || {}),
+  };
   if (nextFeatures.length === 0) {
     delete decorativeFeaturesByGarmentKey[garmentKey];
     delete monogramPlacementByGarmentKey[garmentKey];
+    delete monogramTextByGarmentKey[garmentKey];
   } else {
     decorativeFeaturesByGarmentKey[garmentKey] = nextFeatures;
     if (!nextFeatures.includes("Name Monogram")) {
       delete monogramPlacementByGarmentKey[garmentKey];
+      delete monogramTextByGarmentKey[garmentKey];
     } else if (!monogramPlacementByGarmentKey[garmentKey]) {
       monogramPlacementByGarmentKey[garmentKey] = DEFAULT_MONOGRAM_PLACEMENT;
     }
@@ -604,9 +667,11 @@ export const setDecorativeFeaturesForGarment = (
     ...selections,
     decorativeFeaturesByGarmentKey,
     monogramPlacementByGarmentKey,
+    monogramTextByGarmentKey,
     ...syncLegacyDecorativeFeatureMirror(
       decorativeFeaturesByGarmentKey,
       monogramPlacementByGarmentKey,
+      monogramTextByGarmentKey,
     ),
   };
 };
@@ -671,8 +736,13 @@ export const clearDecorativeFeatureAcrossGarments = (
         feature === "Name Monogram" || !remaining.includes("Name Monogram")
           ? undefined
           : selections.monogramPlacement,
+      monogramText:
+        feature === "Name Monogram" || !remaining.includes("Name Monogram")
+          ? undefined
+          : selections.monogramText,
       decorativeFeaturesByGarmentKey: {},
       monogramPlacementByGarmentKey: {},
+      monogramTextByGarmentKey: {},
     };
   }
   let next = selections;
@@ -693,8 +763,10 @@ export const clearAllDecorativeFeatures = (
   ...selections,
   decorativeFeatures: [],
   monogramPlacement: undefined,
+  monogramText: undefined,
   decorativeFeaturesByGarmentKey: {},
   monogramPlacementByGarmentKey: {},
+  monogramTextByGarmentKey: {},
 });
 
 export const formatDecorativeFeatureQuantityPriceLabel = (
@@ -731,8 +803,91 @@ export const setMonogramPlacementForGarment = (
     ...syncLegacyDecorativeFeatureMirror(
       decorativeFeaturesByGarmentKey,
       monogramPlacementByGarmentKey,
+      selections.monogramTextByGarmentKey || {},
     ),
   };
+};
+
+export const setMonogramTextForGarment = (
+  selections: DesignSelections,
+  garmentKey: string,
+  text: unknown,
+): DesignSelections => {
+  const features = getDecorativeFeaturesForGarment(selections, garmentKey);
+  if (!features.includes("Name Monogram")) return selections;
+  const decorativeFeaturesByGarmentKey = {
+    ...(selections.decorativeFeaturesByGarmentKey || {
+      [garmentKey]: features,
+    }),
+    [garmentKey]: features,
+  };
+  const monogramPlacementByGarmentKey = {
+    ...(selections.monogramPlacementByGarmentKey || {}),
+  };
+  if (!monogramPlacementByGarmentKey[garmentKey]) {
+    monogramPlacementByGarmentKey[garmentKey] = DEFAULT_MONOGRAM_PLACEMENT;
+  }
+  const monogramTextByGarmentKey = {
+    ...(selections.monogramTextByGarmentKey || {}),
+  };
+  const validation = validateMonogramText(text);
+  if (validation.status === "valid") {
+    monogramTextByGarmentKey[garmentKey] = validation.text;
+  } else {
+    delete monogramTextByGarmentKey[garmentKey];
+  }
+  return {
+    ...selections,
+    decorativeFeaturesByGarmentKey,
+    monogramPlacementByGarmentKey,
+    monogramTextByGarmentKey,
+    ...syncLegacyDecorativeFeatureMirror(
+      decorativeFeaturesByGarmentKey,
+      monogramPlacementByGarmentKey,
+      monogramTextByGarmentKey,
+    ),
+  };
+};
+
+export const prefillMonogramTextForGarment = (
+  selections: DesignSelections,
+  garmentKey: string,
+  orderedGarmentKeys: readonly string[],
+): DesignSelections => {
+  if (
+    validateMonogramText(getMonogramTextForGarment(selections, garmentKey))
+      .status === "valid"
+  ) {
+    return selections;
+  }
+  const source = orderedGarmentKeys.find((key) => {
+    if (key === garmentKey) return false;
+    return (
+      validateMonogramText(getMonogramTextForGarment(selections, key)).status ===
+      "valid"
+    );
+  });
+  if (!source) return selections;
+  return setMonogramTextForGarment(
+    selections,
+    garmentKey,
+    getMonogramTextForGarment(selections, source) || "",
+  );
+};
+
+export const formatCartMonogramLines = (
+  selections: DesignSelections | null | undefined,
+): string[] => {
+  if (!selections) return [];
+  return enumerateGarmentScopedDecorativeFeatureSelections(selections).flatMap(
+    (row) => {
+      if (row.feature !== "Name Monogram") return [];
+      const text = getMonogramTextForGarment(selections, row.garmentKey);
+      const placement = getMonogramPlacementLabel(row.placement);
+      const line = [text, placement].filter(Boolean).join(" · ");
+      return line ? [line] : [];
+    },
+  );
 };
 
 export const getCustomerSelectableDecorativeFeaturesForGarment = (

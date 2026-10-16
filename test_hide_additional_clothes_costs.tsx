@@ -696,6 +696,7 @@ const disabledStep = createElement(DormantFutureCustomDetailsStep, {
       onDecorativeFeatureGarmentAssign: () => undefined,
   onClearDecorativeFeatures: () => undefined,
   onMonogramPlacementChange: () => undefined,
+  onMonogramTextChange: () => undefined,
   onAccessoryToggle: () => undefined,
   onClearAccessories: () => undefined,
   onAddAdditionalGarment: () => undefined,

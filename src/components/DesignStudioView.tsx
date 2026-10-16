@@ -452,9 +452,12 @@ import {
   clearDecorativeFeatureAcrossGarments,
   expandLegacyDecorativeFeaturesOntoGarments,
   getGarmentKeysForDecorativeFeature,
+  areAssignedMonogramNamesComplete,
   hasGarmentScopedDecorativeFeatureSelections,
+  prefillMonogramTextForGarment,
   setDecorativeFeatureGarmentAssignment,
   setMonogramPlacementForGarment,
+  setMonogramTextForGarment,
   sortTraditionalAccessories,
   type TraditionalAccessory,
 } from "../utils/decorativePricing";
@@ -3432,10 +3435,11 @@ export default function DesignStudioView({
   const isFutureStep4CustomDetailsReady = isFutureCustomDetailsContentReady(
     futureStep4CustomDetailsCompletion,
   );
+  const monogramNamesReady = areAssignedMonogramNamesComplete(designSelections);
   const isFutureStep5PersonalizedAdditionsReady =
     isFutureCustomDetailsContentReady(
       futureStep5PersonalizedAdditionsCompletion,
-    );
+    ) && monogramNamesReady;
   const futureCustomDetailsPricing = futureScopedCustomDetailsReconciliation
     ? calculateGarmentScopedCustomDetailsPricing({
         reconciliation: futureScopedCustomDetailsReconciliation,
@@ -3446,6 +3450,8 @@ export default function DesignStudioView({
   const isFutureCustomDetailsStageReady = isFutureCustomDetailsContentReady(
     futureCustomDetailsCompletion,
   );
+  const isFuturePersonalizedAdditionsNavigationReady =
+    isFutureCustomDetailsStageReady && monogramNamesReady;
   const futureAiTryOnInputFingerprint =
     isFutureCustomDetailsStageReady &&
     isFutureDesignSourceReadyForCustomDetails &&
@@ -3802,6 +3808,7 @@ export default function DesignStudioView({
     customDetailsPricing: futureCustomDetailsPricing,
     personalizedInputs:
       futureScopedPersonalizedInputsReconciliation?.state || null,
+    designSelections: activeCustomerDesignSelections,
     aiTryOnWorkflow: futureAiTryOnWorkflow,
     measurementPlan: futureMeasurementPlan,
     measurementState: reconciledFutureMeasurementState,
@@ -3968,7 +3975,7 @@ export default function DesignStudioView({
     if (isFutureStep4CustomDetailsReady) {
       currentlyEnterable.add("personalized_additions");
     }
-    if (isFutureCustomDetailsStageReady) {
+    if (isFuturePersonalizedAdditionsNavigationReady) {
       currentlyEnterable.add("try_on");
     }
     if (isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow)) {
@@ -3995,7 +4002,7 @@ export default function DesignStudioView({
     futureFabricStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
-    isFutureCustomDetailsStageReady,
+    isFuturePersonalizedAdditionsNavigationReady,
     futureAiTryOnWorkflow,
     isFutureSummaryStageUnlocked,
     isFutureShippingUnlocked,
@@ -5925,7 +5932,7 @@ export default function DesignStudioView({
       fabricComplete: futureFabricStageCompletion.isComplete,
       designSourceReady: isFutureDesignSourceReadyForCustomDetails,
       customDetailsReady: isFutureStep4CustomDetailsReady,
-      personalizedAdditionsReady: isFutureCustomDetailsStageReady,
+      personalizedAdditionsReady: isFuturePersonalizedAdditionsNavigationReady,
       measurementUnlocked: isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow),
       summaryUnlocked: summaryUnlockedByMeasurements,
       inlineAdditionalGarmentFabricTransaction:
@@ -5957,7 +5964,7 @@ export default function DesignStudioView({
     garmentTypeStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
-    isFutureCustomDetailsStageReady,
+    isFuturePersonalizedAdditionsNavigationReady,
     futureAiTryOnWorkflow,
     summaryUnlockedByMeasurements,
     additionalGarmentFabricTransaction,
@@ -7780,7 +7787,7 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !isFutureCustomDetailsStageReady &&
+      !isFuturePersonalizedAdditionsNavigationReady &&
       !isStageHistoricallyUnlocked("try_on")
     ) {
       navigateToFutureStage(
@@ -8748,11 +8755,17 @@ export default function DesignStudioView({
       if (futureDecorativeParentGarmentKeys.length !== 1) {
         return seeded;
       }
-      return setDecorativeFeatureGarmentAssignment(
+      const assigned = setDecorativeFeatureGarmentAssignment(
         seeded,
         feature,
         futureDecorativeParentGarmentKeys[0],
         true,
+      );
+      if (feature !== "Name Monogram") return assigned;
+      return prefillMonogramTextForGarment(
+        assigned,
+        futureDecorativeParentGarmentKeys[0],
+        futureDecorativeParentGarmentKeys,
       );
     });
   };
@@ -8775,11 +8788,17 @@ export default function DesignStudioView({
         current,
         futureDecorativeParentGarmentKeys,
       );
-      return setDecorativeFeatureGarmentAssignment(
+      const next = setDecorativeFeatureGarmentAssignment(
         seeded,
         feature,
         garmentKey,
         assigned,
+      );
+      if (!assigned || feature !== "Name Monogram") return next;
+      return prefillMonogramTextForGarment(
+        next,
+        garmentKey,
+        futureDecorativeParentGarmentKeys,
       );
     });
   };
@@ -8796,6 +8815,15 @@ export default function DesignStudioView({
         futureDecorativeParentGarmentKeys,
       );
       return setMonogramPlacementForGarment(seeded, garmentKey, placement);
+    });
+  };
+  const handleFutureMonogramTextChange = (garmentKey: string, text: string) => {
+    setDesignSelections((current) => {
+      const seeded = expandLegacyDecorativeFeaturesOntoGarments(
+        current,
+        futureDecorativeParentGarmentKeys,
+      );
+      return setMonogramTextForGarment(seeded, garmentKey, text);
     });
   };
   const handleFutureAccessoryToggle = (accessory: TraditionalAccessory) => {
@@ -10202,7 +10230,7 @@ export default function DesignStudioView({
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
         canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
-        canEnterTryOn={isFutureCustomDetailsStageReady}
+        canEnterTryOn={isFuturePersonalizedAdditionsNavigationReady}
         canEnterMeasurement={isFutureMeasurementStageUnlocked(
           futureAiTryOnWorkflow,
         )}
@@ -10477,6 +10505,7 @@ export default function DesignStudioView({
           }
           onClearDecorativeFeatures={handleClearFutureDecorativeFeatures}
           onMonogramPlacementChange={handleFutureMonogramPlacementChange}
+          onMonogramTextChange={handleFutureMonogramTextChange}
           onAccessoryToggle={handleFutureAccessoryToggle}
           onClearAccessories={handleClearFutureAccessories}
           onAddAdditionalGarment={handleAddFutureAdditionalGarment}
