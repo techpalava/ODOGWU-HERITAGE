@@ -12,7 +12,7 @@ import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
-import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
@@ -2963,24 +2963,19 @@ export const DormantFutureFabricStep = ({
         />
       ) : null}
 
-      <div className="space-y-4">
+      <div
+        className="space-y-4"
+        data-testid={showContinueAction ? "future-fabric-continue-action" : undefined}
+      >
         <DesignStudioStepActions
           backDestination="Garment Type"
           onBack={onBack}
+          forward={showContinueAction ? {
+            destination: "Design Style",
+            onClick: onContinue,
+            ariaLabel: "Continue to Design Style",
+          } : undefined}
         />
-        {showContinueAction && (
-          <div
-            data-testid="future-fabric-continue-action"
-            className="flex justify-end"
-          >
-            <DesignStudioForwardButton
-              destination="Design Style"
-              onClick={onContinue}
-              ariaLabel="Continue to Design Style"
-              className="w-full sm:w-auto"
-            />
-          </div>
-        )}
       </div>
 
       {pendingOrphanRepair &&
