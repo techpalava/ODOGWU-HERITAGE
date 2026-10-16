@@ -140,6 +140,12 @@ export const WearerAssignmentPanel = ({
   const addAnotherHintId = useId();
   const nameInputByWearerId = useRef(new Map<string, HTMLInputElement>());
   const knownWearerIds = useRef<string[] | null>(null);
+  /**
+   * Split mode: the one card held open on purpose (Edit, or a newly added
+   * person). Falls back to the selected wearer. Complete cards other than this
+   * one collapse to a short row; incomplete cards always stay open.
+   */
+  const [expandedWearerId, setExpandedWearerId] = useState<string | null>(null);
   const wearers = [...order.wearers].sort(
     (left, right) => left.presentationOrder - right.presentationOrder,
   );
@@ -233,6 +239,7 @@ export const WearerAssignmentPanel = ({
         ? unfitKeysAfterFitChange(wearer.wearerId, fitContext).filter((key) => !before.has(key))
         : [];
     onSetFitContext(wearer.wearerId, fitContext);
+    setExpandedWearerId(wearer.wearerId);
     if (newlyUnfit.length === 0) return;
     fitAttentionNonce.current += 1;
     setFitAttention({
@@ -294,6 +301,7 @@ export const WearerAssignmentPanel = ({
     if (!previous) return;
     const added = ids.find((wearerId) => !previous.includes(wearerId));
     if (!added) return;
+    setExpandedWearerId(added);
     nameInputByWearerId.current.get(added)?.focus?.();
   }, [wearers]);
 
@@ -329,6 +337,19 @@ export const WearerAssignmentPanel = ({
     setUnsavedNameWearerIds((current) => withoutId(current, wearer.wearerId));
     setNameHintWearerIds((current) => withoutId(current, wearer.wearerId));
   };
+  /** Split card setup is complete: confirmed name, a fit, and at least one owned garment. */
+  const isWearerSetupComplete = (wearer: (typeof wearers)[number]) =>
+    isNameConfirmed(wearer) &&
+    wearer.fitContext !== null &&
+    garments.some(
+      (garment) => order.assignmentByGarmentKey[garment.garmentKey] === wearer.wearerId,
+    );
+  const openWearerId = expandedWearerId ?? activeWearerId;
+  const isWearerCardCollapsed = (wearer: (typeof wearers)[number]) =>
+    wearers.length > 1 &&
+    wearer.wearerId !== openWearerId &&
+    fitAttention?.wearerId !== wearer.wearerId &&
+    isWearerSetupComplete(wearer);
   const atWearerCap = wearers.length >= cap;
   const namesPending = wearers.some((wearer) => !isNameConfirmed(wearer));
   /**
@@ -552,10 +573,46 @@ export const WearerAssignmentPanel = ({
       ) : null}
       <h4 className="mt-4 text-sm font-bold text-heritage-green">Add people</h4>
       <div className="mt-2 grid gap-2">
-        {wearers.map((wearer, index) => (
+        {wearers.map((wearer, index) => isWearerCardCollapsed(wearer) ? (
           <article
             key={wearer.wearerId}
-            onClick={() => onSelectWearer(wearer.wearerId)}
+            data-wearer-card-collapsed="true"
+            className={`rounded-2xl border ${
+              wearer.wearerId === activeWearerId
+                ? "border-heritage-gold bg-heritage-cream/40"
+                : "border-heritage-gold/20 bg-white"
+            }`}
+          >
+            <button
+              type="button"
+              data-wearer-card-expand="true"
+              aria-expanded={false}
+              aria-label={`Edit ${labelForWearer(wearer)}`}
+              className="flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-2xl px-3 py-1.5 text-left text-sm"
+              onClick={() => {
+                setExpandedWearerId(wearer.wearerId);
+                onSelectWearer(wearer.wearerId);
+              }}
+            >
+              <span className="font-bold text-heritage-green">{labelForWearer(wearer)}</span>
+              <span className="min-w-0 flex-1 basis-36 break-words text-xs text-heritage-ink/65">
+                {garments
+                  .filter((garment) => order.assignmentByGarmentKey[garment.garmentKey] === wearer.wearerId)
+                  .map((garment) => labelFor(garment))
+                  .join(", ")}
+              </span>
+              <span aria-hidden="true" className="ml-auto shrink-0 text-xs font-bold text-heritage-green underline">
+                Edit
+              </span>
+            </button>
+          </article>
+        ) : (
+          <article
+            key={wearer.wearerId}
+            onClick={() => {
+              setExpandedWearerId(wearer.wearerId);
+              onSelectWearer(wearer.wearerId);
+            }}
             className={`rounded-2xl border p-2.5 ${
               wearer.wearerId === activeWearerId
                 ? "border-heritage-gold bg-heritage-cream/40"
@@ -576,7 +633,10 @@ export const WearerAssignmentPanel = ({
                   className="mt-0.5 min-h-9 w-full min-w-0 rounded-xl border border-heritage-gold/30 bg-white px-3 py-1 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
                   placeholder={index === 0 ? "You" : "Add person"}
                   value={wearer.displayName}
-                  onFocus={() => onSelectWearer(wearer.wearerId)}
+                  onFocus={() => {
+                    setExpandedWearerId(wearer.wearerId);
+                    onSelectWearer(wearer.wearerId);
+                  }}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
                     // Any edit clears confirmation until Save or blur again. The raw
@@ -852,6 +912,7 @@ export const WearerAssignmentPanel = ({
                               aria-describedby={muted ? noteId : undefined}
                               onChange={() => {
                                 if (locked) return;
+                                setExpandedWearerId(wearer.wearerId);
                                 if (checked) {
                                   onUnassignGarment?.(garment.garmentKey);
                                   return;

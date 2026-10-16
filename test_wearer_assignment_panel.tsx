@@ -45,7 +45,16 @@ const textContent = (node: ReactTestInstance | string): string =>
     ? node
     : node.children.map((child) => textContent(child as ReactTestInstance | string)).join("");
 
+/** Split mode collapses complete cards; open one through its Edit row first. */
+const expandCollapsedCard = (root: ReactTestInstance, wearerLabel: string) => {
+  const row = root
+    .findAll((node) => node.type === "button" && node.props["data-wearer-card-expand"] === "true")
+    .find((button) => button.props["aria-label"] === `Edit ${wearerLabel}`);
+  if (row) act(() => row.props.onClick());
+};
+
 const cardFor = (root: ReactTestInstance, wearerLabel: string) => {
+  expandCollapsedCard(root, wearerLabel);
   const card = root.findAllByType("article").find((article) =>
     article
       .findAllByType("input")
@@ -228,6 +237,7 @@ await act(async () => {
 });
 
 const removeButtonFor = (displayName: string) => {
+  expandCollapsedCard(renderer.root, displayName);
   const article = renderer.root.findAllByType("article").find((candidate) =>
     candidate.findAllByType("input").some((input) => input.props.value === displayName),
   );
@@ -239,6 +249,7 @@ const removeButtonFor = (displayName: string) => {
 };
 
 const beforeReject = structuredClone(latestOrder);
+expandCollapsedCard(renderer.root, "Amaka");
 await act(async () => {
   removeButtonFor("Amaka").props.onClick();
 });
@@ -276,6 +287,7 @@ assert.match(textContent(cardFor(renderer.root, "Amaka")), /Assigned to You/);
 assert.equal(latestOrder.assignmentByGarmentKey["additional:shirt:1"], youId);
 assert.ok(latestOrder.wearers.some((wearer) => wearer.wearerId === amaka.wearerId));
 
+expandCollapsedCard(renderer.root, "Amaka");
 await act(async () => {
   removeButtonFor("Amaka").props.onClick();
 });
@@ -861,8 +873,10 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   );
   assert.equal(
     root().findAllByProps({ "data-wearer-garment-assign": "true" }).length,
-    3,
-    "a new person also gets the in-card garment list",
+    1,
+    "the new person opens with the in-card garment list; the complete cards collapse",
+  );
+  assert.equal(root().findAllByProps({ "data-wearer-card-collapsed": "true" }).length, 2
   );
   assert.equal(
     cardFor(root(), "Person 3").findByProps({ "data-wearer-garment-assign": "true" }).props.disabled,
@@ -1633,6 +1647,7 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
   assert.equal(root().findAllByProps({ "data-wearer-unassigned-note": "true" }).length, 1);
 
   // 2+ people: Remove deletes only that person; back under the cap.
+  expandCollapsedCard(root(), "Bola");
   await act(async () => {
     removeButtonIn(root(), "Bola").props.onClick();
   });
@@ -1741,6 +1756,7 @@ console.log("PASS: wearer assignment panel hard ceiling copy");
     soleRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
   });
   assert.equal(soleRenderer.root.findAllByProps({ "data-wearer-people": "true" }).length, 1);
+  expandCollapsedCard(soleRenderer.root, "You");
   await act(async () => {
     removeButtonIn(soleRenderer.root, "You").props.onClick({ stopPropagation() {} });
   });
@@ -2509,7 +2525,8 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
     .filter((node) => typeof node.type === "string")
     .map((node) => textContent(node));
   assert.deepEqual(fredNotes, ["Assigned to nol"]);
-  assert.equal(assertGarmentNotesInsideTheirPill(fn.root), 2);
+  // nol is complete now and collapses while fred is open, so only fred's note shows.
+  assert.equal(assertGarmentNotesInsideTheirPill(fn.root), 1);
   assert.match(
     textContent(garmentRowIn(fn.root, "fred", "base:shirt").findByType("label")),
     /^Shirt\s*Assigned to nol$/,
@@ -2649,12 +2666,14 @@ console.log("PASS: wearer assignment panel owned-by-other rows are locked with a
   assert.equal(marked(resting.root, "data-wearer-garment-unfit-focus").length, 0);
   assert.equal(liveText(resting.root), "");
   // Selecting a person card does not trigger either.
+  expandCollapsedCard(resting.root, "nol");
   await act(async () => {
     cardFor(resting.root, "nol").props.onClick();
   });
-  assert.equal(selectCalls, 1);
+  assert.equal(selectCalls, 2, "nol's Edit row and card click each select nol");
   assert.deepEqual(focused, []);
   // Male -> Female on fred: nothing becomes newly unfit, so no scroll / pulse / focus.
+  expandCollapsedCard(resting.root, "fred");
   await act(async () => {
     fitRadio(resting.root, "fred", "female").props.onChange();
   });
@@ -2675,6 +2694,7 @@ console.log("PASS: wearer assignment panel owned-by-other rows are locked with a
     trigger = create(<FitConflictHarness initial={build("female")} />, { createNodeMock: nodeMock as never });
   });
   assert.equal(beams(trigger.root).length, 0, "Female fit: nothing unfit yet");
+  expandCollapsedCard(trigger.root, "fred");
   await act(async () => {
     fitRadio(trigger.root, "fred", "male").props.onChange();
   });
@@ -2711,9 +2731,11 @@ console.log("PASS: wearer assignment panel owned-by-other rows are locked with a
   );
   assert.equal(focused.length, 1, "no extra focus after the pulse");
   // Unmount mid-pulse: the timer is cleaned up (no state update after unmount).
+  expandCollapsedCard(trigger.root, "fred");
   await act(async () => {
     fitRadio(trigger.root, "fred", "female").props.onChange();
   });
+  expandCollapsedCard(trigger.root, "fred");
   await act(async () => {
     fitRadio(trigger.root, "fred", "male").props.onChange();
   });
@@ -2848,3 +2870,94 @@ console.log("PASS: wearer assignment panel fit-conflict attention");
 }
 
 console.log("PASS: wearer assignment panel Saved success state and visible Remove person");
+
+{
+  // Split mode: complete cards collapse to a short name + garments row; one card stays open.
+  const cpGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:2", garmentType: "shirt" },
+  ];
+  const cpStart: WearerOrderStateV2 = {
+    ...createEmptyWearerOrder(),
+    wearers: [
+      createWearerProfile({ wearerId: "w-ada", displayName: "Ada", fitContext: "female", presentationOrder: 0 }),
+      createWearerProfile({ wearerId: "w-bola", displayName: "Bola", fitContext: "female", presentationOrder: 1 }),
+    ],
+    assignmentByGarmentKey: { "base:shirt": "w-ada", "additional:shirt:1": "w-ada" },
+  };
+  const cpSelected: string[] = [];
+  const CollapseHarness = () => {
+    const [order, setOrder] = useState(cpStart);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={null}
+        garments={cpGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt", "additional:shirt:1": "Long Shirt", "additional:shirt:2": "Short Shirt" }}
+        garmentTypeSelection={selection()}
+        onSelectWearer={(wearerId) => cpSelected.push(wearerId)}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({ order, physicalGarmentCount: cpGarments.length, displayName, fitContext });
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={(garmentKey, wearerId) => {
+          const garment = cpGarments.find((item) => item.garmentKey === garmentKey)!;
+          const result = assignGarmentToWearer({ order, garmentKey, wearerId, garment, garmentTypeSelection: selection() });
+          if (result.status === "updated") setOrder(result.order);
+          return result;
+        }}
+        onUnassignGarment={(garmentKey) => setOrder(removeGarmentFromWearerOrder(order, garmentKey))}
+      />
+    );
+  };
+  const collapsedRows = (root: ReactTestInstance) =>
+    root.findAll((node) => node.type === "article" && node.props["data-wearer-card-collapsed"] === "true");
+  const expandRow = (root: ReactTestInstance, label: string) =>
+    root.find((node) => node.type === "button" && node.props["aria-label"] === `Edit ${label}`);
+  let cp!: ReturnType<typeof create>;
+  await act(async () => {
+    cp = create(<CollapseHarness />);
+  });
+  // Ada is complete (saved name, fit, garments) and collapses; Bola owns nothing and stays open.
+  const adaRow = collapsedRows(cp.root);
+  assert.equal(adaRow.length, 1, "only the complete card collapses");
+  const adaButton = adaRow[0].findByProps({ "data-wearer-card-expand": "true" });
+  assert.equal(adaButton.type, "button");
+  assert.equal(adaButton.props["aria-expanded"], false);
+  assert.equal(adaButton.props["aria-label"], "Edit Ada");
+  assert.match(String(adaButton.props.className), /min-h-11/);
+  assert.match(textContent(adaButton), /Ada/);
+  assert.equal(/fit/i.test(textContent(adaButton)), false, "the row shows no fit");
+  assert.match(textContent(adaButton), /Standard Shirt, Long Shirt/);
+  assert.equal(adaRow[0].findAllByType("input").length, 0, "the collapsed row has no form fields");
+  assert.ok(nameInput(cp.root, "Bola"), "incomplete Bola stays expanded");
+  // Edit re-expands Ada and selects her.
+  await act(async () => {
+    expandRow(cp.root, "Ada").props.onClick();
+  });
+  assert.deepEqual(cpSelected, ["w-ada"]);
+  assert.equal(collapsedRows(cp.root).length, 0);
+  assert.ok(nameInput(cp.root, "Ada"), "Ada is open for editing");
+  // Bola ticks a garment and becomes complete: she is the card being edited, so Ada collapses.
+  await toggleGarment(cp.root, "Bola", "additional:shirt:2");
+  assert.equal(collapsedRows(cp.root).length, 1);
+  assert.equal(expandRow(cp.root, "Ada").props["aria-expanded"], false);
+  assert.ok(nameInput(cp.root, "Bola"), "Bola stays open while editing");
+  // A newly added person opens; every complete card collapses.
+  await act(async () => {
+    addAnotherButton(cp.root).props.onClick();
+  });
+  assert.equal(cp.root.findAllByType("article").length, 3);
+  assert.equal(collapsedRows(cp.root).length, 2, "Ada and Bola collapse");
+  assert.ok(nameInput(cp.root, "Person 3"), "the new person opens");
+  await act(async () => {
+    cp.unmount();
+  });
+}
+
+console.log("PASS: wearer assignment panel complete Split cards collapse to a short row");
