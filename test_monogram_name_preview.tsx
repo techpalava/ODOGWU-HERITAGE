@@ -4,6 +4,9 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import {
+  MONOGRAM_PREVIEW_MIN_FONT,
+  monogramPreviewChestBox,
+  monogramPreviewLetteringFit,
   monogramPreviewLetteringPosition,
   monogramPreviewSilhouette,
 } from "./src/components/MonogramNamePreview";
@@ -47,6 +50,31 @@ assert.notEqual(
 assert.notEqual(
   monogramPreviewLetteringPosition("hem", "dress").top,
   monogramPreviewLetteringPosition("hem", "shirt").top,
+);
+
+const shirtChest = monogramPreviewChestBox("shirt");
+const dressChest = monogramPreviewChestBox("dress");
+assert.ok(shirtChest.x > 40, "left chest sits on the viewer's right");
+assert.ok(shirtChest.x + shirtChest.width < 58, "left chest stays inside the shirt body");
+assert.ok(dressChest.x > 40);
+assert.ok(dressChest.x + dressChest.width < 54);
+for (const sample of ["ADEBAYO", "MMMMMMMMMMMM", "IJ", "O'NEIL-ÉMI", "YOUR NAME"]) {
+  for (const box of [shirtChest, dressChest]) {
+    const fit = monogramPreviewLetteringFit(sample, box);
+    assert.ok(fit.fontSize >= MONOGRAM_PREVIEW_MIN_FONT);
+    assert.ok(fit.fontSize <= box.height);
+    if (fit.textLength !== undefined) {
+      assert.ok(fit.textLength <= box.width);
+      assert.ok(fit.textLength > 0);
+    }
+  }
+}
+assert.equal(monogramPreviewLetteringFit("IJ", shirtChest).textLength, undefined);
+assert.ok(monogramPreviewLetteringFit("ADEBAYO", shirtChest).textLength);
+assert.ok(monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).textLength);
+assert.ok(
+  (monogramPreviewLetteringFit("IJ", shirtChest).fontSize ?? 0) >
+    (monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).fontSize ?? 0),
 );
 
 const style: StyleCategory = {
@@ -165,14 +193,17 @@ assert.equal(shirt.props["data-monogram-preview-placement"], "left_chest");
 assert.equal(shirt.props["data-monogram-preview-text"], "ADEBAYO");
 assert.equal(shirt.props["data-monogram-preview-placeholder"], "false");
 assert.equal(lettering(shirt).children.join(""), "ADEBAYO");
-assert.equal(lettering(shirt).props.style.left, "64%");
+assert.ok(Number(lettering(shirt).props.x) > 40);
+assert.ok(Number(lettering(shirt).props.textLength) <= shirtChest.width);
+assert.match(String(lettering(shirt).props.clipPath), /monogram-chest-base-shirt-chest/);
 
 assert.equal(dress.props["data-monogram-preview-silhouette"], "dress");
 assert.equal(dress.props["data-monogram-preview-placement"], "hem");
 assert.equal(dress.props["data-monogram-preview-text"], "");
 assert.equal(dress.props["data-monogram-preview-placeholder"], "true");
 assert.equal(lettering(dress).children.join(""), "YOUR NAME");
-assert.notEqual(lettering(shirt).props.style.top, lettering(dress).props.style.top);
+assert.equal(lettering(dress).props.style.top, "80%");
+assert.notEqual(lettering(shirt).props.y, lettering(dress).props.style.top);
 
 assert.equal(
   renderer.root.findAll(
