@@ -5,8 +5,8 @@ import type {
   DesignSelections,
   MonogramPlacement,
   StyleCategory,
-} from "../types";
-import { validateMonogramText } from "./monogramText";
+} from "../types.js";
+import { validateMonogramText } from "./monogramText.js";
 import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig.js";
 import {
   calculateCustomDetailsPrice,

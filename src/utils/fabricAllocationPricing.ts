@@ -3,10 +3,10 @@ import type {
   Fabric,
   FabricAllocation,
   FabricAllocationState,
-} from "../types";
-import { getFabricSewingCost, resolveFabricPrice } from "./fabricPricing";
-import { roundMoney } from "./money";
-import { inspectCartItemFabricAllocations } from "./fabricAllocationPersistence";
+} from "../types.js";
+import { getFabricSewingCost, resolveFabricPrice } from "./fabricPricing.js";
+import { roundMoney } from "./money.js";
+import { inspectCartItemFabricAllocations } from "./fabricAllocationPersistence.js";
 
 export type FabricAllocationPricingUnresolvedReason =
   | "NO_FABRIC_ALLOCATIONS"

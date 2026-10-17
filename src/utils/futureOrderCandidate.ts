@@ -8,58 +8,58 @@ import type {
   FutureMeasurementStateV1,
   FutureShippingStateV1,
   WearerOrderStateV2,
-} from "../types";
+} from "../types.js";
 import {
   COMMUNITY_BATCH_CLOSED_MESSAGE,
   isCommunityBatchClosedForOrders,
-} from "./communityBatchOrderClosure";
+} from "./communityBatchOrderClosure.js";
 import {
   DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
   isSupportedDesignStudioJourneySchemaVersion,
-} from "./designSourceJourney";
+} from "./designSourceJourney.js";
 import {
   reconcileFutureShippingState,
   type FutureShippingStageResolution,
-} from "./designStudioFutureShipping";
+} from "./designStudioFutureShipping.js";
 import {
   projectFutureDesignStudioSummary,
   type FutureDesignStudioSummaryBlocker,
   type FutureDesignStudioSummaryInput,
-} from "./designStudioFutureSummary";
+} from "./designStudioFutureSummary.js";
 import {
   buildAuthoritativePhysicalOccurrences,
   validateFinalPhysicalOccurrenceAssignmentParity,
   validateRawFabricAssignments,
-} from "./designSourceState";
-import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
-import { canonicalWearerDisplayName, isWearerOrderStateV2 } from "./wearerOrder";
+} from "./designSourceState.js";
+import { projectActiveFutureMeasurementState } from "./measurementBlueprint.js";
+import { canonicalWearerDisplayName, isWearerOrderStateV2 } from "./wearerOrder.js";
 import {
   getCanonicalOrderIdentity,
   type CanonicalOrderIdentity,
-} from "./orderContextIdentity";
-import { individualLagosToEindhovenChargeCents } from "./individualInboundShippingDisplay";
+} from "./orderContextIdentity.js";
+import { individualLagosToEindhovenChargeCents } from "./individualInboundShippingDisplay.js";
 import {
   isStep8CustomerSelectableCountry,
   isStep8DestinationZone,
   isSupportedStep8RateVersion,
-} from "../config/Step8AdditionalDeliveryConfig";
+} from "../config/Step8AdditionalDeliveryConfig.js";
 import {
   isStep8FakeCountryCode,
   isValidIsoCountryCode,
   normalizeStep8CountryCode,
   resolveStep8WeightTier,
-} from "./step8AdditionalDelivery";
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
+} from "./step8AdditionalDelivery.js";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import {
   validateGarmentScopedDesignStyleAssignmentLedger,
   type GarmentScopedDesignStyleAssignmentLedgerV2,
   type GarmentScopedDesignStyleValidationAuthority,
-} from "./garmentScopedDesignStyleAssignment";
+} from "./garmentScopedDesignStyleAssignment.js";
 import {
   getDesignStyleAuthorityMetadata,
   isAuthoritativeDesignStyleProjection,
-} from "./designStyleAuthority";
-import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
+} from "./designStyleAuthority.js";
+import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity.js";
 
 export const FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION = 1 as const;
 
@@ -291,7 +291,7 @@ export interface FutureOrderCandidateOccurrenceStylesBuildInput {
   readonly occurrences: readonly PhysicalGarmentOccurrence[];
   readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
   readonly validationAuthority: GarmentScopedDesignStyleValidationAuthority;
-  readonly styles: readonly import("../types").StyleCategory[];
+  readonly styles: readonly import("../types.js").StyleCategory[];
   readonly uploadedAuthorityBySourceRef: Readonly<Record<string, FutureOrderCandidateUploadedStyleAuthorityV2 | undefined>>;
 }
 

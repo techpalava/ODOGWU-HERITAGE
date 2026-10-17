@@ -13,26 +13,26 @@ import type {
   GarmentTypeStepSelection,
   FabricAllocationState,
   StyleCategory,
-} from "../types";
+} from "../types.js";
 import {
   ALL_CUSTOM_DETAIL_SELECTION_GROUPS,
   isCustomerVisibleAdditionalClothesCostForGarment,
-} from "../config/GarmentDetailsConfig";
+} from "../config/GarmentDetailsConfig.js";
 import {
   createStyleBaseGarmentSpec,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import {
   resolveCustomDetailPhysicalComponents,
-} from "../config/CustomDetailPhysicalComponentConfig";
+} from "../config/CustomDetailPhysicalComponentConfig.js";
 import {
   type CustomDetailCatalogInspection,
   type ProvenanceAwareCustomDetailCatalogEntry,
   isClothingPriceSelectionGroup,
   sortCustomDetailOptions,
-} from "./catalogHelpers";
-import { normalizePersistedGarmentTypeStepSelection } from "./garmentTypeStepState";
-import { isCanonicalPhysicalGarmentType } from "./garmentConstructionPricing";
-import { parseAdditionalGarmentTypeFromKey } from "./designSourceState";
+} from "./catalogHelpers.js";
+import { normalizePersistedGarmentTypeStepSelection } from "./garmentTypeStepState.js";
+import { isCanonicalPhysicalGarmentType } from "./garmentConstructionPricing.js";
+import { parseAdditionalGarmentTypeFromKey } from "./designSourceState.js";
 import {
   cloneGarmentScopedCustomDetailsState,
   createEmptyGarmentScopedCustomDetailsState,
@@ -40,19 +40,19 @@ import {
   normalizeGarmentScopedCustomDetailsState,
   setGarmentScopedCustomDetailSelection,
   setGarmentScopedCustomDetailSnapshot,
-} from "./garmentScopedCustomDetailsState";
+} from "./garmentScopedCustomDetailsState.js";
 import {
   enumerateGarmentScopedCustomDetailInputs,
   normalizeGarmentScopedCustomDetailInputs,
   PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
   retainGarmentScopedCustomDetailInputIdentities,
   validateGarmentScopedCustomDetailText,
-} from "./garmentScopedCustomDetailInputsState";
+} from "./garmentScopedCustomDetailInputsState.js";
 import type {
   GarmentDesignStyleAssignmentTarget,
   GarmentDesignStyleAssignmentV2,
-} from "./garmentScopedDesignStyleAssignment";
-import type { DesignStyleStepOccurrenceStatus } from "./designStyleStepRuntime";
+} from "./garmentScopedDesignStyleAssignment.js";
+import type { DesignStyleStepOccurrenceStatus } from "./designStyleStepRuntime.js";
 
 const FUTURE_CUSTOM_DETAIL_GARMENT_ORDER: readonly CanonicalPhysicalGarmentType[] = [
   "shirt",

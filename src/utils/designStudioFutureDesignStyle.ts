@@ -2,10 +2,10 @@ import {
   FABRIC_GARMENT_CAPACITY_UNITS,
   applyLegacyStyleFabricCapacityConfig,
   getStyleBaseFabricCapacityComposition,
-} from "../config/StyleFabricCapacityConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
-import { getGarmentTypeStepLabel } from "../components/GarmentTypeStep";
-import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState";
+} from "../config/StyleFabricCapacityConfig.js";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
+import { getGarmentTypeStepLabel } from "../components/GarmentTypeStep.js";
+import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState.js";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailDemographic,
@@ -14,7 +14,7 @@ import type {
   GarmentTypeStepSelection,
   StyleApplicability,
   StyleCategory,
-} from "../types";
+} from "../types.js";
 
 export type FutureDesignStyleCompatibilityStatus =
   | "exact_match"

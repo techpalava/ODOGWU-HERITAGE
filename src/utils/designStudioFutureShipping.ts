@@ -6,7 +6,7 @@ import {
   isStep8CustomerSelectableCountry,
   isStep8DestinationZone,
   type Step8WeightTier,
-} from "../config/Step8AdditionalDeliveryConfig";
+} from "../config/Step8AdditionalDeliveryConfig.js";
 import type {
   FutureShippingDestinationSelectionMode,
   FutureShippingDestinationZone,
@@ -14,16 +14,16 @@ import type {
   FutureShippingStateV1,
   FutureShippingFulfilmentSelection,
   FutureShippingWeightTier,
-} from "../types";
-import type { FutureDesignStudioSummaryStatus } from "./designStudioFutureSummary";
-import { PRICING_CURRENCY_SYMBOL } from "./money";
+} from "../types.js";
+import type { FutureDesignStudioSummaryStatus } from "./designStudioFutureSummary.js";
+import { PRICING_CURRENCY_SYMBOL } from "./money.js";
 import {
   formatStep8CustomerDestination,
   isStep8FakeCountryCode,
   isValidIsoCountryCode,
   normalizeStep8CountryCode,
   resolveStep8AdditionalDelivery,
-} from "./step8AdditionalDelivery";
+} from "./step8AdditionalDelivery.js";
 
 export const FUTURE_SHIPPING_STATE_SCHEMA_VERSION = 1 as const;
 

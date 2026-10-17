@@ -1,7 +1,7 @@
 import type {
   GarmentTypeStepSelection,
   PhysicalGarmentOccurrenceIdentityStateV1,
-} from "../types";
+} from "../types.js";
 
 export const PHYSICAL_GARMENT_OCCURRENCE_IDENTITY_SCHEMA_VERSION = 1 as const;
 

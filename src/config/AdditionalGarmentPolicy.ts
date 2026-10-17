@@ -6,7 +6,7 @@ import type {
   FabricCapacityGarmentSpec,
   FabricGarmentType,
   StyleCategory,
-} from "../types";
+} from "../types.js";
 
 export interface NormalizedGarmentDemographic {
   raw: string;

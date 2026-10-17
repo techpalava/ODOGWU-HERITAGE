@@ -1,4 +1,4 @@
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
 import type {
   AdditionalGarmentEligibilityRule,
   CustomDetailDesignContext,
@@ -9,22 +9,22 @@ import type {
   FabricGarmentType,
   GarmentConstructionPricingResolution,
   CanonicalPhysicalGarmentType,
-} from "../types";
-import type { FabricAllocationSelection } from "../engine/FabricAllocationStateEngine";
+} from "../types.js";
+import type { FabricAllocationSelection } from "../engine/FabricAllocationStateEngine.js";
 import {
   createStyleBaseGarmentSpec,
   FABRIC_GARMENT_CAPACITY_UNITS,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import {
   isAdditionalGarmentType,
   resolveAdditionalGarmentPolicyCandidates,
   resolveShortsGarmentUnitPriceCents,
-} from "../config/AdditionalGarmentPolicy";
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
+} from "../config/AdditionalGarmentPolicy.js";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import {
   isCanonicalPhysicalGarmentType,
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
-} from "./garmentConstructionPricing";
+} from "./garmentConstructionPricing.js";
 
 /** Creation/presentation authority for catalogue additions, separate from Step 1. */
 export const CATALOGUE_ADDITIONAL_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] =

@@ -6,7 +6,7 @@ import type {
   FabricGarmentType,
   FabricUnitCount,
   StyleCategory,
-} from "../types";
+} from "../types.js";
 
 const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
   Partial<Record<FabricGarmentType, NonNullable<DesignSelections["customDetails"]>>>

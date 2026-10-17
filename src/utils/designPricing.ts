@@ -12,34 +12,34 @@ import type {
   GarmentConstructionSelectionMode,
   GarmentTypeStepSelection,
   StyleCategory,
-} from "../types";
+} from "../types.js";
 import {
   calculateCustomDetailsPriceBreakdown,
   filterDesignSelectionsForCustomDetails,
   getSelectedCustomDetailOptionIds,
   hasSelectedCustomDetailOption,
-} from "./catalogHelpers";
-import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
+} from "./catalogHelpers.js";
+import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig.js";
 import {
   calculateGarmentDetailsPrice,
   getStyleIncludedCatalogOverlapPrice,
-} from "./decorativePricing";
-import type { PricedSelection } from "./decorativePricing";
-import { roundMoney } from "./money";
+} from "./decorativePricing.js";
+import type { PricedSelection } from "./decorativePricing.js";
+import { roundMoney } from "./money.js";
 import {
   resolveLegacyFabricMaterialPricing,
   type ResolvedFabricAllocationPricing,
-} from "./fabricAllocationPricing";
+} from "./fabricAllocationPricing.js";
 import {
   createStyleBaseGarmentSpec,
   getDefaultGarmentDetailsForSpec,
-} from "../config/StyleFabricCapacityConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
-import { resolveAdditionalGarmentPriceRows } from "./additionalGarmentDomain";
+} from "../config/StyleFabricCapacityConfig.js";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
+import { resolveAdditionalGarmentPriceRows } from "./additionalGarmentDomain.js";
 import {
   LEGACY_GARMENT_CONSTRUCTION_SELECTION_MODE,
   resolveLockedGarmentConstructionBridge,
-} from "./garmentConstructionCustomDetails";
+} from "./garmentConstructionCustomDetails.js";
 
 export const CHECKOUT_DESIGN_PRICING_VERSION =
   "2026-08-12-design-checkout-v3";

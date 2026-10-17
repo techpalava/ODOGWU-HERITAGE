@@ -1,8 +1,8 @@
-import type { Fabric, FabricAllocationState } from "../types";
+import type { Fabric, FabricAllocationState } from "../types.js";
 import {
   getFabricStockPresentation,
   type FabricStockPresentation,
-} from "./fabricStockPresentation";
+} from "./fabricStockPresentation.js";
 
 export const isAuthoritativeNumericFabricStock = (
   stock: unknown,

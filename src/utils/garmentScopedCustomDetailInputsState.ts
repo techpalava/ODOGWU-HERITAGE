@@ -1,9 +1,9 @@
-import { ALL_CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig";
+import { ALL_CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig.js";
 import type {
   CustomDetailOptionId,
   CustomDetailSelectionGroup,
   GarmentScopedCustomDetailInputsV1,
-} from "../types";
+} from "../types.js";
 
 export const GARMENT_SCOPED_CUSTOM_DETAIL_INPUTS_SCHEMA_VERSION = 1 as const;
 export const GARMENT_SCOPED_CUSTOM_DETAIL_TEXT_MAX_LENGTH = 2000;

@@ -1,5 +1,5 @@
-import type { Fabric } from "../types";
-import { resolveFabricPrice } from "./fabricPricing";
+import type { Fabric } from "../types.js";
+import { resolveFabricPrice } from "./fabricPricing.js";
 
 /** Shared Fabric catalogue availability copy used by Step 2 and Step 4 pickers. */
 export const getFabricAvailabilityMessage = (fabric: Fabric): string | null => {

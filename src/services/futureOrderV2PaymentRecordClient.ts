@@ -1,9 +1,9 @@
 import type { User } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth } from "./firebase.js";
 import {
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
-} from "../utils/futureOrderV2PaymentRecord";
+} from "../utils/futureOrderV2PaymentRecord.js";
 
 export const FUTURE_ORDER_V2_RECORD_PAYMENT_ENDPOINT =
   "/api/future-order-v2/record-payment" as const;
