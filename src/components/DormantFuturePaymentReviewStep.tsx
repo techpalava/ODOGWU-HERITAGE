@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   LockKeyhole,
+  LogIn,
   Pencil,
   Ruler,
   Shirt,
@@ -85,6 +86,8 @@ interface DormantFuturePaymentReviewStepProps {
   onRequestCancelOrder?: () => void;
   onRetryPaymentRecord?: () => void;
   onViewDashboard?: () => void;
+  /** Opens the login screen when a guest presses PAY and must sign in first. */
+  onSignInToPay?: () => void;
   /** Starting radio. Customers begin on card; tests pass ideal or klarna. */
   initialPaymentMethod?: FutureOrderV2PaymentMethod;
 }
@@ -620,6 +623,7 @@ export const DormantFuturePaymentReviewStep = ({
   onRequestCancelOrder,
   onRetryPaymentRecord,
   onViewDashboard,
+  onSignInToPay,
   initialPaymentMethod = "card",
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
@@ -1302,6 +1306,17 @@ export const DormantFuturePaymentReviewStep = ({
                 ? preparationMessage
                 : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
+            {preparation?.status === "authentication_required" && onSignInToPay ? (
+              <button
+                type="button"
+                data-future-payment-sign-in="true"
+                onClick={onSignInToPay}
+                className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 text-xs font-bold uppercase tracking-wider text-heritage-ink shadow-md transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green"
+              >
+                <LogIn aria-hidden="true" size={14} />
+                Sign in
+              </button>
+            ) : null}
             {paymentIsAuthorized && preparation?.status === "prepared" && (
               <p className="mt-2 break-all text-xs text-white/70">
                 Order ID: <span className="font-mono">{preparation.orderId}</span>

@@ -357,6 +357,7 @@ import {
 } from "../utils/futureOrderCandidate";
 import {
   COMMUNITY_BATCH_CLOSED_MESSAGE,
+  COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE,
   communityBatchClosureForIdentity,
   requestFutureOrderCartAdmission,
 } from "../utils/communityBatchOrderClosure";
@@ -5077,8 +5078,13 @@ export default function DesignStudioView({
       const restoredStep4Ready = isFutureCustomDetailsContentReady(
         restoredStep4CustomDetailsCompletion,
       );
+      // Step 10 needs the in-memory review handoff, so a draft saved on
+      // Order Review & Payment (for example before a guest signs in to pay)
+      // reopens on Delivery & Pickup, one Review Order click from PAY.
       const restoredStageId =
-        storedDraft?.currentStageId === "shipping" && canRestoreShipping
+        (storedDraft?.currentStageId === "shipping" ||
+          storedDraft?.currentStageId === "payment") &&
+        canRestoreShipping
           ? "shipping"
           : storedDraft?.currentStageId === "summary" && canRestoreSummary
             ? "summary"
@@ -8280,6 +8286,20 @@ export default function DesignStudioView({
       expectedRevision: cloudFutureDraftRevisionRef.current,
     });
   };
+  // Guests must sign in before PAY. Return to Design Studio afterwards: the
+  // guest draft transfers to the account and reopens at Delivery & Pickup,
+  // where Review Order leads straight back to PAY.
+  const handleSignInToPayFutureOrderV2 = () => {
+    const store = useAppStore.getState();
+    // A stale cart checkout intent would send the customer to Home instead.
+    if (store.checkoutIntent) store.setCheckoutIntent(false);
+    store.setPendingRedirect("design");
+    store.setActiveTab("login");
+    setNotification({
+      message: "Sign in or create an account to pay this order. Your order is saved.",
+      type: "info",
+    });
+  };
   const handlePayFutureOrderV2 = async () => {
     if (communityBatchClosed) {
       setNotification({
@@ -10890,11 +10910,12 @@ export default function DesignStudioView({
         <>
           {futurePaymentReviewTransitionBlockers[0] && (
             <div
+              tabIndex={-1}
               role="alert"
               data-future-payment-review-blocker={
                 futurePaymentReviewTransitionBlockers[0].code
               }
-              className="mb-4 rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 text-sm text-heritage-ink/75"
+              className="mb-4 scroll-mt-28 rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 text-sm text-heritage-ink/75 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
             >
               {futurePaymentReviewTransitionBlockers[0].message}
             </div>
@@ -10916,6 +10937,9 @@ export default function DesignStudioView({
               navigateToFutureStage("personalized_additions")
             }
             onContinueToReview={handleOpenDormantPaymentReviewStage}
+            reviewBlockedMessage={
+              communityBatchClosed ? COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE : null
+            }
           />
         </>
       ) : futureStageId === "payment" ? (
@@ -10964,6 +10988,7 @@ export default function DesignStudioView({
             }
             onRetryPaymentRecord={handleRetryFutureOrderV2PaymentRecord}
             onViewDashboard={() => useAppStore.getState().setActiveTab("dashboard")}
+            onSignInToPay={handleSignInToPayFutureOrderV2}
           />
         ) : null
       ) : null}

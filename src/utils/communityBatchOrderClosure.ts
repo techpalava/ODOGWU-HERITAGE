@@ -5,6 +5,9 @@ import type { CanonicalOrderIdentity } from "./orderContextIdentity.js";
 
 export const COMMUNITY_BATCH_CLOSED_CODE = "COMMUNITY_BATCH_CLOSED" as const;
 export const COMMUNITY_BATCH_CLOSED_MESSAGE = "This batch is closed" as const;
+/** Shown inline when Review Order is clicked on a closed community batch. */
+export const COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE =
+  `${COMMUNITY_BATCH_CLOSED_MESSAGE}. It no longer accepts new orders, so this order can't be reviewed or paid.` as const;
 
 export type CommunityBatchOrderClosure =
   | { readonly closed: false }
