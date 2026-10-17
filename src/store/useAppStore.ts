@@ -58,6 +58,7 @@ import {
   parkReviewableFutureOrderV2Candidate,
   sanitizeFutureOrderV2CartItems,
 } from "../utils/futureOrderV2CartBag";
+import { communityBatchClosureForIdentity } from "../utils/communityBatchOrderClosure";
 
 export interface AppState {
 
@@ -636,6 +637,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ studioParkedInFutureOrderV2Cart });
   },
   parkFutureOrderV2Candidate: (candidate) => {
+    if (candidate.orderIdentity?.orderType === "Community") {
+      const batches = get().batches;
+      if (
+        batches.length === 0 ||
+        communityBatchClosureForIdentity(candidate.orderIdentity, batches).closed
+      ) {
+        return "blocked";
+      }
+    }
     const result = parkReviewableFutureOrderV2Candidate({
       candidate,
       items: get().futureOrderV2CartItems,

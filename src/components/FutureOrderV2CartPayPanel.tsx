@@ -17,6 +17,10 @@ import {
   getFutureOrderV2CartLineLabel,
   getFutureOrderV2CartLineTotalCents,
 } from "../utils/futureOrderV2CartBag";
+import {
+  COMMUNITY_BATCH_CLOSED_MESSAGE,
+  communityBatchClosureForIdentity,
+} from "../utils/communityBatchOrderClosure";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
 import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
@@ -45,6 +49,10 @@ export const FutureOrderV2CartPayPanel = ({
 
   const totalCents = getFutureOrderV2CartLineTotalCents(item);
   const label = getFutureOrderV2CartLineLabel(item);
+  const communityBatchClosed =
+    item.candidate.orderIdentity?.orderType === "Community" &&
+    batches.length > 0 &&
+    communityBatchClosureForIdentity(item.candidate.orderIdentity, batches).closed;
   const includedInbound = resolveIndividualInboundShippingDisplay({
     orderType: item.candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: item.candidate.garments.length,
@@ -64,6 +72,10 @@ export const FutureOrderV2CartPayPanel = ({
     const identity = auth.currentUser;
     if (!currentUser || !identity || identity.isAnonymous) {
       requireSignIn();
+      return;
+    }
+    if (communityBatchClosed) {
+      setMessage(COMMUNITY_BATCH_CLOSED_MESSAGE);
       return;
     }
     if (paying) return;
@@ -170,6 +182,11 @@ export const FutureOrderV2CartPayPanel = ({
           <Trash2 size={16} />
         </button>
       </div>
+      {communityBatchClosed ? (
+        <p role="status" data-testid="cart-community-batch-closed" className="mt-3 text-sm font-semibold text-red-800">
+          {COMMUNITY_BATCH_CLOSED_MESSAGE}
+        </p>
+      ) : (
       <FutureOrderV2StripeCard
         disabled={paying}
         orderId={orderId}
@@ -179,12 +196,13 @@ export const FutureOrderV2CartPayPanel = ({
         onReadyChange={setStripeReady}
         shippingState={item.candidate.shipping.state}
       />
+      )}
       {message ? <FutureOrderV2PaymentAlert message={message} /> : null}
       <button
         type="button"
         data-testid="future-order-v2-cart-pay"
-        disabled={paying || !stripeReady}
-        onClick={() => void handlePay()}
+        disabled={communityBatchClosed || paying || !stripeReady}
+        onClick={communityBatchClosed ? undefined : () => void handlePay()}
         className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-heritage-forest transition hover:bg-heritage-green hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
       >
         <LockKeyhole size={14} />

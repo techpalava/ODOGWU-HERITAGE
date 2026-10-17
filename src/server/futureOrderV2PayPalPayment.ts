@@ -13,6 +13,10 @@ import {
   createAdminFutureOrderV2PaymentRecordStore,
   type FutureOrderV2PaymentRecordStore,
 } from "./futureOrderV2PaymentRecord.js";
+import {
+  readCommunityBatchRecord,
+  resolveCommunityOrderClosure,
+} from "./communityBatchOrderGate.js";
 
 const MINIMUM_EUR_CENTS = 50;
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -50,6 +54,7 @@ export interface FutureOrderV2PayPalPaymentDependencies {
   getServices?: () => PayPalAdminServices;
   createStore?: (db: unknown) => FutureOrderV2PaymentRecordStore;
   now?: () => Date;
+  readCommunityBatch?: (batchId: string) => Promise<unknown | null>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -339,6 +344,35 @@ export const handleFutureOrderV2PayPalCreateOrder = async (
       400,
       "INVALID_EXACT_TOTAL",
       "The reviewed total is not ready to charge.",
+    );
+  }
+
+  const communityClosure = await resolveCommunityOrderClosure({
+    identity: parsed.value.cartItem.candidate.orderIdentity,
+    readBatch:
+      dependencies.readCommunityBatch ??
+      ((batchId: string) => {
+        const getServices =
+          dependencies.getServices ||
+          (getAdminServices as unknown as () => PayPalAdminServices);
+        return readCommunityBatchRecord(getServices().db, batchId);
+      }),
+    now: dependencies.now?.() ?? new Date(),
+  });
+  if (communityClosure.status === "unavailable") {
+    return sendError(
+      res,
+      503,
+      "COMMUNITY_BATCH_UNAVAILABLE",
+      "The community batch could not be confirmed.",
+    );
+  }
+  if (communityClosure.status === "closed") {
+    return sendError(
+      res,
+      409,
+      communityClosure.code,
+      communityClosure.message,
     );
   }
 

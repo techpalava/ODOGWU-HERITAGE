@@ -356,6 +356,11 @@ import {
   type FutureOrderCandidateV2BuildResult,
 } from "../utils/futureOrderCandidate";
 import {
+  COMMUNITY_BATCH_CLOSED_MESSAGE,
+  communityBatchClosureForIdentity,
+  requestFutureOrderCartAdmission,
+} from "../utils/communityBatchOrderClosure";
+import {
   createFutureOrderV2PaymentReviewHandoff,
   FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE,
   isFuturePaymentReviewStageUnlocked,
@@ -1499,7 +1504,7 @@ export default function DesignStudioView({
         if (!eligibility.canAcceptOrders) {
           setNotification({
             message:
-              "This batch is no longer accepting orders. Please review your saved order.",
+              "This batch is closed",
             type: "info",
           });
           window.setTimeout(() => setNotification(null), 4000);
@@ -3817,6 +3822,11 @@ export default function DesignStudioView({
               : ctx.orderType,
         batchId: batchType === "alone" ? undefined : ctx.batchId,
       });
+  const communityBatchClosed =
+    futureOrderIdentity?.orderType === "Community" &&
+    (storeBatches || []).length > 0 &&
+    communityBatchClosureForIdentity(futureOrderIdentity, storeBatches || [])
+      .closed;
   // One order-wide authority for Continue, Journey Stepper, Live Summary, and
   // stage correction. Do not use active-wearer-only completeness here.
   const summaryUnlockedByMeasurements =
@@ -8271,6 +8281,13 @@ export default function DesignStudioView({
     });
   };
   const handlePayFutureOrderV2 = async () => {
+    if (communityBatchClosed) {
+      setNotification({
+        message: COMMUNITY_BATCH_CLOSED_MESSAGE,
+        type: "info",
+      });
+      return;
+    }
     if (futureOrderV2PayInFlightRef.current) return;
     futureOrderV2PayInFlightRef.current = true;
     try {
@@ -8284,9 +8301,24 @@ export default function DesignStudioView({
       futureOrderV2PayInFlightRef.current = false;
     }
   };
-  const handleParkFutureOrderV2InCart = () => {
+  const handleParkFutureOrderV2InCart = async () => {
     const candidate = futurePaymentReviewHandoff?.candidate;
     if (!candidate || candidate.schemaVersion !== 2) return;
+    if (
+      communityBatchClosed ||
+      candidate.orderIdentity?.orderType === "Community"
+    ) {
+      const admission = communityBatchClosed
+        ? { accepted: false, message: COMMUNITY_BATCH_CLOSED_MESSAGE }
+        : await requestFutureOrderCartAdmission(candidate.orderIdentity);
+      if (!admission.accepted) {
+        setNotification({
+          message: admission.message || COMMUNITY_BATCH_CLOSED_MESSAGE,
+          type: "info",
+        });
+        return;
+      }
+    }
     const status = useAppStore.getState().parkFutureOrderV2Candidate(candidate);
     if (status === "blocked") {
       setNotification({
@@ -10217,6 +10249,15 @@ export default function DesignStudioView({
       <div className="mb-3">
         <StudioOrderContextIndicator context={customerOrderContextPresentation} />
       </div>
+      {communityBatchClosed ? (
+        <p
+          role="status"
+          data-testid="community-batch-closed"
+          className="mb-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900"
+        >
+          {COMMUNITY_BATCH_CLOSED_MESSAGE}
+        </p>
+      ) : null}
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
         highestUnlockedStageIndex={highestUnlockedStageIndex}
@@ -10913,6 +10954,7 @@ export default function DesignStudioView({
             }}
             onPay={handlePayFutureOrderV2}
             onParkCompleteOrder={handleParkFutureOrderV2InCart}
+            communityBatchClosed={communityBatchClosed}
             parkCompleteOrderStatus={futureOrderV2AddToCartStatus}
             onStartAnotherOrder={handleStartAnotherOrderAfterCartPark}
             onRequestCancelOrder={
