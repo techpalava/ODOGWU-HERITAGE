@@ -8,6 +8,7 @@ import HomepageOrderGateway, {
 } from "./src/components/HomepageOrderGateway";
 import { createJoinRenderedBatchAction } from "./src/utils/homepageCurrentBatchAction";
 import {
+  getHomepageJoinBatchDescription,
   getHomepageJoinBatchLabel,
   getHomepageOrderGatewayState,
   resolveHomepageCommunityBatchEntry,
@@ -519,6 +520,61 @@ assert.equal(
 assert.doesNotMatch(homeViewSource, /onClick=\{onJoinCommunityBatch\}/);
 assert.match(batchManagementSource, /getHomepageOrderGatewayState\(batches\)/);
 assert.match(batchManagementSource, /getHomepageJoinBatchLabel\(homepageState\.joinBatch\.name\)/);
+
+// Join card copy follows the shared community-batch closure rule.
+assert.match(joinMarkup, /data-join-batch-state="open"/);
+assert.match(joinMarkup, /Join the currently open community batch before ordering closes on /);
+const openDescription = getHomepageJoinBatchDescription(
+  makeBatch({ endDate: "2026-12-15" }),
+  new Date("2026-10-18T12:00:00Z"),
+);
+assert.deepEqual(openDescription, {
+  closed: false,
+  text: "Join the currently open community batch before ordering closes on 15 December 2026.",
+});
+assert.equal(
+  getHomepageJoinBatchDescription(
+    makeBatch({ endDate: "" }),
+    new Date("2026-10-18T12:00:00Z"),
+  ).text,
+  "Join the currently open community batch before its ordering deadline.",
+);
+// Live Avatars shape: admin status still OPEN with a manual override, but the
+// ordering deadline (endDate) has passed, so Studio/cart/payment treat it closed.
+const pastDeadlineAvatars = makeBatch({
+  startDate: "2026-07-06",
+  endDate: "2026-09-30",
+  status: "OPEN",
+  isAutoScheduled: false,
+  isActive: true,
+  targetGarments: 72,
+});
+const closedDescription = getHomepageJoinBatchDescription(
+  pastDeadlineAvatars,
+  new Date("2026-10-18T12:00:00Z"),
+);
+assert.equal(closedDescription.closed, true);
+assert.match(closedDescription.text, /The Avatars batch is closed and is no longer accepting new orders\./);
+assert.doesNotMatch(closedDescription.text, /currently open/);
+assert.equal(
+  getHomepageJoinBatchDescription(
+    makeBatch({ allowOrders: false }),
+    new Date(),
+  ).closed,
+  true,
+);
+const closedMarkup = renderToStaticMarkup(
+  createElement(HomepageOrderGateway, {
+    state: { joinBatch: pastDeadlineAvatars, minimumGarments: 10 },
+    onStartIndividualOrder: () => undefined,
+    onJoinBatch: () => undefined,
+    onCreatePrivateBatch: () => undefined,
+    onBrowseGallery: () => undefined,
+  }),
+);
+assert.match(closedMarkup, /data-join-batch-state="closed"/);
+assert.match(closedMarkup, /The Avatars batch is closed/);
+assert.doesNotMatch(closedMarkup, /currently open community batch/);
 
 console.log(
   "PASS: homepage order gateway source-of-truth, boundaries, and labels",

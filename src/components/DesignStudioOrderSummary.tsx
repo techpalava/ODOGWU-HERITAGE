@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UsersRound, Pencil, Trash2 } from "lucide-react";
 import type { DesignStudioStageId } from "../types";
 import type {
@@ -10,6 +10,10 @@ import type {
 import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummary";
 import { formatCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+import {
+  BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS,
+  BlockedGarmentRemovalReason,
+} from "./BlockedGarmentRemovalReason";
 
 const quietGarmentMetaClassName =
   "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50";
@@ -55,11 +59,13 @@ const RemoveGarmentButton = ({
   ) => void;
 }) => {
   const reasonId = `live-order-summary-removal-reason-${target.garmentKey}`;
+  const [reasonRevealed, setReasonRevealed] = useState(false);
   return (
     <div className="flex min-w-0 flex-col items-end gap-0.5">
       <button
         type="button"
-        disabled={!target.canRequestRemoval}
+        aria-disabled={!target.canRequestRemoval || undefined}
+        title={target.disabledReason ?? undefined}
         aria-label={target.accessibleName}
         aria-describedby={target.disabledReason ? reasonId : undefined}
         data-garment-removal-button={target.garmentKey}
@@ -67,21 +73,23 @@ const RemoveGarmentButton = ({
         data-testid={`live-order-summary-remove-${target.garmentKey}`}
         onClick={(event) => {
           event.stopPropagation();
+          if (!target.canRequestRemoval) {
+            setReasonRevealed(true);
+            return;
+          }
           onRequestGarmentRemoval(target, event.currentTarget);
         }}
-        className="inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+        className={`inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
       >
         <Trash2 aria-hidden="true" size={11} />
         Remove
       </button>
-      {target.disabledReason ? (
-        <p
-          id={reasonId}
-          className="max-w-[10rem] break-words text-right text-[9px] leading-snug text-heritage-ink/55"
-        >
-          {target.disabledReason}
-        </p>
-      ) : null}
+      <BlockedGarmentRemovalReason
+        id={reasonId}
+        reason={target.disabledReason}
+        revealed={reasonRevealed}
+        className="max-w-[10rem] break-words text-right text-[9px] leading-snug text-heritage-ink/55"
+      />
     </div>
   );
 };

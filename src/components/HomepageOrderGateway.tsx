@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Batch } from "../types";
 import {
+  getHomepageJoinBatchDescription,
   getHomepageJoinBatchLabel,
   type HomepageOrderGatewayState,
 } from "../utils/homepageOrderGateway";
@@ -69,6 +70,7 @@ export default function HomepageOrderGateway({
   const existingBatchTitle = currentBatchName
     ? `Join an Existing Batch or Group (${currentBatchName})`
     : "Join an Existing Batch or Group";
+  const joinBatchDescription = getHomepageJoinBatchDescription(joinBatch);
 
   return (
     <section
@@ -130,9 +132,13 @@ export default function HomepageOrderGateway({
               </span>
               <h3 className={orderCardTitleClassName}>{existingBatchTitle}</h3>
 
-              <p className={orderCardBodyClassName}>
-                Join the currently open community batch before its ordering
-                deadline.
+              <p
+                className={orderCardBodyClassName}
+                data-join-batch-state={
+                  joinBatchDescription.closed ? "closed" : "open"
+                }
+              >
+                {joinBatchDescription.text}
               </p>
               <p className={orderCardMetaClassName}>
                 Group minimum: {minimumGarments} garments total | Shared

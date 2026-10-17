@@ -570,7 +570,25 @@ const finalSummaryRenderer = render(
 const finalRemoveButton = finalSummaryRenderer.root.findByProps({
   "data-garment-removal-button": "base:shirt",
 });
-assert.equal(finalRemoveButton.props.disabled, true);
+assert.equal(finalRemoveButton.props["aria-disabled"], true);
+assert.equal(
+  finalSummaryRenderer.root.findByProps({
+    "data-garment-removal-blocked-reason": "hidden",
+  }).props.className,
+  "sr-only",
+  "last-garment reason must not be standing visible text",
+);
+const removalRequestsBeforeFinalClick = requestLog.length;
+act(() => {
+  finalRemoveButton.props.onClick({ stopPropagation: noOp, currentTarget: null });
+});
+assert.equal(requestLog.length, removalRequestsBeforeFinalClick);
+assert.equal(
+  finalSummaryRenderer.root.findAllByProps({
+    "data-garment-removal-blocked-reason": "visible",
+  }).length,
+  1,
+);
 assert.match(textContent(finalSummaryRenderer.root), /At least one garment must remain/);
 
 let keepCount = 0;
