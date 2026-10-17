@@ -4,7 +4,6 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type React from "react";
@@ -28,6 +27,7 @@ import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmat
 import { OrderContextDetails } from "./CustomerOrderContext";
 import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
+import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 
 interface DormantFutureSummaryStepProps {
   summary: FutureDesignStudioSummary;
@@ -154,18 +154,43 @@ const ChoiceActionButton = ({
   </button>
 );
 
+/** Stage 8 design thumb: retries a failed load once before "Image unavailable". */
+const SummaryDesignPreview = ({
+  imageUrl,
+  alt,
+}: {
+  imageUrl: string | null | undefined;
+  alt: string;
+}) => {
+  const image = useImageLoadRetry(imageUrl);
+  if (image.failed) {
+    return (
+      <span className="flex h-full items-center justify-center p-2 text-center text-[10px] text-heritage-ink/45">
+        Image unavailable
+      </span>
+    );
+  }
+  return (
+    <img
+      src={image.src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      className="h-full w-full object-contain"
+      referrerPolicy="no-referrer"
+      onError={image.onError}
+    />
+  );
+};
+
 /** Stage 8 fabric thumb: usable image, else colour swatch, else the Fabric step's "No preview". */
 const SummaryFabricPreview = ({
   allocation,
 }: {
   allocation: FutureSummaryFabricAllocation;
 }) => {
-  const [imageFailed, setImageFailed] = useState(false);
-  useEffect(() => {
-    setImageFailed(false);
-  }, [allocation.allocationId, allocation.image]);
-
-  const showImage = Boolean(allocation.image) && !imageFailed;
+  const image = useImageLoadRetry(allocation.image);
+  const showImage = !image.failed;
   return (
     <div
       className="aspect-[4/3] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/40"
@@ -173,10 +198,12 @@ const SummaryFabricPreview = ({
     >
       {showImage ? (
         <img
-          src={allocation.image!}
+          src={image.src}
           alt={`${allocation.fabricName} fabric swatch`}
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover"
-          onError={() => setImageFailed(true)}
+          onError={image.onError}
           data-summary-fabric-image="true"
         />
       ) : allocation.colorHex ? (
@@ -742,31 +769,14 @@ export const DormantFutureSummaryStep = ({
             {(summary.designStyleOccurrences || []).map((occurrence) => (
           <div key={occurrence.garmentKey} className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
             <div className="aspect-[4/5] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/35">
-              {occurrence.image ? (
-                <>
-                  <img
-                    src={occurrence.image}
-                    alt={
-                      occurrence.sourceKind === "uploaded"
-                        ? `Uploaded design preview for ${occurrence.occurrenceLabel}`
-                        : `${occurrence.name} design for ${occurrence.occurrenceLabel}`
-                    }
-                    className="h-full w-full object-contain"
-                    referrerPolicy="no-referrer"
-                    onError={(event) => {
-                      event.currentTarget.classList.add("hidden");
-                      event.currentTarget.nextElementSibling?.classList.remove("hidden");
-                    }}
-                  />
-                  <span className="hidden h-full items-center justify-center p-2 text-center text-[10px] text-heritage-ink/45">
-                    Image unavailable
-                  </span>
-                </>
-              ) : (
-                <span className="flex h-full items-center justify-center p-2 text-center text-[10px] text-heritage-ink/45">
-                  Image unavailable
-                </span>
-              )}
+              <SummaryDesignPreview
+                imageUrl={occurrence.image}
+                alt={
+                  occurrence.sourceKind === "uploaded"
+                    ? `Uploaded design preview for ${occurrence.occurrenceLabel}`
+                    : `${occurrence.name} design for ${occurrence.occurrenceLabel}`
+                }
+              />
             </div>
             <div className="min-w-0">
               <h4 className="break-words font-bold text-heritage-green">

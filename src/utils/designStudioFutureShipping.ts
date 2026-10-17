@@ -23,6 +23,7 @@ import {
   isValidIsoCountryCode,
   normalizeStep8CountryCode,
   resolveStep8AdditionalDelivery,
+  step8RequiresRegion,
 } from "./step8AdditionalDelivery.js";
 
 export const FUTURE_SHIPPING_STATE_SCHEMA_VERSION = 1 as const;
@@ -509,6 +510,44 @@ const normalizeCustomerPhone = (value: string): string =>
 const isValidPhone = (value: string): boolean =>
   /^\+?[1-9]\d{7,14}$/.test(normalizeCustomerPhone(value));
 
+export const FUTURE_SHIPPING_CITY_HINT =
+  "Enter a city in the selected country.";
+export const FUTURE_SHIPPING_EINDHOVEN_CITY_HINT =
+  'Writing "Eindhoven" exactly selects the local Eindhoven shipping rate.';
+
+/**
+ * Neutral helper under Step 9 City. The country hint only shows while City
+ * is blank, so a valid city never looks like it has an error; the Eindhoven
+ * rate note stays for Netherlands delivery.
+ */
+export const resolveFutureShippingCityHint = ({
+  city,
+  isNetherlandsDelivery,
+}: {
+  city: string;
+  isNetherlandsDelivery: boolean;
+}): string | null => {
+  const parts: string[] = [];
+  if (!city.trim()) parts.push(FUTURE_SHIPPING_CITY_HINT);
+  if (isNetherlandsDelivery) parts.push(FUTURE_SHIPPING_EINDHOVEN_CITY_HINT);
+  return parts.length > 0 ? parts.join(" ") : null;
+};
+
+/**
+ * Whether Step 9 delivery needs State / Province / Region. Required for
+ * countries that need a region on postal addresses and for "other"
+ * destinations (unknown country rules); optional everywhere else.
+ */
+export const futureShippingRequiresRegion = (
+  state: Pick<FutureShippingStateV1, "fulfilmentMethod" | "destinationSelectionMode"> & {
+    customerInformation: { deliveryAddress: { countryCode: string } };
+  },
+): boolean => {
+  if (state.fulfilmentMethod !== "destination_delivery") return false;
+  if (state.destinationSelectionMode === "other_destination") return true;
+  return step8RequiresRegion(state.customerInformation.deliveryAddress.countryCode);
+};
+
 const getCustomerDiagnostics = (
   state: FutureShippingStateV1,
 ): FutureShippingStageDiagnostic[] => {
@@ -553,13 +592,16 @@ const getCustomerDiagnostics = (
     requireText("addressLine1", addressLine1, "Enter the delivery address.");
     requireText("city", city, "Enter the delivery city.");
     requireText("postalCode", postalCode, "Enter the postal code.");
-    // Every destination delivery needs a region so the courier address is
-    // complete; step8RequiresRegion stays courier metadata only.
-    requireText(
-      "stateRegion",
-      stateRegion,
-      "Enter the state, province, or region.",
-    );
+    // Only countries whose postal addresses need a region (US, CA) or an
+    // unlisted "other" destination require it; elsewhere it is optional so
+    // the quote resolves from street, city, postcode, and country.
+    if (futureShippingRequiresRegion(state)) {
+      requireText(
+        "stateRegion",
+        stateRegion,
+        "Enter the state, province, or region.",
+      );
+    }
     if (state.destinationSelectionMode === "other_destination") {
       requireText(
         "otherDestinationCountry",

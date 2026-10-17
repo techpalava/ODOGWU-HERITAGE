@@ -5,6 +5,7 @@ import type { CanonicalPhysicalGarmentType, StyleCategory } from "../types";
 import type { DesignStyleStepCatalogueEntry } from "../utils/designStyleStepRuntime";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { studioOutlinedNavInteractionClass } from "./DesignStudioBackButton";
+import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
   return String(style.name ?? "").trim() || "Design Style";
@@ -224,18 +225,10 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
                     className="relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
                   >
                     <div className="relative aspect-[4/3] overflow-hidden bg-heritage-cream/35">
-                      {entry.style.image ? (
-                        <img
-                          src={entry.style.image}
-                          alt={`${displayStyleName} design`}
-                          className="h-full w-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center px-3 text-center text-xs text-heritage-ink/55">
-                          Image unavailable
-                        </div>
-                      )}
+                      <AdditionalGarmentStyleImage
+                        imageUrl={entry.style.image}
+                        alt={`${displayStyleName} design`}
+                      />
                       {entry.selected && (
                         <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
                           <Check aria-hidden="true" size={14} />
@@ -316,3 +309,32 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
   if (typeof document === "undefined") return dialog;
   return createPortal(dialog, document.body);
 };
+
+/** Style card image: retries a failed load once before "Image unavailable". */
+function AdditionalGarmentStyleImage({
+  imageUrl,
+  alt,
+}: {
+  imageUrl: string | null | undefined;
+  alt: string;
+}) {
+  const image = useImageLoadRetry(imageUrl);
+  if (image.failed) {
+    return (
+      <div className="flex h-full items-center justify-center px-3 text-center text-xs text-heritage-ink/55">
+        Image unavailable
+      </div>
+    );
+  }
+  return (
+    <img
+      src={image.src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      className="h-full w-full object-cover"
+      referrerPolicy="no-referrer"
+      onError={image.onError}
+    />
+  );
+}

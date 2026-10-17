@@ -33,6 +33,7 @@ import {
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
+import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 
 interface DormantFutureDesignStyleStepProps {
   occurrences: readonly DesignStyleStepOccurrencePresentation[];
@@ -173,14 +174,9 @@ const DesignStyleCatalogueCardImage = ({
   imageUrl: string | null | undefined;
   alt: string;
 }) => {
-  const trimmedUrl = typeof imageUrl === "string" ? imageUrl.trim() : "";
-  const [imageFailed, setImageFailed] = useState(false);
+  const image = useImageLoadRetry(imageUrl);
 
-  useEffect(() => {
-    setImageFailed(false);
-  }, [trimmedUrl]);
-
-  if (!trimmedUrl || imageFailed) {
+  if (image.failed) {
     return (
       <div
         className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45"
@@ -194,13 +190,14 @@ const DesignStyleCatalogueCardImage = ({
 
   return (
     <img
-      src={trimmedUrl}
+      src={image.src}
       alt={alt}
       loading="lazy"
+      decoding="async"
       className="h-full w-full object-contain"
       referrerPolicy="no-referrer"
       data-style-card-image="true"
-      onError={() => setImageFailed(true)}
+      onError={image.onError}
     />
   );
 };

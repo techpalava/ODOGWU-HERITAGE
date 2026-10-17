@@ -190,6 +190,9 @@ export function selectSliderReviews(
  * reviews, show the three starter reviews. This never writes to Firestore;
  * admins persist the seeds with "Add starter reviews".
  */
+/** How long the Reviews page waits for live reviews before showing starters. */
+export const REVIEWS_LOADING_TIMEOUT_MS = 6000;
+
 export function resolvePublishedReviewsForDisplay(
   published: readonly CustomerReview[],
   hasLoaded: boolean,
