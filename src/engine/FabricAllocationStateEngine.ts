@@ -1,4 +1,4 @@
-import { FabricCapacityEngine } from "./FabricCapacityEngine";
+import { FabricCapacityEngine } from "./FabricCapacityEngine.js";
 import type {
   AdditionalGarmentDependencyStatus,
   AdditionalGarmentEligibilityRule,
@@ -9,8 +9,8 @@ import type {
   FabricGarmentRole,
   FabricGarmentType,
   FabricGarmentInputAssignment,
-} from "../types";
-import { validateCanonicalAdditionalGarmentSelectionForParking } from "../utils/additionalGarmentDomain";
+} from "../types.js";
+import { validateCanonicalAdditionalGarmentSelectionForParking } from "../utils/additionalGarmentDomain.js";
 
 export interface FabricAllocationSelection {
   code?: string;

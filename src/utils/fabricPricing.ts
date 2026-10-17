@@ -1,5 +1,5 @@
-import type { Fabric } from "../types";
-import { roundMoney } from "./money";
+import type { Fabric } from "../types.js";
+import { roundMoney } from "./money.js";
 
 export const FABRIC_PRICING_EUR: Readonly<Record<string, number>> = {
   "HiTarget Ankara": 3.91,

@@ -1,7 +1,7 @@
-import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig";
-import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig";
-import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
-import { wearerAssignmentLabel, wearerPublicLabel } from "./wearerOrder";
+import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig.js";
+import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig.js";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing.js";
+import { wearerAssignmentLabel, wearerPublicLabel } from "./wearerOrder.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -16,39 +16,39 @@ import type {
   GarmentTypeStepSelection,
   StyleCategory,
   WearerOrderStateV2,
-} from "../types";
-import type { CustomDetailCatalogInspection } from "./catalogHelpers";
+} from "../types.js";
+import type { CustomDetailCatalogInspection } from "./catalogHelpers.js";
 import type {
   FabricAllocationPricingResult,
   ResolvedFabricAllocationPricing,
-} from "./fabricAllocationPricing";
-import { hasUsableFabricImage } from "./fabricCatalogueAvailability";
-import { isUsableFabricColorHex } from "../components/AssignedFabricPreview";
-import type { FutureFabricStageCompletion } from "./designStudioFutureFabricStage";
+} from "./fabricAllocationPricing.js";
+import { hasUsableFabricImage } from "./fabricCatalogueAvailability.js";
+import { isUsableFabricColorHex } from "../components/AssignedFabricPreview.js";
+import type { FutureFabricStageCompletion } from "./designStudioFutureFabricStage.js";
 import {
   getFutureDesignStyleCompositionLabel,
   type FutureDesignStyleSelectionResolution,
-} from "./designStudioFutureDesignStyle";
+} from "./designStudioFutureDesignStyle.js";
 import {
   calculateSelectedDesignPrice,
   type AllInclusiveSelectedDesignPriceBreakdown,
   type AuthoritativeDesignPricing,
-} from "./designPricing";
-import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState";
-import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel";
-import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime";
+} from "./designPricing.js";
+import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState.js";
+import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
+import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime.js";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
   type GarmentScopedCustomDetailsPricingResult,
   type GarmentScopedCustomDetailsReconciliationResult,
-} from "./garmentScopedCustomDetailsDomain";
-import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
+} from "./garmentScopedCustomDetailsDomain.js";
+import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState.js";
 import {
   getMonogramPlacementForGarment,
   getMonogramPlacementLabel,
   getMonogramTextForGarment,
-} from "./decorativePricing";
-import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
+} from "./decorativePricing.js";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"

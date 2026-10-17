@@ -1,4 +1,4 @@
-import { calculateIndividualShipping } from "./shippingPricing";
+import { calculateIndividualShipping } from "./shippingPricing.js";
 
 /** Display label for the included Individual inbound leg. */
 export const INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL =

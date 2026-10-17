@@ -1,4 +1,4 @@
-import type { Fabric } from "../types";
+import type { Fabric } from "../types.js";
 
 export type FabricStockBadgeTone = "in_stock" | "low_stock" | "out_of_stock";
 

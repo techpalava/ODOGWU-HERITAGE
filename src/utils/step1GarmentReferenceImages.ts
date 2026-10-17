@@ -1,5 +1,5 @@
-import type { CustomerSelectableGarmentType } from "./garmentConstructionPricing";
-import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./garmentConstructionPricing";
+import type { CustomerSelectableGarmentType } from "./garmentConstructionPricing.js";
+import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./garmentConstructionPricing.js";
 
 export const STEP1_GARMENT_REFERENCE_DISCLAIMER =
   "Reference images show garment types only. Your selected Fabric and Design Style determine the final appearance.";

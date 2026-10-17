@@ -4,9 +4,9 @@ import {
   type GarmentDesignStyleAssignmentTarget,
   type GarmentScopedDesignStyleAssignmentLedgerV2,
   type UploadedDesignStyleAssignmentInput,
-} from "./garmentScopedDesignStyleAssignment";
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
-import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
+} from "./garmentScopedDesignStyleAssignment.js";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
+import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity.js";
 
 export type DesignStyleUploadOperationKind = "assign" | "replace";
 

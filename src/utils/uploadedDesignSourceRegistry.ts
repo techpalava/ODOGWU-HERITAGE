@@ -1,13 +1,13 @@
 import type {
   CustomerDesignUploadReference,
   UploadedDesignSource,
-} from "../types";
-import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference";
+} from "../types.js";
+import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference.js";
 import {
   cloneDesignSource,
   isValidUploadedDesignDraftSource,
-} from "./designSourceState";
-import type { GarmentScopedDesignStyleAssignmentLedgerV2 } from "./garmentScopedDesignStyleAssignment";
+} from "./designSourceState.js";
+import type { GarmentScopedDesignStyleAssignmentLedgerV2 } from "./garmentScopedDesignStyleAssignment.js";
 
 export const UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD =
   "uploadedDesignSourceRegistry" as const;

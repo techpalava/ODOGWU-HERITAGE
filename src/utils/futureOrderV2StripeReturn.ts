@@ -1,5 +1,5 @@
-import type { FutureOrderV2PaymentRecordResult } from "../services/futureOrderV2PaymentRecordClient";
-import type { FutureOrderV2PaymentRecord } from "./futureOrderV2PaymentRecord";
+import type { FutureOrderV2PaymentRecordResult } from "../services/futureOrderV2PaymentRecordClient.js";
+import type { FutureOrderV2PaymentRecord } from "./futureOrderV2PaymentRecord.js";
 
 export const FUTURE_ORDER_V2_STRIPE_RETURN_PARAM = "future_order_v2_stripe_return";
 export const FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM = "future_order_v2_order_id";

@@ -3,7 +3,7 @@ import type {
   FabricGarmentType,
   MeasurementRiskRoute,
   MeasurementWorkbookRiskRoute,
-} from "../types";
+} from "../types.js";
 
 export const MEASUREMENT_BLUEPRINT_VERSION =
   "measurements-steps-website-v1@8b59ab07" as const;

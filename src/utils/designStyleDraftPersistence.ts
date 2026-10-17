@@ -4,18 +4,18 @@ import type {
   GuestDesignDraft,
   StyleCategory,
   UploadedDesignSource,
-} from "../types";
+} from "../types.js";
 import {
   getDesignStyleAuthorityMetadata,
   isAuthoritativeDesignStyleProjection,
-} from "./designStyleAuthority";
-import { resolveFutureDesignStyleCompatibility } from "./designStudioFutureDesignStyle";
+} from "./designStyleAuthority.js";
+import { resolveFutureDesignStyleCompatibility } from "./designStudioFutureDesignStyle.js";
 import {
   createPhysicalGarmentOccurrenceIdentityToken,
-} from "./physicalGarmentOccurrenceIdentity";
+} from "./physicalGarmentOccurrenceIdentity.js";
 import {
   type PhysicalGarmentOccurrence,
-} from "./designSourceState";
+} from "./designSourceState.js";
 import {
   createEmptyGarmentScopedDesignStyleAssignmentLedger,
   reconcileGarmentScopedDesignStyleAssignmentLedger,
@@ -28,14 +28,14 @@ import {
   type GarmentScopedDesignStyleValidationAuthority,
   type GarmentScopedDesignStyleValidationResult,
   type UploadedDesignStyleAuthorityFacts,
-} from "./garmentScopedDesignStyleAssignment";
+} from "./garmentScopedDesignStyleAssignment.js";
 import {
   collectReferencedUploadedSourceRefsFromLedger,
   inspectUploadedDesignSourceRegistry,
   isExactPersistedUploadedDesignSourceShape,
   serializeUploadedDesignSourcesForDraft,
   UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD,
-} from "./uploadedDesignSourceRegistry";
+} from "./uploadedDesignSourceRegistry.js";
 
 export const DESIGN_STYLE_DRAFT_FIELD = "designStyleAssignmentDraft" as const;
 export const DESIGN_STYLE_DRAFT_SCHEMA_VERSION = 2 as const;

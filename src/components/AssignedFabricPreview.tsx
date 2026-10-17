@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Fabric } from "../types";
+import type { Fabric } from "../types.js";
 import {
   hasUsableFabricImage,
-} from "../utils/fabricCatalogueAvailability";
+} from "../utils/fabricCatalogueAvailability.js";
 
 /** Accept only catalogue-style hex colours: #RGB, #RRGGBB, #RRGGBBAA. */
 export const isUsableFabricColorHex = (

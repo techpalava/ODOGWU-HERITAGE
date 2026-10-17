@@ -1,4 +1,4 @@
-import type { FutureShippingDestinationSelectionMode, FutureShippingDestinationZone } from "../types";
+import type { FutureShippingDestinationSelectionMode, FutureShippingDestinationZone } from "../types.js";
 
 export const STEP8_DELIVERY_RATE_VERSION = "step8-delivery-v1" as const;
 

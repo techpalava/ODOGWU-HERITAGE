@@ -6,9 +6,9 @@ import type {
   FabricAllocation,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
-} from "../types";
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
-import type { GarmentScopedCustomDetailsCompletionResult } from "./garmentScopedCustomDetailsDomain";
+} from "../types.js";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
+import type { GarmentScopedCustomDetailsCompletionResult } from "./garmentScopedCustomDetailsDomain.js";
 
 export const AI_TRY_ON_WORKFLOW_SCHEMA_VERSION = 1 as const;
 

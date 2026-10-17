@@ -1,9 +1,9 @@
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import {
   reconcileGarmentScopedDesignStyleAssignmentLedger,
   type GarmentDesignStyleAssignmentTarget,
   type GarmentScopedDesignStyleAssignmentLedgerV2,
-} from "./garmentScopedDesignStyleAssignment";
+} from "./garmentScopedDesignStyleAssignment.js";
 
 export type UploadedSourceReferenceClassification =
   | "unreferenced"
