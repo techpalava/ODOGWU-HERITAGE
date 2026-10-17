@@ -40,7 +40,7 @@ const succeededIntent = (
 ): StripePaymentIntentSummary => ({
   id: PAYMENT_INTENT_ID,
   status: "succeeded",
-  amount: 31400,
+  amount: 30000,
   currency: "eur",
   metadata: {
     orderId: ORDER_ID,
@@ -223,7 +223,7 @@ assert.notEqual(JSON.stringify(JSON.parse(RAW_BODY)), RAW_BODY);
     orderId: ORDER_ID,
     ownerUid: OWNER_UID,
     paymentIntentId: PAYMENT_INTENT_ID,
-    amountCents: 31400,
+    amountCents: 30000,
     currency: "eur",
     status: "succeeded",
     testMode: true,

@@ -222,6 +222,7 @@ export const quoteFutureOrderPayableTotal = (
   const lagosToEindhovenShippingCents = individualLagosToEindhovenChargeCents({
     orderType: candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: candidate.garments.length,
+    fulfilmentMethod: fulfilment,
   });
   return {
     garmentConstructionSubtotalCents,
@@ -314,6 +315,7 @@ const includedComponentsMatch = (candidate: FutureOrderCandidateV2): boolean => 
   const lagosChargeCents = individualLagosToEindhovenChargeCents({
     orderType: candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: candidate.garments.length,
+    fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
   });
   const lagosMatches =
     lagosChargeCents === null

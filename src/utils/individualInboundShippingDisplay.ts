@@ -18,6 +18,7 @@ export const individualLagosToEindhovenChargeCents = (input: {
   orderType?: string | null;
   batchType?: string | null;
   physicalGarmentCount: number;
+  fulfilmentMethod?: string | null;
 }): number | null =>
   resolveIndividualInboundShippingDisplay(input)?.amountCents ?? null;
 
@@ -50,14 +51,17 @@ const isIndividualOrder = (input: {
 
 /**
  * Individual Lagos→Eindhoven band.
- * Community and other batch routes return null. Callers add `amountCents`
- * to the payable total once.
+ * Community, other batch routes, and Eindhoven pickup return null.
+ * Callers add `amountCents` to the payable total once. Pickup never
+ * carries this charge, even when an older draft still has a delivery quote.
  */
 export const resolveIndividualInboundShippingDisplay = (input: {
   orderType?: string | null;
   batchType?: string | null;
   physicalGarmentCount: number;
+  fulfilmentMethod?: string | null;
 }): IndividualInboundShippingDisplay | null => {
+  if (input.fulfilmentMethod === "eindhoven_pickup") return null;
   if (!isIndividualOrder(input)) return null;
   if (
     !Number.isInteger(input.physicalGarmentCount) ||
