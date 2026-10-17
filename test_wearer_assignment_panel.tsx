@@ -23,6 +23,7 @@ import {
   resolveWearerAssignmentPresentation,
   wearerAssignmentLabel,
   setWearerFitContext,
+  updateWearerMeasurement,
 } from "./src/utils/wearerOrder";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -1944,6 +1945,190 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
 }
 
 console.log("PASS: wearer assignment panel Remove clears name and fit; Only for me keeps them");
+
+{
+  // Remove on the last card, then Add a person: a fresh, empty, unconfirmed card.
+  // Add another person stays gated by the save-name rule. The wearer id, its
+  // measurement bag and the sole garment auto-assignment survive. Mirrors
+  // Design Studio's onCollapseToSolo (clearWearerIdentity + reconcileWearerOrder).
+  const freshGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "base:trouser", garmentType: "trouser" },
+  ];
+  const freshGarmentKeys = freshGarments.map((garment) => garment.garmentKey);
+  const reconcileFresh = (order: WearerOrderStateV2) =>
+    reconcileWearerOrder({
+      order,
+      garmentKeys: freshGarmentKeys,
+      compatibilityDemographic: "female",
+      garments: freshGarments,
+      garmentTypeSelection: selection(),
+    });
+  const savedMeasurement = createEmptyFutureMeasurementState("sample_cloth", "inch");
+  const namedAdaObi = (() => {
+    const sole = reconcileFresh(createEmptyWearerOrder());
+    const soleId = sole.wearers[0].wearerId;
+    const renamed = renameWearer(sole, soleId, "Ada Obi");
+    if (renamed.status !== "updated") throw new Error("expected Ada Obi");
+    // A stale fit left over from before #755 must not survive Remove either.
+    const staleFit = setWearerFitContext(renamed.order, soleId, "female");
+    if (staleFit.status !== "updated") throw new Error("expected stale fit");
+    return reconcileFresh(updateWearerMeasurement(staleFit.order, soleId, savedMeasurement));
+  })();
+  const adaId = namedAdaObi.wearers[0].wearerId;
+  assert.equal(namedAdaObi.wearers[0].fitContext, "female");
+  assert.equal(namedAdaObi.assignmentByGarmentKey["base:shirt"], adaId);
+  assert.equal(namedAdaObi.assignmentByGarmentKey["base:trouser"], adaId);
+
+  let latestOrder = namedAdaObi;
+  let deleteCalls = 0;
+  const FreshCardHarness = ({ initial }: { initial: WearerOrderStateV2 }) => {
+    const [order, setOrder] = useState(initial);
+    const orderRef = useRef(initial);
+    const publish = (next: WearerOrderStateV2) => {
+      orderRef.current = next;
+      latestOrder = next;
+      setOrder(next);
+    };
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={freshGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt", "base:trouser": "Standard Trouser" }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({
+            order: orderRef.current,
+            physicalGarmentCount: freshGarments.length,
+            displayName,
+            fitContext,
+          });
+          if (result.status === "updated") publish(result.order);
+        }}
+        onRenameWearer={(id, displayName) => {
+          const result = renameWearer(orderRef.current, id, displayName);
+          if (result.status === "updated") publish(result.order);
+        }}
+        onReorderWearers={() => {}}
+        onDeleteWearer={(id) => {
+          deleteCalls += 1;
+          const result = deleteWearer(orderRef.current, id);
+          if (result.status === "updated") publish(result.order);
+          return result;
+        }}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order: orderRef.current })}
+        onCollapseToSolo={(options) => {
+          let base = orderRef.current;
+          if (options?.clearSoleIdentity && base.wearers.length === 1) {
+            const cleared = clearWearerIdentity(base, base.wearers[0].wearerId);
+            if (cleared.status === "updated") base = cleared.order;
+          }
+          publish(reconcileFresh(base));
+        }}
+      />
+    );
+  };
+  const onlyNameInput = (root: ReactTestInstance) =>
+    root.find(
+      (node) =>
+        node.type === "input" &&
+        typeof node.props["aria-label"] === "string" &&
+        String(node.props["aria-label"]).startsWith("Name or nickname"),
+    );
+  const addAnother = (root: ReactTestInstance) =>
+    root.findByProps({ "data-wearer-add-another": "true" });
+
+  let freshRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    freshRenderer = create(<FreshCardHarness initial={namedAdaObi} />);
+  });
+  await act(async () => {
+    freshRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(onlyNameInput(freshRenderer.root).props.value, "Ada Obi");
+  assert.equal(
+    freshRenderer.root.findByProps({ "data-wearer-name-save": "true" }).props["data-wearer-name-confirmed"],
+    "true",
+    "a saved name from the order counts as confirmed before Remove",
+  );
+  assert.equal(addAnother(freshRenderer.root).props.disabled, false);
+
+  await act(async () => {
+    freshRenderer.root.findByProps({ "data-wearer-remove": "true" }).props.onClick({ stopPropagation() {} });
+  });
+  assert.equal(deleteCalls, 0, "the last person is not deleted");
+  assert.equal(freshRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  assert.equal(latestOrder.wearers.length, 1);
+  assert.equal(latestOrder.wearers[0].wearerId, adaId, "the wearer id stays");
+  assert.equal(latestOrder.wearers[0].displayName, "", "the saved name is cleared");
+  assert.equal(latestOrder.wearers[0].fitContext, null, "any leftover fit is cleared");
+  assert.deepEqual(
+    latestOrder.wearers[0].measurement,
+    namedAdaObi.wearers[0].measurement,
+    "measurement values are kept for the solo wearer",
+  );
+  assert.equal(latestOrder.assignmentByGarmentKey["base:shirt"], adaId, "sole auto-assignment kept");
+  assert.equal(latestOrder.assignmentByGarmentKey["base:trouser"], adaId, "sole auto-assignment kept");
+
+  await act(async () => {
+    freshRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(freshRenderer.root.findAllByType("article").length, 1, "one fresh card, not a second person");
+  assert.equal(onlyNameInput(freshRenderer.root).props.value, "", "Add a person shows an empty name");
+  assert.equal(textContent(freshRenderer.root).includes("Ada Obi"), false, "the old name is gone");
+  assert.equal(
+    freshRenderer.root.findByProps({ "data-wearer-name-save": "true" }).props["data-wearer-name-confirmed"],
+    "false",
+    "the fresh card is unconfirmed",
+  );
+  assert.equal(addAnother(freshRenderer.root).props.disabled, true, "Add another person is gated");
+  assert.match(
+    textContent(freshRenderer.root.findByProps({ "data-wearer-add-another-reason": "true" })),
+    /^Save each person.s name before adding another$/,
+  );
+
+  // The name rule still releases the gate once a new name is typed and saved.
+  await act(async () => {
+    onlyNameInput(freshRenderer.root).props.onChange({ currentTarget: { value: "Chidi" } });
+  });
+  assert.equal(addAnother(freshRenderer.root).props.disabled, true, "typing alone does not confirm");
+  await act(async () => {
+    freshRenderer.root.findByProps({ "data-wearer-name-save": "true" }).props.onClick({ stopPropagation() {} });
+  });
+  assert.equal(latestOrder.wearers[0].displayName, "Chidi");
+  assert.equal(addAnother(freshRenderer.root).props.disabled, false, "Save releases Add another person");
+  await act(async () => {
+    freshRenderer.unmount();
+  });
+
+  // With two people, Remove deletes that person only and keeps the other's name.
+  const withGuest = addWearer({
+    order: namedAdaObi,
+    physicalGarmentCount: freshGarments.length,
+    displayName: "Bo",
+    fitContext: null,
+  });
+  if (withGuest.status !== "updated") throw new Error("expected Bo");
+  deleteCalls = 0;
+  latestOrder = withGuest.order;
+  let pairRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    pairRenderer = create(<FreshCardHarness initial={withGuest.order} />);
+  });
+  await act(async () => {
+    removeButtonIn(pairRenderer.root, "Bo").props.onClick({ stopPropagation() {} });
+  });
+  assert.equal(deleteCalls, 1, "2+ people: Remove still deletes that person");
+  assert.equal(latestOrder.wearers.length, 1);
+  assert.equal(latestOrder.wearers[0].wearerId, adaId);
+  assert.equal(latestOrder.wearers[0].displayName, "Ada Obi", "2+ people: the remaining name is kept");
+  await act(async () => {
+    pairRenderer.unmount();
+  });
+}
+
+console.log("PASS: wearer assignment panel Remove on the last card then Add a person gives a fresh, gated card");
 
 {
   // Reloaded draft: non-empty names already in the order count as confirmed.

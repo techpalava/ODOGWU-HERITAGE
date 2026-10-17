@@ -329,9 +329,10 @@ export const renameWearer = (
 };
 
 /**
- * Remove on the last card: blank the name and clear the fit, keep the wearer id
- * (and measurement bag). Only for me does not call this. A later fit choice
- * still sole-auto-assigns through reconcileWearerOrder.
+ * Remove on the last card: blank the name and clear any leftover fit, keep the
+ * wearer id (and measurement bag), so Add a person reopens a fresh card. Only for
+ * me does not call this. reconcileWearerOrder still auto-assigns every garment to
+ * the sole wearer.
  */
 export const clearWearerIdentity = (
   order: WearerOrderStateV2,
