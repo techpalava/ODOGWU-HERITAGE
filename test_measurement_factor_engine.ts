@@ -6,6 +6,7 @@ import {
   calculateMeasurementFromAverageFactor,
   deriveMeasurementRangeFromFactors,
   getProfileRowFactors,
+  isManualValueOutsideExpectedRange,
 } from "./src/utils/measurementFactorEngine";
 
 const HEIGHT = 180;
@@ -88,6 +89,57 @@ nearlyEqual(
 nearlyEqual(
   getProfileRowFactors("M", "waist_to_ankle_length")!.averageFactor,
   0.535919333317358,
+);
+
+// Ordinary adult measurements at 175 cm must not trigger "Please recheck".
+const ordinaryAdult175: Record<string, number> = {
+  head_circumference: 56,
+  neck_circumference: 38,
+  shoulder_length: 45,
+  chest_bust_circumference: 100,
+  belly_circumference: 92,
+  bicep_circumference: 32,
+  elbow_circumference: 27,
+  armhole_circumference: 50,
+  height_head_to_lower_neck: 22,
+  height_lower_neck_to_waist: 47,
+  height_waist_to_feet: 95,
+  shirt_length_standard: 75,
+  sleeve_length_short: 22,
+};
+for (const [measurementId, value] of Object.entries(ordinaryAdult175)) {
+  assert.equal(
+    isManualValueOutsideExpectedRange({
+      value,
+      heightValue: 175,
+      factors: getProfileRowFactors("A", measurementId as never),
+    }),
+    false,
+    `${measurementId} ${value} cm at 175 cm should not ask for a recheck`,
+  );
+}
+const headToNeck = getProfileRowFactors("A", "height_head_to_lower_neck");
+for (const value of [20, 22, 26, 30, 32]) {
+  assert.equal(
+    isManualValueOutsideExpectedRange({ value, heightValue: 175, factors: headToNeck }),
+    false,
+    `Head Top to Lower Neck ${value} cm should be accepted quietly`,
+  );
+}
+for (const value of [11, 15, 40, 52]) {
+  assert.equal(
+    isManualValueOutsideExpectedRange({ value, heightValue: 175, factors: headToNeck }),
+    true,
+    `Head Top to Lower Neck ${value} cm should still ask for a recheck`,
+  );
+}
+assert.equal(
+  isManualValueOutsideExpectedRange({
+    value: 200,
+    heightValue: 175,
+    factors: getProfileRowFactors("A", "chest_bust_circumference"),
+  }),
+  true,
 );
 
 console.log("PASS: measurement factor engine");

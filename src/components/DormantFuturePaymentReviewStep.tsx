@@ -16,6 +16,10 @@ import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
+import {
+  BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS,
+  BlockedGarmentRemovalReason,
+} from "./BlockedGarmentRemovalReason";
 import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { DesignStudioStageId } from "../types";
 import {
@@ -141,34 +145,40 @@ const GarmentRemovalAction = ({
   originStage: "payment";
   reasonId: string;
   onRequest?: DormantFuturePaymentReviewStepProps["onRequestGarmentRemoval"];
-}) => (
+}) => {
+  const [reasonRevealed, setReasonRevealed] = useState(false);
+  return (
   <div className="min-w-0 sm:text-right">
     <button
       type="button"
-      disabled={!target.canRequestRemoval}
+      aria-disabled={!target.canRequestRemoval || undefined}
+      title={target.disabledReason ?? undefined}
       aria-label={target.accessibleName}
       aria-describedby={target.disabledReason ? reasonId : undefined}
       data-garment-removal-button={target.garmentKey}
       data-garment-removal-origin-stage={originStage}
       onClick={(event) => {
         event.stopPropagation();
+        if (!target.canRequestRemoval) {
+          setReasonRevealed(true);
+          return;
+        }
         onRequest?.(target, event.currentTarget);
       }}
-      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+      className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
     >
       <Trash2 aria-hidden="true" size={15} />
       Remove
     </button>
-    {target.disabledReason && (
-      <p
-        id={reasonId}
-        className="mt-2 break-words text-left text-xs leading-relaxed text-heritage-ink/65 sm:max-w-56 sm:text-right"
-      >
-        {target.disabledReason}
-      </p>
-    )}
+    <BlockedGarmentRemovalReason
+      id={reasonId}
+      reason={target.disabledReason}
+      revealed={reasonRevealed}
+      className="mt-2 break-words text-left text-xs leading-relaxed text-heritage-ink/65 sm:max-w-56 sm:text-right"
+    />
   </div>
-);
+  );
+};
 
 const ReviewSection = ({
   title,

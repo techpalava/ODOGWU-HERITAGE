@@ -1510,6 +1510,7 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
     },
   ];
   let cancelClicks = 0;
+  let lastGarmentRemovalRequests = 0;
   act(() => {
     renderer.update(
       createElement(DesignStudioOrderSummary, {
@@ -1553,9 +1554,9 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
     }).length,
     1,
   );
-  assert.equal(
-    oneByTestId(renderer.root, "live-order-summary-remove-base:shirt").props.disabled,
-    false,
+  assert.notEqual(
+    oneByTestId(renderer.root, "live-order-summary-remove-base:shirt").props["aria-disabled"],
+    true,
   );
   act(() => {
     renderer.update(
@@ -1572,13 +1573,38 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
         unlockedStages: new Set<DesignStudioStageId>(["garment_type"]),
         currentStageId: "fabric",
         removalTargets: lastGarmentTargets,
-        onRequestGarmentRemoval: () => undefined,
+        onRequestGarmentRemoval: () => {
+          lastGarmentRemovalRequests += 1;
+        },
         onRequestCancelOrder: () => undefined,
       }),
     );
   });
   const lastRemove = oneByTestId(renderer.root, "live-order-summary-remove-base:shirt");
-  assert.equal(lastRemove.props.disabled, true);
+  assert.equal(lastRemove.props["aria-disabled"], true);
+  assert.equal(lastRemove.props.title, "At least one garment must remain in your order.");
+  // The reason is not standing visible text: only screen readers get it until
+  // the customer tries to remove the last garment.
+  const hiddenReason = renderer.root.findByProps({
+    "data-garment-removal-blocked-reason": "hidden",
+  });
+  assert.equal(hiddenReason.props.className, "sr-only");
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-garment-removal-blocked-reason": "visible",
+    }).length,
+    0,
+  );
+  act(() => {
+    lastRemove.props.onClick({ stopPropagation: () => undefined, currentTarget: null });
+  });
+  assert.equal(lastGarmentRemovalRequests, 0, "last garment must not open removal");
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-garment-removal-blocked-reason": "visible",
+    }).length,
+    1,
+  );
   assert.ok(
     textOf(renderer.root).includes(
       "At least one garment must remain in your order.",

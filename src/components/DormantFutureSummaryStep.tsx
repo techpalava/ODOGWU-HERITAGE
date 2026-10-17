@@ -6,7 +6,12 @@ import {
 } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { useState } from "react";
 import type React from "react";
+import {
+  BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS,
+  BlockedGarmentRemovalReason,
+} from "./BlockedGarmentRemovalReason";
 import {
   garmentConstructionInclusionNote,
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
@@ -250,6 +255,9 @@ export const DormantFutureSummaryStep = ({
   onRequestGarmentRemoval,
   onRequestCancelOrder,
 }: DormantFutureSummaryStepProps) => {
+  const [revealedBlockedRemovalKey, setRevealedBlockedRemovalKey] = useState<
+    string | null
+  >(null);
   const isReady = summary.status === "ready";
   const firstBlocker = summary.blockers[0] || null;
   const blockerEditAction = firstBlocker
@@ -507,14 +515,14 @@ export const DormantFutureSummaryStep = ({
                         </span>
                       ) : null}
                     </div>
-                    {removalTarget?.disabledReason && (
-                      <p
-                        id={reasonId}
-                        className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65"
-                      >
-                        {removalTarget.disabledReason}
-                      </p>
-                    )}
+                    <BlockedGarmentRemovalReason
+                      id={reasonId}
+                      reason={removalTarget?.disabledReason}
+                      revealed={
+                        revealedBlockedRemovalKey === garment.garmentKey
+                      }
+                      className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65"
+                    />
                   </div>
                   <div className="flex min-w-0 flex-col gap-2 sm:items-end">
                     {onEditGarment ? (
@@ -535,7 +543,10 @@ export const DormantFutureSummaryStep = ({
                     {removalTarget && (
                       <button
                         type="button"
-                        disabled={!removalTarget.canRequestRemoval}
+                        aria-disabled={
+                          !removalTarget.canRequestRemoval || undefined
+                        }
+                        title={removalTarget.disabledReason ?? undefined}
                         aria-label={removalTarget.accessibleName}
                         aria-describedby={
                           removalTarget.disabledReason ? reasonId : undefined
@@ -544,12 +555,16 @@ export const DormantFutureSummaryStep = ({
                         data-garment-removal-origin-stage="summary"
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (!removalTarget.canRequestRemoval) {
+                            setRevealedBlockedRemovalKey(garment.garmentKey);
+                            return;
+                          }
                           onRequestGarmentRemoval?.(
                             removalTarget,
                             event.currentTarget,
                           );
                         }}
-                        className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                        className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
                       >
                         <Trash2 aria-hidden="true" size={15} />
                         Remove
