@@ -1079,7 +1079,7 @@ assert.equal(
   );
   assert.match(
     studioSource,
-    /isFuturePaymentReviewUnlocked\s*=\s*isFuturePaymentReviewStageUnlocked\(\s*futureOrderCandidateResult/,
+    /isFuturePaymentReviewUnlocked\s*=\s*Boolean\(\s*futurePaymentReviewHandoff\s*&&\s*isFuturePaymentReviewStageUnlocked\(\s*futurePaymentReviewHandoff\s*\)/,
     "payment eligibility remains candidate-derived",
   );
   assert.doesNotMatch(

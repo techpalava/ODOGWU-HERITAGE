@@ -21,6 +21,7 @@ const retainedAvatars = resolveCustomerOrderContextPresentation(
 );
 assert.deepEqual(retainedAvatars, {
   kind: "community",
+  role: null,
   studioLabel: "Community Order",
   detailsOrderType: "Community Batch",
   batchName: "Avatars",
@@ -68,6 +69,7 @@ const individual = resolveCustomerOrderContextPresentation(
 );
 assert.deepEqual(individual, {
   kind: "individual",
+  role: null,
   studioLabel: "Individual Order",
   detailsOrderType: "Individual Order",
   batchName: null,

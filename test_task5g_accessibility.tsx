@@ -37,16 +37,22 @@ act(() => { tree = create(<DormantFutureDesignStyleStep {...baseProps}
 const clear = tree.root.findByProps({ "aria-label": "Clear design for Shirt 2" });
 assert.equal(clear.type, "button");
 act(() => clear.props.onClick());
-assert.equal(cleared, baseProps.clearRequest, "UI forwards the existing authority request unchanged");
-const navigation = tree.root.findByProps({ "aria-label": "Garments requiring a Design Style" });
-const buttons = navigation.findAllByType("button");
-assert.equal(buttons.length, 2);
-assert.match(buttons[0].props["aria-label"], /^Shirt:/);
-assert.match(buttons[1].props["aria-label"], /^Shirt 2:/);
-assert.equal(buttons[1].props["aria-current"], "true");
-act(() => buttons[0].props.onClick());
+const secondClearRequest = baseProps.clearRequests.find(request =>
+  request.target.occurrenceToken === second.target.occurrenceToken);
+assert.ok(secondClearRequest);
+assert.equal(cleared, secondClearRequest, "UI forwards the existing authority request unchanged");
+assert.deepEqual(cleared, baseProps.clearRequest, "the row request matches the active-occurrence request");
+// Each garment row has its own Change Design control for that exact occurrence.
+const changeButtons = tree.root.findAll(node =>
+  node.type === "button" && /^(Choose|Change) Design$/.test(text(node)));
+assert.equal(changeButtons.length, 2);
+act(() => changeButtons[0].props.onClick({ stopPropagation: noop }));
 assert.deepEqual(selected, baseProps.occurrences[0].target);
-const input = tree.root.findByProps({ type: "file" });
+act(() => changeButtons[1].props.onClick({ stopPropagation: noop }));
+assert.deepEqual(selected, second.target);
+const input = tree.root.findAll(node => node.type === "input" && node.props.type === "file")
+  .find(node => node.props["aria-label"] === "Upload a design for Shirt 2")!;
+assert.ok(input);
 assert.equal(input.props["aria-label"], "Upload a design for Shirt 2");
 assert.equal(tree.root.findByProps({ htmlFor: input.props.id }).type, "label");
 act(() => tree.unmount());
@@ -84,14 +90,17 @@ assert.match(text(saving), /Saving your order/);
 renderPayment({ status: "error", message: "Could not prepare. Try again." });
 assert.match(text(status()), /Could not prepare/);
 renderPayment(prepared, { status: "processing", paymentReference: "stable-reference" });
-assert.match(text(status()), /Processing your card payment/);
+assert.match(text(status()), /Processing your payment/);
 assert.equal(payButtons().length, 1);
 const processing = payButtons()[0];
 assert.equal(processing.props.disabled, true);
 assert.equal(processing.props["aria-busy"], true);
 assert.match(text(processing), /Processing payment/);
 renderPayment(prepared, { status: "failed", paymentReference: "stable-reference", message: "Payment failed. Try again." });
-assert.match(text(status()), /Payment failed/);
+// A declined payment is announced in its own alert, not the status line.
+const failureAlert = tree.root.findByProps({ role: "alert" });
+assert.match(text(failureAlert), /Payment not completed/);
+assert.match(text(failureAlert), /Payment failed\. Try again\./);
 assert.equal(payButtons().length, 1, "a declined card leaves the Pay button available");
 const retry = payButtons()[0];
 assert.equal(retry.props["aria-describedby"], status().props.id);
@@ -110,13 +119,16 @@ act(() => tree.unmount());
 
 let edited: unknown;
 act(() => { tree = create(<DesignStudioOrderSummary
-  view={{ sections: [{ id: "design_style", title: "Design Style", editStage: "design_style",
+  // The live summary stays hidden until a garment is committed, so seed one.
+  view={{ sections: [{ id: "construction", title: "Garments", editStage: "garment_type",
+    lines: [{ id: "garment-shirt", label: "Shirt", detail: null, amountLabel: null }] },
+    { id: "design_style", title: "Design Style", editStage: "design_style",
     lines: ["Shirt", "Shirt 2", "Shirt 3"].map((label, index) => ({
       id: String(index), label, detail: index === 0 ? longName : index === 1 ? "Uploaded design" : "Not selected", amountLabel: null,
     })) }], totalStatus: "hidden", totalLabel: "Total", totalValueLabel: "Pending", totalAmountCents: null, quoteRequired: false }}
   unlockedStages={new Set(["design_style"])} currentStageId="custom_details"
   onEditStage={stage => { edited = stage; }} />); });
-assert.deepEqual(tree.root.findAllByType("li").map(row => text(row.findByType("div").findAllByType("p")[0])), ["Shirt", "Shirt 2", "Shirt 3"]);
+assert.deepEqual(tree.root.findByProps({ "data-testid": "live-order-summary-section-design_style" }).findAllByType("li").map(row => text(row.findAllByType("p")[0])), ["Shirt", "Shirt 2", "Shirt 3"]);
 assert.ok(text(tree.root).includes(longName));
 const edit = tree.root.findByProps({ "aria-label": "Edit Design Style" });
 assert.equal(edit.type, "button");

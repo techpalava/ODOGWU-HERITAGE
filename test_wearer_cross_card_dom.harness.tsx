@@ -104,7 +104,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const runScenario = async (
   name: string,
   nolOwnsTrouser: boolean,
-  act: (root: HTMLElement) => void,
+  act: (root: HTMLElement) => void | Promise<void>,
 ) => {
   const fixture = buildCrossCardFixture({ nolOwnsTrouser });
   const host = document.createElement("div");
@@ -125,7 +125,7 @@ const runScenario = async (
   );
   await wait(50);
   const before = latest!;
-  act(host);
+  await act(host);
   await wait(50);
   const after = latest!;
   root.unmount();
@@ -151,15 +151,28 @@ const main = async () => {
   const results = [
     // Real bubbling click on the box itself (the B1 path).
     await runScenario("tick", false, (root) => nolCheckbox(root, "Trouser").click()),
-    await runScenario("untick", true, (root) => nolCheckbox(root, "Trouser").click()),
+    // A finished card (saved name + a garment) folds to a short row (#727), so
+    // the real path to untick is Edit (which selects Nol), then the checkbox.
+    await runScenario("untick", true, async (root) => {
+      if (root.querySelector('input[type="checkbox"][aria-label="Trouser for Nol"]')) {
+        throw new Error("Nol's finished card should be folded while Fred is selected");
+      }
+      const edit = root.querySelector<HTMLButtonElement>(
+        '[data-wearer-card-collapsed="true"] [data-wearer-card-expand="true"][aria-label="Edit Nol"]',
+      );
+      if (!edit) throw new Error("no Edit button on Nol's folded card");
+      edit.click();
+      await wait(50);
+      nolCheckbox(root, "Trouser").click();
+    }),
     // Clicking the pill text: label activation dispatches a second click on the box.
     await runScenario("tick-label", false, (root) =>
       nolCheckbox(root, "Trouser").closest("label")!.click(),
     ),
-    // Empty card chrome (the Fit legend) still selects the card.
+    // Card chrome outside the garment rows still selects the card.
     await runScenario("chrome", false, (root) => {
       const legend = [...nolCheckbox(root, "Trouser").closest("article")!.querySelectorAll("legend")]
-        .find((node) => node.textContent?.includes("Fit for measurements"));
+        .find((node) => node.textContent?.includes("Garments for this person"));
       legend!.click();
     }),
   ];

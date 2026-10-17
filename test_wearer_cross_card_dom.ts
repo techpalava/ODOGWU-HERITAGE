@@ -186,9 +186,10 @@ try {
     pass(`DOM ${name}: real bubbling click on Nol's checkbox changes only the assignment`);
   }
   {
-    const { before, after, fredId } = byName.get("untick")!;
-    assert.equal(after.selectCalls, 0, "untick must not select Nol's card");
-    assert.equal(after.activeWearerId, fredId);
+    // Edit on the folded card selects Nol once; the untick itself selects nothing more.
+    const { before, after, nolId } = byName.get("untick")!;
+    assert.equal(after.selectCalls, 1, "only Edit selects Nol; the untick does not");
+    assert.equal(after.activeWearerId, nolId, "Nol is selected after Edit");
     assert.equal(after.assignment["base:trouser"], undefined, "trouser unassigned");
     const nolBefore = JSON.parse(before.nol);
     const nolAfter = JSON.parse(after.nol);
@@ -196,7 +197,7 @@ try {
     assert.equal(nolAfter.byGarmentKey["base:trouser"], undefined, "trouser fields stripped");
     assert.notEqual(after.nol, before.fred, "Nol never gets Fred's values");
     assert.equal(after.fred, before.fred, "Fred unchanged");
-    pass("DOM untick: real bubbling click strips only Nol's trouser fields");
+    pass("DOM untick: Edit then a real click strips only Nol's trouser fields");
   }
   {
     const { before, after, nolId } = byName.get("chrome")!;
