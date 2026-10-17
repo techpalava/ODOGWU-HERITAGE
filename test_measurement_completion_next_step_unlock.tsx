@@ -106,7 +106,7 @@ const renderHarness = (
 };
 
 const continueButton = (renderer: ReactTestRenderer) =>
-  renderer.root.findAllByType("button").find((node) => collectText(node).includes("Continue to Summary"));
+  renderer.root.findAllByType("button").find((node) => node.props["aria-label"] === "Continue to Summary");
 
 const requiredInputs = (renderer: ReactTestRenderer) =>
   renderer.root.findAllByProps({ "data-measurement-section": "required" }).flatMap((section) =>
@@ -124,7 +124,7 @@ act(() => {
 
 const continueLocked = continueButton(renderer);
 assert.ok(continueLocked);
-assert.equal(continueLocked.props.disabled, true);
+assert.equal(continueLocked.props["aria-disabled"], "true");
 
 assert.ok(requiredInputs(renderer).length > 0);
 assert.equal(
@@ -137,25 +137,35 @@ const fillRequiredExceptLast = () => {
   const inputs = requiredInputs(renderer);
   for (let index = 0; index < inputs.length - 1; index += 1) {
     act(() => {
-      requiredInputs(renderer)[index].props.onChange({ target: { value: "10" } });
+      requiredInputs(renderer)[index].props.onChange({ target: { value: "60" } });
     });
   }
 };
 fillRequiredExceptLast();
-assert.equal(continueButton(renderer)?.props.disabled, true);
+assert.equal(continueButton(renderer)?.props["aria-disabled"], "true");
 
 act(() => {
-  requiredInputs(renderer).at(-1)!.props.onChange({ target: { value: "10" } });
+  requiredInputs(renderer).at(-1)!.props.onChange({ target: { value: "60" } });
+});
+assert.equal(continueButton(renderer)?.props.disabled, false);
+
+// An implausible height (below the 40 cm floor) relocks Continue.
+act(() => {
+  requiredInputs(renderer)[0].props.onChange({ target: { value: "10" } });
+});
+assert.equal(continueButton(renderer)?.props["aria-disabled"], "true");
+act(() => {
+  requiredInputs(renderer)[0].props.onChange({ target: { value: "60" } });
 });
 assert.equal(continueButton(renderer)?.props.disabled, false);
 
 act(() => {
   requiredInputs(renderer).at(-1)!.props.onChange({ target: { value: "" } });
 });
-assert.equal(continueButton(renderer)?.props.disabled, true);
+assert.equal(continueButton(renderer)?.props["aria-disabled"], "true");
 
 act(() => {
-  requiredInputs(renderer).at(-1)!.props.onChange({ target: { value: "10" } });
+  requiredInputs(renderer).at(-1)!.props.onChange({ target: { value: "60" } });
 });
 assert.equal(continueButton(renderer)?.props.disabled, false);
 
@@ -167,7 +177,7 @@ act(() => {
     value: "high_risk",
   }).props.onChange({ target: { value: "high_risk" } });
 });
-assert.equal(continueButton(highRenderer)?.props.disabled, true);
+assert.equal(continueButton(highRenderer)?.props["aria-disabled"], "true");
 assert.equal(
   highRenderer.root.findByProps({ "data-measurement-section": "required" })
     .findAll((node) => Boolean(node.props?.["data-measurement-field"]))[0]
@@ -246,7 +256,7 @@ assert.equal(
     .findByProps({ "data-measurement-badge": "One required" }).props["data-measurement-badge"],
   "One required",
 );
-assert.equal(continueButton(midLongRenderer)?.props.disabled, true);
+assert.equal(continueButton(midLongRenderer)?.props["aria-disabled"], "true");
 
 const fieldInput = (fieldId: string) =>
   midLongRenderer.root.findByProps({ "data-measurement-field": fieldId })
@@ -262,20 +272,20 @@ const individualFieldIds = midLongPlan.requirements
   .map((requirement) => requirement.measurementId);
 for (const fieldId of individualFieldIds) {
   act(() => {
-    fieldInput(fieldId).props.onChange({ target: { value: "10" } });
+    fieldInput(fieldId).props.onChange({ target: { value: "60" } });
   });
 }
-assert.equal(continueButton(midLongRenderer)?.props.disabled, true);
+assert.equal(continueButton(midLongRenderer)?.props["aria-disabled"], "true");
 act(() => {
-  fieldInput("sleeve_length_mid").props.onChange({ target: { value: "10" } });
+  fieldInput("sleeve_length_mid").props.onChange({ target: { value: "60" } });
 });
 assert.equal(continueButton(midLongRenderer)?.props.disabled, false);
 act(() => {
   fieldInput("sleeve_length_mid").props.onChange({ target: { value: "" } });
 });
-assert.equal(continueButton(midLongRenderer)?.props.disabled, true);
+assert.equal(continueButton(midLongRenderer)?.props["aria-disabled"], "true");
 act(() => {
-  fieldInput("sleeve_length_long").props.onChange({ target: { value: "10" } });
+  fieldInput("sleeve_length_long").props.onChange({ target: { value: "60" } });
 });
 assert.equal(continueButton(midLongRenderer)?.props.disabled, false);
 
