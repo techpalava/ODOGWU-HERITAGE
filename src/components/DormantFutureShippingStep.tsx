@@ -25,6 +25,8 @@ import {
   FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
   type FutureShippingFieldId,
   type FutureShippingStageResolution,
+  futureShippingRequiresRegion,
+  resolveFutureShippingCityHint,
 } from "../utils/designStudioFutureShipping";
 import { formatStep8CustomerDestination } from "../utils/step8AdditionalDelivery";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
@@ -242,8 +244,12 @@ export const DormantFutureShippingStep = ({
       : "Standard Shipping to Eindhoven is already included. This step only adds pickup or additional delivery from Eindhoven.";
   const isOtherDestination =
     isDelivery && state.destinationSelectionMode === "other_destination";
-  const regionRequired = isDelivery;
+  const regionRequired = futureShippingRequiresRegion(state);
   const isNetherlandsDelivery = !isOtherDestination && address.countryCode === "NL";
+  const cityHint = resolveFutureShippingCityHint({
+    city: address.city,
+    isNetherlandsDelivery,
+  });
   const addressCheckCountry =
     formatStep8CustomerDestination({
       countryCode: isOtherDestination ? "" : address.countryCode,
@@ -693,22 +699,25 @@ export const DormantFutureShippingStep = ({
                     onBlur={() => revealField("city")}
                     aria-invalid={Boolean(shownError("city"))}
                     aria-describedby={
-                      shownError("city")
-                        ? "future-shipping-city-hint future-shipping-city-error"
-                        : "future-shipping-city-hint"
+                      [
+                        cityHint ? "future-shipping-city-hint" : "",
+                        shownError("city") ? "future-shipping-city-error" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined
                     }
                     autoComplete="address-level2"
                     className={`${inputClassName} mt-1.5`}
                   />
-                  <span
-                    id="future-shipping-city-hint"
-                    data-testid="future-shipping-city-hint"
-                    className="mt-1 block text-[11px] font-normal normal-case leading-snug tracking-normal text-heritage-ink/55"
-                  >
-                    The city must be in the selected country.
-                    {isNetherlandsDelivery &&
-                      " Writing \"Eindhoven\" exactly selects the local Eindhoven shipping rate."}
-                  </span>
+                  {cityHint && (
+                    <span
+                      id="future-shipping-city-hint"
+                      data-testid="future-shipping-city-hint"
+                      className="mt-1 block text-[11px] font-normal normal-case leading-snug tracking-normal text-heritage-ink/55"
+                    >
+                      {cityHint}
+                    </span>
+                  )}
                   {shownError("city") && (
                     <span id="future-shipping-city-error" className="mt-1 block normal-case tracking-normal text-red-700">
                       {shownError("city")!.message}
@@ -717,6 +726,14 @@ export const DormantFutureShippingStep = ({
                 </label>
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
                   State / Province / Region
+                  {!regionRequired && (
+                    <span
+                      data-testid="future-shipping-region-optional"
+                      className="ml-1 font-normal normal-case tracking-normal text-heritage-ink/50"
+                    >
+                      (optional)
+                    </span>
+                  )}
                   <input
                     id="future-shipping-region"
                     value={address.stateRegion || ""}

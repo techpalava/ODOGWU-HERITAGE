@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, Suspense, lazy } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 
 import {
   Check,
@@ -76,15 +76,32 @@ import {
 } from "./utils/uploadedDesignCheckoutPreparation";
 
 // Lazy load modular view components for performance optimization
-const HomeView = lazy(() => import("./components/HomeView"));
-const DesignStudioView = lazy(() => import("./components/DesignStudioView"));
-const DashboardView = lazy(() => import("./components/DashboardView"));
-const CustomOrderView = lazy(() => import("./components/CustomOrderView"));
-const AboutView = lazy(() => import("./components/AboutView"));
-const GalleryView = lazy(() => import("./components/GalleryView"));
-const ReviewsView = lazy(() => import("./components/ReviewsView"));
-const LoginView = lazy(() => import("./components/LoginView"));
-const DatabaseView = lazy(() => import("./components/DatabaseView"));
+// Each view retries a failed chunk import once; light tabs prefetch on idle.
+const homeView = lazyView(() => import("./components/HomeView"));
+const designStudioView = lazyView(() => import("./components/DesignStudioView"));
+const dashboardView = lazyView(() => import("./components/DashboardView"));
+const customOrderView = lazyView(() => import("./components/CustomOrderView"));
+const aboutView = lazyView(() => import("./components/AboutView"));
+const galleryView = lazyView(() => import("./components/GalleryView"));
+const reviewsView = lazyView(() => import("./components/ReviewsView"));
+const loginView = lazyView(() => import("./components/LoginView"));
+const databaseView = lazyView(() => import("./components/DatabaseView"));
+const HomeView = homeView.Component;
+const DesignStudioView = designStudioView.Component;
+const DashboardView = dashboardView.Component;
+const CustomOrderView = customOrderView.Component;
+const AboutView = aboutView.Component;
+const GalleryView = galleryView.Component;
+const ReviewsView = reviewsView.Component;
+const LoginView = loginView.Component;
+const DatabaseView = databaseView.Component;
+const IDLE_PREFETCH_VIEWS = [
+  homeView.prefetch,
+  galleryView.prefetch,
+  reviewsView.prefetch,
+  aboutView.prefetch,
+  loginView.prefetch,
+] as const;
 import { Header } from "./components/Header";
 import { MobileMenu } from "./components/MobileMenu";
 import { CartDrawer } from "./components/CartDrawer";
@@ -96,6 +113,8 @@ import {
   startAppVersionMonitoring,
 } from "./utils/appVersionCheck";
 import Footer from "./components/Footer";
+import { lazyView, prefetchWhenIdle } from "./utils/lazyView";
+import { ViewLoadingFallback } from "./components/ViewLoadingFallback";
 
 
 import { AdminAuthGuard } from "./components/AdminAuthGuard";
@@ -204,9 +223,11 @@ export default function App() {
   React.useEffect(() => {
     const stopVersionMonitoring = startAppVersionMonitoring();
     const removePreloadErrorReload = installPreloadErrorReload();
+    const cancelViewPrefetch = prefetchWhenIdle(IDLE_PREFETCH_VIEWS);
     return () => {
       stopVersionMonitoring();
       removePreloadErrorReload();
+      cancelViewPrefetch();
     };
   }, []);
 
@@ -1836,13 +1857,7 @@ export default function App() {
       {/* CORE ACTIVE OUTLET VIEWPORT */}
       <main className="flex-grow mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 w-full">
         <ErrorBoundary>
-          <Suspense
-            fallback={
-              <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-heritage-gold"></div>
-              </div>
-            }
-          >
+          <Suspense fallback={<ViewLoadingFallback />}>
             {activeTab === "home" && (
               <HomeView
                 onNavigateToTab={(

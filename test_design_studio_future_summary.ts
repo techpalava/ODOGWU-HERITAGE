@@ -78,6 +78,7 @@ import {
   reconcileFutureShippingState,
 } from "./src/utils/designStudioFutureShipping";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
+import { IMAGE_RETRY_DELAY_MS } from "./src/hooks/useImageLoadRetry";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -3065,6 +3066,19 @@ act(() => {
     .findByProps({ "data-summary-fabric-image": "true" })
     .props.onError();
 });
+// One retry after a short pause, then the swatch fallback.
+await act(async () => {
+  await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
+});
+assert.match(
+  fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-image": "true" }).props.src,
+  /imgRetry=1/,
+);
+act(() => {
+  fabricPreviewRenderer.root
+    .findByProps({ "data-summary-fabric-image": "true" })
+    .props.onError();
+});
 assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
   0,
@@ -3094,11 +3108,18 @@ act(() => {
     }),
   );
 });
-act(() => {
-  fabricPreviewRenderer.root
-    .findByProps({ "data-summary-fabric-image": "true" })
-    .props.onError();
-});
+for (let attempt = 0; attempt < 2; attempt += 1) {
+  act(() => {
+    fabricPreviewRenderer.root
+      .findByProps({ "data-summary-fabric-image": "true" })
+      .props.onError();
+  });
+  if (attempt === 0) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
+    });
+  }
+}
 assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-fallback": "true" }).length,
   1,
