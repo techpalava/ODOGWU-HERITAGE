@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PenLine } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import {
+  REVIEWS_LOADING_TIMEOUT_MS,
   resolvePublishedReviewsForDisplay,
   sortReviewsNewestFirst,
 } from "../utils/customerReviews";
@@ -10,8 +11,20 @@ import CustomerReviewForm from "./CustomerReviewForm";
 
 export default function ReviewsView() {
   const customerReviews = useAppStore((state) => state.customerReviews);
-  const hasLoaded = useAppStore((state) => state.hasLoadedCustomerReviews);
+  const hasLoadedReviews = useAppStore((state) => state.hasLoadedCustomerReviews);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  // A slow or stuck Firestore listener must not leave the page on a spinner:
+  // after a short wait, show the starter reviews until live ones arrive.
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  useEffect(() => {
+    if (hasLoadedReviews) return;
+    const timer = window.setTimeout(
+      () => setLoadingTimedOut(true),
+      REVIEWS_LOADING_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [hasLoadedReviews]);
+  const hasLoaded = hasLoadedReviews || loadingTimedOut;
 
   const published = useMemo(
     () =>

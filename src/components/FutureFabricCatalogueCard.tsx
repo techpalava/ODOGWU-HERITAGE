@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
 import type { Fabric } from "../types";
 import {
@@ -9,6 +8,7 @@ import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
 import type { FutureFabricCatalogueCardPresentation } from "../utils/designStudioFutureFabricStage";
 import type { FabricStockPresentation } from "../utils/fabricStockPresentation";
 import { isUsableFabricColorHex } from "./AssignedFabricPreview";
+import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 
 export const FutureFabricCatalogueCard = ({
   fabric,
@@ -112,13 +112,8 @@ export const FutureFabricCatalogueCard = ({
   const colorHex = isUsableFabricColorHex(fabric.colorHex)
     ? fabric.colorHex.trim()
     : null;
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [fabric.code, imageUrl]);
-
-  const showImage = Boolean(imageUrl) && !imageFailed;
+  const image = useImageLoadRetry(imageUrl);
+  const showImage = !image.failed;
   const actionClassName =
     "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45";
   const useAgainSplitClassName =
@@ -168,10 +163,12 @@ export const FutureFabricCatalogueCard = ({
       <div className="relative aspect-[4/3] overflow-hidden bg-heritage-cream/40">
         {showImage ? (
           <img
-            src={imageUrl!}
+            src={image.src}
             alt={`${fabric.name} fabric swatch`}
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover"
-            onError={() => setImageFailed(true)}
+            onError={image.onError}
             data-fabric-card-image="true"
           />
         ) : colorHex ? (

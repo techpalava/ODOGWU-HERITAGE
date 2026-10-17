@@ -16,6 +16,10 @@ import {
   normalizeFutureShippingState,
   persistFutureShippingState,
   reconcileFutureShippingState,
+  futureShippingRequiresRegion,
+  resolveFutureShippingCityHint,
+  FUTURE_SHIPPING_CITY_HINT,
+  FUTURE_SHIPPING_EINDHOVEN_CITY_HINT,
 } from "./src/utils/designStudioFutureShipping";
 import { step8RequiresRegion } from "./src/utils/step8AdditionalDelivery";
 import {
@@ -651,7 +655,8 @@ assert.equal(
   false,
 );
 
-// Region is required for every destination delivery, not only US/CA.
+// Region is optional where the country does not need one (smoke test:
+// Paris stayed "Pending" until State/Province was filled).
 const blankRegionCases = [
   { name: "NL Eindhoven", countryCode: "NL", city: "Eindhoven" },
   { name: "NL Amsterdam", countryCode: "NL", city: "Amsterdam" },
@@ -668,16 +673,56 @@ for (const blankCase of blankRegionCases) {
     garmentCount: 2,
     selectedDesignPrice: 500,
   });
-  assert.equal(blankRegion.status, "incomplete", blankCase.name);
-  assert.equal(blankRegion.formInputsComplete, false, blankCase.name);
-  assert.equal(isFutureShippingStepComplete(blankRegion), false, blankCase.name);
+  assert.equal(blankRegion.status, "quote_ready", blankCase.name);
+  assert.equal(blankRegion.formInputsComplete, true, blankCase.name);
+  assert.equal(isFutureShippingStepComplete(blankRegion), true, blankCase.name);
   assert.equal(
-    blankRegion.diagnostics.find((diagnostic) => diagnostic.field === "stateRegion")
-      ?.message,
-    "Enter the state, province, or region.",
+    blankRegion.diagnostics.some((diagnostic) => diagnostic.field === "stateRegion"),
+    false,
     blankCase.name,
   );
 }
+// Smoke-test address: 1 Standard Shirt (€65) to Paris, no region → €19 band.
+const parisNoRegion = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "FR", "Paris", {
+    stateRegion: "",
+    postalCode: "75001",
+  }),
+  garmentCount: 1,
+  selectedDesignPrice: 65,
+});
+assert.equal(parisNoRegion.status, "quote_ready");
+assert.equal(parisNoRegion.state.destinationZoneId, "EUROPE");
+assert.equal(parisNoRegion.postEindhovenAdjustmentCents, 1900);
+assert.equal(parisNoRegion.projectedTotalCents, 8400);
+assert.equal(
+  futureShippingRequiresRegion(parisNoRegion.state),
+  false,
+);
+assert.equal(
+  futureShippingRequiresRegion(usBlankRegion.state),
+  true,
+);
+assert.equal(
+  futureShippingRequiresRegion({
+    ...parisNoRegion.state,
+    fulfilmentMethod: "eindhoven_pickup",
+  }),
+  false,
+);
+assert.equal(
+  resolveFutureShippingCityHint({ city: "", isNetherlandsDelivery: false }),
+  FUTURE_SHIPPING_CITY_HINT,
+);
+assert.equal(
+  resolveFutureShippingCityHint({ city: " Paris ", isNetherlandsDelivery: false }),
+  null,
+  "a filled city must not keep the country hint",
+);
+assert.equal(
+  resolveFutureShippingCityHint({ city: "Amsterdam", isNetherlandsDelivery: true }),
+  FUTURE_SHIPPING_EINDHOVEN_CITY_HINT,
+);
 const nlWithRegion = reconcileFutureShippingState({
   state: withDelivery(createEmptyFutureShippingState(), "NL", "Eindhoven", {
     stateRegion: "Noord-Brabant",
@@ -712,8 +757,10 @@ const blankCityRegion = reconcileFutureShippingState({
   selectedDesignPrice: 500,
 });
 assert.ok(blankCityRegion.diagnostics.some((diagnostic) => diagnostic.field === "city"));
-assert.ok(
+assert.equal(
   blankCityRegion.diagnostics.some((diagnostic) => diagnostic.field === "stateRegion"),
+  false,
+  "NL does not require a region",
 );
 assert.equal(isFutureShippingStepComplete(blankCityRegion), false);
 
@@ -840,9 +887,9 @@ assert.match(shippingSource, /stateRegion/);
 assert.match(shippingSource, /future-shipping-region-error/);
 assert.doesNotMatch(shippingSource, /\(if applicable\)/);
 assert.doesNotMatch(shippingSource, /step8RequiresRegion/);
-assert.match(shippingSource, /const regionRequired = isDelivery;/);
-assert.match(shippingSource, /The city must be in the selected country\./);
-assert.match(shippingSource, /exactly selects the local Eindhoven shipping rate/);
+assert.match(shippingSource, /const regionRequired = futureShippingRequiresRegion\(state\);/);
+assert.match(shippingSource, /resolveFutureShippingCityHint\(/);
+assert.doesNotMatch(shippingSource, /The city must be in the selected country\./);
 assert.match(shippingSource, /data-delivery-address-check="true"/);
 assert.match(shippingSource, /Check this matches the courier address before continuing\./);
 assert.match(
