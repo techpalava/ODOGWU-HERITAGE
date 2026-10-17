@@ -18,7 +18,7 @@ import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { DEFAULT_BUSINESS_SETTINGS } from "./src/data/mockData";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { useAppStore } from "./src/store/useAppStore";
-import type { Fabric, GuestDesignDraft, Measurements, StyleCategory } from "./src/types";
+import type { Fabric, GuestDesignDraft, Measurements, StyleCategory, WearerOrderStateV2 } from "./src/types";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { prepareAuthoritativeDesignStyleRecord, projectPublishedDesignStyleRecord } from "./src/utils/designStyleAuthority";
 import { buildAuthoritativePhysicalOccurrences, createCatalogDesignSource, physicalOccurrencesToFabricRequirements } from "./src/utils/designSourceState";
@@ -34,6 +34,7 @@ import { createEmptyFutureMeasurementState, reconcileFutureMeasurementState, req
 import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
 import { getFuturePaymentReviewGarments } from "./src/utils/designStudioFuturePaymentReview";
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import { createFakeWindowNavigation } from "./testing/fakeWindowNavigation";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -60,10 +61,20 @@ Object.defineProperty(globalThis, "window", {
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
     localStorage: memoryStorage,
+    ...createFakeWindowNavigation(),
     matchMedia: () => ({ matches: false, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined }),
   },
 });
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: memoryStorage });
+
+// Drafts persist the multi-person measurement document (schemaVersion 2) since
+// multiple-wearer assignment. These fixtures have one person: read their form.
+const persistedSoleWearerMeasurement = (value: unknown) => {
+  const order = value as WearerOrderStateV2 | undefined;
+  assert.equal(order?.schemaVersion, 2, "Drafts persist the multi-person measurement document.");
+  assert.equal(order.wearers.length, 1, "These fixtures have exactly one person.");
+  return requireFutureMeasurementStateV1(order.wearers[0].measurement);
+};
 
 const { StorageService } = await import("./src/services/storageService");
 const { GuestOrderSessionService } = await import("./src/services/guestOrderSessionService");
@@ -139,7 +150,7 @@ assert.deepEqual(
   ["shirt", "trouser", "skirt", "standard_shorts", "bum_shorts", "dress", "kaftan"],
   "The spare-capacity selector must retain only the approved additional garments.",
 );
-assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "fabric");
+assert.equal(renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props["data-stage-id"], "fabric");
 const allocationId = baseFabricState.fabricAllocations[0].allocationId;
 assert.equal(renderer.root.findAllByProps({ "data-testid": "remaining-fabric-capacity-offer" }).length, 1);
 assert.doesNotMatch(
@@ -148,7 +159,7 @@ assert.doesNotMatch(
   "The redundant generic capacity CTA must not render.",
 );
 await act(async () => {
-  renderer.root.findByProps({ "data-testid": `remaining-fabric-capacity-offer-allocation-${allocationId}` }).props.onClick();
+  renderer.root.findByProps({ "data-testid": `remaining-fabric-capacity-offer-add-${allocationId}` }).props.onClick();
   await flush();
 });
 assert.equal(renderer.root.findAllByProps({
@@ -166,7 +177,7 @@ assert.equal(committedState.fabricAllocations.length, 1, "Capacity reuse must no
 assert.equal(renderer.root.findAllByProps({ "data-additional-garment-fabric-dialog": "true" }).length, 0, "Capacity reuse must not open the normal Fabric catalogue.");
 
 await act(async () => { afterCommitFabricStep.props.onContinue(); await flush(); });
-assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "design_style");
+assert.equal(renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props["data-stage-id"], "design_style");
 const beforeRefreshStyleStep = renderer.root.findByType(DormantFutureDesignStyleStep);
 const beforeRefreshBumShorts = beforeRefreshStyleStep.props.occurrences.find((occurrence: { target: { garmentKey: string } }) => occurrence.target.garmentKey === bumShortsAssignment.garmentKey);
 assert.ok(beforeRefreshBumShorts);
@@ -197,7 +208,7 @@ assert.deepEqual(
 
 act(() => renderer.unmount());
 await mount(null);
-assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "design_style");
+assert.equal(renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props["data-stage-id"], "design_style");
 const refreshedStyleStep = renderer.root.findByType(DormantFutureDesignStyleStep);
 const refreshedBumShorts = refreshedStyleStep.props.occurrences.find((occurrence: { target: { garmentKey: string } }) => occurrence.target.garmentKey === bumShortsAssignment.garmentKey);
 assert.ok(refreshedBumShorts, "Refresh must restore the exact added occurrence.");
@@ -218,7 +229,7 @@ await act(async () => {
 const completedStyleStep = renderer.root.findByType(DormantFutureDesignStyleStep);
 assert.equal(completedStyleStep.props.exactSetComplete, true);
 await act(async () => { completedStyleStep.props.onContinue(); await flush(); });
-assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "custom_details");
+assert.equal(renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props["data-stage-id"], "custom_details");
 assert.deepEqual(
   renderer.root.findByType(DormantFutureCustomDetailsStep).props.additionalGarmentConstructionOptions.map(
     (item: { garmentType: string }) => item.garmentType,
@@ -489,7 +500,7 @@ const summarizeRevision342Draft = (draft: GuestDesignDraft | null) => ({
   customDetails:
     draft?.designSelections.garmentScopedCustomDetails?.selectionsByGarmentKey,
   chestBust:
-    requireFutureMeasurementStateV1(draft?.futureMeasurementState).entered.shared.chest_bust_circumference
+    persistedSoleWearerMeasurement(draft?.futureMeasurementState).entered.shared.chest_bust_circumference
       ?.valueCm,
 });
 const expectedRevision342Summary = {
@@ -630,7 +641,7 @@ await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350))
 const skirtAutosaved = GuestOrderSessionService.getFutureDesignDraft();
 assert.ok(skirtAutosaved);
 assert.notEqual(skirtAutosaved.updatedAt, skirtDraft.updatedAt, "The production autosave must actually run.");
-assert.deepEqual(requireFutureMeasurementStateV1(skirtAutosaved.futureMeasurementState).entered, skirtMeasurements.entered,
+assert.deepEqual(persistedSoleWearerMeasurement(skirtAutosaved.futureMeasurementState).entered, skirtMeasurements.entered,
   "Persist customer measurements; derived measurement status is rebuilt on hydration.");
 act(() => renderer.unmount());
 await mount(null, skirtMountOptions);
