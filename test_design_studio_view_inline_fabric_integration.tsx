@@ -43,6 +43,7 @@ import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { projectFutureDesignStudioSummary } from "./src/utils/designStudioFutureSummary";
 import { buildFutureOrderCandidate } from "./src/utils/futureOrderCandidate";
+import { createFakeWindowNavigation } from "./testing/fakeWindowNavigation";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -55,6 +56,7 @@ if (typeof globalThis.window === "undefined") {
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
+    ...createFakeWindowNavigation(),
     localStorage: {
       getItem: (key: string) => (memory.has(key) ? memory.get(key)! : null),
       setItem: (key: string, value: string) => {
@@ -404,7 +406,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   };
   assert.equal(
     resolveFutureStageCorrection({
-      currentStageId: "custom_details",
+      currentStageId: "personalized_additions",
       garmentTypeComplete: true,
       fabricComplete: true,
       designSourceReady:
@@ -420,7 +422,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   );
   assert.equal(
     resolveFutureStageCorrection({
-      currentStageId: "custom_details",
+      currentStageId: "personalized_additions",
       garmentTypeComplete: true,
       fabricComplete: true,
       designSourceReady: false,
@@ -434,7 +436,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   );
   assert.equal(
     resolveFutureStageCorrection({
-      currentStageId: "custom_details",
+      currentStageId: "personalized_additions",
       garmentTypeComplete: true,
       fabricComplete: true,
       designSourceReady: false,
@@ -581,12 +583,12 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   });
   assert.equal(
     mount.root.findAllByProps({
-      id: "design-studio-nine-stage-journey",
+      id: "design-studio-ten-stage-journey",
     }).length,
     1,
   );
   assert.equal(
-    mount.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
+    mount.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
       "data-stage-id"
     ],
     "garment_type",
