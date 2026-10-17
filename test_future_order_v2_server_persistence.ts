@@ -1204,20 +1204,20 @@ const pendingPersisted = await persistFutureOrderV2ForVerifiedIdentity({
   now: () => NOW,
 });
 assert.equal(pendingPersisted.status, "created");
-const omittedLagosOrder = structuredClone(pendingOrder);
-omittedLagosOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
-  status: "included_in_garment_construction",
-  amountCents: null,
+const stalePickupLagosOrder = structuredClone(pendingOrder);
+stalePickupLagosOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+  status: "separately_charged",
+  amountCents: 1400,
 };
-const omittedPersisted = await persistFutureOrderV2ForVerifiedIdentity({
+const stalePickupPersisted = await persistFutureOrderV2ForVerifiedIdentity({
   identity: { uid: OWNER_UID, isAnonymous: false },
-  request: { masterOrder: omittedLagosOrder, customerOwnerUid: OWNER_UID },
+  request: { masterOrder: stalePickupLagosOrder, customerOwnerUid: OWNER_UID },
   adapter: new MemoryAdapter(),
   now: () => NOW,
 });
-assert.equal(omittedPersisted.status, "invalid");
-if (omittedPersisted.status === "invalid") {
-  assert.equal(omittedPersisted.code, "NON_AUTHORITATIVE_TOTAL");
+assert.equal(stalePickupPersisted.status, "invalid");
+if (stalePickupPersisted.status === "invalid") {
+  assert.equal(stalePickupPersisted.code, "NON_AUTHORITATIVE_TOTAL");
 }
 
 console.log(

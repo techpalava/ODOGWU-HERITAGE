@@ -229,6 +229,7 @@ export const DormantFutureShippingStep = ({
   const inboundShipping = resolveIndividualInboundShippingDisplay({
     orderType,
     physicalGarmentCount: garmentCount,
+    fulfilmentMethod: state.fulfilmentMethod,
   });
   const displayedTotalCents =
     resolution.projectedTotalCents === null
@@ -240,7 +241,9 @@ export const DormantFutureShippingStep = ({
       : "Garment construction already includes fabric, tax, Standard Shipping to Eindhoven, and sewing.";
   const shippingIntro =
     orderType === "Individual"
-      ? "Lagos → Eindhoven shipping is added to the total. This step adds pickup or additional delivery from Eindhoven."
+      ? isPickup
+        ? "Pick up in Eindhoven has no shipping charge."
+        : "Lagos → Eindhoven shipping is added to the total. This step adds pickup or additional delivery from Eindhoven."
       : "Standard Shipping to Eindhoven is already included. This step only adds pickup or additional delivery from Eindhoven.";
   const isOtherDestination =
     isDelivery && state.destinationSelectionMode === "other_destination";

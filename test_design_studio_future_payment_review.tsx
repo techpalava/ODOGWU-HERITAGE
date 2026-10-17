@@ -380,6 +380,27 @@ const pickupPricingRows = getFuturePaymentReviewPricingRows({
   ...candidate.pricing,
   postEindhovenAdjustmentCents: 0,
 });
+const pickupIndividualRows = getFuturePaymentReviewPricingRows(
+  {
+    ...candidate.pricing,
+    postEindhovenAdjustmentCents: 0,
+    exactTotalCents: 32400,
+  },
+  {
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: "eindhoven_pickup",
+  },
+);
+assert.equal(
+  pickupIndividualRows.some((row) => row.id === "lagos_eindhoven_included"),
+  false,
+  "pickup review does not add Lagos → Eindhoven shipping",
+);
+assert.equal(
+  pickupIndividualRows.some((row) => row.id === "post_eindhoven"),
+  false,
+);
 assert.equal(
   pickupPricingRows.some((row) => row.id === "post_eindhoven"),
   false,

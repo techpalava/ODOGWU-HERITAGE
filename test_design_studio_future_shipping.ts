@@ -1087,17 +1087,18 @@ const individualPickupMarkup = renderPricedShippingStep(
   individualPickupQuote,
   "Individual",
 );
-assert.match(individualPickupMarkup, /data-shipping-lagos-inbound="true"/);
-assert.match(individualPickupMarkup, /data-amount-cents="1400"/);
-assert.match(individualPickupMarkup, /Lagos → Eindhoven shipping/);
-assert.match(individualPickupMarkup, /€14\.00/);
+assert.equal(individualPickupMarkup.includes("data-shipping-lagos-inbound"), false);
+assert.equal(individualPickupMarkup.includes("data-amount-cents=\"1400\""), false);
+assert.equal(individualPickupMarkup.includes("Lagos → Eindhoven shipping"), false);
+assert.equal(individualPickupMarkup.includes("€14.00"), false);
 assert.match(individualPickupMarkup, /€65\.00/);
-assert.match(individualPickupMarkup, /data-shipping-displayed-total-cents="7900"/);
-assert.match(individualPickupMarkup, /€79\.00/);
+assert.match(individualPickupMarkup, /data-shipping-displayed-total-cents="6500"/);
+assert.match(individualPickupMarkup, /€65\.00/);
 assert.match(individualPickupMarkup, /Includes fabric, tax, and sewing\./);
-assert.match(
-  individualPickupMarkup,
-  /Lagos → Eindhoven shipping is added to the total\./,
+assert.match(individualPickupMarkup, /Pick up in Eindhoven has no shipping charge\./);
+assert.equal(
+  individualPickupMarkup.includes("Lagos → Eindhoven shipping is added to the total."),
+  false,
 );
 assert.equal(individualPickupMarkup.includes(">Included<"), false);
 assert.equal(

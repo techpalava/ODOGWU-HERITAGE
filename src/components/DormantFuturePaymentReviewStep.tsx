@@ -648,6 +648,7 @@ export const DormantFuturePaymentReviewStep = ({
                 ? "Group Member"
                 : "Group Organizer"),
         physicalGarmentCount: candidate.garments.length,
+        fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
       })
     : [];
   const shippingCustomer = candidate?.shipping.state.customerInformation;
@@ -1143,7 +1144,9 @@ export const DormantFuturePaymentReviewStep = ({
                 ? "Custom shipping quote required. Shipping is not a final charge yet."
                 : candidate.pricing.postEindhovenAdjustmentCents === null
                   ? "Shipping is still pending."
-                  : "Shipping is itemized once in the price breakdown below."}
+                  : candidate.shipping.state.fulfilmentMethod === "eindhoven_pickup"
+                    ? "Pick up in Eindhoven has no shipping charge."
+                    : "Shipping is itemized once in the price breakdown below."}
             </p>
           </ReviewSection>
 

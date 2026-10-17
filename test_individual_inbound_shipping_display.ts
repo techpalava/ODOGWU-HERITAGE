@@ -93,5 +93,31 @@ assert.equal(
   }),
   null,
 );
+assert.equal(
+  resolveIndividualInboundShippingDisplay({
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: "eindhoven_pickup",
+  }),
+  null,
+  "Eindhoven pickup carries no Lagos shipping charge",
+);
+assert.equal(
+  individualLagosToEindhovenChargeCents({
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: "eindhoven_pickup",
+  }),
+  null,
+);
+assert.equal(
+  individualLagosToEindhovenChargeCents({
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: "destination_delivery",
+  }),
+  1400,
+  "address delivery keeps the €14 band",
+);
 
 console.log("test_individual_inbound_shipping_display.ts: all assertions passed");

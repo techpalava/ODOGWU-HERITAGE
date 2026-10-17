@@ -25,14 +25,14 @@ const persisted = createPersistedFutureOrderV2({
 });
 if (persisted.status !== "valid") throw new Error("Expected a valid persisted V2 order.");
 const exactTotalCents = persisted.value.masterOrder.cartItem.candidate.pricing.exactTotalCents;
-assert.equal(exactTotalCents, 31400);
+assert.equal(exactTotalCents, 30000);
 
 const succeededIntent = (
   overrides: Partial<StripePaymentIntentSummary> = {},
 ): StripePaymentIntentSummary => ({
   id: PAYMENT_INTENT_ID,
   status: "succeeded",
-  amount: 31400,
+  amount: 30000,
   currency: "eur",
   metadata: {
     orderId: ORDER_ID,
@@ -209,13 +209,25 @@ for (const intent of [
   succeededIntent({ amount: 100 }),
   succeededIntent({ currency: "usd" }),
   succeededIntent({ metadata: { orderId: "other-order", paymentReference: `future-v2-payment-${ORDER_ID}` } }),
-  succeededIntent({ metadata: { orderId: ORDER_ID, paymentReference: "future-v2-payment-other" } }),
 ]) {
   const memory = createMemoryStore();
   const { res, state } = response();
   await createHandler({ store: memory.store, intent })(request(), res);
   assert.equal(state.statusCode, 409);
   assert.equal(errorCode(state.body), "PAYMENT_MISMATCH");
+  assert.equal(memory.payments.size, 0);
+}
+{
+  const memory = createMemoryStore();
+  const { res, state } = response();
+  await createHandler({
+    store: memory.store,
+    intent: succeededIntent({
+      metadata: { orderId: ORDER_ID, paymentReference: "future-v2-payment-other" },
+    }),
+  })(request(), res);
+  assert.equal(state.statusCode, 409);
+  assert.equal(errorCode(state.body), "ORDER_NOT_PAYABLE");
   assert.equal(memory.payments.size, 0);
 }
 
@@ -235,7 +247,7 @@ for (const intent of [
     orderId: ORDER_ID,
     ownerUid: OWNER_UID,
     paymentIntentId: PAYMENT_INTENT_ID,
-    amountCents: 31400,
+    amountCents: 30000,
     currency: "eur",
     status: "succeeded",
     testMode: true,

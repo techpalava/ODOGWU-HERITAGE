@@ -1600,32 +1600,22 @@ const individualPickup = buildAuthority({
 });
 assert.equal(individualPickup.summary.garmentSummary.length, 1);
 assert.equal(
-  individualPickup.view.costBreakdown?.includedInboundShipping?.label,
-  "Lagos → Eindhoven shipping",
+  individualPickup.view.costBreakdown?.includedInboundShipping ?? null,
+  null,
+  "pickup does not add the Individual Lagos band",
 );
-assert.equal(
-  individualPickup.view.costBreakdown?.includedInboundShipping?.valueLabel,
-  "€14.00",
-);
-assert.equal(
-  individualPickup.view.costBreakdown?.includedInboundShipping?.amountCents,
-  1400,
-);
-assert.notEqual(
-  individualPickup.view.costBreakdown?.includedInboundShipping?.included,
-  true,
-);
+assert.equal(individualPickup.view.costBreakdown?.shipping ?? null, null);
 assert.equal(
   individualPickup.view.totalAmountCents,
-  (pickup.view.totalAmountCents || 0) + 1400,
-  "pickup adds the Individual Lagos band and no final-mile fee",
+  pickup.view.totalAmountCents,
+  "pickup adds no Lagos band and no final-mile fee",
 );
 assert.equal(
   individualPickup.view.costBreakdown?.subtotal.amountCents,
   pickup.view.totalAmountCents,
 );
 assert.equal(
-  (individualPickup.view.costBreakdown?.subtotal.amountCents || 0) + 1400,
+  individualPickup.view.costBreakdown?.subtotal.amountCents,
   individualPickup.view.totalAmountCents,
 );
 assert.equal(
@@ -1652,6 +1642,17 @@ assert.equal(
   communityPickup.view.totalAmountCents,
   pickup.view.totalAmountCents,
 );
+const individualDelivery = buildAuthority({
+  fabricByGarment: { shirt: fabricA },
+  measurementRoute: "low_risk",
+  shippingState: withDelivery("DE", "Berlin"),
+  orderType: "Individual",
+});
+assert.equal(
+  individualDelivery.view.costBreakdown?.includedInboundShipping?.amountCents,
+  1400,
+  "address delivery still shows the €14 Lagos band",
+);
 for (const [pieceCount, amountCents] of [
   [5, 3500],
   [13, 7000],
@@ -1660,14 +1661,14 @@ for (const [pieceCount, amountCents] of [
 ] as const) {
   const banded = projectDesignStudioLiveOrderSummary({
     summary: {
-      ...individualPickup.summary,
+      ...individualDelivery.summary,
       garmentSummary: Array.from({ length: pieceCount }, (_, index) => ({
-        ...individualPickup.summary.garmentSummary[0],
+        ...individualDelivery.summary.garmentSummary[0],
         garmentKey: `base:shirt:${index}`,
       })),
     },
-    shippingResolution: individualPickup.shippingResolution,
-    candidatePricing: individualPickup.candidateResult.candidate?.pricing ?? null,
+    shippingResolution: individualDelivery.shippingResolution,
+    candidatePricing: individualDelivery.candidateResult.candidate?.pricing ?? null,
     fabricAllocationState: individualPickup.allocation,
     measurementState: individualPickup.measurementState,
     measurementPlan: individualPickup.measurementPlan,
@@ -1687,7 +1688,7 @@ for (const [pieceCount, amountCents] of [
   );
   assert.equal(
     banded.totalAmountCents,
-    (individualPickup.candidateResult.candidate?.pricing.exactTotalCents || 0) +
+    (individualDelivery.candidateResult.candidate?.pricing.exactTotalCents || 0) +
       amountCents,
   );
 }

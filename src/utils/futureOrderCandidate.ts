@@ -1268,6 +1268,7 @@ export const buildFutureOrderCandidateV2 = (
   const lagosChargeCents = individualLagosToEindhovenChargeCents({
     orderType: orderIdentity.orderType,
     physicalGarmentCount: coreResult.core.garments.length,
+    fulfilmentMethod: coreResult.core.shipping.state.fulfilmentMethod,
   });
   const pricedCore = coreResult.core.pricing;
   const pricing: FutureOrderCandidatePricingV1 = lagosChargeCents === null
