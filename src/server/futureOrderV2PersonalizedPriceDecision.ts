@@ -84,6 +84,31 @@ const writePriceToAdmin = async (
     .set({ ...record, updatedAt: new Date().toISOString() });
 };
 
+/** Query marker vercel.json adds when it rewrites the decision path onto a shared function. */
+export const PERSONALIZED_PRICE_DECISION_ROUTE = "personalized-price-decision" as const;
+
+/**
+ * Vercel Hobby caps a deployment at 12 functions, so on Vercel this path is
+ * rewritten onto `api/future-order-v2/payment-intent.ts`. Recognise it by the
+ * rewrite marker (query or URL) or by its unique body shape, which never
+ * overlaps a Stripe payment body (no `occurrenceKey`/`decision` there).
+ */
+export const isPersonalizedPriceDecisionRequest = (
+  req: HttpRequest & { query?: unknown; url?: string },
+): boolean => {
+  const query = isRecord(req.query) ? req.query : null;
+  const route = Array.isArray(query?.route) ? query?.route[0] : query?.route;
+  if (route === PERSONALIZED_PRICE_DECISION_ROUTE) return true;
+  if (typeof req.url === "string" && req.url.includes(PERSONALIZED_PRICE_DECISION_ROUTE)) {
+    return true;
+  }
+  const body = isRecord(req.body) ? req.body : null;
+  return (
+    typeof body?.occurrenceKey === "string" &&
+    (body.decision === "accepted" || body.decision === "declined")
+  );
+};
+
 /**
  * Records accept or decline for one priced addition. It never creates a charge.
  */
