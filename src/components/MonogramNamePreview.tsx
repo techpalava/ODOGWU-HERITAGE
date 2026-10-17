@@ -13,18 +13,20 @@ const SHIRT_PATH =
 const DRESS_PATH =
   "M31 15c0-6 18-6 18 0l5 2 13 9-6 10-7-5-1 14c2 14 16 32 18 42H9c2-10 16-28 18-42l-1-14-7 5-6-10 13-9 5-2z";
 
-export const MONOGRAM_PREVIEW_MIN_FONT = 2.15;
+/** Preferred cap height in viewBox units. Short names use at least this size. */
+export const MONOGRAM_PREVIEW_MIN_FONT = 3.3;
 
 /**
  * Wearer's left chest is the viewer's right side of the torso, below the collar.
+ * The box runs from just right of the center line toward the sleeve seam.
  * Coordinates are in the 80×100 silhouette viewBox.
  */
 export const monogramPreviewChestBox = (
   silhouette: "shirt" | "dress",
 ): { x: number; y: number; width: number; height: number } =>
   silhouette === "dress"
-    ? { x: 40.5, y: 22, width: 10, height: 10 }
-    : { x: 40.5, y: 30, width: 14.5, height: 12 };
+    ? { x: 40.4, y: 21.5, width: 13, height: 15 }
+    : { x: 40.4, y: 27, width: 16.6, height: 22 };
 
 export const monogramPreviewSilhouette = (
   garmentType: FabricGarmentType,
@@ -58,26 +60,55 @@ export const monogramPreviewLetteringPosition = (
   }
 };
 
+const LETTER_ADVANCE = 0.95;
+const MAX_FONT = 8;
+
+/** Split a long name so each chest line can stay large enough to read. */
+export const monogramPreviewLines = (text: string): string[] => {
+  const chars = Array.from(text);
+  if (chars.length <= 6) return [text];
+  const words = text.split(" ").filter((word) => word.length > 0);
+  if (
+    words.length === 2 &&
+    words.every((word) => Array.from(word).length <= 8)
+  ) {
+    return words;
+  }
+  const hyphen = text.indexOf("-");
+  if (hyphen > 1 && hyphen < text.length - 1) {
+    const left = text.slice(0, hyphen);
+    const right = text.slice(hyphen + 1);
+    if (Array.from(left).length >= 2 && Array.from(right).length >= 2) {
+      return [left, right];
+    }
+  }
+  const mid = Math.ceil(chars.length / 2);
+  return [chars.slice(0, mid).join(""), chars.slice(mid).join("")];
+};
+
 /**
- * Shrink long names into the chest box. Short names keep a natural size.
- * textLength forces any remaining overflow to the usable chest width.
+ * Size the left-chest lettering so it stays inside the chest box.
+ * Names that would shrink below a readable cap height wrap onto two lines.
+ * Glyphs are not compressed; the font is the largest size that fits.
  */
 export const monogramPreviewLetteringFit = (
   text: string,
   box: { width: number; height: number },
-): { fontSize: number; textLength?: number } => {
+): { lines: string[]; fontSize: number } => {
+  const usable = Math.max(box.width - 0.9, 4);
+  const fontFor = (charCount: number, lineCount: number) => {
+    const byWidth = usable / (Math.max(charCount, 1) * LETTER_ADVANCE);
+    const byHeight = (box.height * 0.9) / (lineCount * 1.2);
+    return Math.min(byWidth, byHeight, MAX_FONT);
+  };
   const count = Math.max(Array.from(text).length, 1);
-  const maxFont = Math.min(4.7, Math.max(box.height - 1.6, MONOGRAM_PREVIEW_MIN_FONT));
-  const fontSize = Math.max(
-    MONOGRAM_PREVIEW_MIN_FONT,
-    Math.min(maxFont, 22 / count),
-  );
-  const usable = Math.max(box.width - 1.4, 4);
-  const estimated = count * fontSize * 0.95;
-  if (estimated > usable) {
-    return { fontSize, textLength: usable };
+  const singleLine = fontFor(count, 1);
+  if (count <= 5 || singleLine >= MONOGRAM_PREVIEW_MIN_FONT) {
+    return { lines: [text], fontSize: singleLine };
   }
-  return { fontSize };
+  const lines = monogramPreviewLines(text);
+  const longest = Math.max(...lines.map((line) => Array.from(line).length), 1);
+  return { lines, fontSize: fontFor(longest, lines.length) };
 };
 
 const clipIdFor = (garmentKey: string) =>
@@ -104,6 +135,10 @@ export const MonogramNamePreview = ({
   const leftChest = resolvedPlacement === "left_chest";
   const chest = monogramPreviewChestBox(silhouette);
   const fit = monogramPreviewLetteringFit(lettering, chest);
+  const chestCenterX = chest.x + chest.width / 2;
+  const lineStep = fit.fontSize * 1.15;
+  const firstLineY =
+    chest.y + chest.height / 2 - ((fit.lines.length - 1) * lineStep) / 2;
   const bodyClipId = `${clipIdFor(garmentKey)}-body`;
   const chestClipId = `${clipIdFor(garmentKey)}-chest`;
   const outline = silhouette === "dress" ? DRESS_PATH : SHIRT_PATH;
@@ -116,7 +151,7 @@ export const MonogramNamePreview = ({
       data-monogram-preview-view={back ? "back" : "front"}
       data-monogram-preview-text={empty ? "" : shown}
       data-monogram-preview-placeholder={empty ? "true" : "false"}
-      className="relative h-[4.75rem] w-[3.75rem] shrink-0 sm:h-24 sm:w-20"
+      className="relative aspect-[4/5] w-80 max-w-full shrink-0 sm:w-96"
       aria-hidden="true"
     >
       <svg viewBox="0 0 80 100" className="h-full w-full" aria-hidden="true" overflow="hidden">
@@ -156,22 +191,21 @@ export const MonogramNamePreview = ({
           <g clipPath={`url(#${bodyClipId})`}>
             <text
               data-monogram-preview-lettering="true"
-              x={chest.x + chest.width / 2}
-              y={chest.y + chest.height / 2}
+              x={chestCenterX}
+              y={firstLineY}
               textAnchor="middle"
               dominantBaseline="central"
               fontFamily='"Cinzel", "Playfair Display", Georgia, serif'
-              fontWeight={600}
+              fontWeight={700}
               fontSize={fit.fontSize}
-              fill={empty ? "rgba(197,168,92,0.4)" : "#C5A85C"}
-              stroke={empty ? "none" : "#0A291B"}
-              strokeWidth={empty ? 0 : 0.16}
-              paintOrder="stroke"
+              fill={empty ? "rgba(10,41,27,0.38)" : "#0A291B"}
               clipPath={`url(#${chestClipId})`}
-              lengthAdjust={fit.textLength ? "spacingAndGlyphs" : undefined}
-              textLength={fit.textLength}
             >
-              {lettering}
+              {fit.lines.map((line, index) => (
+                <tspan key={`${index}-${line}`} x={chestCenterX} y={firstLineY + index * lineStep}>
+                  {line}
+                </tspan>
+              ))}
             </text>
           </g>
         ) : null}

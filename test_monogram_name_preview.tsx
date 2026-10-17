@@ -56,25 +56,38 @@ const shirtChest = monogramPreviewChestBox("shirt");
 const dressChest = monogramPreviewChestBox("dress");
 assert.ok(shirtChest.x > 40, "left chest sits on the viewer's right");
 assert.ok(shirtChest.x + shirtChest.width < 58, "left chest stays inside the shirt body");
+assert.ok(shirtChest.width > 16, "chest text runs toward the sleeve seam");
 assert.ok(dressChest.x > 40);
 assert.ok(dressChest.x + dressChest.width < 54);
 for (const sample of ["ADEBAYO", "MMMMMMMMMMMM", "IJ", "O'NEIL-ÉMI", "YOUR NAME"]) {
   for (const box of [shirtChest, dressChest]) {
     const fit = monogramPreviewLetteringFit(sample, box);
-    assert.ok(fit.fontSize >= MONOGRAM_PREVIEW_MIN_FONT);
+    const longest = Math.max(...fit.lines.map((line) => Array.from(line).length), 1);
+    assert.ok(fit.fontSize > 1.5);
     assert.ok(fit.fontSize <= box.height);
-    if (fit.textLength !== undefined) {
-      assert.ok(fit.textLength <= box.width);
-      assert.ok(fit.textLength > 0);
-    }
+    assert.ok(longest * fit.fontSize * 0.95 <= box.width);
+    assert.equal(fit.lines.join(""), sample.replace(/[\s-]/g, ""));
   }
 }
-assert.equal(monogramPreviewLetteringFit("IJ", shirtChest).textLength, undefined);
-assert.ok(monogramPreviewLetteringFit("ADEBAYO", shirtChest).textLength);
-assert.ok(monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).textLength);
+assert.deepEqual(monogramPreviewLetteringFit("IJ", shirtChest).lines, ["IJ"]);
+assert.ok(monogramPreviewLetteringFit("IJ", shirtChest).fontSize >= MONOGRAM_PREVIEW_MIN_FONT);
+assert.deepEqual(monogramPreviewLetteringFit("ADEBAYO", shirtChest).lines, ["ADEB", "AYO"]);
+assert.deepEqual(monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).lines, [
+  "MMMMMM",
+  "MMMMMM",
+]);
+assert.deepEqual(monogramPreviewLetteringFit("O'NEIL-ÉMI", shirtChest).lines, ["O'NEIL", "ÉMI"]);
 assert.ok(
-  (monogramPreviewLetteringFit("IJ", shirtChest).fontSize ?? 0) >
-    (monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).fontSize ?? 0),
+  monogramPreviewLetteringFit("IJ", shirtChest).fontSize >
+    monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).fontSize,
+);
+assert.ok(
+  monogramPreviewLetteringFit("MMMMMMMMMMMM", shirtChest).fontSize * (384 / 80) >= 12,
+  "twelve wide letters stay at least 12px tall on the desktop silhouette",
+);
+assert.ok(
+  monogramPreviewLetteringFit("ADEBAYO", shirtChest).fontSize * (320 / 80) >= 14,
+  "a seven-letter name stays readable on the mobile silhouette",
 );
 
 const style: StyleCategory = {
@@ -186,15 +199,26 @@ const preview = (garmentKey: string) =>
 const lettering = (node: ReactTestInstance) =>
   node.findByProps({ "data-monogram-preview-lettering": "true" });
 
+const letteringText = (node: ReactTestInstance) =>
+  lettering(node)
+    .children.map((child) =>
+      typeof child === "string" ? child : (child as ReactTestInstance).children.join(""),
+    )
+    .join("");
+
 const shirt = preview("base:shirt");
 const dress = preview("base:dress");
 assert.equal(shirt.props["data-monogram-preview-silhouette"], "shirt");
 assert.equal(shirt.props["data-monogram-preview-placement"], "left_chest");
 assert.equal(shirt.props["data-monogram-preview-text"], "ADEBAYO");
 assert.equal(shirt.props["data-monogram-preview-placeholder"], "false");
-assert.equal(lettering(shirt).children.join(""), "ADEBAYO");
+assert.equal(letteringText(shirt), "ADEBAYO");
 assert.ok(Number(lettering(shirt).props.x) > 40);
-assert.ok(Number(lettering(shirt).props.textLength) <= shirtChest.width);
+assert.ok(Number(lettering(shirt).props.fontSize) >= MONOGRAM_PREVIEW_MIN_FONT);
+assert.equal(lettering(shirt).props.fontWeight, 700);
+assert.equal(lettering(shirt).props.fill, "#0A291B");
+assert.match(String(shirt.props.className), /w-80/);
+assert.match(String(shirt.props.className), /sm:w-96/);
 assert.match(String(lettering(shirt).props.clipPath), /monogram-chest-base-shirt-chest/);
 
 assert.equal(dress.props["data-monogram-preview-silhouette"], "dress");
