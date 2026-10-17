@@ -15,18 +15,27 @@ const DRESS_PATH =
 
 /** Preferred cap height in viewBox units. Short names use at least this size. */
 export const MONOGRAM_PREVIEW_MIN_FONT = 3.3;
+export const MONOGRAM_PREVIEW_VIEWBOX_WIDTH = 80;
+/** Keep lettering this far inside the sleeve seam, as a fraction of the shirt width. */
+export const MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO = 0.06;
+export const MONOGRAM_PREVIEW_SLEEVE_SEAM_X = { shirt: 58, dress: 54 } as const;
 
 /**
  * Wearer's left chest is the viewer's right side of the torso, below the collar.
- * The box runs from just right of the center line toward the sleeve seam.
+ * The box starts just right of the center line and stops short of the sleeve seam.
  * Coordinates are in the 80×100 silhouette viewBox.
  */
 export const monogramPreviewChestBox = (
   silhouette: "shirt" | "dress",
-): { x: number; y: number; width: number; height: number } =>
-  silhouette === "dress"
-    ? { x: 40.4, y: 21.5, width: 13, height: 15 }
-    : { x: 40.4, y: 27, width: 16.6, height: 22 };
+): { x: number; y: number; width: number; height: number } => {
+  const x = 41.1;
+  const right =
+    MONOGRAM_PREVIEW_SLEEVE_SEAM_X[silhouette] -
+    MONOGRAM_PREVIEW_VIEWBOX_WIDTH * MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO;
+  return silhouette === "dress"
+    ? { x, y: 22, width: right - x, height: 14 }
+    : { x, y: 27, width: right - x, height: 20 };
+};
 
 export const monogramPreviewSilhouette = (
   garmentType: FabricGarmentType,
@@ -60,55 +69,43 @@ export const monogramPreviewLetteringPosition = (
   }
 };
 
-const LETTER_ADVANCE = 0.95;
+const LETTER_ADVANCE = 1;
 const MAX_FONT = 8;
 
-/** Split a long name so each chest line can stay large enough to read. */
+/**
+ * Break only at a space or a hyphen. The hyphen stays on the first piece.
+ * A word with neither break is never split.
+ */
 export const monogramPreviewLines = (text: string): string[] => {
-  const chars = Array.from(text);
-  if (chars.length <= 6) return [text];
-  const words = text.split(" ").filter((word) => word.length > 0);
-  if (
-    words.length === 2 &&
-    words.every((word) => Array.from(word).length <= 8)
-  ) {
-    return words;
-  }
-  const hyphen = text.indexOf("-");
-  if (hyphen > 1 && hyphen < text.length - 1) {
-    const left = text.slice(0, hyphen);
-    const right = text.slice(hyphen + 1);
-    if (Array.from(left).length >= 2 && Array.from(right).length >= 2) {
-      return [left, right];
-    }
-  }
-  const mid = Math.ceil(chars.length / 2);
-  return [chars.slice(0, mid).join(""), chars.slice(mid).join("")];
+  const chunks = text.match(/[^\s-]+-|[^\s-]+/g);
+  return chunks && chunks.length > 0 ? chunks : [text];
 };
 
 /**
  * Size the left-chest lettering so it stays inside the chest box.
- * Names that would shrink below a readable cap height wrap onto two lines.
- * Glyphs are not compressed; the font is the largest size that fits.
+ * One word stays on one line and shrinks to the chest width.
+ * Several words wrap only when one line would fall below the preferred size.
  */
 export const monogramPreviewLetteringFit = (
   text: string,
   box: { width: number; height: number },
 ): { lines: string[]; fontSize: number } => {
-  const usable = Math.max(box.width - 0.9, 4);
+  const usable = Math.max(box.width - 0.6, 4);
   const fontFor = (charCount: number, lineCount: number) => {
     const byWidth = usable / (Math.max(charCount, 1) * LETTER_ADVANCE);
-    const byHeight = (box.height * 0.9) / (lineCount * 1.2);
+    const byHeight = (box.height * 0.88) / (lineCount * 1.15);
     return Math.min(byWidth, byHeight, MAX_FONT);
   };
-  const count = Math.max(Array.from(text).length, 1);
-  const singleLine = fontFor(count, 1);
-  if (count <= 5 || singleLine >= MONOGRAM_PREVIEW_MIN_FONT) {
+  const chunks = monogramPreviewLines(text);
+  if (chunks.length === 1) {
+    return { lines: chunks, fontSize: fontFor(Array.from(chunks[0]).length, 1) };
+  }
+  const singleLine = fontFor(Math.max(Array.from(text).length, 1), 1);
+  if (singleLine >= MONOGRAM_PREVIEW_MIN_FONT) {
     return { lines: [text], fontSize: singleLine };
   }
-  const lines = monogramPreviewLines(text);
-  const longest = Math.max(...lines.map((line) => Array.from(line).length), 1);
-  return { lines, fontSize: fontFor(longest, lines.length) };
+  const longest = Math.max(...chunks.map((line) => Array.from(line).length), 1);
+  return { lines: chunks, fontSize: fontFor(longest, chunks.length) };
 };
 
 const clipIdFor = (garmentKey: string) =>
