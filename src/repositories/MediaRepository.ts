@@ -2,6 +2,7 @@ import { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storag
 import { collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, getDocs } from "firebase/firestore";
 import { storage, db } from "../services/firebase";
 import { v4 as uuidv4 } from "uuid";
+import { STORAGE_IMMUTABLE_CACHE_CONTROL } from "../utils/storageCacheControl";
 
 export interface MediaMetadata {
   id: string;
@@ -85,7 +86,11 @@ export const MediaRepository = {
     // Upload to Firebase Storage
     console.log("[MediaRepository.upload] Uploading to Firebase Storage at:", storagePath);
     try {
-      const snapshot = await uploadString(storageRef, base64Data, 'data_url');
+      // Timestamped path: never overwritten, safe to cache for a year.
+      const snapshot = await uploadString(storageRef, base64Data, 'data_url', {
+        contentType: mimeType,
+        cacheControl: STORAGE_IMMUTABLE_CACHE_CONTROL,
+      });
       console.log("[MediaRepository.upload] Firebase Storage upload successful");
       const downloadURL = await getDownloadURL(snapshot.ref);
       const id = uuidv4();

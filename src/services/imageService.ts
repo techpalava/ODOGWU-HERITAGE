@@ -1,6 +1,7 @@
 import { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 import { storage } from "./firebase";
 import { v4 as uuidv4 } from "uuid";
+import { STORAGE_IMMUTABLE_CACHE_CONTROL } from "../utils/storageCacheControl";
 
 export const ImageService = {
   uploadImageIfBase64: async (base64OrUrl: string, pathPrefix: string = "images", metadata?: any): Promise<string> => {
@@ -19,6 +20,8 @@ export const ImageService = {
       
       const uploadMetadata = {
         contentType: mimeType,
+        // uuid file name: never overwritten, safe to cache for a year.
+        cacheControl: STORAGE_IMMUTABLE_CACHE_CONTROL,
         customMetadata: metadata || {}
       };
 
