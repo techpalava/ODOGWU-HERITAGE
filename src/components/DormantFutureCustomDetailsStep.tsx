@@ -12,6 +12,7 @@ import { individualLagosToEindhovenChargeCents } from "../utils/individualInboun
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
+import { MonogramNamePreview } from "./MonogramNamePreview";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import type {
   CanonicalPhysicalGarmentType,
@@ -48,6 +49,7 @@ import {
   TRADITIONAL_ACCESSORY_OPTIONS,
   formatDecorativeFeatureQuantityPriceLabel,
   formatDecorativeFeatureUnitPriceLabel,
+  DEFAULT_MONOGRAM_PLACEMENT,
   getAvailableMonogramPlacements,
   getCustomerSelectableDecorativeFeatures,
   getDecorativeFeaturePrice,
@@ -2048,59 +2050,70 @@ export const DormantFutureCustomDetailsStep = ({
                                       monogramTextErrorMessage(validation);
                                     const nameInputId = `monogram-name-${parent.garmentKey}`;
                                     return (
-                                      <div className="mt-2 border-t border-heritage-gold/15 pt-2">
-                                        <label
-                                          htmlFor={nameInputId}
-                                          className="block text-[11px] font-bold text-heritage-green"
-                                        >
-                                          Name
-                                        </label>
-                                        <input
-                                          id={nameInputId}
-                                          type="text"
-                                          value={shown}
-                                          data-monogram-name-input={parent.garmentKey}
-                                          autoComplete="off"
-                                          autoCapitalize="characters"
-                                          spellCheck={false}
-                                          aria-invalid={Boolean(nameError)}
-                                          aria-describedby={
-                                            nameError
-                                              ? `${nameInputId}-error`
-                                              : undefined
-                                          }
-                                          onChange={(event) => {
-                                            const presented = presentMonogramDraft(
-                                              event.target.value,
-                                            );
-                                            setMonogramNameDrafts((current) => ({
-                                              ...current,
-                                              [parent.garmentKey]: presented,
-                                            }));
-                                            const nextValidation =
-                                              validateMonogramText(presented);
-                                            onMonogramTextChange(
-                                              parent.garmentKey,
-                                              nextValidation.status === "valid"
-                                                ? nextValidation.text
-                                                : "",
-                                            );
-                                          }}
-                                          className="mt-1.5 w-full rounded-xl border border-heritage-green/20 bg-white px-3 py-2 font-serif text-sm uppercase tracking-wide text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
-                                        />
-                                        <div className="mt-1 flex min-w-0 items-start justify-between gap-3 text-[11px]">
-                                          <span
-                                            id={`${nameInputId}-error`}
-                                            data-monogram-name-error={parent.garmentKey}
-                                            className="min-w-0 break-words text-red-700"
+                                      <div
+                                        data-monogram-name-field={parent.garmentKey}
+                                        className="mt-2 flex flex-wrap items-start gap-2 border-t border-heritage-gold/15 pt-2"
+                                      >
+                                        <div className="min-w-[9.5rem] flex-1">
+                                          <label
+                                            htmlFor={nameInputId}
+                                            className="block text-[11px] font-bold text-heritage-green"
                                           >
-                                            {nameError}
-                                          </span>
-                                          <span className="shrink-0 text-heritage-ink/55">
-                                            {normalizeMonogramText(shown).length}/
-                                            {MONOGRAM_TEXT_MAX_LENGTH}
-                                          </span>
+                                            Name
+                                          </label>
+                                          <input
+                                            id={nameInputId}
+                                            type="text"
+                                            value={shown}
+                                            data-monogram-name-input={parent.garmentKey}
+                                            autoComplete="off"
+                                            autoCapitalize="characters"
+                                            spellCheck={false}
+                                            aria-invalid={Boolean(nameError)}
+                                            aria-describedby={
+                                              nameError
+                                                ? `${nameInputId}-error`
+                                                : undefined
+                                            }
+                                            onChange={(event) => {
+                                              const presented = presentMonogramDraft(
+                                                event.target.value,
+                                              );
+                                              setMonogramNameDrafts((current) => ({
+                                                ...current,
+                                                [parent.garmentKey]: presented,
+                                              }));
+                                              const nextValidation =
+                                                validateMonogramText(presented);
+                                              onMonogramTextChange(
+                                                parent.garmentKey,
+                                                nextValidation.status === "valid"
+                                                  ? nextValidation.text
+                                                  : "",
+                                              );
+                                            }}
+                                            className="mt-1.5 w-full rounded-xl border border-heritage-green/20 bg-white px-3 py-2 font-serif text-sm uppercase tracking-wide text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+                                          />
+                                          <div className="mt-1 flex min-w-0 items-start justify-between gap-3 text-[11px]">
+                                            <span
+                                              id={`${nameInputId}-error`}
+                                              data-monogram-name-error={parent.garmentKey}
+                                              className="min-w-0 break-words text-red-700"
+                                            >
+                                              {nameError}
+                                            </span>
+                                            <span className="shrink-0 text-heritage-ink/55">
+                                              {normalizeMonogramText(shown).length}/
+                                              {MONOGRAM_TEXT_MAX_LENGTH}
+                                            </span>
+                                          </div>
                                         </div>
+                                        <MonogramNamePreview
+                                          garmentKey={parent.garmentKey}
+                                          garmentType={parent.garmentType}
+                                          name={shown}
+                                          placement={placement ?? DEFAULT_MONOGRAM_PLACEMENT}
+                                        />
                                       </div>
                                     );
                                   })()

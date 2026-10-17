@@ -310,12 +310,12 @@ const shirtRow = renderer.root.findAll(
 const shirtPlacement = shirtRow
   ?.findAll((node) => node.type === "fieldset")
   .find((node) => textContent(node).includes("Monogram placement"));
-const shirtName = shirtRow?.findAll(
-  (node) => node.props?.["data-monogram-name-input"] === "base:shirt",
+const shirtNameField = shirtRow?.findAll(
+  (node) => node.props?.["data-monogram-name-field"] === "base:shirt",
 )[0];
-if (shirtPlacement && shirtName) {
+if (shirtPlacement && shirtNameField) {
   const placementIndex = shirtRow.children.indexOf(shirtPlacement);
-  const nameIndex = shirtRow.children.indexOf(shirtName.parent || shirtName);
+  const nameIndex = shirtRow.children.indexOf(shirtNameField);
   assert.ok(
     nameIndex >= 0 && placementIndex >= 0 && nameIndex < placementIndex,
     "the name field sits above the placement control",
