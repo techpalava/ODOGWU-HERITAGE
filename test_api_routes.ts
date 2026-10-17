@@ -172,6 +172,50 @@ async function run() {
     code: "AUTH_REQUIRED",
   });
 
+  // personalized-price-decision shares payment-intent.ts (Hobby 12-function cap)
+  // through a vercel.json rewrite that adds ?route=personalized-price-decision.
+  const vercelConfig = JSON.parse(readFileSync("./vercel.json", "utf8")) as {
+    rewrites?: Array<{ source: string; destination: string }>;
+  };
+  assert.ok(
+    vercelConfig.rewrites?.some(
+      (rewrite) =>
+        rewrite.source === "/api/future-order-v2/personalized-price-decision" &&
+        rewrite.destination ===
+          "/api/future-order-v2/payment-intent?route=personalized-price-decision",
+    ),
+    "vercel.json must rewrite personalized-price-decision onto payment-intent.",
+  );
+  const decisionGet = createResponse();
+  await futureOrderV2PaymentIntentHandler(
+    { ...request("GET"), query: { route: "personalized-price-decision" } } as HttpRequest,
+    decisionGet.response,
+  );
+  assert.equal(decisionGet.state.status, 405);
+  assert.equal(
+    (decisionGet.state.body as { code?: string }).code,
+    "METHOD_NOT_ALLOWED",
+  );
+  const decisionPost = createResponse();
+  await futureOrderV2PaymentIntentHandler(
+    {
+      ...request("POST", { body: {} }),
+      query: { route: "personalized-price-decision" },
+    } as HttpRequest,
+    decisionPost.response,
+  );
+  assert.equal(decisionPost.state.status, 401);
+  assert.equal((decisionPost.state.body as { code?: string }).code, "AUTH_REQUIRED");
+  const decisionByBody = createResponse();
+  await futureOrderV2PaymentIntentHandler(
+    request("POST", {
+      body: { orderId: "o1", occurrenceKey: "k1", decision: "accepted" },
+    }),
+    decisionByBody.response,
+  );
+  assert.equal(decisionByBody.state.status, 401);
+  assert.equal((decisionByBody.state.body as { code?: string }).code, "AUTH_REQUIRED");
+
   const healthEnvKeys = ["VERCEL", "VERCEL_ENV", "VERCEL_GIT_COMMIT_SHA"] as const;
   const previousHealthEnv = new Map<string, string | undefined>(
     healthEnvKeys.map((key) => [key, process.env[key]]),
