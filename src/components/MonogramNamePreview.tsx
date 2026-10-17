@@ -19,22 +19,26 @@ export const MONOGRAM_PREVIEW_VIEWBOX_WIDTH = 80;
 /** Keep lettering this far inside the sleeve seam, as a fraction of the shirt width. */
 export const MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO = 0.06;
 export const MONOGRAM_PREVIEW_SLEEVE_SEAM_X = { shirt: 58, dress: 54 } as const;
+/** Placket / collar-V tip. Wearer's left is the viewer's right of this line. */
+export const MONOGRAM_PREVIEW_CENTER_X = 40;
+/** Small gap so a full line stays off the placket and on the left chest. */
+const PLAQUET_GAP = 0.8;
 
 /**
- * Wearer's left chest is the viewer's right side of the torso, below the collar.
- * The box starts just right of the center line and stops short of the sleeve seam.
- * Coordinates are in the 80×100 silhouette viewBox.
+ * Wearer's left chest is the viewer's right side of the torso.
+ * The box starts just right of the placket, just below the collar, and stops
+ * one seam-margin short of the sleeve. Coordinates are in the 80×100 viewBox.
  */
 export const monogramPreviewChestBox = (
   silhouette: "shirt" | "dress",
 ): { x: number; y: number; width: number; height: number } => {
-  const x = 41.1;
+  const x = MONOGRAM_PREVIEW_CENTER_X + PLAQUET_GAP;
   const right =
     MONOGRAM_PREVIEW_SLEEVE_SEAM_X[silhouette] -
     MONOGRAM_PREVIEW_VIEWBOX_WIDTH * MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO;
   return silhouette === "dress"
-    ? { x, y: 22, width: right - x, height: 14 }
-    : { x, y: 27, width: right - x, height: 20 };
+    ? { x, y: 21, width: right - x, height: 15 }
+    : { x, y: 25, width: right - x, height: 20 };
 };
 
 export const monogramPreviewSilhouette = (
@@ -69,8 +73,19 @@ export const monogramPreviewLetteringPosition = (
   }
 };
 
-const LETTER_ADVANCE = 1;
+const WIDE_LETTER = /[MW]/;
+/** Cinzel wide capitals. Other capitals are narrower, so a mixed name can be larger. */
+const WIDE_ADVANCE = 1.08;
+const TYPICAL_ADVANCE = 0.8;
 const MAX_FONT = 8;
+
+/** Average em width used to size a line so it fills the chest without passing the seam. */
+export const monogramPreviewLineAdvance = (line: string): number => {
+  const chars = Array.from(line);
+  if (chars.length === 0) return TYPICAL_ADVANCE;
+  const wide = chars.filter((char) => WIDE_LETTER.test(char)).length;
+  return (wide * WIDE_ADVANCE + (chars.length - wide) * TYPICAL_ADVANCE) / chars.length;
+};
 
 /**
  * Break only at a space or a hyphen. The hyphen stays on the first piece.
@@ -90,21 +105,24 @@ export const monogramPreviewLetteringFit = (
   text: string,
   box: { width: number; height: number },
 ): { lines: string[]; fontSize: number } => {
-  const usable = Math.max(box.width - 0.6, 4);
-  const fontFor = (charCount: number, lineCount: number) => {
-    const byWidth = usable / (Math.max(charCount, 1) * LETTER_ADVANCE);
-    const byHeight = (box.height * 0.88) / (lineCount * 1.15);
+  const usable = Math.max(box.width - 0.35, 4);
+  const fontFor = (line: string, lineCount: number) => {
+    const count = Math.max(Array.from(line).length, 1);
+    const byWidth = usable / (count * monogramPreviewLineAdvance(line));
+    const byHeight = (box.height * 0.9) / (lineCount * 1.12);
     return Math.min(byWidth, byHeight, MAX_FONT);
   };
   const chunks = monogramPreviewLines(text);
   if (chunks.length === 1) {
-    return { lines: chunks, fontSize: fontFor(Array.from(chunks[0]).length, 1) };
+    return { lines: chunks, fontSize: fontFor(chunks[0], 1) };
   }
-  const singleLine = fontFor(Math.max(Array.from(text).length, 1), 1);
+  const singleLine = fontFor(text, 1);
   if (singleLine >= MONOGRAM_PREVIEW_MIN_FONT) {
     return { lines: [text], fontSize: singleLine };
   }
-  const longest = Math.max(...chunks.map((line) => Array.from(line).length), 1);
+  const longest = chunks.reduce((best, line) =>
+    Array.from(line).length > Array.from(best).length ? line : best,
+  );
   return { lines: chunks, fontSize: fontFor(longest, chunks.length) };
 };
 
@@ -148,7 +166,7 @@ export const MonogramNamePreview = ({
       data-monogram-preview-view={back ? "back" : "front"}
       data-monogram-preview-text={empty ? "" : shown}
       data-monogram-preview-placeholder={empty ? "true" : "false"}
-      className="relative aspect-[4/5] w-80 max-w-full shrink-0 sm:w-96"
+      className="relative aspect-[4/5] w-full max-w-full shrink-0 basis-full sm:w-[32rem] sm:max-w-[32rem] sm:basis-[32rem]"
       aria-hidden="true"
     >
       <svg viewBox="0 0 80 100" className="h-full w-full" aria-hidden="true" overflow="hidden">

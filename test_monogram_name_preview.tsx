@@ -4,12 +4,14 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import {
+  MONOGRAM_PREVIEW_CENTER_X,
   MONOGRAM_PREVIEW_MIN_FONT,
   MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO,
   MONOGRAM_PREVIEW_SLEEVE_SEAM_X,
   MONOGRAM_PREVIEW_VIEWBOX_WIDTH,
   monogramPreviewChestBox,
   monogramPreviewLetteringFit,
+  monogramPreviewLineAdvance,
   monogramPreviewLetteringPosition,
   monogramPreviewSilhouette,
 } from "./src/components/MonogramNamePreview";
@@ -58,13 +60,19 @@ assert.notEqual(
 const shirtChest = monogramPreviewChestBox("shirt");
 const dressChest = monogramPreviewChestBox("dress");
 const seamMargin = MONOGRAM_PREVIEW_VIEWBOX_WIDTH * MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO;
-assert.ok(shirtChest.x > 40, "left chest sits on the viewer's right");
+assert.ok(shirtChest.x > MONOGRAM_PREVIEW_CENTER_X, "left chest stays off the center line");
+assert.ok(shirtChest.x < 41.2, "single-word box starts just past the placket");
+assert.ok(shirtChest.width > 12.3, "single-word box runs wider across the chest");
+assert.ok(shirtChest.y <= 25, "lettering starts just below the collar");
 assert.ok(shirtChest.x + shirtChest.width < 58, "left chest stays inside the shirt body");
 assert.ok(
   MONOGRAM_PREVIEW_SLEEVE_SEAM_X.shirt - (shirtChest.x + shirtChest.width) >= seamMargin - 0.001,
   "shirt lettering keeps a 6% margin from the sleeve seam",
 );
-assert.ok(dressChest.x > 40);
+assert.ok(dressChest.x > MONOGRAM_PREVIEW_CENTER_X);
+assert.ok(dressChest.x < 41.2);
+assert.ok(dressChest.width > shirtChest.width * 0.6);
+assert.ok(dressChest.y <= 21.5, "dress lettering starts just below the collar");
 assert.ok(dressChest.x + dressChest.width < 54);
 assert.ok(
   MONOGRAM_PREVIEW_SLEEVE_SEAM_X.dress - (dressChest.x + dressChest.width) >= seamMargin - 0.001,
@@ -73,17 +81,32 @@ assert.ok(
 for (const sample of ["ADEBAYO", "MMMMMMMMMMMM", "IJ", "O'NEIL-ÉMI", "ADA OBI", "YOUR NAME"]) {
   for (const box of [shirtChest, dressChest]) {
     const fit = monogramPreviewLetteringFit(sample, box);
-    const longest = Math.max(...fit.lines.map((line) => Array.from(line).length), 1);
+    const longestLine = fit.lines.reduce((best, line) =>
+      Array.from(line).length > Array.from(best).length ? line : best,
+    );
+    const longest = Array.from(longestLine).length;
     assert.ok(fit.fontSize > 0.4);
     assert.ok(fit.fontSize <= box.height);
-    assert.ok(longest * fit.fontSize <= box.width);
+    assert.ok(
+      longest * fit.fontSize * monogramPreviewLineAdvance(longestLine) <= box.width + 0.05,
+    );
     assert.equal(fit.lines.join(""), sample.replace(/\s+/g, ""));
     assert.ok(
       fit.lines.every((line) => /^[^\s-]+-?$/.test(line)),
       `${sample} must not break a word or drop a hyphen`,
     );
+    const textWidth = longest * fit.fontSize * monogramPreviewLineAdvance(longestLine);
+    const leftEdge = box.x + box.width / 2 - textWidth / 2;
+    assert.ok(leftEdge > MONOGRAM_PREVIEW_CENTER_X, `${sample} must not cross the center line`);
   }
 }
+const adebayoFit = monogramPreviewLetteringFit("ADEBAYO", shirtChest);
+assert.equal(adebayoFit.lines.length, 1);
+assert.ok(
+  Array.from("ADEBAYO").length * adebayoFit.fontSize * monogramPreviewLineAdvance("ADEBAYO") >=
+    shirtChest.width * 0.9,
+  "a single word fills the wider chest box",
+);
 assert.deepEqual(monogramPreviewLetteringFit("IJ", shirtChest).lines, ["IJ"]);
 assert.ok(monogramPreviewLetteringFit("IJ", shirtChest).fontSize >= MONOGRAM_PREVIEW_MIN_FONT);
 assert.deepEqual(monogramPreviewLetteringFit("ADEBAYO", shirtChest).lines, ["ADEBAYO"]);
@@ -227,8 +250,12 @@ assert.ok(Number(lettering(shirt).props.x) > 40);
 assert.ok(Number(lettering(shirt).props.fontSize) > 0);
 assert.equal(lettering(shirt).props.fontWeight, 700);
 assert.equal(lettering(shirt).props.fill, "#0A291B");
-assert.match(String(shirt.props.className), /w-80/);
-assert.match(String(shirt.props.className), /sm:w-96/);
+assert.match(String(shirt.props.className), /basis-full/);
+assert.match(String(shirt.props.className), /sm:w-\[32rem\]/);
+assert.ok(
+  Number(lettering(shirt).props.fontSize) >= 2,
+  "ADEBAYO stays large enough to read on the desktop silhouette",
+);
 assert.match(String(lettering(shirt).props.clipPath), /monogram-chest-base-shirt-chest/);
 
 assert.equal(dress.props["data-monogram-preview-silhouette"], "dress");
