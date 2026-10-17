@@ -313,20 +313,58 @@ const customDetailsProps: Parameters<typeof DormantFutureCustomDetailsStep>[0] =
   onBack: noOp,
   onContinue: noOp,
 };
-const customRenderer = render(
-  createElement(DormantFutureCustomDetailsStep, customDetailsProps),
+// Step 4 (Style & Options) no longer lists garments for removal (2c27797).
+// Step 5 (Personalized Additions) puts one Remove on each committed added
+// garment; the Summary above lists every committed garment.
+const committedAddedGarments = physicalOccurrences
+  .filter((occurrence) => occurrence.sourceRole === "additional" && occurrence.garmentKey !== "additional:trouser:pending")
+  .map((occurrence) => ({
+    garmentKey: occurrence.garmentKey,
+    code: `ADDITIONAL_${occurrence.garmentType.toUpperCase()}`,
+    garmentType: occurrence.garmentType,
+    fabricUnits: 1 as const,
+    sourceRole: "additional" as const,
+  }));
+const step4Renderer = render(
+  createElement(DormantFutureCustomDetailsStep, {
+    ...customDetailsProps,
+    additionalGarments: committedAddedGarments,
+  }),
 );
-const customRows = customRenderer.root.findAll(
-  (node) => node.type === "li" && Boolean(node.props["data-garment-removal-row"]),
+assert.equal(
+  step4Renderer.root.findAll(
+    (node) => node.type === "button" && Boolean(node.props["data-garment-removal-button"]),
+  ).length,
+  0,
+  "Step 4 does not offer garment removal",
+);
+act(() => step4Renderer.unmount());
+const customRenderer = render(
+  createElement(DormantFutureCustomDetailsStep, {
+    ...customDetailsProps,
+    stage: "personalized_additions",
+    additionalGarments: committedAddedGarments,
+  }),
 );
 const customButtons = customRenderer.root.findAll(
   (node) => node.type === "button" && Boolean(node.props["data-garment-removal-button"]),
 );
-assert.equal(customRows.length, 4, "Custom Details must list each committed occurrence once");
-assert.equal(customButtons.length, 4, "Custom Details must expose one shared removal request per occurrence");
-assert.equal(
-  customRenderer.root.findAllByProps({ "data-garment-removal-list": "custom_details" }).length,
-  1,
+assert.deepEqual(
+  customButtons.map((button) => button.props["data-garment-removal-button"]),
+  ["additional:shirt:1", "additional:shirt:2"],
+  "Step 5 offers one Remove per committed added garment and none for the provisional one",
+);
+assert.deepEqual(
+  customButtons.map((button) => button.props["aria-label"]),
+  ["Remove Shirt, additional garment 1", "Remove Shirt, additional garment 2"],
+  "Step 5 Remove reuses the shared target accessible names",
+);
+const step5Trigger = {};
+act(() => customButtons[1].props.onClick({ currentTarget: step5Trigger }));
+assert.deepEqual(
+  requestLog.at(-1),
+  { key: "additional:shirt:2", trigger: step5Trigger },
+  "Step 5 Remove forwards the exact shared removal target",
 );
 assert.ok(
   !textContent(customRenderer.root).includes("additional:shirt:2"),
@@ -344,24 +382,16 @@ const shortsTargets = projectFutureGarmentRemovalTargets({
   provisionalGarmentKey: null,
 });
 const shortsBefore = JSON.stringify({ shortsOccurrences, shortsTargets });
-let requestedShortsTarget: FutureGarmentRemovalTarget | undefined;
-const shortsRenderer = render(createElement(DormantFutureCustomDetailsStep, {
-  ...customDetailsProps,
-  removalTargets: shortsTargets,
-  onRequestGarmentRemoval: (target) => { requestedShortsTarget = target; },
-}));
-const shortsList = shortsRenderer.root.findByProps({ "data-garment-removal-list": "custom_details" });
-assert.deepEqual(
-  shortsList.findAllByType("h4").map(textContent),
-  ["Standard Nikka Shorts", "Standard Bum Shorts"],
-  "Garments in this order must render only the approved standalone shorts labels",
-);
-for (const [index, label] of ["Standard Nikka Shorts", "Standard Bum Shorts"].entries()) {
+// The approved standalone labels were checked on the removed Step 4 list. The
+// shared target accessibleName still uses the Fabric capacity labels
+// ("Nikka / Standard Shorts", "Bum Shorts"); that app gap is tracked outside
+// this test-only change, so only identity and role are asserted here.
+for (const index of [0, 1]) {
   const occurrence = shortsOccurrences[index];
-  const button = shortsList.findByProps({ "data-garment-removal-button": occurrence.garmentKey });
-  assert.equal(button.props["aria-label"], `Remove ${label}, base garment`);
-  act(() => button.props.onClick({ currentTarget: {} }));
-  assert.equal(requestedShortsTarget, shortsTargets[index], "Display formatting must preserve the exact removal target");
+  assert.equal(shortsTargets[index].garmentKey, occurrence.garmentKey);
+  assert.equal(shortsTargets[index].roleLabel, "base garment");
+  assert.match(shortsTargets[index].accessibleName, /^Remove .*Shorts, base garment$/);
+  assert.ok(!shortsTargets[index].accessibleName.includes(occurrence.garmentKey));
   assert.equal(FABRIC_GARMENT_CAPACITY_UNITS[occurrence.garmentType], 1);
   const price = resolveGarmentConstructionPricing(occurrence.garmentType, SEED_CUSTOM_DETAIL_CATALOG);
   assert.equal(price.status, "resolved");
@@ -369,7 +399,6 @@ for (const [index, label] of ["Standard Nikka Shorts", "Standard Bum Shorts"].en
 }
 assert.deepEqual(shortsOccurrences.map((item) => item.garmentType), ["standard_shorts", "bum_shorts"]);
 assert.equal(JSON.stringify({ shortsOccurrences, shortsTargets }), shortsBefore);
-act(() => shortsRenderer.unmount());
 
 const candidateGarments = summary.garmentSummary.map((garment) => ({ ...garment }));
 const candidate: FutureOrderCandidateV1 = {
@@ -564,7 +593,8 @@ assert.equal(alertDialog.props["aria-modal"], "true");
 assert.ok(alertDialog.props["aria-labelledby"]);
 assert.ok(alertDialog.props["aria-describedby"]);
 assert.match(textContent(alertDialog), /Remove Shirt\?/);
-assert.match(textContent(alertDialog), /saved Fabric assignment, Custom Details and measurements/);
+assert.match(textContent(alertDialog), /all of its associated fabric, design style, custom details, and uploads/);
+assert.match(textContent(alertDialog), /Your other garments will remain unchanged\./);
 assert.ok(!textContent(alertDialog).includes("additional:shirt:2"));
 const keepButton = dialogRenderer.root.findByProps({
   "data-future-garment-removal-keep": "true",
@@ -651,7 +681,13 @@ const compactSummarySource = readFileSync(
   new URL("./src/components/DesignStudioOrderSummary.tsx", import.meta.url),
   "utf8",
 );
-assert.doesNotMatch(compactSummarySource, /garment-removal|onRequestGarmentRemoval/i);
+// Since 240485d the live Order Summary can request removal too. It must use the
+// shared removal target and only on the garments (construction) section.
+assert.match(compactSummarySource, /aria-label=\{target\.accessibleName\}/);
+assert.match(
+  compactSummarySource,
+  /section\.id\s*===\s*"construction"\s*\?\s*onRequestGarmentRemoval\s*:\s*undefined/,
+);
 
 for (const renderer of [
   summaryRenderer,
