@@ -2,6 +2,11 @@ import { Timestamp, type Firestore } from "firebase-admin/firestore";
 import type { CanonicalOrderIdentity } from "../utils/orderContextIdentity.js";
 import { recomputeFutureOrderPayableTotal } from "../utils/futureOrderPayableTotal.js";
 import {
+  COMMUNITY_BATCH_CLOSED_CODE,
+  COMMUNITY_BATCH_CLOSED_MESSAGE,
+} from "../utils/communityBatchOrderClosure.js";
+import { resolveCommunityOrderClosure } from "./communityBatchOrderGate.js";
+import {
   FUTURE_ORDER_V2_COLLECTION,
   createPersistedFutureOrderV2,
   hasSameFutureOrderV2ImmutableBusinessValue,
@@ -18,7 +23,8 @@ export type FutureOrderV2ServerErrorCode =
   | "OWNER_MISMATCH"
   | "ORDER_ID_UNAVAILABLE"
   | "PRIVATE_BATCH_UNAUTHORIZED"
-  | "PRIVATE_BATCH_UNAVAILABLE";
+  | "PRIVATE_BATCH_UNAVAILABLE"
+  | "COMMUNITY_BATCH_UNAVAILABLE";
 
 export class FutureOrderV2ServerError extends Error {
   readonly code: FutureOrderV2ServerErrorCode;
@@ -145,6 +151,7 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
   adapter,
   catalog = [],
   now = () => new Date(),
+  readCommunityBatch,
 }: {
   identity: VerifiedFutureOrderV2Identity;
   request: FutureOrderV2PersistenceRequest;
@@ -152,6 +159,8 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
   /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
   catalog?: unknown;
   now?: () => Date;
+  /** Live `batches` document. Required for a Community order; omitted readers fail closed. */
+  readCommunityBatch?: (batchId: string) => Promise<unknown | null>;
 }): Promise<PersistFutureOrderV2Result> => {
   if (!hasText(identity.uid)) {
     throw new FutureOrderV2ServerError(
@@ -194,8 +203,36 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
     };
   }
 
+  const orderIdentity = proposed.value.masterOrder.cartItem.candidate.orderIdentity;
+  if (orderIdentity?.orderType === "Community") {
+    if (!readCommunityBatch) {
+      return {
+        status: "invalid",
+        code: COMMUNITY_BATCH_CLOSED_CODE,
+        message: COMMUNITY_BATCH_CLOSED_MESSAGE,
+      };
+    }
+    const closure = await resolveCommunityOrderClosure({
+      identity: orderIdentity,
+      readBatch: readCommunityBatch,
+      now: now(),
+    });
+    if (closure.status === "unavailable") {
+      throw new FutureOrderV2ServerError(
+        "COMMUNITY_BATCH_UNAVAILABLE",
+        "The community batch could not be confirmed.",
+      );
+    }
+    if (closure.status === "closed") {
+      return {
+        status: "invalid",
+        code: closure.code,
+        message: closure.message,
+      };
+    }
+  }
+
   return adapter.runTransaction(async (transaction) => {
-    const orderIdentity = proposed.value.masterOrder.cartItem.candidate.orderIdentity;
     if (isGroupOrderIdentity(orderIdentity)) {
       if (!transaction.assertGroupOrderIdentity) {
         throw new FutureOrderV2ServerError(

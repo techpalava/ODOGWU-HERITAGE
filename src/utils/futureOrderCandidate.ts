@@ -9,7 +9,10 @@ import type {
   FutureShippingStateV1,
   WearerOrderStateV2,
 } from "../types";
-import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import {
+  COMMUNITY_BATCH_CLOSED_MESSAGE,
+  isCommunityBatchClosedForOrders,
+} from "./communityBatchOrderClosure";
 import {
   DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
   isSupportedDesignStudioJourneySchemaVersion,
@@ -321,11 +324,11 @@ export const getRetainedCommunityBatchEligibilityBlocker = (
       message: "This batch is no longer available for orders.",
     };
   }
-  if (!BatchBusinessRules.canAcceptOrders(retainedBatch).canAcceptOrders) {
+  if (isCommunityBatchClosedForOrders(retainedBatch)) {
     return {
       code: "RETAINED_COMMUNITY_BATCH_INELIGIBLE",
       stage: "payment",
-      message: "This batch is no longer accepting orders.",
+      message: COMMUNITY_BATCH_CLOSED_MESSAGE,
     };
   }
   return null;

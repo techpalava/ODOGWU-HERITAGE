@@ -7,7 +7,7 @@ import type {
   Fabric,
   StyleCategory,
 } from "../types";
-import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { isCommunityBatchClosedForOrders } from "./communityBatchOrderClosure";
 import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
 import {
   filterDesignSelectionsForCustomDetails,
@@ -328,8 +328,7 @@ export const revalidateCartForCheckout = (
 
     if (item.batchType === "community") {
       const batch = findCurrentBatch(item, context.batches);
-      const eligibility = BatchBusinessRules.canAcceptOrders(batch);
-      if (!batch || !eligibility.canAcceptOrders) {
+      if (!batch || isCommunityBatchClosedForOrders(batch)) {
         const routingDecision = OrderRoutingEngine.evaluateOrder(
           {
             orderType: "Community",

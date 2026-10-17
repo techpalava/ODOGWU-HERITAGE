@@ -7,6 +7,7 @@ import {
   FutureOrderV2ServerError,
   persistFutureOrderV2ForVerifiedIdentity,
 } from "./futureOrderV2Persistence.js";
+import { readCommunityBatchRecord } from "./communityBatchOrderGate.js";
 import {
   parseFutureOrderV2PersistenceRequest,
   type FutureOrderV2PersistenceAdapter,
@@ -74,6 +75,7 @@ const statusByServerError: Record<FutureOrderV2ServerError["code"], number> = {
   ORDER_ID_UNAVAILABLE: 409,
   PRIVATE_BATCH_UNAUTHORIZED: 403,
   PRIVATE_BATCH_UNAVAILABLE: 409,
+  COMMUNITY_BATCH_UNAVAILABLE: 503,
 };
 
 export const createFutureOrderV2PersistenceHandler = (
@@ -139,6 +141,8 @@ export const createFutureOrderV2PersistenceHandler = (
         adapter: createAdapter(services.db),
         catalog: await readCatalog(services.db),
         now: dependencies.now,
+        readCommunityBatch: (batchId) =>
+          readCommunityBatchRecord(services.db, batchId),
       });
       const status =
         result.status === "created"
