@@ -566,16 +566,34 @@ const individualInboundChargeToAddCents = ({
   summary,
   candidatePricing,
   orderType,
+  fulfilmentMethod = null,
 }: {
   summary: FutureDesignStudioSummary;
   candidatePricing: FutureOrderCandidatePricingV1 | null;
   orderType?: string | null;
+  fulfilmentMethod?: string | null;
 }): number => {
   const inbound = resolveIndividualInboundShippingDisplay({
     orderType,
     physicalGarmentCount: summary.garmentSummary.length,
+    fulfilmentMethod,
   });
-  if (!inbound) return 0;
+  if (!inbound) {
+    // A restored exact snapshot can still carry a delivery-era Lagos band.
+    // Pickup drops that stored charge instead of keeping it in the total.
+    const storedLagos = candidatePricing?.components.lagosToEindhovenShipping;
+    if (
+      fulfilmentMethod === "eindhoven_pickup" &&
+      candidatePricing?.status === "exact" &&
+      candidatePricing.exactTotalCents !== null &&
+      storedLagos?.status === "separately_charged" &&
+      typeof storedLagos.amountCents === "number" &&
+      storedLagos.amountCents > 0
+    ) {
+      return -storedLagos.amountCents;
+    }
+    return 0;
+  }
   const lagos = candidatePricing?.components.lagosToEindhovenShipping;
   if (
     candidatePricing?.status === "exact" &&
@@ -607,6 +625,7 @@ const resolveTotal = ({
     summary,
     candidatePricing,
     orderType,
+    fulfilmentMethod: shippingResolution?.state.fulfilmentMethod,
   });
   if (
     candidatePricing?.status === "exact" &&
@@ -684,6 +703,7 @@ const resolveCostBreakdown = ({
   const includedInbound = resolveIndividualInboundShippingDisplay({
     orderType,
     physicalGarmentCount: summary.garmentSummary.length,
+    fulfilmentMethod: method,
   });
   const subtotal = subtotalCents === null
     ? null

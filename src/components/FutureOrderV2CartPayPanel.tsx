@@ -56,6 +56,7 @@ export const FutureOrderV2CartPayPanel = ({
   const includedInbound = resolveIndividualInboundShippingDisplay({
     orderType: item.candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: item.candidate.garments.length,
+    fulfilmentMethod: item.candidate.shipping.state.fulfilmentMethod,
   });
 
   const requireSignIn = () => {

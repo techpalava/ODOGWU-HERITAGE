@@ -547,6 +547,7 @@ export const getFuturePaymentReviewPricingRows = (
     orderType?: string | null;
     batchType?: string | null;
     physicalGarmentCount?: number | null;
+    fulfilmentMethod?: string | null;
   } | null,
 ): readonly FuturePaymentReviewPricingRow[] => {
   const includedInbound =
@@ -555,8 +556,15 @@ export const getFuturePaymentReviewPricingRows = (
           orderType: display.orderType,
           batchType: display.batchType,
           physicalGarmentCount: display.physicalGarmentCount,
+          fulfilmentMethod: display.fulfilmentMethod,
         })
       : null;
+  const individualOrder =
+    display?.orderType === "Individual" ||
+    (display?.batchType === "alone" &&
+      display.orderType !== "Community" &&
+      display.orderType !== "Group Organizer" &&
+      display.orderType !== "Group Member");
   const rows: FuturePaymentReviewPricingRow[] = [
     {
       id: "garment_construction",
@@ -566,7 +574,7 @@ export const getFuturePaymentReviewPricingRows = (
     },
     {
       id: "included_components",
-      label: includedInbound
+      label: includedInbound || individualOrder
         ? INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE
         : FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE,
       amountCents: null,

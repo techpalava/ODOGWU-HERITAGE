@@ -118,6 +118,7 @@ export const CustomerFutureOrderV2Details = ({
   const pricingRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
     orderType: candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: candidate.garments.length,
+    fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
   });
   const shipping = candidate.shipping.state;
   const customer = shipping.customerInformation;

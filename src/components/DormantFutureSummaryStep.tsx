@@ -299,6 +299,7 @@ export const DormantFutureSummaryStep = ({
   const includedInbound = resolveIndividualInboundShippingDisplay({
     orderType: summaryOrderType,
     physicalGarmentCount: summary.garmentSummary.length,
+    fulfilmentMethod: shippingResolution?.state.fulfilmentMethod,
   });
   const constructionInclusionNote =
     garmentConstructionInclusionNote(summaryOrderType) ===

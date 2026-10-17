@@ -57,6 +57,7 @@ const createCandidate = (
   const lagosChargeCents = individualLagosToEindhovenChargeCents({
     orderType: orderIdentity.orderType,
     physicalGarmentCount: garmentCount,
+    fulfilmentMethod: "eindhoven_pickup",
   });
   return {
     schemaVersion: 2,

@@ -107,7 +107,7 @@ const response = () => {
   );
   assert.equal(state.statusCode, 200);
   assert.deepEqual(created, {
-    amountCents: 31400,
+    amountCents: 30000,
     orderId: prepared.orderId,
     paymentReference,
   });
@@ -152,7 +152,7 @@ const createMemoryStore = () => {
     capture: {
       id: "5O190127TN364715T",
       status: "COMPLETED",
-      amountCents: 31400,
+      amountCents: 30000,
       currency: "eur",
       customId: prepared.orderId,
       invoiceId: paymentReference,
@@ -199,7 +199,7 @@ const createMemoryStore = () => {
         return {
           id: "5O190127TN364715T",
           status: "COMPLETED",
-          amountCents: 31400,
+          amountCents: 30000,
           currency: "eur",
           customId: prepared.orderId,
           invoiceId: paymentReference,

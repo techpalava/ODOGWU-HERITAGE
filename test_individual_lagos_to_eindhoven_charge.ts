@@ -8,26 +8,40 @@ import {
 } from "./testing/futureOrderV2Fixture";
 import type { FutureOrderCandidateV2 } from "./src/utils/futureOrderCandidate";
 
+type WritableCandidate = {
+  -readonly [K in keyof FutureOrderCandidateV2]: FutureOrderCandidateV2[K];
+};
+
+const cloneCandidate = (candidate: FutureOrderCandidateV2): WritableCandidate =>
+  structuredClone(candidate) as WritableCandidate;
+import {
+  createEmptyFutureShippingState,
+  normalizeFutureShippingState,
+  persistFutureShippingState,
+  reconcileFutureShippingState,
+} from "./src/utils/designStudioFutureShipping";
+import { individualLagosToEindhovenChargeCents } from "./src/utils/individualInboundShippingDisplay";
+
 const individualOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "individual-charge",
 );
 const individualCandidate = individualOrder.cartItem.candidate;
 const individualQuote = quoteFutureOrderPayableTotal(individualCandidate);
 assert.ok(individualQuote);
-assert.equal(individualQuote.lagosToEindhovenShippingCents, 1400);
+assert.equal(individualCandidate.shipping.state.fulfilmentMethod, "eindhoven_pickup");
+assert.equal(individualQuote.lagosToEindhovenShippingCents, null);
 assert.equal(
   individualQuote.exactTotalCents,
   individualQuote.selectedDesignTotalCents +
-    individualQuote.postEindhovenAdjustmentCents +
-    1400,
+    individualQuote.postEindhovenAdjustmentCents,
 );
 assert.equal(
   individualCandidate.pricing.components.lagosToEindhovenShipping.status,
-  "separately_charged",
+  "included_in_garment_construction",
 );
 assert.equal(
   individualCandidate.pricing.components.lagosToEindhovenShipping.amountCents,
-  1400,
+  null,
 );
 const individualPayable = recomputeFutureOrderPayableTotal(individualCandidate);
 assert.equal(individualPayable.status, "exact");
@@ -43,16 +57,16 @@ assert.equal(
   individualCandidate.pricing.exactTotalCents,
 );
 
-const oneGarment = structuredClone(individualCandidate) as FutureOrderCandidateV2;
+const oneGarment = cloneCandidate(individualCandidate);
 oneGarment.garments = [oneGarment.garments[0]!];
 const pickupQuote = quoteFutureOrderPayableTotal(oneGarment);
 assert.ok(pickupQuote);
 assert.equal(pickupQuote.garmentConstructionSubtotalCents, 6500);
 assert.equal(pickupQuote.postEindhovenAdjustmentCents, 0);
-assert.equal(pickupQuote.lagosToEindhovenShippingCents, 1400);
-assert.equal(pickupQuote.exactTotalCents, 7900);
+assert.equal(pickupQuote.lagosToEindhovenShippingCents, null);
+assert.equal(pickupQuote.exactTotalCents, 6500);
 
-const deliveryCandidate = structuredClone(oneGarment) as FutureOrderCandidateV2;
+const deliveryCandidate = cloneCandidate(oneGarment);
 deliveryCandidate.shipping = {
   ...deliveryCandidate.shipping,
   state: {
@@ -63,7 +77,6 @@ deliveryCandidate.shipping = {
       deliveryAddress: {
         ...deliveryCandidate.shipping.state.customerInformation.deliveryAddress,
         city: "Paris",
-        country: "France",
         countryCode: "FR",
       },
     },
@@ -103,20 +116,21 @@ assert.equal(
   null,
 );
 assert.equal(communityCandidate.pricing.exactTotalCents, communityQuote.exactTotalCents);
-assert.notEqual(
+assert.equal(
   communityCandidate.pricing.exactTotalCents,
   individualCandidate.pricing.exactTotalCents,
+  "pickup Individual and Community both omit the Lagos band",
 );
 const communityPayable = recomputeFutureOrderPayableTotal(communityCandidate);
 assert.equal(communityPayable.status, "exact");
 
 const simpleIndividual = createFutureOrderV2Fixture("simple-individual");
 assert.equal(simpleIndividual.cartItem.candidate.garments.length, 3);
-assert.equal(simpleIndividual.cartItem.candidate.pricing.exactTotalCents, 31400);
+assert.equal(simpleIndividual.cartItem.candidate.pricing.exactTotalCents, 30000);
 assert.equal(
   simpleIndividual.cartItem.candidate.pricing.components.lagosToEindhovenShipping
     .amountCents,
-  1400,
+  null,
 );
 const simpleCommunity = createFutureOrderV2Fixture("simple-community", undefined, {
   orderType: "Community",
@@ -132,7 +146,7 @@ assert.equal(
 const pendingPersonalized = (
   candidate: FutureOrderCandidateV2,
 ): FutureOrderCandidateV2 => {
-  const pending = structuredClone(candidate) as FutureOrderCandidateV2;
+  const pending = cloneCandidate(candidate);
   pending.pricing = {
     ...pending.pricing,
     status: "pending",
@@ -169,7 +183,7 @@ const pendingPersonalized = (
   return pending;
 };
 
-const alignToQuote = (candidate: FutureOrderCandidateV2) => {
+const alignToQuote = (candidate: WritableCandidate) => {
   const quote = quoteFutureOrderPayableTotal(candidate);
   assert.ok(quote);
   if (!quote) throw new Error("Expected a catalogue quote.");
@@ -206,36 +220,130 @@ const alignToQuote = (candidate: FutureOrderCandidateV2) => {
   return quote;
 };
 
-const pickupAligned = structuredClone(oneGarment) as FutureOrderCandidateV2;
+const pickupAligned = cloneCandidate(oneGarment);
 alignToQuote(pickupAligned);
 const pickupPending = pendingPersonalized(pickupAligned);
 const pickupPendingResult = recomputeFutureOrderPayableTotal(pickupPending);
 assert.equal(pickupPendingResult.status, "not_exact");
-assert.equal(readFutureOrderV2ChargeableCents(pickupPending, null), 7900);
+assert.equal(readFutureOrderV2ChargeableCents(pickupPending, null), 6500);
 
-const parisAligned = structuredClone(deliveryCandidate) as FutureOrderCandidateV2;
+const parisAligned = cloneCandidate(deliveryCandidate);
 alignToQuote(parisAligned);
 const parisPending = pendingPersonalized(parisAligned);
 assert.equal(recomputeFutureOrderPayableTotal(parisPending).status, "not_exact");
 assert.equal(readFutureOrderV2ChargeableCents(parisPending, null), 9800);
 
-const omittedLagos = structuredClone(pickupPending) as FutureOrderCandidateV2;
-omittedLagos.pricing = {
-  ...omittedLagos.pricing,
+const omittedDeliveryLagos = cloneCandidate(parisPending);
+omittedDeliveryLagos.pricing = {
+  ...omittedDeliveryLagos.pricing,
   components: {
-    ...omittedLagos.pricing.components,
+    ...omittedDeliveryLagos.pricing.components,
     lagosToEindhovenShipping: {
       status: "included_in_garment_construction",
       amountCents: null,
     },
   },
 };
-assert.equal(recomputeFutureOrderPayableTotal(omittedLagos).status, "rejected");
-assert.equal(readFutureOrderV2ChargeableCents(omittedLagos, null), 6500);
+assert.equal(recomputeFutureOrderPayableTotal(omittedDeliveryLagos).status, "rejected");
+
+const stalePickupCharge = cloneCandidate(oneGarment);
+alignToQuote(stalePickupCharge);
+assert.equal(stalePickupCharge.pricing.exactTotalCents, 6500);
+assert.equal(recomputeFutureOrderPayableTotal(stalePickupCharge).status, "exact");
+assert.equal(readFutureOrderV2ChargeableCents(stalePickupCharge, null), 6500);
+stalePickupCharge.pricing = {
+  ...stalePickupCharge.pricing,
+  exactTotalCents: 7900,
+  components: {
+    ...stalePickupCharge.pricing.components,
+    lagosToEindhovenShipping: {
+      status: "separately_charged",
+      amountCents: 1400,
+    },
+  },
+};
+assert.equal(
+  recomputeFutureOrderPayableTotal(stalePickupCharge).status,
+  "rejected",
+  "a restored pickup ledger must not keep a previous Lagos shipping charge",
+);
 
 const communityPending = pendingPersonalized(structuredClone(communityCandidate));
 assert.equal(recomputeFutureOrderPayableTotal(communityPending).status, "not_exact");
 assert.equal(
   readFutureOrderV2ChargeableCents(communityPending, null),
   communityCandidate.pricing.exactTotalCents,
+);
+
+const deliveredDraft = reconcileFutureShippingState({
+  state: {
+    ...createEmptyFutureShippingState(),
+    fulfilmentMethod: "destination_delivery",
+    destinationSelectionMode: "supported_country",
+    customerInformation: {
+      fullName: "Ada Heritage",
+      phone: "+31612345678",
+      email: "ada@example.com",
+      deliveryAddress: {
+        addressLine1: "1 Rue de Rivoli",
+        addressLine2: "",
+        city: "Paris",
+        stateRegion: "Ile-de-France",
+        postalCode: "75001",
+        countryCode: "FR",
+      },
+      comment: "",
+    },
+  },
+  garmentCount: 1,
+  selectedDesignPrice: 77,
+});
+assert.equal(deliveredDraft.postEindhovenAdjustmentCents, 1900);
+assert.equal(
+  individualLagosToEindhovenChargeCents({
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: deliveredDraft.state.fulfilmentMethod,
+  }),
+  1400,
+);
+const persistedDraft = persistFutureShippingState({
+  draft: { id: "draft-pickup-switch" },
+  state: deliveredDraft.state,
+});
+const restoredShipping = normalizeFutureShippingState(
+  persistedDraft.futureShippingState,
+).state;
+assert.equal(restoredShipping.fulfilmentMethod, "destination_delivery");
+assert.ok(restoredShipping.quoteReference);
+const switchedToPickup = reconcileFutureShippingState({
+  state: {
+    ...restoredShipping,
+    fulfilmentMethod: "eindhoven_pickup",
+    destinationSelectionMode: null,
+    quoteReference: null,
+  },
+  garmentCount: 1,
+  selectedDesignPrice: 77,
+});
+assert.equal(switchedToPickup.status, "quote_ready");
+assert.equal(switchedToPickup.postEindhovenAdjustmentCents, 0);
+assert.equal(switchedToPickup.projectedTotalCents, 7700);
+assert.equal(
+  individualLagosToEindhovenChargeCents({
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: switchedToPickup.state.fulfilmentMethod,
+  }),
+  null,
+  "switching a restored delivery draft to pickup drops the Lagos band",
+);
+assert.equal(
+  individualLagosToEindhovenChargeCents({
+    orderType: "Individual",
+    physicalGarmentCount: 1,
+    fulfilmentMethod: "destination_delivery",
+  }),
+  1400,
+  "delivery still uses the €14 Lagos band",
 );

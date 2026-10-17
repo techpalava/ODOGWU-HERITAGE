@@ -2161,10 +2161,26 @@ const pickupResolution = reconcileFutureShippingState({
 });
 assert.equal(pickupResolution.status, "quote_ready");
 assert.equal(pickupResolution.postEindhovenAdjustmentCents, 0);
+const pickupSummaryMarkup = renderSummaryMarkup(pickupResolution);
 assert.doesNotMatch(
-  renderSummaryMarkup(pickupResolution),
+  pickupSummaryMarkup,
   /<dt[^>]*>Shipping<\/dt>/,
   "pickup must omit a misleading monetary Shipping row",
+);
+assert.equal(
+  pickupSummaryMarkup.includes("Lagos → Eindhoven shipping"),
+  false,
+  "pickup summary does not add the Lagos band",
+);
+assert.equal(pickupSummaryMarkup.includes("data-summary-included-inbound"), false);
+if (pickupResolution.projectedTotalCents === null) {
+  throw new Error("pickup must supply an authoritative payable projection");
+}
+const pickupTotalText = `€${(pickupResolution.projectedTotalCents / 100).toFixed(2)}`;
+assert.match(
+  pickupSummaryMarkup,
+  new RegExp(`>Total</dt>[\\s\\S]*?>${pickupTotalText}</dd>`),
+  "pickup total is the design total with no shipping",
 );
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);

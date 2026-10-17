@@ -80,7 +80,7 @@ assert.equal(readFutureOrderV2ReviewedTotalCents({
   cartItemId: prepared.cartItemId,
   paymentReference,
   masterOrder: prepared.masterOrder,
-}), 31400);
+}), 30000);
 
 const persisted = createPersistedFutureOrderV2({
   masterOrder: prepared.masterOrder,
@@ -322,7 +322,7 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
   );
   assert.equal(state.statusCode, 200);
   assert.deepEqual(created, {
-    amountCents: 31400,
+    amountCents: 30000,
     orderId: prepared.orderId,
     paymentReference,
     shipping: PICKUP_STRIPE_SHIPPING,
@@ -1168,7 +1168,11 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
       (pendingCandidate.pricing.postEindhovenAdjustmentCents ?? 0) +
       (pendingCandidate.pricing.components.lagosToEindhovenShipping.amountCents ?? 0),
   );
-  assert.ok((knownBaseCents ?? 0) > (pendingCandidate.pricing.garmentConstructionSubtotalCents ?? 0));
+  assert.equal(
+    knownBaseCents,
+    pendingCandidate.pricing.garmentConstructionSubtotalCents,
+    "pickup charges the garment total with no shipping",
+  );
   const pendingStored = createPersistedFutureOrderV2({
     masterOrder: pendingOrder,
     owner: { uid: OWNER_UID, isAnonymous: false },
@@ -1212,8 +1216,8 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
 
   const tampered = structuredClone(pendingStored.value);
   tampered.masterOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
-    status: "included_in_garment_construction",
-    amountCents: null,
+    status: "separately_charged",
+    amountCents: 1400,
   };
   const tamperedResponse = response();
   let tamperedCharged = false;
