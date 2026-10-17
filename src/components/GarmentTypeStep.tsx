@@ -1,23 +1,23 @@
 import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
-import { DesignStudioStepActions } from "./DesignStudioBackButton";
-import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
+import { DesignStudioStepActions } from "./DesignStudioBackButton.js";
+import { DesignStudioStepGuide } from "./DesignStudioStepGuide.js";
 import type {
   CustomDetailDemographic,
   CustomDetailOption,
   FabricGarmentAssignment,
   FabricGarmentType,
-} from "../types";
+} from "../types.js";
 import {
   createStyleBaseGarmentSpec,
   formatCustomerFacingFabricCapacityAmount,
   formatGarmentFabricCapacityUsage,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import {
   FabricCapacityEngine,
   getCustomerFacingFabricQuantityForAssignments,
-} from "../engine/FabricCapacityEngine";
-import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+} from "../engine/FabricCapacityEngine.js";
+import { PRICING_CURRENCY_SYMBOL } from "../utils/money.js";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   STEP_1_SELECTABLE_GARMENT_TYPES,
@@ -25,7 +25,7 @@ import {
   getStep1SelectableGarmentTypes,
   type GarmentConstructionPricingResolution,
   resolveGarmentConstructionPricing,
-} from "../utils/garmentConstructionPricing";
+} from "../utils/garmentConstructionPricing.js";
 import {
   STEP1_GARMENT_REFERENCE_DISCLAIMER,
   getStep1GarmentReferenceAlt,
@@ -33,14 +33,14 @@ import {
   getStep1GarmentSecondaryReferenceImage,
   isStep1DualImageGarmentType,
   isStep1GarmentReferenceType,
-} from "../utils/step1GarmentReferenceImages";
-import { formatRequiredFabricQuantitySentence } from "../utils/designStudioFutureFabricStage";
+} from "../utils/step1GarmentReferenceImages.js";
+import { formatRequiredFabricQuantitySentence } from "../utils/designStudioFutureFabricStage.js";
 import {
   describeGarmentTypeStageBlockers,
   type GarmentTypeStageBlocker,
   type GarmentTypeStageBlockerCode,
-} from "../utils/designStudioJourneyMode";
-import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
+} from "../utils/designStudioJourneyMode.js";
+import { formatDesignStudioStepCounter } from "../utils/designSourceJourney.js";
 
 const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   value: CustomDetailDemographic;

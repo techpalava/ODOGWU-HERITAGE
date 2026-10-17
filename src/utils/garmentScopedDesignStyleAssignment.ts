@@ -1,5 +1,5 @@
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
-import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
+import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity.js";
 
 export const GARMENT_SCOPED_DESIGN_STYLE_ASSIGNMENT_SCHEMA_VERSION = 2 as const;
 

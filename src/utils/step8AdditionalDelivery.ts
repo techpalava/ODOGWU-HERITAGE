@@ -1,7 +1,7 @@
 import type {
   FutureShippingDestinationZone,
   FutureShippingFulfilmentSelection,
-} from "../types";
+} from "../types.js";
 import {
   STEP8_ADDITIONAL_DELIVERY_RATES_CENTS,
   STEP8_COUNTRY_ZONE_INDEX,

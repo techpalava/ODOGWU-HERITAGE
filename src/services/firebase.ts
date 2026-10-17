@@ -28,7 +28,7 @@ import {
   readFirebaseClientEnvironmentVariables,
   resolveFirebaseClientConfiguration,
   resolveFirebaseRuntimeMode,
-} from "../utils/firebaseClientConfiguration";
+} from "../utils/firebaseClientConfiguration.js";
 
 const viteEnv = import.meta.env;
 const runtimeMode = resolveFirebaseRuntimeMode({

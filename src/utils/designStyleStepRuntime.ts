@@ -1,16 +1,16 @@
 import type {
   CanonicalPhysicalGarmentType,
   StyleCategory,
-} from "../types";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+} from "../types.js";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
 import {
   getDesignStyleAuthorityMetadata,
   isAuthoritativeDesignStyleProjection,
-} from "./designStyleAuthority";
+} from "./designStyleAuthority.js";
 import {
   type FutureDesignStyleAdaptationConfirmationCopy,
   type FutureDesignStyleMatchPresentation,
-} from "./designStudioFutureDesignStyle";
+} from "./designStudioFutureDesignStyle.js";
 import {
   assignCatalogDesignStyleToGarmentOccurrence,
   clearGarmentDesignStyleAssignment,
@@ -23,15 +23,15 @@ import {
   type GarmentScopedDesignStyleAssignmentLedgerV2,
   type GarmentScopedDesignStyleValidationAuthority,
   type GarmentScopedDesignStyleValidationResult,
-} from "./garmentScopedDesignStyleAssignment";
+} from "./garmentScopedDesignStyleAssignment.js";
 import {
   hydrateDesignStyleDraftEnvelope,
   type DesignStyleDraftHydrationResult,
   type PersistedDesignStyleDraftV2,
-} from "./designStyleDraftPersistence";
-import type { PhysicalGarmentOccurrence } from "./designSourceState";
-import { nextOccurrenceFamilyLabels } from "./occurrenceDisplayLabel";
-import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
+} from "./designStyleDraftPersistence.js";
+import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
+import { nextOccurrenceFamilyLabels } from "./occurrenceDisplayLabel.js";
+import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity.js";
 import {
   applyDesignStyleUploadOperation,
   beginDesignStyleUploadOperation,
@@ -40,8 +40,8 @@ import {
   type DesignStyleUploadOperationKind,
   type DesignStyleUploadOperationState,
   type DesignStyleUploadOperationTicket,
-} from "./designStyleUploadOperation";
-import type { UploadedDesignStyleAssignmentInput } from "./garmentScopedDesignStyleAssignment";
+} from "./designStyleUploadOperation.js";
+import type { UploadedDesignStyleAssignmentInput } from "./garmentScopedDesignStyleAssignment.js";
 import {
   buildUploadedSourceReferenceIndex,
   evaluateUploadedSourceDeletionEligibility,
@@ -49,7 +49,7 @@ import {
   projectUploadedSourceOccurrenceDetach,
   type UploadedSourceDeletionEligibility,
   type UploadedSourceDeletionProof,
-} from "./designStyleUploadedSourceLifecycle";
+} from "./designStyleUploadedSourceLifecycle.js";
 
 export type DesignStyleStepOccurrenceStatus =
   | "complete"

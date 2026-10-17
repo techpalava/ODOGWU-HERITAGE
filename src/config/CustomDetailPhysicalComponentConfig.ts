@@ -1,8 +1,8 @@
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailGarmentGroup,
-} from "../types";
-import { STYLE_BASE_GARMENT_TYPES } from "./StyleFabricCapacityConfig";
+} from "../types.js";
+import { STYLE_BASE_GARMENT_TYPES } from "./StyleFabricCapacityConfig.js";
 
 export type CustomDetailComponentKeyStrategy = "parent" | "child";
 

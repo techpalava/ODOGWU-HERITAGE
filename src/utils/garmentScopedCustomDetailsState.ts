@@ -1,4 +1,4 @@
-import { ALL_CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig";
+import { ALL_CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig.js";
 import type {
   CustomDetailGarmentGroup,
   CustomDetailSelectionGroup,
@@ -7,7 +7,7 @@ import type {
   GarmentScopedCustomDetailSelection,
   GarmentScopedCustomDetailSnapshot,
   GarmentScopedCustomDetailsStateV1,
-} from "../types";
+} from "../types.js";
 
 export const GARMENT_SCOPED_CUSTOM_DETAILS_SCHEMA_VERSION = 1 as const;
 

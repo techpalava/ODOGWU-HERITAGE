@@ -11,9 +11,9 @@ import type {
   GarmentSelection,
   IndividualShippingSnapshot,
   ShippingQuoteStatus,
-} from "../types";
-import { clampRatio, roundMoney } from "./money";
-import { inspectCartItemFabricAllocations } from "./fabricAllocationPersistence";
+} from "../types.js";
+import { clampRatio, roundMoney } from "./money.js";
+import { inspectCartItemFabricAllocations } from "./fabricAllocationPersistence.js";
 
 export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;

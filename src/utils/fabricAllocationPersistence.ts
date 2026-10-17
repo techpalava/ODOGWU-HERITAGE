@@ -1,8 +1,8 @@
-import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
+import { FabricCapacityEngine } from "../engine/FabricCapacityEngine.js";
 import {
   createStyleBaseGarmentSpec,
   FABRIC_GARMENT_CAPACITY_UNITS,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import type {
   CartItem,
   FabricAllocation,
@@ -14,12 +14,12 @@ import type {
   FabricGarmentRole,
   GuestDesignDraft,
   MasterOrder,
-} from "../types";
-import { getCatalogDesignSourceKey } from "./designSourceState";
+} from "../types.js";
+import { getCatalogDesignSourceKey } from "./designSourceState.js";
 import {
   isCanonicalPhysicalGarmentType,
   isCustomerSelectableGarmentType,
-} from "./garmentConstructionPricing";
+} from "./garmentConstructionPricing.js";
 
 type LowerGarmentType = "trousers" | "skirt";
 const GARMENT_TYPES: readonly FabricGarmentType[] = [

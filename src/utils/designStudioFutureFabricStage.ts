@@ -1,11 +1,11 @@
-import { createStyleBaseGarmentSpec, getFabricGarmentSelectionsForComposition } from "../config/StyleFabricCapacityConfig";
-import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
+import { createStyleBaseGarmentSpec, getFabricGarmentSelectionsForComposition } from "../config/StyleFabricCapacityConfig.js";
+import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine.js";
 import {
   FabricCapacityEngine,
   getCustomerFacingFabricQuantityForAllocations,
   getCustomerFacingFabricQuantityForAssignments,
   getFabricGarmentLabel,
-} from "../engine/FabricCapacityEngine";
+} from "../engine/FabricCapacityEngine.js";
 import type {
   Fabric,
   FabricAllocation,
@@ -14,28 +14,28 @@ import type {
   FabricGarmentAssignment,
   FabricGarmentInputAssignment,
   GarmentTypeStepSelection,
-} from "../types";
-import { getFabricAvailabilityMessage } from "./fabricCatalogueAvailability";
-import { resolveFabricAllocationMaterialPricing } from "./fabricAllocationPricing";
-import { resolveFabricPrice } from "./fabricPricing";
+} from "../types.js";
+import { getFabricAvailabilityMessage } from "./fabricCatalogueAvailability.js";
+import { resolveFabricAllocationMaterialPricing } from "./fabricAllocationPricing.js";
+import { resolveFabricPrice } from "./fabricPricing.js";
 import {
   canCreatePhysicalFabricAllocationForStock,
   formatFabricStockOverAllocatedCopy,
   getFabricStockOverAllocations,
   resolveFabricFromCatalogue,
   validateProjectedFabricStock,
-} from "./fabricStockAvailability";
-import { getGarmentTypeStageCompletion } from "./designStudioJourneyMode";
+} from "./fabricStockAvailability.js";
+import { getGarmentTypeStageCompletion } from "./designStudioJourneyMode.js";
 import {
   getStep1SelectableGarmentTypes,
   isStep1SelectableGarmentType,
-} from "./garmentConstructionPricing";
+} from "./garmentConstructionPricing.js";
 import {
   physicalOccurrencesToFabricRequirements,
   validateRawFabricAssignments,
   type AuthoritativePhysicalOrderDiagnostic,
   type PhysicalGarmentOccurrence,
-} from "./designSourceState";
+} from "./designSourceState.js";
 
 export type FutureFabricStageBlockerCode =
   | "GARMENT_TYPE_INCOMPLETE"

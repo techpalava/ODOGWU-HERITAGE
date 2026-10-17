@@ -7,15 +7,15 @@ import type {
   GarmentConstructionPricingResolution,
   GarmentConstructionSelectionMode,
   GarmentTypeStepSelection,
-} from "../types";
-import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
+} from "../types.js";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing.js";
 import {
   getCustomDetailSelectionOptionIds,
   isClothingPriceSelectionGroup,
   normalizeCustomDetailCatalog,
   type ApplicableCustomDetailGroup,
-} from "./catalogHelpers";
-import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
+} from "./catalogHelpers.js";
+import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState.js";
 
 export const LEGACY_GARMENT_CONSTRUCTION_SELECTION_MODE =
   "legacy_custom_details" as const;

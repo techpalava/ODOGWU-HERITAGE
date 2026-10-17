@@ -1,4 +1,4 @@
-import type { Batch } from "../types";
+import type { Batch } from "../types.js";
 
 export type BatchStatus = Batch["status"];
 

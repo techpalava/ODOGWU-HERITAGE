@@ -1,7 +1,7 @@
 import {
   createStyleBaseGarmentSpec,
   STYLE_BASE_GARMENT_TYPES,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import type {
   CanonicalPhysicalGarmentType,
   ConstructionDetail,
@@ -11,7 +11,7 @@ import type {
   DesignSelections,
   FabricCapacityGarmentSpec,
   StyleCategory,
-} from "../types";
+} from "../types.js";
 
 export const DESIGN_STYLE_AUTHORITY_SCHEMA_VERSION = 1 as const;
 
