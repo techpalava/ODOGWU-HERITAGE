@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -45,7 +45,14 @@ interface DormantFutureShippingStepProps {
   priceEvaluationPending?: boolean;
   onEditPersonalizedAdditions?: () => void;
   onContinueToReview: () => void;
+  /**
+   * When set (for example a closed community batch), Review Order stays
+   * clickable but only explains why the order cannot be reviewed.
+   */
+  reviewBlockedMessage?: string | null;
 }
+
+type ReviewActionSlot = "header" | "footer";
 
 const moneyFromCents = (amountCents: number): string =>
   `${PRICING_CURRENCY_SYMBOL}${(amountCents / 100).toFixed(2)}`;
@@ -105,7 +112,29 @@ export const DormantFutureShippingStep = ({
   priceEvaluationPending = false,
   onEditPersonalizedAdditions,
   onContinueToReview,
+  reviewBlockedMessage = null,
 }: DormantFutureShippingStepProps) => {
+  const reviewBlocked = Boolean(reviewBlockedMessage);
+  const reviewReady = canContinueToReview && !reviewBlocked;
+  const [reviewBlockedNotice, setReviewBlockedNotice] = useState<{
+    slot: ReviewActionSlot;
+    nonce: number;
+  } | null>(null);
+  const headerBlockedNoticeRef = useRef<HTMLParagraphElement>(null);
+  const footerBlockedNoticeRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (!reviewBlockedNotice) return;
+    const target =
+      reviewBlockedNotice.slot === "header"
+        ? headerBlockedNoticeRef.current
+        : footerBlockedNoticeRef.current;
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }, [reviewBlockedNotice]);
+  useEffect(() => {
+    if (!reviewBlocked) setReviewBlockedNotice(null);
+  }, [reviewBlocked]);
   const customer = state.customerInformation;
   const address = customer.deliveryAddress;
   const [touchedFields, setTouchedFields] = useState<ReadonlySet<FutureShippingFieldId>>(
@@ -128,7 +157,14 @@ export const DormantFutureShippingStep = ({
       return next;
     });
   };
-  const attemptReview = () => {
+  const attemptReview = (slot: ReviewActionSlot = "footer") => {
+    if (reviewBlocked) {
+      setReviewBlockedNotice((current) => ({
+        slot,
+        nonce: (current?.nonce ?? 0) + 1,
+      }));
+      return;
+    }
     if (canContinueToReview) {
       onContinueToReview();
       return;
@@ -255,18 +291,32 @@ export const DormantFutureShippingStep = ({
           slot="header"
           backDestination="Summary"
           onBack={onBack}
-          className="mb-5"
+          className={reviewBlockedNotice?.slot === "header" ? "mb-3" : "mb-5"}
           forward={{
             label: "Review Order",
-            onClick: attemptReview,
-            onLockedClick: attemptReview,
-            disabled: !canContinueToReview,
-            locked: !canContinueToReview,
-            icon: canContinueToReview ? "package" : "lock",
+            onClick: () => attemptReview("header"),
+            onLockedClick: () => attemptReview("header"),
+            disabled: !reviewReady,
+            locked: !reviewReady,
+            icon: reviewReady ? "package" : "lock",
             describedBy: "future-payment-lock-reason",
             ariaLabel: "Review Order",
           }}
         />
+        {reviewBlocked && reviewBlockedNotice?.slot === "header" ? (
+          <p
+            key={reviewBlockedNotice.nonce}
+            ref={headerBlockedNoticeRef}
+            id="future-shipping-review-blocked-header"
+            role="alert"
+            tabIndex={-1}
+            data-future-shipping-review-blocked="header"
+            className="mb-5 flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+          >
+            <AlertTriangle aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
+            <span>{reviewBlockedMessage}</span>
+          </p>
+        ) : null}
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           {formatDesignStudioStepCounter("shipping")}
         </p>
@@ -940,7 +990,24 @@ export const DormantFutureShippingStep = ({
           slot="footer"
           backDestination="Summary"
           onBack={onBack}
-          note={(
+          note={reviewBlocked ? (
+            <p
+              key={reviewBlockedNotice?.slot === "footer" ? reviewBlockedNotice.nonce : "idle"}
+              ref={footerBlockedNoticeRef}
+              id="future-payment-lock-reason"
+              role={reviewBlockedNotice?.slot === "footer" ? "alert" : "status"}
+              tabIndex={-1}
+              data-future-shipping-review-blocked={reviewBlockedNotice?.slot === "footer" ? "footer" : "idle"}
+              className={reviewBlockedNotice?.slot === "footer"
+                ? "flex w-full items-start gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                : "w-full text-xs font-semibold leading-relaxed text-red-800 outline-none"}
+            >
+              {reviewBlockedNotice?.slot === "footer" ? (
+                <AlertTriangle aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
+              ) : null}
+              <span>{reviewBlockedMessage}</span>
+            </p>
+          ) : (
             <p id="future-payment-lock-reason" className="w-full text-xs leading-relaxed text-heritage-ink/60">
               {priceEvaluationPending && canContinueToReview
                 ? "Your order review is ready. The total today is the base garment. Personalized additions are reviewed after you order."
@@ -953,11 +1020,11 @@ export const DormantFutureShippingStep = ({
           )}
           forward={{
             label: "Review Order",
-            onClick: attemptReview,
-            onLockedClick: attemptReview,
-            disabled: !canContinueToReview,
-            locked: !canContinueToReview,
-            icon: canContinueToReview ? "package" : "lock",
+            onClick: () => attemptReview("footer"),
+            onLockedClick: () => attemptReview("footer"),
+            disabled: !reviewReady,
+            locked: !reviewReady,
+            icon: reviewReady ? "package" : "lock",
             describedBy: "future-payment-lock-reason",
             ariaLabel: "Review Order",
           }}
