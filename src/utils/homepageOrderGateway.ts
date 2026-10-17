@@ -2,6 +2,7 @@ import type { Batch, OrderContext } from "../types";
 import { CapacityService } from "../services/CapacityService";
 import { getCurrentRegistrationBatch } from "./batchUtils";
 import { BATCH_MINIMUM_GARMENTS } from "./shippingPricing";
+import { isCommunityBatchClosedForOrders } from "./communityBatchOrderClosure";
 
 export interface HomepageOrderGatewayState {
   joinBatch: Batch | null;
@@ -23,6 +24,59 @@ export function getHomepageJoinBatchLabel(
   return !isLoading && hasBatchName
     ? `Join the ${batchName}`
     : "Join Current Batch";
+}
+
+const formatHomepageBatchDeadline = (
+  value: string | null | undefined,
+): string | null => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const trimmed = value.trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const date = dateOnly
+    ? new Date(
+        Date.UTC(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])),
+      )
+    : new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: dateOnly ? "UTC" : undefined,
+  }).format(date);
+};
+
+export interface HomepageJoinBatchDescription {
+  closed: boolean;
+  text: string;
+}
+
+/**
+ * Copy for the "Join an Existing Batch" homepage card. It uses the same
+ * closure rule as Design Studio, cart and payment
+ * (isCommunityBatchClosedForOrders), so a batch whose ordering deadline has
+ * passed is described as closed even if its admin status still says OPEN.
+ */
+export function getHomepageJoinBatchDescription(
+  batch: Batch | null | undefined,
+  now: Date = new Date(),
+): HomepageJoinBatchDescription {
+  const name = batch?.name?.trim();
+  if (!batch || isCommunityBatchClosedForOrders(batch, now)) {
+    return {
+      closed: true,
+      text: `${
+        name ? `The ${name} batch` : "This community batch"
+      } is closed and is no longer accepting new orders. You can still start an individual order or create a private batch.`,
+    };
+  }
+  const deadline = formatHomepageBatchDeadline(batch.endDate);
+  return {
+    closed: false,
+    text: deadline
+      ? `Join the currently open community batch before ordering closes on ${deadline}.`
+      : "Join the currently open community batch before its ordering deadline.",
+  };
 }
 
 export function getHomepageOrderGatewayState(

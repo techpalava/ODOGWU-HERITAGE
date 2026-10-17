@@ -50,6 +50,16 @@ export const getProfileRowFactors = (
   };
 };
 
+/**
+ * The workbook min/max factors are the extremes seen in a small sample of
+ * customers, not the limits of normal adult bodies. Low-variance rows such as
+ * Head Top to Lower Neck (24.3-29.4 cm at 175 cm height) therefore flagged
+ * ordinary values like 22 cm. The "please recheck" hint now allows this much
+ * slack beyond the sampled extremes; clearly wrong values (e.g. a doubled or
+ * halved number) still fall outside and keep the hint.
+ */
+export const MANUAL_RANGE_RECHECK_TOLERANCE = 0.2;
+
 export const isManualValueOutsideExpectedRange = ({
   value,
   heightValue,
@@ -66,5 +76,8 @@ export const isManualValueOutsideExpectedRange = ({
     heightValue,
     factors,
   );
-  return value < expectedMin || value > expectedMax;
+  return (
+    value < expectedMin * (1 - MANUAL_RANGE_RECHECK_TOLERANCE) ||
+    value > expectedMax * (1 + MANUAL_RANGE_RECHECK_TOLERANCE)
+  );
 };
