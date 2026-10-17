@@ -168,7 +168,7 @@ const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
   "Finish assigning fabric to the pending additional garment before removing fabric from another additional garment.";
 
 const STEP2_FABRIC_CAPACITY_INTRO =
-  "One Fabric can make up to two standard garments. A Long Dress uses one full Fabric. You may reuse available capacity or choose different Fabrics for your garments.";
+  "One Fabric can make up to two standard garments. A Long Dress uses one full Fabric. Your order uses only the number of Fabrics it needs, so garments share a Fabric where they can.";
 
 const UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE =
   "No selected Fabric has capacity for this garment. Change a Fabric assignment or remove a Fabric selection.";
@@ -193,7 +193,7 @@ const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabrics Selected: ${selectedFabricQuantity} · Minimum needed: ${requiredFabricQuantity}`;
+  `Fabrics Selected: ${selectedFabricQuantity} · Fabrics needed: ${requiredFabricQuantity}`;
 
 const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
@@ -653,7 +653,7 @@ export const DormantFutureFabricStep = ({
     !isTargetedAdditionalCatalogueTarget;
   const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
     selectedFabricQuantity,
-    requiredGarmentCount: completion.requiredGarmentCount,
+    requiredFabricQuantity,
   });
   const partialAllocationSummaryById = useMemo(
     () =>
@@ -685,9 +685,9 @@ export const DormantFutureFabricStep = ({
     compatiblePartialTargets.some(
       (entry) => entry.compatibleGarmentKeys.length > 1,
     )
-      ? "You may reuse available Fabric capacity or choose another Fabric for the remaining garments."
-      : "You may reuse available Fabric capacity or choose another Fabric for the remaining garment.";
-  const fabricSlotsAvailable = selectedFabricQuantity < completion.requiredGarmentCount;
+      ? "Complete your selected Fabrics by assigning the remaining garments to available Fabric capacity."
+      : "Complete your selected Fabric by assigning the remaining garment to it.";
+  const fabricSlotsAvailable = selectedFabricQuantity < requiredFabricQuantity;
   const resolveUnassignedGarmentFabricAction = (
     garmentKey: string,
   ): "add_fabric" | "assign_to_fabric" | "blocked" => {
@@ -727,8 +727,8 @@ export const DormantFutureFabricStep = ({
     : [];
   const showAllocationLimitCopy =
     !isOverAllocated &&
-    selectedFabricQuantity >= completion.requiredGarmentCount &&
-    completion.requiredGarmentCount > 0 &&
+    selectedFabricQuantity >= requiredFabricQuantity &&
+    requiredFabricQuantity > 0 &&
     (unassignedStep1Targets.length > 0 ||
       unassignedTargets.length > 0 ||
       Boolean(pendingAdditionalAssignment));

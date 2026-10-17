@@ -21,6 +21,7 @@ import {
   getFuturePartialFabricAllocationSummaries,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
+  getRequiredPhysicalFabricAllocationCount,
   hasAvoidablePartialFabricAllocation,
   isFutureFinalPartialFabricAllocation,
   removeFutureFabricAssignment,
@@ -130,16 +131,20 @@ assert.equal(
     state: fourState,
     garmentTypeSelection: createSelection(fourOrdinary),
   }),
-  true,
+  false,
 );
 
-const separateThird = assign(fourState, fourOrdinary, "base:standard_shorts", "FAB-C");
-assert.equal(separateThird.status, "assigned");
-assert.equal(separateThird.state.fabricAllocations.length, 3);
-assert.deepEqual(planningOf(fourOrdinary, separateThird.state), {
+const blockedThird = assign(fourState, fourOrdinary, "base:standard_shorts", "FAB-C");
+assert.equal(blockedThird.status, "blocked");
+assert.equal(
+  blockedThird.status === "blocked" ? blockedThird.reason : null,
+  "FABRIC_QUANTITY_LIMIT_REACHED",
+);
+assert.equal(blockedThird.state.fabricAllocations.length, 2);
+assert.deepEqual(planningOf(fourOrdinary, blockedThird.state), {
   requiredGarmentCount: 4,
   requiredFabricQuantity: 2,
-  selectedFabricQuantity: 3,
+  selectedFabricQuantity: 2,
 });
 
 const unusedAtLimit = resolveStep1FabricCatalogueCardPresentation({
@@ -148,7 +153,7 @@ const unusedAtLimit = resolveStep1FabricCatalogueCardPresentation({
   fabricAllocationState: fourState,
   availabilityMessage: null,
 });
-assert.deepEqual(unusedAtLimit, { status: "SELECT", action: "select" });
+assert.deepEqual(unusedAtLimit, { status: "SELECT", action: "none" });
 
 const useAgainA = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -184,7 +189,7 @@ assert.equal(completionOf(fourOrdinary, fourState).isComplete, true);
 assert.equal(
   fourState.fabricAllocations.some((allocation) => allocation.fabricCode === "FAB-C"),
   false,
-  "Choosing reuse preserves the two physical allocations.",
+  "A third unused Fabric product must never create allocation 3.",
 );
 
 let sameProduct = empty();
@@ -414,8 +419,12 @@ assert.deepEqual(planningOf(fourOrdinary, legacyState), {
   selectedFabricQuantity: 4,
 });
 const legacyCompletion = completionOf(fourOrdinary, legacyState);
-assert.equal(legacyCompletion.isComplete, true);
-assert.deepEqual(legacyCompletion.blockers, []);
+assert.equal(legacyCompletion.isComplete, false);
+assert.ok(
+  legacyCompletion.blockers.some(
+    (blocker) => blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED",
+  ),
+);
 
 let repaired = removeFutureFabricAssignment({
   state: legacyState,
@@ -488,8 +497,8 @@ assert.equal(
     state: additionalState,
     garmentTypeSelection: fourSelection,
   }),
-  true,
-  "The efficient minimum is not a ceiling; transaction authorization is checked separately.",
+  false,
+  "Legacy fabric ceiling ignores unauthorized pending garments.",
 );
 assert.equal(
   getFutureGarmentFabricPlanning({
@@ -625,14 +634,19 @@ assert.equal(
   false,
   "Shirt 1/2 with Gown still unassigned must not be treated as a final residual.",
 );
-const separateDifferentProduct = assign(
+const blockedDifferentProduct = assign(
   screenshotPartial,
   mixedScreenshotTypes,
   "base:trouser",
   "FAB-C",
 );
-assert.equal(separateDifferentProduct.status, "assigned");
-assert.equal(completionOf(mixedScreenshotTypes, separateDifferentProduct.state).isComplete, true);
+assert.equal(blockedDifferentProduct.status, "blocked");
+assert.equal(
+  blockedDifferentProduct.status === "blocked"
+    ? blockedDifferentProduct.reason
+    : null,
+  "FABRIC_QUANTITY_LIMIT_REACHED",
+);
 assert.equal(
   getFutureCompatiblePartialFabricAllocations({
     garmentTypeSelection: mixedScreenshotSelection,
@@ -640,7 +654,7 @@ assert.equal(
     garmentKey: "base:trouser",
   }).length,
   1,
-  "Reuse remains an option alongside choosing Fabric C.",
+  "Domain analysis must still expose the partial Fabric A/B allocation even when Fabric C is blocked.",
 );
 let screenshotComplete = assign(
   screenshotPartial,
@@ -1077,6 +1091,153 @@ assert.deepEqual(
     }),
     true,
   );
+}
+
+// Block past Fabrics needed: removing a garment lowers the number needed. The
+// saved Fabrics stay as they are (nothing is deleted for the customer), but
+// Fabric cannot complete until they trim back to the number needed.
+{
+  const shirtTrouserSelection = createSelection(["shirt", "trouser"]);
+  const shirtOnlySelection = createSelection(["shirt"]);
+  let state = FabricAllocationStateEngine.initialize();
+  for (const [garmentType, key] of [["shirt", "base:shirt"], ["trouser", "base:trouser"]] as const) {
+    const result = assignFutureFabricToGarment({
+      state,
+      garmentTypeSelection: shirtTrouserSelection,
+      garmentKey: key,
+      fabricCode: "FAB-A",
+      fabrics,
+    });
+    assert.equal(result.status, "assigned", `${garmentType} shares Fabric A`);
+    state = result.state;
+  }
+  assert.equal(state.fabricAllocations.length, 1);
+  const blockedExtra = assignFutureFabricToGarment({
+    state,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "FAB-B",
+    fabrics,
+  });
+  assert.equal(
+    blockedExtra.status === "blocked" ? null : blockedExtra.state.fabricAllocations.length,
+    1,
+    "Changing a garment's Fabric at the limit is a swap, never an extra Fabric.",
+  );
+
+  // A legacy draft that kept two Fabrics for one Shirt + one Trouser.
+  let legacy = FabricAllocationStateEngine.createAllocationForFabric(FabricAllocationStateEngine.initialize(), "FAB-A");
+  legacy = FabricAllocationStateEngine.attemptAppendGarment(legacy, {
+    code: "BASE_SHIRT",
+    garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+    sourceRole: "main",
+  });
+  legacy = FabricAllocationStateEngine.createAllocationForFabric(legacy, "FAB-B");
+  legacy = FabricAllocationStateEngine.attemptAppendGarment(legacy, {
+    code: "BASE_TROUSER",
+    garmentSpec: { key: "base:trouser", garmentType: "trouser", fabricUnits: 1 },
+    sourceRole: "main",
+  });
+  const legacyCompletion = getFutureFabricStageCompletion({
+    garmentTypeSelection: shirtTrouserSelection,
+    fabricAllocationState: legacy,
+    fabrics,
+  });
+  assert.equal(legacyCompletion.isComplete, false);
+  assert.ok(legacyCompletion.blockers.some((blocker) => blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED"));
+  assert.equal(legacy.fabricAllocations.length, 2, "Saved Fabrics are kept, not silently deleted.");
+  const trimmed = removeFutureFabricAssignment({ state: legacy, garmentKey: "base:trouser" });
+  const reassigned = assignFutureFabricToGarment({
+    state: trimmed,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "FAB-A",
+    fabrics,
+  });
+  assert.equal(reassigned.status, "assigned");
+  assert.equal(
+    getFutureFabricStageCompletion({
+      garmentTypeSelection: shirtTrouserSelection,
+      fabricAllocationState: reassigned.state,
+      fabrics,
+    }).isComplete,
+    true,
+    "Trimming back to the Fabrics needed lets the customer continue.",
+  );
+  assert.equal(
+    getRequiredPhysicalFabricAllocationCount({
+      garmentTypeSelection: shirtOnlySelection,
+      fabricAllocationState: FabricAllocationStateEngine.initialize(),
+    }),
+    1,
+  );
+
+  // An Additional Garment counts toward the number needed while it waits for
+  // Fabric: a third standard garment needs a second Fabric, a second one does not.
+  const authoritative = projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]);
+  const extraTrouser = createCatalogueAdditionalGarmentSelection({
+    garmentType: "trouser",
+    authoritativePhysicalOccurrences: authoritative,
+    authorizedOccurrenceKeys: [],
+  });
+  assert.equal(extraTrouser.status, "resolved");
+  if (extraTrouser.status !== "resolved") throw new Error("Expected addition");
+  const extraKey = extraTrouser.selection.garmentSpec!.key;
+  const pendingOnFull = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
+    state,
+    extraTrouser.selection,
+  );
+  assert.equal(
+    getRequiredPhysicalFabricAllocationCount({
+      garmentTypeSelection: shirtTrouserSelection,
+      fabricAllocationState: pendingOnFull,
+      countPendingGarmentForCapacity: true,
+    }),
+    2,
+  );
+  const newFabricForExtra = assignFutureFabricToGarment({
+    state: pendingOnFull,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: extraKey,
+    fabricCode: "FAB-B",
+    fabrics,
+  });
+  assert.equal(newFabricForExtra.status, "assigned", "A garment that truly needs another Fabric may get one.");
+  assert.equal(newFabricForExtra.state.fabricAllocations.length, 2);
+
+  const halfState = assignFutureFabricToGarment({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtOnlySelection,
+    garmentKey: "base:shirt",
+    fabricCode: "FAB-A",
+    fabrics,
+  });
+  assert.equal(halfState.status, "assigned");
+  const extraShirt = createCatalogueAdditionalGarmentSelection({
+    garmentType: "shirt",
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+    authorizedOccurrenceKeys: [],
+  });
+  assert.equal(extraShirt.status, "resolved");
+  if (extraShirt.status !== "resolved") throw new Error("Expected addition");
+  const pendingOnHalf = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
+    halfState.state,
+    extraShirt.selection,
+  );
+  const blockedNewFabric = assignFutureFabricToGarment({
+    state: pendingOnHalf,
+    garmentTypeSelection: shirtOnlySelection,
+    garmentKey: extraShirt.selection.garmentSpec!.key,
+    fabricCode: "FAB-B",
+    fabrics,
+  });
+  assert.equal(blockedNewFabric.status, "blocked");
+  assert.equal(
+    blockedNewFabric.status === "blocked" ? blockedNewFabric.reason : null,
+    "FABRIC_QUANTITY_LIMIT_REACHED",
+    "Two Shirts fit on one Fabric, so a second Fabric is not offered.",
+  );
+  assert.equal(blockedNewFabric.state.fabricAllocations.length, 1);
 }
 
 console.log("test_step2_fabric_allocation_limit: ok");

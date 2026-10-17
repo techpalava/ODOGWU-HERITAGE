@@ -268,9 +268,9 @@ assert.equal(parked.pendingFabricGarment?.garmentKey, secondKey);
 assert.equal(parked.awaitingFabricForPendingGarment, true);
 
 // When the new exact occurrence is already represented in the authoritative
-// physical set, its total capacity can still fit the reusable Fabric. Choosing
-// a different Fabric must create its own validated allocation instead of being
-// blocked by that minimum-capacity projection.
+// physical set, its total capacity still fits the reusable Fabric, so the
+// order needs only one Fabric. A different Fabric would be one more than
+// needed, so it is blocked and the existing allocation is left unchanged.
 const alternateAddition = createCatalogueAdditionalGarmentSelection({
   garmentType: "standard_shorts",
   authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
@@ -302,29 +302,18 @@ const alternateAssigned = assignFutureFabricToGarment({
   fabrics: [fabricA, fabricB],
   requiredPhysicalOccurrences: alternateRequiredOccurrences,
 });
-assert.equal(alternateAssigned.status, "assigned");
-const alternateConfirmation = confirmAdditionalGarmentFabricAssignment({
-  previousState: alternatePending,
-  nextState: alternateAssigned.state,
-  garmentKey: alternateGarmentKey,
-  fabricCode: fabricB.code,
-});
-assert.equal(alternateConfirmation.status, "assigned");
+assert.equal(alternateAssigned.status, "blocked");
+assert.equal(
+  alternateAssigned.status === "blocked" ? alternateAssigned.reason : null,
+  "FABRIC_QUANTITY_LIMIT_REACHED",
+);
 assert.deepEqual(
-  alternateConfirmation.state.fabricAllocations[0].garmentAssignments.map(
-    (assignment) => assignment.garmentKey,
+  alternateAssigned.state.fabricAllocations.map((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
   ),
-  ["base:shirt"],
+  [["base:shirt"]],
   "the existing garment must retain its reusable Fabric",
 );
-assert.deepEqual(
-  alternateConfirmation.state.fabricAllocations[1].garmentAssignments.map(
-    (assignment) => assignment.garmentKey,
-  ),
-  [alternateGarmentKey],
-  "the selected alternate Fabric must bind only the new exact occurrence",
-);
-assert.equal(alternateConfirmation.state.fabricAllocations[1].fabricCode, fabricB.code);
 const outOfStockAlternate = assignFutureFabricToGarment({
   state: alternatePending,
   garmentTypeSelection,

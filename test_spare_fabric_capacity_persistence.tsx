@@ -586,10 +586,11 @@ const skirtDraft: GuestDesignDraft = {
   selectedStyleId: skirtStyles[0].id, confirmedStyleId: skirtStyles[0].id,
   designSource: skirtSource, confirmedDesignSourceKey: skirtSource.sourceKey,
   designStyleAssignmentDraft: skirtStyleModel.hydration.envelope,
-  fabricAllocations: physicalOccurrencesToFabricRequirements(skirtOccurrences).map((assignment, index) => ({
-    allocationId: `skirt-allocation-${index}`, fabricCode: skirtFabrics[index].code,
-    garmentAssignments: [assignment],
-  })),
+  // Two standard skirts share one Fabric: the order needs exactly one.
+  fabricAllocations: [{
+    allocationId: "skirt-allocation-0", fabricCode: skirtFabrics[0].code,
+    garmentAssignments: physicalOccurrencesToFabricRequirements(skirtOccurrences),
+  }],
   designSelections: {
     accessories: [], garmentScopedCustomDetails: {
       schemaVersion: 1,
@@ -708,7 +709,7 @@ assert.deepEqual(skirtPayment.candidate.occurrenceStyleSnapshots.map((row: {
 assert.deepEqual(skirtPayment.candidate.fabricAllocations.map((allocation: {
   fabricCode: string; garmentAssignments: readonly { garmentKey: string }[];
 }) => [allocation.fabricCode, allocation.garmentAssignments.map((item) => item.garmentKey)]), [
-  ["SKIRT-FABRIC-A", ["base:skirt"]], ["SKIRT-FABRIC-B", ["base:long_skirt"]],
+  ["SKIRT-FABRIC-A", ["base:skirt", "base:long_skirt"]],
 ]);
 assert.deepEqual(skirtPayment.candidate.customDetails.map((detail: {
   garmentKey: string; optionId: string;
