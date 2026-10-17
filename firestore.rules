@@ -927,6 +927,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Sticky Feedback button: guests and customers may create one bounded
+    // record each time. Only admins (or the Admin SDK) can read or remove it.
+    // Mirrors SITE_FEEDBACK_CREATE_KEYS and SITE_FEEDBACK_LIMITS in
+    // src/utils/siteFeedback.ts.
+    function hasValidSiteFeedbackCreate(data) {
+      return data.keys().hasAll(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
+        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
+        && data.schemaVersion == 1
+        && data.status == "new"
+        && data.type in ["bug", "idea", "other"]
+        && data.message is string
+        && data.message.size() >= 5
+        && data.message.size() <= 2000
+        && (data.email == null || (data.email is string && data.email.size() <= 254 && data.email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")))
+        && data.page is string
+        && data.page.size() <= 500
+        && data.tab is string
+        && data.tab.size() <= 64
+        && (data.studioStep == null || (data.studioStep is string && data.studioStep.size() <= 64))
+        && data.userAgent is string
+        && data.userAgent.size() <= 512
+        && data.viewport is string
+        && data.viewport.size() <= 32
+        && data.createdAt == request.time
+        && (data.uid == null
+          || (request.auth != null && data.uid == request.auth.uid));
+    }
+
+    match /site_feedback/{feedbackId} {
+      allow create: if hasValidSiteFeedbackCreate(request.resource.data);
+      allow read, update, delete: if isAdmin();
+    }
+
     match /media/{mediaId} {
       allow read: if true;
       allow write: if isAdmin();

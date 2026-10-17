@@ -88,6 +88,7 @@ const DatabaseView = lazy(() => import("./components/DatabaseView"));
 import { Header } from "./components/Header";
 import { MobileMenu } from "./components/MobileMenu";
 import { CartDrawer } from "./components/CartDrawer";
+import { SiteFeedbackButton } from "./components/SiteFeedbackButton";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppVersionBanner } from "./components/AppVersionBanner";
 import {
@@ -2107,6 +2108,9 @@ export default function App() {
 
       {/* SHOPPING CART SLIDE-OVER DRAWER */}
       <CartDrawer />
+
+      {/* STICKY SITE FEEDBACK TAB (every page) */}
+      <SiteFeedbackButton />
 
       {individualOrderStartRequest && (
         <IndividualOrderStartDialog
