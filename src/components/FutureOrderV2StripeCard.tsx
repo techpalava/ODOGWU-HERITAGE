@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   loadStripe,
   type Stripe,
@@ -60,6 +61,19 @@ export const isFutureOrderV2StripePayReady = ({
   stripeClientReady: boolean;
 }): boolean =>
   method === "ideal" || method === "klarna" ? stripeClientReady : cardReady;
+
+export const FUTURE_ORDER_V2_CARD_LOADING_MESSAGE = "Loading secure card form…";
+
+/** Explains a disabled Pay while the Stripe Card Element has not fired ready. */
+export const shouldShowFutureOrderV2CardLoading = ({
+  method,
+  cardReady,
+  loadFailed,
+}: {
+  method: FutureOrderV2PaymentMethod;
+  cardReady: boolean;
+  loadFailed: boolean;
+}): boolean => method === "card" && !cardReady && !loadFailed;
 
 /** Hidden wallet chrome must not intercept the method pills or Pay. */
 export const futureOrderV2ExpressCheckoutShell = (walletsShown: boolean) =>
@@ -155,6 +169,7 @@ export const FutureOrderV2StripeCard = ({
 
   const [method, setMethod] = useState<FutureOrderV2PaymentMethod>("card");
   const [cardReady, setCardReady] = useState(false);
+  const [cardLoadFailed, setCardLoadFailed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -458,6 +473,7 @@ export const FutureOrderV2StripeCard = ({
 
     mountCard().catch((error: unknown) => {
       if (cancelled) return;
+      setCardLoadFailed(true);
       setMessage(
         error instanceof Error
           ? error.message
@@ -681,6 +697,16 @@ export const FutureOrderV2StripeCard = ({
           data-future-order-v2-card
           className="min-h-11 rounded-xl border border-white/30 bg-white px-3 py-3"
         />
+        {shouldShowFutureOrderV2CardLoading({ method, cardReady, loadFailed: cardLoadFailed }) && (
+          <p
+            role="status"
+            data-future-order-v2-card-loading
+            className="mt-2 flex items-center gap-2 text-xs leading-relaxed text-white/80"
+          >
+            <Loader2 aria-hidden="true" size={14} className="shrink-0 animate-spin" />
+            {FUTURE_ORDER_V2_CARD_LOADING_MESSAGE}
+          </p>
+        )}
         {fieldError && (
           <p
             data-future-order-v2-card-field-error

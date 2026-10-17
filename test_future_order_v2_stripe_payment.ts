@@ -23,9 +23,14 @@ import {
   isFutureOrderV2ExpressCheckoutAmount,
   isFutureOrderV2ExpressWalletAvailable,
   isFutureOrderV2StripePayReady,
+  shouldShowFutureOrderV2CardLoading,
+  FUTURE_ORDER_V2_CARD_LOADING_MESSAGE,
 } from "./src/components/FutureOrderV2StripeCard";
 import { FutureOrderV2AllowedCardIcons } from "./src/components/futureOrderV2PaymentMethodIcons";
-import { createFutureOrderV2PaymentReviewHandoff } from "./src/utils/designStudioFuturePaymentReview";
+import {
+  createFutureOrderV2PaymentReviewHandoff,
+  FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE,
+} from "./src/utils/designStudioFuturePaymentReview";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
@@ -1244,6 +1249,133 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
     recomputeFutureOrderPayableTotal(tampered.masterOrder.cartItem.candidate).status,
     "rejected",
   );
+}
+
+// Card loading note explains a disabled Pay until the Card Element is ready.
+assert.equal(
+  shouldShowFutureOrderV2CardLoading({ method: "card", cardReady: false, loadFailed: false }),
+  true,
+);
+assert.equal(
+  shouldShowFutureOrderV2CardLoading({ method: "card", cardReady: true, loadFailed: false }),
+  false,
+);
+assert.equal(
+  shouldShowFutureOrderV2CardLoading({ method: "card", cardReady: false, loadFailed: true }),
+  false,
+);
+assert.equal(
+  shouldShowFutureOrderV2CardLoading({ method: "ideal", cardReady: false, loadFailed: false }),
+  false,
+);
+{
+  const loadingMarkup = renderToStaticMarkup(
+    createElement(FutureOrderV2StripeCard, {
+      amountCents: 7900,
+      orderId: "future-order-loading",
+      disabled: false,
+      onReadyChange: () => undefined,
+    } as any),
+  );
+  assert.match(loadingMarkup, /data-future-order-v2-card-loading/);
+  assert.match(loadingMarkup, /role="status"/);
+  assert.ok(loadingMarkup.includes(FUTURE_ORDER_V2_CARD_LOADING_MESSAGE));
+}
+{
+  // A failed Stripe load replaces the loading note with the error.
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: "Stripe test payments are not configured." }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    await act(async () => {
+      renderer = create(
+        createElement(FutureOrderV2StripeCard, {
+          amountCents: 7900,
+          orderId: "future-order-loading",
+          disabled: false,
+          onReadyChange: () => undefined,
+        } as any),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.equal(
+      renderer!.root.findAllByProps({ "data-future-order-v2-card-loading": true }).length,
+      0,
+    );
+  } finally {
+    act(() => renderer?.unmount());
+    globalThis.fetch = previousFetch;
+  }
+}
+
+// Guest PAY: the sign-in message carries a real Sign in button.
+{
+  const signInHandoff = createFutureOrderV2PaymentReviewHandoff(prepared.candidate, {
+    status: "authentication_required",
+    message: FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE,
+  });
+  let signInClicks = 0;
+  const withButton = renderToStaticMarkup(
+    createElement(DormantFuturePaymentReviewStep, {
+      result: signInHandoff,
+      onBack: () => undefined,
+      onEditStage: () => undefined,
+      onPay: () => undefined,
+      onSignInToPay: () => {
+        signInClicks += 1;
+      },
+    }),
+  );
+  assert.ok(withButton.includes(FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE));
+  assert.match(withButton, /data-future-payment-sign-in="true"[^>]*>[\s\S]*?Sign in<\/button>/);
+  const withoutHandler = renderToStaticMarkup(
+    createElement(DormantFuturePaymentReviewStep, {
+      result: signInHandoff,
+      onBack: () => undefined,
+      onEditStage: () => undefined,
+      onPay: () => undefined,
+    }),
+  );
+  assert.equal(withoutHandler.includes("data-future-payment-sign-in"), false);
+  const preparedHandoff = createFutureOrderV2PaymentReviewHandoff(prepared.candidate, {
+    status: "prepared",
+    cartItemId: prepared.cartItemId,
+    orderId: prepared.orderId,
+  });
+  const signedIn = renderToStaticMarkup(
+    createElement(DormantFuturePaymentReviewStep, {
+      result: preparedHandoff,
+      onBack: () => undefined,
+      onEditStage: () => undefined,
+      onPay: () => undefined,
+      onSignInToPay: () => undefined,
+    }),
+  );
+  assert.equal(signedIn.includes("data-future-payment-sign-in"), false);
+  let renderer: ReturnType<typeof create> | undefined;
+  act(() => {
+    renderer = create(
+      createElement(DormantFuturePaymentReviewStep, {
+        result: signInHandoff,
+        onBack: () => undefined,
+        onEditStage: () => undefined,
+        onPay: () => undefined,
+        onSignInToPay: () => {
+          signInClicks += 1;
+        },
+      }),
+    );
+  });
+  act(() => {
+    renderer!.root.findByProps({ "data-future-payment-sign-in": "true" }).props.onClick();
+  });
+  assert.equal(signInClicks, 1);
+  act(() => renderer?.unmount());
 }
 
 console.log(

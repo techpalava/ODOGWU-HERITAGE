@@ -1,3 +1,4 @@
+import { COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE } from "./src/utils/communityBatchOrderClosure";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
@@ -1220,6 +1221,82 @@ act(() => {
 });
 assert.equal(readyPickup.continued(), true);
 assert.equal(readyPickup.text().includes("Enter the recipient's full name."), false);
+
+// Closed community batch: Review Order explains itself instead of failing silently.
+{
+  let continued = false;
+  let renderer: ReactTestRenderer | null = null;
+  const focused: string[] = [];
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureShippingStep, {
+        state: pickup.state,
+        resolution: pickup,
+        selectedDesignPrice: 65,
+        garmentCount: 1,
+        orderType: "Community",
+        onChange: () => undefined,
+        onRefreshQuote: () => undefined,
+        onBack: () => undefined,
+        canContinueToReview: true,
+        onContinueToReview: () => {
+          continued = true;
+        },
+        reviewBlockedMessage: COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE,
+      }),
+      {
+        createNodeMock: (element) => ({
+          focus: () => {
+            const props = element.props as Record<string, unknown>;
+            focused.push(String(props.id ?? props["data-future-shipping-review-blocked"]));
+          },
+          scrollIntoView: () => undefined,
+        }),
+      },
+    );
+  });
+  const view = renderer as unknown as ReactTestRenderer;
+  const buttons = () =>
+    view.root.findAll(
+      (node) => node.type === "button" && node.props?.["aria-label"] === "Review Order",
+    );
+  assert.equal(buttons().length, 2);
+  for (const button of buttons()) {
+    assert.equal(button.props["aria-disabled"], "true", "closed batch shows Review Order locked but clickable");
+  }
+  // The footer note states the reason before any click.
+  const idleNote = view.root.find(
+    (node) => node.props?.["data-future-shipping-review-blocked"] === "idle",
+  );
+  assert.equal(idleNote.props.role, "status");
+  assert.match(JSON.stringify(view.toJSON()), /This batch is closed\. It no longer accepts new orders/);
+
+  act(() => {
+    buttons()[1].props.onClick();
+  });
+  assert.equal(continued, false, "the closed-batch block still stops review");
+  const footerAlert = view.root.find(
+    (node) => node.props?.["data-future-shipping-review-blocked"] === "footer",
+  );
+  assert.equal(footerAlert.props.role, "alert");
+  assert.equal(footerAlert.props.tabIndex, -1);
+  assert.deepEqual(focused, ["future-payment-lock-reason"], "footer notice receives focus");
+
+  act(() => {
+    buttons()[0].props.onClick();
+  });
+  assert.equal(continued, false);
+  const headerAlert = view.root.find(
+    (node) => node.props?.["data-future-shipping-review-blocked"] === "header",
+  );
+  assert.equal(headerAlert.props.role, "alert");
+  assert.match(
+    headerAlert.findAll((node) => node.type === "span").map((node) => node.children.join("")).join(" "),
+    /This batch is closed/,
+  );
+  assert.equal(focused[focused.length - 1], "future-shipping-review-blocked-header");
+  act(() => view.unmount());
+}
 
 globalThis.document = previousDocument;
 
