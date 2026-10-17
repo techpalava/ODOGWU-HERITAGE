@@ -77,6 +77,8 @@ interface DormantFuturePaymentReviewStepProps {
   ) => void;
   onPay?: () => void;
   onParkCompleteOrder?: () => void;
+  /** Closed community batches cannot be paid or bagged. */
+  communityBatchClosed?: boolean;
   parkCompleteOrderStatus?: "idle" | "added" | "already_present";
   onStartAnotherOrder?: () => void;
   /** Draft-only; omit after payment is confirmed. */
@@ -612,6 +614,7 @@ export const DormantFuturePaymentReviewStep = ({
   onRequestGarmentRemoval,
   onPay,
   onParkCompleteOrder,
+  communityBatchClosed = false,
   parkCompleteOrderStatus = "idle",
   onStartAnotherOrder,
   onRequestCancelOrder,
@@ -1311,6 +1314,15 @@ export const DormantFuturePaymentReviewStep = ({
             )}
             {v2Payable && !paymentIsAuthorized && payment?.status !== "redirecting" && (
               <>
+                {communityBatchClosed ? (
+                  <p
+                    role="status"
+                    data-testid="payment-community-batch-closed"
+                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-900"
+                  >
+                    This batch is closed
+                  </p>
+                ) : (
                 <FutureOrderV2StripeCard
                   disabled={!canSettleReviewedOrder || payIsBusy}
                   orderId={
@@ -1327,6 +1339,7 @@ export const DormantFuturePaymentReviewStep = ({
                       : null
                   }
                 />
+                )}
                 {payment?.status === "failed" && (
                   <FutureOrderV2PaymentAlert message={payment.message} />
                 )}
@@ -1334,10 +1347,10 @@ export const DormantFuturePaymentReviewStep = ({
                     <button
                     type="button"
                     data-future-order-v2-pay={true}
-                    disabled={!canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
+                    disabled={communityBatchClosed || !canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"
-                    onClick={onPay}
+                    onClick={communityBatchClosed ? undefined : onPay}
                     className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
                   >
                     <LockKeyhole aria-hidden="true" size={14} />
@@ -1347,8 +1360,8 @@ export const DormantFuturePaymentReviewStep = ({
                       <button
                         type="button"
                         data-testid="future-order-v2-add-to-cart"
-                        disabled={!canSettleReviewedOrder || payIsBusy}
-                        onClick={onParkCompleteOrder}
+                        disabled={communityBatchClosed || !canSettleReviewedOrder || payIsBusy}
+                        onClick={communityBatchClosed ? undefined : onParkCompleteOrder}
                         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-gold/50 bg-heritage-forest px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-gold hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                       >
                         <ShoppingBag aria-hidden="true" size={14} />

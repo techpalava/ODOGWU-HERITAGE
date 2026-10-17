@@ -12,6 +12,8 @@ import {
   resolveFutureOrderV2StripeShipping,
   type FutureOrderV2StripeShipping,
 } from "../utils/futureOrderV2StripeShipping.js";
+import { resolveCommunityOrderClosure, readCommunityBatchRecord } from "./communityBatchOrderGate.js";
+import { getCanonicalOrderIdentity } from "../utils/orderContextIdentity.js";
 import {
   FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
   isPersonalizedAdditionPaymentReference,
@@ -62,6 +64,9 @@ export interface FutureOrderV2StripePaymentDependencies {
   readPersonalizedPrice?: (orderId: string) => Promise<unknown | null>;
   /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
   readCatalog?: () => Promise<unknown>;
+  /** Live community batch document. Defaults to the `batches` collection. */
+  readCommunityBatch?: (batchId: string) => Promise<unknown | null>;
+  now?: () => Date;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -274,6 +279,47 @@ export const handleFutureOrderV2StripeConfig = (
   return setNoStore(res).status(200).json({ publishableKey, testMode: true });
 };
 
+const handleFutureOrderV2CartAdmission = async (
+  res: HttpResponse,
+  body: Record<string, unknown>,
+  dependencies: FutureOrderV2StripePaymentDependencies,
+) => {
+  const identity = getCanonicalOrderIdentity(body.orderIdentity);
+  if (!identity) {
+    return sendError(
+      res,
+      400,
+      "INVALID_ORDER_IDENTITY",
+      "This order cannot be added to the cart.",
+    );
+  }
+  const readBatch =
+    dependencies.readCommunityBatch ??
+    ((batchId: string) => {
+      const getServices =
+        dependencies.getServices ||
+        (getAdminServices as unknown as () => StripePaymentAdminServices);
+      return readCommunityBatchRecord(getServices().db, batchId);
+    });
+  const closure = await resolveCommunityOrderClosure({
+    identity,
+    readBatch,
+    now: dependencies.now?.() ?? new Date(),
+  });
+  if (closure.status === "unavailable") {
+    return sendError(
+      res,
+      503,
+      "COMMUNITY_BATCH_UNAVAILABLE",
+      "The community batch could not be confirmed.",
+    );
+  }
+  if (closure.status === "closed") {
+    return sendError(res, 409, closure.code, closure.message);
+  }
+  return setNoStore(res).status(200).json({ accepted: true });
+};
+
 /**
  * Creates a Stripe test PaymentIntent for a persisted Future Order V2.
  * Amount comes only from the server-loaded order owned by the caller — never
@@ -286,6 +332,11 @@ export const handleFutureOrderV2StripePayment = async (
 ) => {
   if (req.method !== "POST") {
     return sendError(res, 405, "METHOD_NOT_ALLOWED", "Use POST for this payment.");
+  }
+
+  const body = isRecord(req.body) ? req.body : null;
+  if (body?.action === "add-to-cart") {
+    return handleFutureOrderV2CartAdmission(res, body, dependencies);
   }
 
   const bearerToken = getBearerToken(req);
@@ -355,7 +406,6 @@ export const handleFutureOrderV2StripePayment = async (
   const createPaymentIntent =
     dependencies.createPaymentIntent ?? createFutureOrderV2StripeTestPaymentIntent;
 
-  const body = isRecord(req.body) ? req.body : null;
   const orderId = typeof body?.orderId === "string" ? body.orderId : "";
   const paymentReference =
     typeof body?.paymentReference === "string" ? body.paymentReference : "";
@@ -471,6 +521,30 @@ export const handleFutureOrderV2StripePayment = async (
         "The reviewed total is not ready to charge.",
       );
     }
+  }
+
+  const communityClosure = await resolveCommunityOrderClosure({
+    identity: candidate.orderIdentity,
+    readBatch:
+      dependencies.readCommunityBatch ??
+      ((batchId: string) => readCommunityBatchRecord(services.db, batchId)),
+    now: dependencies.now?.() ?? new Date(),
+  });
+  if (communityClosure.status === "unavailable") {
+    return sendError(
+      res,
+      503,
+      "COMMUNITY_BATCH_UNAVAILABLE",
+      "The community batch could not be confirmed.",
+    );
+  }
+  if (communityClosure.status === "closed") {
+    return sendError(
+      res,
+      409,
+      communityClosure.code,
+      communityClosure.message,
+    );
   }
 
   try {

@@ -1,11 +1,11 @@
-import { Batch, OrderContext } from "../types";
-import { CapacityService } from "../services/CapacityService";
-import { parseBatchDateBoundary } from "../utils/batchDateRange";
+import { Batch, OrderContext } from "../types.js";
+import { CapacityService } from "../services/CapacityService.js";
+import { parseBatchDateBoundary } from "../utils/batchDateRange.js";
 import {
   normalizeBatchStatus,
   PRODUCTION_OR_CLOSED_STATUSES,
   REGISTRATION_OPEN_STATUSES,
-} from "../utils/batchStatus";
+} from "../utils/batchStatus.js";
 
 export interface BatchEligibility {
   canAcceptOrders: boolean;
