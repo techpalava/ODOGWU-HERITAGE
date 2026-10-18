@@ -1,4 +1,9 @@
 import {
+  DESIGN_STUDIO_STEP_LAYOUT_CLASS,
+  DESIGN_STUDIO_STEP_MAIN_CLASS,
+  DESIGN_STUDIO_STEP_SIDEBAR_CLASS,
+} from "./DesignStudioStepLayout";
+import {
   normalizeCustomDetailCatalog,
   inspectCustomDetailCatalog,
 } from "../utils/catalogHelpers";
@@ -10334,9 +10339,10 @@ export default function DesignStudioView({
         onSelectPayment={handleStepperJump(handleOpenDormantPaymentReviewStage)}
       />
       <div
+        data-studio-step-layout={showShellLiveOrderSummary ? "true" : undefined}
         className={
           showShellLiveOrderSummary
-            ? "mt-4 grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2.2fr)_minmax(16rem,1fr)]"
+            ? `mt-4 ${DESIGN_STUDIO_STEP_LAYOUT_CLASS}`
             : "mt-4"
         }
       >
@@ -10345,7 +10351,8 @@ export default function DesignStudioView({
           tabIndex={-1}
           aria-label={`${formatDesignStudioStepCounter(futureStageId)}: ${currentStageLabel}`}
           data-design-studio-stage-target={futureStageId}
-          className="min-w-0 scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          data-studio-step-main={showShellLiveOrderSummary ? "true" : undefined}
+          className={`${showShellLiveOrderSummary ? `${DESIGN_STUDIO_STEP_MAIN_CLASS} lg:row-span-2` : "min-w-0"} scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2`}
         >
       {futureStageId === "garment_type" ? (
         <div className="space-y-5">
@@ -11032,7 +11039,7 @@ export default function DesignStudioView({
           />
         </section>
         {showShellLiveOrderSummary ? (
-          <div className="min-w-0">
+          <div data-studio-step-sidebar="true" className={DESIGN_STUDIO_STEP_SIDEBAR_CLASS}>
             {liveOrderSummaryCard}
           </div>
         ) : null}

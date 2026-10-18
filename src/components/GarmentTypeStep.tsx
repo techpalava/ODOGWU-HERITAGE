@@ -1,3 +1,8 @@
+import {
+  DESIGN_STUDIO_STEP_LAYOUT_CLASS,
+  DESIGN_STUDIO_STEP_MAIN_CLASS,
+  DESIGN_STUDIO_STEP_SIDEBAR_CLASS,
+} from "./DesignStudioStepLayout";
 import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton.js";
@@ -427,9 +432,13 @@ export const GarmentTypeStep = ({
   return (
     <section
       aria-labelledby={`${idPrefix}-title`}
-      className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"
+      data-studio-step-layout="true"
+      className={DESIGN_STUDIO_STEP_LAYOUT_CLASS}
     >
-      <div className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7 lg:col-span-8">
+      <div
+        data-studio-step-main="true"
+        className={`${DESIGN_STUDIO_STEP_MAIN_CLASS} rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7`}
+      >
         <DesignStudioStepActions
           slot="header"
           backDisabled
@@ -720,7 +729,7 @@ export const GarmentTypeStep = ({
         )}
       </div>
 
-      <div className="min-w-0 lg:col-span-4">
+      <div data-studio-step-sidebar="true" className={DESIGN_STUDIO_STEP_SIDEBAR_CLASS}>
         {orderSummary ? (
           orderSummary
         ) : (
