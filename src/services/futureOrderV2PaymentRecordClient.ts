@@ -1,6 +1,7 @@
 import type { User } from "firebase/auth";
 import { auth } from "./firebase.js";
 import {
+  getFutureOrderV2ProviderTransactionId,
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord.js";
@@ -64,7 +65,7 @@ export const createFutureOrderV2PaymentRecordClient = ({
       if (
         record &&
         record.orderId === orderId &&
-        record.paymentIntentId === paymentIntentId
+        getFutureOrderV2ProviderTransactionId(record) === paymentIntentId
       ) {
         return { status: "recorded", record };
       }

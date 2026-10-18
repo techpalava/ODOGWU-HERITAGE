@@ -30,6 +30,15 @@ import {
   createFutureOrderV2Fixture,
 } from "./testing/futureOrderV2Fixture";
 
+/** Test fixtures are readonly; tamper tests need a writable deep clone. */
+type DeepMutable<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends object
+    ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
+    : T;
+const mutableClone = <T,>(value: T): DeepMutable<T> =>
+  structuredClone(value) as DeepMutable<T>;
+
 const OWNER_UID = "future-order-owner";
 const OTHER_UID = "another-future-order-owner";
 const NOW = new Date("2026-09-05T10:00:00.000Z");
@@ -1152,20 +1161,8 @@ assert.match(clientSource, /persist-future-order-v2/);
 const pendingSource = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "pending-personalized-base",
 );
-const pendingOrder = structuredClone(pendingSource);
-const pendingCandidate = pendingOrder.cartItem.candidate as {
-  pricing: {
-    status: string;
-    customDetailsCents: number | null;
-    selectedDesignTotalCents: number | null;
-    exactTotalCents: number | null;
-    components: {
-      customDetails: { status: string; amountCents: number | null };
-      lagosToEindhovenShipping: { status: string; amountCents: number | null };
-    };
-  };
-  customDetails: unknown[];
-};
+const pendingOrder = mutableClone(pendingSource);
+const pendingCandidate = pendingOrder.cartItem.candidate;
 pendingCandidate.pricing.status = "pending";
 pendingCandidate.pricing.customDetailsCents = null;
 pendingCandidate.pricing.selectedDesignTotalCents = null;
@@ -1204,7 +1201,7 @@ const pendingPersisted = await persistFutureOrderV2ForVerifiedIdentity({
   now: () => NOW,
 });
 assert.equal(pendingPersisted.status, "created");
-const stalePickupLagosOrder = structuredClone(pendingOrder);
+const stalePickupLagosOrder = mutableClone(pendingOrder);
 stalePickupLagosOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
   status: "separately_charged",
   amountCents: 1400,

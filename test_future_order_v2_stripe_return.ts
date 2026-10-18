@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getFutureOrderV2ProviderTransactionId } from "./src/utils/futureOrderV2PaymentRecord";
 import {
   FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM,
   FUTURE_ORDER_V2_STRIPE_RETURN_PARAM,
@@ -99,7 +100,7 @@ const recorded = await resumeFutureOrderV2StripeReturn({
 assert.equal(recorded.status, "recorded");
 if (recorded.status === "recorded") {
   assert.equal(recorded.orderId, "future-order-ideal");
-  assert.equal(recorded.record.providerTransactionId, "pi_ideal_return");
+  assert.equal(getFutureOrderV2ProviderTransactionId(recorded.record), "pi_ideal_return");
 }
 assert.equal(readFutureOrderV2StripeReturnContext(storage), null);
 

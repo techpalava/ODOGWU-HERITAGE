@@ -55,6 +55,15 @@ import {
   createFutureOrderV2Fixture,
 } from "./testing/futureOrderV2Fixture";
 
+/** Test fixtures are readonly; tamper tests need a writable deep clone. */
+type DeepMutable<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends object
+    ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
+    : T;
+const mutableClone = <T,>(value: T): DeepMutable<T> =>
+  structuredClone(value) as DeepMutable<T>;
+
 const PICKUP_STRIPE_SHIPPING = {
   name: "Ada Lovelace",
   email: "ada@example.test",
@@ -1134,7 +1143,7 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
   const pendingSource = createCatalogueAuthoritativeFutureOrderV2Fixture(
     "stripe-pending-personalized",
   );
-  const pendingOrder = structuredClone(pendingSource);
+  const pendingOrder = mutableClone(pendingSource);
   const pendingCandidate = pendingOrder.cartItem.candidate;
   pendingCandidate.pricing = {
     ...pendingCandidate.pricing,
@@ -1222,7 +1231,7 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
   assert.equal(state.statusCode, 200);
   assert.equal(chargedAmount, knownBaseCents);
 
-  const tampered = structuredClone(pendingStored.value);
+  const tampered = mutableClone(pendingStored.value);
   tampered.masterOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
     status: "separately_charged",
     amountCents: 1400,

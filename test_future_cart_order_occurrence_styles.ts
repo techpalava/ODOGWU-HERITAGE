@@ -130,6 +130,7 @@ const candidate = (
   shipping: {
     state: {
       schemaVersion: 1,
+      pickupLocation: "",
       fulfilmentMethod: "destination_delivery",
       destinationSelectionMode: "supported_country",
       otherDestinationCountry: null,
