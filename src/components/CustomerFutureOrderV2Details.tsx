@@ -36,8 +36,10 @@ import {
   PERSONALIZED_BASE_PAYMENT_NOTICE,
   personalizedAdditionCustomerStatusLabel,
   presentPersonalizedAdditionLines,
+  presentPersonalizedAdditionSettlement,
   readAcceptedPersonalizedDifferenceCents,
   readFutureOrderV2ChargeableCents,
+  reportedPaidTotalCents,
   type FutureOrderV2PersonalizedPriceRecord,
 } from "../utils/futureOrderV2PersonalizedPrice";
 
@@ -130,6 +132,15 @@ export const CustomerFutureOrderV2Details = ({
   const additionLines = presentPersonalizedAdditionLines(candidate, priceRecord);
   const payableCents = readFutureOrderV2ChargeableCents(candidate, priceRecord);
   const differenceCents = readAcceptedPersonalizedDifferenceCents(candidate, priceRecord);
+  const additionSettlement = presentPersonalizedAdditionSettlement(candidate, priceRecord);
+  const totalPaidCents = reportedPaidTotalCents({
+    basePaymentCents: payment?.amountCents ?? null,
+    settlement: additionSettlement,
+  });
+  const paidBadgeCents =
+    additionSettlement.additionSettled && totalPaidCents !== null
+      ? totalPaidCents
+      : payment?.amountCents ?? null;
   const payBusy = payPhase !== "idle";
   const canPay =
     Boolean(paymentActions) && payableCents !== null && !localPayment && (!payment || payBusy);
@@ -189,9 +200,23 @@ export const CustomerFutureOrderV2Details = ({
       });
       if (outcome.status === "paid") {
         if (priceRecord) {
+          const paymentIntentId = getFutureOrderV2ProviderTransactionId(outcome.record);
+          const additionPayments = priceRecord.additionPayments.some(
+            (payment) => payment.paymentIntentId === paymentIntentId,
+          )
+            ? priceRecord.additionPayments
+            : [
+                ...priceRecord.additionPayments,
+                {
+                  paymentIntentId,
+                  amountCents: outcome.record.amountCents,
+                  recordedAt: outcome.record.recordedAt,
+                },
+              ];
           setLocalPrice({
             ...priceRecord,
-            additionPaidCents: (priceRecord.additionPaidCents ?? 0) + outcome.record.amountCents,
+            additionPayments,
+            additionPaidCents: additionPayments.reduce((total, payment) => total + payment.amountCents, 0),
           });
         }
       } else if (outcome.status === "redirecting") setIsRedirecting(true);
@@ -300,9 +325,9 @@ export const CustomerFutureOrderV2Details = ({
                 </h3>
                 <p className="break-all font-mono text-[11px] text-heritage-ink/60">{order.orderId}</p>
               </div>
-              {payment ? (
+              {payment && paidBadgeCents !== null ? (
                 <span className="px-2 py-1 rounded text-[10px] font-bold uppercase border bg-emerald-50 text-emerald-800 border-emerald-200">
-                  Paid (test) {formatFutureOrderV2PaidAmount(payment.amountCents)}
+                  Paid (test) {formatFutureOrderV2PaidAmount(paidBadgeCents)}
                 </span>
               ) : (
                 <span className="px-2 py-1 rounded text-[10px] font-bold uppercase border bg-amber-50 text-amber-800 border-amber-200">
@@ -421,8 +446,12 @@ export const CustomerFutureOrderV2Details = ({
 
             <DetailsSection title="Price">
               <dl className="space-y-1">
-                {pricingRows.map((row) =>
-                  row.presentation === "supporting_note" ? (
+                {pricingRows.map((row) => {
+                  const amountCents =
+                    row.id === "custom_details" && additionSettlement.customDetailsDisplayCents !== null
+                      ? additionSettlement.customDetailsDisplayCents
+                      : row.amountCents;
+                  return row.presentation === "supporting_note" ? (
                     <p key={row.id} className="text-xs text-heritage-ink/60">
                       {row.label}
                     </p>
@@ -434,31 +463,45 @@ export const CustomerFutureOrderV2Details = ({
                     >
                       <dt>{row.label}</dt>
                       <dd className="font-mono">
-                        {row.amountCents === null
+                        {amountCents === null
                           ? "Pending"
-                          : formatFutureOrderV2PaidAmount(row.amountCents)}
+                          : formatFutureOrderV2PaidAmount(amountCents)}
                       </dd>
                     </div>
                   ) : (
                     <div key={row.id} className="flex justify-between gap-3">
                       <dt>{row.label}</dt>
                       <dd className="font-mono">
-                        {row.amountCents === null ? "Pending" : formatFutureOrderV2PaidAmount(row.amountCents)}
+                        {amountCents === null ? "Pending" : formatFutureOrderV2PaidAmount(amountCents)}
                       </dd>
                     </div>
-                  ),
-                )}
-                {candidate.pricing.exactTotalCents !== null && (
+                  );
+                })}
+                {candidate.pricing.exactTotalCents !== null && !additionSettlement.additionSettled && (
                   <div className="flex justify-between gap-3 border-t border-heritage-green/15 pt-1 font-bold text-heritage-green">
                     <dt>Total</dt>
                     <dd className="font-mono">{formatFutureOrderV2PaidAmount(candidate.pricing.exactTotalCents)}</dd>
                   </div>
                 )}
-                {candidate.pricing.exactTotalCents === null && payableCents !== null && (
+                {candidate.pricing.exactTotalCents === null && payableCents !== null && !additionSettlement.additionSettled && (
                   <div className="flex justify-between gap-3 border-t border-heritage-green/15 pt-1 font-bold text-heritage-green">
                     <dt>Base total</dt>
                     <dd className="font-mono">{formatFutureOrderV2PaidAmount(payableCents)}</dd>
                   </div>
+                )}
+                {additionSettlement.additionSettled && totalPaidCents !== null && (
+                  <>
+                    <div className="flex justify-between gap-3" data-customer-v2-addition-amount>
+                      <dt>Personalized addition</dt>
+                      <dd className="font-mono">
+                        {formatFutureOrderV2PaidAmount(additionSettlement.paidAdditionCents)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3 border-t border-heritage-green/15 pt-1 font-bold text-heritage-green" data-customer-v2-total-paid>
+                      <dt>Total paid</dt>
+                      <dd className="font-mono">{formatFutureOrderV2PaidAmount(totalPaidCents)}</dd>
+                    </div>
+                  </>
                 )}
               </dl>
             </DetailsSection>
@@ -523,7 +566,9 @@ export const CustomerFutureOrderV2Details = ({
                           {formatPersonalizedPriceEuros(line.amountCents)}.
                           {differenceCents !== null
                             ? " Pay the difference for this addition when you are ready. You have not been charged for it."
-                            : " This addition is paid."}
+                            : additionSettlement.additionSettled
+                              ? ` Paid. Payment reference ${additionSettlement.additionPaymentReferences.join(", ")}.`
+                              : " This addition is paid."}
                         </p>
                       )}
                       {line.status === "declined" && (
@@ -568,12 +613,35 @@ export const CustomerFutureOrderV2Details = ({
               ) : payment ? (
                 <div data-customer-v2-order-payment className="text-xs space-y-0.5">
                   <p className="font-semibold text-heritage-green">
-                    Paid (test) {formatFutureOrderV2PaidAmount(payment.amountCents)} on{" "}
-                    {formatCustomerOrderDate(payment.recordedAt)}
+                    Paid (test){" "}
+                    {formatFutureOrderV2PaidAmount(
+                      additionSettlement.additionSettled && totalPaidCents !== null
+                        ? totalPaidCents
+                        : payment.amountCents,
+                    )}{" "}
+                    on {formatCustomerOrderDate(payment.recordedAt)}
                   </p>
+                  {additionSettlement.additionSettled ? (
+                    <p>Base payment {formatFutureOrderV2PaidAmount(payment.amountCents)}</p>
+                  ) : null}
                   <p>
                     Payment reference: <span className="break-all font-mono">{getFutureOrderV2ProviderTransactionId(payment)}</span>
                   </p>
+                  {additionSettlement.additionSettled && totalPaidCents !== null && (
+                    <div data-customer-v2-addition-payment className="space-y-0.5 pt-1">
+                      <p>
+                        Addition paid {formatFutureOrderV2PaidAmount(additionSettlement.paidAdditionCents)}
+                      </p>
+                      {additionSettlement.additionPaymentReferences.map((reference) => (
+                        <p key={reference} data-customer-v2-addition-reference>
+                          Addition payment reference: <span className="break-all font-mono">{reference}</span>
+                        </p>
+                      ))}
+                      <p className="font-semibold text-heritage-green">
+                        Total paid {formatFutureOrderV2PaidAmount(totalPaidCents)}
+                      </p>
+                    </div>
+                  )}
                   <p className="text-heritage-ink/60">Test payment: no real money was charged.</p>
                 </div>
               ) : (

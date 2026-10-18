@@ -18,7 +18,9 @@ import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV
 import { presentFutureOrderV2WorkshopCard, type FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
 import {
   PERSONALIZED_BASE_PAYMENT_NOTICE,
+  presentPersonalizedAdditionSettlement,
   readFutureOrderV2ChargeableCents,
+  reportedPaidTotalCents,
   type FutureOrderV2PersonalizedPriceRecord,
 } from "../utils/futureOrderV2PersonalizedPrice";
 import { CustomerFutureOrderV2Details } from "./CustomerFutureOrderV2Details";
@@ -93,10 +95,17 @@ export const CustomerFutureOrderV2List = ({
         {entries.map(({ persisted, presentation: order }) => {
           const payment = paymentsByOrderId.get(order.orderId);
           const personalizedPrice = personalizedPricesByOrderId.get(order.orderId) ?? null;
-          const chargeableCents = readFutureOrderV2ChargeableCents(
-            persisted.masterOrder.cartItem.candidate,
-            personalizedPrice,
-          );
+          const candidate = persisted.masterOrder.cartItem.candidate;
+          const chargeableCents = readFutureOrderV2ChargeableCents(candidate, personalizedPrice);
+          const additionSettlement = presentPersonalizedAdditionSettlement(candidate, personalizedPrice);
+          const totalPaidCents = reportedPaidTotalCents({
+            basePaymentCents: payment?.amountCents ?? null,
+            settlement: additionSettlement,
+          });
+          const paidBadgeCents =
+            additionSettlement.additionSettled && totalPaidCents !== null
+              ? totalPaidCents
+              : payment?.amountCents ?? null;
           return (
             <div
               key={order.orderId}
@@ -117,7 +126,7 @@ export const CustomerFutureOrderV2List = ({
                     data-customer-v2-order-paid={order.orderId}
                     className="px-2 py-1 rounded text-[8px] font-bold uppercase border bg-emerald-50 text-emerald-800 border-emerald-200 h-fit shrink-0"
                   >
-                    Paid (test) {formatFutureOrderV2PaidAmount(payment.amountCents)}
+                    Paid (test) {formatFutureOrderV2PaidAmount(paidBadgeCents ?? payment.amountCents)}
                   </span>
                 ) : (
                   <span
@@ -165,15 +174,28 @@ export const CustomerFutureOrderV2List = ({
                 );
               })()}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                {chargeableCents !== null ? (
+                {additionSettlement.additionSettled && totalPaidCents !== null ? (
+                  <div className="text-[10px] text-heritage-ink/75" data-customer-v2-order-total-paid={order.orderId}>
+                    Total paid: <span className="font-bold text-heritage-green">
+                      {formatFutureOrderV2PaidAmount(totalPaidCents)}
+                    </span>
+                    <p>
+                      Includes personalized addition {formatFutureOrderV2PaidAmount(additionSettlement.paidAdditionCents)}
+                      {additionSettlement.additionPaymentReferences.length > 0
+                        ? ` (${additionSettlement.additionPaymentReferences.join(", ")})`
+                        : ""}
+                      .
+                    </p>
+                  </div>
+                ) : chargeableCents !== null ? (
                   <div className="text-[10px] text-heritage-ink/75">
-                    {persisted.masterOrder.cartItem.candidate.pricing.status === "exact"
+                    {candidate.pricing.status === "exact"
                       ? "Total"
                       : "Base total"}
                     : <span className="font-bold text-heritage-green">
                       {formatFutureOrderV2PaidAmount(chargeableCents)}
                     </span>
-                    {persisted.masterOrder.cartItem.candidate.pricing.status !== "exact" ? (
+                    {candidate.pricing.status !== "exact" ? (
                       <p>{PERSONALIZED_BASE_PAYMENT_NOTICE}</p>
                     ) : null}
                   </div>

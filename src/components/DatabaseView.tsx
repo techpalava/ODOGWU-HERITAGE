@@ -90,6 +90,7 @@ import {
   replaceOrderByTrackingId,
 } from "../utils/masterOrderAdmin";
 import { buildProductionManifestCsv } from "../utils/productionManifestCsv";
+import { PersonalizedAdditionContactScript } from "./PersonalizedAdditionContactScript";
 import { workshopDeliveryDateInputValue } from "../utils/customerWorkshopProgress";
 import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
 
@@ -156,6 +157,7 @@ import {
 import { parsePersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract";
 import {
   buildPersonalizedPriceOrderLink,
+  contactScriptForPricedLine,
   evaluatePersonalizedAddition,
   FUTURE_ORDER_V2_NOTIFICATION_OUTBOX_COLLECTION,
   FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
@@ -164,6 +166,8 @@ import {
   personalizedAdditionOpsStatusLabel,
   parseEuroAmountToCents,
   parseFutureOrderV2PersonalizedPrice,
+  presentPersonalizedAdditionSettlement,
+  reportedPaidTotalCents,
   type FutureOrderV2PersonalizedPriceRecord,
   type PersonalizedEvaluationSeed,
 } from "../utils/futureOrderV2PersonalizedPrice";
@@ -779,7 +783,10 @@ export default function DatabaseView({
   const handleExportManifest = () => {
     setIsExporting(true);
     try {
-      const csv = buildProductionManifestCsv(orders);
+      const csv = buildProductionManifestCsv(orders, {
+        personalizedPricesByOrderId: futureOrderV2PersonalizedPricesByOrderId,
+        paymentsByOrderId: futureOrderV2PaymentsByOrderId,
+      });
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1367,6 +1374,7 @@ export default function DatabaseView({
       amountCents,
       tailorNote: typeof editingItem?.tailorNote === "string" ? editingItem.tailorNote : "",
       toEmail: typeof editingItem?.customerEmail === "string" ? editingItem.customerEmail : "",
+      customerName: typeof editingItem?.customerName === "string" ? editingItem.customerName : "",
       orderLink: buildPersonalizedPriceOrderLink(
         typeof window !== "undefined" ? window.location.origin : "",
         orderId,
@@ -1388,10 +1396,17 @@ export default function DatabaseView({
         createdAt: serverTimestamp(),
       });
       await batch.commit();
+      const pricedLine = outcome.record.lines.find((line) => line.occurrenceKey === occurrenceKey);
+      setEditingItem({
+        ...editingItem,
+        amountEuros: (amountCents / 100).toFixed(2),
+        tailorNote: pricedLine?.tailorNote ?? "",
+        contactMessage: pricedLine?.contactMessage ?? "",
+        contactFollowUp: pricedLine?.contactFollowUp ?? "",
+      });
       triggerStatus(
-        `Personalized price saved for ${orderId}. Contact script saved for staff. Nothing is sent automatically.`,
+        `Personalized price saved for ${orderId}. Copy the contact script below. Nothing is sent automatically.`,
       );
-      setEditingType(null);
     } catch {
       triggerStatus("Failed to save the personalized price", "error");
     }
@@ -3444,6 +3459,19 @@ export default function DatabaseView({
                       Saves the price and a contact script for staff to send by email or WhatsApp.
                       Nothing is sent automatically. If the customer does not reply, follow up once after a few days, then mark the addition declined so it is left off. Do not charge it.
                     </p>
+                    {typeof editingItem.contactMessage === "string" && editingItem.contactMessage.trim() ? (
+                      <div className="sm:col-span-2">
+                        <PersonalizedAdditionContactScript
+                          customerName={
+                            typeof editingItem.customerName === "string" ? editingItem.customerName : ""
+                          }
+                          message={editingItem.contactMessage}
+                          followUp={
+                            typeof editingItem.contactFollowUp === "string" ? editingItem.contactFollowUp : ""
+                          }
+                        />
+                      </div>
+                    ) : null}
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
                       <button
                         type="button"
@@ -5787,6 +5815,43 @@ export default function DatabaseView({
                             const v2History = presentFutureOrderV2History(o);
                             if (v2History.status === "valid") {
                               const history = v2History.value;
+                              const parsedOrder = parsePersistedFutureOrderV2(
+                                unwrapDocumentProjection(o),
+                              );
+                              const candidate =
+                                parsedOrder.status === "valid"
+                                  ? parsedOrder.value.masterOrder.cartItem.candidate
+                                  : null;
+                              const priceRecord =
+                                futureOrderV2PersonalizedPricesByOrderId.get(history.orderId) ?? null;
+                              const additionSettlement = candidate
+                                ? presentPersonalizedAdditionSettlement(candidate, priceRecord)
+                                : null;
+                              const basePayment = futureOrderV2PaymentsByOrderId.get(history.orderId);
+                              const totalPaidCents = reportedPaidTotalCents({
+                                basePaymentCents: basePayment?.amountCents ?? null,
+                                settlement: additionSettlement,
+                              });
+                              const totalLabel =
+                                additionSettlement?.additionSettled && totalPaidCents !== null
+                                  ? `€${(totalPaidCents / 100).toFixed(2)}`
+                                  : history.exactTotalCents === null
+                                    ? "Pending"
+                                    : `€${(history.exactTotalCents / 100).toFixed(2)}`;
+                              const savedScripts = (priceRecord?.lines ?? []).flatMap((line) => {
+                                const script = contactScriptForPricedLine({
+                                  customerName: history.customer.fullName,
+                                  orderId: history.orderId,
+                                  orderLink: buildPersonalizedPriceOrderLink(
+                                    window.location.origin,
+                                    history.orderId,
+                                  ),
+                                  line,
+                                });
+                                return script
+                                  ? [{ occurrenceKey: line.occurrenceKey, ...script }]
+                                  : [];
+                              });
                               return (
                                 <tr
                                   key={history.orderId}
@@ -5875,7 +5940,16 @@ export default function DatabaseView({
                                   <td className="px-4 py-3 text-[10px]">
                                     <FutureOrderV2AdminPaymentCell
                                       orderId={history.orderId}
-                                      record={futureOrderV2PaymentsByOrderId.get(history.orderId)}
+                                      record={basePayment}
+                                      settledAddition={
+                                        additionSettlement?.additionSettled && totalPaidCents !== null
+                                          ? {
+                                              paidCents: additionSettlement.paidAdditionCents,
+                                              references: additionSettlement.additionPaymentReferences,
+                                              totalPaidCents,
+                                            }
+                                          : null
+                                      }
                                     />
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-heritage-gold">
@@ -5888,25 +5962,17 @@ export default function DatabaseView({
                                         )
                                       : formatAdminShippingStatus(history.shippingStatus)}
                                   </td>
-                                  <td className="px-4 py-3 font-bold text-heritage-green">
-                                    {history.exactTotalCents === null
-                                      ? "Pending"
-                                      : `€${(history.exactTotalCents / 100).toFixed(2)}`}
+                                  <td
+                                    className="px-4 py-3 font-bold text-heritage-green"
+                                    data-future-order-v2-total={history.orderId}
+                                  >
+                                    {totalLabel}
                                   </td>
                                   <td className="px-4 py-3 text-[10px] text-gray-400">
                                     {history.persistedAt}
                                   </td>
                                   <td className="px-4 py-3 text-right text-[10px] text-gray-400">
                                     {(() => {
-                                      const parsedOrder = parsePersistedFutureOrderV2(
-                                        unwrapDocumentProjection(o),
-                                      );
-                                      const candidate =
-                                        parsedOrder.status === "valid"
-                                          ? parsedOrder.value.masterOrder.cartItem.candidate
-                                          : null;
-                                      const priceRecord =
-                                        futureOrderV2PersonalizedPricesByOrderId.get(history.orderId) ?? null;
                                       const pending = candidate
                                         ? listTailorPricablePersonalizedLines(candidate, priceRecord)
                                         : [];
@@ -5930,11 +5996,23 @@ export default function DatabaseView({
                                                 const priced = priceRecord?.lines.find(
                                                   (line) => line.occurrenceKey === first.occurrenceKey,
                                                 );
+                                                const savedScript = priced
+                                                  ? contactScriptForPricedLine({
+                                                      customerName: history.customer.fullName,
+                                                      orderId: history.orderId,
+                                                      orderLink: buildPersonalizedPriceOrderLink(
+                                                        window.location.origin,
+                                                        history.orderId,
+                                                      ),
+                                                      line: priced,
+                                                    })
+                                                  : null;
                                                 setIsNewRecord(false);
                                                 setEditingItem({
                                                   orderId: history.orderId,
                                                   ownerUid: history.customer.ownerUid,
                                                   customerEmail: history.customer.email,
+                                                  customerName: history.customer.fullName,
                                                   occurrenceKey: first.occurrenceKey,
                                                   requirementText: first.requirementText,
                                                   amountEuros:
@@ -5942,6 +6020,8 @@ export default function DatabaseView({
                                                       ? (priced.amountCents / 100).toFixed(2)
                                                       : "",
                                                   tailorNote: priced?.tailorNote ?? "",
+                                                  contactMessage: savedScript?.message ?? "",
+                                                  contactFollowUp: savedScript?.followUp ?? "",
                                                   seeds: listPersonalizedEvaluationSeeds(candidate),
                                                 });
                                                 setEditingType("v2-personalized-price");
@@ -5975,6 +6055,22 @@ export default function DatabaseView({
                                           ) : pending.length === 0 ? (
                                             "Read-only"
                                           ) : null}
+                                          {savedScripts.map((line) => (
+                                            <details
+                                              key={line.occurrenceKey}
+                                              data-admin-v2-saved-contact-script={history.orderId}
+                                              className="w-64 text-left"
+                                            >
+                                              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                                                Contact script
+                                              </summary>
+                                              <PersonalizedAdditionContactScript
+                                                customerName={history.customer.fullName}
+                                                message={line.message}
+                                                followUp={line.followUp}
+                                              />
+                                            </details>
+                                          ))}
                                         </div>
                                       );
                                     })()}

@@ -1,4 +1,11 @@
-import { presentFutureOrderV2History } from "./futureOrderV2History.js";
+import { presentFutureOrderV2History, unwrapDocumentProjection } from "./futureOrderV2History.js";
+import { parsePersistedFutureOrderV2 } from "./futureOrderV2PersistenceContract.js";
+import {
+  presentPersonalizedAdditionSettlement,
+  reportedPaidTotalCents,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "./futureOrderV2PersonalizedPrice.js";
+import { formatFutureOrderV2PaidAmount } from "./futureOrderV2PaymentRecord.js";
 
 export const PRODUCTION_MANIFEST_HEADERS = [
   "Order / Tracking ID",
@@ -52,6 +59,33 @@ const workshopNotAvailable = (): string[] =>
 const v2TotalLabel = (exactTotalCents: number | null): string =>
   exactTotalCents === null ? "N/A" : `V2 total €${(exactTotalCents / 100).toFixed(2)}`;
 
+export interface ProductionManifestContext {
+  readonly personalizedPricesByOrderId?: ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>;
+  readonly paymentsByOrderId?: ReadonlyMap<string, { readonly amountCents: number }>;
+}
+
+const settledTotalLabel = (
+  order: unknown,
+  context: ProductionManifestContext | undefined,
+): string | null => {
+  if (!context?.personalizedPricesByOrderId) return null;
+  const parsed = parsePersistedFutureOrderV2(unwrapDocumentProjection(order));
+  if (parsed.status !== "valid") return null;
+  const price = context.personalizedPricesByOrderId.get(parsed.value.orderId) ?? null;
+  const settlement = presentPersonalizedAdditionSettlement(
+    parsed.value.masterOrder.cartItem.candidate,
+    price,
+  );
+  if (!settlement.additionSettled) return null;
+  const totalPaidCents = reportedPaidTotalCents({
+    basePaymentCents: context.paymentsByOrderId?.get(parsed.value.orderId)?.amountCents ?? null,
+    settlement,
+  });
+  if (totalPaidCents === null) return null;
+  const references = settlement.additionPaymentReferences.join(", ");
+  return `V2 total ${formatFutureOrderV2PaidAmount(totalPaidCents)} (addition ${formatFutureOrderV2PaidAmount(settlement.paidAdditionCents)}${references ? `, ${references}` : ""})`;
+};
+
 const legacyManifestValues = (order: unknown): string[] => {
   const source = isRecord(order) ? order : {};
   const shipment = isRecord(source.shipment) ? source.shipment : {};
@@ -97,7 +131,7 @@ const legacyManifestValues = (order: unknown): string[] => {
   ].map((value) => String(value));
 };
 
-const manifestValues = (order: unknown): string[] => {
+const manifestValues = (order: unknown, context?: ProductionManifestContext): string[] => {
   try {
     const history = presentFutureOrderV2History(order);
     if (history.status === "valid") {
@@ -107,7 +141,7 @@ const manifestValues = (order: unknown): string[] => {
         text(history.value.customer.email, "N/A"),
         text(history.value.customer.phone, "N/A"),
         ...workshopNotAvailable(),
-        v2TotalLabel(history.value.exactTotalCents),
+        settledTotalLabel(order, context) ?? v2TotalLabel(history.value.exactTotalCents),
       ];
     }
     if (history.status === "invalid_history") {
@@ -127,10 +161,13 @@ const manifestValues = (order: unknown): string[] => {
   return legacyManifestValues(order);
 };
 
-export const buildProductionManifestCsv = (orders: readonly unknown[]): string => {
+export const buildProductionManifestCsv = (
+  orders: readonly unknown[],
+  context?: ProductionManifestContext,
+): string => {
   const rows = [PRODUCTION_MANIFEST_HEADERS.join(",")];
   for (const order of orders) {
-    rows.push(manifestValues(order).map(escapeCSV).join(","));
+    rows.push(manifestValues(order, context).map(escapeCSV).join(","));
   }
   return rows.join("\n");
 };

@@ -77,6 +77,17 @@ export interface PersonalizedAdditionPriceLine {
   /** Null while evaluation is still pending. Kept for audit after decline. */
   readonly amountCents: number | null;
   readonly tailorNote: string;
+  /** Staff-only email/WhatsApp text. Empty until the tailor saves a price. */
+  readonly contactMessage: string;
+  /** The single follow-up reminder. Empty until the tailor saves a price. */
+  readonly contactFollowUp: string;
+}
+
+/** A difference charge Stripe has already confirmed. */
+export interface PersonalizedAdditionPayment {
+  readonly paymentIntentId: string;
+  readonly amountCents: number;
+  readonly recordedAt: string;
 }
 
 export interface FutureOrderV2PersonalizedPriceRecord {
@@ -84,8 +95,13 @@ export interface FutureOrderV2PersonalizedPriceRecord {
   readonly orderId: string;
   readonly ownerUid: string;
   readonly lines: readonly PersonalizedAdditionPriceLine[];
-  /** Cents already charged for accepted additions. The base payment is separate. */
+  /**
+   * Cents already confirmed for accepted additions. The base payment is separate.
+   * Stays null until Stripe confirms a difference charge.
+   */
   readonly additionPaidCents: number | null;
+  /** Confirmed difference charges. Empty while the addition is unpaid or declined. */
+  readonly additionPayments: readonly PersonalizedAdditionPayment[];
 }
 
 export interface PersonalizedPriceReadyNotification {
@@ -207,7 +223,63 @@ const pendingLine = (seed: PersonalizedEvaluationSeed): PersonalizedAdditionPric
   status: "evaluation_pending",
   amountCents: null,
   tailorNote: "",
+  contactMessage: "",
+  contactFollowUp: "",
 });
+
+const ADDITION_PAYMENT_INTENT_ID = /^pi_[A-Za-z0-9_]{1,255}$/;
+
+const optionalScript = (value: unknown, max: number): string | null => {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length <= max ? trimmed : null;
+};
+
+const parseAdditionPayment = (value: unknown): PersonalizedAdditionPayment | null => {
+  if (!isRecord(value)) return null;
+  const paymentIntentId = typeof value.paymentIntentId === "string" ? value.paymentIntentId : "";
+  const recordedAt = typeof value.recordedAt === "string" ? value.recordedAt : "";
+  if (!ADDITION_PAYMENT_INTENT_ID.test(paymentIntentId)) return null;
+  if (!isCents(value.amountCents) || value.amountCents < 1) return null;
+  if (recordedAt && Number.isNaN(Date.parse(recordedAt))) return null;
+  return {
+    paymentIntentId,
+    amountCents: value.amountCents,
+    recordedAt,
+  };
+};
+
+/**
+ * Older saves stored one PaymentIntent id beside the paid cents. Newer saves
+ * store `additionPayments`. Either shape is a confirmed difference charge.
+ */
+const parseAdditionPayments = (
+  value: Record<string, unknown>,
+  additionPaidCents: number | null,
+): PersonalizedAdditionPayment[] | null => {
+  if (Array.isArray(value.additionPayments)) {
+    if (value.additionPayments.length > 8) return null;
+    const payments: PersonalizedAdditionPayment[] = [];
+    for (const item of value.additionPayments) {
+      const payment = parseAdditionPayment(item);
+      if (!payment) return null;
+      payments.push(payment);
+    }
+    if (new Set(payments.map((payment) => payment.paymentIntentId)).size !== payments.length) {
+      return null;
+    }
+    return payments;
+  }
+  const legacyId = value.additionPaymentIntentId;
+  if (typeof legacyId !== "string" || !ADDITION_PAYMENT_INTENT_ID.test(legacyId)) return [];
+  if (additionPaidCents === null || additionPaidCents < 1) return [];
+  const recordedAt =
+    typeof value.additionPaymentRecordedAt === "string" && !Number.isNaN(Date.parse(value.additionPaymentRecordedAt))
+      ? value.additionPaymentRecordedAt
+      : "";
+  return [{ paymentIntentId: legacyId, amountCents: additionPaidCents, recordedAt }];
+};
 
 const parseLine = (value: unknown): PersonalizedAdditionPriceLine | null => {
   if (!isRecord(value) || !isStatus(value.status)) return null;
@@ -216,7 +288,17 @@ const parseLine = (value: unknown): PersonalizedAdditionPriceLine | null => {
   const optionId = trimText(value.optionId, 200);
   const requirementText = trimText(value.requirementText, 2000);
   const tailorNote = typeof value.tailorNote === "string" ? value.tailorNote.trim() : null;
-  if (!occurrenceKey || !garmentKey || !optionId || !requirementText || tailorNote === null) {
+  const contactMessage = optionalScript(value.contactMessage, 4000);
+  const contactFollowUp = optionalScript(value.contactFollowUp, 2000);
+  if (
+    !occurrenceKey ||
+    !garmentKey ||
+    !optionId ||
+    !requirementText ||
+    tailorNote === null ||
+    contactMessage === null ||
+    contactFollowUp === null
+  ) {
     return null;
   }
   if (tailorNote.length > 500) return null;
@@ -239,6 +321,8 @@ const parseLine = (value: unknown): PersonalizedAdditionPriceLine | null => {
     status: value.status,
     amountCents,
     tailorNote,
+    contactMessage,
+    contactFollowUp,
   };
 };
 
@@ -257,17 +341,22 @@ export const parseFutureOrderV2PersonalizedPrice = (
   const keys = new Set(parsed.map((line) => line.occurrenceKey));
   if (keys.size !== parsed.length) return null;
   const rawAdditionPaidCents = value.additionPaidCents;
-  let additionPaidCents: number | null = null;
+  let storedPaidCents: number | null = null;
   if (rawAdditionPaidCents != null) {
     if (!isCents(rawAdditionPaidCents)) return null;
-    additionPaidCents = rawAdditionPaidCents;
+    storedPaidCents = rawAdditionPaidCents;
   }
+  const additionPayments = parseAdditionPayments(value, storedPaidCents);
+  if (!additionPayments) return null;
+  const confirmedCents = additionPayments.reduce((total, payment) => total + payment.amountCents, 0);
+  const additionPaidCents = additionPayments.length > 0 ? confirmedCents : storedPaidCents;
   return {
     schemaVersion: 1,
     orderId: value.orderId,
     ownerUid: value.ownerUid,
     lines: parsed,
     additionPaidCents,
+    additionPayments,
   };
 };
 
@@ -437,23 +526,35 @@ export const personalizedPriceNotificationId = (
 const emailSubject = (orderId: string): string =>
   `Your personalized addition is priced — Order #${orderId}`;
 
-const emailBody = ({
+export interface PersonalizedAdditionContactScript {
+  readonly message: string;
+  readonly followUp: string;
+}
+
+/**
+ * Staff copy for one priced addition. The message and the single follow-up
+ * are written down for a person to send. Nothing is sent automatically.
+ */
+export const buildPersonalizedAdditionContactScript = ({
+  customerName,
   orderId,
   requirementText,
   amountCents,
   tailorNote,
   orderLink,
 }: {
+  customerName: string;
   orderId: string;
   requirementText: string;
   amountCents: number;
   tailorNote: string;
   orderLink: string;
-}): string => {
-  const note = tailorNote
-    ? `\nTailor note: ${tailorNote}\n`
-    : "\n";
-  return [
+}): PersonalizedAdditionContactScript => {
+  const price = formatPersonalizedPriceEuros(amountCents);
+  const note = tailorNote.trim() ? `Tailor note: ${tailorNote.trim()}` : "Tailor note: none";
+  const message = [
+    `Hi ${customerName},`,
+    "",
     "Your personalized addition is priced.",
     "",
     `Order #${orderId}`,
@@ -461,18 +562,74 @@ const emailBody = ({
     "What you asked for:",
     `"${requirementText}"`,
     "",
-    `Evaluated price: ${formatPersonalizedPriceEuros(amountCents)}`,
-    note.trimEnd(),
+    `Evaluated price: ${price}`,
+    note,
     "",
-    "Next steps:",
+    "How to accept:",
     "- Accept and pay the difference from your order only if you want this addition. Accepting does not charge you.",
     "- Decline the addition to leave it off. Your base garment stays.",
     "- Reply by email or WhatsApp if you have a question.",
-    "- If we do not hear back, we follow up once after a few days, then leave this addition off. We never charge it automatically.",
     "",
     `Open your order: ${orderLink}`,
   ].join("\n");
+  const followUp = [
+    `Hi ${customerName}, this is our one follow-up about your personalized addition.`,
+    "",
+    `Order #${orderId}`,
+    `What you asked for: "${requirementText}"`,
+    `Evaluated price: ${price}`,
+    note,
+    "",
+    "If you still want it, accept and pay the difference from your order. If we do not hear back, we follow up once after a few days, then leave this addition off. We never charge it automatically.",
+    "",
+    `Open your order: ${orderLink}`,
+  ].join("\n");
+  return { message, followUp };
 };
+
+/** Saved script, or one rebuilt from a priced line so staff can still copy it. */
+export const contactScriptForPricedLine = ({
+  customerName,
+  orderId,
+  orderLink,
+  line,
+}: {
+  customerName: string;
+  orderId: string;
+  orderLink: string;
+  line: Pick<
+    PersonalizedAdditionPriceLine,
+    | "status"
+    | "amountCents"
+    | "requirementText"
+    | "tailorNote"
+    | "contactMessage"
+    | "contactFollowUp"
+  >;
+}): PersonalizedAdditionContactScript | null => {
+  if (line.contactMessage.trim()) {
+    return { message: line.contactMessage, followUp: line.contactFollowUp };
+  }
+  if (
+    line.amountCents === null ||
+    line.status === "evaluation_pending" ||
+    line.status === "declined" ||
+    !customerName.trim()
+  ) {
+    return null;
+  }
+  return buildPersonalizedAdditionContactScript({
+    customerName: customerName.trim(),
+    orderId,
+    requirementText: line.requirementText,
+    amountCents: line.amountCents,
+    tailorNote: line.tailorNote,
+    orderLink,
+  });
+};
+
+const emailBody = (script: PersonalizedAdditionContactScript): string =>
+  `${script.message}\n\nFollow-up reminder (send once, only if there is no reply):\n${script.followUp}`;
 
 export type EvaluatePersonalizedAdditionResult =
   | {
@@ -497,6 +654,7 @@ export const evaluatePersonalizedAddition = ({
   tailorNote,
   toEmail,
   orderLink,
+  customerName,
 }: {
   existing: FutureOrderV2PersonalizedPriceRecord | null;
   orderId: string;
@@ -507,6 +665,7 @@ export const evaluatePersonalizedAddition = ({
   tailorNote: string;
   toEmail: string;
   orderLink: string;
+  customerName: string;
 }): EvaluatePersonalizedAdditionResult => {
   if (!orderId || !ownerUid) {
     return { status: "invalid", message: "A saved order and owner are required." };
@@ -517,6 +676,10 @@ export const evaluatePersonalizedAddition = ({
   const email = toEmail.trim();
   if (!email.includes("@") || email.length > 320) {
     return { status: "invalid", message: "This order has no customer email." };
+  }
+  const name = customerName.trim();
+  if (!name || name.length > 120) {
+    return { status: "invalid", message: "This order has no customer name." };
   }
   const note = tailorNote.trim();
   if (note.length > 500) {
@@ -536,6 +699,14 @@ export const evaluatePersonalizedAddition = ({
       message: "The customer has already decided on this personalized addition.",
     };
   }
+  const contact = buildPersonalizedAdditionContactScript({
+    customerName: name,
+    orderId,
+    requirementText: seed.requirementText,
+    amountCents,
+    tailorNote: note,
+    orderLink,
+  });
   const byKey = new Map((existing?.lines ?? []).map((line) => [line.occurrenceKey, line]));
   const lines = seeds.map((item) => {
     if (item.occurrenceKey !== occurrenceKey) {
@@ -550,6 +721,8 @@ export const evaluatePersonalizedAddition = ({
       status: "price_ready" as const,
       amountCents,
       tailorNote: note,
+      contactMessage: contact.message,
+      contactFollowUp: contact.followUp,
     };
   });
   const record: FutureOrderV2PersonalizedPriceRecord = {
@@ -558,6 +731,7 @@ export const evaluatePersonalizedAddition = ({
     ownerUid,
     lines,
     additionPaidCents: existing?.additionPaidCents ?? null,
+    additionPayments: existing?.additionPayments ?? [],
   };
   const parsed = parseFutureOrderV2PersonalizedPrice(record);
   if (!parsed) {
@@ -572,13 +746,7 @@ export const evaluatePersonalizedAddition = ({
     ownerUid,
     toEmail: email,
     subject: emailSubject(orderId),
-    body: emailBody({
-      orderId,
-      requirementText: seed.requirementText,
-      amountCents,
-      tailorNote: note,
-      orderLink,
-    }),
+    body: emailBody(contact),
     occurrenceKey,
     requirementText: seed.requirementText,
     amountCents,
@@ -627,6 +795,117 @@ export const decidePersonalizedAddition = (
     return { status: "invalid", message: "The decision could not be saved." };
   }
   return { status: "updated", record: parsed };
+};
+
+export type ConfirmedAdditionPaymentResult =
+  | { readonly status: "recorded" | "already_recorded"; readonly record: FutureOrderV2PersonalizedPriceRecord }
+  | { readonly status: "rejected" };
+
+/**
+ * Marks one difference charge paid only when the PaymentIntent is new and its
+ * amount is exactly the accepted amount still unpaid. A declined or still
+ * unaccepted addition is rejected, so the total stays at the base.
+ */
+export const applyConfirmedAdditionPayment = (
+  record: FutureOrderV2PersonalizedPriceRecord,
+  input: {
+    readonly amountCents: number;
+    readonly paymentIntentId: string;
+    readonly recordedAt: string;
+  },
+): ConfirmedAdditionPaymentResult => {
+  if (!ADDITION_PAYMENT_INTENT_ID.test(input.paymentIntentId)) return { status: "rejected" };
+  if (!isCents(input.amountCents) || input.amountCents < PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS) {
+    return { status: "rejected" };
+  }
+  if (Number.isNaN(Date.parse(input.recordedAt))) return { status: "rejected" };
+  if (record.additionPayments.some((payment) => payment.paymentIntentId === input.paymentIntentId)) {
+    return { status: "already_recorded", record };
+  }
+  const acceptedCents = record.lines.reduce(
+    (total, line) => total + (line.status === "accepted" ? line.amountCents ?? 0 : 0),
+    0,
+  );
+  const paidCents = record.additionPayments.reduce((total, payment) => total + payment.amountCents, 0);
+  if (acceptedCents - paidCents !== input.amountCents) return { status: "rejected" };
+  const next: FutureOrderV2PersonalizedPriceRecord = {
+    ...record,
+    additionPaidCents: paidCents + input.amountCents,
+    additionPayments: [
+      ...record.additionPayments,
+      {
+        paymentIntentId: input.paymentIntentId,
+        amountCents: input.amountCents,
+        recordedAt: input.recordedAt,
+      },
+    ],
+  };
+  const parsed = parseFutureOrderV2PersonalizedPrice(next);
+  if (!parsed) return { status: "rejected" };
+  return { status: "recorded", record: parsed };
+};
+
+export interface PersonalizedAdditionSettlement {
+  readonly baseCents: number | null;
+  /** Confirmed paid addition cents. Zero when the addition is declined or unpaid. */
+  readonly paidAdditionCents: number;
+  readonly additionPaymentReferences: readonly string[];
+  readonly additionSettled: boolean;
+  /**
+   * Custom-details row once a confirmed addition is included.
+   * Null leaves the snapshot row, including "Pending", unchanged.
+   */
+  readonly customDetailsDisplayCents: number | null;
+}
+
+const exactCustomDetailCents = (order: PersonalizedPriceChargeableOrder): number =>
+  order.customDetails.reduce((total, detail) => {
+    if (detail.priceStatus === "exact" && isCents(detail.priceCents)) return total + detail.priceCents;
+    return total;
+  }, 0);
+
+/**
+ * Totals reported to the customer, admin row, and exports. A declined or
+ * unpaid addition contributes nothing. A paid addition is included only after
+ * a confirmed PaymentIntent is stored on the price record.
+ */
+export const presentPersonalizedAdditionSettlement = (
+  order: PersonalizedPriceChargeableOrder,
+  record: FutureOrderV2PersonalizedPriceRecord | null,
+): PersonalizedAdditionSettlement => {
+  const payable = resolvePersonalizedAdditionPayable(order, record);
+  const baseCents = payable.status === "payable" ? payable.baseCents : null;
+  const acceptedCents = payable.status === "payable" ? payable.acceptedCents : 0;
+  const payments = record?.additionPayments ?? [];
+  const confirmedCents = payments.reduce((total, payment) => total + payment.amountCents, 0);
+  const additionSettled =
+    acceptedCents >= PERSONALIZED_PRICE_MINIMUM_CHARGE_CENTS &&
+    confirmedCents === acceptedCents &&
+    payments.length > 0 &&
+    (record?.additionPaidCents ?? 0) === confirmedCents;
+  return {
+    baseCents,
+    paidAdditionCents: additionSettled ? confirmedCents : 0,
+    additionPaymentReferences: additionSettled
+      ? payments.map((payment) => payment.paymentIntentId)
+      : [],
+    additionSettled,
+    customDetailsDisplayCents: additionSettled ? exactCustomDetailCents(order) + confirmedCents : null,
+  };
+};
+
+/** Base payment plus a confirmed addition. Unpaid and declined additions stay at the base. */
+export const reportedPaidTotalCents = ({
+  basePaymentCents,
+  settlement,
+}: {
+  basePaymentCents: number | null;
+  settlement: PersonalizedAdditionSettlement | null;
+}): number | null => {
+  if (!settlement?.additionSettled) return basePaymentCents;
+  const base = basePaymentCents ?? settlement.baseCents;
+  if (base === null) return null;
+  return base + settlement.paidAdditionCents;
 };
 
 export interface PersonalizedAdditionPresentationLine {
