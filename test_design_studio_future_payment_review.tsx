@@ -461,9 +461,6 @@ for (const expected of [
   "Status: Ready to review",
   "Shared measurements",
   "Chest",
-  "70 in (177.8 cm)",
-  "40 in (101.6 cm)",
-  "54 in (137.16 cm)",
   "Garment Length",
   "Deliver to an Address",
   "Ada Heritage",
@@ -486,6 +483,81 @@ const centimetreHeight = centimetreReviewGroups
   .flatMap((group) => group.items)
   .find((item) => item.measurementId === "height");
 assert.equal(centimetreHeight?.formattedDisplay, "177.8 cm (70 in)");
+assert.deepEqual(centimetreHeight?.formattedParts, {
+  preferred: "177.8 cm",
+  alternate: "70 in",
+});
+// Payment Review measurement values render as split pills (preferred left, alternate right).
+for (const [preferred, alternate] of [
+  ["70 in", "177.8 cm"],
+  ["40 in", "101.6 cm"],
+  ["54 in", "137.16 cm"],
+]) {
+  assert.ok(
+    reviewMarkup.includes(
+      `>${preferred}</span><span data-measurement-alternate="true"`,
+    ),
+    `Missing preferred pill part: ${preferred}`,
+  );
+  assert.ok(
+    reviewMarkup.includes(
+      `<span class="sr-only"> (</span>${alternate}<span class="sr-only">)</span>`,
+    ),
+    `Missing alternate pill part: ${alternate}`,
+  );
+  assert.ok(
+    reviewMarkup.replace(/<[^>]+>/g, "").includes(`${preferred} (${alternate})`),
+    `Pill text should read ${preferred} (${alternate})`,
+  );
+}
+assert.match(reviewMarkup, /<dd class="[^"]*"><span data-measurement-pill="true"/);
+assert.equal(reviewMarkup.includes("data-measurement-check-flag"), false, "no diagnostics, no flag");
+assert.equal(
+  new Set([...reviewMarkup.matchAll(/data-measurement-pill="true" class="([^"]*)"/g)].map((match) => match[1])).size,
+  1,
+  "Payment Review pills share one fixed width",
+);
+// "Check this?" follows Step 7's existing range diagnostics; purely informational.
+const flaggedMeasurementState = {
+  ...measurementState,
+  diagnostics: [
+    {
+      code: "measurement_range_recheck" as const,
+      garmentKey: "base:shirt",
+      measurementId: "chest",
+    },
+  ],
+};
+const flaggedGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: flaggedMeasurementState,
+  garments: candidate.garments.map((garment) => ({
+    garmentKey: garment.garmentKey,
+    label: garment.label,
+  })),
+});
+assert.deepEqual(
+  Object.fromEntries(
+    flaggedGroups.flatMap((group) => group.items).map((item) => [item.measurementId, item.outsideUsualRange]),
+  ),
+  { height: false, chest: true, garment_length: false },
+);
+const flaggedReviewMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={{
+      ...individualChargedResult,
+      candidate: { ...individualChargedResult.candidate!, measurements: flaggedMeasurementState },
+    } as FutureOrderCandidateBuildResult}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+  />,
+);
+assert.equal((flaggedReviewMarkup.match(/data-measurement-check-flag="true"/g) || []).length, 1);
+assert.ok(flaggedReviewMarkup.includes("Value outside the usual range, check this"));
+assert.equal(
+  (flaggedReviewMarkup.match(/disabled=""|aria-disabled="true"/g) || []).length,
+  (reviewMarkup.match(/disabled=""|aria-disabled="true"/g) || []).length,
+  "the flag changes no button or gate state",
+);
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
 assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));
@@ -760,6 +832,91 @@ const adaSampleGroups = getFuturePaymentReviewMeasurementGroups({
 const adaSampleTitle = adaSampleGroups.find((group) => group.title.startsWith("Ada"))?.title;
 assert.equal(adaSampleTitle, `Ada — ${MEASUREMENT_METHOD_LABELS.sample_cloth}`);
 assert.equal(adaSampleGroups.some((group) => group.title.includes("sample_cloth")), false);
+// Inside a named person's group, Payment Review drops the order-wide " 2" suffix
+// (the person name already disambiguates); My orders keeps the numbered label.
+const personShirtState = (garmentKey: string) => ({
+  ...createEmptyFutureMeasurementState("low_risk", "cm"),
+  entered: {
+    shared: { height: { valueCm: 170, provenance: "customer_entered" as const } },
+    byGarmentKey: {
+      [garmentKey]: { chest: { valueCm: 95, provenance: "customer_entered" as const } },
+    },
+  },
+});
+const personShirtGarments = [
+  { garmentKey: "base:shirt", garmentType: "shirt", label: "Standard Shirt" },
+  { garmentKey: "additional:shirt:1", garmentType: "shirt", label: "Standard Shirt 2" },
+];
+const chidiAmakaMeasurements = {
+  schemaVersion: 2 as const,
+  wearers: [
+    createWearerProfile({
+      wearerId: "wearer-chidi",
+      displayName: "Chidi",
+      presentationOrder: 0,
+      measurement: personShirtState("base:shirt"),
+    }),
+    createWearerProfile({
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      presentationOrder: 1,
+      measurement: personShirtState("additional:shirt:1"),
+    }),
+  ],
+  assignmentByGarmentKey: {
+    "base:shirt": "wearer-chidi",
+    "additional:shirt:1": "wearer-amaka",
+  },
+};
+const plainPersonTitles = getFuturePaymentReviewMeasurementGroups(
+  { measurements: chidiAmakaMeasurements, garments: personShirtGarments },
+  { plainPersonGarmentLabels: true },
+).map((group) => group.title);
+assert.ok(plainPersonTitles.includes("Amaka — Standard Shirt"));
+assert.ok(plainPersonTitles.includes("Chidi — Standard Shirt"));
+assert.equal(plainPersonTitles.some((title) => title.includes("Standard Shirt 2")), false);
+assert.ok(
+  getFuturePaymentReviewMeasurementGroups({
+    measurements: chidiAmakaMeasurements,
+    garments: personShirtGarments,
+  }).some((group) => group.title === "Amaka — Standard Shirt 2"),
+  "without the option (My orders) the numbered label is unchanged",
+);
+const amakaBothShirtsTitles = getFuturePaymentReviewMeasurementGroups(
+  {
+    measurements: {
+      ...chidiAmakaMeasurements,
+      wearers: [
+        chidiAmakaMeasurements.wearers[0],
+        {
+          ...chidiAmakaMeasurements.wearers[1],
+          measurement: {
+            ...personShirtState("base:shirt"),
+            entered: {
+              shared: personShirtState("base:shirt").entered.shared,
+              byGarmentKey: {
+                "base:shirt": personShirtState("base:shirt").entered.byGarmentKey["base:shirt"],
+                "additional:shirt:1":
+                  personShirtState("additional:shirt:1").entered.byGarmentKey["additional:shirt:1"],
+              },
+            },
+          },
+        },
+      ],
+      assignmentByGarmentKey: {
+        "base:shirt": "wearer-amaka",
+        "additional:shirt:1": "wearer-amaka",
+      },
+    },
+    garments: personShirtGarments,
+  },
+  { plainPersonGarmentLabels: true },
+).map((group) => group.title);
+assert.ok(amakaBothShirtsTitles.includes("Amaka — Standard Shirt"));
+assert.ok(
+  amakaBothShirtsTitles.includes("Amaka — Standard Shirt 2"),
+  "two identical garments for the same person keep their numbers",
+);
 
 const repeatedOccurrenceLabels = projectOccurrenceDisplayLabels([
   { garmentKey: "base:shirt", garmentType: "shirt" },

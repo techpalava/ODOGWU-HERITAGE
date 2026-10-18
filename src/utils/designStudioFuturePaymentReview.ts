@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
 import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
+import { projectPersonGarmentLabels } from "./occurrenceDisplayLabel";
 import {
   type FutureOrderCandidateBlocker,
   type FutureOrderCandidateBuildResult,
@@ -24,6 +25,9 @@ import {
 } from "./individualInboundShippingDisplay";
 import {
   formatDualUnitMeasurementDisplay,
+  getDualUnitMeasurementParts,
+  type DualUnitMeasurementParts,
+  isMeasurementOutsideUsualRange,
   fromCanonicalCentimetres,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
@@ -161,6 +165,10 @@ export interface FuturePaymentReviewMeasurementItem {
   readonly unitLabel: "in" | "cm";
   /** Preferred unit first, alternate in parentheses. Customer-facing payment review line. */
   readonly formattedDisplay: string;
+  /** Preferred / alternate unit text for the split pill (same values as formattedDisplay). */
+  readonly formattedParts: DualUnitMeasurementParts;
+  /** Step 7 flagged this value as outside its usual range. Informational only. */
+  readonly outsideUsualRange: boolean;
   readonly provenanceLabel:
     | "Customer entered"
     | "System derived"
@@ -280,6 +288,7 @@ const toMeasurementItem = ({
   unit,
   convertedFromSample,
   labelDemographic,
+  outsideUsualRange,
 }: {
   measurementId: string;
   valueCm: number;
@@ -287,6 +296,7 @@ const toMeasurementItem = ({
   unit: MeasurementUnit;
   convertedFromSample: boolean;
   labelDemographic: string;
+  outsideUsualRange: boolean;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
   label:
@@ -297,6 +307,8 @@ const toMeasurementItem = ({
   ),
   unitLabel: unit === "inch" ? "in" : "cm",
   formattedDisplay: formatDualUnitMeasurementDisplay(valueCm, unit),
+  formattedParts: getDualUnitMeasurementParts(valueCm, unit),
+  outsideUsualRange,
   provenanceLabel:
     convertedFromSample
       ? "Converted from sample cloth"
@@ -383,12 +395,17 @@ const mergeMeasurements = ({
   unit,
   route,
   labelDemographic,
+  diagnostics,
+  garmentKey,
 }: {
   entered: FutureMeasurementStateV1["entered"]["shared"];
   derived: FutureMeasurementStateV1["derived"]["shared"];
   unit: MeasurementUnit;
   route: SelectedMeasurementMethod;
   labelDemographic: string;
+  diagnostics: FutureMeasurementStateV1["diagnostics"] | undefined;
+  /** null for the shared bag. */
+  garmentKey: string | null;
 }): readonly FuturePaymentReviewMeasurementItem[] => {
   const sampleRoute = isSampleClothMeasurementMethod(route);
   const measurementIds = [
@@ -409,6 +426,11 @@ const mergeMeasurements = ({
       unit,
       convertedFromSample: preferDerived,
       labelDemographic,
+      outsideUsualRange: isMeasurementOutsideUsualRange(
+        diagnostics,
+        measurementId,
+        garmentKey,
+      ),
     })];
   });
 };
@@ -416,6 +438,7 @@ const mergeMeasurements = ({
 type MeasurementReviewGarment = {
   readonly garmentKey: string;
   readonly label: string;
+  readonly garmentType?: string;
   readonly demographic?: string | null;
 };
 
@@ -450,6 +473,8 @@ const groupsFromMeasurementBag = (
     unit: state.unit,
     route: state.route,
     labelDemographic: labelDemographicFor(garments),
+    diagnostics: state.diagnostics,
+    garmentKey: null,
   });
   if (shared.length > 0) {
     groups.push({ garmentKey: null, title: "Shared measurements", items: shared });
@@ -462,6 +487,8 @@ const groupsFromMeasurementBag = (
         unit: state.unit,
         route: state.route,
         labelDemographic: labelDemographicFor(garments, [garmentKey]),
+        diagnostics: state.diagnostics,
+        garmentKey,
       });
       if (items.length > 0) {
         groups.push({
@@ -480,6 +507,14 @@ export const getFuturePaymentReviewMeasurementGroups = (
     readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
     readonly garments: readonly MeasurementReviewGarment[];
   },
+  options: {
+    /**
+     * Stage 10 Payment Review only: inside a named person's group, drop the
+     * order-wide " 2" suffix ("Amaka — Standard Shirt"), unless that person has
+     * two garments with the same name. My orders keeps the numbered labels.
+     */
+    readonly plainPersonGarmentLabels?: boolean;
+  } = {},
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const measurements = candidate.measurements;
   if (isWearerOrderStateV2(measurements)) {
@@ -503,6 +538,9 @@ export const getFuturePaymentReviewMeasurementGroups = (
     const garmentLabels = new Map(
       candidate.garments.map((garment) => [garment.garmentKey, garment.label]),
     );
+    const garmentTypes = new Map(
+      candidate.garments.map((garment) => [garment.garmentKey, garment.garmentType]),
+    );
     const groups: FuturePaymentReviewMeasurementGroup[] = [];
     [...wearerOrder.wearers]
       .sort((left, right) => left.presentationOrder - right.presentationOrder)
@@ -511,12 +549,23 @@ export const getFuturePaymentReviewMeasurementGroups = (
           .filter(([, wearerId]) => wearerId === wearer.wearerId)
           .map(([garmentKey]) => garmentKey)
           .sort((left, right) => left.localeCompare(right));
+        const personGarmentLabels = options.plainPersonGarmentLabels
+          ? projectPersonGarmentLabels(
+              ownedKeys.map((garmentKey) => ({
+                garmentKey,
+                garmentType: garmentTypes.get(garmentKey),
+                label: garmentLabels.get(garmentKey) || garmentKey,
+              })),
+            )
+          : garmentLabels;
         const shared = mergeMeasurements({
           entered: wearer.measurement.entered.shared,
           derived: wearer.measurement.derived.shared,
           unit: wearer.measurement.unit,
           route: wearer.measurement.route,
           labelDemographic: labelDemographicFor(candidate.garments, ownedKeys),
+          diagnostics: wearer.measurement.diagnostics,
+          garmentKey: null,
         });
         if (shared.length > 0) {
           groups.push({
@@ -536,11 +585,13 @@ export const getFuturePaymentReviewMeasurementGroups = (
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
             labelDemographic: labelDemographicFor(candidate.garments, [garmentKey]),
+            diagnostics: wearer.measurement.diagnostics,
+            garmentKey,
           });
           if (items.length === 0) return;
           groups.push({
             garmentKey,
-            title: `${wearerPublicLabel(wearer.displayName, wearer.presentationOrder)} — ${garmentLabels.get(garmentKey) || garmentKey}`,
+            title: `${wearerPublicLabel(wearer.displayName, wearer.presentationOrder)} — ${personGarmentLabels.get(garmentKey) || garmentKey}`,
             items,
           });
         });

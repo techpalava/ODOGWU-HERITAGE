@@ -35,7 +35,7 @@ import {
   type AuthoritativeDesignPricing,
 } from "./designPricing.js";
 import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState.js";
-import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
+import { projectOccurrenceDisplayLabels, projectPersonGarmentLabels } from "./occurrenceDisplayLabel.js";
 import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime.js";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
@@ -48,7 +48,7 @@ import {
   getMonogramPlacementLabel,
   getMonogramTextForGarment,
 } from "./decorativePricing.js";
-import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, isMeasurementOutsideUsualRange, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -167,7 +167,12 @@ export interface FutureSummaryMeasurementValue {
   garmentKey: string | null;
   label: string;
   formattedValue: string;
+  /** Preferred / alternate unit text for the split pill (same values as formattedValue). */
+  formattedParts: DualUnitMeasurementParts;
   convertedFormattedValue: string | null;
+  convertedFormattedParts: DualUnitMeasurementParts | null;
+  /** Step 7 flagged this value as outside its usual range. Informational only. */
+  outsideUsualRange: boolean;
   convertedLabel: string | null;
   value: number;
   unit: FutureMeasurementStateV1["unit"];
@@ -184,6 +189,11 @@ export interface FutureSummaryWearerMeasurements {
   routeLabel: string;
   unit: FutureMeasurementStateV1["unit"];
   status: FutureMeasurementStateV1["calculationStatus"];
+  /**
+   * 2+ wearers only: garmentKey -> label inside this person's group, without the
+   * order-wide " 2" suffix unless the person has two garments of the same name.
+   */
+  personGarmentLabels?: Record<string, string>;
   shared: FutureSummaryMeasurementValue[];
   byGarment: Array<{
     garmentKey: string;
@@ -908,14 +918,27 @@ const mapMeasurements = ({
         stored.valueCm,
         measurementState.unit,
       ),
+      formattedParts: getDualUnitMeasurementParts(
+        stored.valueCm,
+        measurementState.unit,
+      ),
       convertedFormattedValue:
         convertedCm != null && Number.isFinite(convertedCm)
           ? formatDualUnitMeasurementDisplay(convertedCm, measurementState.unit)
+          : null,
+      convertedFormattedParts:
+        convertedCm != null && Number.isFinite(convertedCm)
+          ? getDualUnitMeasurementParts(convertedCm, measurementState.unit)
           : null,
       convertedLabel:
         convertedCm != null && Number.isFinite(convertedCm)
           ? "Converted from sample cloth"
           : null,
+      outsideUsualRange: isMeasurementOutsideUsualRange(
+        measurementState.diagnostics,
+        requirement.measurementId,
+        requirement.scope === "shared" ? null : requirement.garmentKey,
+      ),
       value,
       unit: measurementState.unit,
       provenance: stored.provenance,
@@ -1035,12 +1058,14 @@ const summarizeOrderMeasurements = ({
   measurementState,
   wearerRuntimes,
   garmentLabels,
+  garmentTypes,
   blockers,
 }: {
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
   wearerRuntimes?: FutureDesignStudioSummaryInput["wearerRuntimes"];
   garmentLabels: ReadonlyMap<string, string>;
+  garmentTypes: ReadonlyMap<string, string>;
   blockers: FutureDesignStudioSummaryBlocker[];
 }): FutureSummaryMeasurements => {
   if (!wearerRuntimes || wearerRuntimes.length === 0) {
@@ -1072,10 +1097,25 @@ const summarizeOrderMeasurements = ({
     };
   }
   const wearerGroups = wearerRuntimes.map((wearer, index) => {
+    const personKeys = [
+      ...new Set([
+        ...wearer.garmentKeys,
+        ...wearer.plan.requirements.flatMap((requirement) =>
+          requirement.garmentKey ? [requirement.garmentKey] : [],
+        ),
+      ]),
+    ].filter((garmentKey) => garmentLabels.has(garmentKey));
+    const personGarmentLabels = projectPersonGarmentLabels(
+      personKeys.map((garmentKey) => ({
+        garmentKey,
+        garmentType: garmentTypes.get(garmentKey),
+        label: garmentLabels.get(garmentKey)!,
+      })),
+    );
     const summary = mapMeasurements({
       measurementPlan: wearer.plan,
       measurementState: wearer.measurement,
-      garmentLabels,
+      garmentLabels: new Map([...garmentLabels, ...personGarmentLabels]),
       blockers: [],
     });
     return {
@@ -1086,6 +1126,7 @@ const summarizeOrderMeasurements = ({
       routeLabel: summary.routeLabel,
       unit: summary.unit,
       status: wearer.measurement.calculationStatus,
+      personGarmentLabels: Object.fromEntries(personGarmentLabels),
       shared: summary.shared,
       byGarment: summary.byGarment,
     };
@@ -1176,6 +1217,9 @@ export const projectFutureDesignStudioSummary = (
     wearerRuntimes: input.wearerRuntimes,
     garmentLabels: new Map(
       garmentSummary.map((garment) => [garment.garmentKey, garment.label]),
+    ),
+    garmentTypes: new Map(
+      garmentSummary.map((garment) => [garment.garmentKey, garment.garmentType]),
     ),
     blockers,
   });
