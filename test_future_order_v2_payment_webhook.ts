@@ -14,7 +14,16 @@ import {
 import type { HttpRequest, HttpResponse } from "./src/server/httpTypes";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { parseFutureOrderV2PaymentRecord } from "./src/utils/futureOrderV2PaymentRecord";
-import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import {
+  applyConfirmedAdditionPayment,
+  decidePersonalizedAddition,
+  evaluatePersonalizedAddition,
+  parseFutureOrderV2PersonalizedPrice,
+  personalizedAdditionPaymentReference,
+  readAcceptedPersonalizedDifferenceCents,
+  type FutureOrderV2PersonalizedPriceRecord,
+} from "./src/utils/futureOrderV2PersonalizedPrice";
+import { createCatalogueAuthoritativeFutureOrderV2Fixture, createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 
 const ORDER_ID = "future-order-webhook";
 const OWNER_UID = "webhook-owner";
@@ -497,6 +506,200 @@ for (const [label, options] of [
     if (previousKey === undefined) delete process.env.STRIPE_SECRET_KEY;
     else process.env.STRIPE_SECRET_KEY = previousKey;
   }
+}
+
+// A confirmed difference PaymentIntent is recorded on the price document.
+// A declined or not-yet-accepted addition is left at the base and is not marked paid.
+{
+  const ADDITION_ORDER_ID = "future-order-addition-webhook";
+  const ADDITION_CENTS = 1500;
+  const ADDITION_PI = "pi_test_addition_webhook";
+  const master = structuredClone(
+    createCatalogueAuthoritativeFutureOrderV2Fixture(ADDITION_ORDER_ID),
+  ) as unknown as {
+    cartItem: {
+      candidate: {
+        pricing: {
+          status: string;
+          exactTotalCents: number | null;
+          customDetailsCents: number | null;
+          selectedDesignTotalCents: number | null;
+          components: { customDetails: { status: string; amountCents: number | null } };
+        };
+        customDetails: unknown[];
+      };
+    };
+  };
+  master.cartItem.candidate.pricing = {
+    ...master.cartItem.candidate.pricing,
+    status: "pending",
+    customDetailsCents: null,
+    selectedDesignTotalCents: null,
+    exactTotalCents: null,
+    components: {
+      ...master.cartItem.candidate.pricing.components,
+      customDetails: { status: "pricing_pending", amountCents: null },
+    },
+  };
+  master.cartItem.candidate.customDetails = [
+    {
+      occurrenceKey: "base:shirt:personalized_additional:personalized_additional_evaluation",
+      garmentKey: "base:shirt",
+      garmentLabel: "Shirt",
+      selectionGroup: "personalized_additional",
+      selectionGroupTitle: "Personalized",
+      optionId: "personalized_additional_evaluation",
+      optionLabel: "Personalized Additional Requirement",
+      priceStatus: "evaluation_required",
+      priceCents: null,
+      personalizedText: "Add a family crest on the left chest.",
+      snapshot: {
+        label: "Personalized Additional Requirement",
+        description: "Additional cost will depend on evaluation of personalized needs.",
+        garmentGroup: "personalized",
+        informational: false,
+        requiresEvaluation: true,
+      },
+    },
+  ];
+  const stored = createPersistedFutureOrderV2({
+    masterOrder: master as unknown as Parameters<typeof createPersistedFutureOrderV2>[0]["masterOrder"],
+    owner: { uid: OWNER_UID, isAnonymous: false },
+    customerOwnerUid: OWNER_UID,
+    persistedAt: "2026-10-16T18:00:00.000Z",
+  });
+  assert.equal(stored.status, "valid");
+  if (stored.status !== "valid") throw new Error("expected a pending addition order");
+  const priced = evaluatePersonalizedAddition({
+    existing: null,
+    orderId: ADDITION_ORDER_ID,
+    ownerUid: OWNER_UID,
+    seeds: [
+      {
+        occurrenceKey: "base:shirt:personalized_additional:personalized_additional_evaluation",
+        garmentKey: "base:shirt",
+        optionId: "personalized_additional_evaluation",
+        requirementText: "Add a family crest on the left chest.",
+      },
+    ],
+    occurrenceKey: "base:shirt:personalized_additional:personalized_additional_evaluation",
+    amountCents: ADDITION_CENTS,
+    tailorNote: "Crest is embroidered.",
+    toEmail: "ada@example.com",
+    customerName: "Ada Lovelace",
+    orderLink: "https://heritage.example/?future_order_v2_order_id=future-order-addition-webhook",
+  });
+  assert.equal(priced.status, "ready");
+  if (priced.status !== "ready") throw new Error("expected a priced addition");
+  const accepted = decidePersonalizedAddition(
+    priced.record,
+    "base:shirt:personalized_additional:personalized_additional_evaluation",
+    "accepted",
+  );
+  assert.equal(accepted.status, "updated");
+  if (accepted.status !== "updated") throw new Error("expected accept");
+  const declined = decidePersonalizedAddition(
+    priced.record,
+    "base:shirt:personalized_additional:personalized_additional_evaluation",
+    "declined",
+  );
+  assert.equal(declined.status, "updated");
+  if (declined.status !== "updated") throw new Error("expected decline");
+  const reference = personalizedAdditionPaymentReference(ADDITION_ORDER_ID, ADDITION_CENTS);
+  const additionIntent = succeededIntent({
+    id: ADDITION_PI,
+    amount: ADDITION_CENTS,
+    metadata: {
+      orderId: ADDITION_ORDER_ID,
+      paymentReference: reference,
+      stage: "Design Studio V2",
+    },
+  });
+
+  const createAdditionStore = (price: FutureOrderV2PersonalizedPriceRecord) => {
+    const payments = new Map<string, unknown>();
+    const prices = new Map<string, FutureOrderV2PersonalizedPriceRecord>([[ADDITION_ORDER_ID, price]]);
+    let writes = 0;
+    const store: FutureOrderV2PaymentRecordStore = {
+      async readOrder(orderId) {
+        return orderId === ADDITION_ORDER_ID ? stored.value : null;
+      },
+      async readPersonalizedPrice(orderId) {
+        return prices.get(orderId) ?? null;
+      },
+      async recordAdditionPayment(orderId, input) {
+        const current = parseFutureOrderV2PersonalizedPrice(prices.get(orderId) ?? null);
+        if (!current || stored.status !== "valid") throw new Error("missing price");
+        const due = readAcceptedPersonalizedDifferenceCents(
+          stored.value.masterOrder.cartItem.candidate,
+          current,
+        );
+        if (due === null || due !== input.amountCents) throw new Error("not due");
+        const applied = applyConfirmedAdditionPayment(current, input);
+        if (applied.status === "rejected") throw new Error("rejected");
+        if (applied.status === "recorded") {
+          writes += 1;
+          prices.set(orderId, applied.record);
+        }
+        return applied.status;
+      },
+      async runTransaction(operation) {
+        return operation({
+          async getPayment(orderId) {
+            return payments.get(orderId) ?? null;
+          },
+          createPayment(orderId, record) {
+            writes += 1;
+            payments.set(orderId, record);
+          },
+        });
+      },
+    };
+    return { store, prices, payments, writes: () => writes };
+  };
+
+  const declinedMemory = createAdditionStore(declined.record);
+  const declinedHandler = createHandler({
+    store: declinedMemory.store,
+    intent: additionIntent,
+    event: succeededEvent({ paymentIntentId: ADDITION_PI }),
+  });
+  const declinedResponse = response();
+  await declinedHandler.handler(webhookRequest(), declinedResponse.res);
+  assert.equal(declinedResponse.state.statusCode, 200);
+  assert.equal(bodyOf(declinedResponse.state).status, "ignored");
+  assert.equal(declinedMemory.writes(), 0, "a declined addition is not marked paid");
+  assert.equal(declinedMemory.prices.get(ADDITION_ORDER_ID)?.additionPaidCents ?? null, null);
+
+  const unpaidMemory = createAdditionStore(priced.record);
+  const unpaidHandler = createHandler({
+    store: unpaidMemory.store,
+    intent: additionIntent,
+    event: succeededEvent({ paymentIntentId: ADDITION_PI }),
+  });
+  const unpaidResponse = response();
+  await unpaidHandler.handler(webhookRequest(), unpaidResponse.res);
+  assert.equal(bodyOf(unpaidResponse.state).status, "ignored");
+  assert.equal(unpaidMemory.writes(), 0, "an unaccepted addition is not marked paid");
+
+  const paidMemory = createAdditionStore(accepted.record);
+  const paidHandler = createHandler({
+    store: paidMemory.store,
+    intent: additionIntent,
+    event: succeededEvent({ paymentIntentId: ADDITION_PI }),
+  });
+  const paidResponse = response();
+  await paidHandler.handler(webhookRequest(), paidResponse.res);
+  assert.equal(paidResponse.state.statusCode, 200);
+  assert.equal(bodyOf(paidResponse.state).status, "recorded");
+  assert.equal(paidMemory.payments.size, 0, "the base payment document stays untouched");
+  const savedPrice = paidMemory.prices.get(ADDITION_ORDER_ID);
+  assert.equal(savedPrice?.additionPaidCents, ADDITION_CENTS);
+  assert.equal(savedPrice?.additionPayments[0]?.paymentIntentId, ADDITION_PI);
+  const replay = response();
+  await paidHandler.handler(webhookRequest(), replay.res);
+  assert.equal(bodyOf(replay.state).status, "already_recorded");
+  assert.equal(paidMemory.writes(), 1, "replaying the difference webhook does not write twice");
 }
 
 console.log("PASS: V2 order Stripe payment webhook");
