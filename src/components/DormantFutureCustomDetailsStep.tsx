@@ -1,3 +1,9 @@
+import {
+  DesignStudioStepFooter,
+  DesignStudioStepLayout,
+  DesignStudioStepMain,
+  DesignStudioStepSidebar,
+} from "./DesignStudioStepLayout";
 import { Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -1724,8 +1730,8 @@ export const DormantFutureCustomDetailsStep = ({
 
   return (
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
-        <div className="min-w-0 space-y-4">
+      <DesignStudioStepLayout>
+        <DesignStudioStepMain className="space-y-4">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           slot="header"
@@ -2421,14 +2427,13 @@ export const DormantFutureCustomDetailsStep = ({
           </section>
           )}
         </div>
-        </div>
+        </DesignStudioStepMain>
 
+        <DesignStudioStepSidebar>
         {orderSummary ? (
-          <div className="mt-5 min-w-0 lg:mt-0">
-            {orderSummary}
-          </div>
+          orderSummary
         ) : (
-        <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm lg:sticky lg:top-24 lg:self-start lg:mt-0">
+        <aside className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm lg:sticky lg:top-24">
           <h3 className="font-serif text-lg font-bold text-heritage-green">Order Summary</h3>
           <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Only active garment occurrences and selected optional details are priced.</p>
           <div className="mt-4 space-y-2.5 text-sm">
@@ -2445,22 +2450,24 @@ export const DormantFutureCustomDetailsStep = ({
           </div>
         </aside>
         )}
-      </div>
-
-      <DesignStudioStepActions
-        slot="footer"
-        backDestination={previousStageLabel}
-        onBack={onBack}
-        forward={{
-          destination: nextStageLabel,
-          onClick: onContinue,
-          disabled: !canContinue,
-          locked: !canContinue,
-          ariaLabel: canContinue
-            ? `Continue to ${nextStageLabel}`
-            : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
-        }}
-      />
+        </DesignStudioStepSidebar>
+        <DesignStudioStepFooter>
+        <DesignStudioStepActions
+          slot="footer"
+          backDestination={previousStageLabel}
+          onBack={onBack}
+          forward={{
+            destination: nextStageLabel,
+            onClick: onContinue,
+            disabled: !canContinue,
+            locked: !canContinue,
+            ariaLabel: canContinue
+              ? `Continue to ${nextStageLabel}`
+              : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
+          }}
+        />
+        </DesignStudioStepFooter>
+      </DesignStudioStepLayout>
 
       {showAdditionalGarmentChoiceDialog && (
           <div

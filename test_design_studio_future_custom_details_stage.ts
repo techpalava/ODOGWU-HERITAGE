@@ -3179,7 +3179,7 @@ assert.match(componentSource, /Price requires evaluation\./);
 assert.match(componentSource, /Confirmed after tailoring review/);
 assert.match(componentSource, /Describe your personalized requirement/);
 assert.match(componentSource, /type=\{group\.allowMultiple \? "checkbox" : "radio"\}/);
-assert.match(componentSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,24rem\)\]/);
+assert.match(componentSource, /<DesignStudioStepLayout>[\s\S]*<DesignStudioStepSidebar>[\s\S]*<DesignStudioStepFooter>/);
 assert.match(componentSource, /lg:sticky lg:top-24/);
 assert.doesNotMatch(componentSource, /Not currently included/);
 assert.match(componentSource, /Included in your selected design/);
