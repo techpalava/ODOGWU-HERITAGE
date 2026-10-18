@@ -424,8 +424,8 @@ assert.equal(state.fabricAllocations.length, 2);
 assert.ok(
   state.fabricAllocations.every((allocation) => allocation.fabricCode === "FAB-A"),
 );
-assert.match(textContent(renderer.root), /Fabrics Selected: 2 · Fabrics needed: 2/);
-assert.match(textContent(renderer.root), /Garments assigned: 3\/3/);
+assert.match(textContent(renderer.root), /All garments have fabric/);
+assert.match(textContent(renderer.root), /2 fabrics cover your 3 garments\./);
 
 const twoSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt", "trouser"],

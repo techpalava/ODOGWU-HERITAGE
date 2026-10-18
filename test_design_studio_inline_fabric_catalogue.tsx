@@ -54,7 +54,7 @@ reactDomRuntime.createPortal = (children) => {
   lastPortalChildren = children;
   return children;
 };
-const { DormantFutureFabricStep } = await import(
+const { DormantFutureFabricStep, formatFabricProgressCompleteSummary } = await import(
   "./src/components/DormantFutureFabricStep"
 );
 
@@ -166,6 +166,35 @@ const assertFabricProgress = (
   garmentsRequired: number,
 ) => {
   const progressRegion = root.findByProps({ "data-fabric-progress": "true" });
+  const complete =
+    garmentsRequired > 0 &&
+    garmentsAssigned === garmentsRequired &&
+    fabricSelected <= fabricRequired;
+  assert.equal(
+    progressRegion.props["data-fabric-progress-state"],
+    complete ? "complete" : "in_progress",
+  );
+  if (complete) {
+    // Every garment has fabric: one clear heading replaces the counts.
+    assert.equal(
+      textContent(
+        progressRegion.findByProps({ "data-fabric-progress-complete-heading": "true" }),
+      ),
+      "All garments have fabric",
+    );
+    assert.equal(
+      textContent(
+        progressRegion.findByProps({ "data-fabric-progress-complete-summary": "true" }),
+      ),
+      formatFabricProgressCompleteSummary(fabricSelected, garmentsRequired),
+    );
+    assert.equal(
+      progressRegion.findAllByProps({ "data-fabric-selection-progress": "true" }).length,
+      0,
+    );
+    assert.equal(progressRegion.props["aria-live"], "polite");
+    return;
+  }
   const fabricLine = progressRegion.findByProps({
     "data-fabric-selection-progress": "true",
   });
@@ -175,7 +204,7 @@ const assertFabricProgress = (
   assert.match(
     textContent(fabricLine),
     new RegExp(
-      `^Fabrics Selected: ${fabricSelected} · Fabrics needed: ${fabricRequired}$`,
+      `^Fabrics chosen: ${fabricSelected} of ${fabricRequired} needed$`,
     ),
   );
   assert.doesNotMatch(
@@ -192,7 +221,7 @@ const assertFabricProgress = (
   assert.match(
     textContent(garmentLine),
     new RegExp(
-      `^Garments assigned: ${garmentsAssigned}/${garmentsRequired}$`,
+      `^Garments with fabric: ${garmentsAssigned} of ${garmentsRequired}$`,
     ),
   );
   if (garmentsRequired > 0) {
@@ -5462,7 +5491,7 @@ try {
   assertFabricProgress(fourLimitRenderer.root, 2, 2, 4, 4);
   assert.match(
     textContent(fourLimitRenderer.root),
-    /You need 2 fabrics for your 4 garments\./,
+    /2 fabrics cover your 4 garments\./,
   );
 
   const fourTargets = getFutureFabricAssignmentTargets(fourOrdinarySelection);

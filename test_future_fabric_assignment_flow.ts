@@ -1807,27 +1807,22 @@ assert.match(stepSource, /data-fabric-selection-progress="true"/);
 assert.match(stepSource, /data-garment-assignment-progress="true"/);
 assert.match(stepSource, /data-fabric-planning-sentence="true"/);
 assert.match(stepSource, /formatRequiredFabricQuantitySentence/);
-assert.match(stepSource, /Fabrics Selected:/);
+assert.match(stepSource, /Fabrics chosen:/);
 assert.doesNotMatch(
   stepSource,
   /Fabric selections:/,
-  "Step 2 must use Fabrics Selected, not Fabric selections.",
-);
-assert.doesNotMatch(
-  stepSource,
-  /of \$\{requiredFabricQuantity\} needed/,
-  "Step 2 counter copy must not append needed.",
+  "Step 2 must use Fabrics chosen, not Fabric selections.",
 );
 assert.match(
   stepSource,
-  /\$\{selectedFabricQuantity\} · Fabrics needed: \$\{requiredFabricQuantity\}/,
-  "Fabrics Selected must show how many Fabrics the order needs.",
+  /Fabrics chosen: \$\{selectedFabricQuantity\} of \$\{requiredFabricQuantity\} needed/,
+  "The counter must say how many Fabrics are chosen out of the number needed.",
 );
 assert.match(
   stepSource,
-  /\$\{assignedGarmentCount\}\/\$\{requiredGarmentCount\}/,
-  "Garments assigned must use X/Y with no spaces around the slash.",
+  /Garments with fabric: \$\{assignedGarmentCount\} of \$\{requiredGarmentCount\}/,
 );
+assert.match(stepSource, /data-fabric-progress-complete-heading="true"/);
 assert.match(stepSource, /data-fabric-progress-icon="true"/);
 assert.match(stepSource, /data-catalogue-scroll-anchor="true"/);
 assert.match(stepSource, /catalogueScrollAnchorRef/);
@@ -1839,7 +1834,7 @@ assert.doesNotMatch(
   /querySelector<HTMLElement>\("\[data-fabric-card\]"\)/,
   "Inline Add/Change Fabric must not focus the first Fabric card after scrolling.",
 );
-assert.match(stepSource, /Garments assigned:/);
+assert.match(stepSource, /Garments with fabric:/);
 assert.doesNotMatch(
   stepSource,
   /Fabrics selected:/,
