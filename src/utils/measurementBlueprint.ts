@@ -1122,11 +1122,18 @@ export const formatImplausibleMeasurementMessage = (
 const measurementDisplayUnitLabel = (unit: MeasurementUnit): "in" | "cm" =>
   unit === "inch" ? "in" : "cm";
 
-/** Preferred unit first, alternate in parentheses. Both sides are formatted from valueCm. */
-export const formatDualUnitMeasurementDisplay = (
+export interface DualUnitMeasurementParts {
+  /** Preferred unit (Step 7 unit), e.g. "42 in". */
+  readonly preferred: string;
+  /** The other unit, e.g. "106.68 cm". */
+  readonly alternate: string;
+}
+
+/** Preferred and alternate unit text. Both sides are formatted from valueCm. */
+export const getDualUnitMeasurementParts = (
   valueCm: number,
   preferredUnit: MeasurementUnit,
-): string => {
+): DualUnitMeasurementParts => {
   const alternateUnit: MeasurementUnit = preferredUnit === "inch" ? "cm" : "inch";
   const preferred = roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, preferredUnit),
@@ -1134,7 +1141,43 @@ export const formatDualUnitMeasurementDisplay = (
   const alternate = roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, alternateUnit),
   );
-  return `${preferred} ${measurementDisplayUnitLabel(preferredUnit)} (${alternate} ${measurementDisplayUnitLabel(alternateUnit)})`;
+  return {
+    preferred: `${preferred} ${measurementDisplayUnitLabel(preferredUnit)}`,
+    alternate: `${alternate} ${measurementDisplayUnitLabel(alternateUnit)}`,
+  };
+};
+
+const MEASUREMENT_CHECK_FLAG_DIAGNOSTIC_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
+  "measurement_range_recheck",
+  "implausible_measurement_value",
+]);
+
+/**
+ * True when Step 7 already flagged this value as outside its usual range: the
+ * non-blocking "Please recheck this measurement." hint (workbook height factors
+ * plus MANUAL_RANGE_RECHECK_TOLERANCE) or the absolute plausibility bounds.
+ * Shared values (garmentKey null) match any garment, like Step 7 does.
+ * Display only; it never changes completion or payment gates.
+ */
+export const isMeasurementOutsideUsualRange = (
+  diagnostics: readonly FutureMeasurementDiagnostic[] | undefined,
+  measurementId: string,
+  garmentKey: string | null,
+): boolean =>
+  (diagnostics ?? []).some(
+    (diagnostic) =>
+      MEASUREMENT_CHECK_FLAG_DIAGNOSTIC_CODES.has(diagnostic.code) &&
+      diagnostic.measurementId === measurementId &&
+      (garmentKey === null || diagnostic.garmentKey === garmentKey),
+  );
+
+/** Preferred unit first, alternate in parentheses. Both sides are formatted from valueCm. */
+export const formatDualUnitMeasurementDisplay = (
+  valueCm: number,
+  preferredUnit: MeasurementUnit,
+): string => {
+  const { preferred, alternate } = getDualUnitMeasurementParts(valueCm, preferredUnit);
+  return `${preferred} (${alternate})`;
 };
 
 const createEmptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({

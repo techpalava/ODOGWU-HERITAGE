@@ -35,6 +35,7 @@ import {
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import { projectDesignStudioLiveOrderSummary } from "./src/utils/designStudioLiveOrderSummary";
 import { projectAuthoritativeOrderMeasurements } from "./src/utils/futureOrderCandidate";
+import { projectPersonGarmentLabels } from "./src/utils/occurrenceDisplayLabel";
 import { isWearerOrderStateV2 } from "./src/utils/wearerOrder";
 import {
   formatCompactWearerRouteLabel,
@@ -64,7 +65,9 @@ import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructi
 import {
   createEmptyFutureMeasurementState,
   formatDualUnitMeasurementDisplay,
+  getDualUnitMeasurementParts,
   getMeasurementPhysicalGarments,
+  isMeasurementOutsideUsualRange,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
@@ -535,6 +538,27 @@ const dualInchDisplay = /^\d+(?:\.\d{1,2})? in \(\d+(?:\.\d{1,2})? cm\)$/;
 const dualCentimetreDisplay = /^\d+(?:\.\d{1,2})? cm \(\d+(?:\.\d{1,2})? in\)$/;
 assert.equal(formatDualUnitMeasurementDisplay(106.68, "inch"), "42 in (106.68 cm)");
 assert.equal(formatDualUnitMeasurementDisplay(106.68, "cm"), "106.68 cm (42 in)");
+assert.deepEqual(getDualUnitMeasurementParts(106.68, "inch"), {
+  preferred: "42 in",
+  alternate: "106.68 cm",
+});
+assert.deepEqual(getDualUnitMeasurementParts(106.68, "cm"), {
+  preferred: "106.68 cm",
+  alternate: "42 in",
+});
+assert.ok(
+  [
+    ...exactSummary.measurementSummary.shared,
+    ...exactSummary.measurementSummary.byGarment.flatMap((garment) => garment.values),
+  ].every(
+    (value) =>
+      `${value.formattedParts.preferred} (${value.formattedParts.alternate})` ===
+        value.formattedValue &&
+      value.formattedParts.preferred.endsWith(" in") &&
+      value.formattedParts.alternate.endsWith(" cm"),
+  ),
+  "split-pill parts carry the same canonical values, inches first when inches are preferred",
+);
 assert.ok(
   exactSummary.measurementSummary.shared.every((value) =>
     dualInchDisplay.test(value.formattedValue),
@@ -571,6 +595,14 @@ assert.ok(
     (value) => value.formattedValue === "25.4 cm (10 in)",
   ),
   "the same canonical centimetres render centimetres first when that unit is preferred",
+);
+assert.ok(
+  centimetrePreferredSummary.measurementSummary.shared.some(
+    (value) =>
+      value.formattedParts.preferred === "25.4 cm" &&
+      value.formattedParts.alternate === "10 in",
+  ),
+  "centimetre-preferred split-pill parts put centimetres on the left",
 );
 assert.ok(
   exactSummary.measurementSummary.byGarment.some(
@@ -2091,7 +2123,100 @@ if (destinationDeliveryResolution.projectedTotalCents === null) {
   throw new Error("destination delivery must supply an authoritative payable projection");
 }
 const destinationDeliveryMarkup = renderSummaryMarkup(destinationDeliveryResolution);
-assert.match(destinationDeliveryMarkup, /10 in \(25\.4 cm\)/);
+// Split pill: preferred unit left, alternate right; hidden parentheses keep the read order.
+assert.match(
+  destinationDeliveryMarkup,
+  /<span data-measurement-preferred="true"[^>]*>10 in<\/span><span data-measurement-alternate="true"[^>]*><span class="sr-only"> \(<\/span>25\.4 cm<span class="sr-only">\)<\/span><\/span>/,
+);
+assert.match(
+  destinationDeliveryMarkup.replace(/<[^>]+>/g, ""),
+  /10 in \(25\.4 cm\)/,
+  "pill text still reads preferred then alternate in parentheses",
+);
+assert.match(destinationDeliveryMarkup, /data-measurement-preferred="true" class="[^"]*bg-\[#f3ece0\][^"]*font-bold text-heritage-green/);
+assert.match(destinationDeliveryMarkup, /data-measurement-alternate="true" class="[^"]*border-l border-\[#e3d6bd\]/);
+assert.match(destinationDeliveryMarkup, /data-measurement-pill="true" class="[^"]*rounded-full border border-\[#e3d6bd\][^"]*tabular-nums/);
+// Garment group headings: spaced from the line above and larger than the row labels.
+const measurementSectionHeadings = [
+  ...destinationDeliveryMarkup.matchAll(
+    /<div data-summary-measurement-section="true" class="([^"]*)"><h4 class="([^"]*)">([^<]*)<\/h4>/g,
+  ),
+];
+assert.ok(measurementSectionHeadings.length >= 2, "shared and garment measurement sections render");
+assert.ok(
+  measurementSectionHeadings.some((match) => match[3] === "Shared body measurements"),
+);
+assert.ok(measurementSectionHeadings.some((match) => match[3] === "Standard Shirt"));
+for (const [, wrapperClass, headingClass] of measurementSectionHeadings) {
+  assert.match(wrapperClass, /\bmt-5\b/);
+  assert.match(wrapperClass, /\bborder-t\b/);
+  assert.match(wrapperClass, /\bpt-4\b/);
+  assert.match(headingClass, /\btext-base\b/);
+  assert.match(headingClass, /\bfont-extrabold\b/);
+  assert.match(headingClass, /\buppercase\b/);
+  assert.match(headingClass, /\btext-heritage-gold\b/);
+}
+// Item 4: "Check this?" mirrors Step 7's existing range diagnostics (workbook height
+// factors + MANUAL_RANGE_RECHECK_TOLERANCE, or plausibility bounds). Informational only.
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "measurement_range_recheck", garmentKey: "base:shirt", measurementId: "neck_circumference" }],
+  "neck_circumference",
+  null,
+), true, "a shared value matches its diagnostic on any garment");
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "measurement_range_recheck", garmentKey: "base:shirt", measurementId: "sleeve_length_short" }],
+  "sleeve_length_short",
+  "base:trouser",
+), false, "a garment value only matches its own garment's diagnostic");
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "implausible_measurement_value", garmentKey: "base:shirt", measurementId: "total_height" }],
+  "total_height",
+  null,
+), true, "plausibility-bound diagnostics also flag");
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "required_measurement_missing", garmentKey: "base:shirt", measurementId: "total_height" }],
+  "total_height",
+  null,
+), false, "other diagnostics never flag");
+const rangeRecheckIds = new Set(
+  exactInput.measurementState.diagnostics
+    .filter((diagnostic) => diagnostic.code === "measurement_range_recheck")
+    .map((diagnostic) => diagnostic.measurementId),
+);
+assert.ok(rangeRecheckIds.size > 0, "the 40 in / 10 in fixture trips Step 7's recheck hint");
+const exactMeasurementValues = [
+  ...exactSummary.measurementSummary.shared,
+  ...exactSummary.measurementSummary.byGarment.flatMap((garment) => garment.values),
+];
+assert.deepEqual(
+  exactMeasurementValues.filter((value) => value.outsideUsualRange).map((value) => value.measurementId).sort(),
+  [...rangeRecheckIds].sort(),
+  "exactly the Step 7 recheck rows carry the flag",
+);
+assert.ok(exactMeasurementValues.some((value) => !value.outsideUsualRange));
+assert.equal(exactSummary.status, "ready", "the flag never blocks Summary / Continue");
+const checkFlagMatches = destinationDeliveryMarkup.match(/data-measurement-check-flag="true"/g) || [];
+assert.equal(checkFlagMatches.length, rangeRecheckIds.size);
+assert.match(
+  destinationDeliveryMarkup,
+  /<span data-measurement-check-flag="true" title="Value outside the usual range, check this" class="[^"]*amber[^"]*"><span aria-hidden="true">Check this\?<\/span><span class="sr-only">Value outside the usual range, check this<\/span><\/span><span data-measurement-pill="true"/,
+  "the quiet amber tag sits left of the pill with an accessible description",
+);
+const totalHeightRow =
+  destinationDeliveryMarkup.split(">Total Height</span>")[1]?.split("</li>")[0] || "";
+assert.ok(totalHeightRow.includes("data-measurement-pill"));
+assert.equal(totalHeightRow.includes("data-measurement-check-flag"), false, "in-range rows stay unflagged");
+assert.match(destinationDeliveryMarkup, /aria-label="Continue to Delivery"/);
+// Item 5: every pill of a size has the same fixed width with 50/50 halves.
+const mdPillClasses = new Set(
+  [...destinationDeliveryMarkup.matchAll(/data-measurement-pill="true" class="([^"]*)"/g)].map((match) => match[1]),
+);
+assert.equal(mdPillClasses.size, 1, "all Summary pills share one class list");
+const [mdPillClass] = [...mdPillClasses];
+assert.match(mdPillClass, /\bw-\[10\.5rem\]/);
+assert.match(mdPillClass, /\bwhitespace-nowrap\b/);
+assert.match(destinationDeliveryMarkup, /data-measurement-preferred="true" class="[^"]*\bw-1\/2\b/);
+assert.match(destinationDeliveryMarkup, /data-measurement-alternate="true" class="[^"]*\bw-1\/2\b/);
 assert.equal(destinationDeliveryMarkup.includes("Display unit:"), false);
 assert.match(
   destinationDeliveryMarkup,
@@ -2479,6 +2604,153 @@ assert.equal(twoWearerSummary.measurementSummary.routeLabel, "2 people");
 assert.deepEqual(
   twoWearerSummary.measurementSummary.wearerGroups?.map((wearer) => wearer.displayName),
   ["You", "Amaka"],
+);
+// Item 6: with 2+ wearers each block opens with a serif person heading over a dark rule.
+const renderMeasurementSummaryMarkup = (summary: typeof twoWearerSummary) =>
+  renderToStaticMarkup(
+    createElement(DormantFutureSummaryStep, {
+      summary,
+      onBack: () => {},
+      onEditGarments: () => {},
+      onEditFabrics: () => {},
+      onEditDesignStyle: () => {},
+      onEditCustomDetails: () => {},
+      onEditAiTryOn: () => {},
+      onEditMeasurements: () => {},
+      canContinueToShipping: false,
+      onContinueToShipping: () => {},
+    }),
+  );
+const wearerBlocks = [
+  ...chiefAdaMarkup.matchAll(
+    /<section data-summary-measurement-wearer="([^"]+)" class="([^"]*)"><h4 data-summary-measurement-person-heading="true" class="([^"]*)">([^<]*)<\/h4><p data-summary-measurement-person-garments="true" class="[^"]*">([^<]*)<\/p>/g,
+  ),
+];
+assert.deepEqual(
+  wearerBlocks.map((match) => [match[1], match[4], match[5]]),
+  [
+    ["wearer-chief", "Chief", "Standard Shirt"],
+    ["wearer-ada", "Ada", "Standard Shirt 2"],
+  ],
+);
+for (const [, , sectionClass, headingClass] of wearerBlocks) {
+  assert.match(sectionClass, /\bborder-t-2\b/);
+  assert.match(sectionClass, /\bborder-heritage-green\b/);
+  assert.match(headingClass, /\bfont-serif\b/);
+  assert.match(headingClass, /\btext-2xl\b/, "person headings (24px) outrank gold group headings (text-base, 16px) and row labels (text-sm, 14px)");
+  assert.match(headingClass, /\bfont-semibold\b/);
+  assert.match(headingClass, /\btext-heritage-green\b/);
+}
+// Person garment labels: plain family name inside a person's group, numbered only
+// when the same person has two garments with the same name.
+assert.deepEqual(
+  Object.fromEntries(projectPersonGarmentLabels([
+    { garmentKey: "additional:shirt:1", garmentType: "shirt", label: "Standard Shirt 2" },
+    { garmentKey: "base:trouser", garmentType: "trouser", label: "Trouser" },
+  ])),
+  { "additional:shirt:1": "Standard Shirt", "base:trouser": "Trouser" },
+);
+assert.deepEqual(
+  Object.fromEntries(projectPersonGarmentLabels([
+    { garmentKey: "base:shirt", garmentType: "shirt", label: "Standard Shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt", label: "Standard Shirt 2" },
+  ])),
+  { "base:shirt": "Standard Shirt", "additional:shirt:1": "Standard Shirt 2" },
+  "same person, two identical garments: numbers stay",
+);
+assert.deepEqual(
+  Object.fromEntries(projectPersonGarmentLabels([
+    { garmentKey: "base:shirt", garmentType: "shirt", label: "Own upload 2" },
+  ])),
+  { "base:shirt": "Own upload 2" },
+  "labels that are not a family name are left alone",
+);
+const adaOwnPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: exactInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: exactInput.garmentTypeSelection,
+    physicalOccurrences: [{ garmentKey: "additional:shirt:1", garmentType: "shirt" }],
+  }),
+  additionalGarmentConstructions: repeatedShirtConstruction.state,
+});
+let adaOwnState = createEmptyFutureMeasurementState("low_risk", "cm");
+for (const requirement of adaOwnPlan.requirements.filter((candidate) => candidate.directInput)) {
+  adaOwnState = setFutureMeasurementInput({
+    state: adaOwnState,
+    requirement,
+    displayValue: requirement.measurementId === "total_height"
+      ? 165
+      : Math.round((requirement.averageFactor ?? 0.3) * 165 * 10) / 10,
+  });
+}
+adaOwnState = reconcileFutureMeasurementState({ state: adaOwnState, plan: adaOwnPlan });
+const chiefAdaOwnSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerRuntimes: [
+    chiefAdaRuntimes[0],
+    { ...chiefAdaRuntimes[1], plan: adaOwnPlan, measurement: adaOwnState },
+  ],
+});
+const adaOwnGroup = chiefAdaOwnSummary.measurementSummary.wearerGroups?.[1];
+assert.deepEqual(adaOwnGroup?.personGarmentLabels, { "additional:shirt:1": "Standard Shirt" });
+assert.deepEqual(adaOwnGroup?.byGarment.map((garment) => garment.garmentLabel), ["Standard Shirt"]);
+assert.ok(
+  chiefAdaOwnSummary.garmentSummary.some((garment) => garment.label === "Standard Shirt 2"),
+  "the order-wide numbered label is unchanged outside the person group",
+);
+const chiefAdaOwnMarkup = renderMeasurementSummaryMarkup(chiefAdaOwnSummary);
+const adaOwnBlock =
+  chiefAdaOwnMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1]?.split("</section>")[0] || "";
+assert.match(adaOwnBlock, /data-summary-measurement-person-garments="true" class="[^"]*">Standard Shirt<\/p>/);
+assert.match(adaOwnBlock, /<h5 class="[^"]*">Standard Shirt<\/h5>/);
+assert.equal(adaOwnBlock.includes("Standard Shirt 2"), false);
+assert.ok(chiefAdaOwnMarkup.includes(">Standard Shirt 2</h4>"), "Garments card keeps Standard Shirt 2");
+const adaBlock = chiefAdaMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1] || "";
+assert.match(
+  adaBlock,
+  /<div data-summary-measurement-section="true" class="[^"]*"><h5 class="text-base font-extrabold uppercase[^"]*">Shared body measurements<\/h5>/,
+  "group headings sit under the person heading",
+);
+assert.ok(adaBlock.includes("data-measurement-pill"));
+assert.ok(adaBlock.includes("data-measurement-check-flag"), "flags also show per person");
+assert.equal(
+  chiefAdaMarkup.includes("Standard Shirt — "),
+  false,
+  "garment rows no longer repeat the garment name in each label",
+);
+const blankSecondWearerSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-you",
+      displayName: "You",
+      fitContext: "male" as const,
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: exactInput.measurementState,
+    },
+    {
+      wearerId: "wearer-blank",
+      displayName: "",
+      fitContext: "female" as const,
+      garmentKeys: ["base:dress"],
+      plan: amakaSummaryInput.measurementPlan,
+      measurement: amakaSummaryInput.measurementState,
+    },
+  ],
+});
+assert.match(
+  renderMeasurementSummaryMarkup(blankSecondWearerSummary),
+  /data-summary-measurement-person-heading="true" class="[^"]*">Person 2<\/h4>/,
+  "a blank name among 2+ wearers keeps its Person N heading",
+);
+assert.equal(
+  blankSoleMarkup.includes("data-summary-measurement-person-heading"),
+  false,
+  "solo keeps the compact header (no person heading, no Person 1)",
 );
 assert.equal(exactSummary.measurementSummary.wearerGroups, undefined);
 assert.equal(exactSummary.measurementSummary.routeLabel.includes("Amaka"), false);

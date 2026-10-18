@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
+import { DualUnitMeasurementPill } from "./DualUnitMeasurementPill";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
@@ -651,7 +652,9 @@ export const DormantFuturePaymentReviewStep = ({
       isAwaitingPersonalizedPriceEvaluation(candidate),
   );
   const measurementGroups = candidate
-    ? getFuturePaymentReviewMeasurementGroups(candidate)
+    ? getFuturePaymentReviewMeasurementGroups(candidate, {
+        plainPersonGarmentLabels: true,
+      })
     : [];
   const pricingRows = candidate
     ? getFuturePaymentReviewPricingRows(candidate.pricing, {
@@ -1062,7 +1065,7 @@ export const DormantFuturePaymentReviewStep = ({
                       {group.items.map((item) => (
                         <div
                           key={item.measurementId}
-                          className="flex min-w-0 flex-wrap justify-between gap-2"
+                          className="flex min-w-0 flex-wrap items-center justify-between gap-2"
                         >
                           <dt className="min-w-0 break-words text-heritage-ink/70">
                             {item.label}
@@ -1070,8 +1073,11 @@ export const DormantFuturePaymentReviewStep = ({
                               ({item.provenanceLabel})
                             </span>
                           </dt>
-                          <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                            {item.formattedDisplay}
+                          <dd className="min-w-0 max-w-full text-right">
+                            <DualUnitMeasurementPill
+                              parts={item.formattedParts}
+                              outsideUsualRange={item.outsideUsualRange}
+                            />
                           </dd>
                         </div>
                       ))}
