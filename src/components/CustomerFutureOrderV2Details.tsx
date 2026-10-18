@@ -28,6 +28,7 @@ import type { FutureOrderV2PaymentMethod } from "../utils/futureOrderV2Payment";
 import {
   formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
+  getFutureOrderV2ProviderTransactionId,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
 import {
@@ -551,7 +552,7 @@ export const CustomerFutureOrderV2Details = ({
                     <p className="font-serif text-lg font-bold">Payment successful</p>
                     <p className="text-sm">
                       {formatFutureOrderV2PaidAmount(localPayment.amountCents)} paid. Reference{" "}
-                      <span className="break-all font-mono text-xs">{localPayment.paymentIntentId}</span>
+                      <span className="break-all font-mono text-xs">{getFutureOrderV2ProviderTransactionId(localPayment)}</span>
                     </p>
                     <p className="text-xs text-emerald-800/80">Test payment: no real money was charged.</p>
                     <button
@@ -571,7 +572,7 @@ export const CustomerFutureOrderV2Details = ({
                     {formatCustomerOrderDate(payment.recordedAt)}
                   </p>
                   <p>
-                    Payment reference: <span className="break-all font-mono">{payment.paymentIntentId}</span>
+                    Payment reference: <span className="break-all font-mono">{getFutureOrderV2ProviderTransactionId(payment)}</span>
                   </p>
                   <p className="text-heritage-ink/60">Test payment: no real money was charged.</p>
                 </div>

@@ -76,6 +76,7 @@ const makeLegacyDraft = (): GuestDesignDraft => ({
   },
   futureShippingState: {
     schemaVersion: 1,
+    pickupLocation: "",
     fulfilmentMethod: null,
     destinationSelectionMode: null,
     otherDestinationCountry: "",

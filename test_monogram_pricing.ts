@@ -104,7 +104,9 @@ const businessSettings = {
   },
 } as BusinessSettings;
 
-const expectedDescriptions: Readonly<Record<DecorativeFeature, string>> = {
+// Only the customer-selectable options are listed; Lining and Net are
+// construction extras with their own descriptions.
+const expectedDescriptions: Readonly<Partial<Record<DecorativeFeature, string>>> = {
   "Name Monogram":
     "Add your name to an eligible upper-body garment. Left Chest is the recommended placement.",
   Embroidery:

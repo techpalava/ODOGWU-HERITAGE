@@ -302,6 +302,8 @@ if (typeof globalThis.window === "undefined") {
   Object.assign(globalThis, {
     window: {
       localStorage: studioStorage,
+      // Design Studio reads location.search for the Stripe return resume.
+      location: { search: "", hash: "", pathname: "/", href: "http://localhost/" },
       setTimeout: globalThis.setTimeout.bind(globalThis),
       clearTimeout: globalThis.clearTimeout.bind(globalThis),
       requestAnimationFrame: (callback: FrameRequestCallback) => {
@@ -420,7 +422,7 @@ await act(async () => {
   await Promise.resolve();
   await Promise.resolve();
 });
-const studioRoot = () => studio.root.findByProps({ id: "design-studio-nine-stage-journey" });
+const studioRoot = () => studio.root.findByProps({ id: "design-studio-ten-stage-journey" });
 assert.equal(studioRoot().props["data-order-context-batch-id"], GROUP_ID);
 assert.equal(studioRoot().props["data-private-batch-authorization"], "authorized");
 const initialStudioAuthorizationGeneration =
@@ -549,7 +551,7 @@ for (const [privateBatchRole, uid] of [
   // Step 1 edit while the persisted-only PRIVATE identity remains authorized.
   const controlStudio = await mountPersistedOnlyStudio();
   const controlRoot = () =>
-    controlStudio.root.findByProps({ id: "design-studio-nine-stage-journey" });
+    controlStudio.root.findByProps({ id: "design-studio-ten-stage-journey" });
   assert.equal(
     controlRoot().props["data-order-context-type"],
     privateBatchRole === "organizer" ? "Group Organizer" : "Group Member",
@@ -580,7 +582,7 @@ for (const [privateBatchRole, uid] of [
   );
   const persistedOnlyStudio = await mountPersistedOnlyStudio();
   const persistedOnlyRoot = () =>
-    persistedOnlyStudio.root.findByProps({ id: "design-studio-nine-stage-journey" });
+    persistedOnlyStudio.root.findByProps({ id: "design-studio-ten-stage-journey" });
   assert.equal(
     persistedOnlyRoot().props["data-private-batch-authorization"],
     "authorized",
@@ -639,7 +641,7 @@ for (const orderType of ["Group Organizer", "Group Member"] as const) {
     await Promise.resolve();
   });
   const publicStudioRoot = publicStudio.root.findByProps({
-    id: "design-studio-nine-stage-journey",
+    id: "design-studio-ten-stage-journey",
   });
   assert.equal(publicStudioRoot.props["data-order-context-type"], orderType);
   assert.equal(publicStudioRoot.props["data-order-context-batch-id"], publicGroupId);

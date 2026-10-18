@@ -150,6 +150,9 @@ try {
       name: "Regression Administrator",
       email: "techpalavabox@gmail.com",
       phone: "+234000000000",
+      // Since 1dc6415 the admin role comes from the server bootstrap
+      // (customer.role), not from a client-side email list.
+      role: "Administrator",
     } satisfies Customer,
     referenceData: [],
     customDetailCatalog: [],

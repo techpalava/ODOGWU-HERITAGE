@@ -17,7 +17,6 @@ import {
 } from "./src/components/MonogramNamePreview";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
-  setDecorativeFeatureGarmentAssignment,
   setMonogramPlacementForGarment,
   setMonogramTextForGarment,
 } from "./src/utils/decorativePricing";

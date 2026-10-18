@@ -73,13 +73,25 @@ type BusinessSettingsResult = Awaited<
 >;
 const catalogGates = Array.from({ length: 5 }, () => deferred<Catalog>());
 const businessSettingsGates = Array.from(
-  { length: 2 },
+  { length: 5 },
   () => deferred<BusinessSettingsResult>(),
 );
 let catalogCalls = 0;
 let businessSettingsCalls = 0;
 let ordinaryListenerInstalls = 0;
 let privateDiscoveryStarts = 0;
+let activeOrdinaryListeners = 0;
+const installListener = () => {
+  ordinaryListenerInstalls += 1;
+  activeOrdinaryListeners += 1;
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    activeOrdinaryListeners -= 1;
+  };
+};
+const catalogOf = (id: string) => [{ id }] as unknown as Catalog;
 const restore = [
   replace(StorageService, "getCatalog", () =>
     catalogGates[catalogCalls++]!.promise,
@@ -87,22 +99,12 @@ const restore = [
   replace(StorageService, "getBusinessSettings", () =>
     businessSettingsGates[businessSettingsCalls++]!.promise,
   ),
-  replace(StorageService, "subscribeToDocument", () => {
-    ordinaryListenerInstalls += 1;
-    return () => undefined;
-  }),
-  replace(StorageService, "subscribeToCollection", () => {
-    ordinaryListenerInstalls += 1;
-    return () => undefined;
-  }),
-  replace(FabricService, "subscribeToFabrics", () => {
-    ordinaryListenerInstalls += 1;
-    return () => undefined;
-  }),
-  replace(DesignStyleAuthorityService, "subscribeToPublished", () => {
-    ordinaryListenerInstalls += 1;
-    return () => undefined;
-  }),
+  replace(StorageService, "subscribeToDocument", () => installListener()),
+  replace(StorageService, "subscribeToCollection", () => installListener()),
+  replace(FabricService, "subscribeToFabrics", () => installListener()),
+  replace(DesignStyleAuthorityService, "subscribeToPublished", () =>
+    installListener(),
+  ),
 ];
 const removePrivateDiscoveryObserver = setPrivateBatchDiscoveryStartObserverForTests(
   () => {
@@ -141,71 +143,79 @@ try {
     "Repeated initialization keeps Private Batch access generation monotonic.",
   );
 
-  catalogGates[0]!.resolve([]);
-  await flush();
+  // Since 5732403 each run starts its catalog/settings reads and listeners
+  // synchronously, in parallel. Supersession is enforced by the next run
+  // tearing those listeners down and by every later step checking that its
+  // run is still current, so a stale run's results never land.
+  assert.equal(catalogCalls, 2, "A and B each start one catalog read.");
+  assert.equal(businessSettingsCalls, 2, "A and B each start one settings read.");
+  const listenersPerRun = activeOrdinaryListeners;
+  assert.ok(listenersPerRun > 0, "Current B has its listeners installed.");
   assert.equal(
-    businessSettingsCalls,
-    0,
-    "Superseded A must not advance to the settings phase.",
+    ordinaryListenerInstalls,
+    listenersPerRun * 2,
+    "A's listeners were installed and then torn down by B.",
   );
-  assert.equal(ordinaryListenerInstalls, 0, "A must not install listeners.");
-  assert.equal(privateDiscoveryStarts, 0, "A must not start private discovery.");
+  assert.equal(privateDiscoveryStarts, 2);
+
+  catalogGates[0]!.resolve(catalogOf("catalog-A"));
+  businessSettingsGates[0]!.resolve(null);
+  await flush();
   assert.equal(
     useAppStore.getState().isLoadingData,
     true,
-    "A must not mark newer B initialization complete.",
+    "Superseded A must not mark newer B initialization complete.",
   );
+  assert.notDeepEqual(
+    useAppStore.getState().customDetailCatalog,
+    catalogOf("catalog-A"),
+    "Superseded A must not publish its catalog.",
+  );
+  assert.equal(activeOrdinaryListeners, listenersPerRun, "A must not reinstall listeners.");
 
-  catalogGates[1]!.resolve([]);
-  await flush();
-  assert.equal(businessSettingsCalls, 1, "Only B reaches the settings phase.");
-  businessSettingsGates[0]!.resolve(null);
+  catalogGates[1]!.resolve(catalogOf("catalog-B"));
+  businessSettingsGates[1]!.resolve(null);
   await initializationB;
   await initializationA;
-  assert.ok(ordinaryListenerInstalls > 0, "Current B installs listeners.");
-  assert.equal(privateDiscoveryStarts, 1, "Only current B starts private discovery.");
   assert.equal(useAppStore.getState().isLoadingData, false);
+  assert.deepEqual(useAppStore.getState().customDetailCatalog, catalogOf("catalog-B"));
+  assert.equal(activeOrdinaryListeners, listenersPerRun, "Only B's listeners stay active.");
+  assert.equal(
+    useAppStore.getState().customGroupAccessById[privateGroup.batchId],
+    undefined,
+    "No earlier private access survives reinitialization.",
+  );
 
-  // Exercise a three-call out-of-order completion as well: B then A resolve
-  // while C is current; only C can reach subscriptions/completion.
-  const listenerBaseline = ordinaryListenerInstalls;
-  const discoveryBaseline = privateDiscoveryStarts;
+  // Three-call out-of-order completion: B then A resolve while C is current;
+  // only C can publish completion, and only C's listeners stay active.
   const initializationA2 = useAppStore.getState().initializeData();
   const initializationB2 = useAppStore.getState().initializeData();
   const initializationC = useAppStore.getState().initializeData();
-  catalogGates[3]!.resolve([]);
+  assert.equal(catalogCalls, 5);
+  assert.equal(businessSettingsCalls, 5);
+  assert.equal(activeOrdinaryListeners, listenersPerRun);
+  catalogGates[3]!.resolve(catalogOf("catalog-B2"));
+  businessSettingsGates[3]!.resolve(null);
+  catalogGates[2]!.resolve(catalogOf("catalog-A2"));
+  businessSettingsGates[2]!.resolve(null);
   await flush();
-  assert.equal(
-    businessSettingsCalls,
-    1,
-    "Superseded B must not advance while C remains pending.",
-  );
-  catalogGates[2]!.resolve([]);
-  await flush();
-  assert.equal(
-    ordinaryListenerInstalls,
-    listenerBaseline,
-    "Superseded A/B must install no listeners.",
-  );
-  assert.equal(
-    privateDiscoveryStarts,
-    discoveryBaseline,
-    "Superseded A/B must not restart private discovery.",
-  );
   assert.equal(useAppStore.getState().isLoadingData, true);
-  catalogGates[4]!.resolve([]);
-  await flush();
-  assert.equal(businessSettingsCalls, 2, "Only C reaches settings.");
-  businessSettingsGates[1]!.resolve(null);
+  assert.deepEqual(
+    useAppStore.getState().customDetailCatalog,
+    catalogOf("catalog-B"),
+    "Superseded A2/B2 must not publish their catalogs.",
+  );
+  catalogGates[4]!.resolve(catalogOf("catalog-C"));
+  businessSettingsGates[4]!.resolve(null);
   await Promise.all([initializationA2, initializationB2, initializationC]);
-  assert.ok(ordinaryListenerInstalls > listenerBaseline);
-  assert.equal(privateDiscoveryStarts, discoveryBaseline + 1);
   assert.equal(useAppStore.getState().isLoadingData, false);
+  assert.deepEqual(useAppStore.getState().customDetailCatalog, catalogOf("catalog-C"));
+  assert.equal(activeOrdinaryListeners, listenersPerRun);
 } finally {
   removePrivateDiscoveryObserver();
   restore.reverse().forEach((restoreDependency) => restoreDependency());
 }
 
 console.log(
-  "PASS: initializeData supersession leaves older startup runs inert through listener and private-discovery installation",
+  "PASS: initializeData supersession keeps older startup runs from publishing results or keeping listeners",
 );

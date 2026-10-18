@@ -122,7 +122,7 @@ const draft: GuestDesignDraft = {
   specialInstructions: "",
   leftoverFabricChoice: "",
   hasLining: false,
-  pricingBreakdown: {},
+  pricingBreakdown: { customDetailsPrice: 0, eindhovenToDestinationShipping: null },
   shippingSnapshot: {},
   updatedAt: "2026-10-04T12:00:00.000Z",
   resumeLocus: created,
@@ -153,7 +153,8 @@ assert.deepEqual(normalized.resumeLocus, {
 
 const dropped = normalizeGuestDesignDraft({
   ...draft,
-  resumeLocus: { schemaVersion: 9, activeWearerId: "wearer-2" } as GuestDesignDraft["resumeLocus"],
+  // Deliberately malformed persisted data (unknown schema version).
+  resumeLocus: { schemaVersion: 9, activeWearerId: "wearer-2" } as unknown as GuestDesignDraft["resumeLocus"],
 });
 assert.equal(dropped.resumeLocus, undefined);
 
