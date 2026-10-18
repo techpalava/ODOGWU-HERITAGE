@@ -1195,13 +1195,12 @@ const customDetailsSource = readFileSync(
 );
 assert.match(
   customDetailsSource,
-  /orderSummary \? \(\s*<div className="mt-5 min-w-0 lg:mt-0/,
+  /<DesignStudioStepSidebar>\s*\{orderSummary \? \(\s*orderSummary/,
 );
 const customDetailsStageMarkup = customDetailsSource.slice(
   customDetailsSource.indexOf("data-stage-id={stage}"),
 );
-const customDetailsSummaryGridClass =
-  "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6";
+const customDetailsSummaryGridClass = "<DesignStudioStepLayout>";
 const customDetailsSummaryGridAt = customDetailsStageMarkup.indexOf(
   customDetailsSummaryGridClass,
 );
@@ -1218,7 +1217,7 @@ const customDetailsLeftColumnMarkers = [
   "data-step5-garment-context-list",
   "data-additional-garment-fabric-announcement",
   "id={`future-${stage}-title`}",
-  "{completion.blockers.length > 0 &&",
+  "{stageAttentionMessages.length > 0 &&",
 ];
 for (const marker of customDetailsLeftColumnMarkers) {
   assert.equal(

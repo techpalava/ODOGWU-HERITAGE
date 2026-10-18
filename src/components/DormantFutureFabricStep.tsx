@@ -1,3 +1,9 @@
+import {
+  DesignStudioStepFooter,
+  DesignStudioStepLayout,
+  DesignStudioStepMain,
+  DesignStudioStepSidebar,
+} from "./DesignStudioStepLayout";
 import { CheckCircle2, Layers3, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -2203,8 +2209,8 @@ export const DormantFutureFabricStep = ({
       data-stage-id="fabric"
       data-stage-complete={completion.isComplete}
     >
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-6">
-        <div className="min-w-0 space-y-6">
+      <DesignStudioStepLayout>
+        <DesignStudioStepMain className="space-y-6">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioStepActions
           slot="header"
@@ -2846,8 +2852,8 @@ export const DormantFutureFabricStep = ({
           </div>
         )}
 
-        </div>
-        <div className="mt-6 min-w-0 lg:mt-0">
+        </DesignStudioStepMain>
+        <DesignStudioStepSidebar>
       {orderSummary ? (
         orderSummary
       ) : (
@@ -2889,8 +2895,25 @@ export const DormantFutureFabricStep = ({
           </div>
       </aside>
       )}
-        </div>
+        </DesignStudioStepSidebar>
+        <DesignStudioStepFooter>
+      <div
+        className="space-y-4"
+        data-testid={showContinueAction ? "future-fabric-continue-action" : undefined}
+      >
+        <DesignStudioStepActions
+          slot="footer"
+          backDestination="Garment Type"
+          onBack={onBack}
+          forward={showContinueAction ? {
+            destination: "Design Style",
+            onClick: onContinue,
+            ariaLabel: "Continue to Design Style",
+          } : undefined}
+        />
       </div>
+        </DesignStudioStepFooter>
+      </DesignStudioStepLayout>
 
       {pendingStep1FabricAssignment &&
         step1AssignmentDialogFabric &&
@@ -3029,22 +3052,6 @@ export const DormantFutureFabricStep = ({
           onCancel={() => closeFabricRemovalChooser(true)}
         />
       ) : null}
-
-      <div
-        className="space-y-4"
-        data-testid={showContinueAction ? "future-fabric-continue-action" : undefined}
-      >
-        <DesignStudioStepActions
-          slot="footer"
-          backDestination="Garment Type"
-          onBack={onBack}
-          forward={showContinueAction ? {
-            destination: "Design Style",
-            onClick: onContinue,
-            ariaLabel: "Continue to Design Style",
-          } : undefined}
-        />
-      </div>
 
       {pendingOrphanRepair &&
         typeof document !== "undefined" &&
