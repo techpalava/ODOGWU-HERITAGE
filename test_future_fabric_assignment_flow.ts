@@ -270,23 +270,35 @@ assert.equal(
   "a full-capacity Long Dress must not create a half-capacity offer",
 );
 
-// Deliberately separate half Fabrics complete the stage and are charged once each.
+// Shirt + Trouser need one Fabric, so a second Fabric product is blocked.
 const twoGarmentSelection = createSelection(["shirt", "trouser"]);
 const firstHalfState = assign(FabricAllocationStateEngine.initialize(), ["shirt", "trouser"], "base:shirt", "FAB-A");
 const firstHalfCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: firstHalfState, fabrics });
 assert.equal(firstHalfCompletion.isComplete, false);
 assert.deepEqual(getFutureRemainingFabricCapacityOffers({ fabricAllocationState: firstHalfState, fabricStageComplete: firstHalfCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true }), []);
-const separateHalvesState = assign(firstHalfState, ["shirt", "trouser"], "base:trouser", "FAB-B");
+const blockedSecondFabric = assignFutureFabricToGarment({ state: firstHalfState, garmentTypeSelection: twoGarmentSelection, garmentKey: "base:trouser", fabricCode: "FAB-B", fabrics });
+assert.equal(blockedSecondFabric.status, "blocked");
+assert.equal(blockedSecondFabric.status === "blocked" ? blockedSecondFabric.reason : null, "FABRIC_QUANTITY_LIMIT_REACHED");
+assert.equal(blockedSecondFabric.state.fabricAllocations.length, 1);
+// A saved draft from before the limit may still hold separate halves. Its
+// selections are kept (and priced as saved), but Fabric cannot complete.
+const separateHalvesState = FabricAllocationStateEngine.attemptAppendGarment(
+  FabricAllocationStateEngine.createAllocationForFabric(firstHalfState, "FAB-B"),
+  { code: "BASE_TROUSER", garmentSpec: { key: "base:trouser", garmentType: "trouser", fabricUnits: 1 }, sourceRole: "main" },
+);
 const separateHalvesCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: separateHalvesState, fabrics });
-assert.equal(separateHalvesCompletion.isComplete, true);
-assert.deepEqual(separateHalvesCompletion.blockers, []);
+assert.equal(separateHalvesCompletion.isComplete, false);
+assert.deepEqual(separateHalvesCompletion.blockers, [{ code: "FABRIC_QUANTITY_OVER_ALLOCATED" }]);
 assert.equal(separateHalvesState.fabricAllocations.length, 2);
 const separateHalvesPricing = resolveFabricAllocationMaterialPricing(separateHalvesState.fabricAllocations, fabrics);
 assert.equal(separateHalvesPricing.status, "resolved");
 if (separateHalvesPricing.status !== "resolved") throw new Error("Expected material pricing");
 assert.equal(separateHalvesPricing.allocationCount, 2);
 assert.equal(separateHalvesPricing.totalMaterialPrice, 30);
-const combinedCapacityOffers = getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: separateHalvesCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true });
+assert.deepEqual(getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: separateHalvesCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true }), []);
+// Offer signatures are still checked with two half allocations, as a saved
+// draft can carry them; the stage-complete gate is forced for that check only.
+const combinedCapacityOffers = getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: true, hasEligibleHalfCapacityAdditionalGarment: true });
 assert.deepEqual(combinedCapacityOffers.map((offer) => offer.fabricCode), ["FAB-A", "FAB-B"]);
 const combinedSignature = getRemainingFabricCapacityOfferSignature(combinedCapacityOffers);
 const dismissedSignatures = new Set([combinedSignature]);
@@ -758,7 +770,8 @@ act(() => lockedCapacityOfferRenderer.unmount());
 
 // Physical allocation ordinals must be calculated before partial allocations
 // are filtered. Here Selection 1 is full while Selections 2 and 3 still have
-// one standard-garment slot each.
+// one standard-garment slot each. Four standard garments need only two
+// Fabrics, so Selection 3 is built directly as a saved pre-limit draft would be.
 const threePhysicalSelections = [
   "shirt",
   "trouser",
@@ -773,7 +786,10 @@ let ordinalState = assign(
 );
 ordinalState = assign(ordinalState, threePhysicalSelections, "base:trouser", "FAB-A");
 ordinalState = assign(ordinalState, threePhysicalSelections, "base:skirt", "FAB-B");
-ordinalState = assign(ordinalState, threePhysicalSelections, "base:kaftan", "FAB-C");
+ordinalState = FabricAllocationStateEngine.attemptAppendGarment(
+  FabricAllocationStateEngine.createAllocationForFabric(ordinalState, "FAB-C"),
+  { code: "BASE_KAFTAN", garmentSpec: { key: "base:kaftan", garmentType: "kaftan", fabricUnits: 1 }, sourceRole: "main" },
+);
 const ordinalOffers = getFutureRemainingFabricCapacityOffers({
   fabricAllocationState: ordinalState,
   fabricStageComplete: true,
@@ -1791,27 +1807,22 @@ assert.match(stepSource, /data-fabric-selection-progress="true"/);
 assert.match(stepSource, /data-garment-assignment-progress="true"/);
 assert.match(stepSource, /data-fabric-planning-sentence="true"/);
 assert.match(stepSource, /formatRequiredFabricQuantitySentence/);
-assert.match(stepSource, /Fabrics Selected:/);
+assert.match(stepSource, /Fabrics chosen:/);
 assert.doesNotMatch(
   stepSource,
   /Fabric selections:/,
-  "Step 2 must use Fabrics Selected, not Fabric selections.",
-);
-assert.doesNotMatch(
-  stepSource,
-  /of \$\{requiredFabricQuantity\} needed/,
-  "Step 2 counter copy must not append needed.",
+  "Step 2 must use Fabrics chosen, not Fabric selections.",
 );
 assert.match(
   stepSource,
-  /\$\{selectedFabricQuantity\} · Minimum needed: \$\{requiredFabricQuantity\}/,
-  "The efficient minimum must not look like a mandatory maximum.",
+  /Fabrics chosen: \$\{selectedFabricQuantity\} of \$\{requiredFabricQuantity\} needed/,
+  "The counter must say how many Fabrics are chosen out of the number needed.",
 );
 assert.match(
   stepSource,
-  /\$\{assignedGarmentCount\}\/\$\{requiredGarmentCount\}/,
-  "Garments assigned must use X/Y with no spaces around the slash.",
+  /Garments with fabric: \$\{assignedGarmentCount\} of \$\{requiredGarmentCount\}/,
 );
+assert.match(stepSource, /data-fabric-progress-complete-heading="true"/);
 assert.match(stepSource, /data-fabric-progress-icon="true"/);
 assert.match(stepSource, /data-catalogue-scroll-anchor="true"/);
 assert.match(stepSource, /catalogueScrollAnchorRef/);
@@ -1823,7 +1834,7 @@ assert.doesNotMatch(
   /querySelector<HTMLElement>\("\[data-fabric-card\]"\)/,
   "Inline Add/Change Fabric must not focus the first Fabric card after scrolling.",
 );
-assert.match(stepSource, /Garments assigned:/);
+assert.match(stepSource, /Garments with fabric:/);
 assert.doesNotMatch(
   stepSource,
   /Fabrics selected:/,

@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import type { Fabric } from "../types";
 import type { FuturePartialFabricAssignmentTargetPresentation } from "../utils/designStudioFutureFabricStage";
+import { AssignedFabricPreview } from "./AssignedFabricPreview";
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   Array.from(
@@ -17,12 +19,15 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
 export const PartialFabricCapacityAssignmentDialog = ({
   garmentLabel,
   fabricNameByCode,
+  fabricByCode,
   targets,
   onConfirm,
   onCancel,
 }: {
   garmentLabel: string;
   fabricNameByCode: ReadonlyMap<string, string>;
+  /** Catalogue Fabrics used for each card's image (fallback when missing). */
+  fabricByCode?: ReadonlyMap<string, Fabric>;
   targets: readonly FuturePartialFabricAssignmentTargetPresentation[];
   onConfirm: (allocationId: string) => void;
   onCancel: () => void;
@@ -35,6 +40,19 @@ export const PartialFabricCapacityAssignmentDialog = ({
   const singleFabricName =
     singleTarget &&
     (fabricNameByCode.get(singleTarget.fabricCode) || singleTarget.fabricCode);
+
+  const renderFabricImage = (
+    target: FuturePartialFabricAssignmentTargetPresentation,
+    fabricName: string,
+  ) => (
+    <AssignedFabricPreview
+      fabric={fabricByCode?.get(target.fabricCode)}
+      garmentKey={target.allocationId}
+      garmentLabel={garmentLabel}
+      fabricCode={target.fabricCode}
+      imageAlt={fabricName}
+    />
+  );
 
   useEffect(() => {
     if (typeof document === "undefined" || !document.body?.style) return;
@@ -120,26 +138,29 @@ export const PartialFabricCapacityAssignmentDialog = ({
 
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-5">
           {singleTarget ? (
-            <div className="space-y-3 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 p-4">
-              <p className="break-words font-serif text-base font-bold text-heritage-green">
-                {singleFabricName}
-              </p>
-              <p className="text-sm text-heritage-ink/75">
-                <span className="font-semibold text-heritage-green">
-                  Currently assigned:
-                </span>{" "}
-                {singleTarget.assignedGarmentLabels.join(", ")}
-              </p>
-              <p className="text-sm text-heritage-ink/75">
-                <span className="font-semibold text-heritage-green">Add:</span>{" "}
-                {singleTarget.addGarmentLabel}
-              </p>
-              <p
-                className="text-sm font-semibold text-heritage-green"
-                data-partial-capacity-progress="true"
-              >
-                Capacity: {singleTarget.usedUnits}/{singleTarget.usedUnits + singleTarget.remainingUnits} → {singleTarget.projectedUsedUnits}/{singleTarget.usedUnits + singleTarget.remainingUnits}
-              </p>
+            <div className="flex min-w-0 flex-col gap-4 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 p-4 sm:flex-row sm:items-start">
+              {renderFabricImage(singleTarget, singleFabricName || singleTarget.fabricCode)}
+              <div className="min-w-0 flex-1 space-y-3">
+                <p className="break-words font-serif text-base font-bold text-heritage-green">
+                  {singleFabricName}
+                </p>
+                <p className="text-sm text-heritage-ink/75">
+                  <span className="font-semibold text-heritage-green">
+                    Currently assigned:
+                  </span>{" "}
+                  {singleTarget.assignedGarmentLabels.join(", ")}
+                </p>
+                <p className="text-sm text-heritage-ink/75">
+                  <span className="font-semibold text-heritage-green">Add:</span>{" "}
+                  {singleTarget.addGarmentLabel}
+                </p>
+                <p
+                  className="text-sm font-semibold text-heritage-green"
+                  data-partial-capacity-progress="true"
+                >
+                  Capacity: {singleTarget.usedUnits}/{singleTarget.usedUnits + singleTarget.remainingUnits} → {singleTarget.projectedUsedUnits}/{singleTarget.usedUnits + singleTarget.remainingUnits}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -152,21 +173,26 @@ export const PartialFabricCapacityAssignmentDialog = ({
                     className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 p-4"
                     data-partial-allocation-id={target.allocationId}
                   >
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-                      Fabric Selection {target.fabricSelectionNumber}
-                    </p>
-                    <p className="mt-1 break-words font-serif text-base font-bold text-heritage-green">
-                      {fabricName}
-                    </p>
-                    <p className="mt-2 text-sm text-heritage-ink/75">
-                      Currently: {target.assignedGarmentLabels.join(", ")}
-                    </p>
-                    <p
-                      className="mt-2 text-sm font-semibold text-heritage-green"
-                      data-partial-capacity-progress="true"
-                    >
-                      Capacity: {target.usedUnits}/{target.usedUnits + target.remainingUnits} → {target.projectedUsedUnits}/{target.usedUnits + target.remainingUnits}
-                    </p>
+                    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+                      {renderFabricImage(target, fabricName)}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
+                          Fabric Selection {target.fabricSelectionNumber}
+                        </p>
+                        <p className="mt-1 break-words font-serif text-base font-bold text-heritage-green">
+                          {fabricName}
+                        </p>
+                        <p className="mt-2 text-sm text-heritage-ink/75">
+                          Currently: {target.assignedGarmentLabels.join(", ")}
+                        </p>
+                        <p
+                          className="mt-2 text-sm font-semibold text-heritage-green"
+                          data-partial-capacity-progress="true"
+                        >
+                          Capacity: {target.usedUnits}/{target.usedUnits + target.remainingUnits} → {target.projectedUsedUnits}/{target.usedUnits + target.remainingUnits}
+                        </p>
+                      </div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => onConfirm(target.allocationId)}

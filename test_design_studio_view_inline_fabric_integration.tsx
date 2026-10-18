@@ -360,9 +360,21 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   assert.equal(activated.selectedStyleId, "style-shirt-1");
   assert.equal(activated.designSource?.kind, "catalog");
 
+  // Fill Fabric A first: another Fabric is only allowed when the order
+  // actually needs one more (here Shirt + two added Shirts need two Fabrics).
+  const filler = createCatalogueAdditionalGarmentSelection({
+    garmentType: "shirt",
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
+  });
+  assert.equal(filler.status, "resolved");
+  state = FabricAllocationStateEngine.attemptAppendGarment(
+    state,
+    filler.selection,
+  );
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
     authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
+    authorizedOccurrenceKeys: [filler.selection.garmentSpec!.key],
   });
   assert.equal(addition.status, "resolved");
   const garmentKey = addition.selection.garmentSpec!.key;
