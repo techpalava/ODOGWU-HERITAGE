@@ -62,7 +62,9 @@ export type AdditionalGarmentFabricTransaction = {
       | "fabric"
       | "design_style"
       | "custom_details"
-      | "personalized_additions";
+      | "personalized_additions"
+      | "measurement"
+      | "summary";
   };
   /** True when the Step 5 fabric dialog was opened for this transaction. */
   openedModal?: boolean;

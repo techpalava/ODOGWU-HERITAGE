@@ -5524,7 +5524,7 @@ export default function DesignStudioView({
     effectiveJourneyGarmentTypeSelection;
   const garmentTypeSelectionReconcileSignature = JSON.stringify({
     types: garmentTypeSelection.garmentTypes,
-    demographic: garmentTypeSelection.selectedDemographic,
+    demographic: garmentTypeSelection.demographic,
     identity: garmentTypeSelection.physicalOccurrenceIdentityState,
   });
 

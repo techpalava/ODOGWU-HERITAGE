@@ -252,6 +252,7 @@ const makeDraft = (
   },
   futureShippingState: {
     schemaVersion: 1,
+    pickupLocation: "",
     fulfilmentMethod: "destination_delivery",
     destinationSelectionMode: "supported_country",
     otherDestinationCountry: "",

@@ -85,8 +85,9 @@ assert.match(
 for (const [section, stage] of [
   ["Garments Ordered", "garment_type"],
   ["Fabrics", "fabric"],
-  ["Design Style", "design_style"],
-  ["Construction Options", "custom_details"],
+  // Commit 928a2e4 merged Design Style and Construction Options into one
+  // "Style & Options" section owned by the Design Style step.
+  ["Style & Options", "design_style"],
   ["Measurements", "measurement"],
   ["Delivery & Pickup", "shipping"],
 ] as const) {

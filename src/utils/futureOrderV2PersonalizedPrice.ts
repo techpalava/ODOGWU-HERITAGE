@@ -256,9 +256,12 @@ export const parseFutureOrderV2PersonalizedPrice = (
   const parsed = lines as PersonalizedAdditionPriceLine[];
   const keys = new Set(parsed.map((line) => line.occurrenceKey));
   if (keys.size !== parsed.length) return null;
-  const additionPaidCents =
-    value.additionPaidCents == null ? null : value.additionPaidCents;
-  if (additionPaidCents !== null && !isCents(additionPaidCents)) return null;
+  const rawAdditionPaidCents = value.additionPaidCents;
+  let additionPaidCents: number | null = null;
+  if (rawAdditionPaidCents != null) {
+    if (!isCents(rawAdditionPaidCents)) return null;
+    additionPaidCents = rawAdditionPaidCents;
+  }
   return {
     schemaVersion: 1,
     orderId: value.orderId,

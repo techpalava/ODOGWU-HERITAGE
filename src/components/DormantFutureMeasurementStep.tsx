@@ -724,16 +724,6 @@ export const DormantFutureMeasurementStep = ({
   const requiredRequirements = selectedMethod
     ? presentationRequirements.filter((requirement) => requirement.section === "required")
     : [];
-  const calculatedRequirements = selectedMethod
-    ? presentationRequirements.filter(
-        (requirement) => requirement.inputSource === "calculated_average_factor",
-      )
-    : [];
-  const optionalRequirements = selectedMethod
-    ? presentationRequirements.filter(
-        (requirement) => requirement.inputSource === "optional_manual",
-      )
-    : [];
   const requiredUnitCount = countRequiredMeasurementUnits(requiredRequirements);
   const completedManualInputCount = countSatisfiedRequiredMeasurementUnits({
     requirements: requiredRequirements,
