@@ -114,11 +114,11 @@ const SAMPLE_CLOTH_HALF_WIDTH_IDS = new Set<CanonicalMeasurementId>([
 ]);
 
 const SAMPLE_CLOTH_CUSTOMER_LABELS: Partial<Record<CanonicalMeasurementId, string>> = {
-  chest_bust_circumference: "Chest across sample (laid flat)",
+  chest_bust_circumference: "Chest / Borst across sample (laid flat)",
   belly_circumference: "Belly across sample (laid flat)",
   waist_circumference: "Waist across sample (laid flat)",
   hip_circumference: "Hip across sample (laid flat)",
-  under_bust_circumference: "Under Bust across sample (laid flat)",
+  under_bust_circumference: "Under Borst across sample (laid flat)",
   bicep_circumference: "Bicep across sample (laid flat)",
   elbow_circumference: "Elbow across sample (laid flat)",
   wrist_circumference: "Wrist across sample (laid flat)",
