@@ -157,16 +157,23 @@ act(() => {
 });
 assert.deepEqual(selectedExistingAllocationIds, [allocationA]);
 
-act(() => {
-  dialog
-    .findByProps({
-      "data-fabric-card": "true",
-      "data-fabric-code": fabricC.code,
-      "data-fabric-action": "select",
-    })
-    .props.onClick();
+// Shirt + Trouser + the new Trouser need two Fabrics and the order already
+// has two, so a third Fabric is blocked with a clear reason. Spare capacity on
+// Fabric A or B ("In Your Order") remains the way to place this garment.
+const blockedFabricCCard = dialog.findByProps({
+  "data-fabric-card": "true",
+  "data-fabric-code": fabricC.code,
 });
-assert.deepEqual(selectedNewFabricCodes, [fabricC.code]);
+assert.equal(blockedFabricCCard.props["data-fabric-action"], "none");
+assert.equal(blockedFabricCCard.props.disabled, true);
+assert.match(
+  textContent(dialog.findByProps({ "data-fabric-card-code": fabricC.code })),
+  /Your order already uses the 2 fabrics required\. To use this Fabric, first remove or change another Fabric assignment\./,
+);
+act(() => {
+  blockedFabricCCard.props.onClick?.();
+});
+assert.deepEqual(selectedNewFabricCodes, [], "a blocked Fabric card must not start a new allocation");
 
 const reused = assignFutureGarmentToExistingFabricAllocation({
   state: pendingState,
@@ -222,14 +229,83 @@ assert.equal(
   "a catalogue-marked one-unit Bum Shorts allocation must assign successfully",
 );
 
-const newAllocation = applyFutureFabricCardSelection({
+const blockedNewAllocation = applyFutureFabricCardSelection({
   state: pendingState,
   garmentTypeSelection,
   garmentKey,
   fabricCode: fabricC.code,
   fabrics,
 });
-assert.equal(newAllocation.fabricAllocations.length, 3);
+assert.equal(
+  blockedNewAllocation.fabricAllocations.length,
+  2,
+  "a Fabric past the number the order needs must not create another allocation",
+);
+assert.equal(
+  blockedNewAllocation.fabricAllocations.some((entry) =>
+    entry.garmentAssignments.some((assignment) => assignment.garmentKey === garmentKey),
+  ),
+  false,
+);
+
+// When the Additional Garment truly needs another Fabric (Shirt + Trouser
+// share Fabric A, which is full), a different catalogue Fabric stays open.
+let sharedFullState = FabricAllocationStateEngine.initialize();
+sharedFullState = FabricAllocationStateEngine.createAllocationForFabric(sharedFullState, fabricA.code);
+sharedFullState = FabricAllocationStateEngine.attemptAppendGarment(sharedFullState, {
+  code: "BASE_SHIRT",
+  garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+  sourceRole: "main",
+});
+sharedFullState = FabricAllocationStateEngine.attemptAppendGarment(sharedFullState, {
+  code: "BASE_TROUSER",
+  garmentSpec: { key: "base:trouser", garmentType: "trouser", fabricUnits: 1 },
+  sourceRole: "main",
+});
+const sharedFullPendingState =
+  FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
+    sharedFullState,
+    addition.selection,
+  );
+const sharedFullSelections: string[] = [];
+act(() => {
+  renderer = create(
+    createElement(FutureAdditionalGarmentFabricDialog, {
+      transaction: {
+        transactionId: 4,
+        phase: "catalogue",
+        origin: "new_addition",
+        garmentKey,
+        garmentType: "trouser",
+        openedModal: true,
+      },
+      fabrics,
+      garmentTypeSelection,
+      fabricAllocationState: sharedFullPendingState,
+      errorMessage: null,
+      onSelectFabric: (fabricCode) => sharedFullSelections.push(fabricCode),
+      onSelectExistingAllocation: () => undefined,
+      onCancel: () => undefined,
+    }),
+  );
+});
+const openFabricCCard = renderer.root.findByProps({
+  "data-fabric-card": "true",
+  "data-fabric-code": fabricC.code,
+});
+assert.equal(openFabricCCard.props["data-fabric-action"], "select");
+assert.equal(openFabricCCard.props.disabled, false);
+act(() => openFabricCCard.props.onClick());
+assert.deepEqual(sharedFullSelections, [fabricC.code]);
+act(() => renderer.unmount());
+const newAllocation = applyFutureFabricCardSelection({
+  state: sharedFullPendingState,
+  garmentTypeSelection,
+  garmentKey,
+  fabricCode: fabricC.code,
+  fabrics,
+});
+assert.equal(newAllocation.fabricAllocations.length, 2);
 assert.equal(
   newAllocation.fabricAllocations.find((entry) =>
     entry.garmentAssignments.some((assignment) => assignment.garmentKey === garmentKey),
