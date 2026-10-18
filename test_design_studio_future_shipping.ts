@@ -1,4 +1,7 @@
-import { COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE } from "./src/utils/communityBatchOrderClosure";
+import {
+  COMMUNITY_BATCH_CHECKING_MESSAGE,
+  COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE,
+} from "./src/utils/communityBatchOrderClosure";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
@@ -1343,6 +1346,79 @@ assert.equal(readyPickup.text().includes("Enter the recipient's full name."), fa
     /This batch is closed/,
   );
   assert.equal(focused[focused.length - 1], "future-shipping-review-blocked-header");
+  act(() => view.unmount());
+}
+
+// Ready Step 9 copy no longer claims payment is unavailable (PAY works on Step 10).
+{
+  let renderer: ReactTestRenderer | null = null;
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureShippingStep, {
+        state: pickup.state,
+        resolution: pickup,
+        selectedDesignPrice: 65,
+        garmentCount: 1,
+        orderType: "Community",
+        onChange: () => undefined,
+        onRefreshQuote: () => undefined,
+        onBack: () => undefined,
+        canContinueToReview: true,
+        onContinueToReview: () => undefined,
+      }),
+    );
+  });
+  const view = renderer as unknown as ReactTestRenderer;
+  const json = JSON.stringify(view.toJSON());
+  assert.match(json, /Your order review is ready\. Select Review Order to check your order and pay securely\./);
+  assert.equal(json.includes("Online payment remains unavailable"), false);
+  act(() => view.unmount());
+}
+
+// Batch still loading: no closed message, Review Order waits quietly.
+{
+  let continued = false;
+  let renderer: ReactTestRenderer | null = null;
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureShippingStep, {
+        state: pickup.state,
+        resolution: pickup,
+        selectedDesignPrice: 65,
+        garmentCount: 1,
+        orderType: "Community",
+        onChange: () => undefined,
+        onRefreshQuote: () => undefined,
+        onBack: () => undefined,
+        canContinueToReview: true,
+        onContinueToReview: () => {
+          continued = true;
+        },
+        reviewBlockedMessage: null,
+        reviewCheckingMessage: COMMUNITY_BATCH_CHECKING_MESSAGE,
+      }),
+      { createNodeMock: () => ({ focus: () => undefined, scrollIntoView: () => undefined }) },
+    );
+  });
+  const view = renderer as unknown as ReactTestRenderer;
+  const json = JSON.stringify(view.toJSON());
+  assert.equal(json.includes("This batch is closed"), false, "loading batch shows no closed message");
+  assert.ok(json.includes(COMMUNITY_BATCH_CHECKING_MESSAGE), "loading batch shows the quiet checking note");
+  const buttons = view.root.findAll(
+    (node) => node.type === "button" && node.props?.["aria-label"] === "Review Order",
+  );
+  assert.equal(buttons.length, 2);
+  for (const button of buttons) {
+    act(() => {
+      button.props.onClick();
+    });
+  }
+  assert.equal(continued, false, "Review Order cannot proceed while the batch is unknown");
+  assert.equal(
+    view.root.findAll((node) => node.props?.["data-future-shipping-review-blocked"] === "footer").length,
+    0,
+    "no closed alert while loading",
+  );
   act(() => view.unmount());
 }
 

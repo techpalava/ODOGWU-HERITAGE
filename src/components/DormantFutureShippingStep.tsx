@@ -52,6 +52,11 @@ interface DormantFutureShippingStepProps {
    * clickable but only explains why the order cannot be reviewed.
    */
   reviewBlockedMessage?: string | null;
+  /**
+   * Set while the order's batch is still being checked (batch list loading).
+   * Review stays unavailable, with this quiet note instead of a closed error.
+   */
+  reviewCheckingMessage?: string | null;
 }
 
 type ReviewActionSlot = "header" | "footer";
@@ -115,9 +120,11 @@ export const DormantFutureShippingStep = ({
   onEditPersonalizedAdditions,
   onContinueToReview,
   reviewBlockedMessage = null,
+  reviewCheckingMessage = null,
 }: DormantFutureShippingStepProps) => {
   const reviewBlocked = Boolean(reviewBlockedMessage);
-  const reviewReady = canContinueToReview && !reviewBlocked;
+  const reviewChecking = !reviewBlocked && Boolean(reviewCheckingMessage);
+  const reviewReady = canContinueToReview && !reviewBlocked && !reviewChecking;
   const [reviewBlockedNotice, setReviewBlockedNotice] = useState<{
     slot: ReviewActionSlot;
     nonce: number;
@@ -167,6 +174,7 @@ export const DormantFutureShippingStep = ({
       }));
       return;
     }
+    if (reviewChecking && canContinueToReview) return;
     if (canContinueToReview) {
       onContinueToReview();
       return;
@@ -1029,10 +1037,12 @@ export const DormantFutureShippingStep = ({
             </p>
           ) : (
             <p id="future-payment-lock-reason" className="w-full text-xs leading-relaxed text-heritage-ink/60">
-              {priceEvaluationPending && canContinueToReview
+              {reviewChecking && canContinueToReview
+                ? reviewCheckingMessage
+                : priceEvaluationPending && canContinueToReview
                 ? "Your order review is ready. The total today is the base garment. Personalized additions are reviewed after you order."
                 : canContinueToReview
-                  ? "Your order review is ready. Online payment remains unavailable."
+                  ? "Your order review is ready. Select Review Order to check your order and pay securely."
                   : resolution.quoteRequired
                     ? "Custom shipping quote required before reviewing payment."
                     : "Complete delivery or pickup before reviewing your order."}

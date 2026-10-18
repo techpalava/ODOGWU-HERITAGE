@@ -6,7 +6,9 @@ import {
   communityBatchFromRecord,
   isCommunityBatchClosedForOrders,
   requestFutureOrderCartAdmission,
+  resolveCommunityBatchClosureStatus,
 } from "./src/utils/communityBatchOrderClosure";
+import { readFileSync } from "node:fs";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./src/utils/futureOrderCandidate";
 import { handleFutureOrderV2StripePayment } from "./src/server/futureOrderV2StripePayment";
 import {
@@ -321,5 +323,29 @@ await assert.rejects(
     error instanceof FutureOrderV2ServerError &&
     error.code === "COMMUNITY_BATCH_UNAVAILABLE",
 );
+
+// Closure status waits for the batch list: unknown/loading is never "closed".
+{
+  const community = { orderType: "Community" as const, batchId: "batch-6" };
+  assert.equal(resolveCommunityBatchClosureStatus({ orderType: "Individual" }, [], false, NOW), "not_applicable");
+  assert.equal(resolveCommunityBatchClosureStatus(community, [], false, NOW), "loading");
+  assert.equal(resolveCommunityBatchClosureStatus(community, [batch()], false, NOW), "loading");
+  assert.equal(resolveCommunityBatchClosureStatus(community, [batch()], true, NOW), "open");
+  assert.equal(
+    resolveCommunityBatchClosureStatus(community, [avatarsPastDeadline], true, NOW),
+    "closed",
+  );
+  // The loaded list is the whole batches collection, so a missing batch is closed.
+  assert.equal(resolveCommunityBatchClosureStatus(community, [batch({ id: "batch-8" })], true, NOW), "closed");
+
+  const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+  assert.equal(studioSource.includes("(storeBatches || []).length > 0 &&"), false);
+  assert.match(studioSource, /resolveCommunityBatchClosureStatus\(\s*futureOrderIdentity,\s*storeBatches \|\| \[\],\s*hasLoadedStoreBatches,/);
+  // The load-time toast is judged from the live batch, not the reloaded draft context.
+  assert.match(studioSource, /resolveCommunityBatchClosureStatus\(\s*\{ orderType: "Community", batchId: effectiveOrderContext\.batchId \}/);
+  const cartSource = readFileSync("src/components/FutureOrderV2CartPayPanel.tsx", "utf8");
+  assert.equal(cartSource.includes("batches.length > 0 &&"), false);
+  assert.match(cartSource, /disabled=\{communityBatchClosed \|\| communityBatchChecking \|\| paying \|\| !stripeReady\}/);
+}
 
 console.log("PASS: closed community batches are rejected for cart, checkout, and save");

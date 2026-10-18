@@ -18,8 +18,9 @@ import {
   getFutureOrderV2CartLineTotalCents,
 } from "../utils/futureOrderV2CartBag";
 import {
+  COMMUNITY_BATCH_CHECKING_MESSAGE,
   COMMUNITY_BATCH_CLOSED_MESSAGE,
-  communityBatchClosureForIdentity,
+  resolveCommunityBatchClosureStatus,
 } from "../utils/communityBatchOrderClosure";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
@@ -35,6 +36,7 @@ export const FutureOrderV2CartPayPanel = ({
 }) => {
   const currentUser = useAppStore((state) => state.currentUser);
   const batches = useAppStore((state) => state.batches);
+  const hasLoadedBatches = useAppStore((state) => state.hasLoadedBatches);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setCheckoutIntent = useAppStore((state) => state.setCheckoutIntent);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
@@ -49,10 +51,13 @@ export const FutureOrderV2CartPayPanel = ({
 
   const totalCents = getFutureOrderV2CartLineTotalCents(item);
   const label = getFutureOrderV2CartLineLabel(item);
-  const communityBatchClosed =
-    item.candidate.orderIdentity?.orderType === "Community" &&
-    batches.length > 0 &&
-    communityBatchClosureForIdentity(item.candidate.orderIdentity, batches).closed;
+  const communityBatchClosureStatus = resolveCommunityBatchClosureStatus(
+    item.candidate.orderIdentity,
+    batches,
+    hasLoadedBatches,
+  );
+  const communityBatchClosed = communityBatchClosureStatus === "closed";
+  const communityBatchChecking = communityBatchClosureStatus === "loading";
   const includedInbound = resolveIndividualInboundShippingDisplay({
     orderType: item.candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: item.candidate.garments.length,
@@ -75,6 +80,7 @@ export const FutureOrderV2CartPayPanel = ({
       requireSignIn();
       return;
     }
+    if (communityBatchChecking) return;
     if (communityBatchClosed) {
       setMessage(COMMUNITY_BATCH_CLOSED_MESSAGE);
       return;
@@ -198,12 +204,17 @@ export const FutureOrderV2CartPayPanel = ({
         shippingState={item.candidate.shipping.state}
       />
       )}
+      {communityBatchChecking ? (
+        <p role="status" data-testid="cart-community-batch-checking" className="mt-3 text-xs text-heritage-ink/60">
+          {COMMUNITY_BATCH_CHECKING_MESSAGE}
+        </p>
+      ) : null}
       {message ? <FutureOrderV2PaymentAlert message={message} /> : null}
       <button
         type="button"
         data-testid="future-order-v2-cart-pay"
-        disabled={communityBatchClosed || paying || !stripeReady}
-        onClick={communityBatchClosed ? undefined : () => void handlePay()}
+        disabled={communityBatchClosed || communityBatchChecking || paying || !stripeReady}
+        onClick={communityBatchClosed || communityBatchChecking ? undefined : () => void handlePay()}
         className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-heritage-forest transition hover:bg-heritage-green hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
       >
         <LockKeyhole size={14} />
