@@ -901,6 +901,7 @@ const mapMeasurements = ({
         ? getSampleClothCustomerLabel(
             requirement.measurementId,
             requirement.definition.customerLabel,
+            requirement.labelDemographic,
           )
         : requirement.definition.customerLabel,
       formattedValue: formatDualUnitMeasurementDisplay(

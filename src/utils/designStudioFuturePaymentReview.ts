@@ -30,6 +30,8 @@ import {
   isSelectedMeasurementMethod,
   MEASUREMENT_METHOD_LABELS,
   roundMeasurementDisplayValue,
+  getDemographicMeasurementCustomerLabel,
+  resolveMeasurementLabelDemographicForGarments,
 } from "./measurementBlueprint";
 
 export const FUTURE_PAYMENT_UNAVAILABLE_MESSAGE =
@@ -277,15 +279,19 @@ const toMeasurementItem = ({
   provenance,
   unit,
   convertedFromSample,
+  labelDemographic,
 }: {
   measurementId: string;
   valueCm: number;
   provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
   convertedFromSample: boolean;
+  labelDemographic: string;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
-  label: humanizeIdentifier(measurementId),
+  label:
+    getDemographicMeasurementCustomerLabel(measurementId, labelDemographic) ??
+    humanizeIdentifier(measurementId),
   displayValue: roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, unit),
   ),
@@ -376,11 +382,13 @@ const mergeMeasurements = ({
   derived,
   unit,
   route,
+  labelDemographic,
 }: {
   entered: FutureMeasurementStateV1["entered"]["shared"];
   derived: FutureMeasurementStateV1["derived"]["shared"];
   unit: MeasurementUnit;
   route: SelectedMeasurementMethod;
+  labelDemographic: string;
 }): readonly FuturePaymentReviewMeasurementItem[] => {
   const sampleRoute = isSampleClothMeasurementMethod(route);
   const measurementIds = [
@@ -400,13 +408,33 @@ const mergeMeasurements = ({
       ...value,
       unit,
       convertedFromSample: preferDerived,
+      labelDemographic,
     })];
   });
 };
 
+type MeasurementReviewGarment = {
+  readonly garmentKey: string;
+  readonly label: string;
+  readonly demographic?: string | null;
+};
+
+/** Step 1 demographic for these garments, used only for Chest / Borst wording. */
+const labelDemographicFor = (
+  garments: readonly MeasurementReviewGarment[],
+  garmentKeys?: readonly string[],
+): string => {
+  const scoped = garmentKeys
+    ? garments.filter((garment) => garmentKeys.includes(garment.garmentKey))
+    : garments;
+  return resolveMeasurementLabelDemographicForGarments(
+    scoped.map((garment) => garment.demographic ?? null),
+  );
+};
+
 const groupsFromMeasurementBag = (
   state: FutureMeasurementStateV1,
-  garments: readonly { garmentKey: string; label: string }[],
+  garments: readonly MeasurementReviewGarment[],
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const garmentLabels = new Map(
     garments.map((garment) => [garment.garmentKey, garment.label]),
@@ -421,6 +449,7 @@ const groupsFromMeasurementBag = (
     derived: state.derived.shared,
     unit: state.unit,
     route: state.route,
+    labelDemographic: labelDemographicFor(garments),
   });
   if (shared.length > 0) {
     groups.push({ garmentKey: null, title: "Shared measurements", items: shared });
@@ -432,6 +461,7 @@ const groupsFromMeasurementBag = (
         derived: state.derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
         route: state.route,
+        labelDemographic: labelDemographicFor(garments, [garmentKey]),
       });
       if (items.length > 0) {
         groups.push({
@@ -448,7 +478,7 @@ const groupsFromMeasurementBag = (
 export const getFuturePaymentReviewMeasurementGroups = (
   candidate: {
     readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
-    readonly garments: readonly { readonly garmentKey: string; readonly label: string }[];
+    readonly garments: readonly MeasurementReviewGarment[];
   },
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const measurements = candidate.measurements;
@@ -486,6 +516,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
           derived: wearer.measurement.derived.shared,
           unit: wearer.measurement.unit,
           route: wearer.measurement.route,
+          labelDemographic: labelDemographicFor(candidate.garments, ownedKeys),
         });
         if (shared.length > 0) {
           groups.push({
@@ -504,6 +535,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
             derived: wearer.measurement.derived.byGarmentKey[garmentKey] || {},
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
+            labelDemographic: labelDemographicFor(candidate.garments, [garmentKey]),
           });
           if (items.length === 0) return;
           groups.push({

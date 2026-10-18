@@ -26,6 +26,7 @@ import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
   CanonicalPhysicalGarmentType,
+  CustomDetailDemographic,
   CustomDetailOption,
   DesignSource,
   FabricAllocationState,
@@ -114,11 +115,9 @@ const SAMPLE_CLOTH_HALF_WIDTH_IDS = new Set<CanonicalMeasurementId>([
 ]);
 
 const SAMPLE_CLOTH_CUSTOMER_LABELS: Partial<Record<CanonicalMeasurementId, string>> = {
-  chest_bust_circumference: "Chest / Borst across sample (laid flat)",
   belly_circumference: "Belly across sample (laid flat)",
   waist_circumference: "Waist across sample (laid flat)",
   hip_circumference: "Hip across sample (laid flat)",
-  under_bust_circumference: "Under Borst across sample (laid flat)",
   bicep_circumference: "Bicep across sample (laid flat)",
   elbow_circumference: "Elbow across sample (laid flat)",
   wrist_circumference: "Wrist across sample (laid flat)",
@@ -147,10 +146,107 @@ export const getSampleClothGeometry = (
     : "length_or_opening";
 };
 
+/**
+ * Chest and under-chest wording follows the Step 1 garment demographic:
+ * Male garments say Chest, Female garments say Borst. Unisex, mixed, or
+ * unknown keeps both ("Chest / Borst"). Labels only: ids and stored fields
+ * keep their bust names.
+ */
+type DemographicLabels = Readonly<Record<CustomDetailDemographic, string>>;
+
+const DEMOGRAPHIC_BODY_LABELS: Partial<Record<CanonicalMeasurementId, DemographicLabels>> = {
+  chest_bust_circumference: {
+    male: "Chest Circumference",
+    female: "Borst Circumference",
+    unisex: "Chest / Borst Circumference",
+  },
+  under_bust_circumference: {
+    male: "Under Chest Circumference",
+    female: "Under Borst Circumference",
+    unisex: "Under Chest / Borst Circumference",
+  },
+  shoulder_to_under_bust_length: {
+    male: "Shoulder to Under-Chest Length",
+    female: "Shoulder to Under-Borst Length",
+    unisex: "Shoulder to Under-Chest / Borst Length",
+  },
+};
+
+const DEMOGRAPHIC_SAMPLE_CLOTH_LABELS: Partial<Record<CanonicalMeasurementId, DemographicLabels>> = {
+  chest_bust_circumference: {
+    male: "Chest across sample (laid flat)",
+    female: "Borst across sample (laid flat)",
+    unisex: "Chest / Borst across sample (laid flat)",
+  },
+  under_bust_circumference: {
+    male: "Under Chest across sample (laid flat)",
+    female: "Under Borst across sample (laid flat)",
+    unisex: "Under Chest / Borst across sample (laid flat)",
+  },
+};
+
+/** Male or Female when that is the only demographic; otherwise Unisex (the Chest / Borst fallback). */
+export const resolveMeasurementLabelDemographic = (
+  demographic: unknown,
+): CustomDetailDemographic =>
+  demographic === "male" || demographic === "female" ? demographic : "unisex";
+
+/** One demographic for a set of garments: shared only when every garment agrees. */
+export const resolveMeasurementLabelDemographicForGarments = (
+  demographics: readonly unknown[],
+): CustomDetailDemographic => {
+  const resolved = new Set(demographics.map(resolveMeasurementLabelDemographic));
+  return resolved.size === 1 ? [...resolved][0] : "unisex";
+};
+
+/** Chest / Borst wording for the chest and under-chest fields; null for every other field. */
+export const getDemographicMeasurementCustomerLabel = (
+  measurementId: string,
+  demographic: unknown,
+): string | null =>
+  DEMOGRAPHIC_BODY_LABELS[measurementId as CanonicalMeasurementId]?.[
+    resolveMeasurementLabelDemographic(demographic)
+  ] ?? null;
+
+export const getMeasurementCustomerLabel = (
+  measurementId: CanonicalMeasurementId,
+  demographic: unknown,
+  fallbackLabel?: string,
+): string =>
+  DEMOGRAPHIC_BODY_LABELS[measurementId]?.[
+    resolveMeasurementLabelDemographic(demographic)
+  ] ||
+  fallbackLabel ||
+  DEFINITION_BY_ID.get(measurementId)?.customerLabel ||
+  measurementId;
+
 export const getSampleClothCustomerLabel = (
   measurementId: CanonicalMeasurementId,
   fallbackLabel: string,
-): string => SAMPLE_CLOTH_CUSTOMER_LABELS[measurementId] || fallbackLabel;
+  demographic?: unknown,
+): string =>
+  DEMOGRAPHIC_SAMPLE_CLOTH_LABELS[measurementId]?.[
+    resolveMeasurementLabelDemographic(demographic)
+  ] ||
+  SAMPLE_CLOTH_CUSTOMER_LABELS[measurementId] ||
+  fallbackLabel;
+
+const labelDefinitionCache = new Map<string, MeasurementDefinition>();
+
+/** The shared definition, with the customer label worded for this demographic. */
+const definitionForLabelDemographic = (
+  definition: MeasurementDefinition,
+  demographic: CustomDetailDemographic,
+): MeasurementDefinition => {
+  const label = DEMOGRAPHIC_BODY_LABELS[definition.id]?.[demographic];
+  if (!label || label === definition.customerLabel) return definition;
+  const cacheKey = `${definition.id}:${demographic}`;
+  const cached = labelDefinitionCache.get(cacheKey);
+  if (cached) return cached;
+  const next = { ...definition, customerLabel: label };
+  labelDefinitionCache.set(cacheKey, next);
+  return next;
+};
 
 export const getSampleClothFieldInstruction = (
   geometry: SampleClothGeometry | undefined,
@@ -542,6 +638,8 @@ export interface PlannedMeasurementRequirement {
   stdFactor: number | null;
   alternativeGroup?: string;
   sampleGeometry?: SampleClothGeometry;
+  /** Step 1 demographic used for Chest / Borst wording (labels only). */
+  labelDemographic: CustomDetailDemographic;
 }
 
 export interface MeasurementRequirementPlan {
@@ -829,6 +927,9 @@ export const planMeasurementRequirements = ({
     .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
   const diagnostics: FutureMeasurementDiagnostic[] = [];
   const requirements: PlannedMeasurementRequirement[] = [];
+  const labelDemographic = resolveMeasurementLabelDemographic(
+    garmentTypeSelection.demographic,
+  );
   if (route === "critical_risk" && !criticalRiskSupported) {
     diagnostics.push({
       code: "calculation_configuration_pending",
@@ -880,8 +981,9 @@ export const planMeasurementRequirements = ({
           });
           return;
         }
-        const definition = DEFINITION_BY_ID.get(field.measurementId);
-        if (!definition) return;
+        const baseDefinition = DEFINITION_BY_ID.get(field.measurementId);
+        if (!baseDefinition) return;
+        const definition = definitionForLabelDemographic(baseDefinition, labelDemographic);
         const isHeight = field.measurementId === "total_height";
         const scope = definition.scope === "shared_body" ? "shared" : "garment";
         requirements.push({
@@ -908,6 +1010,7 @@ export const planMeasurementRequirements = ({
           minFactor: field.minFactor,
           maxFactor: field.maxFactor,
           stdFactor: field.stdFactor,
+          labelDemographic,
         });
         return;
       }
@@ -924,8 +1027,9 @@ export const planMeasurementRequirements = ({
       const alternativeOneOf = applicability === "unresolved"
         && Boolean(field.alternativeGroup)
         && (provenRequiredOnRoute || isCompleteSetField(field));
-      const definition = DEFINITION_BY_ID.get(field.measurementId);
-      if (!definition) return;
+      const baseDefinition = DEFINITION_BY_ID.get(field.measurementId);
+      if (!baseDefinition) return;
+      const definition = definitionForLabelDemographic(baseDefinition, labelDemographic);
       const sampleGeometry = isSampleClothMeasurementMethod(route)
         ? getSampleClothGeometry(field.measurementId)
         : null;
@@ -964,6 +1068,7 @@ export const planMeasurementRequirements = ({
         minFactor: field.minFactor,
         maxFactor: field.maxFactor,
         stdFactor: field.stdFactor,
+        labelDemographic,
         ...(alternativeOneOf ? { alternativeGroup: field.alternativeGroup } : {}),
         ...(sampleGeometry ? { sampleGeometry } : {}),
       };
