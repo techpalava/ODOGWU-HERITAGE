@@ -16,8 +16,10 @@ import {
 } from "../utils/futureOrderV2PaymentRecord.js";
 import {
   FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION,
+  applyConfirmedAdditionPayment,
   isPersonalizedAdditionPaymentReference,
   parseFutureOrderV2PersonalizedPrice,
+  readAcceptedPersonalizedDifferenceCents,
   readPersonalizedStripeChargeCents,
 } from "../utils/futureOrderV2PersonalizedPrice.js";
 
@@ -49,7 +51,11 @@ export interface FutureOrderV2PaymentRecordStore {
   readPersonalizedPrice?(orderId: string): Promise<unknown | null>;
   recordAdditionPayment?(
     orderId: string,
-    input: { readonly amountCents: number; readonly paymentIntentId: string },
+    input: {
+      readonly amountCents: number;
+      readonly paymentIntentId: string;
+      readonly recordedAt: string;
+    },
   ): Promise<"recorded" | "already_recorded">;
   runTransaction<T>(
     operation: (transaction: FutureOrderV2PaymentRecordTransaction) => Promise<T>,
@@ -140,21 +146,45 @@ export const createAdminFutureOrderV2PaymentRecordStore = (
     },
     async recordAdditionPayment(orderId, input) {
       const reference = db.collection(FUTURE_ORDER_V2_PERSONALIZED_PRICE_COLLECTION).doc(orderId);
+      const orderReference = db.collection(FUTURE_ORDER_V2_COLLECTION).doc(orderId);
       return db.runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(reference);
+        const [snapshot, orderSnapshot] = await Promise.all([
+          transaction.get(reference),
+          transaction.get(orderReference),
+        ]);
         if (!snapshot.exists) {
           throw new Error("Personalized price record is missing.");
         }
-        const data = snapshot.data() ?? {};
-        if (data.additionPaymentIntentId === input.paymentIntentId) {
+        const record = parseFutureOrderV2PersonalizedPrice(snapshot.data() ?? null);
+        const order = parsePersistedFutureOrderV2(
+          orderSnapshot.exists ? orderSnapshot.data() ?? null : null,
+          orderId,
+        );
+        if (!record || order.status !== "valid") {
+          throw new Error("Personalized price record is missing.");
+        }
+        if (record.additionPayments.some((payment) => payment.paymentIntentId === input.paymentIntentId)) {
           return "already_recorded" as const;
         }
-        const paid = typeof data.additionPaidCents === "number" ? data.additionPaidCents : 0;
-        transaction.update(reference, {
-          additionPaidCents: paid + input.amountCents,
-          additionPaymentIntentId: input.paymentIntentId,
-        });
-        return "recorded" as const;
+        const due = readAcceptedPersonalizedDifferenceCents(
+          order.value.masterOrder.cartItem.candidate,
+          record,
+        );
+        if (due === null || due !== input.amountCents) {
+          throw new Error("Addition payment does not match the accepted difference.");
+        }
+        const applied = applyConfirmedAdditionPayment(record, input);
+        if (applied.status === "rejected") {
+          throw new Error("Addition payment was not confirmed.");
+        }
+        if (applied.status === "recorded") {
+          transaction.update(reference, {
+            additionPayments: applied.record.additionPayments,
+            additionPaidCents: applied.record.additionPaidCents,
+            additionPaymentIntentId: input.paymentIntentId,
+          });
+        }
+        return applied.status;
       });
     },
     runTransaction: (operation) =>
@@ -331,6 +361,37 @@ export const saveVerifiedFutureOrderV2Payment = async ({
     typeof paymentIntent.metadata.paymentReference === "string"
       ? paymentIntent.metadata.paymentReference
       : "";
+  const additionPayment = isPersonalizedAdditionPaymentReference(orderId, paymentReference);
+  const existingAddition = additionPayment
+    ? personalizedPrice?.additionPayments.find(
+        (payment) => payment.paymentIntentId === paymentIntentId,
+      )
+    : undefined;
+  if (existingAddition) {
+    if (
+      paymentIntent.status === "succeeded" &&
+      paymentIntent.id === paymentIntentId &&
+      paymentIntent.metadata.orderId === orderId &&
+      paymentIntent.currency === "eur" &&
+      paymentIntent.amount === existingAddition.amountCents
+    ) {
+      return {
+        status: "already_recorded",
+        record: {
+          schemaVersion: 1,
+          orderId,
+          ownerUid,
+          paymentIntentId,
+          amountCents: existingAddition.amountCents,
+          currency: "eur",
+          status: "succeeded",
+          testMode: true,
+          recordedAt: existingAddition.recordedAt || now().toISOString(),
+        },
+      };
+    }
+    return { status: "mismatch" };
+  }
   const chargeableCents = readPersonalizedStripeChargeCents({
     orderId,
     order: candidate,
@@ -340,7 +401,6 @@ export const saveVerifiedFutureOrderV2Payment = async ({
   if (chargeableCents === null) {
     return { status: "not_payable" };
   }
-  const additionPayment = isPersonalizedAdditionPaymentReference(orderId, paymentReference);
   if (
     !additionPayment &&
     !pendingPersonalizedKnownBaseIsAuthoritative(candidate, catalog ?? [])
@@ -376,6 +436,7 @@ export const saveVerifiedFutureOrderV2Payment = async ({
       const additionStatus = await store.recordAdditionPayment(orderId, {
         amountCents: chargeableCents,
         paymentIntentId,
+        recordedAt: proposed.recordedAt,
       });
       return { status: additionStatus, record: proposed };
     } catch {
@@ -472,9 +533,12 @@ export const createFutureOrderV2PaymentRecordHandler = (
       return reply(500, { error: "Stripe could not be reached.", code: "STRIPE_LOOKUP_FAILED" });
     }
     const orderId = paymentIntent.metadata.orderId ?? "";
+    const paymentReference = paymentIntent.metadata.paymentReference ?? "";
+    const baseReference = `future-v2-payment-${orderId}`;
     if (
       !SAFE_ORDER_ID.test(orderId) ||
-      paymentIntent.metadata.paymentReference !== `future-v2-payment-${orderId}`
+      (paymentReference !== baseReference &&
+        !isPersonalizedAdditionPaymentReference(orderId, paymentReference))
     ) {
       return reply(200, { received: true, status: "ignored" });
     }
