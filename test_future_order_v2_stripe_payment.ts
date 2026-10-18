@@ -566,7 +566,7 @@ assert.match(reviewStepSource, /onExpressCheckoutConfirm=\{onPay\}/);
 assert.match(reviewStepSource, /amountCents=\{payableNowCents\}/);
 assert.match(
   reviewStepSource,
-  /disabled=\{communityBatchClosed \|\| !canSettleReviewedOrder \|\| payIsBusy \|\| !stripePaymentReady\}/,
+  /disabled=\{communityBatchClosed \|\| communityBatchChecking \|\| !canSettleReviewedOrder \|\| payIsBusy \|\| !stripePaymentReady\}/,
 );
 assert.equal(reviewStepSource.includes("cardReady"), false);
 

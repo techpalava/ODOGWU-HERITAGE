@@ -1,3 +1,4 @@
+import { COMMUNITY_BATCH_CHECKING_MESSAGE } from "../utils/communityBatchOrderClosure";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -84,6 +85,11 @@ interface DormantFuturePaymentReviewStepProps {
   onParkCompleteOrder?: () => void;
   /** Closed community batches cannot be paid or bagged. */
   communityBatchClosed?: boolean;
+  /**
+   * The order's community batch is still being checked (batch list loading).
+   * PAY and Add to cart wait quietly; no closed message is shown.
+   */
+  communityBatchChecking?: boolean;
   parkCompleteOrderStatus?: "idle" | "added" | "already_present";
   onStartAnotherOrder?: () => void;
   /** Draft-only; omit after payment is confirmed. */
@@ -628,6 +634,7 @@ export const DormantFuturePaymentReviewStep = ({
   onPay,
   onParkCompleteOrder,
   communityBatchClosed = false,
+  communityBatchChecking = false,
   parkCompleteOrderStatus = "idle",
   onStartAnotherOrder,
   onRequestCancelOrder,
@@ -1371,14 +1378,23 @@ export const DormantFuturePaymentReviewStep = ({
                 {payment?.status === "failed" && (
                   <FutureOrderV2PaymentAlert message={payment.message} />
                 )}
+                {communityBatchChecking && !communityBatchClosed ? (
+                  <p
+                    role="status"
+                    data-testid="payment-community-batch-checking"
+                    className="mt-3 text-xs leading-relaxed text-white/70"
+                  >
+                    {COMMUNITY_BATCH_CHECKING_MESSAGE}
+                  </p>
+                ) : null}
                 <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                     <button
                     type="button"
                     data-future-order-v2-pay={true}
-                    disabled={communityBatchClosed || !canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
+                    disabled={communityBatchClosed || communityBatchChecking || !canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"
-                    onClick={communityBatchClosed ? undefined : onPay}
+                    onClick={communityBatchClosed || communityBatchChecking ? undefined : onPay}
                     className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
                   >
                     <LockKeyhole aria-hidden="true" size={14} />
@@ -1388,8 +1404,8 @@ export const DormantFuturePaymentReviewStep = ({
                       <button
                         type="button"
                         data-testid="future-order-v2-add-to-cart"
-                        disabled={communityBatchClosed || !canSettleReviewedOrder || payIsBusy}
-                        onClick={communityBatchClosed ? undefined : onParkCompleteOrder}
+                        disabled={communityBatchClosed || communityBatchChecking || !canSettleReviewedOrder || payIsBusy}
+                        onClick={communityBatchClosed || communityBatchChecking ? undefined : onParkCompleteOrder}
                         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-gold/50 bg-heritage-forest px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-gold hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                       >
                         <ShoppingBag aria-hidden="true" size={14} />

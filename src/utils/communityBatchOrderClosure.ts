@@ -63,6 +63,37 @@ export const communityBatchClosureForIdentity = (
     : { closed: false };
 };
 
+/**
+ * Customer-facing closure state for a Community order.
+ *
+ * "loading" means the batch list has not arrived from Firestore yet, so the
+ * batch is unknown: show no closed message, but keep Review and PAY waiting.
+ * Once the list has loaded it is the complete batches collection, so a batch
+ * that is missing from it is treated as closed (it cannot accept orders).
+ */
+export type CommunityBatchClosureStatus =
+  | "not_applicable"
+  | "loading"
+  | "open"
+  | "closed";
+
+/** Quiet note shown while the batch list is still loading. */
+export const COMMUNITY_BATCH_CHECKING_MESSAGE =
+  "Checking that this batch is still open\u2026" as const;
+
+export const resolveCommunityBatchClosureStatus = (
+  identity: CanonicalOrderIdentity | null | undefined,
+  batches: readonly Batch[] | null | undefined,
+  batchesLoaded: boolean,
+  now: Date = new Date(),
+): CommunityBatchClosureStatus => {
+  if (!identity || identity.orderType !== "Community") return "not_applicable";
+  if (!batchesLoaded) return "loading";
+  return communityBatchClosureForIdentity(identity, batches || [], now).closed
+    ? "closed"
+    : "open";
+};
+
 /** Reads the batch fields the closure rule needs from a Firestore document. */
 export const communityBatchFromRecord = (
   batchId: string,
