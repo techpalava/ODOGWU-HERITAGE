@@ -21,10 +21,15 @@ import {
   parseFutureOrderV2PersonalizedPrice,
   readPersonalizedStripeChargeCents,
 } from "../utils/futureOrderV2PersonalizedPrice.js";
+import {
+  futureOrderV2StripePaymentMethodTypes,
+  FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
+} from "../utils/futureOrderV2StripeMethods.js";
+
+export { FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES };
 
 const MINIMUM_EUR_CENTS = 50;
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = ["card", "ideal", "klarna"] as const;
 const IDEAL_IDEMPOTENCY_SUFFIX = ":ideal";
 const KLARNA_IDEMPOTENCY_SUFFIX = ":klarna";
 
@@ -152,16 +157,23 @@ const getStripeTestClient = (): Stripe => {
 };
 
 /**
- * Older PaymentIntents stay on their idempotency key.
- * A card-only intent is reissued as :ideal; a card+iDEAL intent is reissued as :klarna.
- * A fresh key already includes every current method, so the suffix is unused.
+ * Older PaymentIntents stay on their idempotency key until they include every
+ * method this currency can charge. EUR reissues a card-only intent as :ideal
+ * and leaves a card+iDEAL intent alone. Klarna is not an EUR method on this
+ * account, so a missing Klarna type is not an upgrade. When the requested
+ * list includes Klarna (USD), a missing Klarna type is still reissued as :klarna.
  */
 export const nextFutureOrderV2StripeIdempotencyUpgrade = (
   types: readonly string[] | null | undefined,
+  requestedTypes: readonly string[] = FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
 ): typeof IDEAL_IDEMPOTENCY_SUFFIX | typeof KLARNA_IDEMPOTENCY_SUFFIX | null => {
   const list = types ?? [];
-  if (!list.includes("ideal")) return IDEAL_IDEMPOTENCY_SUFFIX;
-  if (!list.includes("klarna")) return KLARNA_IDEMPOTENCY_SUFFIX;
+  if (requestedTypes.includes("ideal") && !list.includes("ideal")) {
+    return IDEAL_IDEMPOTENCY_SUFFIX;
+  }
+  if (requestedTypes.includes("klarna") && !list.includes("klarna")) {
+    return KLARNA_IDEMPOTENCY_SUFFIX;
+  }
   return null;
 };
 
@@ -205,10 +217,12 @@ export const createFutureOrderV2StripeTestPaymentIntent = async (
   input: FutureOrderV2StripePaymentIntentInput,
 ): Promise<FutureOrderV2StripePaymentIntent> => {
   const stripe = getStripeTestClient();
+  const currency = "eur";
+  const paymentMethodTypes = [...futureOrderV2StripePaymentMethodTypes(currency)];
   const createParams: Stripe.PaymentIntentCreateParams = {
     amount: input.amountCents,
-    currency: "eur",
-    payment_method_types: [...FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES],
+    currency,
+    payment_method_types: paymentMethodTypes,
     metadata: {
       orderId: input.orderId,
       paymentReference: input.paymentReference,
@@ -229,12 +243,14 @@ export const createFutureOrderV2StripeTestPaymentIntent = async (
   ): Promise<Stripe.PaymentIntent> => {
     const suffix = nextFutureOrderV2StripeIdempotencyUpgrade(
       paymentIntent.payment_method_types,
+      paymentMethodTypes,
     );
     if (!suffix) return paymentIntent;
     try {
       const upgraded = await createUpgraded(suffix);
       const next = nextFutureOrderV2StripeIdempotencyUpgrade(
         upgraded.payment_method_types,
+        paymentMethodTypes,
       );
       if (!next) return upgraded;
       return createUpgraded(next);
@@ -242,7 +258,9 @@ export const createFutureOrderV2StripeTestPaymentIntent = async (
       if (!isIdempotencyConflict(error) || suffix === KLARNA_IDEMPOTENCY_SUFFIX) {
         throw error;
       }
-      // The :ideal key already belongs to a card+iDEAL intent. Mint :klarna.
+      // The :ideal key is already in use. The next suffix is a new idempotency
+      // key only. payment_method_types stay on the currency list, so EUR does
+      // not gain Klarna.
       return createUpgraded(KLARNA_IDEMPOTENCY_SUFFIX);
     }
   };
@@ -276,7 +294,11 @@ export const handleFutureOrderV2StripeConfig = (
       "The Stripe test publishable key is not configured.",
     );
   }
-  return setNoStore(res).status(200).json({ publishableKey, testMode: true });
+  return setNoStore(res).status(200).json({
+    publishableKey,
+    testMode: true,
+    paymentMethodTypes: [...FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES],
+  });
 };
 
 const handleFutureOrderV2CartAdmission = async (

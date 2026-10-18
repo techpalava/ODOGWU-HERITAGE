@@ -24,6 +24,7 @@ import {
   isFutureOrderV2ExpressWalletAvailable,
   isFutureOrderV2StripePayReady,
   shouldShowFutureOrderV2CardLoading,
+  futureOrderV2VisibleStripeMethods,
   FUTURE_ORDER_V2_CARD_LOADING_MESSAGE,
 } from "./src/components/FutureOrderV2StripeCard";
 import { FutureOrderV2AllowedCardIcons } from "./src/components/futureOrderV2PaymentMethodIcons";
@@ -41,6 +42,10 @@ import {
   createEmptyFutureShippingState,
   FUTURE_PICKUP_ATELIER_ADDRESS,
 } from "./src/utils/designStudioFutureShipping";
+import {
+  futureOrderV2StripePaymentMethodTypes,
+  FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
+} from "./src/utils/futureOrderV2StripeMethods";
 import {
   resolveFutureOrderV2StripeShipping,
   toFutureOrderV2KlarnaBillingDetails,
@@ -409,6 +414,7 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
   assert.deepEqual(state.body, {
     publishableKey: "pk_test_example",
     testMode: true,
+    paymentMethodTypes: ["card", "ideal"],
   });
 }
 
@@ -427,12 +433,21 @@ const paymentRoute = serverSource.slice(paymentRouteStart, paymentRouteEnd);
 assert.ok(paymentRouteStart >= 0 && paymentRouteEnd > paymentRouteStart);
 assert.equal(paymentRoute.includes("amount / 2"), false);
 const stripeSource = readFileSync("src/server/futureOrderV2StripePayment.ts", "utf8");
-assert.match(stripeSource, /currency: "eur"/);
+assert.match(stripeSource, /const currency = "eur"/);
 assert.match(stripeSource, /createOnce\(input\.paymentReference\)/);
-assert.match(stripeSource, /payment_method_types: \[\.\.\.FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES\]/);
-assert.match(
-  stripeSource,
-  /FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = \["card", "ideal", "klarna"\]/,
+assert.match(stripeSource, /futureOrderV2StripePaymentMethodTypes\(currency\)/);
+assert.match(stripeSource, /payment_method_types: paymentMethodTypes/);
+assert.equal(/payment_method_types:\s*\[[^\]]*klarna/.test(stripeSource), false);
+assert.deepEqual([...FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES], ["card", "ideal"]);
+assert.deepEqual([...futureOrderV2StripePaymentMethodTypes("eur")], ["card", "ideal"]);
+assert.equal(futureOrderV2StripePaymentMethodTypes("eur").includes("klarna"), false);
+assert.deepEqual([...futureOrderV2StripePaymentMethodTypes("usd")], ["card", "klarna"]);
+assert.equal(futureOrderV2StripePaymentMethodTypes("usd").includes("ideal"), false);
+assert.deepEqual([...futureOrderV2StripePaymentMethodTypes("gbp")], ["card"]);
+assert.deepEqual([...futureOrderV2VisibleStripeMethods()], ["card", "ideal"]);
+assert.deepEqual(
+  [...futureOrderV2VisibleStripeMethods(["card", "ideal", "klarna"])],
+  ["card", "ideal", "klarna"],
 );
 assert.equal(stripeSource.includes('"paypal"'), false);
 assert.match(stripeSource, /KLARNA_IDEMPOTENCY_SUFFIX/);
@@ -901,12 +916,35 @@ try {
 
 assert.equal(nextFutureOrderV2StripeIdempotencyUpgrade(["card"]), ":ideal");
 assert.equal(nextFutureOrderV2StripeIdempotencyUpgrade(null), ":ideal");
+assert.equal(nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal"]), null);
 assert.equal(
-  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal"]),
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal", "klarna"]),
+  null,
+);
+const legacyKlarnaMethods = ["card", "ideal", "klarna"] as const;
+assert.equal(
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card"], legacyKlarnaMethods),
+  ":ideal",
+);
+assert.equal(
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal"], legacyKlarnaMethods),
   ":klarna",
 );
 assert.equal(
-  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal", "klarna"]),
+  nextFutureOrderV2StripeIdempotencyUpgrade(
+    ["card", "ideal", "klarna"],
+    legacyKlarnaMethods,
+  ),
+  null,
+);
+const usdMethods = futureOrderV2StripePaymentMethodTypes("usd");
+assert.equal(nextFutureOrderV2StripeIdempotencyUpgrade(["card"], usdMethods), ":klarna");
+assert.equal(
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "ideal"], usdMethods),
+  ":klarna",
+);
+assert.equal(
+  nextFutureOrderV2StripeIdempotencyUpgrade(["card", "klarna"], usdMethods),
   null,
 );
 
@@ -1021,7 +1059,7 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
     });
     assert.match(String(methods.props.className), /\brelative\b/);
     assert.match(String(methods.props.className), /\bz-10\b/);
-    for (const methodName of ["card", "ideal", "klarna"] as const) {
+    for (const methodName of ["card", "ideal"] as const) {
       const radio = renderer.root.findByProps({
         [`data-future-order-v2-method-${methodName}`]: true,
       });
@@ -1076,42 +1114,12 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
     });
     assert.equal(payStarts, 1);
 
-    await act(async () => {
-      renderer!.root
-        .findByProps({ "data-future-order-v2-method-klarna": true })
-        .props.onClick();
-    });
-    assert.equal(payStarts, 1, "Selecting Klarna must not start payment");
     assert.equal(
-      renderer.root.findByProps({ "data-future-order-v2-method-klarna": true }).props[
-        "aria-checked"
-      ],
-      true,
+      renderer.root.findAllByProps({ "data-future-order-v2-method-klarna": true }).length,
+      0,
+      "EUR checkout hides Klarna when the PaymentIntent does not offer it",
     );
-    await act(async () => {
-      stripeCard.props.onReadyChange(
-        isFutureOrderV2StripePayReady({
-          method: "klarna",
-          cardReady: false,
-          stripeClientReady: false,
-        }),
-      );
-    });
-    assert.equal(payButton().props.disabled, true);
-    await act(async () => {
-      stripeCard.props.onReadyChange(
-        isFutureOrderV2StripePayReady({
-          method: "klarna",
-          cardReady: false,
-          stripeClientReady: true,
-        }),
-      );
-    });
-    assert.equal(
-      payButton().props.disabled,
-      false,
-      "Pay is not gated solely by missing cardReady for Klarna",
-    );
+    assert.match(String(methods.props.className), /grid-cols-2/);
   } finally {
     if (renderer) {
       await act(async () => {
@@ -1272,6 +1280,33 @@ assert.equal(
   shouldShowFutureOrderV2CardLoading({ method: "ideal", cardReady: false, loadFailed: false }),
   false,
 );
+{
+  const eurMethods = renderToStaticMarkup(
+    createElement(FutureOrderV2StripeCard, {
+      amountCents: 7900,
+      orderId: "future-order-eur-methods",
+      disabled: false,
+      onReadyChange: () => undefined,
+    } as any),
+  );
+  assert.ok(eurMethods.includes("data-future-order-v2-method-card"));
+  assert.ok(eurMethods.includes("data-future-order-v2-method-ideal"));
+  assert.equal(eurMethods.includes("data-future-order-v2-method-klarna"), false);
+  assert.equal(eurMethods.includes("data-future-order-v2-klarna-help"), false);
+  assert.match(eurMethods, /grid-cols-2/);
+  const withKlarna = renderToStaticMarkup(
+    createElement(FutureOrderV2StripeCard, {
+      amountCents: 7900,
+      orderId: "future-order-klarna-methods",
+      disabled: false,
+      offeredPaymentMethodTypes: ["card", "ideal", "klarna"],
+      onReadyChange: () => undefined,
+    } as any),
+  );
+  assert.ok(withKlarna.includes("data-future-order-v2-method-klarna"));
+  assert.ok(withKlarna.includes("data-future-order-v2-klarna-help"));
+  assert.match(withKlarna, /grid-cols-3/);
+}
 {
   const loadingMarkup = renderToStaticMarkup(
     createElement(FutureOrderV2StripeCard, {
