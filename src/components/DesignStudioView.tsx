@@ -357,9 +357,10 @@ import {
 } from "../utils/futureOrderCandidate";
 import {
   COMMUNITY_BATCH_CLOSED_MESSAGE,
+  COMMUNITY_BATCH_CHECKING_MESSAGE,
   COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE,
-  communityBatchClosureForIdentity,
   requestFutureOrderCartAdmission,
+  resolveCommunityBatchClosureStatus,
 } from "../utils/communityBatchOrderClosure";
 import {
   createFutureOrderV2PaymentReviewHandoff,
@@ -905,6 +906,9 @@ export default function DesignStudioView({
     (state) => state.retryFabricsSubscription,
   );
   const storeBatches = useAppStore((state) => state.batches);
+  const hasLoadedStoreBatches = useAppStore((state) => state.hasLoadedBatches);
+  // Batch id that already received the load-time "batch is closed" toast.
+  const closedBatchToastIdRef = useRef<string | null>(null);
   const storeCustomGroups = useAppStore((state) => state.customGroups);
   const customGroupAccessById = useAppStore(
     (state) => state.customGroupAccessById,
@@ -1498,25 +1502,42 @@ export default function DesignStudioView({
       } else if (effectiveOrderContext.orderType === "Group Member") {
         setBatchType("personalized");
         setCustomGroupCode(effectiveOrderContext.batchId || "");
+      } else if (effectiveOrderContext.batchId) {
+        // A persisted Community order retains its canonical batch identity.
+        // A closed live batch must not be silently rebound to individual
+        // pricing; downstream actions revalidate and fail closed.
+        setBatchType("community");
+        // Judge closure from the live batch record only. Before the batches
+        // listener delivers, a reloaded draft's context has no schedule or
+        // status yet, and reading that as "closed" flashed a false toast.
+        const closureStatus = resolveCommunityBatchClosureStatus(
+          { orderType: "Community", batchId: effectiveOrderContext.batchId },
+          storeBatches || [],
+          hasLoadedStoreBatches,
+        );
+        if (closureStatus === "closed") {
+          if (closedBatchToastIdRef.current !== effectiveOrderContext.batchId) {
+            closedBatchToastIdRef.current = effectiveOrderContext.batchId;
+            setNotification({
+              message: COMMUNITY_BATCH_CLOSED_MESSAGE,
+              type: "info",
+            });
+            window.setTimeout(() => setNotification(null), 4000);
+          }
+        } else if (closureStatus === "open") {
+          closedBatchToastIdRef.current = null;
+        }
       } else {
         const eligibility = BatchBusinessRules.canAcceptOrders(
           effectiveOrderContext,
         );
         if (!eligibility.canAcceptOrders) {
           setNotification({
-            message:
-              "This batch is closed",
+            message: COMMUNITY_BATCH_CLOSED_MESSAGE,
             type: "info",
           });
           window.setTimeout(() => setNotification(null), 4000);
-          // A persisted Community order retains its canonical batch identity.
-          // The live batch is closed, so downstream actions must revalidate and
-          // fail closed; it must not be silently rebound to individual pricing.
-          if (!effectiveOrderContext.batchId) {
-            setBatchType("alone");
-          } else {
-            setBatchType("community");
-          }
+          setBatchType("alone");
         } else {
           setBatchType("community");
         }
@@ -1529,6 +1550,7 @@ export default function DesignStudioView({
     isActivePrivateOrderBlocked,
     setNotification,
     storeBatches,
+    hasLoadedStoreBatches,
   ]);
 
   // Hydration authorization is not a one-time check. An authoritative
@@ -3823,11 +3845,15 @@ export default function DesignStudioView({
               : ctx.orderType,
         batchId: batchType === "alone" ? undefined : ctx.batchId,
       });
-  const communityBatchClosed =
-    futureOrderIdentity?.orderType === "Community" &&
-    (storeBatches || []).length > 0 &&
-    communityBatchClosureForIdentity(futureOrderIdentity, storeBatches || [])
-      .closed;
+  // Closure messages need the loaded batch list. While it loads the batch is
+  // unknown: no closed message, but Review and PAY wait (see "checking").
+  const communityBatchClosureStatus = resolveCommunityBatchClosureStatus(
+    futureOrderIdentity,
+    storeBatches || [],
+    hasLoadedStoreBatches,
+  );
+  const communityBatchClosed = communityBatchClosureStatus === "closed";
+  const communityBatchChecking = communityBatchClosureStatus === "loading";
   // One order-wide authority for Continue, Journey Stepper, Live Summary, and
   // stage correction. Do not use active-wearer-only completeness here.
   const summaryUnlockedByMeasurements =
@@ -8301,6 +8327,7 @@ export default function DesignStudioView({
     });
   };
   const handlePayFutureOrderV2 = async () => {
+    if (communityBatchChecking) return;
     if (communityBatchClosed) {
       setNotification({
         message: COMMUNITY_BATCH_CLOSED_MESSAGE,
@@ -8324,6 +8351,7 @@ export default function DesignStudioView({
   const handleParkFutureOrderV2InCart = async () => {
     const candidate = futurePaymentReviewHandoff?.candidate;
     if (!candidate || candidate.schemaVersion !== 2) return;
+    if (communityBatchChecking) return;
     if (
       communityBatchClosed ||
       candidate.orderIdentity?.orderType === "Community"
@@ -10940,6 +10968,9 @@ export default function DesignStudioView({
             reviewBlockedMessage={
               communityBatchClosed ? COMMUNITY_BATCH_CLOSED_REVIEW_MESSAGE : null
             }
+            reviewCheckingMessage={
+              communityBatchChecking ? COMMUNITY_BATCH_CHECKING_MESSAGE : null
+            }
           />
         </>
       ) : futureStageId === "payment" ? (
@@ -10979,6 +11010,7 @@ export default function DesignStudioView({
             onPay={handlePayFutureOrderV2}
             onParkCompleteOrder={handleParkFutureOrderV2InCart}
             communityBatchClosed={communityBatchClosed}
+            communityBatchChecking={communityBatchChecking}
             parkCompleteOrderStatus={futureOrderV2AddToCartStatus}
             onStartAnotherOrder={handleStartAnotherOrderAfterCartPark}
             onRequestCancelOrder={
