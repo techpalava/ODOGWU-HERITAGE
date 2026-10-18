@@ -1,4 +1,4 @@
-import { Layers3, X } from "lucide-react";
+import { CheckCircle2, Layers3, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -16,6 +16,7 @@ import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
+  ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
@@ -168,7 +169,7 @@ const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
   "Finish assigning fabric to the pending additional garment before removing fabric from another additional garment.";
 
 const STEP2_FABRIC_CAPACITY_INTRO =
-  "One Fabric can make up to two standard garments. A Long Dress uses one full Fabric. You may reuse available capacity or choose different Fabrics for your garments.";
+  "One Fabric can make up to two standard garments. A Long Dress uses one full Fabric. Your order uses only the number of Fabrics it needs, so garments share a Fabric where they can.";
 
 const UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE =
   "No selected Fabric has capacity for this garment. Change a Fabric assignment or remove a Fabric selection.";
@@ -189,17 +190,28 @@ const getOrphanRepairTargetKey = (
 ): string =>
   `${target.allocationId}:${target.garmentKey}:${target.assignmentSignature}`;
 
-const formatFabricSelectionProgress = (
+export const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabrics Selected: ${selectedFabricQuantity} · Minimum needed: ${requiredFabricQuantity}`;
+  `Fabrics chosen: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
 
-const formatGarmentAssignmentProgress = (
+export const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
   requiredGarmentCount: number,
 ): string =>
-  `Garments assigned: ${assignedGarmentCount}/${requiredGarmentCount}`;
+  `Garments with fabric: ${assignedGarmentCount} of ${requiredGarmentCount}`;
+
+export const FABRIC_PROGRESS_COMPLETE_HEADING = "All garments have fabric";
+
+/** "1 fabric covers your 2 garments." / "2 fabrics cover your 3 garments." */
+export const formatFabricProgressCompleteSummary = (
+  fabricQuantity: number,
+  garmentCount: number,
+): string =>
+  `${fabricQuantity} ${fabricQuantity === 1 ? "fabric covers" : "fabrics cover"} your ${garmentCount} ${
+    garmentCount === 1 ? "garment" : "garments"
+  }.`;
 
 const labelOwnedFabricCancelTargets = (
   garmentKeys: readonly string[],
@@ -653,8 +665,13 @@ export const DormantFutureFabricStep = ({
     !isTargetedAdditionalCatalogueTarget;
   const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
     selectedFabricQuantity,
-    requiredGarmentCount: completion.requiredGarmentCount,
+    requiredFabricQuantity,
   });
+  // Every garment has fabric and the order is within Fabrics needed.
+  const fabricProgressComplete =
+    completion.requiredGarmentCount > 0 &&
+    completion.assignedGarmentCount === completion.requiredGarmentCount &&
+    !isOverAllocated;
   const partialAllocationSummaryById = useMemo(
     () =>
       new Map(
@@ -685,9 +702,9 @@ export const DormantFutureFabricStep = ({
     compatiblePartialTargets.some(
       (entry) => entry.compatibleGarmentKeys.length > 1,
     )
-      ? "You may reuse available Fabric capacity or choose another Fabric for the remaining garments."
-      : "You may reuse available Fabric capacity or choose another Fabric for the remaining garment.";
-  const fabricSlotsAvailable = selectedFabricQuantity < completion.requiredGarmentCount;
+      ? "Complete your selected Fabrics by assigning the remaining garments to available Fabric capacity."
+      : "Complete your selected Fabric by assigning the remaining garment to it.";
+  const fabricSlotsAvailable = selectedFabricQuantity < requiredFabricQuantity;
   const resolveUnassignedGarmentFabricAction = (
     garmentKey: string,
   ): "add_fabric" | "assign_to_fabric" | "blocked" => {
@@ -709,6 +726,10 @@ export const DormantFutureFabricStep = ({
     () => new Map(fabrics.map((fabric) => [fabric.code, fabric.name])),
     [fabrics],
   );
+  const fabricByCode = useMemo(
+    () => new Map(fabrics.map((fabric) => [fabric.code, fabric])),
+    [fabrics],
+  );
   const orphanRepairAllocationNumberById = useMemo(() => {
     const allocationIds = [
       ...new Set(orphanRepairTargets.map((target) => target.allocationId)),
@@ -727,8 +748,8 @@ export const DormantFutureFabricStep = ({
     : [];
   const showAllocationLimitCopy =
     !isOverAllocated &&
-    selectedFabricQuantity >= completion.requiredGarmentCount &&
-    completion.requiredGarmentCount > 0 &&
+    selectedFabricQuantity >= requiredFabricQuantity &&
+    requiredFabricQuantity > 0 &&
     (unassignedStep1Targets.length > 0 ||
       unassignedTargets.length > 0 ||
       Boolean(pendingAdditionalAssignment));
@@ -2222,14 +2243,44 @@ export const DormantFutureFabricStep = ({
           <div
             aria-live="polite"
             data-fabric-progress="true"
-            className="flex min-w-0 max-w-full shrink-0 items-start gap-3 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green"
+            data-fabric-progress-state={fabricProgressComplete ? "complete" : "in_progress"}
+            className={`flex min-w-0 max-w-full shrink-0 items-start gap-3 rounded-2xl border px-4 py-3 text-xs font-bold text-heritage-green ${
+              fabricProgressComplete
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-heritage-gold/30 bg-heritage-cream/35"
+            }`}
           >
-            <Layers3
-              aria-hidden="true"
-              data-fabric-progress-icon="true"
-              size={20}
-              className="mt-0.5 shrink-0 text-heritage-gold"
-            />
+            {fabricProgressComplete ? (
+              <CheckCircle2
+                aria-hidden="true"
+                data-fabric-progress-icon="true"
+                size={20}
+                className="mt-0.5 shrink-0 text-emerald-700"
+              />
+            ) : (
+              <Layers3
+                aria-hidden="true"
+                data-fabric-progress-icon="true"
+                size={20}
+                className="mt-0.5 shrink-0 text-heritage-gold"
+              />
+            )}
+            {fabricProgressComplete ? (
+              <div className="min-w-0 flex-1">
+                <p data-fabric-progress-complete-heading="true" className="break-words text-sm">
+                  {FABRIC_PROGRESS_COMPLETE_HEADING}
+                </p>
+                <p
+                  data-fabric-progress-complete-summary="true"
+                  className="mt-1 break-words text-[11px] font-normal leading-relaxed text-heritage-ink/70"
+                >
+                  {formatFabricProgressCompleteSummary(
+                    selectedFabricQuantity,
+                    completion.requiredGarmentCount,
+                  )}
+                </p>
+              </div>
+            ) : (
             <div className="min-w-0 flex-1">
               <p data-fabric-selection-progress="true" className="break-words">
                 {formatFabricSelectionProgress(
@@ -2255,6 +2306,7 @@ export const DormantFutureFabricStep = ({
                 </p>
               )}
             </div>
+            )}
           </div>
         </div>
 
@@ -2442,20 +2494,25 @@ export const DormantFutureFabricStep = ({
                     : undefined
                 }
               >
-                <div
-                  className={
-                    assigned
-                      ? "flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start"
-                      : "min-w-0"
-                  }
-                >
+                {/* Same layout for every card: details beside a fixed-size image
+                    slot, content grows so the action button pins to the bottom. */}
+                <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start">
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-start gap-2">
-                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                        <p className="min-w-0 break-words text-sm font-bold text-heritage-green">
+                      {/* Title on its own line and the badge always below it,
+                          so every card lines up whatever the name length. */}
+                      <div className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center gap-1.5">
+                        <p className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
                           {garmentLabel}
                         </p>
-                        <span className="shrink-0 rounded-full border border-heritage-gold/30 bg-white px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-heritage-green">
+                        <span
+                          data-garment-fabric-badge="true"
+                          className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide ${
+                            assigned
+                              ? "border-heritage-green/25 bg-heritage-green/5 text-heritage-green"
+                              : "border-heritage-gold/30 bg-white text-heritage-green"
+                          }`}
+                        >
                           {assigned ? "Assigned" : "Needs fabric"}
                         </span>
                       </div>
@@ -2471,7 +2528,7 @@ export const DormantFutureFabricStep = ({
                               fabric?.name ?? "Selected fabric",
                             )
                           }
-                          className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                          className="-mr-2 -mt-1 ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                         >
                           <X aria-hidden="true" size={16} />
                           <span className="sr-only">Remove Fabric</span>
@@ -2480,7 +2537,7 @@ export const DormantFutureFabricStep = ({
                     </div>
                     {assigned && fabric ? (
                       <>
-                        <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/70">
+                        <p className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/70">
                           {fabric.name} ({fabric.code})
                         </p>
                         <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
@@ -2502,7 +2559,7 @@ export const DormantFutureFabricStep = ({
                         ) : null}
                       </>
                     ) : (
-                      <p className="mt-1 text-xs text-heritage-ink/60">
+                      <p className="mt-2 text-xs text-heritage-ink/60">
                         Fabric not assigned
                       </p>
                     )}
@@ -2527,7 +2584,15 @@ export const DormantFutureFabricStep = ({
                       garmentLabel={garmentLabel}
                       fabricCode={assigned.allocation.fabricCode}
                     />
-                  ) : null}
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      data-unassigned-fabric-placeholder="true"
+                      className={`${ASSIGNED_FABRIC_PREVIEW_CLASSNAME} hidden items-center justify-center border-dashed sm:flex`}
+                    >
+                      <Layers3 size={22} className="text-heritage-gold/60" />
+                    </div>
+                  )}
                 </div>
                 {assigned ? (
                   <button
@@ -2939,6 +3004,7 @@ export const DormantFutureFabricStep = ({
               : pendingPartialFabricAssignment.garmentKey
           }
           fabricNameByCode={fabricNameByCode}
+          fabricByCode={fabricByCode}
           targets={partialAssignmentPresentations}
           onConfirm={commitPartialFabricAssignment}
           onCancel={cancelPartialFabricAssignment}

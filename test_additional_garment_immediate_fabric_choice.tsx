@@ -793,28 +793,23 @@ assert.equal(
   false,
 );
 
-// A different catalogue fabric keeps the original allocation unchanged and
-// assigns exactly the pending occurrence to a new physical allocation.
+// Shirt + the copied Shirt fit on one Fabric and Fabric A still has room, so
+// a different catalogue Fabric would exceed the Fabrics the order needs. It is
+// refused without touching the original allocation or the pending garment.
 const choseAnother = applyFutureFabricCardSelection({
   state: copyPending,
   garmentTypeSelection,
   garmentKey: copiedGarmentKey,
   fabricCode: fabricB.code,
 });
-assert.equal(choseAnother.fabricAllocations.length, 2);
+assert.equal(choseAnother.fabricAllocations.length, 1);
 assert.deepEqual(
   choseAnother.fabricAllocations[0].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt"],
 );
-assert.deepEqual(
-  choseAnother.fabricAllocations[1].garmentAssignments.map(
-    (assignment) => assignment.garmentKey,
-  ),
-  [copiedGarmentKey],
-);
-assert.equal(choseAnother.fabricAllocations[1].fabricCode, fabricB.code);
+assert.equal(choseAnother.pendingFabricGarment?.garmentKey, copiedGarmentKey);
 
 // Captured transaction identities reject stale callbacks before mutation.
 const newerTransaction: AdditionalGarmentFabricTransaction = {

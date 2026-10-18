@@ -9,7 +9,10 @@ import type {
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import {
+  assignFutureFabricToGarment,
+  formatFabricQuantityLimitChangeCopy,
   getFutureCompatiblePartialFabricAllocations,
+  getRequiredPhysicalFabricAllocationCount,
   resolveFutureFabricCatalogueCardPresentation,
 } from "../utils/designStudioFutureFabricStage";
 import {
@@ -131,6 +134,14 @@ export const FutureAdditionalGarmentFabricDialog = ({
           return left.name.localeCompare(right.name);
         }),
     [reusableAllocationOptionsByFabricCode, visibleFabricByCode],
+  );
+  const quantityLimitMessage = formatFabricQuantityLimitChangeCopy(
+    getRequiredPhysicalFabricAllocationCount({
+      garmentTypeSelection,
+      fabricAllocationState,
+      requiredPhysicalOccurrences,
+      countPendingGarmentForCapacity: true,
+    }),
   );
   const isFinishing =
     transaction.phase === "assigning" ||
@@ -273,22 +284,42 @@ export const FutureAdditionalGarmentFabricDialog = ({
                     fabrics,
                     requiredPhysicalOccurrences,
                   });
+                  // A different Fabric would need a new allocation. Once the order
+                  // already has the Fabrics it needs, only spare capacity on a
+                  // selected Fabric ("In Your Order") can serve this garment.
+                  const quantityLimitReached =
+                    !reusableAllocationOptions?.length &&
+                    (() => {
+                      const preview = assignFutureFabricToGarment({
+                        state: fabricAllocationState,
+                        garmentTypeSelection,
+                        garmentKey: transaction.garmentKey,
+                        fabricCode: fabric.code,
+                        fabrics,
+                        requiredPhysicalOccurrences,
+                      });
+                      return (
+                        preview.status === "blocked" &&
+                        preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+                      );
+                    })();
                   // A Fabric already offering "In Your Order" reuse options can
                   // still serve this garment, so it must not also claim that
                   // no stock is available.
-                  const stockConstraintMessage =
-                    getFabricNewAllocationStockConstraintMessage(
-                      fabric,
-                      fabricAllocationState,
-                      Boolean(reusableAllocationOptions?.length),
-                    );
+                  const stockConstraintMessage = quantityLimitReached
+                    ? quantityLimitMessage
+                    : getFabricNewAllocationStockConstraintMessage(
+                        fabric,
+                        fabricAllocationState,
+                        Boolean(reusableAllocationOptions?.length),
+                      );
                   return (
                     <FutureFabricCatalogueCard
                       key={fabric.code}
                       fabric={fabric}
                       presentation={{
                         ...presentation,
-                        action: "select",
+                        action: quantityLimitReached ? "none" : "select",
                         cancelGarmentKey: null,
                         cancelGarmentKeys: [],
                       }}
@@ -305,7 +336,9 @@ export const FutureAdditionalGarmentFabricDialog = ({
                       stockConstraintMessage={stockConstraintMessage}
                       describedBy={helpId}
                       actionLabel="Select This Fabric"
-                      onAction={() => onSelectFabric(fabric.code)}
+                      onAction={() => {
+                        if (!quantityLimitReached) onSelectFabric(fabric.code);
+                      }}
                       orderAllocationOptions={reusableAllocationOptions?.map(
                         (option) => ({
                           ...option,

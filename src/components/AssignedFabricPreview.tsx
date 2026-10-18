@@ -26,12 +26,15 @@ export const AssignedFabricPreview = ({
   garmentLabel,
   fabricCode,
   className = ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
+  imageAlt,
 }: {
   fabric: Fabric | null | undefined;
   garmentKey: string;
   garmentLabel: string;
   fabricCode: string;
   className?: string;
+  /** Overrides the image alt text; defaults to "<Fabric> selected for <garment>". */
+  imageAlt?: string;
 }) => {
   const previewCode = fabric?.code || fabricCode;
   const imageUrl = hasUsableFabricImage(fabric) ? fabric!.image!.trim() : null;
@@ -56,7 +59,7 @@ export const AssignedFabricPreview = ({
       <div {...commonProps}>
         <img
           src={imageUrl}
-          alt={`${fabric!.name} selected for ${garmentLabel}`}
+          alt={imageAlt ?? `${fabric!.name} selected for ${garmentLabel}`}
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"
