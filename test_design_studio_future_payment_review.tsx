@@ -461,9 +461,6 @@ for (const expected of [
   "Status: Ready to review",
   "Shared measurements",
   "Chest",
-  "70 in (177.8 cm)",
-  "40 in (101.6 cm)",
-  "54 in (137.16 cm)",
   "Garment Length",
   "Deliver to an Address",
   "Ada Heritage",
@@ -486,6 +483,34 @@ const centimetreHeight = centimetreReviewGroups
   .flatMap((group) => group.items)
   .find((item) => item.measurementId === "height");
 assert.equal(centimetreHeight?.formattedDisplay, "177.8 cm (70 in)");
+assert.deepEqual(centimetreHeight?.formattedParts, {
+  preferred: "177.8 cm",
+  alternate: "70 in",
+});
+// Payment Review measurement values render as split pills (preferred left, alternate right).
+for (const [preferred, alternate] of [
+  ["70 in", "177.8 cm"],
+  ["40 in", "101.6 cm"],
+  ["54 in", "137.16 cm"],
+]) {
+  assert.ok(
+    reviewMarkup.includes(
+      `>${preferred}</span><span data-measurement-alternate="true"`,
+    ),
+    `Missing preferred pill part: ${preferred}`,
+  );
+  assert.ok(
+    reviewMarkup.includes(
+      `<span class="sr-only"> (</span>${alternate}<span class="sr-only">)</span>`,
+    ),
+    `Missing alternate pill part: ${alternate}`,
+  );
+  assert.ok(
+    reviewMarkup.replace(/<[^>]+>/g, "").includes(`${preferred} (${alternate})`),
+    `Pill text should read ${preferred} (${alternate})`,
+  );
+}
+assert.match(reviewMarkup, /<dd class="[^"]*"><span data-measurement-pill="true"/);
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
 assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));

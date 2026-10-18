@@ -1122,11 +1122,18 @@ export const formatImplausibleMeasurementMessage = (
 const measurementDisplayUnitLabel = (unit: MeasurementUnit): "in" | "cm" =>
   unit === "inch" ? "in" : "cm";
 
-/** Preferred unit first, alternate in parentheses. Both sides are formatted from valueCm. */
-export const formatDualUnitMeasurementDisplay = (
+export interface DualUnitMeasurementParts {
+  /** Preferred unit (Step 7 unit), e.g. "42 in". */
+  readonly preferred: string;
+  /** The other unit, e.g. "106.68 cm". */
+  readonly alternate: string;
+}
+
+/** Preferred and alternate unit text. Both sides are formatted from valueCm. */
+export const getDualUnitMeasurementParts = (
   valueCm: number,
   preferredUnit: MeasurementUnit,
-): string => {
+): DualUnitMeasurementParts => {
   const alternateUnit: MeasurementUnit = preferredUnit === "inch" ? "cm" : "inch";
   const preferred = roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, preferredUnit),
@@ -1134,7 +1141,19 @@ export const formatDualUnitMeasurementDisplay = (
   const alternate = roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, alternateUnit),
   );
-  return `${preferred} ${measurementDisplayUnitLabel(preferredUnit)} (${alternate} ${measurementDisplayUnitLabel(alternateUnit)})`;
+  return {
+    preferred: `${preferred} ${measurementDisplayUnitLabel(preferredUnit)}`,
+    alternate: `${alternate} ${measurementDisplayUnitLabel(alternateUnit)}`,
+  };
+};
+
+/** Preferred unit first, alternate in parentheses. Both sides are formatted from valueCm. */
+export const formatDualUnitMeasurementDisplay = (
+  valueCm: number,
+  preferredUnit: MeasurementUnit,
+): string => {
+  const { preferred, alternate } = getDualUnitMeasurementParts(valueCm, preferredUnit);
+  return `${preferred} (${alternate})`;
 };
 
 const createEmptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({

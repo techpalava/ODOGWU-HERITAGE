@@ -5,6 +5,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { DualUnitMeasurementPill } from "./DualUnitMeasurementPill";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useState } from "react";
 import type React from "react";
@@ -884,7 +885,7 @@ export const DormantFutureSummaryStep = ({
                   <p className="text-xs text-heritage-ink/60">
                     Method: {wearer.routeLabel}. Status: {wearer.status}.
                   </p>
-                  <ul className="mt-2 space-y-1 text-sm text-heritage-ink/75">
+                  <ul className="mt-2 space-y-1.5 text-sm text-heritage-ink/75">
                     {wearer.garmentKeys.map((garmentKey) => {
                       const garmentLabel = summary.garmentSummary.find(
                         (garment) => garment.garmentKey === garmentKey,
@@ -893,17 +894,29 @@ export const DormantFutureSummaryStep = ({
                       return <li key={garmentKey}>{garmentLabel}</li>;
                     })}
                     {wearer.shared.map((measurement) => (
-                      <li key={measurement.requirementKey}>
-                        {measurement.label}: {measurement.formattedValue}
-                        {measurement.convertedFormattedValue
-                          ? ` (${measurement.convertedFormattedValue})`
-                          : ""}
+                      <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
+                        <span className="min-w-0 break-words">{measurement.label}</span>
+                        <span className="shrink-0 text-right">
+                          <DualUnitMeasurementPill parts={measurement.formattedParts} />
+                          {measurement.convertedFormattedParts && (
+                            <span
+                              data-sample-converted="true"
+                              className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
+                            >
+                              Production equivalent
+                              <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
+                            </span>
+                          )}
+                        </span>
                       </li>
                     ))}
                     {wearer.byGarment.flatMap((garment) =>
                       garment.values.map((measurement) => (
-                        <li key={measurement.requirementKey}>
-                          {garment.garmentLabel} — {measurement.label}: {measurement.formattedValue}
+                        <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
+                          <span className="min-w-0 break-words">
+                            {garment.garmentLabel} — {measurement.label}
+                          </span>
+                          <DualUnitMeasurementPill parts={measurement.formattedParts} />
                         </li>
                       )),
                     )}
@@ -946,24 +959,25 @@ export const DormantFutureSummaryStep = ({
           </div>
           )}
           {summary.measurementSummary.shared.length > 0 && (
-            <div className="mt-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+            <div data-summary-measurement-section className="mt-5 border-t border-heritage-gold/20 pt-4">
+              <h4 className="text-base font-extrabold uppercase tracking-wider text-heritage-gold">
                 {isSampleClothMeasurementMethod(summary.measurementSummary.route)
                   ? "Shared sample measurements"
                   : "Shared body measurements"}
               </h4>
-              <ul className="mt-2 space-y-1 text-sm text-heritage-ink/75">
+              <ul className="mt-3 space-y-2 text-sm text-heritage-ink/75">
                 {summary.measurementSummary.shared.map((measurement) => (
-                  <li key={measurement.requirementKey} className="flex min-w-0 justify-between gap-3">
+                  <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
                     <span className="min-w-0 break-words">{measurement.label}</span>
-                    <span className="shrink-0 text-right font-mono">
-                      <span>{measurement.formattedValue}</span>
-                      {measurement.convertedFormattedValue && (
+                    <span className="shrink-0 text-right">
+                      <DualUnitMeasurementPill parts={measurement.formattedParts} />
+                      {measurement.convertedFormattedParts && (
                         <span
                           data-sample-converted="true"
-                          className="mt-0.5 block text-[11px] font-sans text-heritage-ink/60"
+                          className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
                         >
-                          Production equivalent {measurement.convertedFormattedValue}
+                          Production equivalent
+                          <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
                         </span>
                       )}
                     </span>
@@ -973,22 +987,23 @@ export const DormantFutureSummaryStep = ({
             </div>
           )}
           {summary.measurementSummary.byGarment.map((garment) => (
-            <div key={garment.garmentKey} className="mt-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+            <div key={garment.garmentKey} data-summary-measurement-section className="mt-5 border-t border-heritage-gold/20 pt-4">
+              <h4 className="text-base font-extrabold uppercase tracking-wider text-heritage-gold">
                 {garment.garmentLabel}
               </h4>
-              <ul className="mt-2 space-y-1 text-sm text-heritage-ink/75">
+              <ul className="mt-3 space-y-2 text-sm text-heritage-ink/75">
                 {garment.values.map((measurement) => (
-                  <li key={measurement.requirementKey} className="flex min-w-0 justify-between gap-3">
+                  <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
                     <span className="min-w-0 break-words">{measurement.label}</span>
-                    <span className="shrink-0 text-right font-mono">
-                      <span>{measurement.formattedValue}</span>
-                      {measurement.convertedFormattedValue && (
+                    <span className="shrink-0 text-right">
+                      <DualUnitMeasurementPill parts={measurement.formattedParts} />
+                      {measurement.convertedFormattedParts && (
                         <span
                           data-sample-converted="true"
-                          className="mt-0.5 block text-[11px] font-sans text-heritage-ink/60"
+                          className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
                         >
-                          Production equivalent {measurement.convertedFormattedValue}
+                          Production equivalent
+                          <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
                         </span>
                       )}
                     </span>

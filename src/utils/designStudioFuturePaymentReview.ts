@@ -24,6 +24,8 @@ import {
 } from "./individualInboundShippingDisplay";
 import {
   formatDualUnitMeasurementDisplay,
+  getDualUnitMeasurementParts,
+  type DualUnitMeasurementParts,
   fromCanonicalCentimetres,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
@@ -159,6 +161,8 @@ export interface FuturePaymentReviewMeasurementItem {
   readonly unitLabel: "in" | "cm";
   /** Preferred unit first, alternate in parentheses. Customer-facing payment review line. */
   readonly formattedDisplay: string;
+  /** Preferred / alternate unit text for the split pill (same values as formattedDisplay). */
+  readonly formattedParts: DualUnitMeasurementParts;
   readonly provenanceLabel:
     | "Customer entered"
     | "System derived"
@@ -291,6 +295,7 @@ const toMeasurementItem = ({
   ),
   unitLabel: unit === "inch" ? "in" : "cm",
   formattedDisplay: formatDualUnitMeasurementDisplay(valueCm, unit),
+  formattedParts: getDualUnitMeasurementParts(valueCm, unit),
   provenanceLabel:
     convertedFromSample
       ? "Converted from sample cloth"

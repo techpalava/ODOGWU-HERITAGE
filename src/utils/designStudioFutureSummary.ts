@@ -48,7 +48,7 @@ import {
   getMonogramPlacementLabel,
   getMonogramTextForGarment,
 } from "./decorativePricing.js";
-import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -167,7 +167,10 @@ export interface FutureSummaryMeasurementValue {
   garmentKey: string | null;
   label: string;
   formattedValue: string;
+  /** Preferred / alternate unit text for the split pill (same values as formattedValue). */
+  formattedParts: DualUnitMeasurementParts;
   convertedFormattedValue: string | null;
+  convertedFormattedParts: DualUnitMeasurementParts | null;
   convertedLabel: string | null;
   value: number;
   unit: FutureMeasurementStateV1["unit"];
@@ -907,9 +910,17 @@ const mapMeasurements = ({
         stored.valueCm,
         measurementState.unit,
       ),
+      formattedParts: getDualUnitMeasurementParts(
+        stored.valueCm,
+        measurementState.unit,
+      ),
       convertedFormattedValue:
         convertedCm != null && Number.isFinite(convertedCm)
           ? formatDualUnitMeasurementDisplay(convertedCm, measurementState.unit)
+          : null,
+      convertedFormattedParts:
+        convertedCm != null && Number.isFinite(convertedCm)
+          ? getDualUnitMeasurementParts(convertedCm, measurementState.unit)
           : null,
       convertedLabel:
         convertedCm != null && Number.isFinite(convertedCm)

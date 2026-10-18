@@ -64,6 +64,7 @@ import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructi
 import {
   createEmptyFutureMeasurementState,
   formatDualUnitMeasurementDisplay,
+  getDualUnitMeasurementParts,
   getMeasurementPhysicalGarments,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
@@ -535,6 +536,27 @@ const dualInchDisplay = /^\d+(?:\.\d{1,2})? in \(\d+(?:\.\d{1,2})? cm\)$/;
 const dualCentimetreDisplay = /^\d+(?:\.\d{1,2})? cm \(\d+(?:\.\d{1,2})? in\)$/;
 assert.equal(formatDualUnitMeasurementDisplay(106.68, "inch"), "42 in (106.68 cm)");
 assert.equal(formatDualUnitMeasurementDisplay(106.68, "cm"), "106.68 cm (42 in)");
+assert.deepEqual(getDualUnitMeasurementParts(106.68, "inch"), {
+  preferred: "42 in",
+  alternate: "106.68 cm",
+});
+assert.deepEqual(getDualUnitMeasurementParts(106.68, "cm"), {
+  preferred: "106.68 cm",
+  alternate: "42 in",
+});
+assert.ok(
+  [
+    ...exactSummary.measurementSummary.shared,
+    ...exactSummary.measurementSummary.byGarment.flatMap((garment) => garment.values),
+  ].every(
+    (value) =>
+      `${value.formattedParts.preferred} (${value.formattedParts.alternate})` ===
+        value.formattedValue &&
+      value.formattedParts.preferred.endsWith(" in") &&
+      value.formattedParts.alternate.endsWith(" cm"),
+  ),
+  "split-pill parts carry the same canonical values, inches first when inches are preferred",
+);
 assert.ok(
   exactSummary.measurementSummary.shared.every((value) =>
     dualInchDisplay.test(value.formattedValue),
@@ -571,6 +593,14 @@ assert.ok(
     (value) => value.formattedValue === "25.4 cm (10 in)",
   ),
   "the same canonical centimetres render centimetres first when that unit is preferred",
+);
+assert.ok(
+  centimetrePreferredSummary.measurementSummary.shared.some(
+    (value) =>
+      value.formattedParts.preferred === "25.4 cm" &&
+      value.formattedParts.alternate === "10 in",
+  ),
+  "centimetre-preferred split-pill parts put centimetres on the left",
 );
 assert.ok(
   exactSummary.measurementSummary.byGarment.some(
@@ -2091,7 +2121,39 @@ if (destinationDeliveryResolution.projectedTotalCents === null) {
   throw new Error("destination delivery must supply an authoritative payable projection");
 }
 const destinationDeliveryMarkup = renderSummaryMarkup(destinationDeliveryResolution);
-assert.match(destinationDeliveryMarkup, /10 in \(25\.4 cm\)/);
+// Split pill: preferred unit left, alternate right; hidden parentheses keep the read order.
+assert.match(
+  destinationDeliveryMarkup,
+  /<span data-measurement-preferred="true"[^>]*>10 in<\/span><span data-measurement-alternate="true"[^>]*><span class="sr-only"> \(<\/span>25\.4 cm<span class="sr-only">\)<\/span><\/span>/,
+);
+assert.match(
+  destinationDeliveryMarkup.replace(/<[^>]+>/g, ""),
+  /10 in \(25\.4 cm\)/,
+  "pill text still reads preferred then alternate in parentheses",
+);
+assert.match(destinationDeliveryMarkup, /data-measurement-preferred="true" class="[^"]*bg-\[#f3ece0\][^"]*font-bold text-heritage-green/);
+assert.match(destinationDeliveryMarkup, /data-measurement-alternate="true" class="[^"]*border-l border-\[#e3d6bd\]/);
+assert.match(destinationDeliveryMarkup, /data-measurement-pill="true" class="[^"]*rounded-full border border-\[#e3d6bd\][^"]*tabular-nums/);
+// Garment group headings: spaced from the line above and larger than the row labels.
+const measurementSectionHeadings = [
+  ...destinationDeliveryMarkup.matchAll(
+    /<div data-summary-measurement-section="true" class="([^"]*)"><h4 class="([^"]*)">([^<]*)<\/h4>/g,
+  ),
+];
+assert.ok(measurementSectionHeadings.length >= 2, "shared and garment measurement sections render");
+assert.ok(
+  measurementSectionHeadings.some((match) => match[3] === "Shared body measurements"),
+);
+assert.ok(measurementSectionHeadings.some((match) => match[3] === "Standard Shirt"));
+for (const [, wrapperClass, headingClass] of measurementSectionHeadings) {
+  assert.match(wrapperClass, /\bmt-5\b/);
+  assert.match(wrapperClass, /\bborder-t\b/);
+  assert.match(wrapperClass, /\bpt-4\b/);
+  assert.match(headingClass, /\btext-base\b/);
+  assert.match(headingClass, /\bfont-extrabold\b/);
+  assert.match(headingClass, /\buppercase\b/);
+  assert.match(headingClass, /\btext-heritage-gold\b/);
+}
 assert.equal(destinationDeliveryMarkup.includes("Display unit:"), false);
 assert.match(
   destinationDeliveryMarkup,
