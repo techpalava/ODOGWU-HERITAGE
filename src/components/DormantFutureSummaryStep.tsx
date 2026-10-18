@@ -926,6 +926,7 @@ export const DormantFutureSummaryStep = ({
                     (candidate) => candidate.garmentKey === garmentKey,
                   );
                   const garmentLabel =
+                    wearer.personGarmentLabels?.[garmentKey] ||
                     garment?.label ||
                     wearer.byGarment.find((group) => group.garmentKey === garmentKey)
                       ?.garmentLabel;
@@ -944,7 +945,7 @@ export const DormantFutureSummaryStep = ({
                   >
                     <h4
                       data-summary-measurement-person-heading
-                      className="break-words font-serif text-lg font-bold text-heritage-green"
+                      className="break-words font-serif text-2xl font-semibold leading-tight text-heritage-green"
                     >
                       {wearer.displayName}
                     </h4>

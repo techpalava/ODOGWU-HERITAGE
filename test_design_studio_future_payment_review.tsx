@@ -832,6 +832,91 @@ const adaSampleGroups = getFuturePaymentReviewMeasurementGroups({
 const adaSampleTitle = adaSampleGroups.find((group) => group.title.startsWith("Ada"))?.title;
 assert.equal(adaSampleTitle, `Ada — ${MEASUREMENT_METHOD_LABELS.sample_cloth}`);
 assert.equal(adaSampleGroups.some((group) => group.title.includes("sample_cloth")), false);
+// Inside a named person's group, Payment Review drops the order-wide " 2" suffix
+// (the person name already disambiguates); My orders keeps the numbered label.
+const personShirtState = (garmentKey: string) => ({
+  ...createEmptyFutureMeasurementState("low_risk", "cm"),
+  entered: {
+    shared: { height: { valueCm: 170, provenance: "customer_entered" as const } },
+    byGarmentKey: {
+      [garmentKey]: { chest: { valueCm: 95, provenance: "customer_entered" as const } },
+    },
+  },
+});
+const personShirtGarments = [
+  { garmentKey: "base:shirt", garmentType: "shirt", label: "Standard Shirt" },
+  { garmentKey: "additional:shirt:1", garmentType: "shirt", label: "Standard Shirt 2" },
+];
+const chidiAmakaMeasurements = {
+  schemaVersion: 2 as const,
+  wearers: [
+    createWearerProfile({
+      wearerId: "wearer-chidi",
+      displayName: "Chidi",
+      presentationOrder: 0,
+      measurement: personShirtState("base:shirt"),
+    }),
+    createWearerProfile({
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      presentationOrder: 1,
+      measurement: personShirtState("additional:shirt:1"),
+    }),
+  ],
+  assignmentByGarmentKey: {
+    "base:shirt": "wearer-chidi",
+    "additional:shirt:1": "wearer-amaka",
+  },
+};
+const plainPersonTitles = getFuturePaymentReviewMeasurementGroups(
+  { measurements: chidiAmakaMeasurements, garments: personShirtGarments },
+  { plainPersonGarmentLabels: true },
+).map((group) => group.title);
+assert.ok(plainPersonTitles.includes("Amaka — Standard Shirt"));
+assert.ok(plainPersonTitles.includes("Chidi — Standard Shirt"));
+assert.equal(plainPersonTitles.some((title) => title.includes("Standard Shirt 2")), false);
+assert.ok(
+  getFuturePaymentReviewMeasurementGroups({
+    measurements: chidiAmakaMeasurements,
+    garments: personShirtGarments,
+  }).some((group) => group.title === "Amaka — Standard Shirt 2"),
+  "without the option (My orders) the numbered label is unchanged",
+);
+const amakaBothShirtsTitles = getFuturePaymentReviewMeasurementGroups(
+  {
+    measurements: {
+      ...chidiAmakaMeasurements,
+      wearers: [
+        chidiAmakaMeasurements.wearers[0],
+        {
+          ...chidiAmakaMeasurements.wearers[1],
+          measurement: {
+            ...personShirtState("base:shirt"),
+            entered: {
+              shared: personShirtState("base:shirt").entered.shared,
+              byGarmentKey: {
+                "base:shirt": personShirtState("base:shirt").entered.byGarmentKey["base:shirt"],
+                "additional:shirt:1":
+                  personShirtState("additional:shirt:1").entered.byGarmentKey["additional:shirt:1"],
+              },
+            },
+          },
+        },
+      ],
+      assignmentByGarmentKey: {
+        "base:shirt": "wearer-amaka",
+        "additional:shirt:1": "wearer-amaka",
+      },
+    },
+    garments: personShirtGarments,
+  },
+  { plainPersonGarmentLabels: true },
+).map((group) => group.title);
+assert.ok(amakaBothShirtsTitles.includes("Amaka — Standard Shirt"));
+assert.ok(
+  amakaBothShirtsTitles.includes("Amaka — Standard Shirt 2"),
+  "two identical garments for the same person keep their numbers",
+);
 
 const repeatedOccurrenceLabels = projectOccurrenceDisplayLabels([
   { garmentKey: "base:shirt", garmentType: "shirt" },

@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
 import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
+import { projectPersonGarmentLabels } from "./occurrenceDisplayLabel";
 import {
   type FutureOrderCandidateBlocker,
   type FutureOrderCandidateBuildResult,
@@ -473,8 +474,20 @@ const groupsFromMeasurementBag = (
 export const getFuturePaymentReviewMeasurementGroups = (
   candidate: {
     readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
-    readonly garments: readonly { readonly garmentKey: string; readonly label: string }[];
+    readonly garments: readonly {
+      readonly garmentKey: string;
+      readonly label: string;
+      readonly garmentType?: string;
+    }[];
   },
+  options: {
+    /**
+     * Stage 10 Payment Review only: inside a named person's group, drop the
+     * order-wide " 2" suffix ("Amaka — Standard Shirt"), unless that person has
+     * two garments with the same name. My orders keeps the numbered labels.
+     */
+    readonly plainPersonGarmentLabels?: boolean;
+  } = {},
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const measurements = candidate.measurements;
   if (isWearerOrderStateV2(measurements)) {
@@ -498,6 +511,9 @@ export const getFuturePaymentReviewMeasurementGroups = (
     const garmentLabels = new Map(
       candidate.garments.map((garment) => [garment.garmentKey, garment.label]),
     );
+    const garmentTypes = new Map(
+      candidate.garments.map((garment) => [garment.garmentKey, garment.garmentType]),
+    );
     const groups: FuturePaymentReviewMeasurementGroup[] = [];
     [...wearerOrder.wearers]
       .sort((left, right) => left.presentationOrder - right.presentationOrder)
@@ -506,6 +522,15 @@ export const getFuturePaymentReviewMeasurementGroups = (
           .filter(([, wearerId]) => wearerId === wearer.wearerId)
           .map(([garmentKey]) => garmentKey)
           .sort((left, right) => left.localeCompare(right));
+        const personGarmentLabels = options.plainPersonGarmentLabels
+          ? projectPersonGarmentLabels(
+              ownedKeys.map((garmentKey) => ({
+                garmentKey,
+                garmentType: garmentTypes.get(garmentKey),
+                label: garmentLabels.get(garmentKey) || garmentKey,
+              })),
+            )
+          : garmentLabels;
         const shared = mergeMeasurements({
           entered: wearer.measurement.entered.shared,
           derived: wearer.measurement.derived.shared,
@@ -537,7 +562,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
           if (items.length === 0) return;
           groups.push({
             garmentKey,
-            title: `${wearerPublicLabel(wearer.displayName, wearer.presentationOrder)} — ${garmentLabels.get(garmentKey) || garmentKey}`,
+            title: `${wearerPublicLabel(wearer.displayName, wearer.presentationOrder)} — ${personGarmentLabels.get(garmentKey) || garmentKey}`,
             items,
           });
         });

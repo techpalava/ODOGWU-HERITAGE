@@ -35,7 +35,7 @@ import {
   type AuthoritativeDesignPricing,
 } from "./designPricing.js";
 import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState.js";
-import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
+import { projectOccurrenceDisplayLabels, projectPersonGarmentLabels } from "./occurrenceDisplayLabel.js";
 import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime.js";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
@@ -189,6 +189,11 @@ export interface FutureSummaryWearerMeasurements {
   routeLabel: string;
   unit: FutureMeasurementStateV1["unit"];
   status: FutureMeasurementStateV1["calculationStatus"];
+  /**
+   * 2+ wearers only: garmentKey -> label inside this person's group, without the
+   * order-wide " 2" suffix unless the person has two garments of the same name.
+   */
+  personGarmentLabels?: Record<string, string>;
   shared: FutureSummaryMeasurementValue[];
   byGarment: Array<{
     garmentKey: string;
@@ -1052,12 +1057,14 @@ const summarizeOrderMeasurements = ({
   measurementState,
   wearerRuntimes,
   garmentLabels,
+  garmentTypes,
   blockers,
 }: {
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
   wearerRuntimes?: FutureDesignStudioSummaryInput["wearerRuntimes"];
   garmentLabels: ReadonlyMap<string, string>;
+  garmentTypes: ReadonlyMap<string, string>;
   blockers: FutureDesignStudioSummaryBlocker[];
 }): FutureSummaryMeasurements => {
   if (!wearerRuntimes || wearerRuntimes.length === 0) {
@@ -1089,10 +1096,25 @@ const summarizeOrderMeasurements = ({
     };
   }
   const wearerGroups = wearerRuntimes.map((wearer, index) => {
+    const personKeys = [
+      ...new Set([
+        ...wearer.garmentKeys,
+        ...wearer.plan.requirements.flatMap((requirement) =>
+          requirement.garmentKey ? [requirement.garmentKey] : [],
+        ),
+      ]),
+    ].filter((garmentKey) => garmentLabels.has(garmentKey));
+    const personGarmentLabels = projectPersonGarmentLabels(
+      personKeys.map((garmentKey) => ({
+        garmentKey,
+        garmentType: garmentTypes.get(garmentKey),
+        label: garmentLabels.get(garmentKey)!,
+      })),
+    );
     const summary = mapMeasurements({
       measurementPlan: wearer.plan,
       measurementState: wearer.measurement,
-      garmentLabels,
+      garmentLabels: new Map([...garmentLabels, ...personGarmentLabels]),
       blockers: [],
     });
     return {
@@ -1103,6 +1125,7 @@ const summarizeOrderMeasurements = ({
       routeLabel: summary.routeLabel,
       unit: summary.unit,
       status: wearer.measurement.calculationStatus,
+      personGarmentLabels: Object.fromEntries(personGarmentLabels),
       shared: summary.shared,
       byGarment: summary.byGarment,
     };
@@ -1193,6 +1216,9 @@ export const projectFutureDesignStudioSummary = (
     wearerRuntimes: input.wearerRuntimes,
     garmentLabels: new Map(
       garmentSummary.map((garment) => [garment.garmentKey, garment.label]),
+    ),
+    garmentTypes: new Map(
+      garmentSummary.map((garment) => [garment.garmentKey, garment.garmentType]),
     ),
     blockers,
   });

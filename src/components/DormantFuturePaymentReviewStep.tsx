@@ -652,7 +652,9 @@ export const DormantFuturePaymentReviewStep = ({
       isAwaitingPersonalizedPriceEvaluation(candidate),
   );
   const measurementGroups = candidate
-    ? getFuturePaymentReviewMeasurementGroups(candidate)
+    ? getFuturePaymentReviewMeasurementGroups(candidate, {
+        plainPersonGarmentLabels: true,
+      })
     : [];
   const pricingRows = candidate
     ? getFuturePaymentReviewPricingRows(candidate.pricing, {

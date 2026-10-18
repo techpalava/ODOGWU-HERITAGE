@@ -35,6 +35,7 @@ import {
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import { projectDesignStudioLiveOrderSummary } from "./src/utils/designStudioLiveOrderSummary";
 import { projectAuthoritativeOrderMeasurements } from "./src/utils/futureOrderCandidate";
+import { projectPersonGarmentLabels } from "./src/utils/occurrenceDisplayLabel";
 import { isWearerOrderStateV2 } from "./src/utils/wearerOrder";
 import {
   formatCompactWearerRouteLabel,
@@ -2636,9 +2637,77 @@ for (const [, , sectionClass, headingClass] of wearerBlocks) {
   assert.match(sectionClass, /\bborder-t-2\b/);
   assert.match(sectionClass, /\bborder-heritage-green\b/);
   assert.match(headingClass, /\bfont-serif\b/);
-  assert.match(headingClass, /\btext-lg\b/);
+  assert.match(headingClass, /\btext-2xl\b/, "person headings (24px) outrank gold group headings (text-base, 16px) and row labels (text-sm, 14px)");
+  assert.match(headingClass, /\bfont-semibold\b/);
   assert.match(headingClass, /\btext-heritage-green\b/);
 }
+// Person garment labels: plain family name inside a person's group, numbered only
+// when the same person has two garments with the same name.
+assert.deepEqual(
+  Object.fromEntries(projectPersonGarmentLabels([
+    { garmentKey: "additional:shirt:1", garmentType: "shirt", label: "Standard Shirt 2" },
+    { garmentKey: "base:trouser", garmentType: "trouser", label: "Trouser" },
+  ])),
+  { "additional:shirt:1": "Standard Shirt", "base:trouser": "Trouser" },
+);
+assert.deepEqual(
+  Object.fromEntries(projectPersonGarmentLabels([
+    { garmentKey: "base:shirt", garmentType: "shirt", label: "Standard Shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt", label: "Standard Shirt 2" },
+  ])),
+  { "base:shirt": "Standard Shirt", "additional:shirt:1": "Standard Shirt 2" },
+  "same person, two identical garments: numbers stay",
+);
+assert.deepEqual(
+  Object.fromEntries(projectPersonGarmentLabels([
+    { garmentKey: "base:shirt", garmentType: "shirt", label: "Own upload 2" },
+  ])),
+  { "base:shirt": "Own upload 2" },
+  "labels that are not a family name are left alone",
+);
+const adaOwnPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: exactInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: exactInput.garmentTypeSelection,
+    physicalOccurrences: [{ garmentKey: "additional:shirt:1", garmentType: "shirt" }],
+  }),
+  additionalGarmentConstructions: repeatedShirtConstruction.state,
+});
+let adaOwnState = createEmptyFutureMeasurementState("low_risk", "cm");
+for (const requirement of adaOwnPlan.requirements.filter((candidate) => candidate.directInput)) {
+  adaOwnState = setFutureMeasurementInput({
+    state: adaOwnState,
+    requirement,
+    displayValue: requirement.measurementId === "total_height"
+      ? 165
+      : Math.round((requirement.averageFactor ?? 0.3) * 165 * 10) / 10,
+  });
+}
+adaOwnState = reconcileFutureMeasurementState({ state: adaOwnState, plan: adaOwnPlan });
+const chiefAdaOwnSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerRuntimes: [
+    chiefAdaRuntimes[0],
+    { ...chiefAdaRuntimes[1], plan: adaOwnPlan, measurement: adaOwnState },
+  ],
+});
+const adaOwnGroup = chiefAdaOwnSummary.measurementSummary.wearerGroups?.[1];
+assert.deepEqual(adaOwnGroup?.personGarmentLabels, { "additional:shirt:1": "Standard Shirt" });
+assert.deepEqual(adaOwnGroup?.byGarment.map((garment) => garment.garmentLabel), ["Standard Shirt"]);
+assert.ok(
+  chiefAdaOwnSummary.garmentSummary.some((garment) => garment.label === "Standard Shirt 2"),
+  "the order-wide numbered label is unchanged outside the person group",
+);
+const chiefAdaOwnMarkup = renderMeasurementSummaryMarkup(chiefAdaOwnSummary);
+const adaOwnBlock =
+  chiefAdaOwnMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1]?.split("</section>")[0] || "";
+assert.match(adaOwnBlock, /data-summary-measurement-person-garments="true" class="[^"]*">Standard Shirt<\/p>/);
+assert.match(adaOwnBlock, /<h5 class="[^"]*">Standard Shirt<\/h5>/);
+assert.equal(adaOwnBlock.includes("Standard Shirt 2"), false);
+assert.ok(chiefAdaOwnMarkup.includes(">Standard Shirt 2</h4>"), "Garments card keeps Standard Shirt 2");
 const adaBlock = chiefAdaMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1] || "";
 assert.match(
   adaBlock,
