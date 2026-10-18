@@ -24,6 +24,11 @@ import {
   resolveFutureOrderV2StripeShipping,
   toFutureOrderV2KlarnaBillingDetails,
 } from "../utils/futureOrderV2StripeShipping";
+import {
+  FUTURE_ORDER_V2_STRIPE_METHOD_ORDER,
+  FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
+  type FutureOrderV2StripeAccountMethod,
+} from "../utils/futureOrderV2StripeMethods";
 import type { FutureShippingStateV1 } from "../types";
 import {
   FutureOrderV2AllowedCardIcons,
@@ -106,10 +111,27 @@ const walletFlagsFromChange = (
   };
 };
 
+const isStripeAccountMethod = (
+  value: unknown,
+): value is FutureOrderV2StripeAccountMethod =>
+  value === "card" || value === "ideal" || value === "klarna";
+
+/** Methods the checkout may show. EUR omits Klarna; an explicit list can include it. */
+export const futureOrderV2VisibleStripeMethods = (
+  offered: readonly string[] | null | undefined = FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
+): readonly FutureOrderV2StripeAccountMethod[] => {
+  const source =
+    offered && offered.length > 0 ? offered : FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES;
+  return FUTURE_ORDER_V2_STRIPE_METHOD_ORDER.filter((method) => source.includes(method));
+};
+
+const stripeMethodGridClass = (count: number): string =>
+  count >= 3 ? "grid-cols-3" : count === 2 ? "grid-cols-2" : "grid-cols-1";
+
 /**
  * Card via Stripe Element, iDEAL or Klarna redirect, or Apple Pay / Google Pay.
  * Wallets use a separate Express Checkout Element and confirm as card.
- * Klarna is a radio here and is never offered on that element.
+ * Klarna is a radio only when this currency offers it, and is never on that element.
  * The test card is 4242 4242 4242 4242.
  */
 export const FutureOrderV2StripeCard = ({
@@ -118,6 +140,7 @@ export const FutureOrderV2StripeCard = ({
   returnSurface,
   amountCents = null,
   shippingState = null,
+  offeredPaymentMethodTypes,
   onExpressCheckoutConfirm,
   onReadyChange,
   onMethodChange,
@@ -129,6 +152,8 @@ export const FutureOrderV2StripeCard = ({
   amountCents?: number | null;
   /** Persisted Step 9 shipping. Klarna confirm reads it; the charge amount does not. */
   shippingState?: FutureShippingStateV1 | null;
+  /** Overrides the euro method list. Klarna stays hidden unless this includes it. */
+  offeredPaymentMethodTypes?: readonly string[];
   /**
    * Existing pay action. It calls authorizeFutureOrderV2Payment; the registered
    * confirmer then runs stripe.confirmPayment for the Express Checkout Element.
@@ -175,8 +200,14 @@ export const FutureOrderV2StripeCard = ({
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [stripeClient, setStripeClient] = useState<Stripe | null>(null);
   const [expressCheckoutVisible, setExpressCheckoutVisible] = useState(false);
+  const [configPaymentMethodTypes, setConfigPaymentMethodTypes] = useState<
+    readonly string[] | null
+  >(null);
 
   methodRef.current = method;
+  const visibleMethods = futureOrderV2VisibleStripeMethods(
+    offeredPaymentMethodTypes ?? configPaymentMethodTypes,
+  );
 
   const reportReady = (
     nextMethod: FutureOrderV2PaymentMethod,
@@ -292,6 +323,16 @@ export const FutureOrderV2StripeCard = ({
       if (!publishableKey.startsWith("pk_test_")) {
         throw new Error("The Stripe test publishable key is not configured.");
       }
+      if (
+        !offeredPaymentMethodTypes &&
+        payload &&
+        typeof payload === "object" &&
+        "paymentMethodTypes" in payload &&
+        Array.isArray(payload.paymentMethodTypes)
+      ) {
+        const methods = payload.paymentMethodTypes.filter(isStripeAccountMethod);
+        if (!cancelled && methods.length > 0) setConfigPaymentMethodTypes(methods);
+      }
       const stripe = await loadStripe(publishableKey);
       if (!stripe || cancelled || !mountRef.current) {
         throw new Error("Stripe payments could not be loaded.");
@@ -375,6 +416,12 @@ export const FutureOrderV2StripeCard = ({
         }
 
         if (methodRef.current === "klarna") {
+          if (!context.paymentMethodTypes.includes("klarna")) {
+            return {
+              status: "failed",
+              message: "Klarna is not available for this payment.",
+            };
+          }
           const activeOrderId = orderIdRef.current;
           const shipping = resolveFutureOrderV2StripeShipping(
             shippingStateRef.current,
@@ -633,59 +680,65 @@ export const FutureOrderV2StripeCard = ({
       </div>
 
       <div
-        className="relative z-10 grid grid-cols-3 gap-2"
+        className={`relative z-10 grid ${stripeMethodGridClass(visibleMethods.length)} gap-2`}
         role="radiogroup"
         aria-label="Payment method"
         data-future-order-v2-payment-methods
       >
-        <button
-          type="button"
-          role="radio"
-          aria-checked={method === "card"}
-          data-future-order-v2-method-card
-          disabled={disabled}
-          onClick={() => selectMethod("card")}
-          className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
-            method === "card"
-              ? "border-heritage-gold bg-heritage-gold/15 text-white"
-              : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
-          } disabled:cursor-not-allowed disabled:opacity-60`}
-        >
-          <FutureOrderV2MethodIcon method="card" />
-          Card
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={method === "ideal"}
-          data-future-order-v2-method-ideal
-          disabled={disabled}
-          onClick={() => selectMethod("ideal")}
-          className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
-            method === "ideal"
-              ? "border-heritage-gold bg-heritage-gold/15 text-white"
-              : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
-          } disabled:cursor-not-allowed disabled:opacity-60`}
-        >
-          <FutureOrderV2MethodIcon method="ideal" />
-          iDEAL
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={method === "klarna"}
-          data-future-order-v2-method-klarna
-          disabled={disabled}
-          onClick={() => selectMethod("klarna")}
-          className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
-            method === "klarna"
-              ? "border-heritage-gold bg-heritage-gold/15 text-white"
-              : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
-          } disabled:cursor-not-allowed disabled:opacity-60`}
-        >
-          <FutureOrderV2MethodIcon method="klarna" />
-          Klarna
-        </button>
+        {visibleMethods.includes("card") && (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={method === "card"}
+            data-future-order-v2-method-card
+            disabled={disabled}
+            onClick={() => selectMethod("card")}
+            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+              method === "card"
+                ? "border-heritage-gold bg-heritage-gold/15 text-white"
+                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            <FutureOrderV2MethodIcon method="card" />
+            Card
+          </button>
+        )}
+        {visibleMethods.includes("ideal") && (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={method === "ideal"}
+            data-future-order-v2-method-ideal
+            disabled={disabled}
+            onClick={() => selectMethod("ideal")}
+            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+              method === "ideal"
+                ? "border-heritage-gold bg-heritage-gold/15 text-white"
+                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            <FutureOrderV2MethodIcon method="ideal" />
+            iDEAL
+          </button>
+        )}
+        {visibleMethods.includes("klarna") && (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={method === "klarna"}
+            data-future-order-v2-method-klarna
+            disabled={disabled}
+            onClick={() => selectMethod("klarna")}
+            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+              method === "klarna"
+                ? "border-heritage-gold bg-heritage-gold/15 text-white"
+                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            <FutureOrderV2MethodIcon method="klarna" />
+            Klarna
+          </button>
+        )}
       </div>
 
       <div className={method === "card" ? "block" : "hidden"}>
@@ -725,25 +778,29 @@ export const FutureOrderV2StripeCard = ({
         )}
       </div>
 
-      <div className={method === "ideal" ? "block" : "hidden"}>
-        <p
-          data-future-order-v2-ideal-help
-          className="text-xs leading-relaxed text-white/75"
-        >
-          Pay with iDEAL. You will be redirected to your Dutch bank to authorize
-          this payment, then returned here.
-        </p>
-      </div>
+      {visibleMethods.includes("ideal") && (
+        <div className={method === "ideal" ? "block" : "hidden"}>
+          <p
+            data-future-order-v2-ideal-help
+            className="text-xs leading-relaxed text-white/75"
+          >
+            Pay with iDEAL. You will be redirected to your Dutch bank to authorize
+            this payment, then returned here.
+          </p>
+        </div>
+      )}
 
-      <div className={method === "klarna" ? "block" : "hidden"}>
-        <p
-          data-future-order-v2-klarna-help
-          className="text-xs leading-relaxed text-white/75"
-        >
-          Pay with Klarna. You will be redirected to Klarna to authorize this
-          payment, then returned here.
-        </p>
-      </div>
+      {visibleMethods.includes("klarna") && (
+        <div className={method === "klarna" ? "block" : "hidden"}>
+          <p
+            data-future-order-v2-klarna-help
+            className="text-xs leading-relaxed text-white/75"
+          >
+            Pay with Klarna. You will be redirected to Klarna to authorize this
+            payment, then returned here.
+          </p>
+        </div>
+      )}
 
       {message && (
         <p role="alert" className="text-xs leading-relaxed text-heritage-gold">

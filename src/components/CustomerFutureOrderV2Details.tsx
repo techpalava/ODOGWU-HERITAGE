@@ -252,7 +252,7 @@ export const CustomerFutureOrderV2Details = ({
             : canPay
               ? additionLines.length > 0
                 ? PERSONALIZED_BASE_PAYMENT_NOTICE
-                : "Choose Apple Pay, Google Pay, card, iDEAL, or Klarna and pay to complete your order."
+                : "Choose Apple Pay, Google Pay, card, or iDEAL and pay to complete your order."
               : "Pay only the accepted addition. Accepting did not charge you.";
 
   const dialog = (
