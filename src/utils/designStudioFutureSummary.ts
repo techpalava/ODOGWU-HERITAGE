@@ -48,7 +48,7 @@ import {
   getMonogramPlacementLabel,
   getMonogramTextForGarment,
 } from "./decorativePricing.js";
-import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, isMeasurementOutsideUsualRange, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -171,6 +171,8 @@ export interface FutureSummaryMeasurementValue {
   formattedParts: DualUnitMeasurementParts;
   convertedFormattedValue: string | null;
   convertedFormattedParts: DualUnitMeasurementParts | null;
+  /** Step 7 flagged this value as outside its usual range. Informational only. */
+  outsideUsualRange: boolean;
   convertedLabel: string | null;
   value: number;
   unit: FutureMeasurementStateV1["unit"];
@@ -926,6 +928,11 @@ const mapMeasurements = ({
         convertedCm != null && Number.isFinite(convertedCm)
           ? "Converted from sample cloth"
           : null,
+      outsideUsualRange: isMeasurementOutsideUsualRange(
+        measurementState.diagnostics,
+        requirement.measurementId,
+        requirement.scope === "shared" ? null : requirement.garmentKey,
+      ),
       value,
       unit: measurementState.unit,
       provenance: stored.provenance,

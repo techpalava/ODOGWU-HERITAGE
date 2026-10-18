@@ -511,6 +511,53 @@ for (const [preferred, alternate] of [
   );
 }
 assert.match(reviewMarkup, /<dd class="[^"]*"><span data-measurement-pill="true"/);
+assert.equal(reviewMarkup.includes("data-measurement-check-flag"), false, "no diagnostics, no flag");
+assert.equal(
+  new Set([...reviewMarkup.matchAll(/data-measurement-pill="true" class="([^"]*)"/g)].map((match) => match[1])).size,
+  1,
+  "Payment Review pills share one fixed width",
+);
+// "Check this?" follows Step 7's existing range diagnostics; purely informational.
+const flaggedMeasurementState = {
+  ...measurementState,
+  diagnostics: [
+    {
+      code: "measurement_range_recheck" as const,
+      garmentKey: "base:shirt",
+      measurementId: "chest",
+    },
+  ],
+};
+const flaggedGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: flaggedMeasurementState,
+  garments: candidate.garments.map((garment) => ({
+    garmentKey: garment.garmentKey,
+    label: garment.label,
+  })),
+});
+assert.deepEqual(
+  Object.fromEntries(
+    flaggedGroups.flatMap((group) => group.items).map((item) => [item.measurementId, item.outsideUsualRange]),
+  ),
+  { height: false, chest: true, garment_length: false },
+);
+const flaggedReviewMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={{
+      ...individualChargedResult,
+      candidate: { ...individualChargedResult.candidate!, measurements: flaggedMeasurementState },
+    } as FutureOrderCandidateBuildResult}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+  />,
+);
+assert.equal((flaggedReviewMarkup.match(/data-measurement-check-flag="true"/g) || []).length, 1);
+assert.ok(flaggedReviewMarkup.includes("Value outside the usual range, check this"));
+assert.equal(
+  (flaggedReviewMarkup.match(/disabled=""|aria-disabled="true"/g) || []).length,
+  (reviewMarkup.match(/disabled=""|aria-disabled="true"/g) || []).length,
+  "the flag changes no button or gate state",
+);
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
 assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));

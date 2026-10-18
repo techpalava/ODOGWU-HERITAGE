@@ -1072,7 +1072,10 @@ export const DormantFuturePaymentReviewStep = ({
                             </span>
                           </dt>
                           <dd className="min-w-0 max-w-full text-right">
-                            <DualUnitMeasurementPill parts={item.formattedParts} />
+                            <DualUnitMeasurementPill
+                              parts={item.formattedParts}
+                              outsideUsualRange={item.outsideUsualRange}
+                            />
                           </dd>
                         </div>
                       ))}

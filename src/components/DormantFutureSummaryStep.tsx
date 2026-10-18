@@ -21,6 +21,7 @@ import {
   formatCompactWearerRouteLabel,
   type FutureDesignStudioSummary,
   type FutureSummaryFabricAllocation,
+  type FutureSummaryMeasurementValue,
 } from "../utils/designStudioFutureSummary";
 import { isSampleClothMeasurementMethod } from "../utils/measurementBlueprint";
 import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
@@ -228,6 +229,48 @@ const SummaryFabricPreview = ({
           No preview
         </div>
       )}
+    </div>
+  );
+};
+
+/** One gold-headed measurement group (shared or per garment) with split-pill rows. */
+const SummaryMeasurementGroup = ({
+  title,
+  values,
+  headingLevel = "h4",
+}: {
+  title: string;
+  values: readonly FutureSummaryMeasurementValue[];
+  headingLevel?: "h4" | "h5";
+}) => {
+  const Heading = headingLevel;
+  return (
+    <div data-summary-measurement-section className="mt-5 border-t border-heritage-gold/20 pt-4">
+      <Heading className="text-base font-extrabold uppercase tracking-wider text-heritage-gold">
+        {title}
+      </Heading>
+      <ul className="mt-3 space-y-2 text-sm text-heritage-ink/75">
+        {values.map((measurement) => (
+          <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
+            <span className="min-w-0 break-words">{measurement.label}</span>
+            <span className="shrink-0 text-right">
+              <DualUnitMeasurementPill
+                parts={measurement.formattedParts}
+                outsideUsualRange={measurement.outsideUsualRange}
+              />
+              {measurement.convertedFormattedParts && (
+                <span
+                  data-sample-converted="true"
+                  className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
+                >
+                  Production equivalent
+                  <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };
@@ -876,53 +919,68 @@ export const DormantFutureSummaryStep = ({
         >
           {summary.measurementSummary.wearerGroups &&
           summary.measurementSummary.wearerGroups.length > 1 ? (
-            <div className="space-y-4">
-              {summary.measurementSummary.wearerGroups.map((wearer) => (
-                <div key={wearer.wearerId}>
-                  <p className="text-sm font-semibold text-heritage-green">
-                    {wearer.displayName}
-                  </p>
-                  <p className="text-xs text-heritage-ink/60">
-                    Method: {wearer.routeLabel}. Status: {wearer.status}.
-                  </p>
-                  <ul className="mt-2 space-y-1.5 text-sm text-heritage-ink/75">
-                    {wearer.garmentKeys.map((garmentKey) => {
-                      const garmentLabel = summary.garmentSummary.find(
-                        (garment) => garment.garmentKey === garmentKey,
-                      )?.label;
-                      if (!garmentLabel) return null;
-                      return <li key={garmentKey}>{garmentLabel}</li>;
-                    })}
-                    {wearer.shared.map((measurement) => (
-                      <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
-                        <span className="min-w-0 break-words">{measurement.label}</span>
-                        <span className="shrink-0 text-right">
-                          <DualUnitMeasurementPill parts={measurement.formattedParts} />
-                          {measurement.convertedFormattedParts && (
-                            <span
-                              data-sample-converted="true"
-                              className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
-                            >
-                              Production equivalent
-                              <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
-                            </span>
-                          )}
-                        </span>
-                      </li>
-                    ))}
-                    {wearer.byGarment.flatMap((garment) =>
-                      garment.values.map((measurement) => (
-                        <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
-                          <span className="min-w-0 break-words">
-                            {garment.garmentLabel} — {measurement.label}
-                          </span>
-                          <DualUnitMeasurementPill parts={measurement.formattedParts} />
-                        </li>
-                      )),
+            <div>
+              {summary.measurementSummary.wearerGroups.map((wearer) => {
+                const garmentLines = wearer.garmentKeys.flatMap((garmentKey) => {
+                  const garment = summary.garmentSummary.find(
+                    (candidate) => candidate.garmentKey === garmentKey,
+                  );
+                  const garmentLabel =
+                    garment?.label ||
+                    wearer.byGarment.find((group) => group.garmentKey === garmentKey)
+                      ?.garmentLabel;
+                  if (!garmentLabel) return [];
+                  return [
+                    garment?.fitLabel
+                      ? `${garmentLabel} · ${garment.fitLabel}`
+                      : garmentLabel,
+                  ];
+                });
+                return (
+                  <section
+                    key={wearer.wearerId}
+                    data-summary-measurement-wearer={wearer.wearerId}
+                    className="mt-5 border-t-2 border-heritage-green pt-4 first:mt-1"
+                  >
+                    <h4
+                      data-summary-measurement-person-heading
+                      className="break-words font-serif text-lg font-bold text-heritage-green"
+                    >
+                      {wearer.displayName}
+                    </h4>
+                    {garmentLines.length > 0 && (
+                      <p
+                        data-summary-measurement-person-garments
+                        className="mt-0.5 break-words text-sm text-heritage-ink/65"
+                      >
+                        {garmentLines.join(", ")}
+                      </p>
                     )}
-                  </ul>
-                </div>
-              ))}
+                    <p className="text-xs text-heritage-ink/60">
+                      Method: {wearer.routeLabel}. Status: {wearer.status}.
+                    </p>
+                    {wearer.shared.length > 0 && (
+                      <SummaryMeasurementGroup
+                        title={
+                          isSampleClothMeasurementMethod(wearer.route)
+                            ? "Shared sample measurements"
+                            : "Shared body measurements"
+                        }
+                        values={wearer.shared}
+                        headingLevel="h5"
+                      />
+                    )}
+                    {wearer.byGarment.map((garment) => (
+                      <SummaryMeasurementGroup
+                        key={garment.garmentKey}
+                        title={garment.garmentLabel}
+                        values={garment.values}
+                        headingLevel="h5"
+                      />
+                    ))}
+                  </section>
+                );
+              })}
             </div>
           ) : (
           <div>
@@ -959,58 +1017,21 @@ export const DormantFutureSummaryStep = ({
           </div>
           )}
           {summary.measurementSummary.shared.length > 0 && (
-            <div data-summary-measurement-section className="mt-5 border-t border-heritage-gold/20 pt-4">
-              <h4 className="text-base font-extrabold uppercase tracking-wider text-heritage-gold">
-                {isSampleClothMeasurementMethod(summary.measurementSummary.route)
+            <SummaryMeasurementGroup
+              title={
+                isSampleClothMeasurementMethod(summary.measurementSummary.route)
                   ? "Shared sample measurements"
-                  : "Shared body measurements"}
-              </h4>
-              <ul className="mt-3 space-y-2 text-sm text-heritage-ink/75">
-                {summary.measurementSummary.shared.map((measurement) => (
-                  <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="min-w-0 break-words">{measurement.label}</span>
-                    <span className="shrink-0 text-right">
-                      <DualUnitMeasurementPill parts={measurement.formattedParts} />
-                      {measurement.convertedFormattedParts && (
-                        <span
-                          data-sample-converted="true"
-                          className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
-                        >
-                          Production equivalent
-                          <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                  : "Shared body measurements"
+              }
+              values={summary.measurementSummary.shared}
+            />
           )}
           {summary.measurementSummary.byGarment.map((garment) => (
-            <div key={garment.garmentKey} data-summary-measurement-section className="mt-5 border-t border-heritage-gold/20 pt-4">
-              <h4 className="text-base font-extrabold uppercase tracking-wider text-heritage-gold">
-                {garment.garmentLabel}
-              </h4>
-              <ul className="mt-3 space-y-2 text-sm text-heritage-ink/75">
-                {garment.values.map((measurement) => (
-                  <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="min-w-0 break-words">{measurement.label}</span>
-                    <span className="shrink-0 text-right">
-                      <DualUnitMeasurementPill parts={measurement.formattedParts} />
-                      {measurement.convertedFormattedParts && (
-                        <span
-                          data-sample-converted="true"
-                          className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-heritage-ink/60"
-                        >
-                          Production equivalent
-                          <DualUnitMeasurementPill parts={measurement.convertedFormattedParts} size="sm" />
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <SummaryMeasurementGroup
+              key={garment.garmentKey}
+              title={garment.garmentLabel}
+              values={garment.values}
+            />
           ))}
         </Section>
       </div>

@@ -1147,6 +1147,30 @@ export const getDualUnitMeasurementParts = (
   };
 };
 
+const MEASUREMENT_CHECK_FLAG_DIAGNOSTIC_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
+  "measurement_range_recheck",
+  "implausible_measurement_value",
+]);
+
+/**
+ * True when Step 7 already flagged this value as outside its usual range: the
+ * non-blocking "Please recheck this measurement." hint (workbook height factors
+ * plus MANUAL_RANGE_RECHECK_TOLERANCE) or the absolute plausibility bounds.
+ * Shared values (garmentKey null) match any garment, like Step 7 does.
+ * Display only; it never changes completion or payment gates.
+ */
+export const isMeasurementOutsideUsualRange = (
+  diagnostics: readonly FutureMeasurementDiagnostic[] | undefined,
+  measurementId: string,
+  garmentKey: string | null,
+): boolean =>
+  (diagnostics ?? []).some(
+    (diagnostic) =>
+      MEASUREMENT_CHECK_FLAG_DIAGNOSTIC_CODES.has(diagnostic.code) &&
+      diagnostic.measurementId === measurementId &&
+      (garmentKey === null || diagnostic.garmentKey === garmentKey),
+  );
+
 /** Preferred unit first, alternate in parentheses. Both sides are formatted from valueCm. */
 export const formatDualUnitMeasurementDisplay = (
   valueCm: number,

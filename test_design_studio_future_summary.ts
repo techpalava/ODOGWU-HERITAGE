@@ -66,6 +66,7 @@ import {
   formatDualUnitMeasurementDisplay,
   getDualUnitMeasurementParts,
   getMeasurementPhysicalGarments,
+  isMeasurementOutsideUsualRange,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
@@ -2154,6 +2155,67 @@ for (const [, wrapperClass, headingClass] of measurementSectionHeadings) {
   assert.match(headingClass, /\buppercase\b/);
   assert.match(headingClass, /\btext-heritage-gold\b/);
 }
+// Item 4: "Check this?" mirrors Step 7's existing range diagnostics (workbook height
+// factors + MANUAL_RANGE_RECHECK_TOLERANCE, or plausibility bounds). Informational only.
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "measurement_range_recheck", garmentKey: "base:shirt", measurementId: "neck_circumference" }],
+  "neck_circumference",
+  null,
+), true, "a shared value matches its diagnostic on any garment");
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "measurement_range_recheck", garmentKey: "base:shirt", measurementId: "sleeve_length_short" }],
+  "sleeve_length_short",
+  "base:trouser",
+), false, "a garment value only matches its own garment's diagnostic");
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "implausible_measurement_value", garmentKey: "base:shirt", measurementId: "total_height" }],
+  "total_height",
+  null,
+), true, "plausibility-bound diagnostics also flag");
+assert.equal(isMeasurementOutsideUsualRange(
+  [{ code: "required_measurement_missing", garmentKey: "base:shirt", measurementId: "total_height" }],
+  "total_height",
+  null,
+), false, "other diagnostics never flag");
+const rangeRecheckIds = new Set(
+  exactInput.measurementState.diagnostics
+    .filter((diagnostic) => diagnostic.code === "measurement_range_recheck")
+    .map((diagnostic) => diagnostic.measurementId),
+);
+assert.ok(rangeRecheckIds.size > 0, "the 40 in / 10 in fixture trips Step 7's recheck hint");
+const exactMeasurementValues = [
+  ...exactSummary.measurementSummary.shared,
+  ...exactSummary.measurementSummary.byGarment.flatMap((garment) => garment.values),
+];
+assert.deepEqual(
+  exactMeasurementValues.filter((value) => value.outsideUsualRange).map((value) => value.measurementId).sort(),
+  [...rangeRecheckIds].sort(),
+  "exactly the Step 7 recheck rows carry the flag",
+);
+assert.ok(exactMeasurementValues.some((value) => !value.outsideUsualRange));
+assert.equal(exactSummary.status, "ready", "the flag never blocks Summary / Continue");
+const checkFlagMatches = destinationDeliveryMarkup.match(/data-measurement-check-flag="true"/g) || [];
+assert.equal(checkFlagMatches.length, rangeRecheckIds.size);
+assert.match(
+  destinationDeliveryMarkup,
+  /<span data-measurement-check-flag="true" title="Value outside the usual range, check this" class="[^"]*amber[^"]*"><span aria-hidden="true">Check this\?<\/span><span class="sr-only">Value outside the usual range, check this<\/span><\/span><span data-measurement-pill="true"/,
+  "the quiet amber tag sits left of the pill with an accessible description",
+);
+const totalHeightRow =
+  destinationDeliveryMarkup.split(">Total Height</span>")[1]?.split("</li>")[0] || "";
+assert.ok(totalHeightRow.includes("data-measurement-pill"));
+assert.equal(totalHeightRow.includes("data-measurement-check-flag"), false, "in-range rows stay unflagged");
+assert.match(destinationDeliveryMarkup, /aria-label="Continue to Delivery"/);
+// Item 5: every pill of a size has the same fixed width with 50/50 halves.
+const mdPillClasses = new Set(
+  [...destinationDeliveryMarkup.matchAll(/data-measurement-pill="true" class="([^"]*)"/g)].map((match) => match[1]),
+);
+assert.equal(mdPillClasses.size, 1, "all Summary pills share one class list");
+const [mdPillClass] = [...mdPillClasses];
+assert.match(mdPillClass, /\bw-\[10\.5rem\]/);
+assert.match(mdPillClass, /\bwhitespace-nowrap\b/);
+assert.match(destinationDeliveryMarkup, /data-measurement-preferred="true" class="[^"]*\bw-1\/2\b/);
+assert.match(destinationDeliveryMarkup, /data-measurement-alternate="true" class="[^"]*\bw-1\/2\b/);
 assert.equal(destinationDeliveryMarkup.includes("Display unit:"), false);
 assert.match(
   destinationDeliveryMarkup,
@@ -2541,6 +2603,85 @@ assert.equal(twoWearerSummary.measurementSummary.routeLabel, "2 people");
 assert.deepEqual(
   twoWearerSummary.measurementSummary.wearerGroups?.map((wearer) => wearer.displayName),
   ["You", "Amaka"],
+);
+// Item 6: with 2+ wearers each block opens with a serif person heading over a dark rule.
+const renderMeasurementSummaryMarkup = (summary: typeof twoWearerSummary) =>
+  renderToStaticMarkup(
+    createElement(DormantFutureSummaryStep, {
+      summary,
+      onBack: () => {},
+      onEditGarments: () => {},
+      onEditFabrics: () => {},
+      onEditDesignStyle: () => {},
+      onEditCustomDetails: () => {},
+      onEditAiTryOn: () => {},
+      onEditMeasurements: () => {},
+      canContinueToShipping: false,
+      onContinueToShipping: () => {},
+    }),
+  );
+const wearerBlocks = [
+  ...chiefAdaMarkup.matchAll(
+    /<section data-summary-measurement-wearer="([^"]+)" class="([^"]*)"><h4 data-summary-measurement-person-heading="true" class="([^"]*)">([^<]*)<\/h4><p data-summary-measurement-person-garments="true" class="[^"]*">([^<]*)<\/p>/g,
+  ),
+];
+assert.deepEqual(
+  wearerBlocks.map((match) => [match[1], match[4], match[5]]),
+  [
+    ["wearer-chief", "Chief", "Standard Shirt"],
+    ["wearer-ada", "Ada", "Standard Shirt 2"],
+  ],
+);
+for (const [, , sectionClass, headingClass] of wearerBlocks) {
+  assert.match(sectionClass, /\bborder-t-2\b/);
+  assert.match(sectionClass, /\bborder-heritage-green\b/);
+  assert.match(headingClass, /\bfont-serif\b/);
+  assert.match(headingClass, /\btext-lg\b/);
+  assert.match(headingClass, /\btext-heritage-green\b/);
+}
+const adaBlock = chiefAdaMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1] || "";
+assert.match(
+  adaBlock,
+  /<div data-summary-measurement-section="true" class="[^"]*"><h5 class="text-base font-extrabold uppercase[^"]*">Shared body measurements<\/h5>/,
+  "group headings sit under the person heading",
+);
+assert.ok(adaBlock.includes("data-measurement-pill"));
+assert.ok(adaBlock.includes("data-measurement-check-flag"), "flags also show per person");
+assert.equal(
+  chiefAdaMarkup.includes("Standard Shirt — "),
+  false,
+  "garment rows no longer repeat the garment name in each label",
+);
+const blankSecondWearerSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-you",
+      displayName: "You",
+      fitContext: "male" as const,
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: exactInput.measurementState,
+    },
+    {
+      wearerId: "wearer-blank",
+      displayName: "",
+      fitContext: "female" as const,
+      garmentKeys: ["base:dress"],
+      plan: amakaSummaryInput.measurementPlan,
+      measurement: amakaSummaryInput.measurementState,
+    },
+  ],
+});
+assert.match(
+  renderMeasurementSummaryMarkup(blankSecondWearerSummary),
+  /data-summary-measurement-person-heading="true" class="[^"]*">Person 2<\/h4>/,
+  "a blank name among 2+ wearers keeps its Person N heading",
+);
+assert.equal(
+  blankSoleMarkup.includes("data-summary-measurement-person-heading"),
+  false,
+  "solo keeps the compact header (no person heading, no Person 1)",
 );
 assert.equal(exactSummary.measurementSummary.wearerGroups, undefined);
 assert.equal(exactSummary.measurementSummary.routeLabel.includes("Amaka"), false);

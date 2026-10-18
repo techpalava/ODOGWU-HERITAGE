@@ -26,6 +26,7 @@ import {
   formatDualUnitMeasurementDisplay,
   getDualUnitMeasurementParts,
   type DualUnitMeasurementParts,
+  isMeasurementOutsideUsualRange,
   fromCanonicalCentimetres,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
@@ -163,6 +164,8 @@ export interface FuturePaymentReviewMeasurementItem {
   readonly formattedDisplay: string;
   /** Preferred / alternate unit text for the split pill (same values as formattedDisplay). */
   readonly formattedParts: DualUnitMeasurementParts;
+  /** Step 7 flagged this value as outside its usual range. Informational only. */
+  readonly outsideUsualRange: boolean;
   readonly provenanceLabel:
     | "Customer entered"
     | "System derived"
@@ -281,12 +284,14 @@ const toMeasurementItem = ({
   provenance,
   unit,
   convertedFromSample,
+  outsideUsualRange,
 }: {
   measurementId: string;
   valueCm: number;
   provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
   convertedFromSample: boolean;
+  outsideUsualRange: boolean;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
   label: humanizeIdentifier(measurementId),
@@ -296,6 +301,7 @@ const toMeasurementItem = ({
   unitLabel: unit === "inch" ? "in" : "cm",
   formattedDisplay: formatDualUnitMeasurementDisplay(valueCm, unit),
   formattedParts: getDualUnitMeasurementParts(valueCm, unit),
+  outsideUsualRange,
   provenanceLabel:
     convertedFromSample
       ? "Converted from sample cloth"
@@ -381,11 +387,16 @@ const mergeMeasurements = ({
   derived,
   unit,
   route,
+  diagnostics,
+  garmentKey,
 }: {
   entered: FutureMeasurementStateV1["entered"]["shared"];
   derived: FutureMeasurementStateV1["derived"]["shared"];
   unit: MeasurementUnit;
   route: SelectedMeasurementMethod;
+  diagnostics: FutureMeasurementStateV1["diagnostics"] | undefined;
+  /** null for the shared bag. */
+  garmentKey: string | null;
 }): readonly FuturePaymentReviewMeasurementItem[] => {
   const sampleRoute = isSampleClothMeasurementMethod(route);
   const measurementIds = [
@@ -405,6 +416,11 @@ const mergeMeasurements = ({
       ...value,
       unit,
       convertedFromSample: preferDerived,
+      outsideUsualRange: isMeasurementOutsideUsualRange(
+        diagnostics,
+        measurementId,
+        garmentKey,
+      ),
     })];
   });
 };
@@ -426,6 +442,8 @@ const groupsFromMeasurementBag = (
     derived: state.derived.shared,
     unit: state.unit,
     route: state.route,
+    diagnostics: state.diagnostics,
+    garmentKey: null,
   });
   if (shared.length > 0) {
     groups.push({ garmentKey: null, title: "Shared measurements", items: shared });
@@ -437,6 +455,8 @@ const groupsFromMeasurementBag = (
         derived: state.derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
         route: state.route,
+        diagnostics: state.diagnostics,
+        garmentKey,
       });
       if (items.length > 0) {
         groups.push({
@@ -491,6 +511,8 @@ export const getFuturePaymentReviewMeasurementGroups = (
           derived: wearer.measurement.derived.shared,
           unit: wearer.measurement.unit,
           route: wearer.measurement.route,
+          diagnostics: wearer.measurement.diagnostics,
+          garmentKey: null,
         });
         if (shared.length > 0) {
           groups.push({
@@ -509,6 +531,8 @@ export const getFuturePaymentReviewMeasurementGroups = (
             derived: wearer.measurement.derived.byGarmentKey[garmentKey] || {},
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
+            diagnostics: wearer.measurement.diagnostics,
+            garmentKey,
           });
           if (items.length === 0) return;
           groups.push({
