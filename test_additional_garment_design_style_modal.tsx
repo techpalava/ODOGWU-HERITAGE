@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { FutureAdditionalGarmentDesignStyleDialog } from "./src/components/FutureAdditionalGarmentDesignStyleDialog";
 import type { DesignStyleStepCatalogueEntry } from "./src/utils/designStyleStepRuntime";

@@ -23,7 +23,7 @@ const construction = {
   components: [{
     componentKey: "shirt:shirt_construction:shirt_std_short",
     optionId: "shirt_std_short",
-    selectionGroup: "shirt_construction",
+    selectionGroup: "shirt_construction" as const,
     priceCents: 1,
     price: 0.01,
   }],

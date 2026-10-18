@@ -1908,8 +1908,8 @@ assert.doesNotMatch(
 assert.match(studioSource, /assignSameFabricProductToGarments\(/);
 assert.match(
   studioSource,
-  /onBack=\{\(\) => navigateToFutureStage\("garment_type"\)\}/,
-  "Step 2 Back must retain the approved navigation helper and return to Garment Type.",
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("garment_type"\)\}/,
+  "Step 2 Back must use the Summary-edit return helper and fall back to Garment Type.",
 );
 assert.match(
   studioSource,

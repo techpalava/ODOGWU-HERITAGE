@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
 import type { FutureDesignStudioSummary } from "./src/utils/designStudioFutureSummary";
@@ -70,8 +69,8 @@ const summary: FutureDesignStudioSummary = {
   customDetailsSummary: [],
   aiTryOnSummary: { status: "skipped", label: "Skipped" },
   measurementSummary: {
-    route: "manual",
-    routeLabel: "Manual",
+    route: "low_risk",
+    routeLabel: "Low Risk",
     unit: "cm",
     shared: [],
     byGarment: [],

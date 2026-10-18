@@ -81,6 +81,7 @@ const makeDraft = (
   },
   futureShippingState: {
     schemaVersion: 1,
+    pickupLocation: "",
     fulfilmentMethod: "destination_delivery",
     customerInformation: {
       fullName: "Future Customer",

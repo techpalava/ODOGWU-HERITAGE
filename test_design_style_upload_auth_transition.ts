@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { shouldAcceptInFlightDesignStyleUploadSuccess } from "./src/utils/designStyleUploadSingleFlight";
 import type {
   CustomerDesignUploadReference,
   GuestDesignDraft,
@@ -397,13 +398,38 @@ const assignmentSnapshot = (draft: GuestDesignDraft) =>
   );
   assert.match(identityTransition, /futureDraftIdentityGenerationRef\.current \+= 1/);
   assert.match(identityTransition, /clearFutureDesignStyleRuntimeHydration\(\)/);
-  const uploadSuccess = studioSource.match(
-    /onSuccess: \(source\) => \{[\s\S]*?applyFutureDesignStyleMutationLedger\(latest, result\.ledger\);/,
-  )?.[0] || "";
-  assert.match(uploadSuccess, /latest\.identityKey !== captured\.identityKey/);
-  assert.match(uploadSuccess, /latest\.identityGeneration !== captured\.identityGeneration/);
-  assert.match(uploadSuccess, /latest\.runtimeGeneration !== captured\.runtimeGeneration/);
+  // 5568fb5 moved the stale-callback check into
+  // shouldAcceptInFlightDesignStyleUploadSuccess (identity key + identity
+  // generation + active step + ticket target). Hydration republish
+  // (runtimeGeneration) is intentionally no longer a rejection reason.
+  const uploadSuccessStart = studioSource.indexOf("onSuccess: (source) => {");
+  assert.ok(uploadSuccessStart >= 0);
+  const uploadSuccess = studioSource.slice(uploadSuccessStart, uploadSuccessStart + 2_000);
+  assert.match(uploadSuccess, /shouldAcceptInFlightDesignStyleUploadSuccess\(/);
+  assert.match(uploadSuccess, /capturedIdentityKey: captured\.identityKey/);
+  assert.match(uploadSuccess, /capturedIdentityGeneration: captured\.identityGeneration/);
+  assert.match(uploadSuccess, /latestIdentityKey: latest\.identityKey/);
+  assert.match(uploadSuccess, /latestIdentityGeneration: latest\.identityGeneration/);
   assert.match(uploadSuccess, /finishFutureDesignStyleUploadWithoutMutation/);
+  const current = {
+    capturedIdentityKey: "guest:a",
+    capturedIdentityGeneration: 4,
+    latestIdentityKey: "guest:a",
+    latestIdentityGeneration: 4,
+    latestStepIsActive: true,
+    ticketTargetStillCurrent: true,
+  };
+  assert.equal(shouldAcceptInFlightDesignStyleUploadSuccess(current), true);
+  assert.equal(
+    shouldAcceptInFlightDesignStyleUploadSuccess({ ...current, latestIdentityKey: "account:b" }),
+    false,
+    "a pre-auth upload callback must not land on the signed-in identity",
+  );
+  assert.equal(
+    shouldAcceptInFlightDesignStyleUploadSuccess({ ...current, latestIdentityGeneration: 5 }),
+    false,
+    "a callback from an older identity generation must be rejected",
+  );
 }
 
 // H. Transfer failure preserves the guest ledger and fabricates no account draft.

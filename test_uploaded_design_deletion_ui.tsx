@@ -111,13 +111,27 @@ const renderUploadedAssignment = async (confirmed: boolean) => {
   return { renderer, model };
 };
 
+// The continue-action slot is the shared step row (Back + Continue).
+const findDesignStyleContinueButton = (
+  renderer: ReturnType<typeof create>,
+) => {
+  const buttons = renderer.root
+    .findByProps({ "data-testid": "future-design-style-continue-action" })
+    .findAllByType("button")
+    .filter((button) => /Continue/.test(textContent(button)));
+  assert.equal(buttons.length, 1, "Expected one Design Style Continue button.");
+  return buttons[0];
+};
+
 // Task 5D shows an existing confirmed upload assignment as occurrence-scoped,
 // read-only evidence. Task 5E owns reconnecting secure upload mutations.
 {
   const { renderer, model } = await renderUploadedAssignment(true);
   const text = textContent(renderer.root);
   assert.equal(model.projection.isComplete, true);
-  assert.match(text, /Current assignment:\s*Uploaded design/);
+  // 2bb8178 replaced the "Current assignment:" line with the Your Garments
+  // mapping, which lists each garment with its assigned design.
+  assert.match(text, /Your Garments\s*Shirt\s*Uploaded design/);
   assert.match(
     text,
     /Removing this assignment keeps the uploaded source available/i,
@@ -133,20 +147,20 @@ const renderUploadedAssignment = async (confirmed: boolean) => {
     1,
     "Each confirmed uploaded assignment should expose an occurrence-scoped remove action.",
   );
-  assert.equal(
-    renderer.root.findAllByType("input").length,
-    0,
-    "No legacy upload mutation input may be reconnected by Task 5D.",
-  );
+  // 5568fb5 (Task 5E) reconnected uploads as one per-garment "Replace Upload"
+  // file input. No other (legacy) upload input may exist.
+  const uploadInputs = renderer.root.findAllByType("input");
+  assert.equal(uploadInputs.length, 1, "Only the per-garment upload input may render.");
+  assert.equal(uploadInputs[0].props.type, "file");
+  assert.equal(uploadInputs[0].props.accept, "image/jpeg,image/png,image/webp");
+  assert.match(String(uploadInputs[0].props["aria-label"]), /Replace uploaded design for Shirt/);
   assert.equal(text.includes("Delete Image"), false);
   assert.equal(text.includes("Retry deleting"), false);
   assert.equal(text.includes(uploadReference.storagePath), false);
   assert.equal(text.includes(uploadReference.designReferenceId), false);
   assert.equal(text.includes("blob:private-uploaded-design-preview"), false);
   assert.equal(
-    renderer.root
-      .findByProps({ "data-testid": "future-design-style-continue-action" })
-      .findByType("button").props.disabled,
+    findDesignStyleContinueButton(renderer).props.disabled,
     false,
   );
 }
@@ -156,15 +170,19 @@ const renderUploadedAssignment = async (confirmed: boolean) => {
   const { renderer, model } = await renderUploadedAssignment(false);
   assert.equal(model.projection.isComplete, false);
   assert.equal(model.projection.occurrences[0]?.status, "upload_pending");
-  assert.match(textContent(renderer.root), /Upload pending/);
+  // 438ce43 removed per-status labels such as "Upload pending"; a pending
+  // upload now simply does not count as assigned and blocks Continue.
+  assert.match(textContent(renderer.root), /0 of 1 garment assigned/);
+  assert.match(
+    textContent(renderer.root),
+    /Choose a design reference for Shirt to continue\./,
+  );
   assert.equal(
-    renderer.root
-      .findByProps({ "data-testid": "future-design-style-continue-action" })
-      .findByType("button").props.disabled,
+    findDesignStyleContinueButton(renderer).props.disabled,
     true,
   );
 }
 
 console.log(
-  "PASS: uploaded deletion remains secure and Task 5D upload assignments are read-only",
+  "PASS: uploaded deletion remains secure and uploaded assignments use the per-garment upload action",
 );
