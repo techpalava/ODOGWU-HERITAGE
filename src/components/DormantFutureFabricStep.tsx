@@ -709,6 +709,10 @@ export const DormantFutureFabricStep = ({
     () => new Map(fabrics.map((fabric) => [fabric.code, fabric.name])),
     [fabrics],
   );
+  const fabricByCode = useMemo(
+    () => new Map(fabrics.map((fabric) => [fabric.code, fabric])),
+    [fabrics],
+  );
   const orphanRepairAllocationNumberById = useMemo(() => {
     const allocationIds = [
       ...new Set(orphanRepairTargets.map((target) => target.allocationId)),
@@ -2939,6 +2943,7 @@ export const DormantFutureFabricStep = ({
               : pendingPartialFabricAssignment.garmentKey
           }
           fabricNameByCode={fabricNameByCode}
+          fabricByCode={fabricByCode}
           targets={partialAssignmentPresentations}
           onConfirm={commitPartialFabricAssignment}
           onCancel={cancelPartialFabricAssignment}
