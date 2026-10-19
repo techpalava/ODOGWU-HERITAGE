@@ -128,7 +128,8 @@ for (const measurementId of [
     (candidate) => candidate.measurementId === measurementId,
   );
   assert.ok(requirement, `${measurementId} remains planned.`);
-  assert.equal(requirement.inputSource, "optional_manual");
+  assert.equal(requirement.inputSource, "route_marker", `${measurementId} is required: no factor.`);
+  assert.equal(requirement.directInput, true);
   assert.equal(requirement.averageFactor, null);
 }
 
@@ -300,7 +301,14 @@ assert.deepEqual(
     .filter((requirement) => requirement.directInput)
     .map((requirement) => requirement.measurementId)
     .sort(),
-  ["belly_circumference", "chest_bust_circumference", "total_height"],
+  [
+    "belly_circumference",
+    "chest_bust_circumference",
+    "hip_circumference",
+    "shoulder_to_under_bust_length",
+    "total_height",
+    "under_bust_circumference",
+  ],
 );
 const dressHeight = dressHighPlan.requirements.find(
   (requirement) => requirement.measurementId === "total_height" && requirement.directInput,
@@ -335,6 +343,25 @@ dressHighState = reconcileFutureMeasurementState({
   state: dressHighState,
   plan: dressHighPlan,
 });
+// The factorless Dress rows are now required too.
+assert.equal(isFutureSummaryUnlockedByMeasurements(dressHighState), false);
+for (const [measurementId, value] of [
+  ["under_bust_circumference", 78],
+  ["hip_circumference", 100],
+  ["shoulder_to_under_bust_length", 30],
+] as const) {
+  dressHighState = setFutureMeasurementInput({
+    state: dressHighState,
+    requirement: dressHighPlan.requirements.find(
+      (candidate) => candidate.measurementId === measurementId && candidate.directInput,
+    )!,
+    displayValue: value,
+  });
+}
+dressHighState = reconcileFutureMeasurementState({
+  state: dressHighState,
+  plan: dressHighPlan,
+});
 assert.equal(isFutureSummaryUnlockedByMeasurements(dressHighState), true);
 for (const measurementId of [
   "hip_circumference",
@@ -344,7 +371,7 @@ for (const measurementId of [
   const requirement = dressHighPlan.requirements.find(
     (candidate) => candidate.measurementId === measurementId,
   );
-  assert.equal(requirement?.inputSource, "optional_manual");
+  assert.equal(requirement?.inputSource, "route_marker");
   assert.equal(
     dressHighState.derived.byGarmentKey["base:dress"]?.[measurementId],
     undefined,

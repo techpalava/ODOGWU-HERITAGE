@@ -2073,11 +2073,18 @@ assert.equal(
     ?.hip_circumference,
   undefined,
 );
+// Dress Hip has no factor, so it is required and typed; that shared typed Hip
+// also serves the Trouser instead of a Trouser estimate.
 assert.equal(
   requireFutureMeasurementStateV1(dressFirstCandidate.candidate.measurements).derived.byGarmentKey[
     "base:trouser"
-  ]?.hip_circumference?.calculation?.averageFactor,
-  0.584591437335114,
+  ]?.hip_circumference,
+  undefined,
+);
+assert.equal(
+  requireFutureMeasurementStateV1(dressFirstCandidate.candidate.measurements).entered.shared
+    .hip_circumference?.provenance,
+  "customer_entered",
 );
 assert.equal(
   midCompleteCandidate.blockers.some((blocker) => blocker.code === "MEASUREMENT_CALCULATION_PENDING"),
