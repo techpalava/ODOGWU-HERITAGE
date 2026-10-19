@@ -152,11 +152,35 @@ assert.equal(styleStepSource.includes("handleStyleChange"), false);
 assert.equal(styleStepSource.includes("setFabricAllocationState"), false);
 assert.equal(styleStepSource.includes("Upload Your Own Design"), false);
 assert.equal(styleStepSource.includes("Continue with Uploaded Design"), false);
-assert.match(styleStepSource, /Choose a design for/);
-assert.match(styleStepSource, /Previous garment/);
-assert.match(styleStepSource, /Next garment/);
-assert.match(styleStepSource, /Continue to Custom Details/);
-assert.match(styleStepSource, /disabled/);
+// Step 3 shows every design with a garment-mapping dialog (2bb8178, PR #81);
+// the old one-garment-at-a-time carousel copy ("Choose a design for X",
+// Previous / Next garment) is gone. What must hold: every forward action to
+// Custom Details stays gated on the exact garment set being complete, and the
+// gated state names the first garment that still needs a design.
+const customDetailsForwardActions = [
+  ...styleStepSource.matchAll(
+    /forward=\{\{\s*destination: "Custom Details",([\s\S]*?)\}\}/g,
+  ),
+].map((match) => match[1]);
+assert.ok(
+  customDetailsForwardActions.length >= 2,
+  "header and footer both offer Continue to Custom Details",
+);
+for (const action of customDetailsForwardActions) {
+  assert.match(action, /onClick: onContinue,/);
+  assert.match(action, /disabled: !exactSetComplete,/);
+  assert.match(action, /locked: !exactSetComplete,/);
+  assert.match(action, /ariaLabel: "Continue to Custom Details",/);
+}
+assert.match(
+  styleStepSource,
+  /const firstIncompleteOccurrence = occurrences\.find\(\s*\(occurrence\) => occurrence\.status !== "complete",\s*\);/,
+);
+assert.match(
+  styleStepSource,
+  /!exactSetComplete && firstIncompleteOccurrence \? \([\s\S]*?role="status"[\s\S]*?\{firstIncompleteOccurrence\.label\}[\s\S]*?\) : null/,
+  "locked Continue explains which garment still needs a design",
+);
 const occurrenceMutationHandlers = studioSource.slice(
   studioSource.indexOf("const handleAssignFutureCatalogueStyle"),
   studioSource.indexOf("const isStageHistoricallyUnlocked"),
@@ -176,15 +200,22 @@ assert.equal(
   false,
   "Occurrence-scoped Step 3 mutations must not use price activation as completion",
 );
-const futureDraftAutosaveEffect = studioSource.slice(
-  studioSource.indexOf(
-    "if (!guestDraftHydrated || isAdditionalGarmentCommitPending) return;",
-  ),
-  studioSource.indexOf("const handleDormantGarmentTypesChange"),
+// Locate the future-draft autosave effect by the scheduler it queues on, not
+// by its guard line (the guard grew extra hydration/authorization checks in
+// 72abde2, PR #81, which made the old anchor miss).
+const futureDraftAutosaveStart = studioSource.indexOf(
+  "activeFutureDraftAutosaveScheduler.schedule(",
+);
+const futureDraftAutosaveEnd = studioSource.indexOf(
+  "const handleDormantGarmentTypesChange",
 );
 assert.ok(
-  futureDraftAutosaveEffect.length > 0,
+  futureDraftAutosaveStart > 0 && futureDraftAutosaveEnd > futureDraftAutosaveStart,
   "Expected to locate the future-draft autosave effect",
+);
+const futureDraftAutosaveEffect = studioSource.slice(
+  futureDraftAutosaveStart,
+  futureDraftAutosaveEnd,
 );
 assert.match(
   futureDraftAutosaveEffect,
