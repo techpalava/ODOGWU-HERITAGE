@@ -1,7 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
-import { parseFutureOrderMasterOrderV2 } from "../utils/futureOrderV2Storage.js";
 import { parsePersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract.js";
 import {
   getFutureOrderV2ProviderTransactionId,
@@ -51,6 +50,8 @@ export interface FutureOrderV2PayPalPaymentDependencies {
     paymentReference: string;
   }) => Promise<{ id: string }>;
   capturePayPalOrder?: (paypalOrderId: string) => Promise<FutureOrderV2PayPalOrderSummary>;
+  /** Reads a PayPal order (GET) so its amount is checked before capture. */
+  readPayPalOrder?: (paypalOrderId: string) => Promise<FutureOrderV2PayPalOrderSummary>;
   getServices?: () => PayPalAdminServices;
   createStore?: (db: unknown) => FutureOrderV2PaymentRecordStore;
   now?: () => Date;
@@ -271,6 +272,164 @@ export const captureFutureOrderV2PayPalSandboxOrder = async (
   };
 };
 
+export const readFutureOrderV2PayPalSandboxOrder = async (
+  paypalOrderId: string,
+  dependencies: FutureOrderV2PayPalPaymentDependencies = {},
+): Promise<FutureOrderV2PayPalOrderSummary> => {
+  const env = readPayPalEnv(dependencies);
+  const token = await getPayPalAccessToken(dependencies);
+  const response = await fetch(
+    `${paypalApiBase(env)}/v2/checkout/orders/${encodeURIComponent(paypalOrderId)}`,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  const payload: unknown = await response.json();
+  if (!response.ok || !isRecord(payload) || typeof payload.id !== "string") {
+    throw new Error("PayPal could not read this order.");
+  }
+  const units = Array.isArray(payload.purchase_units) ? payload.purchase_units : [];
+  const unit = units.find(isRecord) ?? null;
+  if (!unit || units.length !== 1) {
+    throw new Error("PayPal order must have exactly one purchase unit.");
+  }
+  const parsed = readPurchaseUnitIds(unit);
+  return {
+    id: payload.id,
+    status: typeof payload.status === "string" ? payload.status : "",
+    amountCents: parsed.amountCents,
+    currency: parsed.currency,
+    customId: parsed.customId,
+    invoiceId: parsed.invoiceId,
+  };
+};
+
+type SignedInCustomer =
+  | { readonly status: "ok"; readonly services: PayPalAdminServices; readonly uid: string }
+  | { readonly status: "error"; readonly httpStatus: number; readonly code: string; readonly message: string };
+
+/** Same rule as capture: a verified, non-anonymous Firebase account. */
+const verifySignedInCustomer = async (
+  req: HttpRequest,
+  dependencies: FutureOrderV2PayPalPaymentDependencies,
+  anonymousMessage: string,
+): Promise<SignedInCustomer> => {
+  const bearerToken = getBearerToken(req);
+  if (!bearerToken) {
+    return {
+      status: "error",
+      httpStatus: 401,
+      code: "AUTH_REQUIRED",
+      message: "Firebase authentication is required.",
+    };
+  }
+  const getServices =
+    dependencies.getServices ||
+    (getAdminServices as unknown as () => PayPalAdminServices);
+  let services: PayPalAdminServices;
+  let token: VerifiedToken;
+  try {
+    services = getServices();
+    token = await services.auth.verifyIdToken(bearerToken);
+  } catch {
+    return {
+      status: "error",
+      httpStatus: 401,
+      code: "AUTH_REQUIRED",
+      message: "Firebase authentication could not be verified.",
+    };
+  }
+  const signInProvider = token.firebase?.sign_in_provider;
+  if (typeof signInProvider !== "string" || !signInProvider || !token.uid) {
+    return {
+      status: "error",
+      httpStatus: 401,
+      code: "AUTH_REQUIRED",
+      message: "Firebase authentication could not be verified.",
+    };
+  }
+  if (signInProvider === "anonymous") {
+    return {
+      status: "error",
+      httpStatus: 403,
+      code: "ANONYMOUS_NOT_ALLOWED",
+      message: anonymousMessage,
+    };
+  }
+  return { status: "ok", services, uid: token.uid };
+};
+
+const createPaymentStore = (
+  dependencies: FutureOrderV2PayPalPaymentDependencies,
+  db: unknown,
+): FutureOrderV2PaymentRecordStore =>
+  (dependencies.createStore ||
+    ((value: unknown) => createAdminFutureOrderV2PaymentRecordStore(value as Firestore)))(db);
+
+type StoredPayableOrder =
+  | {
+      readonly status: "ok";
+      readonly amountCents: number;
+      readonly order: Extract<ReturnType<typeof parsePersistedFutureOrderV2>, { status: "valid" }>["value"];
+    }
+  | { readonly status: "error"; readonly httpStatus: number; readonly code: string; readonly message: string };
+
+/**
+ * Loads the stored, server-verified order and returns the amount to charge.
+ * The amount comes only from Firestore, never from the request body.
+ */
+const readStoredPayableOrder = async (
+  store: FutureOrderV2PaymentRecordStore,
+  orderId: string,
+  ownerUid: string,
+): Promise<StoredPayableOrder> => {
+  let raw: unknown | null;
+  try {
+    raw = await store.readOrder(orderId);
+  } catch {
+    return {
+      status: "error",
+      httpStatus: 503,
+      code: "ORDER_LOOKUP_UNAVAILABLE",
+      message: "The prepared order could not be loaded right now. Retry this same order.",
+    };
+  }
+  const order = parsePersistedFutureOrderV2(raw, orderId);
+  if (order.status !== "valid") {
+    return {
+      status: "error",
+      httpStatus: 404,
+      code: "ORDER_NOT_FOUND",
+      message: "This prepared order could not be found.",
+    };
+  }
+  if (order.value.ownerUid !== ownerUid) {
+    return {
+      status: "error",
+      httpStatus: 403,
+      code: "OWNER_MISMATCH",
+      message: "This order belongs to another account.",
+    };
+  }
+  const pricing = order.value.masterOrder.cartItem.candidate.pricing;
+  const amountCents = pricing.exactTotalCents;
+  if (
+    pricing.status !== "exact" ||
+    typeof amountCents !== "number" ||
+    !Number.isSafeInteger(amountCents) ||
+    amountCents < MINIMUM_EUR_CENTS
+  ) {
+    return {
+      status: "error",
+      httpStatus: 409,
+      code: "ORDER_NOT_PAYABLE",
+      message: "This order does not have a confirmed total.",
+    };
+  }
+  return { status: "ok", amountCents, order: order.value };
+};
+
 export const handleFutureOrderV2PayPalConfig = (
   _req: HttpRequest,
   res: HttpResponse,
@@ -310,11 +469,25 @@ export const handleFutureOrderV2PayPalCreateOrder = async (
     );
   }
 
+  const customer = await verifySignedInCustomer(
+    req,
+    dependencies,
+    "Sign in with your account to pay with PayPal.",
+  );
+  if (customer.status !== "ok") {
+    return sendError(res, customer.httpStatus, customer.code, customer.message);
+  }
+
+  // Only the order id and its reference are read from the body. Any price or
+  // masterOrder the browser sends is ignored.
   const body = isRecord(req.body) ? req.body : null;
   const orderId = typeof body?.orderId === "string" ? body.orderId : "";
   const paymentReference =
     typeof body?.paymentReference === "string" ? body.paymentReference : "";
-  if (!orderId || paymentReference !== `future-v2-payment-${orderId}`) {
+  if (
+    !SAFE_ORDER_ID.test(orderId) ||
+    paymentReference !== `future-v2-payment-${orderId}`
+  ) {
     return sendError(
       res,
       400,
@@ -323,40 +496,40 @@ export const handleFutureOrderV2PayPalCreateOrder = async (
     );
   }
 
-  const parsed = parseFutureOrderMasterOrderV2(body?.masterOrder);
-  if (parsed.status !== "valid" || parsed.value.orderId !== orderId) {
+  const store = createPaymentStore(dependencies, customer.services.db);
+  const stored = await readStoredPayableOrder(store, orderId, customer.uid);
+  if (stored.status !== "ok") {
+    return sendError(res, stored.httpStatus, stored.code, stored.message);
+  }
+  const amountCents = stored.amountCents;
+
+  let alreadyPaid: boolean;
+  try {
+    alreadyPaid = await store.runTransaction(
+      async (transaction) => (await transaction.getPayment(orderId)) !== null,
+    );
+  } catch {
     return sendError(
       res,
-      400,
-      "INVALID_PREPARED_ORDER",
-      "The prepared order could not be verified for payment.",
+      503,
+      "PAYMENT_RECORD_UNAVAILABLE",
+      "The payment status could not be checked right now. Retry this same order.",
     );
   }
-  const pricing = parsed.value.cartItem.candidate.pricing;
-  const amountCents = pricing.exactTotalCents;
-  if (
-    pricing.status !== "exact" ||
-    !Number.isSafeInteger(amountCents) ||
-    amountCents < MINIMUM_EUR_CENTS
-  ) {
+  if (alreadyPaid) {
     return sendError(
       res,
-      400,
-      "INVALID_EXACT_TOTAL",
-      "The reviewed total is not ready to charge.",
+      409,
+      "PAYMENT_ALREADY_RECORDED",
+      "A payment is already recorded for this order.",
     );
   }
 
   const communityClosure = await resolveCommunityOrderClosure({
-    identity: parsed.value.cartItem.candidate.orderIdentity,
+    identity: stored.order.masterOrder.cartItem.candidate.orderIdentity,
     readBatch:
       dependencies.readCommunityBatch ??
-      ((batchId: string) => {
-        const getServices =
-          dependencies.getServices ||
-          (getAdminServices as unknown as () => PayPalAdminServices);
-        return readCommunityBatchRecord(getServices().db, batchId);
-      }),
+      ((batchId: string) => readCommunityBatchRecord(customer.services.db, batchId)),
     now: dependencies.now?.() ?? new Date(),
   });
   if (communityClosure.status === "unavailable") {
@@ -496,15 +669,19 @@ export const handleFutureOrderV2PayPalCapture = async (
     );
   }
 
-  const bearerToken = getBearerToken(req);
-  if (!bearerToken) {
-    return sendError(res, 401, "AUTH_REQUIRED", "Firebase authentication is required.");
-  }
-
   const body = isRecord(req.body) ? req.body : null;
   const orderId = typeof body?.orderId === "string" ? body.orderId : "";
   const paypalOrderId =
     typeof body?.paypalOrderId === "string" ? body.paypalOrderId : "";
+
+  const customer = await verifySignedInCustomer(
+    req,
+    dependencies,
+    "Sign in with your account to record this payment.",
+  );
+  if (customer.status !== "ok") {
+    return sendError(res, customer.httpStatus, customer.code, customer.message);
+  }
   if (!SAFE_ORDER_ID.test(orderId) || !PAYPAL_ORDER_ID.test(paypalOrderId)) {
     return sendError(
       res,
@@ -514,45 +691,48 @@ export const handleFutureOrderV2PayPalCapture = async (
     );
   }
 
-  const getServices =
-    dependencies.getServices ||
-    (getAdminServices as unknown as () => PayPalAdminServices);
-  const createStore =
-    dependencies.createStore ||
-    ((db: unknown) => createAdminFutureOrderV2PaymentRecordStore(db as Firestore));
+  const services = customer.services;
+  const token = { uid: customer.uid };
+  const store = createPaymentStore(dependencies, services.db);
   const capturePayPalOrder =
     dependencies.capturePayPalOrder ??
     ((id: string) => captureFutureOrderV2PayPalSandboxOrder(id, dependencies));
+  const readPayPalOrder =
+    dependencies.readPayPalOrder ??
+    ((id: string) => readFutureOrderV2PayPalSandboxOrder(id, dependencies));
   const now = dependencies.now || (() => new Date());
 
-  let services: PayPalAdminServices;
-  let token: VerifiedToken;
+  // Pre-capture guard: the PayPal order must match the stored order and its
+  // server-verified total before any money moves.
+  const stored = await readStoredPayableOrder(store, orderId, customer.uid);
+  if (stored.status !== "ok") {
+    return sendError(res, stored.httpStatus, stored.code, stored.message);
+  }
+  let approved: FutureOrderV2PayPalOrderSummary;
   try {
-    services = getServices();
-    token = await services.auth.verifyIdToken(bearerToken);
-  } catch {
+    approved = await readPayPalOrder(paypalOrderId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown PayPal error";
+    console.warn("Future order V2 PayPal order lookup failed:", message);
     return sendError(
       res,
-      401,
-      "AUTH_REQUIRED",
-      "Firebase authentication could not be verified.",
+      502,
+      "PAYPAL_ORDER_LOOKUP_FAILED",
+      "PayPal could not confirm this payment. Retry this same order.",
     );
   }
-  const signInProvider = token.firebase?.sign_in_provider;
-  if (typeof signInProvider !== "string" || !signInProvider) {
+  if (
+    approved.id !== paypalOrderId ||
+    approved.customId !== orderId ||
+    approved.invoiceId !== `future-v2-payment-${orderId}` ||
+    approved.currency !== "eur" ||
+    approved.amountCents !== stored.amountCents
+  ) {
     return sendError(
       res,
-      401,
-      "AUTH_REQUIRED",
-      "Firebase authentication could not be verified.",
-    );
-  }
-  if (signInProvider === "anonymous") {
-    return sendError(
-      res,
-      403,
-      "ANONYMOUS_NOT_ALLOWED",
-      "Sign in with your account to record this payment.",
+      409,
+      "PAYMENT_MISMATCH",
+      "This payment does not match the prepared order.",
     );
   }
 
@@ -573,7 +753,7 @@ export const handleFutureOrderV2PayPalCapture = async (
   let outcome: Awaited<ReturnType<typeof saveVerifiedFutureOrderV2PayPalPayment>>;
   try {
     outcome = await saveVerifiedFutureOrderV2PayPalPayment({
-      store: createStore(services.db),
+      store,
       orderId,
       paypalOrderId,
       capture,

@@ -17,7 +17,10 @@ import {
 } from "./src/server/futureOrderV2Persistence";
 import { handleFutureOrderV2PayPalCreateOrder } from "./src/server/futureOrderV2PayPalPayment";
 import type { HttpRequest, HttpResponse } from "./src/server/httpTypes";
-import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
+import {
+  createPersistedFutureOrderV2,
+  type FutureOrderV2PersistenceAdapter,
+} from "./src/utils/futureOrderV2PersistenceContract";
 import { createCatalogueAuthoritativeFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 
 const NOW = new Date("2026-10-17T18:00:00.000Z");
@@ -271,18 +274,24 @@ assert.equal(missingReader.status, "invalid");
 
 let paypalCreated = false;
 const paypalClosed = createResponse();
+const paypalClosedOrder = createPersistedFutureOrderV2({
+  masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(
+    "closed-community-order",
+    undefined,
+    { orderType: "Community", batchId: "batch-6" },
+  ),
+  owner: { uid: "owner-1", isAnonymous: false },
+  customerOwnerUid: "owner-1",
+  persistedAt: "2026-10-17T17:00:00.000Z",
+});
+if (paypalClosedOrder.status !== "valid") throw new Error("Expected persisted order.");
 await handleFutureOrderV2PayPalCreateOrder(
   {
     method: "POST",
-    headers: {},
+    headers: { authorization: "Bearer owner-token" },
     body: {
       orderId: "closed-community-order",
       paymentReference: "future-v2-payment-closed-community-order",
-      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(
-        "closed-community-order",
-        undefined,
-        { orderType: "Community", batchId: "batch-6" },
-      ),
     },
   },
   paypalClosed.response,
@@ -291,6 +300,29 @@ await handleFutureOrderV2PayPalCreateOrder(
     readClientId: () => "sandbox-client",
     readClientSecret: () => "sandbox-secret",
     readEnv: () => "sandbox",
+    getServices: () => ({
+      auth: {
+        async verifyIdToken() {
+          return { uid: "owner-1", firebase: { sign_in_provider: "password" } };
+        },
+      },
+      db: {},
+    }),
+    createStore: () => ({
+      async readOrder() {
+        return paypalClosedOrder.value;
+      },
+      async runTransaction(operation) {
+        return operation({
+          async getPayment() {
+            return null;
+          },
+          createPayment() {
+            throw new Error("create-order must not write payments");
+          },
+        });
+      },
+    }),
     readCommunityBatch: async () => closedRecord,
     createPayPalOrder: async () => {
       paypalCreated = true;
@@ -299,6 +331,10 @@ await handleFutureOrderV2PayPalCreateOrder(
   },
 );
 assert.equal(paypalClosed.state.status, 409);
+assert.equal(
+  (paypalClosed.state.body as { code?: string }).code,
+  "COMMUNITY_BATCH_CLOSED",
+);
 assert.equal(paypalCreated, false);
 
 await assert.rejects(

@@ -2,7 +2,6 @@ import {
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
-import type { FutureOrderMasterOrderV2 } from "../utils/futureOrderV2Storage";
 
 export type FutureOrderV2PayPalCaptureResult =
   | { readonly status: "recorded"; readonly record: FutureOrderV2PaymentRecord }
@@ -45,23 +44,42 @@ export const fetchFutureOrderV2PayPalConfig = async (): Promise<{
   return { clientId: payload.clientId, currency, locale };
 };
 
+const readSignedInIdToken = async (action: string): Promise<string> => {
+  // Lazy import keeps static UI tests from initializing the Firebase client.
+  const { auth } = await import("./firebase");
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) {
+    throw new Error(`Sign in to ${action}.`);
+  }
+  try {
+    return await user.getIdToken();
+  } catch {
+    throw new Error(`Sign in again to ${action}.`);
+  }
+};
+
+/**
+ * Starts a PayPal order for a stored order. The server reads the amount from
+ * the stored, server-verified order; the browser sends only ids.
+ */
 export const createFutureOrderV2PayPalOrder = async ({
   orderId,
   paymentReference,
-  masterOrder,
 }: {
   orderId: string;
   paymentReference: string;
-  masterOrder: FutureOrderMasterOrderV2;
 }): Promise<string> => {
+  const idToken = await readSignedInIdToken("pay with PayPal");
   const response = await fetch("/api/future-order-v2/paypal", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
     body: JSON.stringify({
       action: "create-order",
       orderId,
       paymentReference,
-      masterOrder,
     }),
   });
   const payload: unknown = await response.json().catch(() => null);
