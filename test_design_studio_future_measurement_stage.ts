@@ -44,10 +44,12 @@ assert.match(measurementSource, /Optional Measurements/);
 assert.match(measurementSource, /Calculated from height/);
 assert.match(
   measurementSource,
-  /These values fill in from Total Height after every required measurement for this garment is entered/,
+  /These values fill in from your Total Height as soon as you enter it\./,
 );
 assert.match(measurementSource, /data-measurement-calculated-pending/);
-assert.match(measurementSource, /Waiting on:/);
+assert.match(measurementSource, /Enter your Total Height above and these values fill in straight away\./);
+assert.equal(measurementSource.includes("Waiting on:"), false);
+assert.equal(measurementSource.includes("height alone is not enough"), false);
 assert.match(measurementSource, /Please recheck this measurement\./);
 assert.match(measurementSource, /saved/);
 assert.match(measurementSource, /Shared Body Measurements/);
@@ -1423,18 +1425,60 @@ console.log("PASS: measurement Measuring-for person chips switch the active wear
       }),
     );
   });
-  const pendingNode = pendingCalcRenderer.root.findByProps({
+  // Height alone fills every height estimate straight away, while the other
+  // required measurements are still empty.
+  assert.equal(
+    pendingCalcRenderer.root.findAllByProps({
+      "data-measurement-calculated-pending": "true",
+    }).length,
+    0,
+    "no pending note once a valid height is entered",
+  );
+  const calculatedValues = pendingCalcRenderer.root.findAll(
+    (node) => typeof node.props?.["data-measurement-calculated-value"] === "string",
+  );
+  assert.ok(calculatedValues.length > 0);
+  assert.equal(
+    calculatedValues.some(
+      (node) => node.props["data-measurement-calculated-value"] === "pending",
+    ),
+    false,
+    "every calculated field shows a value after height only",
+  );
+  assert.equal(mediumState.calculationStatus, "incomplete");
+
+  let noHeightRenderer!: ReturnType<typeof create>;
+  const noHeightState = reconcileFutureMeasurementState({
+    state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "medium_risk"),
+    plan: mediumPlan,
+  });
+  act(() => {
+    noHeightRenderer = create(
+      createElement(DormantFutureMeasurementStep, {
+        plan: mediumPlan,
+        state: noHeightState,
+        physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  const pendingNode = noHeightRenderer.root.findByProps({
     "data-measurement-calculated-pending": "true",
   });
-  const waitingOn = String(pendingNode.props["data-measurement-calculated-waiting-on"] || "");
-  assert.ok(waitingOn.length > 0, "pending calc lists remaining required manuals");
-  assert.equal(waitingOn.includes("Total Height"), false);
-  assert.ok(headingText(pendingNode).includes("Waiting on:"));
+  assert.equal(pendingNode.props["data-measurement-calculated-waiting-on"], "total_height");
   assert.ok(
-    pendingCalcRenderer.root.findAll(
+    headingText(pendingNode).includes(
+      "Enter your Total Height above and these values fill in straight away.",
+    ),
+  );
+  assert.ok(
+    noHeightRenderer.root.findAll(
       (node) => node.props?.["data-measurement-calculated-value"] === "pending",
     ).length > 0,
   );
 }
 
-console.log("PASS: measurement calculated-from-height pending remaining manuals");
+console.log("PASS: measurement calculated-from-height fills from height alone");

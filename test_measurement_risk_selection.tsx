@@ -259,9 +259,12 @@ assert.equal(
 );
 assert.match(
   collectText(renderer.root),
-  /These values fill in from Total Height after every required measurement for this garment is entered/,
+  /These values fill in from your Total Height as soon as you enter it\./,
 );
-assert.match(collectText(renderer.root), /Waiting on:/);
+assert.match(
+  collectText(renderer.root),
+  /Enter your Total Height above and these values fill in straight away\./,
+);
 assert.equal(collectText(renderer.root).includes("Complete the required measurements to calculate this value"), false);
 assert.match(collectText(renderer.root), /Calculated from height/);
 
