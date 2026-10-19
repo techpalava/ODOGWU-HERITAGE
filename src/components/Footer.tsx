@@ -1,8 +1,10 @@
 import React from "react";
 import { useAppStore } from "../store/useAppStore";
-import { BatchBusinessRules } from "../engine/BatchBusinessRules";
-import { getCurrentCommunityBatch } from "../utils/batchUtils";
-import { CapacityService } from "../services/CapacityService";
+import type { Batch } from "../types";
+import {
+  HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID,
+  resolveFooterBatchLink,
+} from "../utils/footerBatchLink";
 
 import {
   Phone,
@@ -19,8 +21,35 @@ import {
 } from "lucide-react";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
-export default function Footer() {
-  const { activeTab, setActiveTab, requestDesignStudioFromNav, businessSettings, batches } = useAppStore();
+interface FooterProps {
+  /** Same batch the Home open-batch card joins (null when none is open). */
+  joinBatch?: Batch | null;
+  /** Same handler the Home Join button uses. */
+  onJoinCommunityBatch?: (batch: Batch) => void;
+}
+
+const scrollToHomeOrderGateway = (attempt = 0) => {
+  const target = document.getElementById(HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID);
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  // Home may still be mounting after the tab switch.
+  if (attempt < 20) {
+    window.setTimeout(() => scrollToHomeOrderGateway(attempt + 1), 50);
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+};
+
+export default function Footer({ joinBatch = null, onJoinCommunityBatch }: FooterProps = {}) {
+  const {
+    activeTab,
+    setActiveTab,
+    requestDesignStudioFromNav,
+    businessSettings,
+    hasLoadedBatches,
+  } = useAppStore();
   const primaryEmail =
     businessSettings?.applicationSettings?.primaryEmail?.trim() || "";
   const secondaryEmail =
@@ -36,32 +65,31 @@ export default function Footer() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const openBatch = getCurrentCommunityBatch(batches);
-  const activeCommunityBatch = openBatch
-    ? {
-        orderType: "Community",
-        batchId: openBatch.id,
-        batchName: openBatch.name,
-        closingDate: openBatch.endDate,
-        deliveryWindow: openBatch.estimatedDelivery || "",
-        expectedParticipants: CapacityService.getTargetCapacity(openBatch),
-        currentMembers: CapacityService.getReservedCapacity(openBatch),
-        allowOrders: openBatch.allowOrders,
-        batchStatus: openBatch.status,
-        pickupLocation:
-          openBatch.pickupLocation || businessSettings?.productionSettings?.defaultPickupLocation || "Eindhoven",
-      } as any
-    : null;
+  const batchLink = resolveFooterBatchLink({ hasLoadedBatches, joinBatch });
+  const handleBatchLink = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const target = batchLink.target;
+    if (target.kind === "join-batch" && onJoinCommunityBatch) {
+      onJoinCommunityBatch(target.batch);
+      return;
+    }
+    const alreadyHome = activeTab === "home";
+    setActiveTab("home");
+    // App resets scroll ~150ms after a tab change; scroll after that.
+    window.setTimeout(() => scrollToHomeOrderGateway(), alreadyHome ? 0 : 250);
+  };
 
-  const activeBatchEligibility = BatchBusinessRules.canAcceptOrders(activeCommunityBatch);
-  const canJoinActiveBatch = activeBatchEligibility.canAcceptOrders;
-
-  const quickLinks = [
+  const quickLinks: Array<{
+    label: string;
+    tab: string;
+    onClick?: (e: React.MouseEvent) => void;
+    id?: string;
+  }> = [
     { label: "Home", tab: "home" },
     { label: "Design Studio", tab: "design" },
     { label: "Gallery", tab: "gallery" },
     { label: "How It Works", tab: "home" }, // Assuming it scrolls or goes to home
-    { label: activeCommunityBatch && canJoinActiveBatch ? "Join Current Batch" : "Create Custom Order", tab: activeCommunityBatch && canJoinActiveBatch ? "home" : "custom-order" },
+    { label: batchLink.label, tab: "home", onClick: handleBatchLink, id: "footer-join-current-batch" },
     { label: "Contact", tab: "home" }, // Depending on implementation
   ];
 
@@ -109,7 +137,14 @@ export default function Footer() {
               {quickLinks.map((link, index) => (
                 <li key={index}>
                   <button
-                    onClick={(e) => handleNavigation(e, link.tab)}
+                    type="button"
+                    id={link.id}
+                    data-footer-target={
+                      link.id ? batchLink.target.kind : undefined
+                    }
+                    onClick={(e) =>
+                      link.onClick ? link.onClick(e) : handleNavigation(e, link.tab)
+                    }
                     className={`text-xs flex items-center gap-1.5 transition-colors duration-200 hover:text-heritage-gold ${
                       activeTab === link.tab
                         ? "text-heritage-gold font-bold"
