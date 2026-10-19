@@ -4941,34 +4941,20 @@ try {
     stockCatalogueRenderer.root,
     "STOCK-OUT-CONTRADICTORY",
   );
-  // KNOWN FAILURE, tracked separately from the Fabric limit: an OUT_OF_STOCK
-  // fabric with stock 10 still shows "In Stock: 10" (stock badge logic in
-  // getOrderAwareFabricStockPresentation). Stock code is intentionally left
-  // unchanged here, so the check logs instead of stopping this file.
-  try {
-    assert.equal(
-      outOfStockContradictoryBadge?.props["data-fabric-stock-label"],
-      "Out of Stock",
-    );
-    assert.match(
-      textContent(outOfStockContradictoryBadge ?? null),
-      /^Out of Stock$/,
-    );
-    assert.doesNotMatch(
-      textContent(outOfStockContradictoryBadge ?? null),
-      /: 10$/,
-      "Contradictory OUT_OF_STOCK + stock 10 must not expose the quantity.",
-    );
-    console.log(
-      "NOTE: the known OUT_OF_STOCK stock-badge failure now passes; remove this try/catch.",
-    );
-  } catch {
-    console.warn(
-      `KNOWN FAILURE (stock badge, not fixed here): OUT_OF_STOCK + stock 10 shows "${textContent(
-        outOfStockContradictoryBadge ?? null,
-      )}" instead of "Out of Stock".`,
-    );
-  }
+  // An OUT_OF_STOCK fabric with a positive stock count still reads Out of Stock.
+  assert.equal(
+    outOfStockContradictoryBadge?.props["data-fabric-stock-label"],
+    "Out of Stock",
+  );
+  assert.match(
+    textContent(outOfStockContradictoryBadge ?? null),
+    /^Out of Stock$/,
+  );
+  assert.doesNotMatch(
+    textContent(outOfStockContradictoryBadge ?? null),
+    /: 10$/,
+    "Contradictory OUT_OF_STOCK + stock 10 must not expose the quantity.",
+  );
   assert.equal(
     findStockBadge(stockCatalogueRenderer.root, "STOCK-HIDDEN"),
     undefined,
