@@ -48,7 +48,7 @@ import {
   getMonogramPlacementLabel,
   getMonogramTextForGarment,
 } from "./decorativePricing.js";
-import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, isMeasurementOutsideUsualRange, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, isMeasurementOutsideUsualRange, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, isSharedPresentationRequirement, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -901,8 +901,9 @@ const mapMeasurements = ({
       ? derivedValue?.valueCm ?? getSampleClothProductionEquivalentCm(stored.valueCm)
       : null;
     const occurrenceOwned =
-      requirement.scope === "garment" ||
-      stored.provenance === "calculated_average_factor";
+      !isSharedPresentationRequirement(requirement) &&
+      (requirement.scope === "garment" ||
+        stored.provenance === "calculated_average_factor");
     return [{
       requirementKey: requirement.key,
       measurementId: requirement.measurementId,
@@ -1052,6 +1053,9 @@ const mapPricing = ({
     selectedDesignPrice,
   };
 };
+
+/** One person's Summary measurement groups (shared + per garment). Exported for regression tests. */
+export const projectFutureSummaryMeasurementGroups = mapMeasurements;
 
 const summarizeOrderMeasurements = ({
   measurementPlan,

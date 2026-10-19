@@ -668,6 +668,12 @@ export interface PlannedMeasurementRequirement {
   sampleGeometry?: SampleClothGeometry;
   /** Step 1 demographic used for Chest / Borst wording (labels only). */
   labelDemographic: CustomDetailDemographic;
+  /**
+   * Presentation only (never on plan requirements): a shared body measurement
+   * calculated from height for several garments with the same Average Factor,
+   * collapsed to this one row so it shows once, under the shared group.
+   */
+  sharedPresentation?: true;
 }
 
 export interface MeasurementRequirementPlan {
@@ -699,6 +705,14 @@ const compareMeasurementRequirementsForPresentation = (
   return sourceRow !== 0 ? sourceRow : left.key.localeCompare(right.key);
 };
 
+/** True when a presented row belongs in the shared body group, not a garment group. */
+export const isSharedPresentationRequirement = (
+  requirement: PlannedMeasurementRequirement,
+): boolean =>
+  requirement.scope === "shared" &&
+  (requirement.inputSource !== "calculated_average_factor" ||
+    requirement.sharedPresentation === true);
+
 export const projectMeasurementRequirementsForPresentation = ({
   requirements,
   state,
@@ -710,7 +724,20 @@ export const projectMeasurementRequirementsForPresentation = ({
     left.key.localeCompare(right.key),
   );
   const sharedManual = new Map<string, PlannedMeasurementRequirement>();
+  const sharedCalculated = new Map<string, PlannedMeasurementRequirement[]>();
   const projected: PlannedMeasurementRequirement[] = [];
+  // A shared body measurement the customer must type for one garment is not
+  // also shown as a height estimate for another garment (one field, one row).
+  const requiredSharedManualKeys = new Set(
+    requirements
+      .filter(
+        (requirement) =>
+          requirement.scope === "shared" &&
+          requirement.inputSource !== "calculated_average_factor" &&
+          requirement.directInput,
+      )
+      .map((requirement) => requirement.manualValueKey),
+  );
 
   ordered.forEach((requirement) => {
     if (
@@ -736,7 +763,31 @@ export const projectMeasurementRequirementsForPresentation = ({
     ) {
       return;
     }
+    if (
+      requirement.inputSource === "calculated_average_factor" &&
+      requirement.scope === "shared"
+    ) {
+      if (requiredSharedManualKeys.has(requirement.manualValueKey)) return;
+      const group = sharedCalculated.get(requirement.manualValueKey) || [];
+      group.push(requirement);
+      sharedCalculated.set(requirement.manualValueKey, group);
+      return;
+    }
     projected.push(requirement);
+  });
+
+  // The same body measurement estimated for several garments (for example
+  // Waist for Trousers and Shorts on Height Only) has one value, so it is
+  // presented once. Rows with differing factors stay per garment.
+  sharedCalculated.forEach((group) => {
+    const sameFactor = group.every(
+      (requirement) => requirement.averageFactor === group[0]!.averageFactor,
+    );
+    if (group.length > 1 && sameFactor) {
+      projected.push({ ...group[0]!, sharedPresentation: true });
+      return;
+    }
+    projected.push(...group);
   });
 
   return [...sharedManual.values(), ...projected].sort(
