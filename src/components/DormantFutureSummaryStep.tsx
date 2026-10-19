@@ -18,12 +18,15 @@ import {
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
 } from "../utils/designPriceBreakdownPresentation";
 import {
-  formatCompactWearerRouteLabel,
   type FutureDesignStudioSummary,
   type FutureSummaryFabricAllocation,
   type FutureSummaryMeasurementValue,
 } from "../utils/designStudioFutureSummary";
-import { isSampleClothMeasurementMethod } from "../utils/measurementBlueprint";
+import {
+  isSampleClothMeasurementMethod,
+  isSelectedMeasurementMethod,
+  MEASUREMENT_METHOD_LABELS,
+} from "../utils/measurementBlueprint";
 import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -234,21 +237,74 @@ const SummaryFabricPreview = ({
 };
 
 /** One gold-headed measurement group (shared or per garment) with split-pill rows. */
+const MEASUREMENT_METHOD_BADGE_TONES: Record<
+  keyof typeof MEASUREMENT_METHOD_LABELS,
+  string
+> = {
+  low_risk: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  medium_risk: "border-amber-200 bg-amber-50 text-amber-800",
+  high_risk: "border-red-200 bg-red-50 text-red-700",
+  critical_risk: "border-red-300 bg-red-100 text-red-800",
+  sample_cloth: "border-heritage-gold/30 bg-heritage-cream text-heritage-green",
+};
+
+/** Measurement method (risk level) as a small coloured badge. Display only. */
+const MeasurementMethodBadge = ({
+  route,
+}: {
+  route: FutureDesignStudioSummary["measurementSummary"]["route"];
+}) =>
+  isSelectedMeasurementMethod(route) ? (
+    <span
+      data-summary-measurement-method-badge={route}
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${MEASUREMENT_METHOD_BADGE_TONES[route]}`}
+    >
+      <span className="sr-only">Measurement method: </span>
+      {MEASUREMENT_METHOD_LABELS[route]}
+    </span>
+  ) : (
+    <span
+      data-summary-measurement-method-badge="none"
+      className="text-xs text-heritage-ink/60"
+    >
+      Measurement method not selected
+    </span>
+  );
+
+/** One gold-headed measurement group (shared or per garment) with split-pill rows. */
 const SummaryMeasurementGroup = ({
   title,
   values,
   headingLevel = "h4",
+  editLabel,
+  onEdit,
 }: {
   title: string;
   values: readonly FutureSummaryMeasurementValue[];
   headingLevel?: "h4" | "h5";
+  /** Accessible name of this group's Edit link, e.g. "Edit Standard Shirt measurements". */
+  editLabel: string;
+  /** Opens Step 7 Measurements (the same destination as the card's Edit Measurements). */
+  onEdit: () => void;
 }) => {
   const Heading = headingLevel;
   return (
     <div data-summary-measurement-section className="mt-5 border-t border-heritage-gold/20 pt-4">
-      <Heading className="text-base font-extrabold uppercase tracking-wider text-heritage-gold">
-        {title}
-      </Heading>
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        <Heading className="min-w-0 break-words text-base font-extrabold uppercase tracking-wider text-heritage-gold">
+          {title}
+        </Heading>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={editLabel}
+          data-summary-measurement-section-edit
+          className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded px-1 text-xs font-semibold text-heritage-green underline underline-offset-2 transition hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+        >
+          <Pencil aria-hidden="true" size={12} />
+          Edit
+        </button>
+      </div>
       <ul className="mt-3 space-y-2 text-sm text-heritage-ink/75">
         {values.map((measurement) => (
           <li key={measurement.requirementKey} className="flex min-w-0 items-center justify-between gap-3">
@@ -943,12 +999,15 @@ export const DormantFutureSummaryStep = ({
                     data-summary-measurement-wearer={wearer.wearerId}
                     className="mt-5 border-t-2 border-heritage-green pt-4 first:mt-1"
                   >
-                    <h4
-                      data-summary-measurement-person-heading
-                      className="break-words font-serif text-2xl font-semibold leading-tight text-heritage-green"
-                    >
-                      {wearer.displayName}
-                    </h4>
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                      <h4
+                        data-summary-measurement-person-heading
+                        className="min-w-0 break-words font-serif text-2xl font-semibold leading-tight text-heritage-green"
+                      >
+                        {wearer.displayName}
+                      </h4>
+                      <MeasurementMethodBadge route={wearer.route} />
+                    </div>
                     {garmentLines.length > 0 && (
                       <p
                         data-summary-measurement-person-garments
@@ -958,7 +1017,7 @@ export const DormantFutureSummaryStep = ({
                       </p>
                     )}
                     <p className="text-xs text-heritage-ink/60">
-                      Method: {wearer.routeLabel}. Status: {wearer.status}.
+                      Status: {wearer.status}.
                     </p>
                     {wearer.shared.length > 0 && (
                       <SummaryMeasurementGroup
@@ -969,6 +1028,8 @@ export const DormantFutureSummaryStep = ({
                         }
                         values={wearer.shared}
                         headingLevel="h5"
+                        editLabel={`Edit ${wearer.displayName}'s shared measurements`}
+                        onEdit={onEditMeasurements}
                       />
                     )}
                     {wearer.byGarment.map((garment) => (
@@ -977,6 +1038,8 @@ export const DormantFutureSummaryStep = ({
                         title={garment.garmentLabel}
                         values={garment.values}
                         headingLevel="h5"
+                        editLabel={`Edit ${wearer.displayName}'s ${garment.garmentLabel} measurements`}
+                        onEdit={onEditMeasurements}
                       />
                     ))}
                   </section>
@@ -985,14 +1048,27 @@ export const DormantFutureSummaryStep = ({
             </div>
           ) : (
           <div>
-            <p className="text-sm font-semibold text-heritage-green">
-              {summary.measurementSummary.wearerGroups?.length === 1
-                ? formatCompactWearerRouteLabel(
-                    summary.measurementSummary.wearerGroups[0].displayName,
-                    summary.measurementSummary.wearerGroups[0].routeLabel,
-                  )
-                : summary.measurementSummary.routeLabel}
-            </p>
+            {(() => {
+              const soleName =
+                summary.measurementSummary.wearerGroups?.length === 1
+                  ? summary.measurementSummary.wearerGroups[0].displayName.trim()
+                  : "";
+              // Blank / "You" sole wearer stays unnamed (never "Person 1"): badge only.
+              const showSoleName = Boolean(soleName) && soleName.toLowerCase() !== "you";
+              return (
+                <div
+                  data-summary-measurement-sole-header
+                  className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                >
+                  {showSoleName && (
+                    <p className="min-w-0 break-words text-sm font-semibold text-heritage-green">
+                      {soleName}
+                    </p>
+                  )}
+                  <MeasurementMethodBadge route={summary.measurementSummary.route} />
+                </div>
+              );
+            })()}
             {summary.measurementSummary.wearerGroups?.length === 1
               ? summary.measurementSummary.wearerGroups[0].garmentKeys.map(
                   (garmentKey) => {
@@ -1025,6 +1101,8 @@ export const DormantFutureSummaryStep = ({
                   : "Shared body measurements"
               }
               values={summary.measurementSummary.shared}
+              editLabel="Edit shared measurements"
+              onEdit={onEditMeasurements}
             />
           )}
           {summary.measurementSummary.byGarment.map((garment) => (
@@ -1032,6 +1110,8 @@ export const DormantFutureSummaryStep = ({
               key={garment.garmentKey}
               title={garment.garmentLabel}
               values={garment.values}
+              editLabel={`Edit ${garment.garmentLabel} measurements`}
+              onEdit={onEditMeasurements}
             />
           ))}
         </Section>
