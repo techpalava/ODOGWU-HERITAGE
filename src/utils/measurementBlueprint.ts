@@ -263,11 +263,24 @@ export const MEASUREMENT_METHOD_ORDER = [
   MEASUREMENT_SAMPLE_CLOTH_METHOD,
 ] as const satisfies ReadonlyArray<MeasurementMethodId>;
 
+/**
+ * Customer-facing names for the four body-measurement routes. They describe how
+ * much the customer measures, not a level of danger. The persisted route IDs
+ * (`low_risk` … `critical_risk`) are unchanged.
+ */
 export const MEASUREMENT_RISK_ROUTE_LABELS: Record<MeasurementRiskRoute, string> = {
-  low_risk: "Low Risk",
-  medium_risk: "Medium Risk",
-  high_risk: "High Risk",
-  critical_risk: "Critical Risk",
+  low_risk: "Full Measurements",
+  medium_risk: "Most Measurements",
+  high_risk: "Key Measurements",
+  critical_risk: "Height Only",
+};
+
+/** One-line customer descriptions for each route card on Step 7. */
+export const MEASUREMENT_RISK_ROUTE_DESCRIPTIONS: Record<MeasurementRiskRoute, string> = {
+  low_risk: "You measure everything for your selected garments. Nothing is calculated from height.",
+  medium_risk: "You measure most of the fields. A few are calculated from your Total Height.",
+  high_risk: "You measure only a few key fields. Most are calculated from your Total Height.",
+  critical_risk: "Provide only your Total Height. All required measurements are calculated automatically.",
 };
 
 export const MEASUREMENT_METHOD_LABELS: Record<MeasurementMethodId, string> = {
@@ -275,10 +288,25 @@ export const MEASUREMENT_METHOD_LABELS: Record<MeasurementMethodId, string> = {
   sample_cloth: MEASUREMENT_SAMPLE_CLOTH_LABEL,
 };
 
-export const CRITICAL_RISK_AVAILABLE_COPY =
-  "Provide only your Total Height. All required measurements are calculated automatically.";
+/**
+ * Staff-facing route names (admin tailoring readouts). Staff keep the original
+ * Low / Medium / High / Critical Risk wording.
+ */
+export const MEASUREMENT_RISK_ROUTE_STAFF_LABELS: Record<MeasurementRiskRoute, string> = {
+  low_risk: "Low Risk",
+  medium_risk: "Medium Risk",
+  high_risk: "High Risk",
+  critical_risk: "Critical Risk",
+};
+
+export const MEASUREMENT_METHOD_STAFF_LABELS: Record<MeasurementMethodId, string> = {
+  ...MEASUREMENT_RISK_ROUTE_STAFF_LABELS,
+  sample_cloth: MEASUREMENT_SAMPLE_CLOTH_LABEL,
+};
+
+export const CRITICAL_RISK_AVAILABLE_COPY = MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.critical_risk;
 export const CRITICAL_RISK_UNAVAILABLE_COPY =
-  "Critical Risk is unavailable for this garment selection because one or more required measurements cannot yet be calculated from height.";
+  "Height Only is unavailable for this garment selection because one or more required measurements cannot yet be calculated from height.";
 
 export const criticalRiskUnavailableCopy = (
   garmentLabels: readonly string[],
@@ -291,7 +319,7 @@ export const criticalRiskUnavailableCopy = (
         ? `${garmentLabels[0]} and ${garmentLabels[1]}`
         : `${garmentLabels.slice(0, -1).join(", ")}, and ${garmentLabels[garmentLabels.length - 1]}`;
   const verb = garmentLabels.length === 1 ? "needs" : "need";
-  return `Critical Risk is unavailable because ${list} still ${verb} measurements that cannot be calculated from height.`;
+  return `Height Only is unavailable because ${list} still ${verb} measurements that cannot be calculated from height.`;
 };
 
 export const MEASUREMENT_RISK_SELECTION_NOTICE =

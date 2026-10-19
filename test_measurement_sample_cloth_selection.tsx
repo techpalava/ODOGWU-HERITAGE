@@ -205,9 +205,9 @@ assert.equal(
 );
 assert.equal(
   renderer.root.findByProps({ "data-measurement-option-subtitle": "risk" }).children[0],
-  "Measurement by Risk Level",
+  "Choose how much you want to measure",
 );
-assert.match(pageText, /Measurement by Risk Level/);
+assert.match(pageText, /Choose how much you want to measure/);
 assert.match(pageText, /Option 1: Close-to-Body Measurements/);
 const sampleLegend = renderer.root
   .findByProps({ "data-measurement-sample-selector": "true" })
@@ -218,7 +218,7 @@ assert.equal(
   renderer.root.findAll(
     (node) =>
       node.type === "legend" &&
-      collectText(node) === "Measurement by Risk Level",
+      collectText(node) === "Choose how much you want to measure",
   ).length,
   0,
 );

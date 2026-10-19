@@ -260,7 +260,7 @@ const MEASUREMENT_METHOD_BADGE_TONES: Record<
   sample_cloth: "border-heritage-gold/30 bg-heritage-cream text-heritage-green",
 };
 
-/** Measurement method (risk level) as a small coloured badge. Display only. */
+/** Measurement method (how much the customer measured) as a small coloured badge. Display only. */
 const MeasurementMethodBadge = ({
   route,
 }: {

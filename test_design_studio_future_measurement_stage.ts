@@ -37,8 +37,10 @@ assert.match(studioSource, /wearerAssignmentLabel/);
 assert.match(studioSource, /nextIncompleteWearer/);
 assert.match(studioSource, /onGoToWearer/);
 assert.match(measurementSource, /Dimension \/ Measurement/);
-assert.match(measurementSource, /Enter the complete measurements required for your selected garments\./);
-assert.match(measurementSource, /Enter the required measurements\. Optional values are calculated from height where available\./);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_DESCRIPTIONS\.low_risk/);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_DESCRIPTIONS\.medium_risk/);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_DESCRIPTIONS\.high_risk/);
+assert.equal(measurementSource.includes("Measurement by Risk Level"), false);
 assert.match(measurementSource, /Required Measurements/);
 assert.match(measurementSource, /Optional Measurements/);
 assert.match(measurementSource, /Calculated from height/);
@@ -155,7 +157,7 @@ assert.match(measurementSource, /Option 3: Onsite Physical Measurements/);
 assert.match(measurementSource, /Option 4: AI Photo Measurements/);
 assert.match(measurementSource, /data-measurement-option-heading="body"/);
 assert.match(measurementSource, /data-measurement-option-subtitle="risk"/);
-assert.match(measurementSource, /Measurement by Risk Level/);
+assert.match(measurementSource, /Choose how much you want to measure/);
 assert.match(measurementSource, /MEASUREMENT_SAMPLE_CLOTH_LABEL/);
 assert.match(measurementSource, /MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION/);
 assert.match(measurementSource, /MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE/);
@@ -1239,7 +1241,7 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
     0,
     "no chip row without wearerChips / onSelectWearer",
   );
-  assert.ok(matchText.includes("Medium Risk") || matchText.includes("Low Risk"));
+  assert.ok(matchText.includes("Most Measurements") || matchText.includes("Full Measurements"));
 }
 
 console.log("PASS: measurement matching clarity person + garments banner");

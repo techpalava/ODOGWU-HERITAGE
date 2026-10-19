@@ -2,7 +2,7 @@ import type { FabricGarmentType, FutureMeasurementStateV1 } from "../types.js";
 import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
 import {
   isFutureMeasurementStateV1,
-  MEASUREMENT_METHOD_LABELS,
+  MEASUREMENT_METHOD_STAFF_LABELS,
 } from "./measurementBlueprint.js";
 import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder.js";
 
@@ -71,7 +71,7 @@ const valuesFromBag = (
     .sort((left, right) => left.measurementId.localeCompare(right.measurementId));
 
 const methodLabel = (state: FutureMeasurementStateV1): string =>
-  state.route ? MEASUREMENT_METHOD_LABELS[state.route] : "Method not selected";
+  state.route ? MEASUREMENT_METHOD_STAFF_LABELS[state.route] : "Method not selected";
 
 const readoutFromBag = ({
   wearerId,
