@@ -40,7 +40,7 @@ assert.match(measurementSource, /Dimension \/ Measurement/);
 assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_DESCRIPTIONS\.low_risk/);
 assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_DESCRIPTIONS\.medium_risk/);
 assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_DESCRIPTIONS\.high_risk/);
-assert.equal(measurementSource.includes("Measurement by Risk Level"), false);
+assert.equal(measurementSource.includes("Choose how much you want to measure"), false);
 assert.match(measurementSource, /Required Measurements/);
 assert.match(measurementSource, /Optional Measurements/);
 assert.match(measurementSource, /Calculated from height/);
@@ -157,7 +157,7 @@ assert.match(measurementSource, /Option 3: Onsite Physical Measurements/);
 assert.match(measurementSource, /Option 4: AI Photo Measurements/);
 assert.match(measurementSource, /data-measurement-option-heading="body"/);
 assert.match(measurementSource, /data-measurement-option-subtitle="risk"/);
-assert.match(measurementSource, /Choose how much you want to measure/);
+assert.match(measurementSource, /Measurement by Risk Level/);
 assert.match(measurementSource, /MEASUREMENT_SAMPLE_CLOTH_LABEL/);
 assert.match(measurementSource, /MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION/);
 assert.match(measurementSource, /MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE/);
@@ -1241,7 +1241,7 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
     0,
     "no chip row without wearerChips / onSelectWearer",
   );
-  assert.ok(matchText.includes("Most Measurements") || matchText.includes("Full Measurements"));
+  assert.ok(matchText.includes("Medium Risk (Most Measurements)") || matchText.includes("Low Risk (Full Measurements)"));
 }
 
 console.log("PASS: measurement matching clarity person + garments banner");

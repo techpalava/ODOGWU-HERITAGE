@@ -157,16 +157,17 @@ assert.deepEqual(
 );
 assert.deepEqual(
   optionLabels.map((node) => MEASUREMENT_RISK_ROUTE_LABELS[node.props["data-measurement-risk-option"] as MeasurementRiskRoute]),
-  ["Full Measurements", "Most Measurements", "Key Measurements", "Height Only"],
+  ["Low Risk (Full Measurements)", "Medium Risk (Most Measurements)", "High Risk (Key Measurements)", "Critical Risk (Height Only)"],
 );
 const pageText = collectText(renderer.root);
-assert.match(pageText, /Full Measurements/);
-assert.match(pageText, /Most Measurements/);
-assert.match(pageText, /Key Measurements/);
-assert.match(pageText, /Height Only/);
-assert.match(pageText, /Choose how much you want to measure/);
-// Effort-level copy: no customer-visible "Risk" wording on Step 7.
-assert.equal(/\bRisk\b/.test(pageText), false, "Step 7 must not show Risk wording to customers");
+assert.match(pageText, /Low Risk \(Full Measurements\)/);
+assert.match(pageText, /Medium Risk \(Most Measurements\)/);
+assert.match(pageText, /High Risk \(Key Measurements\)/);
+assert.match(pageText, /Critical Risk \(Height Only\)/);
+assert.match(pageText, /Measurement by Risk Level/);
+// Combined names: every effort-level name appears only after its Risk level, and the interim subtitle is gone.
+assert.equal(/(?<!Low Risk \()Full Measurements|(?<!Medium Risk \()Most Measurements|(?<!High Risk \()Key Measurements|(?<!Critical Risk \()Height Only/.test(pageText), false, "Step 7 effort-level names must be paired with their Risk level");
+assert.equal(pageText.includes("Choose how much you want to measure"), false, "Step 7 subtitle must read Measurement by Risk Level");
 // Each card has its own one-line description; Medium and High must differ.
 for (const option of optionLabels) {
   const route = option.props["data-measurement-risk-option"] as MeasurementRiskRoute;
