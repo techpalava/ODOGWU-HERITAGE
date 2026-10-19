@@ -207,7 +207,16 @@ assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: highPlan, state: highState }),
   2,
 );
-assert.equal(highState.derived.byGarmentKey["base:shirt"]?.head_circumference, undefined);
+// Height alone fills the height estimates straight away (Task: estimate on
+// height entry); the required manuals still gate completion.
+assert.equal(
+  highState.derived.byGarmentKey["base:shirt"]?.head_circumference?.valueCm,
+  calculateMeasurementFromAverageFactor(180, headRequirement.averageFactor!),
+);
+assert.equal(
+  highState.derived.byGarmentKey["base:shirt"]?.head_circumference?.provenance,
+  "calculated_average_factor",
+);
 assert.equal(highState.derived.byGarmentKey["base:shirt"]?.chest_bust_circumference, undefined);
 
 highState = fillHighManual(highState, { chest_bust_circumference: 90 });
