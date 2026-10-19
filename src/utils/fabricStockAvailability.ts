@@ -146,10 +146,12 @@ export const getOrderAwareFabricStockPresentation = (
     return getFabricStockPresentation(fabric);
   }
   const remaining = getFabricRemainingPhysicalStock(fabric, state)!;
+  // stockStatus is the availability authority: OUT_OF_STOCK never shows a count.
+  const noStockLeft = remaining === 0 || fabric.stockStatus === "OUT_OF_STOCK";
   // Stock counts and already-allocated capacity are distinct authorities. A
   // target-aware capacity check is supplied by the existing allocator; never
   // infer it from the stock count or change allocation arithmetic here.
-  if (remaining === 0 && options.hasCompatibleReusableHalfCapacity) {
+  if (noStockLeft && options.hasCompatibleReusableHalfCapacity) {
     return {
       visible: true,
       status: "REUSABLE_CAPACITY",
@@ -157,7 +159,7 @@ export const getOrderAwareFabricStockPresentation = (
       tone: "in_stock",
     };
   }
-  if (remaining === 0) {
+  if (noStockLeft) {
     return {
       visible: true,
       status: "OUT_OF_STOCK",
