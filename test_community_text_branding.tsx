@@ -57,9 +57,20 @@ try {
   assert.ok(classes(footerName).has("text-base"), "Footer community name is text-base");
   assert.ok(!classes(footerName).has("text-sm"));
   assert.ok(classes(footerName).has("break-words"));
+
+  // Footer bottom bar copyright line (Fredrick's follow-up, 2026-10-19).
+  const copyright = footer.find(node => node.type === "div" &&
+    node.children.some(child => typeof child === "string" && child.startsWith("©")) &&
+    text(node).includes(communityName));
+  const copyrightTokens = classes(copyright);
+  assert.ok(copyrightTokens.has("font-extrabold"), `Footer copyright is extrabold: ${copyright.props.className}`);
+  assert.ok(copyrightTokens.has("text-xs") && copyrightTokens.has("sm:text-sm"),
+    "Footer copyright is text-xs on phones and text-sm from sm up (was 10px / text-xs)");
+  assert.ok(copyrightTokens.has("break-words"), "Footer copyright wraps instead of overflowing");
+  assert.ok(![...copyrightTokens].some(token => /^(?:truncate|whitespace-nowrap|overflow-hidden)$/.test(token)));
 } finally {
   act(() => { tree?.unmount(); });
   useAppStore.setState(originalState);
 }
 
-console.log("PASS: header and footer community text is bigger, bolder and wraps safely");
+console.log("PASS: header, footer and copyright community text is bigger, bolder and wraps safely");
