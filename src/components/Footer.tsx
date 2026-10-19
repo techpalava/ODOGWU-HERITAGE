@@ -70,6 +70,9 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
     e.preventDefault();
     const target = batchLink.target;
     if (target.kind === "join-batch" && onJoinCommunityBatch) {
+      // The footer sits at the bottom; start the Studio (or the draft
+      // choice dialog) from the top, as the other footer links do.
+      window.scrollTo({ top: 0, behavior: "smooth" });
       onJoinCommunityBatch(target.batch);
       return;
     }
