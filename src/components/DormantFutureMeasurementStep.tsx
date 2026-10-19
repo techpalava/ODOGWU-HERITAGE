@@ -311,6 +311,7 @@ const MeasurementField = ({
     ? getSampleClothCustomerLabel(
         requirement.measurementId,
         requirement.definition.customerLabel,
+        requirement.labelDemographic,
       )
     : requirement.definition.customerLabel;
   const fieldInstruction = sampleGeometry

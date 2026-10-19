@@ -34,6 +34,8 @@ import {
   isSelectedMeasurementMethod,
   MEASUREMENT_METHOD_LABELS,
   roundMeasurementDisplayValue,
+  getDemographicMeasurementCustomerLabel,
+  resolveMeasurementLabelDemographicForGarments,
 } from "./measurementBlueprint";
 
 export const FUTURE_PAYMENT_UNAVAILABLE_MESSAGE =
@@ -285,6 +287,7 @@ const toMeasurementItem = ({
   provenance,
   unit,
   convertedFromSample,
+  labelDemographic,
   outsideUsualRange,
 }: {
   measurementId: string;
@@ -292,10 +295,13 @@ const toMeasurementItem = ({
   provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
   convertedFromSample: boolean;
+  labelDemographic: string;
   outsideUsualRange: boolean;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
-  label: humanizeIdentifier(measurementId),
+  label:
+    getDemographicMeasurementCustomerLabel(measurementId, labelDemographic) ??
+    humanizeIdentifier(measurementId),
   displayValue: roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, unit),
   ),
@@ -388,6 +394,7 @@ const mergeMeasurements = ({
   derived,
   unit,
   route,
+  labelDemographic,
   diagnostics,
   garmentKey,
 }: {
@@ -395,6 +402,7 @@ const mergeMeasurements = ({
   derived: FutureMeasurementStateV1["derived"]["shared"];
   unit: MeasurementUnit;
   route: SelectedMeasurementMethod;
+  labelDemographic: string;
   diagnostics: FutureMeasurementStateV1["diagnostics"] | undefined;
   /** null for the shared bag. */
   garmentKey: string | null;
@@ -417,6 +425,7 @@ const mergeMeasurements = ({
       ...value,
       unit,
       convertedFromSample: preferDerived,
+      labelDemographic,
       outsideUsualRange: isMeasurementOutsideUsualRange(
         diagnostics,
         measurementId,
@@ -426,9 +435,29 @@ const mergeMeasurements = ({
   });
 };
 
+type MeasurementReviewGarment = {
+  readonly garmentKey: string;
+  readonly label: string;
+  readonly garmentType?: string;
+  readonly demographic?: string | null;
+};
+
+/** Step 1 demographic for these garments, used only for Chest / Borst wording. */
+const labelDemographicFor = (
+  garments: readonly MeasurementReviewGarment[],
+  garmentKeys?: readonly string[],
+): string => {
+  const scoped = garmentKeys
+    ? garments.filter((garment) => garmentKeys.includes(garment.garmentKey))
+    : garments;
+  return resolveMeasurementLabelDemographicForGarments(
+    scoped.map((garment) => garment.demographic ?? null),
+  );
+};
+
 const groupsFromMeasurementBag = (
   state: FutureMeasurementStateV1,
-  garments: readonly { garmentKey: string; label: string }[],
+  garments: readonly MeasurementReviewGarment[],
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const garmentLabels = new Map(
     garments.map((garment) => [garment.garmentKey, garment.label]),
@@ -443,6 +472,7 @@ const groupsFromMeasurementBag = (
     derived: state.derived.shared,
     unit: state.unit,
     route: state.route,
+    labelDemographic: labelDemographicFor(garments),
     diagnostics: state.diagnostics,
     garmentKey: null,
   });
@@ -456,6 +486,7 @@ const groupsFromMeasurementBag = (
         derived: state.derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
         route: state.route,
+        labelDemographic: labelDemographicFor(garments, [garmentKey]),
         diagnostics: state.diagnostics,
         garmentKey,
       });
@@ -474,11 +505,7 @@ const groupsFromMeasurementBag = (
 export const getFuturePaymentReviewMeasurementGroups = (
   candidate: {
     readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
-    readonly garments: readonly {
-      readonly garmentKey: string;
-      readonly label: string;
-      readonly garmentType?: string;
-    }[];
+    readonly garments: readonly MeasurementReviewGarment[];
   },
   options: {
     /**
@@ -536,6 +563,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
           derived: wearer.measurement.derived.shared,
           unit: wearer.measurement.unit,
           route: wearer.measurement.route,
+          labelDemographic: labelDemographicFor(candidate.garments, ownedKeys),
           diagnostics: wearer.measurement.diagnostics,
           garmentKey: null,
         });
@@ -556,6 +584,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
             derived: wearer.measurement.derived.byGarmentKey[garmentKey] || {},
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
+            labelDemographic: labelDemographicFor(candidate.garments, [garmentKey]),
             diagnostics: wearer.measurement.diagnostics,
             garmentKey,
           });

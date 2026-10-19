@@ -290,7 +290,10 @@ assert.equal(
 );
 assert.match(collectText(renderer.root), new RegExp(MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE));
 assert.match(collectText(renderer.root), /Measure these on the sample garment/);
+// Male garment (Step 1 demographic "male"): Chest wording, never Borst or Bust.
 assert.match(collectText(renderer.root), /Chest across sample \(laid flat\)/);
+assert.doesNotMatch(collectText(renderer.root), /Borst/);
+assert.doesNotMatch(collectText(renderer.root), /Bust/);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-field": "total_height" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-field": "head_circumference" }).length, 0);
 assert.notEqual(
