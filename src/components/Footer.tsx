@@ -283,7 +283,7 @@ export default function Footer() {
 
         {/* Footer Bottom Bar */}
         <div className="pt-8 border-t border-heritage-gold/20 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] sm:text-xs text-heritage-beige/50">
-          <div className="order-3 md:order-1 text-center md:text-left">
+          <div className="order-3 md:order-1 text-center md:text-left text-xs sm:text-sm font-extrabold tracking-wide break-words">
             © {new Date().getFullYear()}{" "}
             {businessSettings?.applicationSettings?.communityName ||
               "The Odogwu Heritage"}
