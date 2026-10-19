@@ -81,39 +81,6 @@ const response = () => {
   });
 }
 
-{
-  const { res, state } = response();
-  let created: unknown = null;
-  await handleFutureOrderV2PayPalCreateOrder(
-    {
-      method: "POST",
-      headers: {},
-      body: {
-        orderId: prepared.orderId,
-        paymentReference,
-        masterOrder: prepared.masterOrder,
-      },
-    },
-    res,
-    {
-      readEnv: () => "sandbox",
-      readClientId: () => "sandbox-client-id",
-      readClientSecret: () => "sandbox-secret",
-      async createPayPalOrder(input) {
-        created = input;
-        return { id: "5O190127TN364715T" };
-      },
-    },
-  );
-  assert.equal(state.statusCode, 200);
-  assert.deepEqual(created, {
-    amountCents: 30000,
-    orderId: prepared.orderId,
-    paymentReference,
-  });
-  assert.deepEqual(state.body, { paypalOrderId: "5O190127TN364715T" });
-}
-
 const OWNER_UID = "paypal-owner";
 const persisted = createPersistedFutureOrderV2({
   masterOrder: prepared.masterOrder,
@@ -195,6 +162,16 @@ const createMemoryStore = () => {
         db: {},
       }),
       createStore: () => createMemoryStore().store,
+      async readPayPalOrder() {
+        return {
+          id: "5O190127TN364715T",
+          status: "APPROVED",
+          amountCents: 30000,
+          currency: "eur",
+          customId: prepared.orderId,
+          invoiceId: paymentReference,
+        };
+      },
       async capturePayPalOrder() {
         return {
           id: "5O190127TN364715T",
@@ -215,6 +192,233 @@ const createMemoryStore = () => {
   assert.ok(record);
   assert.equal(record?.schemaVersion, 2);
 }
+
+
+// ---- create-order: signed-in owner only, amount from the stored order ----
+const sandboxEnv = {
+  readEnv: () => "sandbox",
+  readClientId: () => "sandbox-client-id",
+  readClientSecret: () => "sandbox-secret",
+};
+const servicesFor = (uid: string, provider = "password") => () => ({
+  auth: {
+    async verifyIdToken(token: string) {
+      if (token !== "valid-token") throw new Error("bad token");
+      return { uid, firebase: { sign_in_provider: provider } };
+    },
+  },
+  db: {},
+});
+// A tampered browser order claiming €1.00 must not change what is charged.
+const tamperedMasterOrder = JSON.parse(JSON.stringify(prepared.masterOrder));
+tamperedMasterOrder.cartItem.candidate.pricing.exactTotalCents = 100;
+
+const runCreate = async (
+  headers: Record<string, string>,
+  overrides: Record<string, unknown> = {},
+  body: Record<string, unknown> = {
+    orderId: prepared.orderId,
+    paymentReference,
+    masterOrder: tamperedMasterOrder,
+    amountCents: 100,
+  },
+) => {
+  const { res, state } = response();
+  const created: unknown[] = [];
+  await handleFutureOrderV2PayPalCreateOrder(
+    { method: "POST", headers, body },
+    res,
+    {
+      ...sandboxEnv,
+      getServices: servicesFor(OWNER_UID),
+      createStore: () => createMemoryStore().store,
+      readCommunityBatch: async () => null,
+      async createPayPalOrder(input) {
+        created.push(input);
+        return { id: "5O190127TN364715T" };
+      },
+      ...overrides,
+    },
+  );
+  return { state, created };
+};
+
+{
+  // Signed-in owner: amount is the stored server-verified total, not the tampered body.
+  const { state, created } = await runCreate({ authorization: "Bearer valid-token" });
+  assert.equal(state.statusCode, 200);
+  assert.deepEqual(created, [
+    { amountCents: 30000, orderId: prepared.orderId, paymentReference },
+  ]);
+  assert.deepEqual(state.body, { paypalOrderId: "5O190127TN364715T" });
+}
+{
+  // Absent token -> 401, nothing created.
+  const { state, created } = await runCreate({});
+  assert.equal(state.statusCode, 401);
+  assert.equal((state.body as { code: string }).code, "AUTH_REQUIRED");
+  assert.equal(created.length, 0);
+}
+{
+  // Tampered token -> 401.
+  const { state, created } = await runCreate({ authorization: "Bearer forged-token" });
+  assert.equal(state.statusCode, 401);
+  assert.equal(created.length, 0);
+}
+{
+  // Anonymous session -> 403.
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { getServices: servicesFor("anon-uid", "anonymous") },
+  );
+  assert.equal(state.statusCode, 403);
+  assert.equal((state.body as { code: string }).code, "ANONYMOUS_NOT_ALLOWED");
+  assert.equal(created.length, 0);
+}
+{
+  // Wrong owner -> 403.
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { getServices: servicesFor("someone-else") },
+  );
+  assert.equal(state.statusCode, 403);
+  assert.equal((state.body as { code: string }).code, "OWNER_MISMATCH");
+  assert.equal(created.length, 0);
+}
+{
+  // Unknown order -> 404.
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    {},
+    { orderId: "future-order-missing", paymentReference: "future-v2-payment-future-order-missing" },
+  );
+  assert.equal(state.statusCode, 404);
+  assert.equal(created.length, 0);
+}
+{
+  // Already paid -> 409.
+  const memory = createMemoryStore();
+  memory.payments.set(prepared.orderId, { status: "succeeded" });
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { createStore: () => memory.store },
+  );
+  assert.equal(state.statusCode, 409);
+  assert.equal((state.body as { code: string }).code, "PAYMENT_ALREADY_RECORDED");
+  assert.equal(created.length, 0);
+}
+{
+  // Stored order without an exact total is refused (the persisted-order parser
+  // rejects it as 404, or the payable check returns 409); nothing is created.
+  const notExact = JSON.parse(JSON.stringify(persisted.value));
+  notExact.masterOrder.cartItem.candidate.pricing.status = "evaluation_required";
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    {
+      createStore: () => ({
+        ...createMemoryStore().store,
+        async readOrder() {
+          return notExact;
+        },
+      }),
+    },
+  );
+  assert.ok(state.statusCode === 409 || state.statusCode === 404);
+  assert.equal(created.length, 0);
+}
+{
+  // Live env is still refused before anything else.
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { readEnv: () => "live" },
+  );
+  assert.equal(state.statusCode, 503);
+  assert.equal((state.body as { code: string }).code, "PAYPAL_SANDBOX_REQUIRED");
+  assert.equal(created.length, 0);
+}
+
+// ---- capture: PayPal order amount is checked before capture ----
+{
+  const { res, state } = response();
+  let captured = false;
+  await handleFutureOrderV2PayPalCapture(
+    {
+      method: "POST",
+      headers: { authorization: "Bearer valid-token" },
+      body: { orderId: prepared.orderId, paypalOrderId: "5O190127TN364715T" },
+    },
+    res,
+    {
+      ...sandboxEnv,
+      getServices: servicesFor(OWNER_UID),
+      createStore: () => createMemoryStore().store,
+      async readPayPalOrder() {
+        return {
+          id: "5O190127TN364715T",
+          status: "APPROVED",
+          amountCents: 100,
+          currency: "eur",
+          customId: prepared.orderId,
+          invoiceId: paymentReference,
+        };
+      },
+      async capturePayPalOrder() {
+        captured = true;
+        throw new Error("must not capture");
+      },
+    },
+  );
+  assert.equal(state.statusCode, 409);
+  assert.equal((state.body as { code: string }).code, "PAYMENT_MISMATCH");
+  assert.equal(captured, false);
+}
+{
+  // Wrong owner on capture -> 403 before PayPal is touched.
+  const { res, state } = response();
+  let touched = false;
+  await handleFutureOrderV2PayPalCapture(
+    {
+      method: "POST",
+      headers: { authorization: "Bearer valid-token" },
+      body: { orderId: prepared.orderId, paypalOrderId: "5O190127TN364715T" },
+    },
+    res,
+    {
+      ...sandboxEnv,
+      getServices: servicesFor("someone-else"),
+      createStore: () => createMemoryStore().store,
+      async readPayPalOrder() {
+        touched = true;
+        throw new Error("no");
+      },
+      async capturePayPalOrder() {
+        touched = true;
+        throw new Error("no");
+      },
+    },
+  );
+  assert.equal(state.statusCode, 403);
+  assert.equal(touched, false);
+}
+{
+  // Absent token on capture -> 401.
+  const { res, state } = response();
+  await handleFutureOrderV2PayPalCapture(
+    {
+      method: "POST",
+      headers: {},
+      body: { orderId: prepared.orderId, paypalOrderId: "5O190127TN364715T" },
+    },
+    res,
+    sandboxEnv,
+  );
+  assert.equal(state.statusCode, 401);
+}
+
+// Client sends only ids plus a Firebase token; never a price or masterOrder.
+const clientSource = readFileSync("src/services/futureOrderV2PayPalClient.ts", "utf8");
+assert.equal(clientSource.includes("masterOrder"), false);
+assert.match(clientSource, /Authorization: `Bearer \$\{idToken\}`/);
 
 assert.deepEqual(
   parseFutureOrderV2PaymentRecord({

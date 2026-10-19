@@ -84,13 +84,13 @@ export default function Footer() {
                 referrerPolicy="no-referrer"
               />
               <div className="flex flex-col">
-                <span className="text-sm font-bold tracking-widest text-heritage-gold uppercase font-display">
+                <span className="text-base font-extrabold tracking-widest text-heritage-gold uppercase font-display break-words">
                   {businessSettings?.applicationSettings?.communityName ||
                     "The Odogwu Heritage"}
                 </span>
               </div>
             </div>
-            <p className="text-sm font-medium text-heritage-beige/90 leading-relaxed font-serif italic">
+            <p className="text-base xl:text-lg font-bold text-heritage-beige/90 leading-snug font-serif italic break-words">
               {businessSettings?.applicationSettings?.tagline ||
                 "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
             </p>
@@ -283,7 +283,7 @@ export default function Footer() {
 
         {/* Footer Bottom Bar */}
         <div className="pt-8 border-t border-heritage-gold/20 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] sm:text-xs text-heritage-beige/50">
-          <div className="order-3 md:order-1 text-center md:text-left">
+          <div className="order-3 md:order-1 text-center md:text-left text-xs sm:text-sm font-extrabold tracking-wide break-words">
             © {new Date().getFullYear()}{" "}
             {businessSettings?.applicationSettings?.communityName ||
               "The Odogwu Heritage"}
