@@ -35,6 +35,7 @@ import {
   MEASUREMENT_METHOD_LABELS,
   roundMeasurementDisplayValue,
   getDemographicMeasurementCustomerLabel,
+  getMeasurementDefinition,
   resolveMeasurementLabelDemographicForGarments,
 } from "./measurementBlueprint";
 
@@ -435,6 +436,65 @@ const mergeMeasurements = ({
   });
 };
 
+type MeasurementBags = {
+  readonly shared: FutureMeasurementStateV1["derived"]["shared"];
+  readonly byGarmentKey: FutureMeasurementStateV1["derived"]["byGarmentKey"];
+};
+
+/**
+ * A shared body measurement calculated from height for several garments
+ * (for example Waist for Trousers and Shorts on Height Only) has one value.
+ * Show it once with the shared measurements instead of under every garment.
+ * Display only; the stored order data is unchanged.
+ */
+const liftRepeatedSharedBodyEstimates = ({
+  entered,
+  derived,
+  garmentKeys,
+}: {
+  entered: MeasurementBags;
+  derived: MeasurementBags;
+  garmentKeys: readonly string[];
+}): MeasurementBags => {
+  const valuesById = new Map<string, FutureMeasurementStateV1["derived"]["shared"][string][]>();
+  garmentKeys.forEach((garmentKey) => {
+    Object.entries(derived.byGarmentKey[garmentKey] || {}).forEach(([measurementId, value]) => {
+      valuesById.set(measurementId, [...(valuesById.get(measurementId) || []), value]);
+    });
+  });
+  const lifted = new Set<string>();
+  const shared = { ...derived.shared };
+  valuesById.forEach((values, measurementId) => {
+    const first = values[0];
+    if (!first || values.length < 2) return;
+    if (getMeasurementDefinition(measurementId as never)?.scope !== "shared_body") return;
+    if (entered.shared[measurementId] || derived.shared[measurementId]) return;
+    if (garmentKeys.some((garmentKey) => entered.byGarmentKey[garmentKey]?.[measurementId])) return;
+    const sameEstimate = values.every(
+      (value) =>
+        value.provenance === "calculated_average_factor" &&
+        Math.abs(value.valueCm - first.valueCm) < 1e-9,
+    );
+    if (!sameEstimate) return;
+    shared[measurementId] = first;
+    lifted.add(measurementId);
+  });
+  if (lifted.size === 0) return derived;
+  return {
+    shared,
+    byGarmentKey: Object.fromEntries(
+      Object.entries(derived.byGarmentKey).map(([garmentKey, values]) => [
+        garmentKey,
+        garmentKeys.includes(garmentKey)
+          ? Object.fromEntries(
+              Object.entries(values).filter(([measurementId]) => !lifted.has(measurementId)),
+            )
+          : values,
+      ]),
+    ),
+  };
+};
+
 type MeasurementReviewGarment = {
   readonly garmentKey: string;
   readonly label: string;
@@ -467,9 +527,14 @@ const groupsFromMeasurementBag = (
     ...Object.keys(state.entered.byGarmentKey),
   ]);
   const groups: FuturePaymentReviewMeasurementGroup[] = [];
+  const derived = liftRepeatedSharedBodyEstimates({
+    entered: state.entered,
+    derived: state.derived,
+    garmentKeys: [...garmentKeys],
+  });
   const shared = mergeMeasurements({
     entered: state.entered.shared,
-    derived: state.derived.shared,
+    derived: derived.shared,
     unit: state.unit,
     route: state.route,
     labelDemographic: labelDemographicFor(garments),
@@ -483,7 +548,7 @@ const groupsFromMeasurementBag = (
     (garmentKey) => {
       const items = mergeMeasurements({
         entered: state.entered.byGarmentKey[garmentKey] || {},
-        derived: state.derived.byGarmentKey[garmentKey] || {},
+        derived: derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
         route: state.route,
         labelDemographic: labelDemographicFor(garments, [garmentKey]),
@@ -558,9 +623,14 @@ export const getFuturePaymentReviewMeasurementGroups = (
               })),
             )
           : garmentLabels;
+        const wearerDerived = liftRepeatedSharedBodyEstimates({
+          entered: wearer.measurement.entered,
+          derived: wearer.measurement.derived,
+          garmentKeys: ownedKeys,
+        });
         const shared = mergeMeasurements({
           entered: wearer.measurement.entered.shared,
-          derived: wearer.measurement.derived.shared,
+          derived: wearerDerived.shared,
           unit: wearer.measurement.unit,
           route: wearer.measurement.route,
           labelDemographic: labelDemographicFor(candidate.garments, ownedKeys),
@@ -581,7 +651,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
         ownedKeys.forEach((garmentKey) => {
           const items = mergeMeasurements({
             entered: wearer.measurement.entered.byGarmentKey[garmentKey] || {},
-            derived: wearer.measurement.derived.byGarmentKey[garmentKey] || {},
+            derived: wearerDerived.byGarmentKey[garmentKey] || {},
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
             labelDemographic: labelDemographicFor(candidate.garments, [garmentKey]),

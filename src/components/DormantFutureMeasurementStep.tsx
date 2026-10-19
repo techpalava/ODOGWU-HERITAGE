@@ -54,6 +54,7 @@ import {
   MEASUREMENT_SAMPLE_CLOTH_METHOD,
   MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION,
   projectMeasurementGarmentChipStates,
+  isSharedPresentationRequirement,
   projectMeasurementRequirementsForPresentation,
   projectMeasurementStepProgressPresentation,
   reconcileFutureMeasurementState,
@@ -484,16 +485,10 @@ const MeasurementSection = ({
   /** Registers each group heading so a Summary Edit jump can focus it. */
   registerGroupHeading?: (key: string, element: HTMLElement | null) => void;
 }) => {
-  const sharedRequirements = requirements.filter(
-    (requirement) =>
-      requirement.scope === "shared" &&
-      requirement.inputSource !== "calculated_average_factor",
-  );
+  const sharedRequirements = requirements.filter(isSharedPresentationRequirement);
   const garmentRequirementSections = groupGarmentRequirements(
     requirements.filter(
-      (requirement) =>
-        requirement.scope === "garment" ||
-        requirement.inputSource === "calculated_average_factor",
+      (requirement) => !isSharedPresentationRequirement(requirement),
     ),
   );
   const completedCount = countSatisfiedRequiredMeasurementUnits({
@@ -598,7 +593,9 @@ const MeasurementSection = ({
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
             {sampleMode
               ? "Shared sample measurements are entered once and used for all applicable garments."
-              : "Shared body measurements are entered once and used for all applicable garments."}
+              : section === "calculated"
+                ? "Shared body measurements are calculated once from your Total Height and used for all applicable garments."
+                : "Shared body measurements are entered once and used for all applicable garments."}
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {renderFields(sharedRequirements)}
@@ -1036,10 +1033,7 @@ export const DormantFutureMeasurementStep = ({
     ? presentationRequirements.filter(
         (requirement) =>
           requirement.garmentKey === selectedGarmentKey ||
-          (
-            requirement.scope === "shared" &&
-            requirement.inputSource !== "calculated_average_factor"
-          ),
+          isSharedPresentationRequirement(requirement),
       )
     : presentationRequirements;
   const visibleRequiredRequirements = visibleRequirements.filter(
