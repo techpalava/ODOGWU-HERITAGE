@@ -666,15 +666,25 @@ export const GarmentTypeStep = ({
               : "mt-7 min-w-0 scroll-mt-24 border-t border-heritage-gold/15 pt-6"
           }
         >
-          <legend className="font-serif text-lg font-bold text-heritage-green">
+          <legend
+            className={
+              audienceNeeded
+                ? "float-left w-full font-serif text-lg font-bold text-heritage-green"
+                : "font-serif text-lg font-bold text-heritage-green"
+            }
+          >
             Who is this design for?
           </legend>
           {audienceNeeded ? (
-            <p className="mt-2 text-sm font-semibold leading-relaxed text-heritage-green">
+            <p className="clear-both mt-2 text-sm font-semibold leading-relaxed text-heritage-green">
               Still needed to continue to Fabric.
             </p>
           ) : null}
-          <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
+          <div
+            className={`mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3${
+              audienceNeeded ? " clear-both" : ""
+            }`}
+          >
             {DEMOGRAPHIC_OPTIONS.map((option) => {
               const inputId = `${idPrefix}-demographic-${option.value}`;
               const selected = selectedDemographics.includes(option.value);
