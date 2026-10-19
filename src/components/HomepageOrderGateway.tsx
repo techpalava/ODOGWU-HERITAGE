@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import type { Batch } from "../types";
+import { HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID } from "../utils/footerBatchLink";
 import {
   getHomepageJoinBatchDescription,
   getHomepageJoinBatchLabel,
@@ -74,6 +75,7 @@ export default function HomepageOrderGateway({
 
   return (
     <section
+      id={HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID}
       aria-labelledby="homepage-order-gateway-title"
       className="relative z-20 rounded-3xl border border-heritage-gold/30 bg-heritage-cream shadow-lg"
     >

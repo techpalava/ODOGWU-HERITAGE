@@ -2119,7 +2119,10 @@ export default function App() {
       </main>
 
       {/* PREMIUM FOOTER */}
-      <Footer />
+      <Footer
+        joinBatch={activeCommunityBatch ? registrationBatch ?? null : null}
+        onJoinCommunityBatch={handleJoinCommunityBatch}
+      />
 
       {/* SHOPPING CART SLIDE-OVER DRAWER */}
       <CartDrawer />
