@@ -2177,7 +2177,7 @@ const soleHeader =
 assert.match(
   soleHeader,
   new RegExp(
-    `<span data-summary-measurement-method-badge="${exactSummary.measurementSummary.route}" class="[^"]*rounded-full[^"]*"><span class="sr-only">Measurement method: </span>${exactSummary.measurementSummary.routeLabel}</span>`,
+    `<span data-summary-measurement-method-badge="${exactSummary.measurementSummary.route}" class="[^"]*rounded-full[^"]*"><span class="sr-only">Measurement method: </span>${exactSummary.measurementSummary.routeLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</span>`,
   ),
 );
 assert.equal(soleHeader.includes("Person 1"), false);
@@ -2589,12 +2589,12 @@ const blankSoleSummary = projectFutureDesignStudioSummary({
 });
 const blankSoleGroup = blankSoleSummary.measurementSummary.wearerGroups?.[0];
 assert.equal(blankSoleGroup?.displayName, "You");
-assert.equal(blankSoleGroup?.routeLabel, "High Risk");
+assert.equal(blankSoleGroup?.routeLabel, "High Risk (Key Measurements)");
 const blankSoleCompact = formatCompactWearerRouteLabel(
   blankSoleGroup?.displayName || "",
   blankSoleGroup?.routeLabel || "",
 );
-assert.equal(blankSoleCompact, "High Risk");
+assert.equal(blankSoleCompact, "High Risk (Key Measurements)");
 assert.equal(blankSoleCompact.includes("Person 1"), false);
 const blankSoleMarkup = renderToStaticMarkup(
   createElement(DormantFutureSummaryStep, {
@@ -2611,11 +2611,11 @@ const blankSoleMarkup = renderToStaticMarkup(
   }),
 );
 assert.equal(blankSoleMarkup.includes("Person 1"), false);
-assert.match(blankSoleMarkup, /High Risk/);
+assert.match(blankSoleMarkup, /High Risk \(Key Measurements\)/);
 assert.match(
   blankSoleMarkup,
-  /data-summary-measurement-sole-header="true" class="[^"]*"><span data-summary-measurement-method-badge="high_risk" class="[^"]*border-red-200 bg-red-50 text-red-700[^"]*"><span class="sr-only">Measurement method: <\/span>High Risk<\/span><\/div>/,
-  "blank sole wearer: High Risk badge only",
+  /data-summary-measurement-sole-header="true" class="[^"]*"><span data-summary-measurement-method-badge="high_risk" class="[^"]*border-red-200 bg-red-50 text-red-700[^"]*"><span class="sr-only">Measurement method: <\/span>High Risk \(Key Measurements\)<\/span><\/div>/,
+  "blank sole wearer: High Risk (Key Measurements) badge only",
 );
 const twoWearerSummary = projectFutureDesignStudioSummary({
   ...exactInput,

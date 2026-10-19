@@ -1354,7 +1354,7 @@ export const DormantFutureMeasurementStep = ({
                     <span className={`mt-1 block break-words leading-relaxed ${unavailable ? "text-sm text-heritage-ink" : "text-xs text-heritage-ink/65"}`}>
                       {unavailable && criticalRiskBlockingLabels.length > 0 ? (
                         <>
-                          Critical Risk is unavailable because{" "}
+                          Critical Risk (Height Only) is unavailable because{" "}
                           <strong className="font-semibold text-heritage-green">
                             {criticalRiskBlockingLabels.length === 1
                               ? criticalRiskBlockingLabels[0]

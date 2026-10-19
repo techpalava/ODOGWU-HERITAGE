@@ -1241,7 +1241,7 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
     0,
     "no chip row without wearerChips / onSelectWearer",
   );
-  assert.ok(matchText.includes("Medium Risk") || matchText.includes("Low Risk"));
+  assert.ok(matchText.includes("Medium Risk (Most Measurements)") || matchText.includes("Low Risk (Full Measurements)"));
 }
 
 console.log("PASS: measurement matching clarity person + garments banner");

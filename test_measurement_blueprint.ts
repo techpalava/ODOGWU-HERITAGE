@@ -717,10 +717,10 @@ assert.equal(MEASUREMENT_FORMULA_VERSION, "height-average-factor-v1");
 assert.equal(state.blueprintVersion, MEASUREMENT_BLUEPRINT_VERSION);
 
 assert.deepEqual(MEASUREMENT_RISK_ROUTE_LABELS, {
-  low_risk: "Low Risk",
-  medium_risk: "Medium Risk",
-  high_risk: "High Risk",
-  critical_risk: "Critical Risk",
+  low_risk: "Low Risk (Full Measurements)",
+  medium_risk: "Medium Risk (Most Measurements)",
+  high_risk: "High Risk (Key Measurements)",
+  critical_risk: "Critical Risk (Height Only)",
 });
 assert.deepEqual(MEASUREMENT_RISK_ROUTE_STAFF_LABELS, {
   low_risk: "Low Risk",
