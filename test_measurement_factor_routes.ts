@@ -797,7 +797,12 @@ nearlyEqual(
   derivedFor(shirtOnly, shirtCalculated)!.valueCm,
   calculateMeasurementFromAverageFactor(180, shirtCalculated.averageFactor),
 );
-assert.equal(derivedFor(shirtOnly, trouserCalculated), undefined);
+// The shared Total Height fills the trouser estimates too, even before the
+// trouser's own required measurements are entered.
+nearlyEqual(
+  derivedFor(shirtOnly, trouserCalculated)!.valueCm,
+  calculateMeasurementFromAverageFactor(180, trouserCalculated.averageFactor!),
+);
 assert.equal(shirtOnly.calculationStatus, "incomplete");
 assert.equal(isFutureSummaryUnlockedByMeasurements(shirtOnly), false);
 let bothGarments = shirtOnly;

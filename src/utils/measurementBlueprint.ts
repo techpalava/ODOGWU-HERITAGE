@@ -1923,6 +1923,17 @@ const getRequirementFactors = (
       }
     : null;
 
+/**
+ * A Total Height can drive height estimates when it is a positive, finite
+ * number inside the existing plausible height bounds (40-230 cm). A height
+ * typed in the wrong unit (for example 5.9 as centimetres) gives no estimates.
+ */
+export const isValidHeightForEstimates = (
+  height: FutureMeasurementValueV1 | undefined,
+): height is FutureMeasurementValueV1 =>
+  isPositiveMeasurementValue(height) &&
+  !isImplausibleCanonicalMeasurement(height.valueCm, "total_height", "total_height");
+
 export const deriveActiveCalculatedMeasurements = ({
   route,
   entered,
@@ -1959,24 +1970,13 @@ export const deriveActiveCalculatedMeasurements = ({
   }
   if (route === "low_risk") return derived;
   const height = entered.shared.total_height;
-  if (!isPositiveMeasurementValue(height)) return derived;
-  const directInputsCompleteByGarmentKey = new Map<string, boolean>();
-  const garmentDirectInputsComplete = (garmentKey: string): boolean => {
-    const known = directInputsCompleteByGarmentKey.get(garmentKey);
-    if (known !== undefined) return known;
-    const complete = plan.requirements
-      .filter((candidate) => candidate.directInput && candidate.garmentKey === garmentKey)
-      .every((candidate) =>
-        isPositiveMeasurementValue(getEnteredMeasurementValue(entered, candidate)),
-      );
-    directInputsCompleteByGarmentKey.set(garmentKey, complete);
-    return complete;
-  };
+  // Estimates fill in as soon as a valid Total Height is entered. They no
+  // longer wait for the other required measurements; completion still does.
+  if (!isValidHeightForEstimates(height)) return derived;
   plan.requirements.forEach((requirement) => {
     if (
       requirement.inputSource !== "calculated_average_factor" ||
-      requirement.averageFactor === null ||
-      !garmentDirectInputsComplete(requirement.garmentKey)
+      requirement.averageFactor === null
     ) {
       return;
     }

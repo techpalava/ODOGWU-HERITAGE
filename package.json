@@ -70,6 +70,7 @@
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts && tsx test_measurement_unit_plausibility.ts",
     "test:measurement-risk-selection": "tsx test_measurement_risk_selection.tsx",
     "test:measurement-factorless-required": "tsx test_measurement_factorless_required.tsx",
+    "test:measurement-height-auto-estimate": "tsx test_measurement_height_auto_estimate.tsx",
     "test:measurement-chest-borst-labels": "node scripts/tsxWithViteProductionFirebase.mjs test_measurement_chest_borst_labels.ts",
     "test:measurement-sample-cloth": "tsx test_measurement_sample_cloth.ts && tsx test_measurement_sample_cloth_selection.tsx && node scripts/tsxWithViteProductionFirebase.mjs test_measurement_invalid_draft_hydration.tsx",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
