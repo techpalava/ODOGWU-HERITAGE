@@ -158,6 +158,18 @@ const parsePayPalAmountCents = (value: unknown): number | null => {
   return Number.isSafeInteger(cents) ? cents : null;
 };
 
+/**
+ * PayPal-Request-Id for create-order. PayPal replays the first order for a
+ * repeated request id, so the key carries the stored amount and currency: a
+ * changed stored total starts a fresh PayPal order, the same total reuses it.
+ * custom_id and invoice_id stay the order id and payment reference, which
+ * capture checks before and after capturing.
+ */
+export const getFutureOrderV2PayPalRequestId = (input: {
+  paymentReference: string;
+  amountCents: number;
+}): string => `${input.paymentReference}-eur-${input.amountCents}`;
+
 export const createFutureOrderV2PayPalSandboxOrder = async (
   input: {
     amountCents: number;
@@ -173,7 +185,7 @@ export const createFutureOrderV2PayPalSandboxOrder = async (
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      "PayPal-Request-Id": input.paymentReference,
+      "PayPal-Request-Id": getFutureOrderV2PayPalRequestId(input),
     },
     body: JSON.stringify({
       intent: "CAPTURE",
