@@ -525,7 +525,7 @@ assert.match(batchManagementSource, /getHomepageJoinBatchLabel\(homepageState\.j
 assert.match(joinMarkup, /data-join-batch-state="open"/);
 assert.match(joinMarkup, /Join the currently open community batch before ordering closes on /);
 const openDescription = getHomepageJoinBatchDescription(
-  makeBatch({ endDate: "2026-12-15" }),
+  makeBatch({ startDate: "2026-10-01", endDate: "2026-12-15" }),
   new Date("2026-10-18T12:00:00Z"),
 );
 assert.deepEqual(openDescription, {
@@ -534,7 +534,7 @@ assert.deepEqual(openDescription, {
 });
 assert.equal(
   getHomepageJoinBatchDescription(
-    makeBatch({ endDate: "" }),
+    makeBatch({ startDate: "2026-10-01", endDate: "" }),
     new Date("2026-10-18T12:00:00Z"),
   ).text,
   "Join the currently open community batch before its ordering deadline.",
