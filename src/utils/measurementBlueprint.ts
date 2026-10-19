@@ -799,6 +799,42 @@ const resolveCriticalFieldApplicability = ({
 const isCompleteSetField = (field: MeasurementProfileField): boolean =>
   field.directRoutes.includes("low_risk");
 
+/**
+ * Xavier (2026-10-19): every measurement without an Average Factor is
+ * required, because it cannot be estimated from height. Applies to the
+ * Low / Medium / High body-measurement routes. Critical Risk keeps its
+ * height-only contract and Sample Cloth measures a garment, not height.
+ * One-of sleeve groups keep their existing one-of rule, and square-neck rows
+ * stay optional until a U neck is chosen.
+ */
+const requiresFactorlessMeasurement = ({
+  field,
+  applicability,
+  route,
+}: {
+  field: MeasurementProfileField;
+  applicability: "include" | "exclude" | "unresolved";
+  route: SelectedMeasurementMethod;
+}): boolean => {
+  if (
+    route !== "low_risk" &&
+    route !== "medium_risk" &&
+    route !== "high_risk"
+  ) {
+    return false;
+  }
+  if (field.measurementId === "total_height" || field.averageFactor !== null) {
+    return false;
+  }
+  if (!isCompleteSetField(field)) return false;
+  if (applicability === "include") return true;
+  return (
+    applicability === "unresolved" &&
+    field.conditionalRule === "applicability_unresolved" &&
+    !field.alternativeGroup
+  );
+};
+
 export const isCriticalRiskCompleteSetCalculable = ({
   profile,
   constructionOptionId,
@@ -1021,9 +1057,17 @@ export const planMeasurementRequirements = ({
       // independently required, never both omissible — including Medium/High/
       // Critical planning, where sleeve rows are Low-only markers so they would
       // otherwise silently become calculated_average_factor / optional_manual.
+      // A measurement with no Average Factor cannot be calculated from height,
+      // so on the body-measurement routes it is required instead of optional.
+      // Square-neck rows stay optional until the neck choice proves a U neck.
+      const requiredBecauseFactorless = requiresFactorlessMeasurement({
+        field,
+        applicability,
+        route,
+      });
       const requiredOnRoute = applicability === "unresolved"
-        ? false
-        : provenRequiredOnRoute;
+        ? requiredBecauseFactorless
+        : provenRequiredOnRoute || requiredBecauseFactorless;
       const alternativeOneOf = applicability === "unresolved"
         && Boolean(field.alternativeGroup)
         && (provenRequiredOnRoute || isCompleteSetField(field));

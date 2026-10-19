@@ -202,21 +202,27 @@ const dressPlan = planMeasurementRequirements({
 const presentedOptional = projectMeasurementRequirementsForPresentation({
   requirements: dressPlan.requirements,
 }).filter((requirement) => requirement.section === "optional");
-assert.ok(
-  presentedOptional.some((requirement) => requirement.measurementId === "under_bust_circumference"),
+// Factorless Dress body rows are required; only the square-neck rows stay
+// "If applicable" until a U neck is chosen.
+assert.deepEqual(
+  presentedOptional.map((requirement) => requirement.measurementId).sort(),
+  ["square_neck_length", "square_neck_width"],
 );
+for (const measurementId of [
+  "under_bust_circumference",
+  "hip_circumference",
+  "shoulder_to_under_bust_length",
+]) {
+  const field = renderer.root.findByProps({ "data-measurement-field": measurementId });
+  assert.equal(
+    field.findAll((node) => typeof node.props?.["data-measurement-badge"] === "string")[0]
+      ?.props["data-measurement-badge"],
+    "Customer measurement",
+    `${measurementId} was filled as a required field`,
+  );
+}
 assert.equal(
-  renderer.root.findByProps({ "data-measurement-field": "under_bust_circumference" })
-    .findByProps({ "data-measurement-badge": "If applicable" }).props["data-measurement-badge"],
-  "If applicable",
-);
-assert.equal(
-  renderer.root.findByProps({ "data-measurement-field": "hip_circumference" })
-    .findByProps({ "data-measurement-badge": "If applicable" }).props["data-measurement-badge"],
-  "If applicable",
-);
-assert.equal(
-  renderer.root.findByProps({ "data-measurement-field": "shoulder_to_under_bust_length" })
+  renderer.root.findByProps({ "data-measurement-field": "square_neck_length" })
     .findByProps({ "data-measurement-badge": "If applicable" }).props["data-measurement-badge"],
   "If applicable",
 );

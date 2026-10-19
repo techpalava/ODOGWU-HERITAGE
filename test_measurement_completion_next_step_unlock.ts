@@ -231,18 +231,23 @@ assert.equal(
   dressLowPlan.diagnostics.some((diagnostic) => diagnostic.code === "applicability_unresolved"),
   false,
 );
-assert.equal(
-  visibleRequired(dressLowPlan).some((requirement) =>
-    [
-      "under_bust_circumference",
-      "hip_circumference",
-      "square_neck_length",
-      "square_neck_width",
-      "shoulder_to_under_bust_length",
-    ].includes(requirement.measurementId),
-  ),
-  false,
-  "Hidden/unproven Dress IF APPLICABLE fields must not be required.",
+// Factorless Dress body rows are required (they cannot be estimated from
+// height). Square-neck rows stay optional until a U neck is chosen.
+assert.deepEqual(
+  visibleRequired(dressLowPlan)
+    .map((requirement) => requirement.measurementId)
+    .filter((measurementId) =>
+      [
+        "under_bust_circumference",
+        "hip_circumference",
+        "square_neck_length",
+        "square_neck_width",
+        "shoulder_to_under_bust_length",
+      ].includes(measurementId),
+    )
+    .sort(),
+  ["hip_circumference", "shoulder_to_under_bust_length", "under_bust_circumference"],
+  "Factorless Dress rows are required; square-neck rows wait for a U neck.",
 );
 const dressLowComplete = fillVisibleRequired(dressLowPlan);
 assert.equal(isFutureMeasurementStageComplete(dressLowComplete), true);
@@ -444,7 +449,14 @@ assert.deepEqual(
   visibleRequired(midLongHighPlan)
     .filter((requirement) => requirement.directInput)
     .map((requirement) => requirement.measurementId),
-  ["total_height", "chest_bust_circumference", "belly_circumference"],
+  [
+    "total_height",
+    "chest_bust_circumference",
+    "belly_circumference",
+    "under_bust_circumference",
+    "hip_circumference",
+    "shoulder_to_under_bust_length",
+  ],
 );
 
 const additionalMidLongConstructions: AdditionalGarmentConstructionStateV1 = {
