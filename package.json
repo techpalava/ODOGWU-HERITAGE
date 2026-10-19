@@ -74,6 +74,7 @@
     "test:design-studio-resume-locus": "node scripts/tsxWithViteProductionFirebase.mjs test_design_studio_resume_locus.ts",
     "test:future-custom-details-stage": "tsx test_design_studio_future_custom_details_stage.ts && tsx test_step5_garment_assign_order.ts",
     "test:future-summary-stage": "tsx test_design_studio_future_summary.ts",
+    "test:summary-measurement-group-jump": "tsx test_summary_measurement_group_edit_jump.tsx",
     "test:future-shipping-tariff": "tsx test_future_shipping_tariff.ts",
     "test:future-shipping-stage": "tsx test_design_studio_future_shipping.ts",
     "test:smoke-fixes": "tsx test_smoke_fixes.tsx",

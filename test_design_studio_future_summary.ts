@@ -2139,7 +2139,7 @@ assert.match(destinationDeliveryMarkup, /data-measurement-pill="true" class="[^"
 // Garment group headings: spaced from the line above and larger than the row labels.
 const measurementSectionHeadings = [
   ...destinationDeliveryMarkup.matchAll(
-    /<div data-summary-measurement-section="true" class="([^"]*)"><h4 class="([^"]*)">([^<]*)<\/h4>/g,
+    /<div data-summary-measurement-section="true" class="([^"]*)"><div class="[^"]*"><h4 class="([^"]*)">([^<]*)<\/h4>/g,
   ),
 ];
 assert.ok(measurementSectionHeadings.length >= 2, "shared and garment measurement sections render");
@@ -2156,6 +2156,32 @@ for (const [, wrapperClass, headingClass] of measurementSectionHeadings) {
   assert.match(headingClass, /\buppercase\b/);
   assert.match(headingClass, /\btext-heritage-gold\b/);
 }
+// Idea 3: every measurement group heading carries its own Edit link to Step 7.
+const sectionEditButtons = [
+  ...destinationDeliveryMarkup.matchAll(
+    /<h4 class="[^"]*">([^<]*)<\/h4><button type="button" aria-label="([^"]*)" data-summary-measurement-section-edit="true"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Edit<\/button>/g,
+  ),
+];
+assert.equal(
+  sectionEditButtons.length,
+  measurementSectionHeadings.length,
+  "one Edit link per measurement group",
+);
+assert.ok(sectionEditButtons.some(([, title, label]) =>
+  title === "Shared body measurements" && label === "Edit shared measurements"));
+assert.ok(sectionEditButtons.some(([, title, label]) =>
+  title === "Standard Shirt" && label === "Edit Standard Shirt measurements"));
+// Idea 2: the solo header shows the method as a badge; a blank sole wearer is still unnamed.
+const soleHeader =
+  destinationDeliveryMarkup.split("data-summary-measurement-sole-header")[1]?.split("</div>")[0] || "";
+assert.match(
+  soleHeader,
+  new RegExp(
+    `<span data-summary-measurement-method-badge="${exactSummary.measurementSummary.route}" class="[^"]*rounded-full[^"]*"><span class="sr-only">Measurement method: </span>${exactSummary.measurementSummary.routeLabel}</span>`,
+  ),
+);
+assert.equal(soleHeader.includes("Person 1"), false);
+assert.equal(soleHeader.includes("<p"), false, "blank sole wearer: badge only, no name line");
 // Item 4: "Check this?" mirrors Step 7's existing range diagnostics (workbook height
 // factors + MANUAL_RANGE_RECHECK_TOLERANCE, or plausibility bounds). Informational only.
 assert.equal(isMeasurementOutsideUsualRange(
@@ -2516,6 +2542,13 @@ const amakaMarkup = renderToStaticMarkup(
   }),
 );
 assert.match(amakaMarkup, /Amaka/);
+// Idea 2 (solo, named): name then the method badge, no "Amaka — Route" text.
+assert.match(
+  amakaMarkup,
+  new RegExp(
+    `data-summary-measurement-sole-header="true" class="[^"]*"><p class="[^"]*">Amaka</p><span data-summary-measurement-method-badge="${amakaGroup?.route}"`,
+  ),
+);
 assert.equal(amakaMarkup.includes(">base:dress<"), false);
 assert.match(amakaMarkup, /Standard Dress/);
 const youSummary = projectFutureDesignStudioSummary({
@@ -2579,6 +2612,11 @@ const blankSoleMarkup = renderToStaticMarkup(
 );
 assert.equal(blankSoleMarkup.includes("Person 1"), false);
 assert.match(blankSoleMarkup, /High Risk/);
+assert.match(
+  blankSoleMarkup,
+  /data-summary-measurement-sole-header="true" class="[^"]*"><span data-summary-measurement-method-badge="high_risk" class="[^"]*border-red-200 bg-red-50 text-red-700[^"]*"><span class="sr-only">Measurement method: <\/span>High Risk<\/span><\/div>/,
+  "blank sole wearer: High Risk badge only",
+);
 const twoWearerSummary = projectFutureDesignStudioSummary({
   ...exactInput,
   wearerRuntimes: [
@@ -2623,16 +2661,63 @@ const renderMeasurementSummaryMarkup = (summary: typeof twoWearerSummary) =>
   );
 const wearerBlocks = [
   ...chiefAdaMarkup.matchAll(
-    /<section data-summary-measurement-wearer="([^"]+)" class="([^"]*)"><h4 data-summary-measurement-person-heading="true" class="([^"]*)">([^<]*)<\/h4><p data-summary-measurement-person-garments="true" class="[^"]*">([^<]*)<\/p>/g,
+    /<section data-summary-measurement-wearer="([^"]+)" class="([^"]*)"><div class="[^"]*"><h4 data-summary-measurement-person-heading="true" class="([^"]*)">([^<]*)<\/h4><span data-summary-measurement-method-badge="([^"]+)" class="([^"]*)"><span class="sr-only">Measurement method: <\/span>([^<]*)<\/span><\/div><p data-summary-measurement-person-garments="true" class="[^"]*">([^<]*)<\/p>/g,
   ),
 ];
 assert.deepEqual(
-  wearerBlocks.map((match) => [match[1], match[4], match[5]]),
+  wearerBlocks.map((match) => [match[1], match[4], match[8]]),
   [
     ["wearer-chief", "Chief", "Standard Shirt"],
     ["wearer-ada", "Ada", "Standard Shirt 2"],
   ],
 );
+// Idea 2: each person heading carries their measurement method as a coloured badge,
+// replacing the old "Method: …" text line (status stays).
+assert.deepEqual(
+  wearerBlocks.map((match) => [match[5], match[7]]),
+  chiefAdaSummary.measurementSummary.wearerGroups!.map((wearer) => [
+    wearer.route,
+    wearer.routeLabel,
+  ]),
+);
+for (const match of wearerBlocks) {
+  assert.match(match[6], /\brounded-full\b/);
+  assert.match(match[6], /\bborder-emerald-200\b|\bborder-amber-200\b|\bborder-red-200\b|\bborder-red-300\b|\bborder-heritage-gold\/30\b/);
+}
+assert.equal(chiefAdaMarkup.includes("Method: "), false);
+assert.match(chiefAdaMarkup, /Status: (complete|incomplete)\./);
+// Idea 3: per-person, per-group Edit links name the person and the group.
+assert.match(chiefAdaMarkup, /aria-label="Edit Chief&#x27;s shared measurements" data-summary-measurement-section-edit="true"/);
+assert.match(chiefAdaMarkup, /aria-label="Edit Ada&#x27;s Standard Shirt measurements" data-summary-measurement-section-edit="true"/);
+{
+  let measurementEdits = 0;
+  let otherEdits = 0;
+  let editRenderer!: ReturnType<typeof create>;
+  act(() => {
+    editRenderer = create(
+      createElement(DormantFutureSummaryStep, {
+        summary: chiefAdaSummary,
+        onBack: () => {},
+        onEditGarments: () => { otherEdits += 1; },
+        onEditFabrics: () => { otherEdits += 1; },
+        onEditDesignStyle: () => { otherEdits += 1; },
+        onEditCustomDetails: () => { otherEdits += 1; },
+        onEditAiTryOn: () => { otherEdits += 1; },
+        onEditMeasurements: () => { measurementEdits += 1; },
+        canContinueToShipping: false,
+        onContinueToShipping: () => {},
+      }),
+    );
+  });
+  const sectionEdits = editRenderer.root.findAll(
+    (node) => node.type === "button" && node.props["data-summary-measurement-section-edit"] === true,
+  );
+  assert.ok(sectionEdits.length >= 4, "two people × shared + garment groups");
+  for (const button of sectionEdits) act(() => { button.props.onClick(); });
+  assert.equal(measurementEdits, sectionEdits.length, "each group Edit opens Step 7 Measurements");
+  assert.equal(otherEdits, 0, "group Edit links never open another stage");
+  act(() => { editRenderer.unmount(); });
+}
 for (const [, , sectionClass, headingClass] of wearerBlocks) {
   assert.match(sectionClass, /\bborder-t-2\b/);
   assert.match(sectionClass, /\bborder-heritage-green\b/);
@@ -2711,7 +2796,7 @@ assert.ok(chiefAdaOwnMarkup.includes(">Standard Shirt 2</h4>"), "Garments card k
 const adaBlock = chiefAdaMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1] || "";
 assert.match(
   adaBlock,
-  /<div data-summary-measurement-section="true" class="[^"]*"><h5 class="text-base font-extrabold uppercase[^"]*">Shared body measurements<\/h5>/,
+  /<div data-summary-measurement-section="true" class="[^"]*"><div class="[^"]*"><h5 class="[^"]*text-base font-extrabold uppercase[^"]*">Shared body measurements<\/h5>/,
   "group headings sit under the person heading",
 );
 assert.ok(adaBlock.includes("data-measurement-pill"));

@@ -11,7 +11,14 @@ export type DesignStudioNavigationTarget =
   | { kind: "additional_garment"; garmentKey: string | null }
   | { kind: "validation_target" }
   | { kind: "fabric_unassigned"; garmentKey: string }
-  | { kind: "design_style_incomplete"; occurrenceToken: string };
+  | { kind: "design_style_incomplete"; occurrenceToken: string }
+  | {
+      kind: "measurement_group";
+      /** Step 7 person to show; null for a sole wearer (keep the current one). */
+      wearerId: string | null;
+      /** "shared" or the garment occurrence key of a per-garment group. */
+      groupKey: string;
+    };
 
 export interface DesignStudioNavigationRequest {
   readonly id: number;
@@ -77,4 +84,22 @@ export const getDesignStyleIncompleteNavigationTarget = (
 ): DesignStudioNavigationTarget => ({
   kind: "design_style_incomplete",
   occurrenceToken,
+});
+
+export const MEASUREMENT_SHARED_GROUP_KEY = "shared";
+
+/**
+ * Summary section Edit: open Step 7 on one person's shared or garment group.
+ * Transient: lives only on the navigation request, never in drafts.
+ */
+export const getMeasurementGroupNavigationTarget = ({
+  wearerId,
+  groupKey,
+}: {
+  wearerId: string | null;
+  groupKey: string;
+}): DesignStudioNavigationTarget => ({
+  kind: "measurement_group",
+  wearerId,
+  groupKey,
 });

@@ -101,6 +101,13 @@ interface DormantFutureMeasurementStepProps {
   activeWearerId?: string | null;
   onSelectWearer?: (wearerId: string) => void;
   /**
+   * Transient Summary section-Edit jump: show this person and garment, then
+   * scroll to and focus that group's heading. Never persisted.
+   */
+  groupFocusRequest?: MeasurementGroupFocusRequest | null;
+  /** Called once per request; found=false means fall back to the top of Step 7. */
+  onGroupFocusHandled?: (requestId: number, found: boolean) => void;
+  /**
    * @deprecated Ignored. Step 7 no longer shows a fit control or a fit
    * conflict; measurement fields follow the Studio garment demographic.
    */
@@ -451,6 +458,21 @@ const MeasurementField = ({
   );
 };
 
+export interface MeasurementGroupFocusRequest {
+  readonly id: number;
+  /** Person to show; null keeps the current (sole) wearer. */
+  readonly wearerId: string | null;
+  /** "shared" or a garment occurrence key. */
+  readonly groupKey: string;
+}
+
+export const MEASUREMENT_GROUP_SHARED_KEY = "shared";
+const MEASUREMENT_GROUP_SECTION_ORDER: readonly MeasurementSectionKind[] = [
+  "required",
+  "calculated",
+  "optional",
+];
+
 const MeasurementSection = ({
   title,
   description,
@@ -461,6 +483,7 @@ const MeasurementSection = ({
   sampleMode,
   occurrenceLabels,
   pendingRequiredLabels = [],
+  registerGroupHeading,
 }: {
   title: string;
   description: string;
@@ -471,6 +494,8 @@ const MeasurementSection = ({
   sampleMode: boolean;
   occurrenceLabels: ReadonlyMap<string, { conciseLabel: string }>;
   pendingRequiredLabels?: readonly string[];
+  /** Registers each group heading so a Summary Edit jump can focus it. */
+  registerGroupHeading?: (key: string, element: HTMLElement | null) => void;
 }) => {
   const sharedRequirements = requirements.filter(
     (requirement) =>
@@ -568,8 +593,19 @@ const MeasurementSection = ({
         </div>
       </div>
       {sharedRequirements.length > 0 && (
-        <div className="mt-5">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
+        <div
+          className="mt-5"
+          data-measurement-group={MEASUREMENT_GROUP_SHARED_KEY}
+          data-measurement-group-section={section}
+        >
+          <h4
+            ref={(element) =>
+              registerGroupHeading?.(`${section}:${MEASUREMENT_GROUP_SHARED_KEY}`, element)
+            }
+            tabIndex={-1}
+            data-measurement-group-heading={MEASUREMENT_GROUP_SHARED_KEY}
+            className="scroll-mt-24 text-xs font-bold uppercase tracking-wider text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          >
             {sampleMode ? "Shared sample measurements" : "Shared Body Measurements"}
           </h4>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
@@ -588,9 +624,19 @@ const MeasurementSection = ({
         );
         const alternativeGroups = collectRequiredAlternativeGroups(garmentRequirements);
         return (
-        <div key={garmentKey} className="mt-5">
+        <div
+          key={garmentKey}
+          className="mt-5"
+          data-measurement-group={garmentKey}
+          data-measurement-group-section={section}
+        >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h4 className="font-serif text-base font-bold text-heritage-green">
+            <h4
+              ref={(element) => registerGroupHeading?.(`${section}:${garmentKey}`, element)}
+              tabIndex={-1}
+              data-measurement-group-heading={garmentKey}
+              className="scroll-mt-24 font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
               {formatGarmentLabel(occurrenceLabels, garmentRequirements[0]?.garmentType, garmentKey)} Measurements
             </h4>
             <span className="rounded-full border border-heritage-gold/25 bg-heritage-cream/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
@@ -662,6 +708,8 @@ export const DormantFutureMeasurementStep = ({
   wearerChips = [],
   activeWearerId = null,
   onSelectWearer,
+  groupFocusRequest = null,
+  onGroupFocusHandled,
   onChange,
   onRouteChange,
   onBack,
@@ -901,6 +949,102 @@ export const DormantFutureMeasurementStep = ({
     state,
     onChange,
   ]);
+  // Summary section-Edit jump. Uses the same person / garment selection a
+  // customer tap would, then scrolls to and focuses that group's heading.
+  // Anything that no longer matches reports found=false (top-of-Step-7 fallback).
+  const groupHeadingsRef = useRef(new Map<string, HTMLElement>());
+  const registerGroupHeading = (key: string, element: HTMLElement | null) => {
+    if (element) groupHeadingsRef.current.set(key, element);
+    else groupHeadingsRef.current.delete(key);
+  };
+  const groupFocusProgressRef = useRef<{
+    id: number;
+    wearerRequested: boolean;
+    garmentRequested: boolean;
+    done: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const request = groupFocusRequest;
+    if (!request) return;
+    let progress = groupFocusProgressRef.current;
+    if (!progress || progress.id !== request.id) {
+      progress = { id: request.id, wearerRequested: false, garmentRequested: false, done: false };
+      groupFocusProgressRef.current = progress;
+    }
+    if (progress.done) return;
+    const finish = (found: boolean) => {
+      progress!.done = true;
+      onGroupFocusHandled?.(request.id, found);
+    };
+    if (request.wearerId && request.wearerId !== activeWearerId) {
+      const knownWearer = wearerChips.some((chip) => chip.wearerId === request.wearerId);
+      if (!knownWearer || !onSelectWearer || progress.wearerRequested) {
+        finish(false);
+        return;
+      }
+      progress.wearerRequested = true;
+      onSelectWearer(request.wearerId);
+      return;
+    }
+    if (request.groupKey !== MEASUREMENT_GROUP_SHARED_KEY) {
+      if (!measurementGarments.some((garment) => garment.garmentKey === request.groupKey)) {
+        finish(false);
+        return;
+      }
+      // Check the stored selection too: right after a person switch the local
+      // pick can still show the previous person's garment for one commit.
+      if (
+        selectedGarmentKey !== request.groupKey ||
+        (state.activeGarmentKey ?? null) !== request.groupKey
+      ) {
+        if (progress.garmentRequested) {
+          finish(false);
+          return;
+        }
+        progress.garmentRequested = true;
+        selectGarmentKey(request.groupKey);
+        return;
+      }
+    }
+    const findHeading = () =>
+      MEASUREMENT_GROUP_SECTION_ORDER
+        .map((section) => groupHeadingsRef.current.get(`${section}:${request.groupKey}`))
+        .find((element): element is HTMLElement => Boolean(element));
+    const heading = findHeading();
+    if (!heading) {
+      finish(false);
+      return;
+    }
+    progress.done = true;
+    const schedule = (callback: () => void) => {
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(callback);
+      } else {
+        callback();
+      }
+    };
+    // A late re-render can swap the heading node; always use the live one.
+    const liveHeading = () =>
+      heading.isConnected === false ? findHeading() : heading;
+    schedule(() => {
+      const target = liveHeading();
+      if (!target) {
+        onGroupFocusHandled?.(request.id, false);
+        return;
+      }
+      target.scrollIntoView?.({ behavior: "auto", block: "start" });
+      // Let the scroll settle before focus, like the stage-top navigation does.
+      schedule(() => {
+        const focusTarget = liveHeading();
+        if (!focusTarget) {
+          onGroupFocusHandled?.(request.id, false);
+          return;
+        }
+        focusTarget.focus?.({ preventScroll: true });
+        onGroupFocusHandled?.(request.id, true);
+      });
+    });
+  });
   const visibleRequirements = selectedGarmentKey
     ? presentationRequirements.filter(
         (requirement) =>
@@ -1661,6 +1805,7 @@ export const DormantFutureMeasurementStep = ({
         state={resolvedState}
         onChange={onChange}
         section="required"
+        registerGroupHeading={registerGroupHeading}
         sampleMode={sampleSelected}
         occurrenceLabels={occurrenceLabels}
       />
@@ -1674,6 +1819,7 @@ export const DormantFutureMeasurementStep = ({
           state={resolvedState}
           onChange={onChange}
           section="calculated"
+        registerGroupHeading={registerGroupHeading}
           sampleMode={false}
           occurrenceLabels={occurrenceLabels}
           pendingRequiredLabels={remainingRequiredLabelsForCalc}
@@ -1688,6 +1834,7 @@ export const DormantFutureMeasurementStep = ({
           state={resolvedState}
           onChange={onChange}
           section="optional"
+        registerGroupHeading={registerGroupHeading}
           sampleMode={sampleSelected}
           occurrenceLabels={occurrenceLabels}
         />
