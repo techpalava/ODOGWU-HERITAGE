@@ -84,13 +84,13 @@ export default function Footer() {
                 referrerPolicy="no-referrer"
               />
               <div className="flex flex-col">
-                <span className="text-sm font-bold tracking-widest text-heritage-gold uppercase font-display">
+                <span className="text-base font-extrabold tracking-widest text-heritage-gold uppercase font-display break-words">
                   {businessSettings?.applicationSettings?.communityName ||
                     "The Odogwu Heritage"}
                 </span>
               </div>
             </div>
-            <p className="text-sm font-medium text-heritage-beige/90 leading-relaxed font-serif italic">
+            <p className="text-base xl:text-lg font-bold text-heritage-beige/90 leading-snug font-serif italic break-words">
               {businessSettings?.applicationSettings?.tagline ||
                 "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
             </p>
