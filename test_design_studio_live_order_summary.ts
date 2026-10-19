@@ -1504,7 +1504,7 @@ const midIncomplete = buildAuthority({
 });
 assert.match(
   section(midIncomplete.view, "measurements").lines[0]?.label || "",
-  /Most Measurements/,
+  /Medium Risk/,
 );
 assert.match(
   section(midIncomplete.view, "measurements").lines[0]?.label || "",
@@ -1524,7 +1524,7 @@ const highShirtTrouserIncomplete = buildAuthority({
 });
 assert.equal(
   section(highShirtTrouserIncomplete.view, "measurements").lines[0]?.label,
-  "Key Measurements — 6 required measurements remaining",
+  "High Risk — 6 required measurements remaining",
 );
 assert.equal(
   highShirtTrouserIncomplete.measurementState.diagnostics.filter(
@@ -1539,7 +1539,7 @@ const highShirtTrouserComplete = buildAuthority({
 });
 assert.equal(
   section(highShirtTrouserComplete.view, "measurements").lines[0]?.label,
-  "Key Measurements — Complete",
+  "High Risk — Complete",
 );
 
 const midComplete = buildAuthority({
@@ -1548,7 +1548,7 @@ const midComplete = buildAuthority({
 });
 assert.equal(
   section(midComplete.view, "measurements").lines[0]?.label,
-  "Most Measurements — Complete",
+  "Medium Risk — Complete",
 );
 
 const pickup = buildAuthority({

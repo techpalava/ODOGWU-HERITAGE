@@ -157,16 +157,20 @@ assert.deepEqual(
 );
 assert.deepEqual(
   optionLabels.map((node) => MEASUREMENT_RISK_ROUTE_LABELS[node.props["data-measurement-risk-option"] as MeasurementRiskRoute]),
-  ["Full Measurements", "Most Measurements", "Key Measurements", "Height Only"],
+  ["Low Risk", "Medium Risk", "High Risk", "Critical Risk"],
 );
 const pageText = collectText(renderer.root);
-assert.match(pageText, /Full Measurements/);
-assert.match(pageText, /Most Measurements/);
-assert.match(pageText, /Key Measurements/);
-assert.match(pageText, /Height Only/);
-assert.match(pageText, /Choose how much you want to measure/);
-// Effort-level copy: no customer-visible "Risk" wording on Step 7.
-assert.equal(/\bRisk\b/.test(pageText), false, "Step 7 must not show Risk wording to customers");
+assert.match(pageText, /Low Risk/);
+assert.match(pageText, /Medium Risk/);
+assert.match(pageText, /High Risk/);
+assert.match(pageText, /Critical Risk/);
+assert.match(pageText, /Measurement by Risk Level/);
+// Risk-level names are restored; the interim effort-level names must not return.
+assert.equal(
+  /Full Measurements|Most Measurements|Key Measurements|Height Only|Choose how much you want to measure/.test(pageText),
+  false,
+  "Step 7 must show the Risk-level names, not the interim effort-level names",
+);
 // Each card has its own one-line description; Medium and High must differ.
 for (const option of optionLabels) {
   const route = option.props["data-measurement-risk-option"] as MeasurementRiskRoute;
