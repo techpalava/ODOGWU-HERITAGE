@@ -4,6 +4,8 @@ import {
   handleFutureOrderV2PayPalCapture,
   handleFutureOrderV2PayPalConfig,
   handleFutureOrderV2PayPalCreateOrder,
+  createFutureOrderV2PayPalSandboxOrder,
+  getFutureOrderV2PayPalRequestId,
   saveVerifiedFutureOrderV2PayPalPayment,
 } from "./src/server/futureOrderV2PayPalPayment";
 import type { FutureOrderV2PaymentRecordStore } from "./src/server/futureOrderV2PaymentRecord";
@@ -413,6 +415,104 @@ const runCreate = async (
     sandboxEnv,
   );
   assert.equal(state.statusCode, 401);
+}
+
+// Non-payable stored orders are refused with 409 before PayPal is called.
+// V2 order docs have no cancelled/voided field (the envelope is immutable and
+// exact-keyed); "not payable" means pricing is not exact (pending/invalid).
+const storeReturning = (raw: unknown) => () => {
+  const base = createMemoryStore().store;
+  return { ...base, async readOrder() { return raw; } };
+};
+const pendingOrder = JSON.parse(JSON.stringify(persisted.value));
+pendingOrder.masterOrder.cartItem.candidate.pricing.status = "pending";
+{
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { createStore: storeReturning(pendingOrder) },
+  );
+  assert.equal(state.statusCode, 409);
+  assert.equal((state.body as { code: string }).code, "ORDER_NOT_PAYABLE");
+  assert.equal(created.length, 0, "No PayPal order for a non-payable order");
+}
+{
+  const { res, state } = response();
+  let paypalTouched = false;
+  await handleFutureOrderV2PayPalCapture(
+    {
+      method: "POST",
+      headers: { authorization: "Bearer valid-token" },
+      body: { orderId: prepared.orderId, paypalOrderId: "5O190127TN364715T" },
+    },
+    res,
+    {
+      ...sandboxEnv,
+      getServices: servicesFor(OWNER_UID),
+      createStore: storeReturning(pendingOrder),
+      async readPayPalOrder() { paypalTouched = true; throw new Error("must not read"); },
+      async capturePayPalOrder() { paypalTouched = true; throw new Error("must not capture"); },
+    },
+  );
+  assert.equal(state.statusCode, 409);
+  assert.equal((state.body as { code: string }).code, "ORDER_NOT_PAYABLE");
+  assert.equal(paypalTouched, false, "Capture refuses a non-payable order before PayPal");
+}
+{
+  // A doc carrying an extra cancellation marker is not a valid V2 order: refused, nothing created.
+  const markedCancelled = { ...JSON.parse(JSON.stringify(persisted.value)), status: "cancelled" };
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { createStore: storeReturning(markedCancelled) },
+  );
+  assert.ok(state.statusCode >= 400 && state.statusCode < 500);
+  assert.equal(created.length, 0);
+}
+
+// PayPal-Request-Id carries the stored amount: same total -> same id (PayPal
+// replays the same order), changed total -> new id (fresh PayPal order).
+{
+  const id30000 = getFutureOrderV2PayPalRequestId({ paymentReference, amountCents: 30000 });
+  assert.equal(id30000, `${paymentReference}-eur-30000`);
+  assert.equal(getFutureOrderV2PayPalRequestId({ paymentReference, amountCents: 30000 }), id30000);
+  assert.notEqual(getFutureOrderV2PayPalRequestId({ paymentReference, amountCents: 31000 }), id30000);
+  assert.ok(id30000.length <= 108, "PayPal-Request-Id stays within PayPal's 108-character limit");
+
+  const realFetch = globalThis.fetch;
+  const sent: { requestId: string; body: any }[] = [];
+  globalThis.fetch = (async (url: unknown, init?: { headers?: Record<string, string>; body?: string }) => {
+    const target = String(url);
+    if (target.endsWith("/v1/oauth2/token")) {
+      return new Response(JSON.stringify({ access_token: "sandbox-token", expires_in: 3600 }), { status: 200 });
+    }
+    if (target.endsWith("/v2/checkout/orders")) {
+      sent.push({ requestId: init?.headers?.["PayPal-Request-Id"] ?? "", body: JSON.parse(init?.body ?? "{}") });
+      return new Response(JSON.stringify({ id: `5O190127TN36471${sent.length}T` }), { status: 201 });
+    }
+    throw new Error(`Unexpected fetch ${target}`);
+  }) as typeof fetch;
+  try {
+    for (const amountCents of [30000, 30000, 31000]) {
+      await createFutureOrderV2PayPalSandboxOrder(
+        { amountCents, orderId: prepared.orderId, paymentReference },
+        sandboxEnv,
+      );
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(sent.map((entry) => entry.requestId), [
+    `${paymentReference}-eur-30000`,
+    `${paymentReference}-eur-30000`,
+    `${paymentReference}-eur-31000`,
+  ]);
+  for (const entry of sent) {
+    const unit = entry.body.purchase_units[0];
+    // Capture's mismatch checks still compare these to the order id / reference.
+    assert.equal(unit.custom_id, prepared.orderId);
+    assert.equal(unit.invoice_id, paymentReference);
+    assert.equal(unit.amount.currency_code, "EUR");
+  }
+  assert.deepEqual(sent.map((entry) => entry.body.purchase_units[0].amount.value), ["300.00", "300.00", "310.00"]);
 }
 
 // Client sends only ids plus a Firebase token; never a price or masterOrder.

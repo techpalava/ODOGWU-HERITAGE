@@ -71,7 +71,10 @@ import {
   type AdditionalGarmentCustomDetailsRequest,
 } from "./DormantFutureCustomDetailsStep";
 import { DormantFutureAiTryOnStep } from "./DormantFutureAiTryOnStep";
-import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
+import {
+  DormantFutureMeasurementStep,
+  type MeasurementGroupFocusRequest,
+} from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
@@ -82,6 +85,7 @@ import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
   getDesignStyleIncompleteNavigationTarget,
+  getMeasurementGroupNavigationTarget,
   getFabricUnassignedNavigationTarget,
   getMainStageNavigationTarget,
   getOrderSummaryNavigationTarget,
@@ -977,6 +981,9 @@ export default function DesignStudioView({
     useState<{ id: number; garmentKey: string } | null>(null);
   const [designStyleIncompleteFocusRequest, setDesignStyleIncompleteFocusRequest] =
     useState<{ id: number; occurrenceToken: string } | null>(null);
+  /** Transient Summary section-Edit jump into Step 7 (never persisted). */
+  const [measurementGroupFocusRequest, setMeasurementGroupFocusRequest] =
+    useState<MeasurementGroupFocusRequest | null>(null);
   /**
    * Only explicit customer navigation is routed through this helper. Hydration,
    * safety correction, and modal/sub-flow state updates continue to set the
@@ -1056,6 +1063,14 @@ export default function DesignStudioView({
           effectiveTarget =
             getDesignStyleIncompleteNavigationTarget(focusOccurrenceToken);
         }
+      }
+
+      // A Step 7 group jump only makes sense if we actually land on Step 7.
+      if (
+        effectiveTarget.kind === "measurement_group" &&
+        effectiveStage !== "measurement"
+      ) {
+        effectiveTarget = getMainStageNavigationTarget();
       }
 
       futureStageNavigationRequestIdRef.current += 1;
@@ -4077,6 +4092,9 @@ export default function DesignStudioView({
       if (previousFutureStageIdRef.current === "design_style") {
         setDesignStyleIncompleteFocusRequest(null);
       }
+      if (previousFutureStageIdRef.current === "measurement") {
+        setMeasurementGroupFocusRequest(null);
+      }
       futureGarmentRemovalStageRetentionLeaseRef.current = null;
       futureGarmentRemovalConfirmationGenerationRef.current += 1;
       futureGarmentRemovalConfirmingRef.current = false;
@@ -4142,6 +4160,23 @@ export default function DesignStudioView({
       setDesignStyleIncompleteFocusRequest({
         id: request.id,
         occurrenceToken: request.target.occurrenceToken,
+      });
+      setFutureStageNavigationRequest((current) =>
+        current?.id === request.id ? null : current,
+      );
+      return;
+    }
+
+    // Summary section-Edit jumps are fulfilled by Step 7 once the right person
+    // and garment are showing; it falls back to the stage top if they are gone.
+    if (
+      request.target.kind === "measurement_group" &&
+      request.stage === "measurement"
+    ) {
+      setMeasurementGroupFocusRequest({
+        id: request.id,
+        wearerId: request.target.wearerId,
+        groupKey: request.target.groupKey,
       });
       setFutureStageNavigationRequest((current) =>
         current?.id === request.id ? null : current,
@@ -10822,6 +10857,22 @@ export default function DesignStudioView({
           wearerChips={measurementWearerChips}
           activeWearerId={activeWearer?.wearerId || null}
           onSelectWearer={handleSelectMeasurementWearer}
+          groupFocusRequest={measurementGroupFocusRequest}
+          onGroupFocusHandled={(requestId, found) => {
+            setMeasurementGroupFocusRequest((current) =>
+              current?.id === requestId ? null : current,
+            );
+            if (found) return;
+            // Silent fallback: the ordinary top-of-Step-7 landing.
+            futureStageNavigationRequestIdRef.current += 1;
+            setFutureStageNavigationRequest(
+              createDesignStudioNavigationRequest({
+                id: futureStageNavigationRequestIdRef.current,
+                stage: "measurement",
+                target: getMainStageNavigationTarget(),
+              }),
+            );
+          }}
           nextIncompleteWearer={measurementNextIncompleteWearer}
           onGoToWearer={handleSelectMeasurementWearer}
           hydrationInvalid={futureMeasurementHydrationInvalid}
@@ -10916,6 +10967,13 @@ export default function DesignStudioView({
           onEditMeasurements={() => {
             beginSummaryEditReturn({ focusStageId: "measurement" });
             navigateToFutureStage("measurement");
+          }}
+          onEditMeasurementGroup={(target) => {
+            beginSummaryEditReturn({ focusStageId: "measurement" });
+            navigateToFutureStage(
+              "measurement",
+              getMeasurementGroupNavigationTarget(target),
+            );
           }}
           onEditGarment={handleSummaryEditGarment}
           onChangeGarmentFabric={handleSummaryChangeGarmentFabric}
