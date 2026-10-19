@@ -39,6 +39,13 @@ import type { CustomerOrderContextPresentation } from "../utils/customerOrderCon
 import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
 import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 
+export interface SummaryMeasurementGroupEditTarget {
+  /** Person to open in Step 7; null for a sole wearer. */
+  wearerId: string | null;
+  /** "shared" or the garment occurrence key. */
+  groupKey: string;
+}
+
 interface DormantFutureSummaryStepProps {
   summary: FutureDesignStudioSummary;
   orderContext?: CustomerOrderContextPresentation;
@@ -51,6 +58,11 @@ interface DormantFutureSummaryStepProps {
   onEditCustomDetails: () => void;
   onEditAiTryOn: () => void;
   onEditMeasurements: () => void;
+  /**
+   * Section-level Edit: open Step 7 on this person's shared or garment group.
+   * When omitted, section Edit links fall back to onEditMeasurements.
+   */
+  onEditMeasurementGroup?: (target: SummaryMeasurementGroupEditTarget) => void;
   /** Per-garment Edit — focuses that garmentKey in Fabric (return lease). */
   onEditGarment?: (garmentKey: string) => void;
   onChangeGarmentFabric?: (garmentKey: string) => void;
@@ -284,7 +296,7 @@ const SummaryMeasurementGroup = ({
   headingLevel?: "h4" | "h5";
   /** Accessible name of this group's Edit link, e.g. "Edit Standard Shirt measurements". */
   editLabel: string;
-  /** Opens Step 7 Measurements (the same destination as the card's Edit Measurements). */
+  /** Opens Step 7 Measurements on this group (falls back to the top of Step 7). */
   onEdit: () => void;
 }) => {
   const Heading = headingLevel;
@@ -342,6 +354,7 @@ export const DormantFutureSummaryStep = ({
   onEditCustomDetails,
   onEditAiTryOn,
   onEditMeasurements,
+  onEditMeasurementGroup,
   onEditGarment,
   onChangeGarmentFabric,
   onRemoveGarmentFabric,
@@ -359,6 +372,10 @@ export const DormantFutureSummaryStep = ({
     string | null
   >(null);
   const isReady = summary.status === "ready";
+  const editMeasurementGroup = (wearerId: string | null, groupKey: string) => () => {
+    if (onEditMeasurementGroup) onEditMeasurementGroup({ wearerId, groupKey });
+    else onEditMeasurements();
+  };
   const firstBlocker = summary.blockers[0] || null;
   const blockerEditAction = firstBlocker
     ? {
@@ -1029,7 +1046,7 @@ export const DormantFutureSummaryStep = ({
                         values={wearer.shared}
                         headingLevel="h5"
                         editLabel={`Edit ${wearer.displayName}'s shared measurements`}
-                        onEdit={onEditMeasurements}
+                        onEdit={editMeasurementGroup(wearer.wearerId, "shared")}
                       />
                     )}
                     {wearer.byGarment.map((garment) => (
@@ -1039,7 +1056,7 @@ export const DormantFutureSummaryStep = ({
                         values={garment.values}
                         headingLevel="h5"
                         editLabel={`Edit ${wearer.displayName}'s ${garment.garmentLabel} measurements`}
-                        onEdit={onEditMeasurements}
+                        onEdit={editMeasurementGroup(wearer.wearerId, garment.garmentKey)}
                       />
                     ))}
                   </section>
@@ -1102,7 +1119,7 @@ export const DormantFutureSummaryStep = ({
               }
               values={summary.measurementSummary.shared}
               editLabel="Edit shared measurements"
-              onEdit={onEditMeasurements}
+              onEdit={editMeasurementGroup(null, "shared")}
             />
           )}
           {summary.measurementSummary.byGarment.map((garment) => (
@@ -1111,7 +1128,7 @@ export const DormantFutureSummaryStep = ({
               title={garment.garmentLabel}
               values={garment.values}
               editLabel={`Edit ${garment.garmentLabel} measurements`}
-              onEdit={onEditMeasurements}
+              onEdit={editMeasurementGroup(null, garment.garmentKey)}
             />
           ))}
         </Section>
