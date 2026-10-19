@@ -68,7 +68,7 @@ export function Header() {
               <span className="hidden sm:block text-xs sm:text-sm md:text-base font-bold tracking-[0.1em] sm:tracking-[0.2em] text-heritage-gold uppercase font-display truncate">
                 THE ODOGWU HERITAGE
               </span>
-              <span className="hidden sm:block text-[7px] sm:text-[8px] tracking-wide text-heritage-beige uppercase font-sans font-medium truncate">
+              <span className="hidden sm:block mt-0.5 text-[10px] md:text-[11px] leading-tight tracking-wide text-heritage-beige uppercase font-sans font-extrabold break-words">
                 {businessSettings.applicationSettings.tagline ||
                   "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
               </span>
@@ -76,7 +76,7 @@ export function Header() {
                 <span className="block text-[11px] font-extrabold tracking-[0.05em] text-heritage-gold font-display break-words">
                   THE ODOGWU HERITAGE
                 </span>
-                <span className="block text-[8px] tracking-[0.05em] text-heritage-beige font-sans font-semibold mt-0.5 break-words">
+                <span className="block text-[10px] tracking-[0.05em] text-heritage-beige font-sans font-extrabold mt-0.5 break-words">
                   {businessSettings.applicationSettings.tagline ||
                     "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
                 </span>
