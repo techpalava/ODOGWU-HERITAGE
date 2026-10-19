@@ -45,6 +45,7 @@ import {
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
   isValidHeightForEstimates,
+  MEASUREMENT_RISK_ROUTE_DESCRIPTIONS,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
   MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION,
@@ -133,17 +134,17 @@ const ROUTES: ReadonlyArray<{
   {
     id: "low_risk",
     title: MEASUREMENT_RISK_ROUTE_LABELS.low_risk,
-    description: "Enter the complete measurements required for your selected garments.",
+    description: MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.low_risk,
   },
   {
     id: "medium_risk",
     title: MEASUREMENT_RISK_ROUTE_LABELS.medium_risk,
-    description: "Enter the required measurements. Optional values are calculated from height where available.",
+    description: MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.medium_risk,
   },
   {
     id: "high_risk",
     title: MEASUREMENT_RISK_ROUTE_LABELS.high_risk,
-    description: "Enter the required measurements. Optional values are calculated from height where available.",
+    description: MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.high_risk,
   },
   {
     id: "critical_risk",
@@ -1293,7 +1294,7 @@ export const DormantFutureMeasurementStep = ({
             data-measurement-option-subtitle="risk"
             className="mt-1 text-sm leading-relaxed text-heritage-ink/65"
           >
-            Measurement by Risk Level
+            Choose how much you want to measure
           </p>
         </header>
         <fieldset data-measurement-risk-selector="true" className="mt-3">
@@ -1359,7 +1360,7 @@ export const DormantFutureMeasurementStep = ({
                     <span className={`mt-1 block break-words leading-relaxed ${unavailable ? "text-sm text-heritage-ink" : "text-xs text-heritage-ink/65"}`}>
                       {unavailable && criticalRiskBlockingLabels.length > 0 ? (
                         <>
-                          Critical Risk is unavailable because{" "}
+                          Height Only is unavailable because{" "}
                           <strong className="font-semibold text-heritage-green">
                             {criticalRiskBlockingLabels.length === 1
                               ? criticalRiskBlockingLabels[0]

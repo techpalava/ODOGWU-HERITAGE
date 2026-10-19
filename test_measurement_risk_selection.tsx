@@ -17,6 +17,7 @@ import {
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
   isFutureSummaryUnlockedByMeasurements,
+  MEASUREMENT_RISK_ROUTE_DESCRIPTIONS,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
   normalizeFutureMeasurementState,
@@ -156,13 +157,33 @@ assert.deepEqual(
 );
 assert.deepEqual(
   optionLabels.map((node) => MEASUREMENT_RISK_ROUTE_LABELS[node.props["data-measurement-risk-option"] as MeasurementRiskRoute]),
-  ["Low Risk", "Medium Risk", "High Risk", "Critical Risk"],
+  ["Full Measurements", "Most Measurements", "Key Measurements", "Height Only"],
 );
 const pageText = collectText(renderer.root);
-assert.match(pageText, /Low Risk/);
-assert.match(pageText, /Medium Risk/);
-assert.match(pageText, /High Risk/);
-assert.match(pageText, /Critical Risk/);
+assert.match(pageText, /Full Measurements/);
+assert.match(pageText, /Most Measurements/);
+assert.match(pageText, /Key Measurements/);
+assert.match(pageText, /Height Only/);
+assert.match(pageText, /Choose how much you want to measure/);
+// Effort-level copy: no customer-visible "Risk" wording on Step 7.
+assert.equal(/\bRisk\b/.test(pageText), false, "Step 7 must not show Risk wording to customers");
+// Each card has its own one-line description; Medium and High must differ.
+for (const option of optionLabels) {
+  const route = option.props["data-measurement-risk-option"] as MeasurementRiskRoute;
+  if (option.props["data-measurement-risk-disabled"] === "true") continue;
+  assert.ok(
+    collectText(option).includes(MEASUREMENT_RISK_ROUTE_DESCRIPTIONS[route]),
+    route + " card shows its own description",
+  );
+}
+assert.notEqual(
+  MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.medium_risk,
+  MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.high_risk,
+);
+assert.equal(new Set(Object.values(MEASUREMENT_RISK_ROUTE_DESCRIPTIONS)).size, 4);
+assert.match(MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.low_risk, /Nothing is calculated from height/);
+assert.match(MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.medium_risk, /A few are calculated from your Total Height/);
+assert.match(MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.high_risk, /Most are calculated from your Total Height/);
 assert.equal(radios.filter((radio) => radio.props.checked).length, 0);
 for (const option of optionLabels) {
   const disabled = option.props["data-measurement-risk-disabled"] === "true";
