@@ -1288,7 +1288,7 @@ export const DormantFutureMeasurementStep = ({
             data-measurement-option-subtitle="risk"
             className="mt-1 text-sm leading-relaxed text-heritage-ink/65"
           >
-            Choose how much you want to measure
+            Measurement by Risk Level
           </p>
         </header>
         <fieldset data-measurement-risk-selector="true" className="mt-3">
@@ -1354,7 +1354,7 @@ export const DormantFutureMeasurementStep = ({
                     <span className={`mt-1 block break-words leading-relaxed ${unavailable ? "text-sm text-heritage-ink" : "text-xs text-heritage-ink/65"}`}>
                       {unavailable && criticalRiskBlockingLabels.length > 0 ? (
                         <>
-                          Height Only is unavailable because{" "}
+                          Critical Risk (Height Only) is unavailable because{" "}
                           <strong className="font-semibold text-heritage-green">
                             {criticalRiskBlockingLabels.length === 1
                               ? criticalRiskBlockingLabels[0]

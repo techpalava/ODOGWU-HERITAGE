@@ -264,15 +264,15 @@ export const MEASUREMENT_METHOD_ORDER = [
 ] as const satisfies ReadonlyArray<MeasurementMethodId>;
 
 /**
- * Customer-facing names for the four body-measurement routes. They describe how
- * much the customer measures, not a level of danger. The persisted route IDs
+ * Customer-facing names for the four body-measurement routes (Measurement by
+ * Risk Level). The persisted route IDs
  * (`low_risk` … `critical_risk`) are unchanged.
  */
 export const MEASUREMENT_RISK_ROUTE_LABELS: Record<MeasurementRiskRoute, string> = {
-  low_risk: "Full Measurements",
-  medium_risk: "Most Measurements",
-  high_risk: "Key Measurements",
-  critical_risk: "Height Only",
+  low_risk: "Low Risk (Full Measurements)",
+  medium_risk: "Medium Risk (Most Measurements)",
+  high_risk: "High Risk (Key Measurements)",
+  critical_risk: "Critical Risk (Height Only)",
 };
 
 /** One-line customer descriptions for each route card on Step 7. */
@@ -306,7 +306,7 @@ export const MEASUREMENT_METHOD_STAFF_LABELS: Record<MeasurementMethodId, string
 
 export const CRITICAL_RISK_AVAILABLE_COPY = MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.critical_risk;
 export const CRITICAL_RISK_UNAVAILABLE_COPY =
-  "Height Only is unavailable for this garment selection because one or more required measurements cannot yet be calculated from height.";
+  "Critical Risk (Height Only) is unavailable for this garment selection because one or more required measurements cannot yet be calculated from height.";
 
 export const criticalRiskUnavailableCopy = (
   garmentLabels: readonly string[],
@@ -319,7 +319,7 @@ export const criticalRiskUnavailableCopy = (
         ? `${garmentLabels[0]} and ${garmentLabels[1]}`
         : `${garmentLabels.slice(0, -1).join(", ")}, and ${garmentLabels[garmentLabels.length - 1]}`;
   const verb = garmentLabels.length === 1 ? "needs" : "need";
-  return `Height Only is unavailable because ${list} still ${verb} measurements that cannot be calculated from height.`;
+  return `Critical Risk (Height Only) is unavailable because ${list} still ${verb} measurements that cannot be calculated from height.`;
 };
 
 export const MEASUREMENT_RISK_SELECTION_NOTICE =
