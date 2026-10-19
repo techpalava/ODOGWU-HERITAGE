@@ -157,6 +157,8 @@ const CALCULATED_FROM_HEIGHT_LABEL = "Calculated from height";
 const CALCULATED_FROM_HEIGHT_DESCRIPTION =
   "These values fill in from Total Height after every required measurement for this garment is entered — not from height alone.";
 const IF_APPLICABLE_LABEL = "If applicable";
+const FACTORLESS_REQUIRED_MESSAGE =
+  "Required: this measurement can't be calculated from height, so please measure it.";
 const RANGE_RECHECK_MESSAGE = "Please recheck this measurement.";
 const DRESS_CONDITIONAL_MEASUREMENT_ID_SET = new Set<string>(
   DRESS_CONDITIONAL_MEASUREMENT_IDS,
@@ -299,6 +301,12 @@ const MeasurementField = ({
   const calculated = requirement.inputSource === "calculated_average_factor";
   const optionalManual = requirement.inputSource === "optional_manual";
   const oneOfAlternative = Boolean(getRequiredAlternativeGroupId(requirement));
+  const factorlessRequired =
+    requirement.directInput &&
+    requirement.averageFactor === null &&
+    requirement.measurementId !== "total_height" &&
+    !requirement.sampleGeometry &&
+    (state.route === "medium_risk" || state.route === "high_risk");
   const ifApplicable = DRESS_CONDITIONAL_MEASUREMENT_ID_SET.has(
     requirement.measurementId,
   );
@@ -367,6 +375,14 @@ const MeasurementField = ({
       {fieldInstruction && (
         <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/60">
           {fieldInstruction}
+        </span>
+      )}
+      {factorlessRequired && (
+        <span
+          data-measurement-factorless-required="true"
+          className="mt-1 block break-words text-xs font-semibold leading-relaxed text-heritage-gold"
+        >
+          {FACTORLESS_REQUIRED_MESSAGE}
         </span>
       )}
       {calculated ? (

@@ -11,6 +11,7 @@ import type {
 import {
   createEmptyFutureMeasurementState,
   getResolvedMeasurementValue,
+  isFutureSummaryUnlockedByMeasurements,
   planMeasurementRequirements,
   projectActiveFutureMeasurementState,
   projectMeasurementRequirementsForPresentation,
@@ -151,7 +152,7 @@ assert.deepEqual(
     inputSource: dressHip.inputSource,
     averageFactor: dressHip.averageFactor,
   },
-  { profileId: "E", inputSource: "optional_manual", averageFactor: null },
+  { profileId: "E", inputSource: "route_marker", averageFactor: null },
 );
 assert.deepEqual(
   {
@@ -186,8 +187,29 @@ assert.equal(
   undefined,
   "Dress Profile E Hip has no workbook factor.",
 );
+// Dress Hip has no factor, so it is required and typed. That one shared Hip
+// also serves the Trouser, so there is no Trouser Hip estimate.
+assert.equal(
+  projectedDressFirst.derived.byGarmentKey["base:trouser"]?.hip_circumference,
+  undefined,
+);
+assert.equal(getResolvedMeasurementValue(dressFirstState, trouserHip)?.valueCm, 90);
+assert.equal(
+  getResolvedMeasurementValue(dressFirstState, trouserHip)?.provenance,
+  "customer_entered",
+);
+// Without a typed Hip, the Trouser Hip estimate still fills from height.
+const trouserOnlyHipState = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: dressFirstState,
+    requirement: dressHip,
+    displayValue: null,
+  }),
+  plan: dressFirstPlan,
+});
+assert.equal(isFutureSummaryUnlockedByMeasurements(trouserOnlyHipState), false);
 const calculatedTrouserHip =
-  projectedDressFirst.derived.byGarmentKey["base:trouser"]?.hip_circumference;
+  trouserOnlyHipState.derived.byGarmentKey["base:trouser"]?.hip_circumference;
 assert.ok(calculatedTrouserHip);
 assert.equal(calculatedTrouserHip.provenance, "calculated_average_factor");
 assert.deepEqual(calculatedTrouserHip.calculation, {

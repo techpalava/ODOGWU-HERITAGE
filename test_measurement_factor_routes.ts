@@ -162,11 +162,11 @@ assert.equal(
   dressLowPlan.requirements.some(
     (requirement) =>
       requirement.measurementId === "under_bust_circumference" &&
-      !requirement.directInput &&
-      requirement.section === "optional",
+      requirement.directInput &&
+      requirement.section === "required",
   ),
   true,
-  "Unproven Dress IF APPLICABLE rows remain optional and enterable.",
+  "Factorless Dress rows are required because height cannot estimate them.",
 );
 const dressLowFilled = fillRequired("E", "low_risk");
 assert.equal(isFutureMeasurementStageComplete(dressLowFilled.state), true);
@@ -279,10 +279,12 @@ const sleevelessDressHigh = (() => {
     plan.requirements.some(
       (requirement) =>
         requirement.measurementId === "sleeve_length_sleeveless" &&
-        requirement.inputSource === "optional_manual",
+        requirement.inputSource === "route_marker" &&
+        requirement.directInput &&
+        requirement.section === "required",
     ),
     true,
-    "Sleeveless finish stays optional (no average factor) when construction selects it",
+    "Sleeveless finish is required (no average factor) when construction selects it",
   );
   return plan;
 })();
@@ -332,7 +334,11 @@ for (const profileId of ["A", "E", "I", "L"] as const) {
     assert.equal(derived.calculation?.garmentKey, chest.garmentKey);
   }
   assert.equal(isFutureSummaryUnlockedByMeasurements(before.state), true);
-  assert.ok(!requiredIds.includes("under_bust_circumference"));
+  // Factorless Dress rows (E) are required on Medium Risk; others have none.
+  assert.equal(
+    requiredIds.includes("under_bust_circumference"),
+    profileId === "E",
+  );
 }
 
 const pendingMid = reconcileFutureMeasurementState({
@@ -372,10 +378,15 @@ for (const profileId of Object.keys(PROFILE_FIXTURES) as MeasurementProfileId[])
         .map((requirement) => requirement.measurementId),
     ),
   ].sort();
+  // Source-matrix YES, PROVIDE set, plus the factorless Dress body rows that
+  // are required because height cannot estimate them.
+  const factorlessDressRows = ["E", "F", "G", "H"].includes(profileId)
+    ? ["hip_circumference", "shoulder_to_under_bust_length", "under_bust_circumference"]
+    : [];
   assert.deepEqual(
     planned,
-    [...getRequiredMeasurementIdsForRoute(profileId, "high_risk")].sort(),
-    `${profileId} High planner manuals must match the source-matrix YES, PROVIDE set`,
+    [...getRequiredMeasurementIdsForRoute(profileId, "high_risk"), ...factorlessDressRows].sort(),
+    `${profileId} High planner manuals must match the source-matrix YES, PROVIDE set plus factorless rows`,
   );
   for (const requirement of plan.requirements.filter((item) => item.directInput)) {
     assert.equal(requirement.inputSource, "route_marker");
@@ -388,8 +399,8 @@ const dressHip = dressMid.plan.requirements.find(
   (requirement) => requirement.measurementId === "hip_circumference",
 );
 assert.ok(dressHip);
-assert.equal(dressHip.directInput, false);
-assert.equal(dressHip.inputSource, "optional_manual");
+assert.equal(dressHip.directInput, true);
+assert.equal(dressHip.inputSource, "route_marker");
 assert.equal(dressHip.averageFactor, null);
 assert.equal(dressMid.state.derived.byGarmentKey["dress:1"]?.hip_circumference, undefined);
 assert.equal(getMeasurementProfileField("I", "hip_circumference")?.averageFactor, 0.584591437335114);
