@@ -325,6 +325,44 @@ export const criticalRiskUnavailableCopy = (
 export const MEASUREMENT_RISK_SELECTION_NOTICE =
   "Choose one measurement option and complete only the measurements shown for your selected method.";
 
+const formatGarmentList = (labels: readonly string[]): string =>
+  labels.length === 1
+    ? labels[0]!
+    : labels.length === 2
+      ? `${labels[0]} and ${labels[1]}`
+      : `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+
+const AUDIENCE_LABELS: Record<CustomDetailDemographic, string> = {
+  male: "Male",
+  female: "Female",
+  unisex: "Unisex",
+};
+
+/**
+ * Step 7 warning when the Step 1 audience could not pick these garments'
+ * measurement profile, so the standard (unisex) sizing is used instead.
+ * Measurement is never blocked by it.
+ */
+export const measurementAudienceNoticeCopy = (
+  notice: MeasurementAudienceNotice,
+  garmentLabels: readonly string[],
+): string => {
+  const list = formatGarmentList(garmentLabels);
+  if (notice.kind === "no_audience") {
+    return `No audience chosen for ${list}, so we're using our standard sizing. Please check your choice in Step 1.`;
+  }
+  const one = garmentLabels.length === 1;
+  const audience = AUDIENCE_LABELS[notice.audience];
+  if (notice.audience === "male") {
+    return one
+      ? `${list} is usually a women's garment, but this order is set to ${audience}. We'll still measure it using our standard sizing. Please check your choice in Step 1.`
+      : `${list} are usually women's garments, but this order is set to ${audience}. We'll still measure them using our standard sizing. Please check your choice in Step 1.`;
+  }
+  return one
+    ? `${list} is not usually made for ${audience}, but this order is set to ${audience}. We'll still measure it using our standard sizing. Please check your choice in Step 1.`
+    : `${list} are not usually made for ${audience}, but this order is set to ${audience}. We'll still measure them using our standard sizing. Please check your choice in Step 1.`;
+};
+
 const PATH_INPUT_BLOCKING_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
   "required_measurement_missing",
   "invalid_measurement_value",
@@ -642,6 +680,61 @@ export const isGarmentMeasurementEligibleForDemographic = ({
   );
 };
 
+export type MeasurementAudienceNotice =
+  | { readonly kind: "no_audience"; readonly garmentKeys: readonly string[] }
+  | {
+      readonly kind: "audience_mismatch";
+      readonly audience: CustomDetailDemographic;
+      readonly garmentKeys: readonly string[];
+    };
+
+/**
+ * Which garments are measured with the standard (unisex) blueprint because the
+ * Step 1 audience is missing or cannot pick their profile (for example a dress
+ * on a Male order). Garments with no profile at all (Agbada / Other) or an
+ * unresolved construction are not included: their behaviour is unchanged.
+ */
+export const resolveMeasurementAudienceNotice = ({
+  garments,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+}: {
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): MeasurementAudienceNotice | null => {
+  const measurable = garments.filter(
+    (garment) =>
+      resolveMeasurementProfile({
+        garment,
+        garmentTypeSelection: { ...garmentTypeSelection, demographic: "unisex" },
+        additionalGarmentConstructions,
+      }).status === "resolved",
+  );
+  const audience = garmentTypeSelection.demographic;
+  if (!audience) {
+    return measurable.length > 0
+      ? { kind: "no_audience", garmentKeys: measurable.map((garment) => garment.garmentKey) }
+      : null;
+  }
+  const mismatched = measurable.filter(
+    (garment) =>
+      !isGarmentMeasurementEligibleForDemographic({
+        garment,
+        garmentTypeSelection,
+        demographic: audience,
+        additionalGarmentConstructions,
+      }),
+  );
+  return mismatched.length > 0
+    ? {
+        kind: "audience_mismatch",
+        audience,
+        garmentKeys: mismatched.map((garment) => garment.garmentKey),
+      }
+    : null;
+};
+
 export type MeasurementInputSource =
   | "route_marker"
   | "calculated_average_factor"
@@ -686,6 +779,12 @@ export interface MeasurementRequirementPlan {
   canCalculate: boolean;
   criticalRiskSupported: boolean;
   criticalRiskBlockingGarmentKeys: readonly string[];
+  /**
+   * Set by the per-person planner (planWearerOrderMeasurements): garments
+   * measured with the standard sizing because of the Step 1 audience.
+   * Presentation only; not part of the input fingerprint.
+   */
+  audienceNotice?: MeasurementAudienceNotice | null;
 }
 
 const presentationBand = (requirement: PlannedMeasurementRequirement): number => {
@@ -938,7 +1037,9 @@ export const isCriticalRiskCompleteSetCalculable = ({
       hasHeight = true;
       continue;
     }
-    if (field.averageFactor === null) return false;
+    // Xavier (2026-10-20): a measurement with no Average Factor no longer
+    // blocks Height Only. It is asked as a required manual input instead
+    // (see the critical_risk branch of planMeasurementRequirements).
   }
   return hasHeight;
 };
@@ -1084,9 +1185,7 @@ export const planMeasurementRequirements = ({
       if (applicability === "exclude") return;
       if (route === "critical_risk") {
         if (!isCompleteSetField(field)) return;
-        if (applicability === "unresolved" || (
-          field.measurementId !== "total_height" && field.averageFactor === null
-        )) {
+        if (applicability === "unresolved") {
           diagnostics.push({
             code: "calculation_configuration_pending",
             garmentKey: resolution.garmentKey,
@@ -1100,6 +1199,9 @@ export const planMeasurementRequirements = ({
         if (!baseDefinition) return;
         const definition = definitionForLabelDemographic(baseDefinition, labelDemographic);
         const isHeight = field.measurementId === "total_height";
+        // Factorless rows cannot be calculated from height, so Height Only
+        // asks for them as required manual inputs next to Total Height.
+        const manualRequired = isHeight || field.averageFactor === null;
         const scope = definition.scope === "shared_body" ? "shared" : "garment";
         requirements.push({
           key: [
@@ -1118,9 +1220,9 @@ export const planMeasurementRequirements = ({
           garmentType: resolution.garmentType,
           profileId: resolution.profile.id,
           sourceRow: field.sourceRow,
-          directInput: isHeight,
-          section: isHeight ? "required" : "optional",
-          inputSource: isHeight ? "route_marker" : "calculated_average_factor",
+          directInput: manualRequired,
+          section: manualRequired ? "required" : "optional",
+          inputSource: manualRequired ? "route_marker" : "calculated_average_factor",
           averageFactor: field.averageFactor,
           minFactor: field.minFactor,
           maxFactor: field.maxFactor,
