@@ -332,26 +332,26 @@ const MeasurementField = ({
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="min-w-0 break-words text-sm font-bold text-heritage-green">
           {fieldLabel}
-          <span className="ml-1 font-sans text-[11px] font-bold uppercase tracking-wider text-heritage-ink/50">
+          <span className="ml-1 font-sans text-[11px] font-extrabold uppercase tracking-wider text-heritage-ink/75">
             ({unitWord})
           </span>
         </span>
         <span
           data-measurement-badge={badge}
-          className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold"
+          className="rounded-full border border-heritage-gold/40 bg-white px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-bronze"
         >
           {badge}
         </span>
       </span>
       {fieldInstruction && (
-        <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/60">
+        <span className="mt-1 block break-words text-xs leading-relaxed font-medium text-heritage-ink/80">
           {fieldInstruction}
         </span>
       )}
       {factorlessRequired && (
         <span
           data-measurement-factorless-required="true"
-          className="mt-1 block break-words text-xs font-semibold leading-relaxed text-heritage-gold"
+          className="mt-1 block break-words text-xs font-semibold leading-relaxed text-heritage-bronze"
         >
           {FACTORLESS_REQUIRED_MESSAGE}
         </span>
@@ -363,10 +363,10 @@ const MeasurementField = ({
             data-measurement-calculated-value={stored ? String(displayValue) : "pending"}
           >
             {stored ? displayValue : (
-              <span className="text-heritage-ink/45">Pending</span>
+              <span className="font-semibold text-heritage-ink/65">Pending</span>
             )}
           </span>
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-extrabold text-heritage-ink/70">
             {state.unit === "inch" ? "in" : "cm"}
           </span>
         </span>
@@ -392,7 +392,7 @@ const MeasurementField = ({
             }}
             className="min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 pr-14 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-extrabold text-heritage-ink/70">
             {state.unit === "inch" ? "in" : "cm"}
           </span>
         </span>
@@ -429,7 +429,7 @@ const MeasurementField = ({
         </span>
       )}
       {rangeRecheck && !hasInvalidValue && !implausible && (
-        <span className="mt-2 block text-xs font-semibold text-heritage-gold">
+        <span className="mt-2 block text-xs font-semibold text-heritage-bronze">
           {RANGE_RECHECK_MESSAGE}
         </span>
       )}
@@ -533,17 +533,17 @@ const MeasurementSection = ({
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h3 className="font-serif text-lg font-bold text-heritage-green">{title}</h3>
             {section === "required" && requiredCount > 0 && (
-              <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+              <span className="rounded-full border border-heritage-gold/40 bg-white px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-bronze">
                 {completedCount} of {requiredCount} complete
               </span>
             )}
             {section === "calculated" && (
-              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/60">
+              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-ink/80">
                 {CALCULATED_FROM_HEIGHT_LABEL}
               </span>
             )}
             {section === "optional" && (
-              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/60">
+              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-ink/80">
                 Optional
               </span>
             )}
@@ -562,12 +562,12 @@ const MeasurementSection = ({
               </button>
             )}
           </div>
-          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">{description}</p>
+          <p className="mt-1 text-sm font-medium leading-relaxed text-heritage-ink/80">{description}</p>
           {section === "calculated" && heightPending && (
             <p
               data-measurement-calculated-pending="true"
               data-measurement-calculated-waiting-on="total_height"
-              className="mt-2 text-sm leading-relaxed text-heritage-ink/70"
+              className="mt-2 text-sm leading-relaxed font-medium text-heritage-ink/80"
             >
               {CALCULATED_FROM_HEIGHT_PENDING_COPY}
             </p>
@@ -590,7 +590,7 @@ const MeasurementSection = ({
           >
             {sampleMode ? "Shared sample measurements" : "Shared Body Measurements"}
           </h4>
-          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+          <p className="mt-1 text-sm font-medium leading-relaxed text-heritage-ink/80">
             {sampleMode
               ? "Shared sample measurements are entered once and used for all applicable garments."
               : section === "calculated"
@@ -623,7 +623,7 @@ const MeasurementSection = ({
             >
               {formatGarmentLabel(occurrenceLabels, garmentRequirements[0]?.garmentType, garmentKey)} Measurements
             </h4>
-            <span className="rounded-full border border-heritage-gold/25 bg-heritage-cream/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+            <span className="rounded-full border border-heritage-gold/40 bg-heritage-cream/35 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-bronze">
               Garment specific
             </span>
           </div>
@@ -641,7 +641,7 @@ const MeasurementSection = ({
               <h5 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
                 Sleeve Length
               </h5>
-              <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+              <p className="mt-1 text-sm font-medium leading-relaxed text-heritage-ink/80">
                 Enter the length that matches the sleeve.
               </p>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -1180,7 +1180,7 @@ export const DormantFutureMeasurementStep = ({
             ariaLabel: "Continue to Summary",
           }}
         />
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
+        <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
           {formatDesignStudioStepCounter("measurement")}
         </p>
         <h2
@@ -1189,7 +1189,7 @@ export const DormantFutureMeasurementStep = ({
         >
           Dimension / Measurement
         </h2>
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed font-medium text-heritage-ink/80">
           Add the measurements needed for your selected garments. Numbers you type
           use the unit selected below. Switching between centimetres and inches
           converts saved values.
@@ -1197,7 +1197,7 @@ export const DormantFutureMeasurementStep = ({
         {activeWearerLabel ? (
           <div className="mt-3 space-y-2">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                 Measuring for
               </p>
               {wearerChips.length > 0 && onSelectWearer ? (
@@ -1254,7 +1254,7 @@ export const DormantFutureMeasurementStep = ({
                   ))}
                 </div>
               ) : (
-                <p className="text-sm leading-relaxed text-heritage-ink/70">
+                <p className="text-sm leading-relaxed font-medium text-heritage-ink/80">
                   No garments assigned to {activeWearerLabel} yet.
                 </p>
               )}
@@ -1286,7 +1286,7 @@ export const DormantFutureMeasurementStep = ({
           </h3>
           <p
             data-measurement-option-subtitle="risk"
-            className="mt-1 text-sm leading-relaxed text-heritage-ink/65"
+            className="mt-1 text-sm font-medium leading-relaxed text-heritage-ink/80"
           >
             Measurement by Risk Level
           </p>
@@ -1346,12 +1346,12 @@ export const DormantFutureMeasurementStep = ({
                         {route.title}
                       </span>
                       {status && (
-                        <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-wide text-heritage-ink/70">
+                        <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-bold tracking-wide text-heritage-ink/85">
                           {status}
                         </span>
                       )}
                     </span>
-                    <span className={`mt-1 block break-words leading-relaxed ${unavailable ? "text-sm text-heritage-ink" : "text-xs text-heritage-ink/65"}`}>
+                    <span className={`mt-1 block break-words font-medium leading-relaxed ${unavailable ? "text-sm text-heritage-ink" : "text-xs text-heritage-ink/80"}`}>
                       {unavailable && criticalRiskBlockingLabels.length > 0 ? (
                         <>
                           Critical Risk (Height Only) is unavailable because{" "}
@@ -1387,7 +1387,7 @@ export const DormantFutureMeasurementStep = ({
           <legend className="block w-full font-serif text-lg font-bold leading-snug text-heritage-green">
             Option 2: Sample Cloth Measurements
           </legend>
-          <p className="mt-2 font-sans text-sm leading-relaxed text-heritage-ink/70">
+          <p className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80">
             {MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION}
           </p>
           <div className="mt-4">
@@ -1423,7 +1423,7 @@ export const DormantFutureMeasurementStep = ({
                     {MEASUREMENT_SAMPLE_CLOTH_LABEL}
                   </span>
                   {sampleStatus && (
-                    <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-wide text-heritage-ink/70">
+                    <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-bold tracking-wide text-heritage-ink/85">
                       {sampleStatus}
                     </span>
                   )}
@@ -1445,19 +1445,19 @@ export const DormantFutureMeasurementStep = ({
         >
           Option 3: Onsite Physical Measurements
         </h3>
-        <p className="mt-2 font-sans text-sm leading-relaxed text-heritage-ink/70">
+        <p className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80">
           Information only. These do not complete your measurements.
         </p>
         <div
           data-measurement-onsite-info="true"
           className="mt-4 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
         >
-          <p className="break-words text-sm leading-relaxed text-heritage-ink/70">
+          <p className="break-words text-sm leading-relaxed font-medium text-heritage-ink/80">
             Reach out to the contact to arrange a measurement
           </p>
           <p
             data-measurement-onsite-booking-window="true"
-            className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70"
+            className="mt-1 break-words text-sm leading-relaxed font-medium text-heritage-ink/80"
           >
             Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
           </p>
@@ -1504,7 +1504,7 @@ export const DormantFutureMeasurementStep = ({
           titleClassName="font-serif"
           data-measurement-hydration-error="true"
         >
-          <p className="mt-2 text-sm text-heritage-ink/70">
+          <p className="mt-2 text-sm font-medium text-heritage-ink/80">
             {FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE}
           </p>
         </DesignStudioStepGuide>
@@ -1532,13 +1532,13 @@ export const DormantFutureMeasurementStep = ({
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
               {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
             </p>
             <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
               {routeStatusLabel}
             </h3>
-            <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
+            <p className="mt-1 break-words text-sm leading-relaxed font-medium text-heritage-ink/80">
               {routeSaveMessage}
             </p>
           </div>
@@ -1578,11 +1578,11 @@ export const DormantFutureMeasurementStep = ({
         >
       {measurementGarments.length > 1 && (
         <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
+          <h3 className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
             Choose a garment
           </h3>
           <p
-            className="mt-1 text-xs leading-snug text-heritage-ink/60"
+            className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
             title="Shared body measurements stay saved when you switch."
           >
             {activeWearerLabel
@@ -1682,12 +1682,12 @@ export const DormantFutureMeasurementStep = ({
               : "grid min-w-0 w-full grid-cols-1 gap-x-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
           }
         >
-          <legend className="text-xs font-bold uppercase tracking-wide text-heritage-ink/70">
+          <legend className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
             Measurement unit
           </legend>
           <p
             data-measurement-entry-unit={state.unit}
-            className="mt-1 text-xs leading-snug text-heritage-ink/60"
+            className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
             title="Each field shows that unit. Switching units converts what you already saved."
           >
             Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
@@ -1727,7 +1727,7 @@ export const DormantFutureMeasurementStep = ({
               <h3 className="font-serif text-lg font-bold text-heritage-green">
                 Assign this garment to a person
               </h3>
-              <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+              <p className="mt-1 text-sm leading-relaxed font-medium text-heritage-ink/80">
                 Assign {selectedGarmentLabel} above before its measurements can unlock Summary.
                 You can keep measuring other assigned garments.
               </p>
@@ -1747,7 +1747,7 @@ export const DormantFutureMeasurementStep = ({
               <h3 className="font-serif text-lg font-bold text-heritage-green">
                 Measurement setup pending
               </h3>
-              <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+              <p className="mt-1 text-sm leading-relaxed font-medium text-heritage-ink/80">
                 The measurement setup for this garment is awaiting confirmation for the selected
                 profile. You can continue reviewing measurements for your other garments.
               </p>
@@ -1765,7 +1765,7 @@ export const DormantFutureMeasurementStep = ({
           titleAs="h3"
           titleClassName="font-serif"
         >
-          <ul className="mt-2 space-y-1 text-sm text-heritage-ink/70">
+          <ul className="mt-2 space-y-1 text-sm font-medium text-heritage-ink/80">
             {blockerMessages.map((message) => <li key={message}>{message}</li>)}
           </ul>
         </DesignStudioStepGuide>
@@ -1832,7 +1832,7 @@ export const DormantFutureMeasurementStep = ({
               <p
                 id="measurement-risk-selection-notice"
                 data-measurement-risk-notice="true"
-                className="w-full text-xs leading-relaxed text-heritage-ink/60"
+                className="w-full text-xs leading-relaxed font-medium text-heritage-ink/80"
               >
                 {MEASUREMENT_RISK_SELECTION_NOTICE}
               </p>
