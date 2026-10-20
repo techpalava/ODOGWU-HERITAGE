@@ -29,6 +29,7 @@ import {
   httpRequestFromRawBody,
 } from "./src/server/futureOrderV2PaymentRecord";
 import { handleHealth } from "./src/server/appVersion";
+import { handleClientImageError } from "./src/server/clientImageErrorLog";
 import {
   handleCreatePrivateBatchInvite,
   handleRedeemPrivateBatchInvite,
@@ -74,6 +75,13 @@ app.post(
       res,
     );
   },
+);
+
+// Fabric photo failure reports arrive as text/plain (sendBeacon); keep them small.
+app.post(
+  "/api/client-image-error",
+  express.text({ type: () => true, limit: "4kb" }),
+  (req, res) => handleClientImageError(req, res),
 );
 
 app.use(express.json({ limit: "50mb" }));
