@@ -175,8 +175,8 @@ assert.equal(
     },
     constructionOptionId: "shirt_long_midlong",
   }),
-  false,
-  "Resolved Mid Sleeve still cannot be Critical Risk without an approved factor.",
+  true,
+  "A resolved Mid Sleeve no longer blocks Critical Risk; it is asked as a required manual input.",
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
@@ -190,8 +190,8 @@ assert.equal(
     profile: profileById.E,
     constructionOptionId: "dress_std_sleeveless",
   }),
-  false,
-  "Sleeveless finish still cannot be Critical Risk without an approved factor.",
+  true,
+  "A sleeveless finish no longer blocks Critical Risk; it is asked as a required manual input.",
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
@@ -684,10 +684,92 @@ for (const [label, details] of [
   assert.equal(isFutureSummaryUnlockedByMeasurements(dressSquareState), true);
 }
 
-const sleevelessDress = selectionFor(["dress"], "female", {
-  dress: construction("dress", "dress_std_sleeveless", "dress_construction"),
-});
-const unsupportedPlan = planCritical(sleevelessDress, [garment("base:dress", "dress")]);
+// Xavier (2026-10-20): "for measurements with no average factors, make those
+// fields required". A sleeveless Standard Dress (E) or Full-Length Gown (G)
+// keeps Critical Risk (Height Only) and asks Total Height plus Sleeveless
+// Finish Length as required manual inputs; everything else stays calculated.
+for (const [label, garmentType, optionId] of [
+  ["Standard Dress (E)", "dress", "dress_std_sleeveless"],
+  ["Long Dress (G)", "dress", "dress_long_sleeveless"],
+  ["Full-Length Gown (G)", "full_length_gown", "dress_long_sleeveless"],
+] as const) {
+  const selection = selectionFor([garmentType], "female", {
+    [garmentType]: construction(garmentType, optionId, garmentType === "dress" ? "dress_construction" : "gown_construction" as CustomDetailSelectionGroup),
+  });
+  const garmentKey = `base:${garmentType}`;
+  const sleevelessPlan = planCritical(selection, [garment(garmentKey, garmentType)]);
+  assert.equal(sleevelessPlan.criticalRiskSupported, true, `${label} sleeveless supports Critical`);
+  assert.deepEqual(sleevelessPlan.criticalRiskBlockingGarmentKeys, []);
+  assert.equal(sleevelessPlan.canCalculate, true);
+  assert.equal(
+    sleevelessPlan.diagnostics.some((diagnostic) => diagnostic.code === "calculation_configuration_pending"),
+    false,
+  );
+  const manual = sleevelessPlan.requirements.filter((requirement) => requirement.directInput);
+  assert.deepEqual(
+    manual.map((requirement) => [requirement.measurementId, requirement.section, requirement.inputSource]).sort(),
+    [
+      ["sleeve_length_sleeveless", "required", "route_marker"],
+      ["total_height", "required", "route_marker"],
+    ],
+    `${label}: Total Height plus Sleeveless Finish Length are the only manual inputs`,
+  );
+  assert.equal(
+    sleevelessPlan.requirements.filter((requirement) => requirement.measurementId === "sleeve_length_sleeveless").length,
+    1,
+    `${label}: Sleeveless Finish Length appears once`,
+  );
+  assert.equal(
+    sleevelessPlan.requirements.some((requirement) => requirement.measurementId === "sleeve_length_short"),
+    false,
+    `${label}: the short-sleeve sibling is not planned`,
+  );
+  assert.ok(
+    sleevelessPlan.requirements
+      .filter((requirement) => !requirement.directInput)
+      .every((requirement) => requirement.inputSource === "calculated_average_factor" && requirement.averageFactor !== null),
+    `${label}: every other Critical row is calculated from height`,
+  );
+  for (const skipped of ["under_bust_circumference", "hip_circumference", "square_neck_length", "square_neck_width", "shoulder_to_under_bust_length"]) {
+    assert.equal(
+      sleevelessPlan.requirements.some((requirement) => requirement.measurementId === skipped),
+      false,
+      `${label}: IF APPLICABLE / square-neck ${skipped} stays skipped on Critical`,
+    );
+  }
+  const heightRequirement = manual.find((requirement) => requirement.measurementId === "total_height")!;
+  const sleevelessRequirement = manual.find((requirement) => requirement.measurementId === "sleeve_length_sleeveless")!;
+  let sleevelessState = setFutureMeasurementInput({
+    state: createEmptyFutureMeasurementState("critical_risk", "cm"),
+    requirement: heightRequirement,
+    displayValue: 170,
+  });
+  sleevelessState = reconcileFutureMeasurementState({ state: sleevelessState, plan: sleevelessPlan });
+  assert.equal(sleevelessState.calculationStatus, "incomplete", `${label}: height alone is not enough`);
+  assert.equal(isFutureSummaryUnlockedByMeasurements(sleevelessState), false);
+  assert.equal(
+    countRemainingCustomerRequiredMeasurementUnits({ plan: sleevelessPlan, state: sleevelessState }),
+    1,
+    `${label}: one required measurement remains`,
+  );
+  sleevelessState = setFutureMeasurementInput({
+    state: sleevelessState,
+    requirement: sleevelessRequirement,
+    displayValue: 5,
+  });
+  sleevelessState = reconcileFutureMeasurementState({ state: sleevelessState, plan: sleevelessPlan });
+  assert.equal(sleevelessState.calculationStatus, "complete", `${label}: height plus sleeveless completes`);
+  assert.equal(isFutureSummaryUnlockedByMeasurements(sleevelessState), true);
+  assert.equal(
+    sleevelessState.derived.byGarmentKey[garmentKey]?.sleeve_length_sleeveless,
+    undefined,
+    `${label}: the sleeveless value is never calculated`,
+  );
+}
+
+// A garment whose construction cannot resolve still blocks Critical (unchanged).
+const unresolvedDress = selectionFor(["dress"], "female", {});
+const unsupportedPlan = planCritical(unresolvedDress, [garment("base:dress", "dress")]);
 assert.equal(unsupportedPlan.criticalRiskSupported, false);
 assert.deepEqual(unsupportedPlan.criticalRiskBlockingGarmentKeys, ["base:dress"]);
 assert.deepEqual(supportedPlan.criticalRiskBlockingGarmentKeys, []);
