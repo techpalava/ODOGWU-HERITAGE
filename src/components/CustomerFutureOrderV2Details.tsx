@@ -702,7 +702,9 @@ export const CustomerFutureOrderV2Details = ({
                             data-customer-v2-order-redirecting={paymentMethod}
                             {...(paymentMethod === "klarna"
                               ? { "data-customer-v2-order-klarna-redirecting": true }
-                              : { "data-customer-v2-order-ideal-redirecting": true })}
+                              : paymentMethod === "pix"
+                                ? { "data-customer-v2-order-pix-redirecting": true }
+                                : { "data-customer-v2-order-ideal-redirecting": true })}
                             className="text-sm leading-relaxed text-heritage-ink/80"
                           >
                             {redirectingMessage}

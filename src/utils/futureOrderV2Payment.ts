@@ -8,8 +8,16 @@ import {
   readPersonalizedStripeChargeCents,
   type FutureOrderV2PersonalizedPriceRecord,
 } from "./futureOrderV2PersonalizedPrice";
+import {
+  FUTURE_ORDER_V2_PIX_CHECKOUT_ACTION,
+  FUTURE_ORDER_V2_PIX_PENDING_MESSAGE,
+  isFutureOrderV2CheckoutSessionId,
+  sanitizeFutureOrderV2PixReturnPath,
+  stashFutureOrderV2PixPending,
+  type FutureOrderV2PixVerification,
+} from "./futureOrderV2Pix";
 
-export type FutureOrderV2PaymentMethod = "card" | "ideal" | "klarna";
+export type FutureOrderV2PaymentMethod = "card" | "ideal" | "klarna" | "pix";
 
 export interface FutureOrderV2PaymentAttempt {
   readonly orderId: string;
@@ -241,6 +249,122 @@ export const registerFutureOrderV2CardConfirmer = (
   registerFutureOrderV2PaymentConfirmer(confirmer);
 };
 
+/** The Stage 10 method the customer picked. Pix skips the PaymentIntent and uses hosted Checkout. */
+let paymentMethodReader: (() => FutureOrderV2PaymentMethod) | null = null;
+
+export const registerFutureOrderV2PaymentMethodReader = (
+  reader: (() => FutureOrderV2PaymentMethod) | null,
+): void => {
+  paymentMethodReader = reader;
+};
+
+type FutureOrderV2PixVerifier = (input: {
+  orderId: string;
+  checkoutSessionId: string;
+}) => Promise<FutureOrderV2PixVerification>;
+
+let pixVerifier: FutureOrderV2PixVerifier | null = null;
+let pixNavigator: ((url: string) => void) | null = null;
+
+/** Test hooks. Production verifies through record-payment and navigates with location.assign. */
+export const registerFutureOrderV2PixHooks = (hooks: {
+  verify?: FutureOrderV2PixVerifier | null;
+  navigate?: ((url: string) => void) | null;
+}): void => {
+  if ("verify" in hooks) pixVerifier = hooks.verify ?? null;
+  if ("navigate" in hooks) pixNavigator = hooks.navigate ?? null;
+};
+
+const verifyPixCheckout: FutureOrderV2PixVerifier = async (input) => {
+  if (pixVerifier) return pixVerifier(input);
+  const { verifyFutureOrderV2PixCheckout } = await import(
+    "../services/futureOrderV2PaymentRecordClient"
+  );
+  return verifyFutureOrderV2PixCheckout(input);
+};
+
+const navigateToPixCheckout = (url: string): void => {
+  if (pixNavigator) {
+    pixNavigator(url);
+    return;
+  }
+  if (typeof window !== "undefined") window.location.assign(url);
+};
+
+const payloadText = (payload: unknown, key: string): string =>
+  payload &&
+  typeof payload === "object" &&
+  key in payload &&
+  typeof (payload as Record<string, unknown>)[key] === "string"
+    ? ((payload as Record<string, unknown>)[key] as string)
+    : "";
+
+/**
+ * Asks the server for the hosted Pix Checkout Session. The server prices it
+ * from the persisted EUR order and Adaptive Pricing shows BRL. A session that
+ * is already paid is verified and recorded; one waiting on the bank is shown
+ * as pending instead of opening a second Pix code.
+ */
+const startFutureOrderV2PixCheckout = async (
+  attempt: FutureOrderV2PaymentAttempt,
+  idToken: string,
+): Promise<FutureOrderV2PaymentAuthorizationResult> => {
+  const failed = "Stripe could not start this Pix payment. Retry this same order.";
+  let response: Response;
+  let payload: unknown;
+  try {
+    response = await fetch("/api/future-order-v2/payment-intent", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action: FUTURE_ORDER_V2_PIX_CHECKOUT_ACTION,
+        orderId: attempt.orderId,
+        paymentReference: attempt.paymentReference,
+        returnPath: sanitizeFutureOrderV2PixReturnPath(
+          typeof window !== "undefined" ? window.location.pathname : "/",
+        ),
+      }),
+    });
+    payload = await readFutureOrderV2JsonBody(response);
+  } catch {
+    return { status: "failed", message: failed };
+  }
+  const checkoutSessionId = payloadText(payload, "checkoutSessionId");
+  if (payloadText(payload, "code") === "PIX_PAYMENT_PENDING") {
+    if (isFutureOrderV2CheckoutSessionId(checkoutSessionId)) {
+      stashFutureOrderV2PixPending({ orderId: attempt.orderId, checkoutSessionId });
+    }
+    return { status: "failed", message: FUTURE_ORDER_V2_PIX_PENDING_MESSAGE };
+  }
+  if (!response.ok || payload == null) {
+    return { status: "failed", message: payloadText(payload, "error") || failed };
+  }
+  const status = payloadText(payload, "status");
+  if (status === "open") {
+    const checkoutUrl = payloadText(payload, "checkoutUrl");
+    if (!checkoutUrl.startsWith("https://checkout.stripe.com/")) {
+      return { status: "failed", message: "Stripe did not return a Pix checkout page." };
+    }
+    navigateToPixCheckout(checkoutUrl);
+    return { status: "redirecting" };
+  }
+  if (status === "paid" && isFutureOrderV2CheckoutSessionId(checkoutSessionId)) {
+    const verified = await verifyPixCheckout({ orderId: attempt.orderId, checkoutSessionId });
+    if (verified.status === "recorded") {
+      return { status: "authorized", providerTransactionReference: verified.paymentIntentId };
+    }
+    if (verified.status === "pending") {
+      stashFutureOrderV2PixPending({ orderId: attempt.orderId, checkoutSessionId });
+      return { status: "failed", message: FUTURE_ORDER_V2_PIX_PENDING_MESSAGE };
+    }
+    return { status: "failed", message: verified.message };
+  }
+  return { status: "failed", message: failed };
+};
+
 const MINIMUM_CHARGE_CENTS = 50;
 
 export const readFutureOrderV2ReviewedTotalCents = (
@@ -306,6 +430,10 @@ export const authorizeFutureOrderV2Payment = async (
       status: "failed",
       message: "Sign in again to pay for this order.",
     };
+  }
+
+  if (paymentMethodReader?.() === "pix") {
+    return startFutureOrderV2PixCheckout(attempt, idToken);
   }
 
   let payload: unknown;

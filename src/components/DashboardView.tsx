@@ -14,7 +14,11 @@ import {
   authorizeFutureOrderV2Payment,
   readFutureOrderV2JsonBody,
 } from "../utils/futureOrderV2Payment";
-import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import {
+  recordFutureOrderV2Payment,
+  verifyFutureOrderV2PixCheckout,
+} from "../services/futureOrderV2PaymentRecordClient";
+import { resumeFutureOrderV2PixReturn } from "../utils/futureOrderV2Pix";
 import { retireStudioFutureDesignDraft } from "../services/retirePaidStudioDraft";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
@@ -143,6 +147,21 @@ export default function DashboardView({
     return () => {
       cancelled = true;
     };
+  }, []);
+  useEffect(() => {
+    // Hosted Pix Checkout return. The server reads the session from Stripe;
+    // a Pix still waiting on the bank is stashed so the order shows it.
+    if (!window.location.search.includes("future_order_v2_pix_return=")) return;
+    void (async () => {
+      const result = await resumeFutureOrderV2PixReturn({
+        search: window.location.search,
+        verify: verifyFutureOrderV2PixCheckout,
+      });
+      if (result.status === "ignored") return;
+      if (result.status === "recorded") void retireStudioFutureDesignDraft();
+      stashFutureOrderV2OpenOrderId(result.orderId);
+      setOpenV2OrderId(result.orderId);
+    })();
   }, []);
   useEffect(
     () => StorageService.subscribeToCustomerFutureOrderV2Workshop(setFutureOrderV2WorkshopByOrderId),
