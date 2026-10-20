@@ -25,6 +25,18 @@ import {
   futureOrderV2StripePaymentMethodTypes,
   FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
 } from "../utils/futureOrderV2StripeMethods.js";
+import {
+  buildFutureOrderV2PixReturnUrls,
+  FUTURE_ORDER_V2_PIX_CHECKOUT_ACTION,
+  FUTURE_ORDER_V2_PIX_COUNTRY,
+  isFutureOrderV2PixAmount,
+  sanitizeFutureOrderV2PixReturnPath,
+} from "../utils/futureOrderV2Pix.js";
+import {
+  createFutureOrderV2PixCheckoutSession,
+  type FutureOrderV2PixCheckoutInput,
+  type FutureOrderV2PixCheckoutResult,
+} from "./futureOrderV2PixCheckout.js";
 
 export { FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES };
 
@@ -71,6 +83,10 @@ export interface FutureOrderV2StripePaymentDependencies {
   readCatalog?: () => Promise<unknown>;
   /** Live community batch document. Defaults to the `batches` collection. */
   readCommunityBatch?: (batchId: string) => Promise<unknown | null>;
+  /** Hosted Pix Checkout Session. Defaults to the Stripe test client. */
+  createPixCheckoutSession?: (
+    input: FutureOrderV2PixCheckoutInput,
+  ) => Promise<FutureOrderV2PixCheckoutResult>;
   now?: () => Date;
 }
 
@@ -94,6 +110,25 @@ const getBearerToken = (req: HttpRequest): string | null => {
   const authorization = Array.isArray(header) ? header[0] : header;
   const match = authorization?.match(/^Bearer ([^\s]+)$/);
   return match?.[1] || null;
+};
+
+const firstHeader = (req: HttpRequest, name: string): string => {
+  const value = req.headers[name];
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === "string" ? first.split(",")[0].trim() : "";
+};
+
+/**
+ * Return URLs point back at the host that served this request, so a client
+ * cannot send Checkout to another site. Localhost may use http.
+ */
+export const readFutureOrderV2RequestOrigin = (req: HttpRequest): string | null => {
+  const host = firstHeader(req, "x-forwarded-host") || firstHeader(req, "host");
+  if (!/^[A-Za-z0-9.-]{1,253}(:\d{1,5})?$/.test(host)) return null;
+  const forwardedProto = firstHeader(req, "x-forwarded-proto");
+  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
+  const proto = local && forwardedProto !== "https" ? "http" : "https";
+  return `${proto}://${host}`;
 };
 
 const readTestSecretKey = (
@@ -569,14 +604,30 @@ export const handleFutureOrderV2StripePayment = async (
     );
   }
 
+  const stripeShipping = resolveFutureOrderV2StripeShipping(
+    order.value.masterOrder.cartItem.candidate.shipping.state,
+  );
+
+  if (body?.action === FUTURE_ORDER_V2_PIX_CHECKOUT_ACTION) {
+    return handleFutureOrderV2PixCheckout({
+      req,
+      res,
+      body,
+      dependencies,
+      orderId,
+      paymentReference,
+      amountCents,
+      shippingCountry: stripeShipping?.address.country ?? null,
+      customerEmail: stripeShipping?.email ?? null,
+    });
+  }
+
   try {
     const paymentIntent = await createPaymentIntent({
       amountCents,
       orderId,
       paymentReference,
-      shipping: resolveFutureOrderV2StripeShipping(
-        order.value.masterOrder.cartItem.candidate.shipping.state,
-      ),
+      shipping: stripeShipping,
     });
     if (!paymentIntent.id.startsWith("pi_") || !paymentIntent.clientSecret) {
       return sendError(
@@ -602,4 +653,112 @@ export const handleFutureOrderV2StripePayment = async (
       "Stripe could not start this payment. Retry this same order.",
     );
   }
+};
+
+/**
+ * Pix runs on Stripe-hosted Checkout with Adaptive Pricing. Auth, owner, the
+ * persisted EUR amount and the community batch gate were already checked by
+ * the caller; this adds the Brazil delivery rule and the Pix amount range.
+ */
+const handleFutureOrderV2PixCheckout = async ({
+  req,
+  res,
+  body,
+  dependencies,
+  orderId,
+  paymentReference,
+  amountCents,
+  shippingCountry,
+  customerEmail,
+}: {
+  req: HttpRequest;
+  res: HttpResponse;
+  body: Record<string, unknown>;
+  dependencies: FutureOrderV2StripePaymentDependencies;
+  orderId: string;
+  paymentReference: string;
+  amountCents: number;
+  shippingCountry: string | null;
+  customerEmail: string | null;
+}) => {
+  if (shippingCountry !== FUTURE_ORDER_V2_PIX_COUNTRY) {
+    return sendError(
+      res,
+      400,
+      "PIX_NOT_AVAILABLE",
+      "Pix is available only for orders delivered to Brazil.",
+    );
+  }
+  if (!isFutureOrderV2PixAmount(amountCents)) {
+    return sendError(
+      res,
+      400,
+      "PIX_AMOUNT_NOT_SUPPORTED",
+      "This total is outside the Pix payment limit. Pay by card instead.",
+    );
+  }
+  const origin = readFutureOrderV2RequestOrigin(req);
+  if (!origin) {
+    return sendError(
+      res,
+      400,
+      "PIX_RETURN_UNAVAILABLE",
+      "Pix could not start from this page. Retry this same order.",
+    );
+  }
+  const { successUrl, cancelUrl } = buildFutureOrderV2PixReturnUrls({
+    origin,
+    returnPath: sanitizeFutureOrderV2PixReturnPath(body.returnPath),
+    orderId,
+  });
+  const createPixCheckoutSession =
+    dependencies.createPixCheckoutSession ?? createFutureOrderV2PixCheckoutSession;
+  let result: FutureOrderV2PixCheckoutResult;
+  try {
+    result = await createPixCheckoutSession({
+      amountCents,
+      orderId,
+      paymentReference,
+      customerEmail,
+      successUrl,
+      cancelUrl,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Stripe error";
+    console.warn("Future order V2 Pix checkout could not be created:", message);
+    return sendError(
+      res,
+      502,
+      "STRIPE_PIX_CHECKOUT_FAILED",
+      "Stripe could not start this Pix payment. Retry this same order.",
+    );
+  }
+  if (result.status === "pending") {
+    return setNoStore(res).status(409).json({
+      error:
+        "A Pix payment for this order is already waiting for your bank. Pay that Pix code or wait for it to expire.",
+      code: "PIX_PAYMENT_PENDING",
+      checkoutSessionId: result.checkoutSessionId,
+    });
+  }
+  if (result.status === "paid") {
+    return setNoStore(res).status(200).json({
+      status: "paid",
+      checkoutSessionId: result.checkoutSessionId,
+      paymentIntentId: result.paymentIntentId,
+    });
+  }
+  if (!result.checkoutUrl.startsWith("https://")) {
+    return sendError(
+      res,
+      502,
+      "STRIPE_PIX_CHECKOUT_INCOMPLETE",
+      "Stripe did not return a Pix checkout page.",
+    );
+  }
+  return setNoStore(res).status(200).json({
+    status: "open",
+    checkoutSessionId: result.checkoutSessionId,
+    checkoutUrl: result.checkoutUrl,
+  });
 };

@@ -22,6 +22,11 @@ import {
   readAcceptedPersonalizedDifferenceCents,
   readPersonalizedStripeChargeCents,
 } from "../utils/futureOrderV2PersonalizedPrice.js";
+import { isFutureOrderV2CheckoutSessionId } from "../utils/futureOrderV2Pix.js";
+import {
+  retrieveFutureOrderV2PixCheckoutSession,
+  type StripeCheckoutSessionSummary,
+} from "./futureOrderV2PixCheckout.js";
 
 interface VerifiedPaymentRecordToken {
   readonly uid: string;
@@ -74,6 +79,8 @@ export interface FutureOrderV2PaymentRecordDependencies {
   createStore?: (db: unknown) => FutureOrderV2PaymentRecordStore;
   readSecretKey?: () => string;
   retrievePaymentIntent?: (paymentIntentId: string) => Promise<StripePaymentIntentSummary>;
+  /** Hosted Pix Checkout return. The session is read from Stripe, never the client. */
+  retrieveCheckoutSession?: (checkoutSessionId: string) => Promise<StripeCheckoutSessionSummary>;
   /**
    * Verifies the raw webhook body. Throw when the signature does not match.
    * The returned event is the only event the webhook path may trust.
@@ -481,6 +488,8 @@ export const createFutureOrderV2PaymentRecordHandler = (
     ((db: unknown) => createAdminFutureOrderV2PaymentRecordStore(db as Firestore));
   const retrievePaymentIntent =
     dependencies.retrievePaymentIntent || retrieveStripeTestPaymentIntent;
+  const retrieveCheckoutSession =
+    dependencies.retrieveCheckoutSession || retrieveFutureOrderV2PixCheckoutSession;
   const constructEvent = dependencies.constructEvent || constructStripeWebhookEvent;
   const now = dependencies.now || (() => new Date());
   const log = dependencies.log || ((message: string) => console.info(message));
@@ -592,9 +601,15 @@ export const createFutureOrderV2PaymentRecordHandler = (
 
     const body = isRecord(req.body) ? req.body : null;
     const orderId = typeof body?.orderId === "string" ? body.orderId : "";
-    const paymentIntentId =
+    const requestedPaymentIntentId =
       typeof body?.paymentIntentId === "string" ? body.paymentIntentId : "";
-    if (!SAFE_ORDER_ID.test(orderId) || !PAYMENT_INTENT_ID.test(paymentIntentId)) {
+    const checkoutSessionId = isFutureOrderV2CheckoutSessionId(body?.checkoutSessionId)
+      ? body.checkoutSessionId
+      : null;
+    if (
+      !SAFE_ORDER_ID.test(orderId) ||
+      (!checkoutSessionId && !PAYMENT_INTENT_ID.test(requestedPaymentIntentId))
+    ) {
       return sendError(
         res,
         400,
@@ -634,13 +649,87 @@ export const createFutureOrderV2PaymentRecordHandler = (
       );
     }
 
+    let paymentIntentId = requestedPaymentIntentId;
+    let readPaymentIntent = () => retrievePaymentIntent(paymentIntentId);
+    if (checkoutSessionId) {
+      // Pix return from hosted Checkout. Map the session to its PaymentIntent
+      // on the server; the record below then checks that PaymentIntent exactly
+      // like card, iDEAL and Klarna (owner, EUR, amount, metadata, succeeded).
+      let ownedOrder: ReturnType<typeof parsePersistedFutureOrderV2>;
+      try {
+        ownedOrder = parsePersistedFutureOrderV2(
+          await createStore(services.db).readOrder(orderId),
+          orderId,
+        );
+      } catch {
+        return sendError(
+          res,
+          503,
+          "PAYMENT_RECORD_UNAVAILABLE",
+          "The payment could not be saved right now. Retry saving it.",
+        );
+      }
+      if (ownedOrder.status !== "valid") {
+        return sendError(res, 404, "ORDER_NOT_FOUND", "This prepared order could not be found.");
+      }
+      if (ownedOrder.value.ownerUid !== token.uid) {
+        return sendError(res, 403, "OWNER_MISMATCH", "This order belongs to another account.");
+      }
+      let session: StripeCheckoutSessionSummary;
+      let paymentIntent: StripePaymentIntentSummary;
+      try {
+        session = await retrieveCheckoutSession(checkoutSessionId);
+        if (
+          session.id !== checkoutSessionId ||
+          session.metadata.orderId !== orderId ||
+          session.clientReferenceId !== orderId
+        ) {
+          return sendError(
+            res,
+            409,
+            "PAYMENT_MISMATCH",
+            "This payment does not match the prepared order.",
+          );
+        }
+        if (!session.paymentIntentId || !PAYMENT_INTENT_ID.test(session.paymentIntentId)) {
+          return setNoStore(res).status(409).json({
+            error: "Stripe has not completed this payment.",
+            code: "PAYMENT_NOT_SUCCEEDED",
+            checkoutStatus: session.status,
+          });
+        }
+        paymentIntent = await retrievePaymentIntent(session.paymentIntentId);
+      } catch (error) {
+        console.warn(
+          "Future order V2 Pix checkout could not be read from Stripe:",
+          error instanceof Error ? error.message : "Unknown Stripe error",
+        );
+        return sendError(
+          res,
+          502,
+          "STRIPE_LOOKUP_FAILED",
+          "Stripe could not confirm this payment yet. Retry saving it.",
+        );
+      }
+      if (paymentIntent.status === "requires_action" || paymentIntent.status === "processing") {
+        log("future-order-v2-payment-record status=pix_pending");
+        return setNoStore(res).status(202).json({
+          status: "pending",
+          checkoutSessionId,
+          paymentIntentId: paymentIntent.id,
+        });
+      }
+      paymentIntentId = paymentIntent.id;
+      readPaymentIntent = async () => paymentIntent;
+    }
+
     let outcome: FutureOrderV2PaymentSaveOutcome;
     try {
       outcome = await saveVerifiedFutureOrderV2Payment({
         store: createStore(services.db),
         orderId,
         paymentIntentId,
-        readPaymentIntent: () => retrievePaymentIntent(paymentIntentId),
+        readPaymentIntent,
         expectedOwnerUid: token.uid,
         now,
         catalog: await readCatalog(services.db),

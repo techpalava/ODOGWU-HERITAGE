@@ -58,6 +58,9 @@ export const FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE =
   "Continue at Klarna to complete this payment.";
 export const FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL = "Continuing to your bank...";
 export const FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL = "Continuing to Klarna...";
+export const FUTURE_ORDER_V2_PIX_REDIRECTING_MESSAGE =
+  "Continue on the secure Stripe page to pay with Pix in Brazilian reais.";
+export const FUTURE_ORDER_V2_PIX_REDIRECTING_PAY_LABEL = "Continuing to Pix...";
 /** @deprecated Use FUTURE_ORDER_V2_REDIRECTING_MESSAGE. */
 export const FUTURE_ORDER_V2_PAYPAL_REDIRECTING_MESSAGE =
   FUTURE_ORDER_V2_REDIRECTING_MESSAGE;
@@ -68,14 +71,18 @@ export const futureOrderV2RedirectingMessage = (
 ): string =>
   method === "klarna"
     ? FUTURE_ORDER_V2_KLARNA_REDIRECTING_MESSAGE
-    : FUTURE_ORDER_V2_REDIRECTING_MESSAGE;
+    : method === "pix"
+      ? FUTURE_ORDER_V2_PIX_REDIRECTING_MESSAGE
+      : FUTURE_ORDER_V2_REDIRECTING_MESSAGE;
 
 export const futureOrderV2RedirectingPayLabel = (
   method: FutureOrderV2PaymentMethod,
 ): string =>
   method === "klarna"
     ? FUTURE_ORDER_V2_KLARNA_REDIRECTING_PAY_LABEL
-    : FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL;
+    : method === "pix"
+      ? FUTURE_ORDER_V2_PIX_REDIRECTING_PAY_LABEL
+      : FUTURE_ORDER_V2_REDIRECTING_PAY_LABEL;
 export const FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE =
   "Sign in to pay for this order.";
 
