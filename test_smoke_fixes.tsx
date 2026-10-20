@@ -53,7 +53,8 @@ const run = async () => {
   assert.equal(withImageRetryMarker("/images/local.webp", 1), "/images/local.webp");
   assert.equal(withImageRetryMarker("data:image/png;base64,AA", 1), "data:image/png;base64,AA");
 
-  // useImageLoadRetry: first error retries once, second error fails.
+  // useImageLoadRetry: retries with growing gaps (5, 10, 20, 40 ms here),
+  // each with a fresh query marker, then fails.
   let latest: ImageLoadRetryState | null = null;
   const Probe = ({ url }: { url: string | null }) => {
     latest = useImageLoadRetry(url, 5);
@@ -65,12 +66,14 @@ const run = async () => {
   });
   assert.equal(latest!.src, storageUrl);
   assert.equal(latest!.failed, false);
-  await act(async () => {
-    latest!.onError();
-    await sleep(20);
-  });
-  assert.equal(latest!.src, `${storageUrl}&imgRetry=1`);
-  assert.equal(latest!.failed, false);
+  for (let retry = 1; retry <= 4; retry += 1) {
+    await act(async () => {
+      latest!.onError();
+      await sleep(5 * 2 ** (retry - 1) + 25);
+    });
+    assert.equal(latest!.src, `${storageUrl}&imgRetry=${retry}`);
+    assert.equal(latest!.failed, false);
+  }
   await act(async () => {
     latest!.onError();
   });

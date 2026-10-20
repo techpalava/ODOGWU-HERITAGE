@@ -38,6 +38,11 @@ import { OrderContextDetails } from "./CustomerOrderContext";
 import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
 import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
+import {
+  buildOptimizedImageSources,
+  FABRIC_THUMB_IMAGE_PRESET,
+} from "../utils/optimizedImageUrl";
+import { FabricPhotoReloadButton } from "./FabricPhotoReloadButton";
 
 export interface SummaryMeasurementGroupEditTarget {
   /** Person to open in Step 7; null for a sole wearer. */
@@ -205,21 +210,32 @@ const SummaryDesignPreview = ({
   );
 };
 
-/** Stage 8 fabric thumb: usable image, else colour swatch, else the Fabric step's "No preview". */
+/**
+ * Stage 8 fabric thumb: usable image (resized, then original, with retries),
+ * else colour swatch, else the Fabric step's "No preview". After every retry
+ * of a real photo failed, an icon "Tap to reload photo" button sits on top.
+ */
 const SummaryFabricPreview = ({
   allocation,
 }: {
   allocation: FutureSummaryFabricAllocation;
 }) => {
-  const image = useImageLoadRetry(allocation.image);
+  const image = useImageLoadRetry(allocation.image, {
+    optimized: buildOptimizedImageSources(allocation.image, FABRIC_THUMB_IMAGE_PRESET),
+    report: { surface: "summary-fabric", fabricCode: allocation.fabricCode },
+  });
   const showImage = !image.failed;
+  const canReloadPhoto = Boolean(allocation.image) && image.failed;
   return (
     <div
-      className="aspect-[4/3] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/40"
+      className="relative aspect-[4/3] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/40"
       data-summary-fabric-preview={allocation.allocationId}
     >
       {showImage ? (
         <img
+          key={image.imageKey}
+          srcSet={image.srcSet}
+          sizes={image.sizes}
           src={image.src}
           alt={`${allocation.fabricName} fabric swatch`}
           loading="lazy"
@@ -241,9 +257,18 @@ const SummaryFabricPreview = ({
           aria-label={`${allocation.fabricName} fabric preview unavailable`}
           data-summary-fabric-fallback="true"
         >
-          No preview
+          {canReloadPhoto ? <span className="sr-only">No preview</span> : "No preview"}
         </div>
       )}
+      {canReloadPhoto ? (
+        <div className="absolute inset-0">
+          <FabricPhotoReloadButton
+            fabricName={allocation.fabricName}
+            onReload={image.retry}
+            compact
+          />
+        </div>
+      ) : null}
     </div>
   );
 };
