@@ -806,7 +806,7 @@ export const DormantFutureSummaryStep = ({
                     />
                   </div>
                   <div
-                    className="flex min-w-0 flex-wrap gap-2 *:w-auto *:flex-1 sm:flex-col sm:flex-nowrap sm:items-end sm:*:flex-none"
+                    className="flex min-w-0 flex-wrap gap-2 *:w-auto *:flex-1 sm:flex-nowrap sm:justify-end sm:*:flex-none"
                   >
                     {onEditGarment ? (
                       <button

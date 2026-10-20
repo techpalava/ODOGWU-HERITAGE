@@ -356,6 +356,11 @@ assert.equal(
     ["Edit", "Edit Custom Details for Trouser"],
   );
   assert.equal(one(root, "data-summary-edit-garment", "base:shirt").props["aria-label"], "Edit Standard Shirt");
+  // Edit/Remove sit side by side on the name row (no stacked column that
+  // pushes the choice rows down and leaves an empty gap on desktop).
+  const headerActions = one(root, "data-summary-edit-garment", "base:shirt").parent!;
+  assert.ok(!String(headerActions.props.className).includes("flex-col"));
+  assert.ok(byAttr(headerActions, "data-garment-removal-button").length === 1);
   const removeShirt = one(root, "data-garment-removal-button", "base:shirt");
   assert.equal(removeShirt.props["aria-label"], "Remove Standard Shirt, base garment");
   assert.equal(removeShirt.props["data-garment-removal-origin-stage"], "summary");
