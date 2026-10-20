@@ -1,12 +1,18 @@
 import type {
   DesignStudioStageId,
+  FabricGarmentType,
   FutureMeasurementStateV1,
+  GarmentTypeStepSelection,
   MeasurementUnit,
   SelectedMeasurementMethod,
   WearerOrderStateV2,
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
-import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
+import {
+  isWearerOrderStateV2,
+  resolveWearerMeasurementDemographic,
+  wearerPublicLabel,
+} from "./wearerOrder";
 import { projectPersonGarmentLabels } from "./occurrenceDisplayLabel";
 import {
   type FutureOrderCandidateBlocker,
@@ -36,6 +42,7 @@ import {
   roundMeasurementDisplayValue,
   getDemographicMeasurementCustomerLabel,
   getMeasurementDefinition,
+  resolveMeasurementLabelDemographic,
   resolveMeasurementLabelDemographicForGarments,
 } from "./measurementBlueprint";
 
@@ -509,7 +516,12 @@ type MeasurementReviewGarment = {
   readonly demographic?: string | null;
 };
 
-/** Step 1 demographic for these garments, used only for Chest / Borst wording. */
+/**
+ * Chest / Borst wording for one person's garments, resolved like Step 7 and
+ * Summary: the Step 1 audience, unless it cannot size one of these garments
+ * (for example a dress on a Male order), when Step 7 measures them with the
+ * standard sizing and words the fields "Chest / Borst". Wording only.
+ */
 const labelDemographicFor = (
   garments: readonly MeasurementReviewGarment[],
   garmentKeys?: readonly string[],
@@ -517,8 +529,26 @@ const labelDemographicFor = (
   const scoped = garmentKeys
     ? garments.filter((garment) => garmentKeys.includes(garment.garmentKey))
     : garments;
-  return resolveMeasurementLabelDemographicForGarments(
+  const audience = resolveMeasurementLabelDemographicForGarments(
     scoped.map((garment) => garment.demographic ?? null),
+  );
+  if (audience === "unisex") return audience;
+  return resolveMeasurementLabelDemographic(
+    resolveWearerMeasurementDemographic({
+      garments: scoped.flatMap((garment) =>
+        garment.garmentType
+          ? [{
+              garmentKey: garment.garmentKey,
+              garmentType: garment.garmentType as FabricGarmentType,
+            }]
+          : [],
+      ),
+      garmentTypeSelection: {
+        garmentTypes: [],
+        demographic: audience,
+        constructionByGarment: {},
+      } as unknown as GarmentTypeStepSelection,
+    }),
   );
 };
 
@@ -558,7 +588,7 @@ const groupsFromMeasurementBag = (
         derived: derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
         route: state.route,
-        labelDemographic: labelDemographicFor(garments, [garmentKey]),
+        labelDemographic: labelDemographicFor(garments),
         diagnostics: state.diagnostics,
         garmentKey,
       });
@@ -661,7 +691,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
             derived: wearerDerived.byGarmentKey[garmentKey] || {},
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
-            labelDemographic: labelDemographicFor(candidate.garments, [garmentKey]),
+            labelDemographic: labelDemographicFor(candidate.garments, ownedKeys),
             diagnostics: wearer.measurement.diagnostics,
             garmentKey,
           });
