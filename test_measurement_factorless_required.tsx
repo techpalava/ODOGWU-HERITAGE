@@ -237,7 +237,13 @@ console.log("PASS: factorless garment rows are required per garment occurrence")
     garmentTypeSelection: dressSelection("dress_std_sleeveless"),
     physicalGarments: dress,
   });
-  assert.equal(criticalSleeveless.criticalRiskSupported, false, "sleeveless still cannot use Critical Risk");
+  // Xavier (2026-10-20): factorless fields no longer block Height Only; they are required manual inputs.
+  assert.equal(criticalSleeveless.criticalRiskSupported, true, "sleeveless can use Critical Risk");
+  assert.deepEqual(
+    criticalSleeveless.requirements.filter((requirement) => requirement.directInput).map((r) => r.measurementId).sort(),
+    ["sleeve_length_sleeveless", "total_height"],
+    "Critical Risk asks Total Height plus the factorless Sleeveless Finish Length",
+  );
 
   const sample = planMeasurementRequirements({
     route: "sample_cloth",

@@ -18,6 +18,7 @@ import {
   isGarmentMeasurementEligibleForDemographic,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
+  resolveMeasurementAudienceNotice,
   type MeasurementPhysicalGarment,
   type MeasurementRequirementPlan,
 } from "./measurementBlueprint.js";
@@ -897,12 +898,17 @@ export const planWearerOrderMeasurements = ({
       garmentScopedCustomDetails,
       additionalGarmentConstructions,
     });
+    const audienceNotice = resolveMeasurementAudienceNotice({
+      garments: subset,
+      garmentTypeSelection,
+      additionalGarmentConstructions,
+    });
     return {
       wearerId: wearer.wearerId,
       displayName: wearer.displayName,
       fitContext: wearer.fitContext,
       garmentKeys,
-      plan,
+      plan: audienceNotice ? { ...plan, audienceNotice } : plan,
       measurement: reconcileFutureMeasurementState({
         state: wearer.measurement,
         plan,

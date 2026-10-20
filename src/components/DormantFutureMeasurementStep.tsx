@@ -28,6 +28,7 @@ import {
   CRITICAL_RISK_AVAILABLE_COPY,
   CRITICAL_RISK_UNAVAILABLE_COPY,
   criticalRiskUnavailableCopy,
+  measurementAudienceNoticeCopy,
   FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
   formatDualUnitMeasurementDisplay,
   formatImplausibleMeasurementMessage,
@@ -277,7 +278,9 @@ const MeasurementField = ({
     requirement.averageFactor === null &&
     requirement.measurementId !== "total_height" &&
     !requirement.sampleGeometry &&
-    (state.route === "medium_risk" || state.route === "high_risk");
+    (state.route === "medium_risk" ||
+      state.route === "high_risk" ||
+      state.route === "critical_risk");
   const ifApplicable = DRESS_CONDITIONAL_MEASUREMENT_ID_SET.has(
     requirement.measurementId,
   );
@@ -778,6 +781,18 @@ export const DormantFutureMeasurementStep = ({
     },
   );
   const criticalRiskBlockMessage = criticalRiskUnavailableCopy(criticalRiskBlockingLabels);
+  const audienceNotice = plan.audienceNotice || null;
+  const audienceNoticeMessage = audienceNotice && audienceNotice.garmentKeys.length > 0
+    ? measurementAudienceNoticeCopy(
+        audienceNotice,
+        audienceNotice.garmentKeys.map((garmentKey) => {
+          const garmentType = physicalGarments.find(
+            (garment) => garment.garmentKey === garmentKey,
+          )?.garmentType;
+          return formatGarmentLabel(occurrenceLabels, garmentType, garmentKey);
+        }),
+      )
+    : null;
   const unsupportedGarments = selectedMethod
     ? resolvedState.diagnostics.filter(
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
@@ -1277,6 +1292,17 @@ export const DormantFutureMeasurementStep = ({
           guideCueTarget === "options" && guideCuePhase === "flash" ? "true" : undefined
         }
       >
+        {audienceNoticeMessage && audienceNotice && (
+          <p
+            role="note"
+            data-measurement-audience-warning={audienceNotice.kind}
+            data-measurement-audience-warning-garments={audienceNotice.garmentKeys.join(" ")}
+            className="mb-3 flex min-w-0 items-start gap-2 rounded-xl border border-heritage-gold/40 bg-heritage-gold/10 px-3 py-2 text-sm font-medium leading-relaxed text-heritage-ink"
+          >
+            <ShieldAlert aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-heritage-bronze" />
+            <span className="min-w-0 break-words">{audienceNoticeMessage}</span>
+          </p>
+        )}
         <header data-measurement-risk-heading="true">
           <h3
             data-measurement-option-heading="body"
