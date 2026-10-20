@@ -9,6 +9,7 @@ import {
 } from "@stripe/stripe-js";
 import {
   registerFutureOrderV2PaymentConfirmer,
+  registerFutureOrderV2PaymentMethodReader,
   readFutureOrderV2JsonBody,
   type FutureOrderV2PaymentConfirmContext,
   type FutureOrderV2PaymentConfirmation,
@@ -29,6 +30,16 @@ import {
   FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES,
   type FutureOrderV2StripeAccountMethod,
 } from "../utils/futureOrderV2StripeMethods";
+import {
+  clearFutureOrderV2PixPending,
+  FUTURE_ORDER_V2_PIX_EBANX_TERMS_URL,
+  FUTURE_ORDER_V2_PIX_IOF_DISCLOSURE,
+  FUTURE_ORDER_V2_PIX_PENDING_EVENT,
+  FUTURE_ORDER_V2_PIX_PENDING_MESSAGE,
+  isFutureOrderV2PixAvailable,
+  readFutureOrderV2PixPending,
+  type FutureOrderV2PixPending,
+} from "../utils/futureOrderV2Pix";
 import type { FutureShippingStateV1 } from "../types";
 import {
   FutureOrderV2AllowedCardIcons,
@@ -55,6 +66,7 @@ export const isFutureOrderV2ExpressWalletAvailable = (
 /**
  * Card Pay waits for the Card Element. iDEAL and Klarna confirm through
  * stripe.confirmIdealPayment / confirmKlarnaPayment and only need Stripe.js.
+ * Pix redirects to hosted Checkout and only needs the loaded test config.
  */
 export const isFutureOrderV2StripePayReady = ({
   method,
@@ -65,7 +77,9 @@ export const isFutureOrderV2StripePayReady = ({
   cardReady: boolean;
   stripeClientReady: boolean;
 }): boolean =>
-  method === "ideal" || method === "klarna" ? stripeClientReady : cardReady;
+  method === "ideal" || method === "klarna" || method === "pix"
+    ? stripeClientReady
+    : cardReady;
 
 export const FUTURE_ORDER_V2_CARD_LOADING_MESSAGE = "Loading secure card form…";
 
@@ -126,7 +140,13 @@ export const futureOrderV2VisibleStripeMethods = (
 };
 
 const stripeMethodGridClass = (count: number): string =>
-  count >= 3 ? "grid-cols-3" : count === 2 ? "grid-cols-2" : "grid-cols-1";
+  count >= 4
+    ? "grid-cols-2 sm:grid-cols-4"
+    : count >= 3
+      ? "grid-cols-3"
+      : count === 2
+        ? "grid-cols-2"
+        : "grid-cols-1";
 
 /**
  * Card via Stripe Element, iDEAL or Klarna redirect, or Apple Pay / Google Pay.
@@ -208,6 +228,15 @@ export const FutureOrderV2StripeCard = ({
   const visibleMethods = futureOrderV2VisibleStripeMethods(
     offeredPaymentMethodTypes ?? configPaymentMethodTypes,
   );
+  // Pix is a hosted Checkout option, not a PaymentIntent method. It shows only
+  // for orders delivered to Brazil within the Pix amount range.
+  const pixAvailable = isFutureOrderV2PixAvailable({ shippingState, amountCents });
+  const methodPillCount = visibleMethods.length + (pixAvailable ? 1 : 0);
+  const [pixPending, setPixPending] = useState<FutureOrderV2PixPending | null>(() =>
+    orderId ? readFutureOrderV2PixPending(orderId) : null,
+  );
+  const [pixChecking, setPixChecking] = useState(false);
+  const [pixStatusMessage, setPixStatusMessage] = useState<string | null>(null);
 
   const reportReady = (
     nextMethod: FutureOrderV2PaymentMethod,
@@ -660,6 +689,48 @@ export const FutureOrderV2StripeCard = ({
     cardRef.current?.update({ disabled: disabled || method !== "card" });
   }, [disabled, method]);
 
+  useEffect(() => {
+    registerFutureOrderV2PaymentMethodReader(() => methodRef.current);
+    return () => registerFutureOrderV2PaymentMethodReader(null);
+  }, []);
+
+  useEffect(() => {
+    if (!pixAvailable && methodRef.current === "pix") selectMethod("card");
+  }, [pixAvailable]);
+
+  useEffect(() => {
+    const refresh = () => setPixPending(orderId ? readFutureOrderV2PixPending(orderId) : null);
+    refresh();
+    if (typeof window === "undefined") return;
+    window.addEventListener(FUTURE_ORDER_V2_PIX_PENDING_EVENT, refresh);
+    return () => window.removeEventListener(FUTURE_ORDER_V2_PIX_PENDING_EVENT, refresh);
+  }, [orderId]);
+
+  const checkPixPayment = async () => {
+    if (!pixPending || pixChecking) return;
+    setPixChecking(true);
+    setPixStatusMessage(null);
+    try {
+      const { verifyFutureOrderV2PixCheckout } = await import(
+        "../services/futureOrderV2PaymentRecordClient"
+      );
+      const result = await verifyFutureOrderV2PixCheckout(pixPending);
+      if (result.status === "recorded") {
+        clearFutureOrderV2PixPending();
+        setPixPending(null);
+        setPixStatusMessage("Pix payment received. Your order is paid.");
+      } else if (result.status === "pending") {
+        setPixStatusMessage(FUTURE_ORDER_V2_PIX_PENDING_MESSAGE);
+      } else {
+        setPixStatusMessage(result.message);
+      }
+    } catch {
+      setPixStatusMessage("The Pix payment could not be checked. Try again in a moment.");
+    } finally {
+      setPixChecking(false);
+    }
+  };
+
   const stripeClientReady = stripeClient !== null;
 
   useEffect(() => {
@@ -680,7 +751,7 @@ export const FutureOrderV2StripeCard = ({
       </div>
 
       <div
-        className={`relative z-10 grid ${stripeMethodGridClass(visibleMethods.length)} gap-2`}
+        className={`relative z-10 grid ${stripeMethodGridClass(methodPillCount)} gap-2`}
         role="radiogroup"
         aria-label="Payment method"
         data-future-order-v2-payment-methods
@@ -739,7 +810,59 @@ export const FutureOrderV2StripeCard = ({
             Klarna
           </button>
         )}
+        {pixAvailable && (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={method === "pix"}
+            data-future-order-v2-method-pix
+            disabled={disabled}
+            onClick={() => selectMethod("pix")}
+            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+              method === "pix"
+                ? "border-heritage-gold bg-heritage-gold/15 text-white"
+                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            <FutureOrderV2MethodIcon method="pix" />
+            Pix
+          </button>
+        )}
       </div>
+
+      {pixPending && (
+        <div
+          role="status"
+          data-future-order-v2-pix-pending
+          className="space-y-2 rounded-xl border border-heritage-gold/60 bg-heritage-gold/10 px-3 py-2.5"
+        >
+          <p className="text-xs font-semibold leading-relaxed text-white">
+            Awaiting Pix payment
+          </p>
+          <p className="text-xs leading-relaxed text-white/80">
+            {FUTURE_ORDER_V2_PIX_PENDING_MESSAGE}
+          </p>
+          <button
+            type="button"
+            data-future-order-v2-pix-check
+            disabled={pixChecking}
+            onClick={() => void checkPixPayment()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/40 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pixChecking && <Loader2 aria-hidden="true" size={12} className="animate-spin" />}
+            Check Pix payment
+          </button>
+        </div>
+      )}
+      {pixStatusMessage && (
+        <p
+          role="status"
+          data-future-order-v2-pix-status
+          className="text-xs leading-relaxed text-white/80"
+        >
+          {pixStatusMessage}
+        </p>
+      )}
 
       <div className={method === "card" ? "block" : "hidden"}>
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/70">
@@ -798,6 +921,33 @@ export const FutureOrderV2StripeCard = ({
           >
             Pay with Klarna. You will be redirected to Klarna to authorize this
             payment, then returned here.
+          </p>
+        </div>
+      )}
+
+      {pixAvailable && (
+        <div className={method === "pix" ? "block" : "hidden"}>
+          <p
+            data-future-order-v2-pix-help
+            className="text-xs leading-relaxed text-white/75"
+          >
+            Pay with Pix in Brazilian reais. You will go to a secure Stripe page
+            that shows the amount in BRL and a Pix QR code to scan or copy into
+            your bank app. Your order updates here when the bank confirms it.
+          </p>
+          <p
+            data-future-order-v2-pix-iof
+            className="mt-1.5 text-[11px] leading-relaxed text-white/60"
+          >
+            {FUTURE_ORDER_V2_PIX_IOF_DISCLOSURE}{" "}
+            <a
+              href={FUTURE_ORDER_V2_PIX_EBANX_TERMS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Ebanx terms
+            </a>
           </p>
         </div>
       )}
