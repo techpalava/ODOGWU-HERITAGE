@@ -15,10 +15,9 @@ import {
   countRemainingCustomerRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
   isFutureMeasurementStageComplete,
-  isGarmentMeasurementEligibleForDemographic,
-  planMeasurementRequirements,
+  planPersonMeasurementRequirements,
   reconcileFutureMeasurementState,
-  resolveMeasurementAudienceNotice,
+  resolveMeasurementPlanningDemographic,
   type MeasurementPhysicalGarment,
   type MeasurementRequirementPlan,
 } from "./measurementBlueprint.js";
@@ -180,34 +179,11 @@ export const isGarmentEligibleForWearer = ({
 };
 
 /**
- * Demographic used to pick a person's measurement fields. It comes from the
- * Step 1 Garment Type audience (compatibility demographic: one picked gender,
- * or "unisex" when several were picked), never from a per-person fit. When
- * Step 1 has no demographic, or it cannot resolve a profile for one of these
- * garments (for example a dress with a Male audience), the default "unisex"
- * blueprint is used, which every measurement profile supports.
+ * Demographic used to pick a person's measurement fields. Shared with every
+ * other planner caller (see resolveMeasurementPlanningDemographic).
  */
-export const resolveWearerMeasurementDemographic = ({
-  garments,
-  garmentTypeSelection,
-  additionalGarmentConstructions,
-}: {
-  garments: readonly MeasurementPhysicalGarment[];
-  garmentTypeSelection: GarmentTypeStepSelection;
-  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
-}): CustomDetailDemographic => {
-  const studio = garmentTypeSelection.demographic;
-  if (!studio) return "unisex";
-  const allResolve = garments.every((garment) =>
-    isGarmentMeasurementEligibleForDemographic({
-      garment,
-      garmentTypeSelection,
-      demographic: studio,
-      additionalGarmentConstructions,
-    }),
-  );
-  return allResolve ? studio : "unisex";
-};
+export const resolveWearerMeasurementDemographic =
+  resolveMeasurementPlanningDemographic;
 
 const wearerOwnsGarment = (
   order: WearerOrderStateV2,
@@ -884,23 +860,11 @@ export const planWearerOrderMeasurements = ({
     const subset = physicalGarments.filter((garment) =>
       garmentKeys.includes(garment.garmentKey),
     );
-    const plan = planMeasurementRequirements({
+    const plan = planPersonMeasurementRequirements({
       route: wearer.measurement.route,
-      garmentTypeSelection: {
-        ...garmentTypeSelection,
-        demographic: resolveWearerMeasurementDemographic({
-          garments: subset,
-          garmentTypeSelection,
-          additionalGarmentConstructions,
-        }),
-      },
+      garmentTypeSelection,
       physicalGarments: subset,
       garmentScopedCustomDetails,
-      additionalGarmentConstructions,
-    });
-    const audienceNotice = resolveMeasurementAudienceNotice({
-      garments: subset,
-      garmentTypeSelection,
       additionalGarmentConstructions,
     });
     return {
@@ -908,7 +872,7 @@ export const planWearerOrderMeasurements = ({
       displayName: wearer.displayName,
       fitContext: wearer.fitContext,
       garmentKeys,
-      plan: audienceNotice ? { ...plan, audienceNotice } : plan,
+      plan,
       measurement: reconcileFutureMeasurementState({
         state: wearer.measurement,
         plan,
