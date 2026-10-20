@@ -105,7 +105,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
   assert.equal(card!.src, buildVercelImageUrl(STORAGE_URL, 384));
   assert.equal(
     card!.srcSet,
-    [256, 384, 640].map((w) => `${buildVercelImageUrl(STORAGE_URL, w as 256)} ${w}w`).join(", "),
+    [256, 384, 512].map((w) => `${buildVercelImageUrl(STORAGE_URL, w as 256)} ${w}w`).join(", "),
   );
   assert.equal(card!.sizes, FABRIC_CARD_IMAGE_PRESET.sizes);
   assert.equal(buildOptimizedImageSources(STORAGE_URL, FABRIC_CARD_IMAGE_PRESET, { enabled: false }), null);
@@ -134,7 +134,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     for (const width of [...preset.widths, preset.fallbackWidth]) {
       assert.ok(vercel.images.sizes.includes(width), `width ${width} must be in vercel.json sizes`);
     }
-    assert.ok(Math.max(...preset.widths) <= 640, "card-sized: never more than 640 px");
+    assert.ok(Math.max(...preset.widths) <= 512, "card-sized: never more than 512 px");
   }
   const matchesRemotePattern = (url: string) => {
     const target = new URL(url);
@@ -351,7 +351,7 @@ setImageOptimizationEnabledForTests(true);
   });
   const img = () => renderer.root.findByProps({ "data-fabric-card-image": "true" });
   assert.match(String(img().props.src), /^\/_vercel\/image\?url=/);
-  assert.match(String(img().props.srcSet), / 256w, .* 384w, .* 640w$/);
+  assert.match(String(img().props.srcSet), / 256w, .* 384w, .* 512w$/);
   assert.equal(img().props.sizes, FABRIC_CARD_IMAGE_PRESET.sizes);
   assert.equal(img().props["data-fabric-image-source"], "optimized");
 

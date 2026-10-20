@@ -2,7 +2,8 @@
  * Card-sized catalogue photos through Vercel Image Optimization.
  *
  * Fabric photos in Firebase Storage are up to ~1600 px wide and 0.6-0.9 MB,
- * but the cards that show them are ~100-400 CSS px wide. On Vercel,
+ * but the cards that show them are ~100-400 CSS px wide. 512 px is the
+ * largest width served (sharp enough for a ~300 px card on a 2x screen). On Vercel,
  * `/_vercel/image?url=<encoded>&w=<width>&q=<quality>` (enabled by the
  * `images` block in vercel.json) resizes the original on demand, converts it
  * to WebP, and serves it from the site's own domain. The stored Firestore
@@ -17,11 +18,14 @@
 export const VERCEL_IMAGE_ENDPOINT = "/_vercel/image";
 
 /** Every width the site may request. Must equal vercel.json `images.sizes`. */
-export const VERCEL_IMAGE_SIZES = [128, 256, 384, 640] as const;
+export const VERCEL_IMAGE_SIZES = [128, 256, 384, 512] as const;
 export type VercelImageWidth = (typeof VERCEL_IMAGE_SIZES)[number];
 
-/** Must be listed in vercel.json `images.qualities`. */
-export const VERCEL_IMAGE_QUALITY = 70;
+/**
+ * Must be listed in vercel.json `images.qualities`. 60 keeps every current
+ * fabric under ~80 KB at 512 px (measured on the preview, 2026-10-20).
+ */
+export const VERCEL_IMAGE_QUALITY = 60;
 
 /** The project's Firebase Storage bucket (firebase-applet-config.json). */
 export const FIREBASE_STORAGE_BUCKET = "gen-lang-client-0614710868.firebasestorage.app";
@@ -37,14 +41,14 @@ export interface ResponsiveImagePreset {
 
 /** Fabric catalogue cards: 1 column on phones, up to 4 columns on wide screens. */
 export const FABRIC_CARD_IMAGE_PRESET: ResponsiveImagePreset = {
-  widths: [256, 384, 640],
+  widths: [256, 384, 512],
   fallbackWidth: 384,
   sizes: "(min-width: 1280px) 22vw, (min-width: 1024px) 30vw, (min-width: 640px) 46vw, 92vw",
 };
 
 /** Assigned-Fabric previews: full width (100 px tall) on phones, 128 px from `sm`. */
 export const FABRIC_PREVIEW_IMAGE_PRESET: ResponsiveImagePreset = {
-  widths: [128, 256, 384, 640],
+  widths: [128, 256, 384, 512],
   fallbackWidth: 256,
   sizes: "(min-width: 640px) 128px, 92vw",
 };
