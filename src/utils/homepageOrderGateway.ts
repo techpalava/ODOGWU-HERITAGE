@@ -28,6 +28,7 @@ export function getHomepageJoinBatchLabel(
 
 const formatHomepageBatchDeadline = (
   value: string | null | undefined,
+  month: "long" | "short" = "long",
 ): string | null => {
   if (typeof value !== "string" || !value.trim()) return null;
   const trimmed = value.trim();
@@ -40,7 +41,7 @@ const formatHomepageBatchDeadline = (
   if (Number.isNaN(date.getTime())) return null;
   return new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
-    month: "long",
+    month,
     year: "numeric",
     timeZone: dateOnly ? "UTC" : undefined,
   }).format(date);
@@ -77,6 +78,19 @@ export function getHomepageJoinBatchDescription(
       ? `Join the currently open community batch before ordering closes on ${deadline}.`
       : "Join the currently open community batch before its ordering deadline.",
   };
+}
+
+/**
+ * Short deadline for the Join card pill ("16 Nov 2026"), or null when the
+ * batch is closed for orders or has no readable endDate. Same closure rule as
+ * getHomepageJoinBatchDescription.
+ */
+export function getHomepageJoinBatchDeadlinePill(
+  batch: Batch | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!batch || isCommunityBatchClosedForOrders(batch, now)) return null;
+  return formatHomepageBatchDeadline(batch.endDate, "short");
 }
 
 export function getHomepageOrderGatewayState(
