@@ -313,6 +313,29 @@ assert.equal(
     ["removeStyle", "base:shirt"],
     ["editDetails", "base:trouser"],
   ]);
+  // Tidy 3-row list: each row holds its link and its own actions.
+  const choiceList = one(shirtCard, "data-summary-garment-choices", "base:shirt");
+  assert.equal(choiceList.type, "ul");
+  const rows = choiceList.findAll((node) => node.type === "li");
+  assert.deepEqual(rows.map((row) => row.props["data-summary-garment-choice-row"]), ["fabric", "design-style", "custom-details"]);
+  const rowActions = (row: ReactTestInstance) =>
+    byAttr(row, "data-summary-choice-action").map((node) => node.props["data-summary-choice-action"]);
+  assert.deepEqual(rows.map(rowActions), [
+    ["change-fabric:base:shirt", "remove-fabric:base:shirt"],
+    ["change-style:base:shirt", "remove-style:base:shirt"],
+    ["edit-details:base:shirt"],
+  ]);
+  assert.deepEqual(
+    rows.map((row) => byAttr(row, "data-summary-garment-jump").map((node) => node.props["data-summary-garment-jump"])),
+    [["fabric:base:shirt"], ["design-style:base:shirt"], ["custom-details:base:shirt"]],
+  );
+  // Every action is a real button (keyboard reachable) with its own name.
+  for (const id of rows.flatMap(rowActions)) {
+    const button = one(root, "data-summary-choice-action", id);
+    assert.equal(button.type, "button");
+    assert.equal(button.props.type, "button");
+    assert.ok(String(button.props["aria-label"]).length > 0);
+  }
   // Short visible labels beside their jump link; full names for assistive tech.
   const action = (id: string) => one(root, "data-summary-choice-action", id);
   assert.deepEqual(

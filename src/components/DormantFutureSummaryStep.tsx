@@ -162,6 +162,30 @@ const Section = ({
   </section>
 );
 
+/** One line of the per-garment choice list: link left, actions right, never wraps the actions. */
+const CHOICE_ROW_CLASS =
+  "flex min-w-0 items-center justify-between gap-1 px-1.5 py-0.5 sm:gap-2 sm:px-3";
+
+/** Right-hand actions of a choice row, separated by a dot. */
+const ChoiceActions = ({ children }: { children: React.ReactNode }) => {
+  const actions = (Array.isArray(children) ? children : [children]).filter(Boolean);
+  if (actions.length === 0) return null;
+  return (
+    <div className="flex shrink-0 items-center">
+      {actions.map((action, index) => (
+        <span key={index} className="flex items-center">
+          {index > 0 ? (
+            <span aria-hidden="true" className="px-0.5 text-heritage-ink/30">
+              ·
+            </span>
+          ) : null}
+          {action}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const ChoiceActionButton = ({
   label,
   ariaLabel,
@@ -170,7 +194,7 @@ const ChoiceActionButton = ({
   testId,
 }: {
   label: string;
-  /** Full accessible name when the visible label is short (e.g. "Change"). */
+  /** Full accessible name; the visible label is short (e.g. "Change"). */
   ariaLabel?: string;
   onClick: () => void;
   tone?: "neutral" | "danger";
@@ -184,10 +208,10 @@ const ChoiceActionButton = ({
       onClick();
     }}
     data-summary-choice-action={testId}
-    className={`inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border px-2 text-[10px] font-bold uppercase tracking-wide sm:px-2.5 sm:tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+    className={`inline-flex min-h-9 shrink-0 items-center rounded px-0.5 text-xs font-semibold underline sm:px-1.5 underline-offset-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
       tone === "danger"
-        ? "border-red-200 text-red-700 hover:bg-red-50"
-        : "border-heritage-green/20 text-heritage-green hover:bg-heritage-green hover:text-white"
+        ? "text-red-700 hover:text-red-900 focus-visible:ring-red-500"
+        : "text-heritage-green hover:text-heritage-bronze focus-visible:ring-heritage-gold"
     }`}
   >
     {label}
@@ -283,25 +307,30 @@ const SummaryGarmentJumpLink = ({
     aria-label={ariaLabel}
     data-summary-garment-jump={testId}
     data-summary-jump-status={status}
-    className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-heritage-green/15 bg-white px-2.5 text-[11px] font-semibold text-heritage-green transition hover:border-heritage-green/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+    className="inline-flex min-h-9 min-w-0 items-center gap-1 rounded text-left text-[13px] font-semibold sm:gap-1.5 sm:text-sm text-heritage-green transition hover:text-heritage-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
   >
     {status === "chosen" ? (
       <span
         aria-hidden="true"
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-heritage-green text-white"
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-heritage-green text-white"
       >
         <Check size={11} strokeWidth={3} />
       </span>
     ) : status === "needed" ? (
       <span
         aria-hidden="true"
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-heritage-gold bg-heritage-gold/15 text-[10px] font-bold text-heritage-bronze"
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-heritage-gold bg-heritage-gold/15 text-[10px] font-bold text-heritage-bronze"
       >
         !
       </span>
-    ) : null}
-    {label}
-    <ArrowDown aria-hidden="true" size={12} className="text-heritage-gold" />
+    ) : (
+      <span
+        aria-hidden="true"
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-heritage-ink/20"
+      />
+    )}
+    <span className="min-w-0">{label}</span>
+    <ArrowDown aria-hidden="true" size={13} className="shrink-0 text-heritage-gold" />
   </button>
 );
 
@@ -738,7 +767,7 @@ export const DormantFutureSummaryStep = ({
             return (
               <article
                 key={garment.garmentKey}
-                className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-3 sm:p-4"
+                className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-2.5 sm:p-4"
                 data-garment-removal-row={garment.garmentKey}
                 data-summary-garment-card={garment.garmentKey}
               >
@@ -776,7 +805,9 @@ export const DormantFutureSummaryStep = ({
                       className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65"
                     />
                   </div>
-                  <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-2 sm:flex sm:flex-col sm:items-end">
+                  <div
+                    className="flex min-w-0 flex-wrap gap-2 *:w-auto *:flex-1 sm:flex-col sm:flex-nowrap sm:items-end sm:*:flex-none"
+                  >
                     {onEditGarment ? (
                       <button
                         type="button"
@@ -786,9 +817,9 @@ export const DormantFutureSummaryStep = ({
                           event.stopPropagation();
                           onEditGarment(garment.garmentKey);
                         }}
-                        className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-heritage-green/20 px-3 text-xs font-bold text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                        className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-heritage-green/20 px-2 sm:px-3 text-xs font-bold text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
                       >
-                        <Pencil aria-hidden="true" size={15} />
+                        <Pencil aria-hidden="true" className="shrink-0" size={15} />
                         Edit
                       </button>
                     ) : null}
@@ -816,9 +847,9 @@ export const DormantFutureSummaryStep = ({
                             event.currentTarget,
                           );
                         }}
-                        className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
+                        className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-red-200 px-2 sm:px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
                       >
-                        <Trash2 aria-hidden="true" size={15} />
+                        <Trash2 aria-hidden="true" className="shrink-0" size={15} />
                         Remove
                       </button>
                     )}
@@ -826,11 +857,11 @@ export const DormantFutureSummaryStep = ({
                 </div>
                   </div>
                   <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-2">
-                <div
-                  className="flex min-w-0 flex-wrap gap-x-3 gap-y-2"
+                <ul
+                  className="divide-y divide-heritage-green/10 overflow-hidden rounded-lg border border-heritage-green/12 bg-white/80 sm:max-w-md"
                   data-summary-garment-choices={garment.garmentKey}
                 >
-                  <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-1.5">
+                  <li className={CHOICE_ROW_CLASS} data-summary-garment-choice-row="fabric">
                     <SummaryGarmentJumpLink
                       label="Fabric"
                       status={hasFabric ? "chosen" : "needed"}
@@ -838,25 +869,27 @@ export const DormantFutureSummaryStep = ({
                       testId={`fabric:${garment.garmentKey}`}
                       onClick={() => jumpToSummaryTarget("fabrics")}
                     />
-                    {onChangeGarmentFabric ? (
-                      <ChoiceActionButton
-                        label={hasFabric ? "Change" : "Select"}
-                        ariaLabel={`${hasFabric ? "Change" : "Select"} Fabric for ${garment.label}`}
-                        testId={`change-fabric:${garment.garmentKey}`}
-                        onClick={() => onChangeGarmentFabric(garment.garmentKey)}
-                      />
-                    ) : null}
-                    {hasFabric && onRemoveGarmentFabric ? (
-                      <ChoiceActionButton
-                        label="Remove"
-                        ariaLabel={`Remove Fabric from ${garment.label}`}
-                        tone="danger"
-                        testId={`remove-fabric:${garment.garmentKey}`}
-                        onClick={() => onRemoveGarmentFabric(garment.garmentKey)}
-                      />
-                    ) : null}
-                  </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-1.5">
+                    <ChoiceActions>
+                      {onChangeGarmentFabric ? (
+                        <ChoiceActionButton
+                          label={hasFabric ? "Change" : "Select"}
+                          ariaLabel={`${hasFabric ? "Change" : "Select"} Fabric for ${garment.label}`}
+                          testId={`change-fabric:${garment.garmentKey}`}
+                          onClick={() => onChangeGarmentFabric(garment.garmentKey)}
+                        />
+                      ) : null}
+                      {hasFabric && onRemoveGarmentFabric ? (
+                        <ChoiceActionButton
+                          label="Remove"
+                          ariaLabel={`Remove Fabric from ${garment.label}`}
+                          tone="danger"
+                          testId={`remove-fabric:${garment.garmentKey}`}
+                          onClick={() => onRemoveGarmentFabric(garment.garmentKey)}
+                        />
+                      ) : null}
+                    </ChoiceActions>
+                  </li>
+                  <li className={CHOICE_ROW_CLASS} data-summary-garment-choice-row="design-style">
                     <SummaryGarmentJumpLink
                       label="Design Style"
                       status={hasDesignStyle ? "chosen" : "needed"}
@@ -864,29 +897,31 @@ export const DormantFutureSummaryStep = ({
                       testId={`design-style:${garment.garmentKey}`}
                       onClick={() => jumpToSummaryTarget("design-style")}
                     />
-                    {onChangeGarmentDesignStyle ? (
-                      <ChoiceActionButton
-                        label={hasDesignStyle ? "Change" : "Select"}
-                        ariaLabel={`${hasDesignStyle ? "Change" : "Select"} Design Style for ${garment.label}`}
-                        testId={`change-style:${garment.garmentKey}`}
-                        onClick={() =>
-                          onChangeGarmentDesignStyle(garment.garmentKey)
-                        }
-                      />
-                    ) : null}
-                    {hasDesignStyle && onRemoveGarmentDesignStyle ? (
-                      <ChoiceActionButton
-                        label="Remove"
-                        ariaLabel={`Remove Design Style from ${garment.label}`}
-                        tone="danger"
-                        testId={`remove-style:${garment.garmentKey}`}
-                        onClick={() =>
-                          onRemoveGarmentDesignStyle(garment.garmentKey)
-                        }
-                      />
-                    ) : null}
-                  </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-1.5">
+                    <ChoiceActions>
+                      {onChangeGarmentDesignStyle ? (
+                        <ChoiceActionButton
+                          label={hasDesignStyle ? "Change" : "Select"}
+                          ariaLabel={`${hasDesignStyle ? "Change" : "Select"} Design Style for ${garment.label}`}
+                          testId={`change-style:${garment.garmentKey}`}
+                          onClick={() =>
+                            onChangeGarmentDesignStyle(garment.garmentKey)
+                          }
+                        />
+                      ) : null}
+                      {hasDesignStyle && onRemoveGarmentDesignStyle ? (
+                        <ChoiceActionButton
+                          label="Remove"
+                          ariaLabel={`Remove Design Style from ${garment.label}`}
+                          tone="danger"
+                          testId={`remove-style:${garment.garmentKey}`}
+                          onClick={() =>
+                            onRemoveGarmentDesignStyle(garment.garmentKey)
+                          }
+                        />
+                      ) : null}
+                    </ChoiceActions>
+                  </li>
+                  <li className={CHOICE_ROW_CLASS} data-summary-garment-choice-row="custom-details">
                     {hasConstructionList ? (
                       <SummaryGarmentJumpLink
                         label={`Custom Details (${selectedCustomDetails.length})`}
@@ -897,21 +932,31 @@ export const DormantFutureSummaryStep = ({
                           jumpToSummaryTarget(`custom-details:${garment.garmentKey}`)
                         }
                       />
-                    ) : null}
-                    {onEditGarmentCustomDetails ? (
-                      <ChoiceActionButton
-                        label="Edit"
-                        ariaLabel={`Edit Custom Details for ${garment.label}`}
-                        testId={`edit-details:${garment.garmentKey}`}
-                        onClick={() =>
-                          onEditGarmentCustomDetails(garment.garmentKey)
-                        }
-                      />
-                    ) : null}
-                  </div>
-                </div>
+                    ) : (
+                      <span className="inline-flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-semibold text-heritage-green">
+                        <span
+                          aria-hidden="true"
+                          className="inline-flex h-4 w-4 shrink-0 rounded-full border border-heritage-ink/20"
+                        />
+                        Custom Details ({selectedCustomDetails.length})
+                      </span>
+                    )}
+                    <ChoiceActions>
+                      {onEditGarmentCustomDetails ? (
+                        <ChoiceActionButton
+                          label="Edit"
+                          ariaLabel={`Edit Custom Details for ${garment.label}`}
+                          testId={`edit-details:${garment.garmentKey}`}
+                          onClick={() =>
+                            onEditGarmentCustomDetails(garment.garmentKey)
+                          }
+                        />
+                      ) : null}
+                    </ChoiceActions>
+                  </li>
+                </ul>
               {garment.physicalComponents.length > 1 && (
-                <p className="mt-2 text-xs text-heritage-ink/70">
+                <p className="mt-3 text-xs text-heritage-ink/70">
                   Components: {garment.physicalComponents.map((component) => component.label).join(", ")}
                 </p>
               )}
