@@ -224,6 +224,7 @@ import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
   assignFutureGarmentToExistingFabricAllocation,
+  moveFutureGarmentToFabricAllocation,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
   changeFutureFabricAllocationProduct,
@@ -9787,6 +9788,27 @@ export default function DesignStudioView({
     }
     return result;
   };
+  const handleMoveFutureGarmentToFabricAllocation = (
+    garmentKey: string,
+    allocationId: string,
+  ) => {
+    const result = moveFutureGarmentToFabricAllocation({
+      state: fabricAllocationState,
+      garmentKey,
+      allocationId,
+    });
+    if (result.status === "moved") {
+      if (activeUploadedDesignSource) {
+        setFuturePriceActivatedFabricCode(null);
+      }
+      revalidatePreservedFabricIntegrityAfterMutation({
+        previousState: fabricAllocationState,
+        nextState: result.state,
+      });
+      setFabricAllocationState(result.state);
+    }
+    return result;
+  };
   const handleUseSameFutureFabricForGarment = (garmentKey: string) => {
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
@@ -10486,6 +10508,9 @@ export default function DesignStudioView({
           onAssignSameFabricProduct={handleAssignSameFabricProductToGarments}
           onAssignGarmentToExistingAllocation={
             handleAssignGarmentToExistingAllocation
+          }
+          onMoveGarmentToFabricAllocation={
+            handleMoveFutureGarmentToFabricAllocation
           }
           onBack={() => handleBackDuringSummaryEdit("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
