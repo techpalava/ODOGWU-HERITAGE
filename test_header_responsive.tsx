@@ -69,7 +69,7 @@ try {
   act(() => { menu.props.onClick(); cart.props.onClick(); });
   assert.ok(menuOpened && cartOpened, "Existing mobile navigation actions remain connected");
   assert.deepEqual(header.findByType("nav").findAllByType("button").map(text),
-    ["Home", "Design Studio", "About", "Gallery"], "Preserve guest desktop navigation");
+    ["Home", "Design Studio", "About", "Gallery", "Reviews"], "Preserve guest desktop navigation");
 } finally {
   act(() => { tree?.unmount(); });
   useAppStore.setState(originalState);
