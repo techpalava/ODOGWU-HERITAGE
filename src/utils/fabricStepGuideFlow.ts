@@ -28,6 +28,8 @@ export type FabricGuideTarget =
   | { type: "garment_action"; garmentKey: string }
   | { type: "garment_card"; garmentKey: string }
   | { type: "garment_remove"; garmentKey: string }
+  /** The Guide's own one-tap "Move" button for an over-allocated order. */
+  | { type: "quantity_move"; garmentKey: string }
   | { type: "pending_panel" }
   | { type: "orphan_repair"; repairKey: string }
   | { type: "none" };
@@ -79,6 +81,12 @@ export interface FabricGuideFlowInput {
   /** Merged avoidable-partial guidance copy, shown on the current assign step. */
   avoidablePartialGuidance?: string | null;
   noCapacityMessage?: string;
+  /**
+   * One-move repair for FABRIC_QUANTITY_OVER_ALLOCATED: a garment that sits
+   * alone on a Fabric and fits on another selected Fabric. When present the
+   * fix step explains the move and the beam lands on its Move button.
+   */
+  quantityRepair?: { garmentKey: string; message: string } | null;
 }
 
 export interface FabricGuideFlow {
@@ -211,25 +219,45 @@ export const buildFabricGuideFlow = (
     });
   }
 
-  // 5. More Fabrics than the order needs: remove one from the last selection.
+  // 5. More Fabrics than the order needs. Usually the order shrank after
+  // Fabrics were chosen and two garments now sit alone on separate Fabrics.
   const quantityBlockers = take((b) => b.code === "FABRIC_QUANTITY_OVER_ALLOCATED");
   if (quantityBlockers.length > 0) {
-    const order = input.allocationOrder ?? [];
-    let removeGarment: FabricGuideGarmentInput | undefined;
-    for (let index = order.length - 1; index >= 0 && !removeGarment; index -= 1) {
-      removeGarment = garments.find(
-        (g) => g.assigned && g.allocationId === order[index],
-      );
+    const repair = input.quantityRepair;
+    const repairGarment = repair
+      ? garments.find((g) => g.assigned && g.garmentKey === repair.garmentKey)
+      : undefined;
+    let target: FabricGuideTarget = { type: "none" };
+    if (repair && repairGarment) {
+      target = { type: "quantity_move", garmentKey: repairGarment.garmentKey };
+    } else {
+      // Removing a garment only lowers the count when it empties its Fabric,
+      // so point at a garment on the least-used Fabric (latest on ties), never
+      // at one that shares a full Fabric.
+      const order = input.allocationOrder ?? [];
+      const sizeOf = (allocationId: string | null | undefined) =>
+        garments.filter((g) => g.assigned && g.allocationId === allocationId).length;
+      const orderIndex = (allocationId: string | null | undefined) =>
+        allocationId ? order.indexOf(allocationId) : -1;
+      const candidates = garments.filter((g) => g.assigned);
+      const removeGarment = [...candidates].sort(
+        (left, right) =>
+          sizeOf(left.allocationId) - sizeOf(right.allocationId) ||
+          orderIndex(right.allocationId) - orderIndex(left.allocationId),
+      )[0];
+      if (removeGarment) {
+        target = { type: "garment_remove", garmentKey: removeGarment.garmentKey };
+      }
     }
-    removeGarment ??= [...garments].reverse().find((g) => g.assigned);
     blockedOnly.push({
       id: "fix_quantity",
       kind: "fix_quantity",
       label: "Fix your fabric quantity",
-      messages: unique(quantityBlockers.map((b) => b.message)),
-      target: removeGarment
-        ? { type: "garment_remove", garmentKey: removeGarment.garmentKey }
-        : { type: "none" },
+      messages: unique([
+        ...quantityBlockers.map((b) => b.message),
+        ...(repair && repairGarment ? [repair.message] : []),
+      ]),
+      target,
     });
   }
 
