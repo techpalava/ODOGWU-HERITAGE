@@ -76,7 +76,10 @@ export const FutureFabricCatalogueCard = ({
       ? "border-amber-200 bg-amber-700 text-white"
       : stockPresentation.visible && stockPresentation.tone === "out_of_stock"
         ? "border-red-200 bg-red-700 text-white"
-        : "border-heritage-gold/30 bg-heritage-green text-white";
+        : stockPresentation.visible &&
+            stockPresentation.tone === "reusable_capacity"
+          ? "border-red-200 bg-red-600 text-white"
+          : "border-heritage-gold/30 bg-heritage-green text-white";
   const disabled =
     Boolean(availabilityMessage) ||
     Boolean(actionDisabled) ||

@@ -69,7 +69,7 @@ assert.deepEqual(
   getOrderAwareFabricStockPresentation(fabric, halfUsed, {
     hasCompatibleReusableHalfCapacity: true,
   }),
-  { visible: true, status: "REUSABLE_CAPACITY", label: "1/2 Capacity Left", tone: "in_stock" },
+  { visible: true, status: "REUSABLE_CAPACITY", label: "1/2 Capacity Left", tone: "reusable_capacity" },
 );
 assert.equal(
   fabricStockLabel(getOrderAwareFabricStockPresentation(fabric, halfUsed)),
