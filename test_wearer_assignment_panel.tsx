@@ -2891,3 +2891,66 @@ console.log("PASS: wearer assignment panel Saved success state and visible Remov
 }
 
 console.log("PASS: wearer assignment panel complete Split cards collapse to a short row");
+{
+  // Design Studio keeps summary person labels off until names are saved, so the
+  // panel reports which names are typed but not yet saved (Save / blur).
+  const unsavedGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const unsavedStart: WearerOrderStateV2 = {
+    ...createEmptyWearerOrder(),
+    wearers: [
+      createWearerProfile({ wearerId: "w-you", displayName: "", presentationOrder: 0 }),
+      createWearerProfile({ wearerId: "w-pio", displayName: "", presentationOrder: 1 }),
+    ],
+    // Pio owns nothing yet, so the card stays open (complete cards collapse).
+    assignmentByGarmentKey: { "base:shirt": "w-you" },
+  };
+  const reports: string[][] = [];
+  let unsavedOrder = unsavedStart;
+  const UnsavedHarness = () => {
+    const [order, setOrder] = useState(unsavedStart);
+    unsavedOrder = order;
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={null}
+        garments={unsavedGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt", "additional:shirt:1": "Long Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onReorderWearers={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+        onUnsavedNameWearerIdsChange={(wearerIds) => reports.push([...wearerIds])}
+      />
+    );
+  };
+  let up!: ReturnType<typeof create>;
+  await act(async () => {
+    up = create(<UnsavedHarness />);
+  });
+  assert.deepEqual(reports.at(-1), [], "nothing typed yet");
+  await typeName(up.root, "Person 2", "Pio ");
+  assert.equal(unsavedOrder.wearers[1].displayName, "Pio ", "keystrokes are stored raw");
+  assert.deepEqual(reports.at(-1), ["w-pio"], "typed but not saved");
+  await blurName(up.root, "Pio");
+  assert.equal(unsavedOrder.wearers[1].displayName, "Pio");
+  assert.deepEqual(reports.at(-1), [], "blur saves the name");
+  await typeName(up.root, "Pio", "Pion");
+  assert.deepEqual(reports.at(-1), ["w-pio"], "editing again reopens unsaved");
+  await saveName(up.root, "Pion");
+  assert.deepEqual(reports.at(-1), [], "Save saves the name");
+  await typeName(up.root, "Pion", "Pio");
+  await act(async () => {
+    up.unmount();
+  });
+  assert.deepEqual(reports.at(-1), [], "unmount reports nothing pending");
+}
+
+console.log("PASS: wearer assignment panel reports unsaved names to Design Studio");

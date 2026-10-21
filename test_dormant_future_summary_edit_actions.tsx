@@ -132,7 +132,10 @@ assert.match(html, /data-summary-choice-action="remove-fabric:base:shirt"/);
 assert.match(html, /data-summary-choice-action="change-style:base:shirt"/);
 assert.match(html, /data-summary-choice-action="remove-style:base:shirt"/);
 assert.match(html, /data-summary-choice-action="edit-details:base:trouser"/);
-assert.match(html, /Not selected/);
+// The Fabric/Design Style rows are now jump links with status; Trouser has no Fabric yet.
+assert.match(html, /data-summary-garment-jump="fabric:base:trouser" data-summary-jump-status="needed"/);
+assert.match(html, /data-summary-garment-jump="fabric:base:shirt" data-summary-jump-status="chosen"/);
+assert.match(html, /aria-label="Select Fabric for Trouser" data-summary-choice-action="change-fabric:base:trouser"/);
 assert.match(html, /Cancel Order/);
 
 console.log("test_dormant_future_summary_edit_actions.tsx: all assertions passed");

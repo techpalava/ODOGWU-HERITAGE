@@ -309,6 +309,7 @@ const buildAuthority = ({
   designSelections = {} as DesignSelections,
   styleOverrides = {} as Partial<StyleCategory>,
   wearerOrder = null as WearerOrderStateV2 | null,
+  unsavedWearerNameIds = null as readonly string[] | null,
   orderType = null as string | null,
   garmentTypeSelection: garmentTypeSelectionOverride = null as GarmentTypeStepSelection | null,
 }: {
@@ -326,6 +327,7 @@ const buildAuthority = ({
   designSelections?: DesignSelections;
   styleOverrides?: Partial<StyleCategory>;
   wearerOrder?: WearerOrderStateV2 | null;
+  unsavedWearerNameIds?: readonly string[] | null;
   orderType?: string | null;
   garmentTypeSelection?: GarmentTypeStepSelection | null;
 }) => {
@@ -506,6 +508,7 @@ const buildAuthority = ({
     measurementState,
     basePricing,
     ...(wearerOrder ? { wearerOrder } : {}),
+    ...(unsavedWearerNameIds ? { unsavedWearerNameIds } : {}),
   };
   const summary = projectFutureDesignStudioSummary(summaryInput);
   const selectedDesignPrice =
@@ -2516,6 +2519,7 @@ assert.equal(
   true,
 );
 
+// Second person not saved yet: no wearer line on any Garments Ordered row.
 const blankWearers = buildAuthority({
   garmentTypes: ["shirt", "kaftan"],
   demographic: "male",
@@ -2531,9 +2535,9 @@ const blankWearers = buildAuthority({
     },
   ),
 });
-assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, "Person 1");
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, undefined);
-assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, "Person 2");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, undefined);
 assert.equal(
   constructionLine(blankWearers.view, "base:shirt")?.label,
@@ -2543,6 +2547,71 @@ assert.equal(
   constructionLine(blankWearers.view, "base:kaftan")?.label,
   "Long Length Shirt, Short Sleeve",
 );
+assert.equal(
+  section(blankWearers.view, "construction").lines.every((line) => line.wearerLabel == null),
+  true,
+  "no Person 1 / Person 2 before the second name is saved",
+);
+
+// Second person typing (name stored but still unsaved in Step 7): no wearer line.
+const typingSecond = buildAuthority({
+  garmentTypes: ["shirt", "kaftan"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA, kaftan: fabricA },
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-blank", displayName: "", presentationOrder: 0 },
+      { wearerId: "wearer-pio", displayName: "Pi", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-blank",
+      "base:kaftan": "wearer-pio",
+    },
+  ),
+  unsavedWearerNameIds: ["wearer-pio"],
+});
+assert.equal(constructionLine(typingSecond.view, "base:shirt")?.wearerLabel, undefined);
+assert.equal(constructionLine(typingSecond.view, "base:kaftan")?.wearerLabel, undefined);
+
+// Second name saved: lines show; a still-blank first person reads Person 1.
+const savedSecond = buildAuthority({
+  garmentTypes: ["shirt", "kaftan"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA, kaftan: fabricA },
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-blank", displayName: "", presentationOrder: 0 },
+      { wearerId: "wearer-pio", displayName: "Pio", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-blank",
+      "base:kaftan": "wearer-pio",
+    },
+  ),
+  unsavedWearerNameIds: [],
+});
+assert.equal(constructionLine(savedSecond.view, "base:shirt")?.wearerLabel, "Person 1");
+assert.equal(constructionLine(savedSecond.view, "base:kaftan")?.wearerLabel, "Pio");
+
+// Editing the first person's name does not close the gate.
+const typingFirst = buildAuthority({
+  garmentTypes: ["shirt", "kaftan"],
+  demographic: "male",
+  fabricByGarment: { shirt: fabricA, kaftan: fabricA },
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-nol", displayName: "No", presentationOrder: 0 },
+      { wearerId: "wearer-pio", displayName: "Pio", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-nol",
+      "base:kaftan": "wearer-pio",
+    },
+  ),
+  unsavedWearerNameIds: ["wearer-nol"],
+});
+assert.equal(constructionLine(typingFirst.view, "base:shirt")?.wearerLabel, "No");
+assert.equal(constructionLine(typingFirst.view, "base:kaftan")?.wearerLabel, "Pio");
 
 const soloWearer = buildAuthority({
   garmentTypes: ["shirt"],
@@ -2562,7 +2631,8 @@ assert.equal(
   constructionLine(soloWearer.view, "base:shirt")?.label,
   "Standard Length Shirt, Short Sleeve",
 );
-assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, "Amaka");
+// Solo: no wearer line, even with a saved name.
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, undefined);
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, undefined);
 assert.equal(
   section(soloWearer.view, "fabrics").lines.every(
@@ -2591,7 +2661,7 @@ const soloFitUnset = buildAuthority({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(constructionLine(soloFitUnset.view, "base:shirt")?.wearerLabel, "Amaka");
+assert.equal(constructionLine(soloFitUnset.view, "base:shirt")?.wearerLabel, undefined);
 assert.equal(constructionLine(soloFitUnset.view, "base:shirt")?.fitLabel, undefined);
 
 const unassignedSecond = buildAuthority({

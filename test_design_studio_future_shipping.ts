@@ -980,7 +980,7 @@ const reviewOrderButtons = (markup: string) =>
 const pickupMarkup = renderShippingStep(pickup, true);
 assert.match(
   pickupMarkup,
-  /data-testid="future-shipping-pickup-location"[\s\S]*?<h4 class="font-serif text-lg font-bold text-heritage-green">\s*Pickup location\s*<\/h4>/,
+  /data-testid="future-shipping-pickup-location"[\s\S]*?<h4 class="font-serif text-xl font-bold text-heritage-green">\s*Pickup location\s*<\/h4>/,
 );
 assert.match(pickupMarkup, /placeholder="\+31 6 12345678"/);
 assert.match(pickupMarkup, /id="future-shipping-phone-hint"/);

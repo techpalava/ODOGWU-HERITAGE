@@ -56,6 +56,7 @@ export const WearerAssignmentPanel = ({
   onUnassignGarment,
   onCollapseToSolo,
   onPeopleUiChange,
+  onUnsavedNameWearerIdsChange,
   onAddGarment,
   spareFabricCapacityAvailable = false,
   initialPeopleExpanded = false,
@@ -86,6 +87,12 @@ export const WearerAssignmentPanel = ({
    * Design Studio knows the people UI is showing. Reports false on unmount.
    */
   onPeopleUiChange?: (open: boolean) => void;
+  /**
+   * Reports the wearer ids whose name was edited since the last Save / blur
+   * (still unconfirmed here). Design Studio uses it to keep summary person
+   * labels off until names are saved. Reports [] on unmount.
+   */
+  onUnsavedNameWearerIdsChange?: (wearerIds: readonly string[]) => void;
   /** @deprecated Ignored: fit no longer gates garments, so rows need no eligibility context. */
   garmentTypeSelection?: GarmentTypeStepSelection;
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
@@ -168,6 +175,23 @@ export const WearerAssignmentPanel = ({
     next.add(wearerId);
     return next;
   };
+  const unsavedNameWearerIdsKey = wearers
+    .filter((wearer) => unsavedNameWearerIds.has(wearer.wearerId))
+    .map((wearer) => wearer.wearerId)
+    .join("|");
+  const onUnsavedNameWearerIdsChangeRef = useRef(onUnsavedNameWearerIdsChange);
+  onUnsavedNameWearerIdsChangeRef.current = onUnsavedNameWearerIdsChange;
+  useEffect(() => {
+    onUnsavedNameWearerIdsChangeRef.current?.(
+      unsavedNameWearerIdsKey ? unsavedNameWearerIdsKey.split("|") : [],
+    );
+  }, [unsavedNameWearerIdsKey]);
+  useEffect(
+    () => () => {
+      onUnsavedNameWearerIdsChangeRef.current?.([]);
+    },
+    [],
+  );
   /** Confirmed = a real non-empty name (not the "You" placeholder) that was saved or blurred. */
   const isNameConfirmed = (wearer: (typeof wearers)[number]) =>
     wearer.displayName.trim().length > 0 && !unsavedNameWearerIds.has(wearer.wearerId);

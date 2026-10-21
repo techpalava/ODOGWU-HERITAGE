@@ -20,6 +20,7 @@
   --animate-live-order-summary-enter: live-order-summary-enter 350ms ease-out 1;
   --animate-step-guide-beam: step-guide-beam 3.4s ease-in-out infinite;
   --animate-measurement-guide-flash: measurement-guide-flash 800ms ease-out 1;
+  --animate-continue-unlock-glow: continue-unlock-glow 2.4s ease-in-out infinite;
 }
 
 @keyframes step1-select-attention {
@@ -64,6 +65,27 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* White glow on unlocked (green) Continue buttons. Inset white so it reads on
+   the green fill, plus a soft outer white halo with a faint green edge so it
+   still reads on white cards. */
+@keyframes continue-unlock-glow {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.35),
+      0 0 0 2px rgb(255 255 255 / 0.6),
+      0 0 0 3px rgb(10 41 27 / 0.08),
+      0 0 6px 2px rgb(255 255 255 / 0.4);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 12px 2px rgb(255 255 255 / 0.55),
+      0 0 0 3px rgb(255 255 255 / 1),
+      0 0 0 4px rgb(10 41 27 / 0.2),
+      0 0 18px 6px rgb(255 255 255 / 0.85);
   }
 }
 
