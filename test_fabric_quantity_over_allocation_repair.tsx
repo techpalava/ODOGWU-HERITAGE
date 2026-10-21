@@ -126,12 +126,50 @@ assert.equal(
   }).requiredFabricQuantity,
   5,
 );
-let state = FabricAllocationStateEngine.initialize();
-state = assign(state, nine, "base:shirt", "QTY-A");
-state = assign(state, nine, "base:trouser", "QTY-B");
-state = assign(state, nine, "base:skirt", "QTY-C");
-state = assign(state, nine, "base:long_skirt", "QTY-D");
-state = assign(state, nine, "base:standard_shorts", "QTY-E");
+// Five lone garments on a 9-garment order is a saved draft from before the
+// fit check: the fit check now stops a customer creating it (the fifth lone
+// Fabric would leave the Long Dress without a whole Fabric), so build it as
+// saved data.
+const savedFiveLoneDraft = (): FabricAllocationState => {
+  const entries: Array<[string, string]> = [
+    ["base:shirt", "QTY-A"],
+    ["base:trouser", "QTY-B"],
+    ["base:skirt", "QTY-C"],
+    ["base:long_skirt", "QTY-D"],
+    ["base:standard_shorts", "QTY-E"],
+  ];
+  const fabricAllocations = entries.map(([garmentKey, fabricCode], index) => ({
+    ...assign(FabricAllocationStateEngine.initialize(), nine, garmentKey, fabricCode)
+      .fabricAllocations[0]!,
+    allocationId: `saved-${index + 1}`,
+  }));
+  return {
+    fabricAllocations,
+    activeAllocationId: fabricAllocations[0]!.allocationId,
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+};
+{
+  let fourLone = FabricAllocationStateEngine.initialize();
+  for (const [garmentKey, fabricCode] of [
+    ["base:shirt", "QTY-A"],
+    ["base:trouser", "QTY-B"],
+    ["base:skirt", "QTY-C"],
+    ["base:long_skirt", "QTY-D"],
+  ] as const) {
+    fourLone = assign(fourLone, nine, garmentKey, fabricCode);
+  }
+  const fifth = assignFutureFabricToGarment({
+    state: fourLone,
+    garmentTypeSelection: nine,
+    garmentKey: "base:standard_shorts",
+    fabricCode: "QTY-E",
+    fabrics,
+  });
+  assert.equal(fifth.status, "blocked", "fit check: a fifth lone Fabric would strand the Long Dress");
+}
+let state = savedFiveLoneDraft();
 state = reconcileFutureFabricAllocationState({ state, garmentTypeSelection: eight });
 state = assignExisting(state, "base:bum_shorts", 0);
 state = assignExisting(state, "base:dress", 1);
@@ -238,12 +276,7 @@ assert.equal(overfill.state, shrunk);
 //    pair whose removal does not lower the count.
 // ---------------------------------------------------------------------------
 {
-  let s = FabricAllocationStateEngine.initialize();
-  s = assign(s, nine, "base:shirt", "QTY-A");
-  s = assign(s, nine, "base:trouser", "QTY-B");
-  s = assign(s, nine, "base:skirt", "QTY-C");
-  s = assign(s, nine, "base:long_skirt", "QTY-D");
-  s = assign(s, nine, "base:standard_shorts", "QTY-E");
+  let s = savedFiveLoneDraft();
   s = reconcileFutureFabricAllocationState({ state: s, garmentTypeSelection: eight });
   s = assignExisting(s, "base:bum_shorts", 2);
   s = assignExisting(s, "base:dress", 3);

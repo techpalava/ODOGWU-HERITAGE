@@ -66,6 +66,8 @@ import {
   formatFabricQuantityLimitReachedCopy,
   formatFabricQuantityMoveCopy,
   formatFabricQuantityOverAllocatedCopy,
+  formatFabricQuantityStrandedCopy,
+  getFabricQuantityFitBlockedCopyForGarment,
   formatFutureFabricStockOverAllocatedBlockerMessage,
   getFabricQuantityOverAllocationRepair,
   formatRequiredFabricQuantitySentence,
@@ -128,6 +130,8 @@ const blockerMessages: Record<
   MALFORMED_ASSIGNMENT: "One garment assignment needs review before this step can continue.",
   FABRIC_QUANTITY_OVER_ALLOCATED:
     "Your saved Fabric selections use more fabrics than this order requires. Remove or change Fabric assignments until the required number remains.",
+  FABRIC_QUANTITY_STRANDED:
+    "A garment needs a whole fabric, but the space left on your chosen fabrics is split into halves. Move a garment to free a whole fabric.",
   FABRIC_STOCK_OVER_ALLOCATED:
     "One or more Fabric selections exceed available stock. Remove or change a Fabric Selection.",
   RAW_FABRIC_INTEGRITY_BLOCKED:
@@ -887,6 +891,22 @@ export const DormantFutureFabricStep = ({
   ]);
   const showContinueAction =
     completion.isComplete && !isCatalogueOpen && !pendingStep1FabricAssignment;
+  const labelForQuantityGarmentKey = (garmentKey: string): string => {
+    const concise = occurrenceConciseLabels.get(garmentKey);
+    if (concise) return concise;
+    const target = targets.find(
+      ({ assignment }) => assignment.garmentKey === garmentKey,
+    );
+    return target ? getFutureGarmentLabel(target.assignment.garmentType) : "A garment";
+  };
+  const quantityStrandedBlockers = completion.blockers.filter(
+    (blocker) => blocker.code === "FABRIC_QUANTITY_STRANDED",
+  );
+  const isQuantityStranded = quantityStrandedBlockers.length > 0;
+  const quantityStrandedGarmentLabels = quantityStrandedBlockers
+    .map((blocker) => blocker.garmentKey)
+    .filter((garmentKey): garmentKey is string => Boolean(garmentKey))
+    .map(labelForQuantityGarmentKey);
   const formatBlockerMessage = (
     blocker: FutureFabricStageCompletion["blockers"][number],
   ): string =>
@@ -895,6 +915,11 @@ export const DormantFutureFabricStep = ({
           selectedFabricQuantity,
           requiredFabricQuantity,
         )
+      : blocker.code === "FABRIC_QUANTITY_STRANDED"
+        ? formatFabricQuantityStrandedCopy(
+            quantityStrandedGarmentLabels,
+            requiredFabricQuantity,
+          )
       : blocker.code === "FABRIC_STOCK_OVER_ALLOCATED"
         ? formatFutureFabricStockOverAllocatedBlockerMessage(
             fabrics,
@@ -903,7 +928,7 @@ export const DormantFutureFabricStep = ({
           )
         : blockerMessages[blocker.code];
   const quantityRepair =
-    isOverAllocated && onMoveGarmentToFabricAllocation
+    (isOverAllocated || isQuantityStranded) && onMoveGarmentToFabricAllocation
       ? getFabricQuantityOverAllocationRepair({
           state: fabricAllocationState,
           garmentTypeSelection,
@@ -977,6 +1002,12 @@ export const DormantFutureFabricStep = ({
               toFabricName: quantityRepairFabricName,
               sameFabric: quantityRepair.sameFabric,
               requiredFabricQuantity,
+              makesRoomForLabels:
+                quantityRepair.kind === "stranded"
+                  ? quantityRepair.strandedGarmentKeys.map(
+                      labelForQuantityGarmentKey,
+                    )
+                  : undefined,
             }),
           }
         : null,
@@ -1994,7 +2025,14 @@ export const DormantFutureFabricStep = ({
     if (preview.status === "blocked") {
       const blockedMessage =
         preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
-          ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+          ? getFabricQuantityFitBlockedCopyForGarment({
+              state: fabricAllocationState,
+              garmentTypeSelection,
+              garmentKey,
+              fabricCode: fabric.code,
+              fabrics,
+              requiredPhysicalOccurrences,
+            }) ?? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
           : preview.reason === "FABRIC_STOCK_EXHAUSTED"
             ? formatFabricStockExhaustedCopy()
             : "That fabric could not be assigned to this garment.";
@@ -2498,6 +2536,7 @@ export const DormantFutureFabricStep = ({
       data-fabric-guide="true"
       data-fabric-guide-current={fabricGuideFlow.currentStep?.id}
       data-fabric-quantity-over-allocated={isOverAllocated ? "true" : undefined}
+      data-fabric-quantity-stranded={isQuantityStranded ? "true" : undefined}
     >
       <p className="sr-only" aria-live="polite" data-fabric-guide-announcement="true">
         {formatFabricGuideCurrentStepAnnouncement(fabricGuideFlow)}
@@ -3269,6 +3308,7 @@ export const DormantFutureFabricStep = ({
           selectedGarmentKeys={pendingStep1FabricAssignment.selectedGarmentKeys}
           selectedCount={step1AssignmentEvaluation.selectedCount}
           selectedCapacityUnits={step1AssignmentEvaluation.selectedCapacityUnits}
+          capacityUnitsInUse={step1AssignmentEvaluation.capacityUnitsInUse}
           maxCapacityUnits={step1AssignmentEvaluation.maxCapacityUnits}
           canAssignSelected={
             !step1AssignmentDialogFabric.unavailableError &&
@@ -3288,6 +3328,7 @@ export const DormantFutureFabricStep = ({
           remainingCapacityMessage={
             step1AssignmentEvaluation.remainingCapacityMessage
           }
+          remainingCapacityNote={step1AssignmentEvaluation.remainingCapacityNote}
           candidateEnabled={step1AssignmentEvaluation.candidateEnabled}
           candidateMessages={step1AssignmentEvaluation.candidateMessages}
           selectedFailure={step1AssignmentEvaluation.selectedFailure}

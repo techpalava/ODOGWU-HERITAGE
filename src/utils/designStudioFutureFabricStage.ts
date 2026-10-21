@@ -27,6 +27,7 @@ import {
 } from "./fabricStockAvailability.js";
 import { getGarmentTypeStageCompletion } from "./designStudioJourneyMode.js";
 import {
+  getStep1GarmentDisplayLabel,
   getStep1SelectableGarmentTypes,
   isStep1SelectableGarmentType,
 } from "./garmentConstructionPricing.js";
@@ -47,6 +48,7 @@ export type FutureFabricStageBlockerCode =
   | "INVALID_ALLOCATION_CAPACITY"
   | "MALFORMED_ASSIGNMENT"
   | "FABRIC_QUANTITY_OVER_ALLOCATED"
+  | "FABRIC_QUANTITY_STRANDED"
   | "FABRIC_STOCK_OVER_ALLOCATED"
   | "RAW_FABRIC_INTEGRITY_BLOCKED";
 
@@ -752,6 +754,364 @@ export const getRequiredPhysicalFabricAllocationCount = ({
 };
 
 /**
+ * Fit check. The order may hold at most Fabrics Needed physical Fabrics, so
+ * every garment still waiting for fabric must fit into what is left: whole-
+ * fabric garments (Long Dress, Agbada) each need a new Fabric, and half-unit
+ * garments first use free halves on saved Fabrics, then pair up on new ones.
+ * `shortfall` > 0 means some waiting garment can no longer get fabric without
+ * first moving or removing an existing assignment.
+ */
+export interface FabricQuantityFit {
+  requiredFabricQuantity: number;
+  committedFabricQuantity: number;
+  remainingFabricSlots: number;
+  freeHalfUnits: number;
+  waitingWholeGarmentKeys: string[];
+  waitingHalfGarmentKeys: string[];
+  newFabricsNeeded: number;
+  shortfall: number;
+}
+
+const resolveAssignmentsForFit = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+  requiredPhysicalOccurrences,
+  countPendingGarmentForCapacity,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  countPendingGarmentForCapacity: boolean;
+}): FabricGarmentAssignment[] => {
+  const requiredAssignments = resolveRequiredAssignmentsWithAdditional(
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+  );
+  const pending = fabricAllocationState.pendingFabricGarment;
+  return countPendingGarmentForCapacity &&
+    pending &&
+    !requiredAssignments.some(
+      (assignment) => assignment.garmentKey === pending.garmentKey,
+    )
+    ? [...requiredAssignments, pending]
+    : requiredAssignments;
+};
+
+export const getFabricQuantityFit = ({
+  state,
+  garmentTypeSelection,
+  requiredPhysicalOccurrences,
+  countPendingGarmentForCapacity = false,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  countPendingGarmentForCapacity?: boolean;
+}): FabricQuantityFit => {
+  const maxUnits = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION;
+  const assignments = resolveAssignmentsForFit({
+    garmentTypeSelection,
+    fabricAllocationState: state,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity,
+  });
+  const requiredFabricQuantity =
+    getCustomerFacingFabricQuantityForAssignments(assignments).fabricQuantity;
+  const committedAllocations = state.fabricAllocations.filter(
+    (allocation) => allocation.garmentAssignments.length > 0,
+  );
+  const assignedKeys = new Set(
+    committedAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ),
+  );
+  const freeHalfUnits = committedAllocations.reduce((total, allocation) => {
+    const used = allocation.garmentAssignments.reduce(
+      (sum, assignment) => sum + assignment.fabricUnits,
+      0,
+    );
+    return total + Math.max(0, maxUnits - used);
+  }, 0);
+  const waiting = assignments.filter(
+    (assignment) => !assignedKeys.has(assignment.garmentKey),
+  );
+  const waitingWhole = waiting.filter(
+    (assignment) => assignment.fabricUnits >= maxUnits,
+  );
+  const waitingHalf = waiting.filter(
+    (assignment) => assignment.fabricUnits < maxUnits,
+  );
+  const waitingHalfUnits = waitingHalf.reduce(
+    (total, assignment) => total + assignment.fabricUnits,
+    0,
+  );
+  const newFabricsNeeded =
+    waitingWhole.length +
+    Math.ceil(Math.max(0, waitingHalfUnits - freeHalfUnits) / maxUnits);
+  const remainingFabricSlots = Math.max(
+    0,
+    requiredFabricQuantity - committedAllocations.length,
+  );
+  return {
+    requiredFabricQuantity,
+    committedFabricQuantity: committedAllocations.length,
+    remainingFabricSlots,
+    freeHalfUnits,
+    waitingWholeGarmentKeys: waitingWhole.map((assignment) => assignment.garmentKey),
+    waitingHalfGarmentKeys: waitingHalf.map((assignment) => assignment.garmentKey),
+    newFabricsNeeded,
+    shortfall: Math.max(0, newFabricsNeeded - remainingFabricSlots),
+  };
+};
+
+/**
+ * True when moving from `before` to `after` leaves a waiting garment with
+ * less room than it had (for example a half-unit garment takes a new Fabric
+ * while another saved Fabric still has a free half, so a Long Dress can no
+ * longer get a whole Fabric). Actions that do not make the fit worse are
+ * never blocked here, so an already-stuck draft can still make progress.
+ */
+export const wouldFabricAssignmentStrandWaitingGarments = ({
+  before,
+  after,
+  garmentTypeSelection,
+  requiredPhysicalOccurrences,
+  countPendingGarmentForCapacity = false,
+}: {
+  before: FabricAllocationState;
+  after: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  countPendingGarmentForCapacity?: boolean;
+}): boolean =>
+  getFabricQuantityFit({
+    state: after,
+    garmentTypeSelection,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity,
+  }).shortfall >
+  getFabricQuantityFit({
+    state: before,
+    garmentTypeSelection,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity,
+  }).shortfall;
+
+export interface FabricQuantityHalfFreeAllocation {
+  allocationId: string;
+  fabricCode: string;
+  fabricName: string;
+  /** 1-based position in Fabric Selection order. */
+  selectionNumber: number;
+}
+
+export interface FabricQuantityFitBlockExplanation {
+  garmentKey: string;
+  garmentLabel: string;
+  /** Whole-fabric garments that would be left without a Fabric. */
+  strandedGarmentKeys: string[];
+  strandedGarmentLabels: string[];
+  halfFreeAllocation: FabricQuantityHalfFreeAllocation;
+}
+
+const fabricQuantityGarmentLabel = (
+  assignment: Pick<FabricGarmentAssignment, "garmentType">,
+): string => getStep1GarmentDisplayLabel(assignment.garmentType);
+
+/**
+ * Explains why a half-unit garment cannot take a NEW Fabric of `fabricCode`
+ * and points at a saved Fabric (of another product) with a free half where
+ * it fits instead. Returns null when there is no such Fabric or the garment
+ * is not a half-unit garment.
+ */
+export const explainFabricQuantityBlockForGarment = ({
+  state,
+  garmentTypeSelection,
+  garmentKey,
+  fabricCode,
+  fabrics,
+  requiredPhysicalOccurrences,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  garmentKey: string;
+  fabricCode: string;
+  fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): FabricQuantityFitBlockExplanation | null => {
+  const assignments = resolveAssignmentsForFit({
+    garmentTypeSelection,
+    fabricAllocationState: state,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity: true,
+  });
+  const assignment = assignments.find(
+    (candidate) => candidate.garmentKey === garmentKey,
+  );
+  if (
+    !assignment ||
+    assignment.fabricUnits >= FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION
+  ) {
+    return null;
+  }
+  const allocations = state.fabricAllocations;
+  const destinationIndex = allocations.findIndex(
+    (allocation) =>
+      allocation.garmentAssignments.length > 0 &&
+      allocation.fabricCode !== fabricCode &&
+      !allocation.garmentAssignments.some(
+        (existing) => existing.garmentKey === garmentKey,
+      ) &&
+      fabricAllocationHasRoomFor(allocation, assignment),
+  );
+  if (destinationIndex < 0) return null;
+  const destination = allocations[destinationIndex]!;
+  const fit = getFabricQuantityFit({
+    state,
+    garmentTypeSelection,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity: true,
+  });
+  const strandedGarmentKeys = fit.waitingWholeGarmentKeys.filter(
+    (key) => key !== garmentKey,
+  );
+  const byKey = new Map(assignments.map((item) => [item.garmentKey, item]));
+  return {
+    garmentKey,
+    garmentLabel: fabricQuantityGarmentLabel(assignment),
+    strandedGarmentKeys,
+    strandedGarmentLabels: strandedGarmentKeys.map((key) => {
+      const stranded = byKey.get(key);
+      return stranded ? fabricQuantityGarmentLabel(stranded) : "A garment";
+    }),
+    halfFreeAllocation: {
+      allocationId: destination.allocationId,
+      fabricCode: destination.fabricCode,
+      fabricName:
+        fabrics?.find((fabric) => fabric.code === destination.fabricCode)
+          ?.name ?? destination.fabricCode,
+      selectionNumber: destinationIndex + 1,
+    },
+  };
+};
+
+const joinGarmentLabels = (labels: readonly string[]): string =>
+  labels.length <= 1
+    ? labels[0] ?? ""
+    : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+
+export const formatFabricQuantityFitBlockedCopy = ({
+  garmentLabel,
+  strandedGarmentLabels,
+  selectionNumber,
+  fabricName,
+  requiredFabricQuantity,
+}: {
+  garmentLabel: string;
+  strandedGarmentLabels: readonly string[];
+  selectionNumber: number;
+  fabricName: string;
+  requiredFabricQuantity: number;
+}): string => {
+  const pointer = `Put ${garmentLabel} on Fabric Selection ${selectionNumber} (${fabricName}), which has 1/2 capacity left.`;
+  if (strandedGarmentLabels.length > 0) {
+    return `${joinGarmentLabels(strandedGarmentLabels)} ${
+      strandedGarmentLabels.length === 1 ? "needs" : "need"
+    } a whole fabric. ${pointer}`;
+  }
+  return `Your order needs ${requiredFabricQuantity} ${fabricWord(
+    requiredFabricQuantity,
+  )} in total. ${pointer}`;
+};
+
+/**
+ * Customer copy for a garment blocked by the Fabric quantity limit or the fit
+ * check. Points at a saved Fabric with a free half when one exists; otherwise
+ * null so callers keep their existing copy.
+ */
+export const getFabricQuantityFitBlockedCopyForGarment = (input: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  garmentKey: string;
+  fabricCode: string;
+  fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): string | null => {
+  const explanation = explainFabricQuantityBlockForGarment(input);
+  if (!explanation) return null;
+  return formatFabricQuantityFitBlockedCopy({
+    garmentLabel: explanation.garmentLabel,
+    strandedGarmentLabels: explanation.strandedGarmentLabels,
+    selectionNumber: explanation.halfFreeAllocation.selectionNumber,
+    fabricName: explanation.halfFreeAllocation.fabricName,
+    requiredFabricQuantity: getRequiredPhysicalFabricAllocationCount({
+      garmentTypeSelection: input.garmentTypeSelection,
+      fabricAllocationState: input.state,
+      requiredPhysicalOccurrences: input.requiredPhysicalOccurrences,
+    }),
+  });
+};
+
+export const formatFabricUseForAllQuantityNote = (
+  neededFabricQuantity: number,
+  requiredFabricQuantity: number,
+): string =>
+  `Using this Fabric for all remaining garments would need ${neededFabricQuantity} ${fabricWord(
+    neededFabricQuantity,
+  )}; your order needs ${requiredFabricQuantity}.`;
+
+/**
+ * Physical Fabrics the order would hold if every listed garment used
+ * `fabricCode` (free halves on saved Fabrics of that product are reused).
+ */
+export const getFabricQuantityIfGarmentsUseFabric = ({
+  state,
+  garmentTypeSelection,
+  fabricCode,
+  garmentKeys,
+  requiredPhysicalOccurrences,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricCode: string;
+  garmentKeys: readonly string[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): number => {
+  const maxUnits = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION;
+  const keys = new Set(garmentKeys);
+  const assignments = resolveAssignmentsForFit({
+    garmentTypeSelection,
+    fabricAllocationState: state,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity: true,
+  }).filter((assignment) => keys.has(assignment.garmentKey));
+  const committed = state.fabricAllocations.filter(
+    (allocation) => allocation.garmentAssignments.length > 0,
+  );
+  const freeSameFabricUnits = committed
+    .filter((allocation) => allocation.fabricCode === fabricCode)
+    .reduce((total, allocation) => {
+      const used = allocation.garmentAssignments.reduce(
+        (sum, assignment) => sum + assignment.fabricUnits,
+        0,
+      );
+      return total + Math.max(0, maxUnits - used);
+    }, 0);
+  const wholeCount = assignments.filter(
+    (assignment) => assignment.fabricUnits >= maxUnits,
+  ).length;
+  const halfUnits = assignments
+    .filter((assignment) => assignment.fabricUnits < maxUnits)
+    .reduce((total, assignment) => total + assignment.fabricUnits, 0);
+  return (
+    committed.length +
+    wholeCount +
+    Math.ceil(Math.max(0, halfUnits - freeSameFabricUnits) / maxUnits)
+  );
+};
+
+/**
  * Authoritative ceiling: a NEW physical Fabric allocation may be created only
  * while the committed allocation count is below Fabrics Needed. Customers may
  * change which Fabric an allocation uses, but never select more Fabrics than
@@ -837,6 +1197,14 @@ export interface FabricQuantityOverAllocationRepair {
   toSelectionNumber: number;
   /** The destination already uses the same Fabric product. */
   sameFabric: boolean;
+  /**
+   * "over_allocated": more Fabrics saved than the order needs.
+   * "stranded": saved Fabrics equal Fabrics Needed, but a waiting garment
+   * (e.g. a Long Dress) cannot fit; the move frees a whole Fabric for it.
+   */
+  kind: "over_allocated" | "stranded";
+  /** Waiting garments the move makes room for (only for "stranded"). */
+  strandedGarmentKeys: string[];
 }
 
 const fabricAllocationHasRoomFor = (
@@ -860,16 +1228,40 @@ export const getFabricQuantityOverAllocationRepair = ({
   if (state.pendingFabricGarment || state.awaitingFabricForPendingGarment) {
     return null;
   }
-  if (
-    getCommittedPhysicalFabricAllocationCount(state) <=
+  const overAllocated =
+    getCommittedPhysicalFabricAllocationCount(state) >
     getRequiredPhysicalFabricAllocationCount({
       garmentTypeSelection,
       fabricAllocationState: state,
       requiredPhysicalOccurrences,
-    })
-  ) {
+    });
+  const fitBefore = overAllocated
+    ? null
+    : getFabricQuantityFit({
+        state,
+        garmentTypeSelection,
+        requiredPhysicalOccurrences,
+      });
+  if (!overAllocated && (!fitBefore || fitBefore.shortfall === 0)) {
     return null;
   }
+  // A stranded order only counts a move that actually makes room.
+  const moveImprovesFit = (garmentKey: string, allocationId: string): boolean => {
+    if (!fitBefore) return true;
+    const moved = moveFutureGarmentToFabricAllocation({
+      state,
+      garmentKey,
+      allocationId,
+    });
+    return (
+      moved.status === "moved" &&
+      getFabricQuantityFit({
+        state: moved.state,
+        garmentTypeSelection,
+        requiredPhysicalOccurrences,
+      }).shortfall < fitBefore.shortfall
+    );
+  };
   const allocations = state.fabricAllocations;
   let best: FabricQuantityOverAllocationRepair | null = null;
   let bestRank = Number.POSITIVE_INFINITY;
@@ -900,6 +1292,9 @@ export const getFabricQuantityOverAllocationRepair = ({
         (allocations.length - sourceIndex) * 1_000 +
         destinationIndex;
       if (rank >= bestRank) continue;
+      if (!moveImprovesFit(assignment.garmentKey, destination.allocationId)) {
+        continue;
+      }
       bestRank = rank;
       best = {
         garmentKey: assignment.garmentKey,
@@ -910,6 +1305,8 @@ export const getFabricQuantityOverAllocationRepair = ({
         toFabricCode: destination.fabricCode,
         toSelectionNumber: destinationIndex + 1,
         sameFabric,
+        kind: overAllocated ? "over_allocated" : "stranded",
+        strandedGarmentKeys: fitBefore ? [...fitBefore.waitingWholeGarmentKeys] : [],
       };
     }
   }
@@ -993,18 +1390,35 @@ export const formatFabricQuantityMoveCopy = ({
   toFabricName,
   sameFabric,
   requiredFabricQuantity,
+  makesRoomForLabels,
 }: {
   garmentLabel: string;
   toSelectionNumber: number;
   toFabricName: string;
   sameFabric: boolean;
   requiredFabricQuantity: number;
+  /** Stranded repair: the waiting garments the move frees a Fabric for. */
+  makesRoomForLabels?: readonly string[];
 }): string =>
   `${garmentLabel} is the only garment on its Fabric. Move it onto Fabric Selection ${toSelectionNumber} (${toFabricName}), which has room for it${
     sameFabric ? " and is the same fabric" : ""
-  }, so ${requiredFabricQuantity} ${
-    requiredFabricQuantity === 1 ? "fabric remains" : "fabrics remain"
-  }.`;
+  }, ${
+    makesRoomForLabels && makesRoomForLabels.length > 0
+      ? `so a whole fabric is free for ${joinGarmentLabels(makesRoomForLabels)}.`
+      : `so ${requiredFabricQuantity} ${
+          requiredFabricQuantity === 1 ? "fabric remains" : "fabrics remain"
+        }.`
+  }`;
+
+export const formatFabricQuantityStrandedCopy = (
+  strandedGarmentLabels: readonly string[],
+  requiredFabricQuantity: number,
+): string =>
+  `${joinGarmentLabels(strandedGarmentLabels) || "A garment"} ${
+    strandedGarmentLabels.length > 1 ? "need" : "needs"
+  } a whole fabric, but all ${requiredFabricQuantity} ${fabricWord(
+    requiredFabricQuantity,
+  )} your order needs are already chosen and the space left is split into halves. Move a garment to free a whole fabric.`;
 
 export interface FuturePartialFabricAllocationSummary {
   allocationId: string;
@@ -1674,6 +2088,22 @@ const assignTargetToFabricCore = ({
   if (!hasGarmentAssignment(attempted, target.assignment.garmentKey)) {
     return { status: "blocked", reason: "INVALID_CAPACITY", state };
   }
+  // Fit check: a new Fabric must not leave another waiting garment (e.g. a
+  // Long Dress that needs a whole Fabric) without room within Fabrics Needed.
+  if (
+    wouldFabricAssignmentStrandWaitingGarments({
+      before: state,
+      after: attempted,
+      garmentTypeSelection,
+      requiredPhysicalOccurrences,
+    })
+  ) {
+    return {
+      status: "blocked",
+      reason: "FABRIC_QUANTITY_LIMIT_REACHED",
+      state,
+    };
+  }
   return finalizeAssignedFabricStock({
     fabricCode,
     fabrics,
@@ -1746,6 +2176,21 @@ const assignTargetToFabric = ({
       awaitingState,
       fabricCode,
     );
+    if (
+      wouldFabricAssignmentStrandWaitingGarments({
+        before: awaitingState,
+        after: assigned,
+        garmentTypeSelection,
+        requiredPhysicalOccurrences,
+        countPendingGarmentForCapacity: true,
+      })
+    ) {
+      return {
+        status: "blocked",
+        reason: "FABRIC_QUANTITY_LIMIT_REACHED",
+        state,
+      };
+    }
     return finalizeAssignedFabricStock({
       fabricCode,
       fabrics,
@@ -3072,6 +3517,24 @@ export const getFutureFabricStageCompletion = ({
       .fabricQuantity
   ) {
     blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });
+  } else if (
+    !fabricAllocationState.pendingFabricGarment &&
+    !fabricAllocationState.awaitingFabricForPendingGarment
+  ) {
+    // Fabrics saved are within Fabrics Needed, but the free space is split
+    // into halves so a waiting whole-fabric garment cannot get fabric.
+    const fit = getFabricQuantityFit({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      requiredPhysicalOccurrences,
+    });
+    if (fit.shortfall > 0) {
+      blockers.push({
+        code: "FABRIC_QUANTITY_STRANDED",
+        garmentKey:
+          fit.waitingWholeGarmentKeys[0] ?? fit.waitingHalfGarmentKeys[0],
+      });
+    }
   }
 
   for (const overAllocation of getFabricStockOverAllocations(
