@@ -7,7 +7,7 @@ import {
 import {
   DesignStudioStepActions,
   studioContinueNavInteractionClass,
-  STUDIO_NAV_GOLD_BEAM_CLASS,
+  STUDIO_CONTINUE_RING_BLINK_CLASS,
   studioOutlinedNavInteractionClass,
 } from "./DesignStudioBackButton";
 import type { AiTryOnWorkflowStateV1 } from "../types";
@@ -183,8 +183,7 @@ export const DormantFutureAiTryOnStep = ({
               type="button"
               onClick={onSkip}
               data-continue-unlock-glow="on"
-              data-studio-nav-beam="gold"
-              className={`inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_NAV_GOLD_BEAM_CLASS}`}
+              className={`inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`}
             >
               <SkipForward aria-hidden="true" size={14} className="shrink-0" />
               <span className="min-w-0 text-balance">Continue without AI Try-on</span>
