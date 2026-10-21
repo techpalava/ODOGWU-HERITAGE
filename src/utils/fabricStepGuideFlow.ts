@@ -82,8 +82,9 @@ export interface FabricGuideFlowInput {
   avoidablePartialGuidance?: string | null;
   noCapacityMessage?: string;
   /**
-   * One-move repair for FABRIC_QUANTITY_OVER_ALLOCATED: a garment that sits
-   * alone on a Fabric and fits on another selected Fabric. When present the
+   * One-move repair for FABRIC_QUANTITY_OVER_ALLOCATED or
+   * FABRIC_QUANTITY_STRANDED: a garment that sits alone on a Fabric and fits
+   * on another selected Fabric. When present the
    * fix step explains the move and the beam lands on its Move button.
    */
   quantityRepair?: { garmentKey: string; message: string } | null;
@@ -221,7 +222,13 @@ export const buildFabricGuideFlow = (
 
   // 5. More Fabrics than the order needs. Usually the order shrank after
   // Fabrics were chosen and two garments now sit alone on separate Fabrics.
-  const quantityBlockers = take((b) => b.code === "FABRIC_QUANTITY_OVER_ALLOCATED");
+  // Also: Fabrics saved equal Fabrics needed, but the space left is split
+  // into halves so a waiting Long Dress (or Agbada) cannot get a whole Fabric.
+  const quantityBlockers = take(
+    (b) =>
+      b.code === "FABRIC_QUANTITY_OVER_ALLOCATED" ||
+      b.code === "FABRIC_QUANTITY_STRANDED",
+  );
   if (quantityBlockers.length > 0) {
     const repair = input.quantityRepair;
     const repairGarment = repair
@@ -249,10 +256,18 @@ export const buildFabricGuideFlow = (
         target = { type: "garment_remove", garmentKey: removeGarment.garmentKey };
       }
     }
+    const strandedOnly = quantityBlockers.every(
+      (b) => b.code === "FABRIC_QUANTITY_STRANDED",
+    );
+    const strandedGarment = strandedOnly
+      ? garments.find((g) => g.garmentKey === quantityBlockers[0]?.garmentKey)
+      : undefined;
     blockedOnly.push({
       id: "fix_quantity",
       kind: "fix_quantity",
-      label: "Fix your fabric quantity",
+      label: strandedGarment
+        ? `Make room for ${strandedGarment.label}`
+        : "Fix your fabric quantity",
       messages: unique([
         ...quantityBlockers.map((b) => b.message),
         ...(repair && repairGarment ? [repair.message] : []),

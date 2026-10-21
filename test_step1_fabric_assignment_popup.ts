@@ -245,9 +245,14 @@ const reduced = evaluateStep1FabricAssignmentSelection({
   fabricCode: "FAB-A",
 });
 assert.equal(reduced.canAssignSelected, true);
+// Use Again: the Shirt already uses 1/2 of the saved FAB-A piece, so the
+// Trouser completes it (the summary used to ignore the Shirt and say 1/2
+// would remain).
+assert.equal(reduced.existingCapacityUnits, 1);
+assert.equal(reduced.capacityUnitsInUse, 2);
 assert.equal(
   reduced.groupingCapacityStatus,
-  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+  STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE,
 );
 const reducedCommit = commitStep1FabricAssignment({
   state: leftoverState,
