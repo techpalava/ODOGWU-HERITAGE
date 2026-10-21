@@ -802,6 +802,24 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
         model.projection.occurrences[occurrenceIndex]!.target.occurrenceToken
       }`,
     }).filter((node) => node.type === "button");
+  const assertLockedCheckbox = (dialog: ReactTestInstance, occurrenceIndex: number, message?: string) => {
+    const row = rowFor(dialog, occurrenceIndex);
+    const inputs = row.findAllByType("input");
+    assert.equal(inputs.length, 1, message ?? "A locked row still shows its checkbox.");
+    assert.equal(inputs[0]!.props.disabled, true, "The locked checkbox is disabled.");
+    assert.equal(inputs[0]!.props.checked, false, "The locked checkbox is unticked.");
+    assert.equal(inputs[0]!.props["data-design-mapping-locked-checkbox"], "true");
+    const hintId = inputs[0]!.props["aria-describedby"];
+    assert.ok(hintId, "The locked checkbox is described as locked.");
+    assert.match(
+      textContent(row.find((node) => node.props.id === hintId)),
+      /^Locked\. .*Tap Change/,
+    );
+    assert.equal(row.props["data-design-mapping-row-locked"], "true");
+    // Interacting with the locked checkbox does nothing.
+    inputs[0]!.props.onChange();
+    assert.equal(rowFor(dialog, occurrenceIndex).findAllByType("input")[0]!.props.checked, false);
+  };
   const tapChange = async (dialog: ReactTestInstance, occurrenceIndex: number) => {
     const [button] = changeButtonsFor(dialog, occurrenceIndex);
     assert.ok(button, "Expected a Change button on the locked row.");
@@ -818,7 +836,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   const sameStyleCheckbox = checkboxFor(dialog, 0);
   assert.equal(changeButtonsFor(dialog, 0).length, 0, "Same-style rows have no Change button.");
   // A garment with a different design starts locked: no checkbox, a Change button.
-  assert.equal(rowFor(dialog, 1).findAllByType("input").length, 0);
+  assertLockedCheckbox(dialog, 1);
   assert.equal(rowFor(dialog, 1).props["data-design-mapping-row-locked"], "true");
   const [changeButton] = changeButtonsFor(dialog, 1);
   assert.equal(changeButton!.props.type, "button");
@@ -829,6 +847,9 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   assert.equal(changeButtonsFor(dialog, 1).length, 0, "Change disappears after unlocking.");
   assert.equal(rowFor(dialog, 1).props["data-design-mapping-row-locked"], "false");
   const differentStyleCheckbox = checkboxFor(dialog, 1);
+  assert.equal(differentStyleCheckbox.props.disabled, false, "Change enables the checkbox.");
+  assert.equal(differentStyleCheckbox.props["data-design-mapping-locked-checkbox"], undefined);
+  assert.equal(rowFor(dialog, 1).findAllByType("label").length, 1);
   assert.equal(sameStyleCheckbox.props.checked, true);
   assert.equal(sameStyleCheckbox.props.disabled, true);
   await act(async () => sameStyleCheckbox.props.onChange());
@@ -881,7 +902,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   // A checked different-style row shows a row-level warning only while the
   // customer has explicitly selected that replacement. Reopening re-locks it.
   dialog = await openStyle(casualNative.name);
-  assert.equal(rowFor(dialog, 1).findAllByType("input").length, 0, "Reopening resets the unlocked rows.");
+  assertLockedCheckbox(dialog, 1, "Reopening resets the unlocked rows.");
   await tapChange(dialog, 1);
   const additionalCheckbox = checkboxFor(dialog, 1);
   assert.equal(additionalCheckbox.props.checked, false, "Unlocking does not tick the row.");
@@ -946,7 +967,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   // New ODGH IDs use the same exact-ID comparison. An unassigned card starts
   // with no checked rows and neither opening path creates a warning.
   dialog = await openStyle(contemporaryAnkara.name);
-  assert.equal(rowFor(dialog, 0).findAllByType("input").length, 0);
+  assertLockedCheckbox(dialog, 0);
   assert.equal(changeButtonsFor(dialog, 0).length, 1);
   assert.equal(checkboxFor(dialog, 1).props.checked, true);
   assert.equal(

@@ -1063,17 +1063,20 @@ export const DormantFutureDesignStyleStep = ({
           {pendingEntry.referenceGarmentTypes.length > 0 && <p className="text-xs leading-relaxed text-heritage-ink/70"><span className="font-bold text-heritage-green">Originally designed for:</span> {formatReferenceGarmentTypes(pendingEntry.referenceGarmentTypes)}</p>}
           <fieldset className="mt-4 space-y-2">
             <legend className="mb-2 text-sm font-bold text-heritage-green">Choose garments</legend>
-            {occurrences.map((occurrence) => {
+            {occurrences.map((occurrence, occurrenceIndex) => {
               const token = occurrence.target.occurrenceToken;
               const checked = selectedOccurrenceTokens.has(token);
               const alreadyUsing = occurrence.assignment?.sourceKind === "catalog" && occurrence.assignment.catalogStyleId === pendingEntry.style.id;
               const willReplace = checked && Boolean(occurrence.assignment && !alreadyUsing);
-              // A garment that already has a different design starts locked: no
-              // checkbox until the customer taps Change (no re-lock until close).
+              // A garment that already has a different design starts locked: a
+              // disabled, unticked checkbox until the customer taps Change (no
+              // re-lock until the dialog closes).
               const locked = Boolean(occurrence.assignment) && !alreadyUsing && !unlockedOccurrenceTokens.has(token);
+              const rowNameId = `${dialogTitleId}-garment-${occurrenceIndex}`;
+              const lockedHintId = `${dialogTitleId}-locked-${occurrenceIndex}`;
               const rowText = (
                 <span className="min-w-0 break-words">
-                  <span className="font-bold text-heritage-green">{occurrence.label}</span>
+                  <span id={rowNameId} className="font-bold text-heritage-green">{occurrence.label}</span>
                   {alreadyUsing && <span className="mt-0.5 block text-xs font-semibold text-heritage-ink/60">Using this design</span>}
                   {!alreadyUsing && occurrence.assignmentLabel && <span className="mt-0.5 block text-xs text-heritage-ink/60">Current design: {occurrence.assignmentLabel}</span>}
                   {willReplace && <span role="status" data-testid="design-style-replacement-warning" data-occurrence-token={token} className="mt-2 block rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs leading-relaxed text-amber-900">This garment currently uses {occurrence.assignmentLabel}. Applying {pendingDisplayStyleName} will replace it.</span>}
@@ -1082,8 +1085,20 @@ export const DormantFutureDesignStyleStep = ({
               return (
                 <div key={token} data-occurrence-token={token} data-design-mapping-row-locked={locked ? "true" : "false"} className={`flex min-w-0 items-center gap-2 rounded-xl border border-heritage-green/15 text-sm focus-within:ring-2 focus-within:ring-heritage-gold ${alreadyUsing || locked ? "bg-heritage-cream/20" : ""}`}>
                   {locked ? (
-                    <div data-testid={`design-mapping-locked-${token}`} className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3">
+                    <div data-testid={`design-mapping-locked-${token}`} className="flex min-w-0 flex-1 cursor-default items-start gap-3 px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        disabled
+                        readOnly
+                        aria-labelledby={rowNameId}
+                        aria-describedby={lockedHintId}
+                        data-design-mapping-locked-checkbox="true"
+                        onChange={() => undefined}
+                        className="mt-0.5 size-4 shrink-0 cursor-not-allowed accent-heritage-green disabled:opacity-40"
+                      />
                       {rowText}
+                      <span id={lockedHintId} className="sr-only">Locked. This garment already has a design. Tap Change to choose it for {pendingDisplayStyleName}.</span>
                     </div>
                   ) : (
                     <label className={`flex min-w-0 flex-1 items-start gap-3 px-3 py-3 ${alreadyUsing ? "cursor-default" : "cursor-pointer"}`}>
