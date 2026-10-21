@@ -64,8 +64,10 @@ import {
   changeFutureFabricAllocationProduct,
   formatFabricQuantityLimitChangeCopy,
   formatFabricQuantityLimitReachedCopy,
+  formatFabricQuantityMoveCopy,
   formatFabricQuantityOverAllocatedCopy,
   formatFutureFabricStockOverAllocatedBlockerMessage,
+  getFabricQuantityOverAllocationRepair,
   formatRequiredFabricQuantitySentence,
   getFutureFabricAllocationGroupChangePresentation,
   getFutureFabricAllocationAssignmentSignature,
@@ -83,6 +85,7 @@ import {
   type FutureFabricStageCompletion,
   type HydratedOrphanFabricAssignmentRepairResult,
   type HydratedOrphanFabricAssignmentRepairTarget,
+  type MoveFutureGarmentToFabricAllocationResult,
 } from "../utils/designStudioFutureFabricStage";
 import { resolveStep2PostAssignmentDestination } from "../utils/step2PostAssignmentDestination";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
@@ -166,6 +169,14 @@ interface DormantFutureFabricStepProps {
     garmentKey: string,
     allocationId: string,
   ) => FutureFabricAssignmentResult | void;
+  /**
+   * One-tap repair when the order holds more Fabrics than it needs: move a
+   * garment that sits alone on a Fabric onto another selected Fabric.
+   */
+  onMoveGarmentToFabricAllocation?: (
+    garmentKey: string,
+    allocationId: string,
+  ) => MoveFutureGarmentToFabricAllocationResult | void;
   onBack: () => void;
   onContinue: () => void;
   onUseSameFabric: () => void;
@@ -405,6 +416,7 @@ export const DormantFutureFabricStep = ({
   onUseSameFabricForGarment,
   onAssignSameFabricProduct,
   onAssignGarmentToExistingAllocation,
+  onMoveGarmentToFabricAllocation,
   onBack,
   onContinue,
   onUseSameFabric,
@@ -487,6 +499,7 @@ export const DormantFutureFabricStep = ({
   const garmentCardRefs = useRef(new Map<string, HTMLElement>());
   const garmentRemoveRefs = useRef(new Map<string, HTMLButtonElement>());
   const pendingPanelActionRef = useRef<HTMLButtonElement>(null);
+  const quantityMoveActionRef = useRef<HTMLButtonElement>(null);
   const pendingPostAssignmentNavRef = useRef<{
     assignedGarmentKeys: string[];
     destinationGarmentKey: string;
@@ -889,6 +902,29 @@ export const DormantFutureFabricStep = ({
             blocker.fabricCode,
           )
         : blockerMessages[blocker.code];
+  const quantityRepair =
+    isOverAllocated && onMoveGarmentToFabricAllocation
+      ? getFabricQuantityOverAllocationRepair({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          requiredPhysicalOccurrences,
+        })
+      : null;
+  const quantityRepairGarmentLabel = quantityRepair
+    ? occurrenceConciseLabels.get(quantityRepair.garmentKey) ??
+      (() => {
+          const assignment = fabricAllocationState.fabricAllocations
+            .flatMap((allocation) => allocation.garmentAssignments)
+            .find((candidate) => candidate.garmentKey === quantityRepair.garmentKey);
+          return assignment
+            ? getFutureGarmentLabel(assignment.garmentType)
+            : "This garment";
+        })()
+    : null;
+  const quantityRepairFabricName = quantityRepair
+    ? fabrics.find((fabric) => fabric.code === quantityRepair.toFabricCode)?.name ??
+      quantityRepair.toFabricCode
+    : null;
   // One merged Guide: the old "Fabric needs attention" messages, the
   // avoidable-partial hint and the next-garment cue are steps in this flow.
   // It is hidden whenever the canonical completion says Continue can unlock.
@@ -931,6 +967,19 @@ export const DormantFutureFabricStep = ({
       ? avoidablePartialGuidanceCopy
       : null,
     noCapacityMessage: UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE,
+    quantityRepair:
+      quantityRepair && quantityRepairGarmentLabel && quantityRepairFabricName
+        ? {
+            garmentKey: quantityRepair.garmentKey,
+            message: formatFabricQuantityMoveCopy({
+              garmentLabel: quantityRepairGarmentLabel,
+              toSelectionNumber: quantityRepair.toSelectionNumber,
+              toFabricName: quantityRepairFabricName,
+              sameFabric: quantityRepair.sameFabric,
+              requiredFabricQuantity,
+            }),
+          }
+        : null,
   });
   const fabricGuideBeamTarget: FabricGuideTarget | null =
     fabricGuideFlow.visible && fabricGuideFlow.currentStep
@@ -942,7 +991,12 @@ export const DormantFutureFabricStep = ({
   ): boolean => {
     const target = fabricGuideBeamTarget;
     if (!target || target.type !== type) return false;
-    if (target.type === "garment_action" || target.type === "garment_card" || target.type === "garment_remove") {
+    if (
+      target.type === "garment_action" ||
+      target.type === "garment_card" ||
+      target.type === "garment_remove" ||
+      target.type === "quantity_move"
+    ) {
       return target.garmentKey === key;
     }
     if (target.type === "orphan_repair") return target.repairKey === key;
@@ -2294,6 +2348,9 @@ export const DormantFutureFabricStep = ({
     } else if (target.type === "garment_remove") {
       scrollElement = garmentCardRefs.current.get(target.garmentKey);
       focusElement = garmentRemoveRefs.current.get(target.garmentKey);
+    } else if (target.type === "quantity_move") {
+      focusElement = quantityMoveActionRef.current;
+      scrollElement = focusElement;
     } else if (target.type === "pending_panel") {
       focusElement = pendingPanelActionRef.current;
       scrollElement = focusElement;
@@ -2310,6 +2367,26 @@ export const DormantFutureFabricStep = ({
     if (focusElement) {
       focusElementSafely(focusElement);
     }
+  };
+
+  const handleQuantityRepairMove = () => {
+    if (!quantityRepair || !onMoveGarmentToFabricAllocation) return;
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    const result = onMoveGarmentToFabricAllocation(
+      quantityRepair.garmentKey,
+      quantityRepair.toAllocationId,
+    );
+    if (result && result.status !== "moved") {
+      const message = "That garment could not be moved. Remove or change a Fabric assignment instead.";
+      setVisibleActionError(message);
+      setAssignmentAnnouncement(message);
+      return;
+    }
+    setVisibleActionError(null);
+    setAssignmentAnnouncement(
+      `${quantityRepairGarmentLabel ?? "Garment"} moved to Fabric Selection ${quantityRepair.toSelectionNumber}.`,
+    );
   };
 
   const fabricGuideTitleId = `${fabricGuideIdPrefix}-title`;
@@ -2383,6 +2460,29 @@ export const DormantFutureFabricStep = ({
                 </span>
               ))}
             </span>
+          ) : null}
+          {step.kind === "fix_quantity" &&
+          step.target.type === "quantity_move" &&
+          !isDone &&
+          quantityRepair &&
+          quantityRepairGarmentLabel ? (
+            <button
+              ref={quantityMoveActionRef}
+              type="button"
+              data-testid="fabric-guide-quantity-move"
+              data-fabric-guide-beam={
+                isFabricGuideBeamOn("quantity_move", quantityRepair.garmentKey)
+                  ? "true"
+                  : undefined
+              }
+              onClick={handleQuantityRepairMove}
+              className={`mt-1.5 inline-flex min-h-11 max-w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-center text-[10px] font-bold uppercase tracking-wide text-white transition hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${fabricGuideBeamClass(
+                "quantity_move",
+                quantityRepair.garmentKey,
+              )}`}
+            >
+              {`Move ${quantityRepairGarmentLabel} to Fabric Selection ${quantityRepair.toSelectionNumber}`}
+            </button>
           ) : null}
         </span>
       </li>

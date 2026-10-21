@@ -817,6 +817,195 @@ export const formatFabricQuantityOverAllocatedCopy = (
     requiredFabricQuantity === 1 ? "fabric remains" : "fabrics remain"
   }.`;
 
+/**
+ * Over-allocation repair plan. A saved order can hold more physical Fabric
+ * allocations than it needs once the order shrinks (for example a garment is
+ * removed after Fabrics were chosen): the remaining garments are left spread
+ * across several half-used Fabrics. The cheapest repair is to move a garment
+ * that sits alone on a Fabric onto another selected Fabric that has room, so
+ * that lone Fabric empties and drops out of the count.
+ */
+export interface FabricQuantityOverAllocationRepair {
+  garmentKey: string;
+  fromAllocationId: string;
+  fromFabricCode: string;
+  /** 1-based position of the source allocation in Fabric Selection order. */
+  fromSelectionNumber: number;
+  toAllocationId: string;
+  toFabricCode: string;
+  /** 1-based position of the destination allocation in Fabric Selection order. */
+  toSelectionNumber: number;
+  /** The destination already uses the same Fabric product. */
+  sameFabric: boolean;
+}
+
+const fabricAllocationHasRoomFor = (
+  allocation: FabricAllocation,
+  assignment: FabricGarmentAssignment,
+): boolean =>
+  FabricCapacityEngine.resolveFabricAllocation({
+    ...allocation,
+    garmentAssignments: [...allocation.garmentAssignments, assignment],
+  }).status === "resolved";
+
+export const getFabricQuantityOverAllocationRepair = ({
+  state,
+  garmentTypeSelection,
+  requiredPhysicalOccurrences,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): FabricQuantityOverAllocationRepair | null => {
+  if (state.pendingFabricGarment || state.awaitingFabricForPendingGarment) {
+    return null;
+  }
+  if (
+    getCommittedPhysicalFabricAllocationCount(state) <=
+    getRequiredPhysicalFabricAllocationCount({
+      garmentTypeSelection,
+      fabricAllocationState: state,
+      requiredPhysicalOccurrences,
+    })
+  ) {
+    return null;
+  }
+  const allocations = state.fabricAllocations;
+  let best: FabricQuantityOverAllocationRepair | null = null;
+  let bestRank = Number.POSITIVE_INFINITY;
+  for (let sourceIndex = 0; sourceIndex < allocations.length; sourceIndex += 1) {
+    const source = allocations[sourceIndex]!;
+    // Only a Fabric holding a single garment empties with one move.
+    if (source.garmentAssignments.length !== 1) continue;
+    const assignment = source.garmentAssignments[0]!;
+    for (
+      let destinationIndex = 0;
+      destinationIndex < allocations.length;
+      destinationIndex += 1
+    ) {
+      const destination = allocations[destinationIndex]!;
+      if (
+        destinationIndex === sourceIndex ||
+        destination.garmentAssignments.length === 0 ||
+        !fabricAllocationHasRoomFor(destination, assignment)
+      ) {
+        continue;
+      }
+      const sameFabric = destination.fabricCode === source.fabricCode;
+      // Prefer a move that keeps the garment's Fabric product (nothing the
+      // customer sees changes), then the latest lone Fabric, then the
+      // earliest destination.
+      const rank =
+        (sameFabric ? 0 : 1) * 1_000_000 +
+        (allocations.length - sourceIndex) * 1_000 +
+        destinationIndex;
+      if (rank >= bestRank) continue;
+      bestRank = rank;
+      best = {
+        garmentKey: assignment.garmentKey,
+        fromAllocationId: source.allocationId,
+        fromFabricCode: source.fabricCode,
+        fromSelectionNumber: sourceIndex + 1,
+        toAllocationId: destination.allocationId,
+        toFabricCode: destination.fabricCode,
+        toSelectionNumber: destinationIndex + 1,
+        sameFabric,
+      };
+    }
+  }
+  return best;
+};
+
+export type MoveFutureGarmentToFabricAllocationResult =
+  | { status: "moved"; state: FabricAllocationState }
+  | {
+      status: "blocked";
+      reason:
+        | "GARMENT_NOT_FOUND"
+        | "ALLOCATION_NOT_FOUND"
+        | "INVALID_CAPACITY"
+        | "ASSIGNMENT_IN_PROGRESS";
+      state: FabricAllocationState;
+    };
+
+/**
+ * Atomically moves one committed garment assignment onto another existing
+ * allocation (keeping its exact assignment record) and drops the source
+ * allocation if it becomes empty. Never creates an allocation.
+ */
+export const moveFutureGarmentToFabricAllocation = ({
+  state,
+  garmentKey,
+  allocationId,
+}: {
+  state: FabricAllocationState;
+  garmentKey: string;
+  allocationId: string;
+}): MoveFutureGarmentToFabricAllocationResult => {
+  if (state.pendingFabricGarment || state.awaitingFabricForPendingGarment) {
+    return { status: "blocked", reason: "ASSIGNMENT_IN_PROGRESS", state };
+  }
+  const source = state.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === garmentKey,
+    ),
+  );
+  if (!source) {
+    return { status: "blocked", reason: "GARMENT_NOT_FOUND", state };
+  }
+  const destination = state.fabricAllocations.find(
+    (allocation) => allocation.allocationId === allocationId,
+  );
+  if (!destination || destination.allocationId === source.allocationId) {
+    return { status: "blocked", reason: "ALLOCATION_NOT_FOUND", state };
+  }
+  const assignment = source.garmentAssignments.find(
+    (candidate) => candidate.garmentKey === garmentKey,
+  )!;
+  if (!fabricAllocationHasRoomFor(destination, assignment)) {
+    return { status: "blocked", reason: "INVALID_CAPACITY", state };
+  }
+  const moved = removeEmptyFabricAllocations({
+    ...state,
+    fabricAllocations: state.fabricAllocations.map((allocation) =>
+      allocation.allocationId === source.allocationId
+        ? {
+            ...allocation,
+            garmentAssignments: allocation.garmentAssignments.filter(
+              (candidate) => candidate.garmentKey !== garmentKey,
+            ),
+          }
+        : allocation.allocationId === destination.allocationId
+          ? {
+              ...allocation,
+              garmentAssignments: [...allocation.garmentAssignments, assignment],
+            }
+          : allocation,
+    ),
+    activeAllocationId: destination.allocationId,
+  });
+  return { status: "moved", state: moved };
+};
+
+export const formatFabricQuantityMoveCopy = ({
+  garmentLabel,
+  toSelectionNumber,
+  toFabricName,
+  sameFabric,
+  requiredFabricQuantity,
+}: {
+  garmentLabel: string;
+  toSelectionNumber: number;
+  toFabricName: string;
+  sameFabric: boolean;
+  requiredFabricQuantity: number;
+}): string =>
+  `${garmentLabel} is the only garment on its Fabric. Move it onto Fabric Selection ${toSelectionNumber} (${toFabricName}), which has room for it${
+    sameFabric ? " and is the same fabric" : ""
+  }, so ${requiredFabricQuantity} ${
+    requiredFabricQuantity === 1 ? "fabric remains" : "fabrics remain"
+  }.`;
+
 export interface FuturePartialFabricAllocationSummary {
   allocationId: string;
   fabricCode: string;

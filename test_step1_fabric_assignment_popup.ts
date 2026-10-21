@@ -1070,7 +1070,7 @@ assert.deepEqual(assignedKeys(gownUseAllCommit.state).sort(), [
     visible: true,
     status: "REUSABLE_CAPACITY",
     label: "1/2 Capacity Left",
-    tone: "in_stock",
+    tone: "reusable_capacity",
   });
   assert.equal(empty.fabricAllocations.length, 0, "Pending preview must not persist allocation.");
   const deselected = projectPendingStep1FabricStockPresentation({
@@ -1118,7 +1118,7 @@ assert.deepEqual(assignedKeys(gownUseAllCommit.state).sort(), [
     visible: true,
     status: "REUSABLE_CAPACITY",
     label: "1/2 Capacity Left",
-    tone: "in_stock",
+    tone: "reusable_capacity",
   });
 }
 
