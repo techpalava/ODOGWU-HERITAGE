@@ -5,7 +5,8 @@ import type { CanonicalPhysicalGarmentType, StyleCategory } from "../types";
 import type { DesignStyleStepCatalogueEntry } from "../utils/designStyleStepRuntime";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { studioOutlinedNavInteractionClass } from "./DesignStudioBackButton";
-import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
+import { DesignStyleImage } from "./DesignStyleImage";
+import { DESIGN_STYLE_CARD_IMAGE_PRESET } from "../utils/optimizedImageUrl";
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
   return String(style.name ?? "").trim() || "Design Style";
@@ -228,6 +229,7 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
                       <AdditionalGarmentStyleImage
                         imageUrl={entry.style.image}
                         alt={`${displayStyleName} design`}
+                        styleId={entry.style.id}
                       />
                       {entry.selected && (
                         <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
@@ -310,31 +312,25 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
   return createPortal(dialog, document.body);
 };
 
-/** Style card image: retries a failed load once before "Image unavailable". */
+/** Style card image: resized catalogue photo, retries, then "Image unavailable" + reload. */
 function AdditionalGarmentStyleImage({
   imageUrl,
   alt,
+  styleId,
 }: {
   imageUrl: string | null | undefined;
   alt: string;
+  styleId: string;
 }) {
-  const image = useImageLoadRetry(imageUrl);
-  if (image.failed) {
-    return (
-      <div className="flex h-full items-center justify-center px-3 text-center text-xs text-heritage-ink/55">
-        Image unavailable
-      </div>
-    );
-  }
   return (
-    <img
-      src={image.src}
+    <DesignStyleImage
+      imageUrl={imageUrl}
       alt={alt}
-      loading="lazy"
-      decoding="async"
-      className="h-full w-full object-cover"
-      referrerPolicy="no-referrer"
-      onError={image.onError}
+      preset={DESIGN_STYLE_CARD_IMAGE_PRESET}
+      surface="design-style-card"
+      reportCode={styleId}
+      imgClassName="h-full w-full object-cover"
+      fallbackClassName="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-xs text-heritage-ink/55"
     />
   );
 }
