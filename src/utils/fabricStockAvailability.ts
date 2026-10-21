@@ -156,7 +156,7 @@ export const getOrderAwareFabricStockPresentation = (
       visible: true,
       status: "REUSABLE_CAPACITY",
       label: "1/2 Capacity Left",
-      tone: "in_stock",
+      tone: "reusable_capacity",
     };
   }
   if (noStockLeft) {

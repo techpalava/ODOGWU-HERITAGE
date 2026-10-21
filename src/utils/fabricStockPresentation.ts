@@ -1,6 +1,12 @@
 import type { Fabric } from "../types.js";
 
-export type FabricStockBadgeTone = "in_stock" | "low_stock" | "out_of_stock";
+export type FabricStockBadgeTone =
+  | "in_stock"
+  | "low_stock"
+  | "out_of_stock"
+  // "1/2 Capacity Left": shown in red so customers notice only half a
+  // Fabric Selection remains.
+  | "reusable_capacity";
 
 export type FabricStockPresentation =
   | { visible: false; status: "HIDDEN" }

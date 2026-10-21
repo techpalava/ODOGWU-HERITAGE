@@ -1297,6 +1297,13 @@ assert.equal(
   );
   assert.equal(leftoverUiState.fabricAllocations.length, 0);
   assert.equal(stockLabel(), "1/2 Capacity Left");
+  // The "1/2 Capacity Left" label is red so it stands out from stock counts.
+  assert.match(
+    leftoverUiRenderer.root.findByProps({
+      "data-testid": "step1-fabric-assignment-stock-label",
+    }).props.className,
+    /\btext-red-600\b/,
+  );
   await act(async () =>
     leftoverUiRenderer.root
       .findByProps({ "data-step1-fabric-assignment-checkbox": "base:shirt" })

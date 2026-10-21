@@ -312,7 +312,11 @@ export const Step1FabricAssignmentDialog = ({
               </p>
               {stockPresentation?.visible && (
                 <p
-                  className="mt-1 text-xs font-semibold text-heritage-green"
+                  className={`mt-1 text-xs font-semibold ${
+                    stockPresentation.tone === "reusable_capacity"
+                      ? "text-red-600"
+                      : "text-heritage-green"
+                  }`}
                   data-testid="step1-fabric-assignment-stock-label"
                   data-fabric-stock-label={stockPresentation.label}
                 >
