@@ -11,6 +11,9 @@ import {
   assignFutureFabricToGarment,
   assignSameFabricProductToGarments,
   formatFabricQuantityLimitChangeCopy,
+  formatFabricUseForAllQuantityNote,
+  getFabricQuantityFitBlockedCopyForGarment,
+  getFabricQuantityIfGarmentsUseFabric,
   getFutureFabricBulkChoiceCandidates,
   getFutureFabricStep1AssignmentTargets,
   getFutureGarmentFabricPlanning,
@@ -132,6 +135,12 @@ export type Step1FabricAssignmentEvaluation = {
   fabricLevelError: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
+  /**
+   * Neutral (non-error) note for YES — Use for All when using this Fabric for
+   * every remaining garment would exceed Fabrics Needed. Never red: the
+   * customer has done nothing wrong by opening the panel.
+   */
+  remainingCapacityNote: string | null;
   /**
    * Candidate interactivity is projected from the same bulk assignment
    * transaction used by the confirmation action. Selected rows deliberately
@@ -486,7 +495,13 @@ export const buildStep1FabricAssignmentCandidates = ({
           ? null
           : result.status === "blocked" &&
               result.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
-            ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+            ? getFabricQuantityFitBlockedCopyForGarment({
+                state: fabricAllocationState,
+                garmentTypeSelection,
+                garmentKey: assignment.garmentKey,
+                fabricCode,
+                fabrics,
+              }) ?? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
             : STEP1_INSUFFICIENT_CAPACITY_REASON,
     };
   });
@@ -611,6 +626,12 @@ export const evaluateStep1FabricAssignmentSelection = ({
     groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
   }
   const selectedKeySet = new Set(selected);
+  // State as if the ticked garments were already assigned; per-row guidance
+  // points at Fabrics with free capacity in this projected state.
+  const selectedProjectedState =
+    selectedResult?.status === "assigned"
+      ? selectedResult.state
+      : fabricAllocationState;
   const candidateEnabled: Record<string, boolean> = {};
   const candidateMessages: Record<string, string | null> = {};
   for (const candidate of candidates) {
@@ -628,13 +649,25 @@ export const evaluateStep1FabricAssignmentSelection = ({
     const canAddCandidate = projectedResult?.status === "assigned";
     candidateEnabled[candidate.garmentKey] = isSelected || canAddCandidate;
     if (!isSelected && !canAddCandidate) {
-      messages.push(
+      const fitCopy =
         projectedResult?.status === "blocked" &&
-        (projectedResult.reason === "FABRIC_STOCK_EXHAUSTED" ||
-          projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED")
-          ? formatPredictiveCandidateFailure(projectedResult)
-          : candidate.disabledReason ??
-              formatPredictiveCandidateFailure(projectedResult),
+        projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+          ? getFabricQuantityFitBlockedCopyForGarment({
+              state: selectedProjectedState,
+              garmentTypeSelection,
+              garmentKey: candidate.garmentKey,
+              fabricCode,
+              fabrics,
+            })
+          : null;
+      messages.push(
+        fitCopy ??
+          (projectedResult?.status === "blocked" &&
+          (projectedResult.reason === "FABRIC_STOCK_EXHAUSTED" ||
+            projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED")
+            ? formatPredictiveCandidateFailure(projectedResult)
+            : candidate.disabledReason ??
+                formatPredictiveCandidateFailure(projectedResult)),
       );
     } else if (candidate.disabledReason) {
       messages.push(candidate.disabledReason);
@@ -647,6 +680,26 @@ export const evaluateStep1FabricAssignmentSelection = ({
     }
     candidateMessages[candidate.garmentKey] = [...new Set(messages)][0] ?? null;
   }
+
+  const remainingQuantityIfUsedForAll =
+    remainingResult?.status === "blocked" &&
+    remainingResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+      ? getFabricQuantityIfGarmentsUseFabric({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys: remainingKeys,
+        })
+      : null;
+  const remainingCapacityNote =
+    !fabricLevelError &&
+    remainingQuantityIfUsedForAll !== null &&
+    remainingQuantityIfUsedForAll > requiredFabricQuantity
+      ? formatFabricUseForAllQuantityNote(
+          remainingQuantityIfUsedForAll,
+          requiredFabricQuantity,
+        )
+      : null;
 
   return {
     selectedCount: selected.length,
@@ -665,8 +718,10 @@ export const evaluateStep1FabricAssignmentSelection = ({
             requiredFabricQuantity,
           })
         : null,
+    remainingCapacityNote,
     remainingCapacityMessage:
       !fabricLevelError &&
+      !remainingCapacityNote &&
       !(
         remainingResult?.status === "blocked" &&
         remainingResult.reason === "FABRIC_STOCK_EXHAUSTED"

@@ -419,7 +419,11 @@ const guides = (root: ReactTestInstance) =>
 
 // Over-allocated saved draft: beam lands on the Remove control at fault.
 {
-  const threeGarments = selectionFor(["shirt", "trouser", "agbada"]);
+  // Three half-unit garments need two Fabrics, so Shirt and Trouser may sit on
+  // separate Fabrics (Skirt can still share). An Agbada fixture is no longer
+  // used: the fit check blocks a second lone Fabric that would leave the
+  // Agbada without a whole Fabric.
+  const threeGarments = selectionFor(["shirt", "trouser", "skirt"]);
   const agbadaKeys = getFutureGarmentFabricPlanning({
     garmentTypeSelection: threeGarments,
     fabricAllocationState: FabricAllocationStateEngine.initialize(),

@@ -89,6 +89,7 @@ export const Step1FabricAssignmentDialog = ({
   fabricLevelError = null,
   selectedCapacityMessage,
   remainingCapacityMessage,
+  remainingCapacityNote = null,
   candidateEnabled = {},
   candidateMessages = {},
   selectedFailure = null,
@@ -113,6 +114,8 @@ export const Step1FabricAssignmentDialog = ({
   fabricLevelError?: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
+  /** Neutral (non-error) Use for All note. */
+  remainingCapacityNote?: string | null;
   candidateEnabled?: Record<string, boolean>;
   candidateMessages?: Record<string, string | null>;
   selectedFailure?: Step1FabricAssignmentFailure | null;
@@ -201,7 +204,9 @@ export const Step1FabricAssignmentDialog = ({
     .filter(Boolean)
     .join(" ");
   const useForAllDescribedBy = [
-    remainingCapacityMessage ? remainingCapacityId : null,
+    remainingCapacityMessage || remainingCapacityNote
+      ? remainingCapacityId
+      : null,
     remainingFailure ? getRowWarningId(remainingFailure.garmentKey) : null,
     dialogError ? errorId : null,
   ]
@@ -422,6 +427,14 @@ export const Step1FabricAssignmentDialog = ({
             >
               {remainingCapacityMessage}
             </p>
+          ) : remainingCapacityNote ? (
+            <p
+              id={remainingCapacityId}
+              data-testid="step1-fabric-assignment-remaining-capacity-note"
+              className="mt-3 text-xs font-medium text-heritage-ink/65"
+            >
+              {remainingCapacityNote}
+            </p>
           ) : null}
           {selectedCapacityMessage ? (
             <p
@@ -444,6 +457,7 @@ export const Step1FabricAssignmentDialog = ({
               canUseForAll
                 ? undefined
                 : remainingCapacityMessage ||
+                  remainingCapacityNote ||
                   remainingFailure?.message ||
                   undefined
             }
