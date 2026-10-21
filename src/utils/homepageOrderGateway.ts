@@ -26,7 +26,7 @@ export function getHomepageJoinBatchLabel(
     : "Join Current Batch";
 }
 
-const formatHomepageBatchDeadline = (
+export const formatHomepageBatchDeadline = (
   value: string | null | undefined,
   month: "long" | "short" = "long",
 ): string | null => {
@@ -71,13 +71,17 @@ export function getHomepageJoinBatchDescription(
       } is closed and is no longer accepting new orders. You can still start an individual order or create a private batch.`,
     };
   }
-  const deadline = formatHomepageBatchDeadline(batch.endDate);
-  return {
-    closed: false,
-    text: deadline
-      ? `Join the currently open community batch before ordering closes on ${deadline}.`
-      : "Join the currently open community batch before its ordering deadline.",
-  };
+  return { closed: false, text: getHomepageOpenJoinBatchText(batch.endDate) };
+}
+
+/** Open-batch copy for the Join card, shared by the live and cached card. */
+export function getHomepageOpenJoinBatchText(
+  endDate: string | null | undefined,
+): string {
+  const deadline = formatHomepageBatchDeadline(endDate);
+  return deadline
+    ? `Join the currently open community batch before ordering closes on ${deadline}.`
+    : "Join the currently open community batch before its ordering deadline.";
 }
 
 /**
@@ -91,6 +95,22 @@ export function getHomepageJoinBatchDeadlinePill(
 ): string | null {
   if (!batch || isCommunityBatchClosedForOrders(batch, now)) return null;
   return formatHomepageBatchDeadline(batch.endDate, "short");
+}
+
+/**
+ * Hero order button text. While batches load it reads "Start Your Order" and
+ * leads to the order cards (which already work) instead of a disabled
+ * loading label; afterwards the Join label or "Explore Options" as before.
+ */
+export function getHomepageHeroPrimaryActionLabel({
+  isLoading,
+  joinLabel,
+}: {
+  isLoading: boolean;
+  joinLabel: string | null;
+}): string {
+  if (isLoading) return "Start Your Order";
+  return joinLabel ?? "Explore Options";
 }
 
 export function getHomepageOrderGatewayState(
