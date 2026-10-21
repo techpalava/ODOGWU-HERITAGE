@@ -1,9 +1,32 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "images": {
+    "sizes": [128, 256, 384, 512],
+    "qualities": [60],
+    "formats": ["image/webp"],
+    "minimumCacheTTL": 2678400,
+    "dangerouslyAllowSVG": false,
+    "remotePatterns": [
+      {
+        "protocol": "https",
+        "hostname": "^firebasestorage\\.googleapis\\.com$",
+        "pathname": "^/v0/b/gen-lang-client-0614710868\\.firebasestorage\\.app/o/.*$"
+      },
+      {
+        "protocol": "https",
+        "hostname": "^gen-lang-client-0614710868\\.firebasestorage\\.app$",
+        "pathname": "^/.*$"
+      }
+    ]
+  },
   "rewrites": [
     {
       "source": "/api/future-order-v2/personalized-price-decision",
       "destination": "/api/future-order-v2/payment-intent?route=personalized-price-decision"
+    },
+    {
+      "source": "/api/client-image-error",
+      "destination": "/api/health?route=client-image-error"
     }
   ],
   "headers": [

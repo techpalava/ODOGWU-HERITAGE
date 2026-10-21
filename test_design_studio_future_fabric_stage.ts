@@ -24,9 +24,10 @@ assert.match(fabricSource, /getFutureGarmentLabel\(assignment\.garmentType\)/);
 assert.match(fabricSource, /aria-label=\{`Change fabric for \$\{garmentLabel\}`\}/);
 assert.match(fabricSource, /aria-label=\{`Add fabric for \$\{garmentLabel\}`\}/);
 assert.match(fabricSource, /aria-label=\{`Assign fabric for \$\{garmentLabel\}`\}/);
-assert.match(fabricSource, /Fabric needs attention/);
-assert.match(fabricSource, /data-testid="fabric-needs-attention"/);
-assert.match(fabricSource, /data-fabric-needs-attention="true"/);
+// The old "Fabric needs attention" box is merged into the Fabric Guide flow.
+assert.doesNotMatch(fabricSource, /title="Fabric needs attention"/);
+assert.match(fabricSource, /data-testid="fabric-guide-flow"/);
+assert.match(fabricSource, /title=\{FABRIC_GUIDE_TITLE\}/);
 assert.match(fabricSource, /DesignStudioStepGuide/);
 assert.match(guideSource, />\s*Guide\s*</);
 assert.match(guideSource, /motion-safe:animate-step-guide-beam/);

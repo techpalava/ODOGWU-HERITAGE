@@ -17,6 +17,7 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { isUsableFabricColorHex } from "./src/components/DormantFutureFabricStep";
+import { setDefaultImageRetryDelaysForTests } from "./src/hooks/useImageLoadRetry";
 
 const require = createRequire(import.meta.url);
 const reactDomRuntime = require("react-dom") as {
@@ -29,6 +30,35 @@ const { DormantFutureFabricStep } = await import(
 );
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+// Production retry gaps are 1, 2, 4, 8 s; these tests use 5, 10, 20, 40 ms.
+const PREVIEW_TEST_RETRY_DELAYS_MS = [5, 10, 20, 40];
+setDefaultImageRetryDelaysForTests(PREVIEW_TEST_RETRY_DELAYS_MS);
+
+/** Fails the preview photo on the first load and on every automatic retry. */
+const failPreviewImageEveryTime = async (
+  root: ReactTestInstance,
+  fabricCode: string,
+) => {
+  const findImg = () =>
+    root
+      .findByProps({ "data-assigned-fabric-preview": "true", "data-fabric-code": fabricCode })
+      .findByType("img");
+  for (let attempt = 0; attempt <= PREVIEW_TEST_RETRY_DELAYS_MS.length; attempt += 1) {
+    await act(async () => {
+      findImg().props.onError(new Error("load failed"));
+    });
+    if (attempt < PREVIEW_TEST_RETRY_DELAYS_MS.length) {
+      // Still retrying: the photo, not the colour, is on screen.
+      await act(async () => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, PREVIEW_TEST_RETRY_DELAYS_MS[attempt]! + 30),
+        );
+      });
+      assert.match(String(findImg().props.src), new RegExp(`imgRetry=${attempt + 1}`));
+    }
+  }
+};
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 
@@ -503,16 +533,19 @@ const assign = (
     "data-assigned-fabric-preview": "true",
     "data-fabric-code": fabricImageAndColor.code,
   });
-  const img = preview.findByType("img");
-  await act(async () => {
-    img.props.onError(new Error("load failed"));
-  });
+  assert.equal(preview.findAllByType("img").length, 1);
+  await failPreviewImageEveryTime(renderer.root, fabricImageAndColor.code);
   const after = renderer.root.findByProps({
     "data-assigned-fabric-preview": "true",
     "data-fabric-code": fabricImageAndColor.code,
   });
   assert.equal(after.findAllByType("img").length, 0);
-  assert.equal(after.props.role, "img");
+  // The colour block holds a button, so it is a labelled group, not role="img".
+  assert.equal(after.props.role, "group");
+  const reload = after.findByProps({ "data-fabric-photo-reload": "true" });
+  assert.equal(reload.type, "button");
+  assert.match(String(reload.props["aria-label"]), /^Tap to reload photo of Lagoon Weave$/);
+  assert.match(textContent(reload), /Tap to reload photo/);
   assert.match(String(after.props["aria-label"]), /Lagoon Weave/);
   assert.match(String(after.props["aria-label"]), /colour preview/i);
   assert.equal(after.props.style.backgroundColor, fabricImageAndColor.colorHex);
@@ -528,6 +561,20 @@ const assign = (
       "Change Fabric",
     ),
   );
+  // Tap to reload starts again with the photo and keeps the assignment.
+  await act(async () => {
+    reload.props.onClick({ stopPropagation: () => {} });
+  });
+  const reloaded = renderer.root.findByProps({
+    "data-assigned-fabric-preview": "true",
+    "data-fabric-code": fabricImageAndColor.code,
+  });
+  assert.equal(reloaded.findAllByType("img").length, 1);
+  assert.equal(reloaded.findAllByProps({ "data-fabric-photo-reload": "true" }).length, 0);
+  assert.equal(
+    renderer.root.findByProps({ "data-garment-key": "base:shirt" }).props["data-assignment-status"],
+    "assigned",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -540,15 +587,7 @@ const assign = (
   await act(async () => {
     renderer = create(renderStep(state, shirtSelection));
   });
-  const img = renderer.root
-    .findByProps({
-      "data-assigned-fabric-preview": "true",
-      "data-fabric-code": fabricImageNoColor.code,
-    })
-    .findByType("img");
-  await act(async () => {
-    img.props.onError(new Error("load failed"));
-  });
+  await failPreviewImageEveryTime(renderer.root, fabricImageNoColor.code);
   const after = renderer.root.findByProps({
     "data-assigned-fabric-preview": "true",
     "data-fabric-code": fabricImageNoColor.code,
@@ -556,6 +595,8 @@ const assign = (
   assert.equal(after.findAllByType("img").length, 0);
   assert.match(textContent(after), /Fabric preview unavailable/);
   assert.match(String(after.props["aria-label"]), /Fabric preview unavailable/);
+  assert.equal(after.props.role, "group");
+  assert.equal(after.findAllByProps({ "data-fabric-photo-reload": "true" }).length, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -594,15 +635,7 @@ const assign = (
   await act(async () => {
     renderer = create(renderStep(state, shirtSelection));
   });
-  const failedImg = renderer.root
-    .findByProps({
-      "data-assigned-fabric-preview": "true",
-      "data-fabric-code": fabricImageAndColor.code,
-    })
-    .findByType("img");
-  await act(async () => {
-    failedImg.props.onError(new Error("load failed"));
-  });
+  await failPreviewImageEveryTime(renderer.root, fabricImageAndColor.code);
   assert.equal(
     renderer.root
       .findByProps({
@@ -648,4 +681,5 @@ const assign = (
   assert.match(String(previewImage.props.alt), /Imperial Sapphire Link/);
 }
 
+setDefaultImageRetryDelaysForTests(null);
 console.log("PASS: assigned Fabric card preview regressions");

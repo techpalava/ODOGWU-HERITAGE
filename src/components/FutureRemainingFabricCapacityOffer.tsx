@@ -1,6 +1,7 @@
 import { Plus, X } from "lucide-react";
 import {
   studioContinueNavInteractionClass,
+  STUDIO_CONTINUE_UNLOCK_GLOW_CLASS,
   studioOutlinedNavInteractionClass,
 } from "./DesignStudioBackButton";
 import { useEffect, useId, useRef, useState } from "react";
@@ -331,7 +332,8 @@ export const FutureRemainingFabricCapacityOfferCard = ({
                 type="button"
                 onClick={onContinue}
                 data-testid="remaining-fabric-capacity-offer-decline"
-                className={`inline-flex min-h-11 w-full max-w-full min-w-0 items-center justify-center rounded-xl px-4 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass}`}
+                data-continue-unlock-glow="on"
+                className={`inline-flex min-h-11 w-full max-w-full min-w-0 items-center justify-center rounded-xl px-4 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_UNLOCK_GLOW_CLASS}`}
               >
                 <span className="min-w-0 text-balance">Continue to Design Style</span>
               </button>

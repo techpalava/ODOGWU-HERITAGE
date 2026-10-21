@@ -81,7 +81,7 @@ import {
   reconcileFutureShippingState,
 } from "./src/utils/designStudioFutureShipping";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
-import { IMAGE_RETRY_DELAY_MS } from "./src/hooks/useImageLoadRetry";
+import { setDefaultImageRetryDelaysForTests } from "./src/hooks/useImageLoadRetry";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -3425,6 +3425,29 @@ assert.equal(unresolvedPreviewSummary.fabricSummary[0]?.colorHex, null);
 assert.match(renderFabricSummaryMarkup(unresolvedPreviewSummary), /No preview/);
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+// Production retry gaps are 1, 2, 4, 8 s; shorten them to 5, 10, 20, 40 ms.
+const SUMMARY_TEST_RETRY_DELAYS_MS = [5, 10, 20, 40];
+setDefaultImageRetryDelaysForTests(SUMMARY_TEST_RETRY_DELAYS_MS);
+const failSummaryFabricImageEveryTime = async () => {
+  for (let attempt = 0; attempt <= SUMMARY_TEST_RETRY_DELAYS_MS.length; attempt += 1) {
+    act(() => {
+      fabricPreviewRenderer.root
+        .findByProps({ "data-summary-fabric-image": "true" })
+        .props.onError();
+    });
+    if (attempt < SUMMARY_TEST_RETRY_DELAYS_MS.length) {
+      await act(async () => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, SUMMARY_TEST_RETRY_DELAYS_MS[attempt]! + 30),
+        );
+      });
+      assert.match(
+        fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-image": "true" }).props.src,
+        new RegExp(`imgRetry=${attempt + 1}`),
+      );
+    }
+  }
+};
 let fabricPreviewRenderer!: ReturnType<typeof create>;
 act(() => {
   fabricPreviewRenderer = create(
@@ -3446,24 +3469,8 @@ assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
   1,
 );
-act(() => {
-  fabricPreviewRenderer.root
-    .findByProps({ "data-summary-fabric-image": "true" })
-    .props.onError();
-});
-// One retry after a short pause, then the swatch fallback.
-await act(async () => {
-  await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
-});
-assert.match(
-  fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-image": "true" }).props.src,
-  /imgRetry=1/,
-);
-act(() => {
-  fabricPreviewRenderer.root
-    .findByProps({ "data-summary-fabric-image": "true" })
-    .props.onError();
-});
+// Retries with growing gaps, then the swatch fallback with a reload button.
+await failSummaryFabricImageEveryTime();
 assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
   0,
@@ -3493,26 +3500,38 @@ act(() => {
     }),
   );
 });
-for (let attempt = 0; attempt < 2; attempt += 1) {
-  act(() => {
-    fabricPreviewRenderer.root
-      .findByProps({ "data-summary-fabric-image": "true" })
-      .props.onError();
-  });
-  if (attempt === 0) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
-    });
-  }
-}
+await failSummaryFabricImageEveryTime();
 assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-fallback": "true" }).length,
   1,
 );
+const summaryFallbackText = (node: { children: unknown[] }): string =>
+  node.children
+    .map((child) =>
+      typeof child === "string"
+        ? child
+        : summaryFallbackText(child as { children: unknown[] }),
+    )
+    .join("");
 assert.match(
-  fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-fallback": "true" }).children.join(""),
+  summaryFallbackText(
+    fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-fallback": "true" }),
+  ),
   /No preview/,
 );
+// A photo that existed but failed offers "Tap to reload photo", which starts again.
+const summaryReload = fabricPreviewRenderer.root.findByProps({
+  "data-fabric-photo-reload": "true",
+});
+assert.match(String(summaryReload.props["aria-label"]), /^Tap to reload photo/);
+act(() => {
+  summaryReload.props.onClick({ stopPropagation: () => {} });
+});
+assert.equal(
+  fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
+  1,
+);
+setDefaultImageRetryDelaysForTests(null);
 act(() => {
   fabricPreviewRenderer.unmount();
 });

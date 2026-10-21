@@ -9,6 +9,11 @@ import type { FutureFabricCatalogueCardPresentation } from "../utils/designStudi
 import type { FabricStockPresentation } from "../utils/fabricStockPresentation";
 import { isUsableFabricColorHex } from "./AssignedFabricPreview";
 import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
+import {
+  buildOptimizedImageSources,
+  FABRIC_CARD_IMAGE_PRESET,
+} from "../utils/optimizedImageUrl";
+import { FabricPhotoReloadButton } from "./FabricPhotoReloadButton";
 
 export const FutureFabricCatalogueCard = ({
   fabric,
@@ -112,7 +117,12 @@ export const FutureFabricCatalogueCard = ({
   const colorHex = isUsableFabricColorHex(fabric.colorHex)
     ? fabric.colorHex.trim()
     : null;
-  const image = useImageLoadRetry(imageUrl);
+  const image = useImageLoadRetry(imageUrl, {
+    optimized: buildOptimizedImageSources(imageUrl, FABRIC_CARD_IMAGE_PRESET),
+    report: { surface: "fabric-card", fabricCode: fabric.code },
+  });
+  // Only offer a reload when there was a photo to load.
+  const canReloadPhoto = Boolean(imageUrl) && image.failed;
   const showImage = !image.failed;
   const actionClassName =
     "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45";
@@ -163,13 +173,17 @@ export const FutureFabricCatalogueCard = ({
       <div className="relative aspect-[4/3] overflow-hidden bg-heritage-cream/40">
         {showImage ? (
           <img
+            key={image.imageKey}
             src={image.src}
+            srcSet={image.srcSet}
+            sizes={image.sizes}
             alt={`${fabric.name} fabric swatch`}
             loading="lazy"
             decoding="async"
             className="h-full w-full object-cover"
             onError={image.onError}
             data-fabric-card-image="true"
+            data-fabric-image-source={image.source}
           />
         ) : colorHex ? (
           <div
@@ -184,9 +198,17 @@ export const FutureFabricCatalogueCard = ({
             aria-label={`${fabric.name} fabric preview unavailable`}
             data-fabric-card-fallback="true"
           >
-            No preview
+            {canReloadPhoto ? null : "No preview"}
           </div>
         )}
+        {canReloadPhoto ? (
+          <div className="absolute inset-0 flex items-center justify-center p-2">
+            <FabricPhotoReloadButton
+              fabricName={fabric.name}
+              onReload={image.retry}
+            />
+          </div>
+        ) : null}
         {stockPresentation.visible && (
           <span
             id={stockBadgeId}
