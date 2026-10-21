@@ -102,6 +102,7 @@
     "test:design-studio-navigation": "tsx test_design_studio_navigation.ts && tsx test_design_studio_nine_stage_navigation.ts && tsx test_design_studio_ten_stage_split.ts && tsx test_design_studio_step_counter.ts && tsx test_design_studio_contextual_reentry_guidance.ts && tsx test_design_studio_step_nav_buttons.tsx && tsx test_design_studio_nav_entry.ts",
     "test:design-studio-step-layout": "tsx test_design_studio_step_layout.tsx",
     "test:fabric-guide-flow": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_guide_flow.tsx",
+    "test:fabric-quantity-repair": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_quantity_over_allocation_repair.tsx",
     "test:continue-unlock-glow": "tsx test_continue_unlock_glow.tsx",
     "test:community-text-branding": "node scripts/tsxWithViteProductionFirebase.mjs test_community_text_branding.tsx",
     "test:design-studio-draft-isolation": "node scripts/tsxWithViteProductionFirebase.mjs test_design_studio_draft_isolation.ts",
