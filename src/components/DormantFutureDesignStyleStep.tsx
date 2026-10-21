@@ -33,7 +33,12 @@ import {
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
-import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
+import { DesignStyleImage } from "./DesignStyleImage";
+import {
+  DESIGN_STYLE_CARD_IMAGE_PRESET,
+  DESIGN_STYLE_DIALOG_IMAGE_PRESET,
+  DESIGN_STYLE_THUMB_IMAGE_PRESET,
+} from "../utils/optimizedImageUrl";
 
 interface DormantFutureDesignStyleStepProps {
   occurrences: readonly DesignStyleStepOccurrencePresentation[];
@@ -170,37 +175,24 @@ const assignmentListClassName = (count: number): string =>
 const DesignStyleCatalogueCardImage = ({
   imageUrl,
   alt,
+  styleId,
 }: {
   imageUrl: string | null | undefined;
   alt: string;
-}) => {
-  const image = useImageLoadRetry(imageUrl);
-
-  if (image.failed) {
-    return (
-      <div
-        className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45"
-        data-style-card-image-fallback="true"
-        aria-label={`${alt} unavailable`}
-      >
-        Image unavailable
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={image.src}
-      alt={alt}
-      loading="lazy"
-      decoding="async"
-      className="h-full w-full object-contain"
-      referrerPolicy="no-referrer"
-      data-style-card-image="true"
-      onError={image.onError}
-    />
-  );
-};
+  styleId: string;
+}) => (
+  <DesignStyleImage
+    imageUrl={imageUrl}
+    alt={alt}
+    preset={DESIGN_STYLE_CARD_IMAGE_PRESET}
+    surface="design-style-card"
+    reportCode={styleId}
+    imgClassName="h-full w-full object-contain"
+    fallbackClassName="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-heritage-ink/45"
+    imgDataAttributes={{ "data-style-card-image": "true" }}
+    fallbackDataAttributes={{ "data-style-card-image-fallback": "true" }}
+  />
+);
 
 export const DormantFutureDesignStyleStep = ({
   occurrences,
@@ -894,11 +886,19 @@ export const DormantFutureDesignStyleStep = ({
                 : undefined
             }
           >
-            <img
-              src={selectedDesignImage}
+            <DesignStyleImage
+              imageUrl={selectedDesignImage}
               alt={previewAlt}
-              className="h-full w-full object-contain"
-              referrerPolicy="no-referrer"
+              preset={DESIGN_STYLE_THUMB_IMAGE_PRESET}
+              surface="design-style-preview"
+              reportCode={
+                occurrence.assignment.sourceKind === "uploaded"
+                  ? null
+                  : occurrence.assignment.sourceKey
+              }
+              imgClassName="h-full w-full object-contain"
+              fallbackClassName="flex h-full items-center justify-center text-center text-[9px] text-heritage-ink/45"
+              compactFallback
             />
           </div>
         ) : null}
@@ -1051,7 +1051,7 @@ export const DormantFutureDesignStyleStep = ({
         </header>
         <div ref={dialogContentRef} className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {dialogView === "mapping" ? <>
-          {pendingEntry.style.image && pendingDisplayStyleName && <img src={pendingEntry.style.image} alt={`${pendingDisplayStyleName} design reference`} className="mb-4 max-h-56 w-full rounded-2xl bg-heritage-cream/35 object-contain" />}
+          {pendingEntry.style.image && pendingDisplayStyleName && <DesignStyleImage imageUrl={pendingEntry.style.image} alt={`${pendingDisplayStyleName} design reference`} preset={DESIGN_STYLE_DIALOG_IMAGE_PRESET} surface="design-style-dialog" reportCode={pendingEntry.style.id} imgClassName="mb-4 max-h-56 w-full rounded-2xl bg-heritage-cream/35 object-contain" fallbackClassName="mb-4 flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-2xl bg-heritage-cream/35 px-4 text-center text-xs text-heritage-ink/45" />}
           {pendingEntry.referenceGarmentTypes.length > 0 && <p className="text-xs leading-relaxed text-heritage-ink/70"><span className="font-bold text-heritage-green">Originally designed for:</span> {formatReferenceGarmentTypes(pendingEntry.referenceGarmentTypes)}</p>}
           <fieldset className="mt-4 space-y-2">
             <legend className="mb-2 text-sm font-bold text-heritage-green">Choose garments</legend>
@@ -1096,7 +1096,7 @@ export const DormantFutureDesignStyleStep = ({
           <button ref={detailsCloseRef} type="button" onClick={closeDetails} aria-label="Close Design Style details" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
         </header>
         <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
-          {detailsEntry.style.image && <img src={detailsEntry.style.image} alt={`${formatDisplayStyleLabel(detailsEntry.style)} design`} className="max-h-80 w-full rounded-2xl bg-heritage-cream/35 object-contain" referrerPolicy="no-referrer" />}
+          {detailsEntry.style.image && <DesignStyleImage imageUrl={detailsEntry.style.image} alt={`${formatDisplayStyleLabel(detailsEntry.style)} design`} preset={DESIGN_STYLE_DIALOG_IMAGE_PRESET} surface="design-style-dialog" reportCode={detailsEntry.style.id} imgClassName="max-h-80 w-full rounded-2xl bg-heritage-cream/35 object-contain" fallbackClassName="flex min-h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl bg-heritage-cream/35 px-4 text-center text-xs text-heritage-ink/45" />}
           {detailsEntry.style.description && <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-heritage-ink/75">{detailsEntry.style.description}</p>}
           {detailsEntry.referenceGarmentTypes.length > 0 && <p className="mt-4 rounded-xl bg-heritage-cream/45 px-3 py-2 text-xs leading-relaxed text-heritage-ink/70"><span className="font-bold text-heritage-green">Originally designed for:</span> {formatReferenceGarmentTypes(detailsEntry.referenceGarmentTypes)}</p>}
         </div>
@@ -1203,6 +1203,7 @@ export const DormantFutureDesignStyleStep = ({
                       <DesignStyleCatalogueCardImage
                         imageUrl={entry.style.image}
                         alt={`${displayStyleName} design`}
+                        styleId={entry.style.id}
                       />
                       {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                     </div>
