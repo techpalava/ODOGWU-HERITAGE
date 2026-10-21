@@ -1,8 +1,9 @@
 /**
- * Gold beam on enabled Design Studio step navigation (Back, Continue, Review
- * Order) on every step. Beam only when enabled; never while disabled or
- * locked; heritage gold token; reduced motion gets a static gold ring;
- * focus-visible pauses it so the gold focus ring stays legible.
+ * Crisp gold ring blink (Option A) on unlocked Continue buttons on every
+ * Design Studio step: Continue, Review Order, "Continue without AI Try-on".
+ * Only when enabled; never while disabled or locked; never on Back; thin crisp
+ * heritage gold with no blur/halo; reduced motion gets a static ring;
+ * focus-visible pauses it so the gold focus ring stays readable.
  * The white glow class remains only for the fabric capacity offer's Continue.
  */
 import assert from "node:assert/strict";
@@ -12,11 +13,10 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
   DesignStudioForwardButton,
   DesignStudioStepActions,
+  STUDIO_CONTINUE_RING_BLINK_CLASS,
   STUDIO_CONTINUE_UNLOCK_GLOW_CLASS,
-  STUDIO_NAV_GOLD_BEAM_CLASS,
   DesignStudioBackButton,
   getStudioContinueUnlockGlow,
-  getStudioNavGoldBeam,
 } from "./src/components/DesignStudioBackButton";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -32,31 +32,34 @@ assert.deepEqual(getStudioContinueUnlockGlow(false), {
   className: "",
   "data-continue-unlock-glow": "off",
 });
-assert.equal(getStudioContinueUnlockGlow(true).className, STUDIO_CONTINUE_UNLOCK_GLOW_CLASS);
+assert.equal(getStudioContinueUnlockGlow(true).className, STUDIO_CONTINUE_RING_BLINK_CLASS);
+
+// Option A ring.
+assert.match(STUDIO_CONTINUE_RING_BLINK_CLASS, /motion-safe:animate-continue-ring-blink/);
+assert.match(STUDIO_CONTINUE_RING_BLINK_CLASS, /motion-reduce:continue-ring-static/, "reduced motion: static ring");
+assert.match(STUDIO_CONTINUE_RING_BLINK_CLASS, /motion-safe:focus-visible:animate-none/, "focus ring stays readable");
 
 const css = readFileSync("src/index.css", "utf8");
 assert.match(css, /--animate-continue-unlock-glow:\s*continue-unlock-glow\b/);
 const keyframes = css.match(/@keyframes continue-unlock-glow\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
 assert.ok(keyframes, "continue-unlock-glow keyframes exist");
 assert.match(keyframes, /rgb\(255 255 255/, "the glow is white");
-assert.doesNotMatch(keyframes, /197 168 92/, "the glow is not gold");
+assert.doesNotMatch(keyframes, /197 168 92/, "the white glow is not gold");
 
-// Gold beam for step navigation.
-assert.match(STUDIO_NAV_GOLD_BEAM_CLASS, /motion-safe:animate-studio-nav-gold-beam/);
-assert.match(STUDIO_NAV_GOLD_BEAM_CLASS, /motion-reduce:studio-nav-gold-beam-static/,
-  "reduced motion: static gold ring");
-assert.match(STUDIO_NAV_GOLD_BEAM_CLASS, /motion-safe:focus-visible:animate-none/);
-assert.deepEqual(getStudioNavGoldBeam(false), { className: "", "data-studio-nav-beam": "off" });
-assert.equal(getStudioNavGoldBeam(true).className, STUDIO_NAV_GOLD_BEAM_CLASS);
-assert.match(css, /--animate-studio-nav-gold-beam:\s*studio-nav-gold-beam\b/);
-const goldKeyframes = css.match(/@keyframes studio-nav-gold-beam\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
-assert.ok(goldKeyframes, "studio-nav-gold-beam keyframes exist");
-assert.match(goldKeyframes, /var\(--color-heritage-gold\)/, "beam uses the heritage gold token");
-assert.doesNotMatch(goldKeyframes, /rgb\(255 255 255/, "beam is not white");
-assert.doesNotMatch(goldKeyframes, /#[0-9a-f]{3,8}\b/i, "no new hex colour");
-const goldStatic = css.match(/@utility studio-nav-gold-beam-static\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
-assert.match(goldStatic, /var\(--color-heritage-gold\)/);
-assert.match(css, /--color-heritage-gold:\s*#C5A85C/i, "token unchanged");
+assert.match(css, /--animate-continue-ring-blink:\s*continue-ring-blink 2\.4s step-end infinite/);
+const ring = css.match(/@keyframes continue-ring-blink\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+assert.ok(ring, "continue-ring-blink keyframes exist");
+assert.match(ring, /0 0 0 2px #fff, 0 0 0 3\.5px var\(--color-heritage-gold\)/, "1.5px gold ring, 2px white gap");
+assert.match(ring, /3\.5px transparent/, "blinks off");
+for (const shadow of ring.match(/box-shadow:[^;]+;/g) ?? []) {
+  // Crisp: every shadow is a pure spread ring (0 0 0 Npx), no blur radius.
+  for (const part of shadow.replace("box-shadow:", "").replace(";", "").split(",")) {
+    assert.match(part.trim(), /^0 0 0 [\d.]+px /, `no blur/halo: ${part}`);
+  }
+}
+assert.doesNotMatch(css, /studio-nav-gold-beam/, "#1002 beam removed");
+const ringStatic = css.match(/@utility continue-ring-static\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+assert.match(ringStatic, /0 0 0 2px #fff, 0 0 0 3\.5px var\(--color-heritage-gold\)/);
 
 // --- Shared forward button states -------------------------------------------
 const renderForward = async (props: Parameters<typeof DesignStudioForwardButton>[0]) => {
@@ -68,16 +71,14 @@ const renderForward = async (props: Parameters<typeof DesignStudioForwardButton>
 };
 const glowOn = (button: ReactTestInstance) => {
   assert.equal(button.props["data-continue-unlock-glow"], "on");
-  assert.equal(button.props["data-studio-nav-beam"], "gold");
-  assert.ok(String(button.props.className).includes(STUDIO_NAV_GOLD_BEAM_CLASS));
+  assert.ok(String(button.props.className).includes(STUDIO_CONTINUE_RING_BLINK_CLASS));
   assert.doesNotMatch(String(button.props.className), /animate-continue-unlock-glow/, "not the white glow");
   // Focus ring stays on the button.
   assert.match(String(button.props.className), /focus-visible:ring-heritage-gold/);
 };
 const glowOff = (button: ReactTestInstance) => {
   assert.equal(button.props["data-continue-unlock-glow"], "off");
-  assert.equal(button.props["data-studio-nav-beam"], "off");
-  assert.doesNotMatch(String(button.props.className), /animate-continue-unlock-glow|animate-studio-nav-gold-beam/);
+  assert.doesNotMatch(String(button.props.className), /animate-continue-unlock-glow|animate-continue-ring-blink|continue-ring-static/);
 };
 
 glowOn(await renderForward({ destination: "Fabric", onClick: () => undefined }));
@@ -122,10 +123,10 @@ assert.equal(
 );
 
 // Extra Continue-style next-step buttons outside the shared row.
-// AI Try-on's skip Continue is step navigation: gold. The fabric capacity
-// offer is deliberately left on its existing white glow.
+// AI Try-on's skip Continue gets the gold ring; the fabric capacity offer
+// deliberately keeps its white glow.
 for (const [file, marker, cls] of [
-  ["src/components/DormantFutureAiTryOnStep.tsx", "Continue without AI Try-on", /STUDIO_NAV_GOLD_BEAM_CLASS/],
+  ["src/components/DormantFutureAiTryOnStep.tsx", "Continue without AI Try-on", /STUDIO_CONTINUE_RING_BLINK_CLASS/],
   ["src/components/FutureRemainingFabricCapacityOffer.tsx", "Continue to Design Style", /STUDIO_CONTINUE_UNLOCK_GLOW_CLASS/],
 ] as const) {
   const source = readFileSync(file, "utf8");
@@ -134,24 +135,6 @@ for (const [file, marker, cls] of [
   const block = source.slice(buttonStart, index);
   assert.match(block, cls, `${marker} glow`);
   assert.match(block, /data-continue-unlock-glow="on"/);
-}
-
-// Back button: gold beam when enabled, none when disabled (Garment Type).
-{
-  let renderer!: ReturnType<typeof create>;
-  await act(async () => {
-    renderer = create(createElement(DesignStudioBackButton, { destination: "Fabric", onClick: () => undefined }));
-  });
-  const back = renderer.root.findByType("button");
-  assert.equal(back.props["data-studio-nav-beam"], "gold");
-  assert.ok(String(back.props.className).includes(STUDIO_NAV_GOLD_BEAM_CLASS));
-  assert.match(String(back.props.className), /focus-visible:ring-heritage-gold/);
-  await act(async () => {
-    renderer = create(createElement(DesignStudioBackButton, { disabled: true }));
-  });
-  const disabledBack = renderer.root.findByType("button");
-  assert.equal(disabledBack.props["data-studio-nav-beam"], "off");
-  assert.doesNotMatch(String(disabledBack.props.className), /animate-studio-nav-gold-beam/);
 }
 
 // --- Rendered header + footer rows for each step's gate shape ---------------
@@ -185,11 +168,22 @@ for (const shape of gateShapes) {
       const forward = renderer.root.findByProps({ "data-studio-nav": "forward" });
       const back = renderer.root.findByProps({ "data-studio-nav": "back" });
       (unlocked ? glowOn : glowOff)(forward);
-      assert.equal(back.props["data-studio-nav-beam"], "gold", "enabled Back has the gold beam");
-      assert.ok(String(back.props.className).includes(STUDIO_NAV_GOLD_BEAM_CLASS));
-      assert.doesNotMatch(String(back.props.className), /animate-continue-unlock-glow/, "Back never gets the white glow");
+      assert.doesNotMatch(String(back.props.className), /animate-continue-unlock-glow|continue-ring|gold-beam/, "Back never beams");
+      assert.equal(back.props["data-studio-nav-beam"], undefined);
     }
   }
 }
 
-console.log("test_continue_unlock_glow (gold step-nav beam): PASS");
+// Back alone: pre-#1002 style, no beam, enabled or disabled.
+for (const props of [{ destination: "Fabric", onClick: () => undefined }, { disabled: true }]) {
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(createElement(DesignStudioBackButton, props));
+  });
+  const back = renderer.root.findByType("button");
+  assert.doesNotMatch(String(back.props.className), /animate-|continue-ring|gold-beam/);
+  assert.match(String(back.props.className), /border-heritage-green\/75 bg-white/);
+  assert.match(String(back.props.className), /focus-visible:ring-heritage-gold/);
+}
+
+console.log("test_continue_unlock_glow (Option A gold ring blink): PASS");
