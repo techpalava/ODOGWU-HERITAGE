@@ -825,13 +825,10 @@ export const projectDesignStudioLiveOrderSummary = ({
   ): LiveOrderSummaryLine => {
     return {
       id: `construction-${garment.garmentKey}`,
-      // The selected clothing-price construction is this line's identity.
-      // Step 1 garment.label remains only when that choice is unresolved.
-      label:
-        mainConstructionIdentityLabel(garment) ||
-        garmentLabels.get(garment.garmentKey) ||
-        garment.label,
-      detail: null,
+      // Garment name leads (same as Stage 8 cards); the selected
+      // clothing-price construction sits underneath. Null when unresolved.
+      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      detail: mainConstructionIdentityLabel(garment),
       ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
       ...(garment.fitLabel ? { fitLabel: garment.fitLabel } : {}),
       amountLabel:

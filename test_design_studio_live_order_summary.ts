@@ -808,9 +808,12 @@ hiddenSection(step1Only.view, "delivery");
 hiddenSection(step1Only.view, "optional_extras");
 hiddenSection(step1Only.view, "additional_clothes");
 assert.deepEqual(
-  section(step1Only.view, "construction").lines.map((line) => line.label),
-  ["Standard Length Shirt, Short Sleeve", "With Rope"],
-  "Garments Ordered names the selected construction, not the Step 1 garment",
+  section(step1Only.view, "construction").lines.map((line) => [line.label, line.detail]),
+  [
+    ["Standard Shirt", "Standard Length Shirt, Short Sleeve"],
+    ["Trouser", "With Rope"],
+  ],
+  "Garments Ordered leads with the garment name; the selected construction is the detail",
 );
 hiddenSection(step1Only.view, "standard_shipping");
 assert.equal(
@@ -1009,9 +1012,13 @@ assert.equal(
   "construction choices are not Included rows under Style & Options",
 );
 assert.equal(
-  constructionLine(presentationView, presentationGarment.garmentKey)?.label,
+  constructionLine(presentationView, presentationGarment.garmentKey)?.detail,
   baseConstruction.label,
-  "Garments Ordered uses the selected construction option as its identity",
+  "Garments Ordered shows the selected construction option under the garment name",
+);
+assert.equal(
+  constructionLine(presentationView, presentationGarment.garmentKey)?.label,
+  presentationGarment.label,
 );
 assert.equal(
   section(presentationView, "construction").footer?.amountCents,
@@ -1050,11 +1057,12 @@ const midLongOrder = buildAuthority({
 });
 const midLongLine = constructionLine(midLongOrder.view, "base:shirt");
 assert.ok(midLongLine);
+assert.equal(midLongLine.label, "Standard Shirt");
 assert.equal(
-  midLongLine.label,
+  midLongLine.detail,
   "Standard Length Shirt, Mid-Long Sleeve",
 );
-assert.match(midLongLine.label, /Mid-Long/);
+assert.match(midLongLine.detail || "", /Mid-Long/);
 assert.equal(midLongLine.amountLabel, "€70.00");
 assert.equal(
   midLongOrder.summary.garmentSummary[0]?.constructionTotalCents,
@@ -1088,6 +1096,16 @@ const multiFabric = buildAuthority({
     dress: fabricB,
   },
 });
+// Non-shirt garments: the construction labels ("With Rope", "... Length,
+// Sleeveless") never name the garment, so the name must lead the row.
+assert.deepEqual(
+  section(multiFabric.view, "construction").lines.map((line) => [line.label, line.detail]),
+  [
+    ["Standard Shirt", "Standard Length Shirt, Short Sleeve"],
+    ["Trouser", "With Rope"],
+    ["Standard Dress", "Standard Length, Sleeveless / Over Shoulder"],
+  ],
+);
 assert.deepEqual(
   section(multiFabric.view, "fabrics").lines.map((line) => `${line.label} — ${line.detail}`),
   [
@@ -1163,7 +1181,9 @@ const extraLine = constructionLine(extraCommitted.view, extraKeys[0]);
 assert.ok(extraLine, "committed extra garment must appear in construction rows");
 assert.equal(extraLine.id, `construction-${extraKeys[0]}`);
 assert.match(extraLine.label, /Shirt/);
-assert.equal(extraLine.detail, null);
+// Additional Garments rows also lead with the garment name; construction is the detail.
+assert.doesNotMatch(extraLine.label, /Length|Sleeve/);
+assert.match(extraLine.detail || "", /Standard Length Shirt/);
 assert.equal(extraLine.supportingDetail, undefined);
 assert.equal(
   additionalGarmentsSubsection(extraCommitted.view)?.focusGarmentKey,
@@ -1319,8 +1339,10 @@ assert.equal(
   twoExtraLines[1]?.amountLabel,
   `€${(secondExtraConstruction.totalPriceCents / 100).toFixed(2)}`,
 );
-assert.equal(twoExtraLines[0]?.detail, null);
-assert.equal(twoExtraLines[1]?.detail, null);
+assert.match(twoExtraLines[0]?.detail || "", /Length/);
+assert.match(twoExtraLines[1]?.detail || "", /Length/);
+assert.doesNotMatch(twoExtraLines[0]?.label || "", /Length/);
+assert.doesNotMatch(twoExtraLines[1]?.label || "", /Length/);
 
 const selectedTwoExtrasView = projectDesignStudioLiveOrderSummary({
   summary: {
@@ -1358,7 +1380,8 @@ assert.deepEqual(
   twoExtraKeys.map((garmentKey) => ({
     id: `construction-${garmentKey}`,
     focusGarmentKey: garmentKey,
-    detail: null,
+    // The selected construction sits under the garment name.
+    detail: "Standard Length Shirt, Short Sleeve",
     amountLabel: `€${(
       (twoExtras.additionalConstruction.state.byGarmentKey[garmentKey]?.status === "resolved"
         ? twoExtras.additionalConstruction.state.byGarmentKey[garmentKey].totalPriceCents
@@ -2499,11 +2522,13 @@ const namedWearers = buildAuthority({
 });
 const nolLine = constructionLine(namedWearers.view, "base:shirt");
 const pioLine = constructionLine(namedWearers.view, "base:kaftan");
-assert.equal(nolLine?.label, "Standard Length Shirt, Short Sleeve");
+assert.equal(nolLine?.label, "Standard Shirt");
+assert.equal(nolLine?.detail, "Standard Length Shirt, Short Sleeve");
 assert.equal(nolLine?.wearerLabel, "Nol");
 assert.equal(nolLine?.fitLabel, undefined);
 assert.equal(nolLine?.supportingDetail, undefined);
-assert.equal(pioLine?.label, "Long Length Shirt, Short Sleeve");
+assert.equal(pioLine?.label, "Long Shirt");
+assert.equal(pioLine?.detail, "Long Length Shirt, Short Sleeve");
 assert.equal(pioLine?.wearerLabel, "Pio");
 assert.equal(pioLine?.fitLabel, undefined);
 assert.equal(
@@ -2539,14 +2564,10 @@ assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, und
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, undefined);
-assert.equal(
-  constructionLine(blankWearers.view, "base:shirt")?.label,
-  "Standard Length Shirt, Short Sleeve",
-);
-assert.equal(
-  constructionLine(blankWearers.view, "base:kaftan")?.label,
-  "Long Length Shirt, Short Sleeve",
-);
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.detail, "Standard Length Shirt, Short Sleeve");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.label, "Long Shirt");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.detail, "Long Length Shirt, Short Sleeve");
 assert.equal(
   section(blankWearers.view, "construction").lines.every((line) => line.wearerLabel == null),
   true,
@@ -2627,10 +2648,8 @@ const soloWearer = buildAuthority({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(
-  constructionLine(soloWearer.view, "base:shirt")?.label,
-  "Standard Length Shirt, Short Sleeve",
-);
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.detail, "Standard Length Shirt, Short Sleeve");
 // Solo: no wearer line, even with a saved name.
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, undefined);
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, undefined);
