@@ -55,6 +55,30 @@ function KlarnaMethodGlyph() {
   );
 }
 
+/** Pix teal diamond mark, sized like the Klarna square. */
+function PixMethodGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+      <rect
+        x="3.05"
+        y="3.05"
+        width="9.9"
+        height="9.9"
+        rx="2.2"
+        transform="rotate(45 8 8)"
+        fill="#32BCAD"
+      />
+      <path
+        d="M5.3 8 8 5.3 10.7 8 8 10.7z"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function BrandPlate({
   children,
   brand,
@@ -145,7 +169,7 @@ function AmexBrandGlyph() {
 export function FutureOrderV2MethodIcon({
   method,
 }: {
-  method: "card" | "ideal" | "klarna";
+  method: "card" | "ideal" | "klarna" | "pix";
 }) {
   return (
     <span
@@ -157,6 +181,8 @@ export function FutureOrderV2MethodIcon({
         <CardMethodGlyph />
       ) : method === "ideal" ? (
         <IdealMethodGlyph />
+      ) : method === "pix" ? (
+        <PixMethodGlyph />
       ) : (
         <KlarnaMethodGlyph />
       )}

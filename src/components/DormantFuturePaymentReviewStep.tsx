@@ -1459,7 +1459,9 @@ export const DormantFuturePaymentReviewStep = ({
                   data-future-order-v2-redirecting={paymentMethod}
                   {...(paymentMethod === "klarna"
                     ? { "data-future-order-v2-klarna-redirecting": true }
-                    : { "data-future-order-v2-ideal-redirecting": true })}
+                    : paymentMethod === "pix"
+                      ? { "data-future-order-v2-pix-redirecting": true }
+                      : { "data-future-order-v2-ideal-redirecting": true })}
                   className="mt-4 text-sm leading-relaxed text-white/85"
                 >
                   {redirectingMessage}

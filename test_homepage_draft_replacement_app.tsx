@@ -22,8 +22,14 @@ import {
   GUEST_ORDER_SESSION_STORAGE_NAMESPACE,
 } from "./src/utils/designStudioDraftPersistence";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
+import { HOMEPAGE_JOIN_BATCH_CACHE_KEY } from "./src/utils/homepageJoinBatchCache";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+// HomeView records the rendered Join batch in a display-only cache whenever
+// its effect re-runs. That key is not legacy draft storage, so it is excluded
+// from the zero-write counter; its value is asserted separately below.
+const UNCOUNTED_WRITE_KEYS = new Set<string>([HOMEPAGE_JOIN_BATCH_CACHE_KEY]);
 
 class MemoryStorage implements Storage {
   readonly values = new Map<string, string>();
@@ -42,11 +48,11 @@ class MemoryStorage implements Storage {
     return [...this.values.keys()][index] ?? null;
   }
   removeItem(key: string): void {
-    this.writes += 1;
+    if (!UNCOUNTED_WRITE_KEYS.has(key)) this.writes += 1;
     this.values.delete(key);
   }
   setItem(key: string, value: string): void {
-    this.writes += 1;
+    if (!UNCOUNTED_WRITE_KEYS.has(key)) this.writes += 1;
     this.values.set(key, value);
   }
 }
@@ -67,11 +73,17 @@ Object.defineProperty(globalThis, "window", {
   value: {
     localStorage,
     sessionStorage,
-    location: { hash: "" },
+    location: { hash: "", search: "", pathname: "/" },
     scrollY: 0,
+    innerWidth: 1280,
+    innerHeight: 800,
     scrollTo: () => undefined,
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    // App shell effects (version monitoring, feedback tab) poll on intervals;
+    // real timers are cleared by their effect cleanups when App unmounts.
+    setInterval: globalThis.setInterval.bind(globalThis),
+    clearInterval: globalThis.clearInterval.bind(globalThis),
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -91,7 +103,12 @@ Object.defineProperty(globalThis, "document", {
   configurable: true,
   value: {
     body: { style: {} },
+    // Design Studio scroll buttons read document scroll metrics after Continue.
+    documentElement: { scrollHeight: 800, clientHeight: 800 },
     getElementById: () => null,
+    // App shell listens for visibilitychange; no document events are dispatched here.
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
   },
 });
 Object.defineProperty(globalThis, "IntersectionObserver", {
@@ -236,6 +253,11 @@ const assertDraftRemainsUntouched = () => {
   assert.equal(localStorage.writes, 0, "Homepage preflight and Cancel must not write legacy storage.");
   assert.equal(localStorage.values.has(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE), false);
   assert.equal(localStorage.values.has(FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE), false);
+  assert.equal(
+    JSON.parse(localStorage.getItem(HOMEPAGE_JOIN_BATCH_CACHE_KEY) || "{}").id,
+    "batch-8",
+    "The display-only Join cache may only record the rendered homepage batch.",
+  );
   assert.equal(
     JSON.parse(localStorage.getItem(GUEST_ORDER_SESSION_STORAGE_NAMESPACE) || "{}").designDraft.batchId,
     "batch-7",

@@ -8,6 +8,7 @@ import HomepageOrderGateway, {
 } from "./src/components/HomepageOrderGateway";
 import { createJoinRenderedBatchAction } from "./src/utils/homepageCurrentBatchAction";
 import {
+  getHomepageJoinBatchDeadlinePill,
   getHomepageJoinBatchDescription,
   getHomepageJoinBatchLabel,
   getHomepageOrderGatewayState,
@@ -442,12 +443,14 @@ const joinMarkup = renderToStaticMarkup(
     onManageSourcingBatches: () => undefined,
   }),
 );
-assert.match(joinMarkup, /Join an Existing Batch or Group \(Avatars\)/);
+// Refined cards (2026-10-20): batch name is a gold badge, not part of the title.
+assert.match(joinMarkup, /<h3[^>]*>Join an Existing Batch or Group<\/h3>/);
+assert.match(joinMarkup, /<span data-join-batch-badge="true"[^>]*>Avatars<\/span>/);
 assert.match(joinMarkup, /Join the Avatars/);
 assert.match(joinMarkup, /Join an Existing Batch or Group/);
 assert.match(joinMarkup, /Individual Custom Order/);
 assert.match(joinMarkup, /Ready to Wear/);
-assert.match(joinMarkup, /Ready to Wear - Coming Soon/);
+assert.match(joinMarkup, /aria-label="Ready to Wear - Coming Soon"[^>]*>Coming Soon<\/button>/);
 assert.match(
   joinMarkup,
   /Shipping from Lagos to Location applies\./,
@@ -460,7 +463,7 @@ assert.equal(
 assert.doesNotMatch(joinMarkup, /Order Type [ABCD]/);
 assert.match(joinMarkup, /Manage Sourcing Batches/);
 assert.ok(
-  joinMarkup.indexOf("Join an Existing Batch or Group (Avatars)") <
+  joinMarkup.indexOf("Join an Existing Batch or Group") <
     joinMarkup.indexOf("Create a Private Batch") &&
     joinMarkup.indexOf("Create a Private Batch") <
       joinMarkup.indexOf("Individual Custom Order") &&
@@ -483,6 +486,7 @@ const unnamedBatchMarkup = renderToStaticMarkup(
 );
 assert.match(unnamedBatchMarkup, /Join an Existing Batch or Group/);
 assert.doesNotMatch(unnamedBatchMarkup, /Join an Existing Batch or Group \(\s*\)/);
+assert.doesNotMatch(unnamedBatchMarkup, /data-join-batch-badge/, "No empty name badge");
 
 const customerMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {
@@ -575,6 +579,43 @@ const closedMarkup = renderToStaticMarkup(
 assert.match(closedMarkup, /data-join-batch-state="closed"/);
 assert.match(closedMarkup, /The Avatars batch is closed/);
 assert.doesNotMatch(closedMarkup, /currently open community batch/);
+
+// Refined cards: deadline pill, readable meta chips, CTA labels, closed state.
+const deadlineBatch = makeBatch({ startDate: "2026-10-01", endDate: "2026-11-16" });
+assert.equal(
+  getHomepageJoinBatchDeadlinePill(deadlineBatch, new Date("2026-10-20T12:00:00Z")),
+  "16 Nov 2026",
+);
+assert.equal(getHomepageJoinBatchDeadlinePill(pastDeadlineAvatars, new Date("2026-10-18T12:00:00Z")), null);
+assert.equal(getHomepageJoinBatchDeadlinePill(makeBatch({ endDate: "" }), new Date("2026-10-18T12:00:00Z")), null);
+assert.equal(getHomepageJoinBatchDeadlinePill(null), null);
+assert.match(joinMarkup, /data-join-batch-deadline="true"[^>]*>.*Closes \d{1,2} [A-Z][a-z]{2,4} \d{4}<\/p>/);
+assert.equal(
+  (joinMarkup.match(/<li[^>]*>Group minimum: 10 garments total<\/li>/g) || []).length,
+  2,
+  "Join and Private cards show the group minimum as a chip",
+);
+assert.equal((joinMarkup.match(/<li[^>]*>Shared shipping<\/li>/g) || []).length, 2);
+assert.match(joinMarkup, /<li[^>]*>Independent order<\/li>/);
+assert.match(joinMarkup, /<li[^>]*>Higher direct shipping cost<\/li>/);
+assert.doesNotMatch(joinMarkup, /garments total \| Shared/, "Meta is chips, not a pipe-joined line");
+assert.match(joinMarkup, /Choose how you order/);
+for (const [id, label] of [
+  ["btn-quick-join-cohort", "Join the Avatars"],
+  ["btn-create-private-batch", "Create Private Batch"],
+  ["btn-start-individual-order", "Start Individual Order"],
+  ["btn-quick-gallery", "Browse Style Gallery"],
+] as const) {
+  assert.match(joinMarkup, new RegExp(`id="${id}"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${label}`), `${id} keeps its label`);
+}
+assert.match(joinMarkup, /id="btn-ready-to-wear"[^>]*disabled=""/);
+assert.doesNotMatch(joinMarkup, /\buppercase\b[^"]*text-\[11px\][^"]*text-white/, "Old tiny uppercase CTA style is gone");
+// Open join card is the gold featured card; closed falls back to the plain card with no deadline pill.
+assert.match(joinMarkup, /border-2 border-heritage-gold[\s\S]*?data-join-batch-badge/);
+assert.doesNotMatch(closedMarkup, /data-join-batch-deadline/);
+assert.doesNotMatch(closedMarkup, /border-2 border-heritage-gold/);
+assert.match(closedMarkup, /<span data-join-batch-badge="true"[^>]*>Avatars<\/span>/);
+assert.match(closedMarkup, /id="btn-quick-join-cohort"/);
 
 console.log(
   "PASS: homepage order gateway source-of-truth, boundaries, and labels",

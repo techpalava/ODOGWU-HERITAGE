@@ -12,6 +12,23 @@ export const studioOutlinedNavInteractionClass =
 export const studioContinueNavInteractionClass =
   "border-2 border-heritage-green bg-heritage-green text-white shadow-sm transition duration-200 ease-out enabled:hover:border-heritage-green enabled:hover:bg-white enabled:hover:text-heritage-green focus-visible:border-heritage-green focus-visible:bg-white focus-visible:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
+/**
+ * White glow on an unlocked (enabled) Continue button. The buttons are heritage
+ * green, so the glow is white, never gold. Reduced motion gets a static soft
+ * white ring, and the pulse pauses on keyboard focus so the gold focus ring
+ * stays legible. Never apply it to a disabled or locked Continue.
+ */
+export const STUDIO_CONTINUE_UNLOCK_GLOW_CLASS =
+  "motion-safe:animate-continue-unlock-glow motion-safe:focus-visible:animate-none motion-reduce:shadow-[inset_0_0_0_2px_rgb(255_255_255/0.7),0_0_0_3px_rgb(255_255_255/0.95),0_0_0_4px_rgb(10_41_27/0.18)]";
+
+/** Glow class + data attribute for any Continue / next-step primary button. */
+export const getStudioContinueUnlockGlow = (
+  unlocked: boolean,
+): { className: string; "data-continue-unlock-glow": "on" | "off" } => ({
+  className: unlocked ? STUDIO_CONTINUE_UNLOCK_GLOW_CLASS : "",
+  "data-continue-unlock-glow": unlocked ? "on" : "off",
+});
+
 const StudioNavLabel = ({
   primary,
   secondary,
@@ -110,6 +127,7 @@ export const DesignStudioForwardButton = ({
   const primary = label ?? "Continue";
   const accessible = ariaLabel ?? (destination ? `Continue to ${destination}` : primary);
   const lockedClickable = locked && disabled && Boolean(onLockedClick);
+  const unlockGlow = getStudioContinueUnlockGlow(!disabled && !locked);
   const Icon = locked || icon === "lock"
     ? LockKeyhole
     : icon === "package"
@@ -125,7 +143,8 @@ export const DesignStudioForwardButton = ({
       aria-label={accessible}
       aria-describedby={ariaDescribedBy || describedBy}
       data-studio-nav="forward"
-      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${className}`}
+      data-continue-unlock-glow={unlockGlow["data-continue-unlock-glow"]}
+      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${unlockGlow.className} ${className}`}
     >
       <StudioNavLabel primary={primary} secondary={secondary} emphasis="outline" />
       <Icon aria-hidden="true" size={16} className="shrink-0" />

@@ -1818,6 +1818,7 @@ export const DormantFutureCustomDetailsStep = ({
                     garmentLabel={garmentLabel}
                     fabricCode={assigned.fabricCode}
                     className="size-11 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40"
+                    size="thumb"
                   />
                 ) : (
                   <div
