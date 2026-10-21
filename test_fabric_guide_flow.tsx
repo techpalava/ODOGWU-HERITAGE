@@ -412,8 +412,7 @@ const guides = (root: ReactTestInstance) =>
   assert.equal(forwards.length, 2, "header and docked footer Continue");
   for (const forward of forwards) {
     assert.equal(forward.props["data-continue-unlock-glow"], "on");
-    assert.equal(forward.props["data-studio-nav-beam"], "gold");
-    assert.match(String(forward.props.className), /animate-studio-nav-gold-beam/);
+    assert.match(String(forward.props.className), /animate-continue-ring-blink/);
   }
 }
 

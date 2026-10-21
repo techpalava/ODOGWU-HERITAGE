@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, Suspense } from "react";
+import { useNotificationAutoDismiss } from "./hooks/useNotificationAutoDismiss";
 
 import {
   Check,
@@ -199,6 +200,9 @@ export default function App() {
     setBusinessSettings,
   } = store;
 
+  // Every toast auto-dismisses here; callers only set the notification.
+  useNotificationAutoDismiss(notification, setNotification);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -387,9 +391,6 @@ export default function App() {
     type: "success" | "info" = "success",
   ) => {
     setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
   };
 
   const resolveCurrentHomepageCommunityEntry = (batchId: string) =>

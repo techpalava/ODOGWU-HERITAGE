@@ -99,6 +99,7 @@
     "test:future-order-v2-stripe-payment": "tsx test_future_order_v2_stripe_payment.ts",
     "test:future-order-v2-pix-checkout": "node scripts/tsxWithViteProductionFirebase.mjs test_future_order_v2_pix_checkout.ts",
     "test:future-order-v2-paypal-payment": "tsx test_future_order_v2_paypal_payment.ts",
+    "test:notification-auto-dismiss": "tsx test_notification_auto_dismiss.tsx",
     "test:community-batch-order-closure": "tsx test_community_batch_order_closure.ts",
     "test:design-studio-navigation": "tsx test_design_studio_navigation.ts && tsx test_design_studio_nine_stage_navigation.ts && tsx test_design_studio_ten_stage_split.ts && tsx test_design_studio_step_counter.ts && tsx test_design_studio_contextual_reentry_guidance.ts && tsx test_design_studio_step_nav_buttons.tsx && tsx test_design_studio_nav_entry.ts",
     "test:design-studio-step-layout": "tsx test_design_studio_step_layout.tsx",
