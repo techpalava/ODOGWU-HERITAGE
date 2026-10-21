@@ -20,6 +20,13 @@ import HomepageCardRow, {
 import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 import { createJoinRenderedBatchAction } from "../utils/homepageCurrentBatchAction";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
+import { HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID } from "../utils/footerBatchLink";
+import { getHomepageHeroPrimaryActionLabel } from "../utils/homepageOrderGateway";
+import {
+  readHomepageJoinBatchCache,
+  writeHomepageJoinBatchCache,
+  type HomepageJoinBatchCacheEntry,
+} from "../utils/homepageJoinBatchCache";
 import ankaraLadyImage from "../assets/images/couture_gown_photo_1782308183701.jpg";
 import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jpg";
 import ankaraKidsImage from "../assets/images/regenerated_image_1784258480371.png";
@@ -87,14 +94,30 @@ export default function HomeView({
     orderGatewayState.joinBatch?.name,
     isBatchGatewayLoading,
   );
-  const heroPrimaryAction = isBatchGatewayLoading
-    ? "Loading Order Options"
-    : canJoinActiveBatch
-      ? currentBatchJoinLabel
-      : "Explore Options";
+  // Last Join card outcome, read once so the Join card can render from cache
+  // while the first batches snapshot is in flight (display only).
+  const [provisionalJoin] = useState<HomepageJoinBatchCacheEntry | null>(() =>
+    readHomepageJoinBatchCache(),
+  );
+  useEffect(() => {
+    if (!hasLoadedBatches) return;
+    writeHomepageJoinBatchCache(joinBatch ?? null);
+  }, [hasLoadedBatches, joinBatch]);
+
+  // While batches load the other order options already work, so the hero
+  // button leads to them instead of showing a disabled loading label.
+  const heroPrimaryAction = getHomepageHeroPrimaryActionLabel({
+    isLoading: isBatchGatewayLoading,
+    joinLabel: canJoinActiveBatch ? currentBatchJoinLabel : null,
+  });
   const firstHeroPrimaryAction = heroPrimaryAction;
+  const scrollToOrderGateway = () => {
+    document
+      .getElementById(HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const handleHeroPrimaryAction = isBatchGatewayLoading
-    ? undefined
+    ? scrollToOrderGateway
     : joinBatch
       ? createJoinRenderedBatchAction(joinBatch, onJoinCommunityBatch)
       : onCreatePrivateBatch;
@@ -231,6 +254,7 @@ export default function HomeView({
         <HomepageOrderGateway
           state={orderGatewayState}
           isLoading={isBatchGatewayLoading}
+          provisionalJoin={provisionalJoin}
           onStartIndividualOrder={onStartIndividualOrder}
           unfinishedOrderLabel={unfinishedOrderLabel}
           onResumeUnfinishedOrder={onResumeUnfinishedOrder}
@@ -279,7 +303,6 @@ export default function HomeView({
             <div className="pt-4 sm:pt-6">
               <button
                 onClick={handleHeroPrimaryAction}
-                disabled={isBatchGatewayLoading}
                 className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
               >
                 {firstHeroPrimaryAction} <ArrowRight size={18} />
@@ -549,7 +572,6 @@ export default function HomeView({
         <div className="text-center pt-6">
           <button
             onClick={handleHeroPrimaryAction}
-            disabled={isBatchGatewayLoading}
             className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
           >
             {heroPrimaryAction} <ArrowRight size={14} />
@@ -867,7 +889,6 @@ export default function HomeView({
         <div className="text-center pt-6">
           <button
             onClick={handleHeroPrimaryAction}
-            disabled={isBatchGatewayLoading}
             className="inline-flex bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
           >
             {heroPrimaryAction} <ArrowRight size={14} />
@@ -1076,7 +1097,6 @@ export default function HomeView({
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
             <button
               onClick={handleHeroPrimaryAction}
-              disabled={isBatchGatewayLoading}
               className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
             >
               {heroPrimaryAction} <ArrowRight size={16} />
@@ -1189,7 +1209,6 @@ export default function HomeView({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <button
               onClick={handleHeroPrimaryAction}
-              disabled={isBatchGatewayLoading}
               className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-xl inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
             >
               {heroPrimaryAction} <ArrowRight size={14} />
