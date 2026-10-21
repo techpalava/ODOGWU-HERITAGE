@@ -44,7 +44,7 @@ import {
 } from "./garmentConstructionPricing";
 import {
   getMeasurementPhysicalGarments,
-  planMeasurementRequirements,
+  planPersonMeasurementRequirements,
   reconcileFutureMeasurementState,
 } from "./measurementBlueprint";
 import {
@@ -89,6 +89,11 @@ export interface RemoveFuturePhysicalGarmentOccurrenceInput
   extends FuturePhysicalGarmentRemovalState {
   targetGarmentKey: string;
   expectedAuthoritySignature: string;
+  /**
+   * Garments of the person whose measurementState this is (Step 7's active
+   * person). Omitted: every garment in the order, as for a single person.
+   */
+  measurementGarmentKeys?: readonly string[];
   selectedStyle?: StyleCategory | null;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   aiTryOnPolicy: AiTryOnReconciliationPolicy;
@@ -759,13 +764,24 @@ export const removeFuturePhysicalGarmentOccurrence = (
     });
   }
 
-  const measurementPlan = planMeasurementRequirements({
+  // Plan exactly like Step 7 (planWearerOrderMeasurements): only this
+  // person's remaining garments, with the same standard-sizing fallback for a
+  // Male or no-audience order, so the remaining values are kept, not dropped.
+  const survivingMeasurementGarments = getMeasurementPhysicalGarments({
+    garmentTypeSelection: nextAuthority.effectiveGarmentTypeSelection,
+    physicalOccurrences: nextAuthority.physicalOccurrences,
+  });
+  const measurementGarmentKeys = input.measurementGarmentKeys
+    ? new Set(input.measurementGarmentKeys)
+    : null;
+  const measurementPlan = planPersonMeasurementRequirements({
     route: input.measurementState.route,
     garmentTypeSelection: nextAuthority.effectiveGarmentTypeSelection,
-    physicalGarments: getMeasurementPhysicalGarments({
-      garmentTypeSelection: nextAuthority.effectiveGarmentTypeSelection,
-      physicalOccurrences: nextAuthority.physicalOccurrences,
-    }),
+    physicalGarments: measurementGarmentKeys
+      ? survivingMeasurementGarments.filter((garment) =>
+          measurementGarmentKeys.has(garment.garmentKey),
+        )
+      : survivingMeasurementGarments,
     garmentScopedCustomDetails: nextGarmentScopedCustomDetails,
     additionalGarmentConstructions:
       nextAdditionalGarmentConstructionState,
