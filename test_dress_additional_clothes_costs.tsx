@@ -1164,10 +1164,12 @@ const companion = dressRenderer.root.findByProps({
 const companionLayout = dressRenderer.root.findByProps({
   "data-dress-additional-layout": "companion",
 });
-assert.match(String(companionLayout.props.className), /auto-fit/);
-assert.match(
-  String(companionLayout.props.className),
-  /minmax\(min\(100%,24rem\),1fr\)/,
+assert.equal(
+  companionLayout.findAllByProps({
+    "data-custom-detail-section": "dress-additional-clothes-costs",
+  }).length,
+  1,
+  "the Dress extras card sits inside its own garment's companion row",
 );
 assert.match(String(companionLayout.props.className), /min-w-0/);
 assert.match(
