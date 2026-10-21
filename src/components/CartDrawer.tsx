@@ -96,9 +96,6 @@ export function CartDrawer() {
   const handleRemoveFromCart = (id: string) => {
     setCartItems(cartItems.filter((item) => item.id !== id));
     setNotification({ message: "Garment removed from cart.", type: "info" });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
   };
 
   const openShippingEditor = (item: CartItem) => {
@@ -181,7 +178,6 @@ export function CartDrawer() {
       message: "Shipping details updated. Please review the current amount.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const acceptUpdatedShipping = () => {
@@ -192,7 +188,6 @@ export function CartDrawer() {
       message: "Updated shipping amount accepted.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const acceptUpdatedGarmentPricing = () => {
@@ -203,7 +198,6 @@ export function CartDrawer() {
       message: "Updated garment price accepted.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const continueAsIndividualOrder = (itemId: string) => {
@@ -218,7 +212,6 @@ export function CartDrawer() {
         "The design was preserved and moved to an individual order route.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const handleCheckout = async () => {
@@ -243,9 +236,6 @@ export function CartDrawer() {
           "Review the cart before payment.",
         type: "info",
       });
-      setTimeout(() => {
-        setNotification(null);
-      }, 5000);
       return;
     }
 
@@ -265,7 +255,6 @@ export function CartDrawer() {
               "We couldn't securely prepare your uploaded design for checkout. Please try again.",
             type: "info",
           });
-          setTimeout(() => setNotification(null), 5000);
           return;
         } finally {
           setIsPreparingUploadedDesign(false);
@@ -279,7 +268,6 @@ export function CartDrawer() {
           "Sign in or create an account to securely complete your order.",
         type: "info",
       });
-      setTimeout(() => setNotification(null), 4000);
       return;
     }
 

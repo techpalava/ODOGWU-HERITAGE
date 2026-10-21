@@ -1551,7 +1551,6 @@ export default function DesignStudioView({
               message: COMMUNITY_BATCH_CLOSED_MESSAGE,
               type: "info",
             });
-            window.setTimeout(() => setNotification(null), 4000);
           }
         } else if (closureStatus === "open") {
           closedBatchToastIdRef.current = null;
@@ -1565,7 +1564,6 @@ export default function DesignStudioView({
             message: COMMUNITY_BATCH_CLOSED_MESSAGE,
             type: "info",
           });
-          window.setTimeout(() => setNotification(null), 4000);
           setBatchType("alone");
         } else {
           setBatchType("community");
