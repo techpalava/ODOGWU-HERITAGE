@@ -1787,4 +1787,51 @@ act(() => {
   wearerRenderer.unmount();
 });
 
+// Second person's name not saved in Step 7: the projection leaves wearerLabel
+// off, so Garments Ordered renders no wearer line (no Person 1 / Person 2).
+const unsavedSecondView: LiveOrderSummaryView = {
+  ...wearerSummaryView,
+  sections: wearerSummaryView.sections.map((summarySection) =>
+    summarySection.id === "construction"
+      ? {
+          ...summarySection,
+          lines: summarySection.lines.map(({ wearerLabel: _wearer, fitLabel: _fit, ...line }) => line),
+        }
+      : summarySection,
+  ),
+};
+let unsavedSecondRenderer: ReturnType<typeof create>;
+act(() => {
+  unsavedSecondRenderer = create(
+    createElement(DesignStudioOrderSummary, {
+      view: unsavedSecondView,
+      unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric", "design_style"]),
+      currentStageId: "measurement",
+      onEditStage: () => undefined,
+    }),
+  );
+});
+assert.equal(
+  unsavedSecondRenderer.root.findAll(
+    (node) => node.props?.["data-live-order-summary-wearer"] !== undefined,
+  ).length,
+  0,
+);
+assert.equal(textOf(unsavedSecondRenderer.root).includes("Person 1"), false);
+assert.equal(textOf(unsavedSecondRenderer.root).includes("Person 2"), false);
+act(() => {
+  unsavedSecondRenderer.unmount();
+});
+
+// Design Studio feeds the Step 7 unsaved-name ids into the shared summary input.
+const wearerGateViewSource = readFileSync(
+  new URL("./src/components/DesignStudioView.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(wearerGateViewSource, /onUnsavedNameWearerIdsChange=\{/);
+assert.match(
+  wearerGateViewSource,
+  /wearerOrder: wearerOrderForPlan,\s*unsavedWearerNameIds,/,
+);
+
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");

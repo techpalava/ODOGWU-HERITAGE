@@ -1,7 +1,11 @@
 import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig.js";
 import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig.js";
 import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing.js";
-import { wearerAssignmentLabel, wearerPublicLabel } from "./wearerOrder.js";
+import {
+  wearerAssignmentLabel,
+  wearerNamesReadyForGarmentLabels,
+  wearerPublicLabel,
+} from "./wearerOrder.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -97,7 +101,11 @@ export interface FutureSummaryGarment {
   }>;
   construction: FutureSummaryConstructionOccurrence[];
   constructionTotalCents: number | null;
-  /** Public name beside the role badge. Null when the garment is unassigned or its wearer is missing. */
+  /**
+   * Public name of the assigned person. Null when the garment is unassigned,
+   * its wearer is missing, or the order is not yet multi-person with every
+   * additional person's name saved (wearerNamesReadyForGarmentLabels).
+   */
   wearerLabel: string | null;
   /** Retired per-person fit label. Always null: Step 7 no longer asks for a fit. */
   fitLabel: string | null;
@@ -266,6 +274,12 @@ export interface FutureDesignStudioSummaryInput {
   measurementState: FutureMeasurementStateV1;
   /** Assignment authority for garment-card names and fit. Absent projections stay unlabeled. */
   wearerOrder?: WearerOrderStateV2 | null;
+  /**
+   * Step 7 people panel: wearers whose name was edited since the last Save /
+   * blur. Garment wearer labels stay off until every wearer after the first has
+   * a saved, non-blank name (see wearerNamesReadyForGarmentLabels).
+   */
+  unsavedWearerNameIds?: readonly string[] | null;
   wearerRuntimes?: readonly {
     wearerId: string;
     displayName: string;
@@ -381,7 +395,9 @@ const assignedWearerForGarment = (
 const wearerLabelForAssignedGarment = (
   wearerOrder: WearerOrderStateV2 | null | undefined,
   garmentKey: string,
+  labelsReady: boolean,
 ): string | null => {
+  if (!labelsReady) return null;
   const wearer = assignedWearerForGarment(wearerOrder, garmentKey);
   if (!wearer) return null;
   return wearerPublicLabel(wearer.displayName, wearer.presentationOrder);
@@ -396,6 +412,7 @@ const mapGarments = ({
   catalogInspection,
   fabricAllocationState,
   wearerOrder,
+  unsavedWearerNameIds,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
@@ -407,6 +424,7 @@ const mapGarments = ({
   | "catalogInspection"
   | "fabricAllocationState"
   | "wearerOrder"
+  | "unsavedWearerNameIds"
   | "wearerRuntimes"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] => {
   const occurrences = projectAuthoritativePhysicalOccurrences({
@@ -417,6 +435,10 @@ const mapGarments = ({
     additionalGarmentConstructionState,
   });
   const occurrenceLabels = projectOccurrenceDisplayLabels(occurrences);
+  const wearerLabelsReady = wearerNamesReadyForGarmentLabels(
+    wearerOrder,
+    unsavedWearerNameIds,
+  );
   return occurrences.map((occurrence) => {
     const { garmentKey, garmentType, sourceRole, fabricUnits } = occurrence;
     const allocationAssignment = fabricAllocationState.fabricAllocations
@@ -492,7 +514,11 @@ const mapGarments = ({
       construction: constructionOccurrences,
       constructionTotalCents:
         construction?.status === "resolved" ? construction.totalPriceCents : null,
-      wearerLabel: wearerLabelForAssignedGarment(wearerOrder, garmentKey),
+      wearerLabel: wearerLabelForAssignedGarment(
+        wearerOrder,
+        garmentKey,
+        wearerLabelsReady,
+      ),
       fitLabel: null,
     };
   });
@@ -1176,6 +1202,7 @@ export const projectFutureDesignStudioSummary = (
     catalogInspection: input.catalogInspection,
     fabricAllocationState: input.fabricAllocationState,
     wearerOrder: input.wearerOrder,
+    unsavedWearerNameIds: input.unsavedWearerNameIds,
     wearerRuntimes: input.wearerRuntimes,
     blockers,
   });
