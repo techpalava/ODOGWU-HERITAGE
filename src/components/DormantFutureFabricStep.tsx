@@ -4,7 +4,7 @@ import {
   DesignStudioStepMain,
   DesignStudioStepSidebar,
 } from "./DesignStudioStepLayout";
-import { CheckCircle2, Layers3, X } from "lucide-react";
+import { CheckCircle2, Circle, Layers3, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -19,7 +19,17 @@ import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
-import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
+import {
+  DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS,
+  DesignStudioStepGuide,
+} from "./DesignStudioStepGuide";
+import {
+  FABRIC_GUIDE_TITLE,
+  buildFabricGuideFlow,
+  formatFabricGuideCurrentStepAnnouncement,
+  type FabricGuideStep,
+  type FabricGuideTarget,
+} from "../utils/fabricStepGuideFlow";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
   ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
@@ -349,8 +359,10 @@ const prefersReducedMotion = (): boolean =>
 
 const STEP2_ASSIGNED_HIGHLIGHT_CLASS =
   "ring-2 ring-heritage-green motion-safe:animate-step2-assignment-success motion-reduce:animate-none";
-const STEP2_NEXT_UNASSIGNED_HIGHLIGHT_CLASS =
-  "ring-2 ring-heritage-gold motion-safe:animate-step2-next-unassigned motion-reduce:animate-none";
+// The next unassigned garment no longer gets its own gold ring flash: the
+// Fabric Guide's gold beam already sits on that garment's next action while
+// Continue is locked, so there is one clear cue instead of two.
+const STEP2_NEXT_UNASSIGNED_HIGHLIGHT_CLASS = "";
 
 const focusElementSafely = (element: HTMLElement): boolean => {
   if (!isFocusEligible(element)) return false;
@@ -409,6 +421,7 @@ export const DormantFutureFabricStep = ({
 }: DormantFutureFabricStepProps) => {
   void onUseSameFabricForGarment;
   const lastHandledUnassignedFocusRequestIdRef = useRef<number | null>(null);
+  const fabricGuideIdPrefix = `future-fabric-guide-${useId().replace(/:/g, "")}`;
   const [isCatalogueOpen, setIsCatalogueOpen] = useState(false);
   const [catalogueTargetGarmentKey, setCatalogueTargetGarmentKey] = useState<
     string | null
@@ -472,6 +485,8 @@ export const DormantFutureFabricStep = ({
   const postAssignmentFocusRequestRef = useRef(0);
   const garmentActionRefs = useRef(new Map<string, HTMLButtonElement>());
   const garmentCardRefs = useRef(new Map<string, HTMLElement>());
+  const garmentRemoveRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pendingPanelActionRef = useRef<HTMLButtonElement>(null);
   const pendingPostAssignmentNavRef = useRef<{
     assignedGarmentKeys: string[];
     destinationGarmentKey: string;
@@ -857,26 +872,87 @@ export const DormantFutureFabricStep = ({
     fabricAllocationState.fabricAllocations,
     pendingRemovalRequest,
   ]);
-  const uniqueBlockers = Array.from(
-    new Set(
-      completion.blockers.map((blocker) =>
-        blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED"
-          ? formatFabricQuantityOverAllocatedCopy(
-              selectedFabricQuantity,
-              requiredFabricQuantity,
-            )
-          : blocker.code === "FABRIC_STOCK_OVER_ALLOCATED"
-            ? formatFutureFabricStockOverAllocatedBlockerMessage(
-                fabrics,
-                fabricAllocationState,
-                blocker.fabricCode,
-              )
-            : blockerMessages[blocker.code],
-      ),
-    ),
-  );
   const showContinueAction =
     completion.isComplete && !isCatalogueOpen && !pendingStep1FabricAssignment;
+  const formatBlockerMessage = (
+    blocker: FutureFabricStageCompletion["blockers"][number],
+  ): string =>
+    blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED"
+      ? formatFabricQuantityOverAllocatedCopy(
+          selectedFabricQuantity,
+          requiredFabricQuantity,
+        )
+      : blocker.code === "FABRIC_STOCK_OVER_ALLOCATED"
+        ? formatFutureFabricStockOverAllocatedBlockerMessage(
+            fabrics,
+            fabricAllocationState,
+            blocker.fabricCode,
+          )
+        : blockerMessages[blocker.code];
+  // One merged Guide: the old "Fabric needs attention" messages, the
+  // avoidable-partial hint and the next-garment cue are steps in this flow.
+  // It is hidden whenever the canonical completion says Continue can unlock.
+  const fabricGuideFlow = buildFabricGuideFlow({
+    isComplete: completion.isComplete,
+    garments: targets.map(({ assignment }) => {
+      const assigned = assignmentByGarmentKey.get(assignment.garmentKey);
+      return {
+        garmentKey: assignment.garmentKey,
+        label:
+          occurrenceConciseLabels.get(assignment.garmentKey) ??
+          getFutureGarmentLabel(assignment.garmentType),
+        assigned: Boolean(assigned),
+        fabricCode: assigned?.allocation.fabricCode ?? null,
+        allocationId: assigned?.allocation.allocationId ?? null,
+        action: assigned
+          ? null
+          : resolveUnassignedGarmentFabricAction(assignment.garmentKey),
+      };
+    }),
+    blockers: completion.blockers.map((blocker) => ({
+      code: blocker.code,
+      message: formatBlockerMessage(blocker),
+      garmentKey: blocker.garmentKey,
+      allocationId: blocker.allocationId,
+      fabricCode: blocker.fabricCode,
+    })),
+    selectedFabricQuantity,
+    allocationOrder: fabricAllocationState.fabricAllocations.map(
+      (allocation) => allocation.allocationId,
+    ),
+    orphanRepairKeys: orphanRepairTargets.map(getOrphanRepairTargetKey),
+    pendingPanelVisible: Boolean(
+      fabricAllocationState.pendingFabricGarment &&
+        !fabricAllocationState.awaitingFabricForPendingGarment,
+    ),
+    awaitingFabricGarmentKey: pendingAdditionalAssignment?.garmentKey ?? null,
+    catalogueTargetGarmentKey,
+    avoidablePartialGuidance: showAvoidablePartialGuidance
+      ? avoidablePartialGuidanceCopy
+      : null,
+    noCapacityMessage: UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE,
+  });
+  const fabricGuideBeamTarget: FabricGuideTarget | null =
+    fabricGuideFlow.visible && fabricGuideFlow.currentStep
+      ? fabricGuideFlow.currentStep.target
+      : null;
+  const isFabricGuideBeamOn = (
+    type: FabricGuideTarget["type"],
+    key?: string,
+  ): boolean => {
+    const target = fabricGuideBeamTarget;
+    if (!target || target.type !== type) return false;
+    if (target.type === "garment_action" || target.type === "garment_card" || target.type === "garment_remove") {
+      return target.garmentKey === key;
+    }
+    if (target.type === "orphan_repair") return target.repairKey === key;
+    return true;
+  };
+  const fabricGuideBeamClass = (
+    type: FabricGuideTarget["type"],
+    key?: string,
+  ): string =>
+    isFabricGuideBeamOn(type, key) ? DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS : "";
   const catalogueNotice = resolveFabricCatalogueNotice({
     loadState: fabricsCatalogueState,
     visibleCount: visibleFabrics.length,
@@ -2202,6 +2278,139 @@ export const DormantFutureFabricStep = ({
     );
   };
 
+  const focusFabricGuideTarget = (target: FabricGuideTarget) => {
+    if (target.type === "catalogue") {
+      scrollToFabricCatalogue();
+      return;
+    }
+    let scrollElement: HTMLElement | null | undefined = null;
+    let focusElement: HTMLElement | null | undefined = null;
+    if (target.type === "garment_action") {
+      scrollElement = garmentCardRefs.current.get(target.garmentKey);
+      focusElement = garmentActionRefs.current.get(target.garmentKey);
+    } else if (target.type === "garment_card") {
+      scrollElement = garmentCardRefs.current.get(target.garmentKey);
+      focusElement = garmentActionRefs.current.get(target.garmentKey);
+    } else if (target.type === "garment_remove") {
+      scrollElement = garmentCardRefs.current.get(target.garmentKey);
+      focusElement = garmentRemoveRefs.current.get(target.garmentKey);
+    } else if (target.type === "pending_panel") {
+      focusElement = pendingPanelActionRef.current;
+      scrollElement = focusElement;
+    } else if (target.type === "orphan_repair") {
+      focusElement = orphanRepairActionRefs.current.get(target.repairKey);
+      scrollElement = focusElement;
+    }
+    if (scrollElement && typeof scrollElement.scrollIntoView === "function") {
+      scrollElement.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "center",
+      });
+    }
+    if (focusElement) {
+      focusElementSafely(focusElement);
+    }
+  };
+
+  const fabricGuideTitleId = `${fabricGuideIdPrefix}-title`;
+  const renderFabricGuideStep = (step: FabricGuideStep, index: number) => {
+    const isCurrent = step.status === "current";
+    const isDone = step.status === "done";
+    const statusText = isDone ? "Done" : isCurrent ? "Current step" : "Still to do";
+    return (
+      <li
+        key={step.id}
+        data-fabric-guide-step={step.id}
+        data-fabric-guide-step-kind={step.kind}
+        data-fabric-guide-step-status={step.status}
+        aria-current={isCurrent ? "step" : undefined}
+        className={`flex min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 ${
+          isCurrent ? "bg-white/90 ring-1 ring-heritage-gold/60" : ""
+        }`}
+      >
+        <span aria-hidden="true" className="mt-0.5 shrink-0">
+          {isDone ? (
+            <CheckCircle2 size={16} className="text-emerald-700" />
+          ) : isCurrent ? (
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-heritage-gold text-[9px] font-bold text-white">
+              {index + 1}
+            </span>
+          ) : (
+            <Circle size={16} className="text-heritage-ink/35" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="sr-only">{`${statusText}, step ${index + 1}: `}</span>
+          {step.target.type !== "none" ? (
+            <button
+              type="button"
+              data-fabric-guide-link={step.id}
+              onClick={() => focusFabricGuideTarget(step.target)}
+              className={`min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                isDone
+                  ? "font-medium text-heritage-ink/55 decoration-heritage-ink/25"
+                  : isCurrent
+                    ? "font-bold text-heritage-green decoration-heritage-gold"
+                    : "font-semibold text-heritage-green/80 decoration-heritage-gold/50"
+              }`}
+            >
+              {step.label}
+            </button>
+          ) : (
+            <span
+              className={`break-words ${
+                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/70"
+              }`}
+            >
+              {step.label}
+            </span>
+          )}
+          {step.messages.length > 0 && !isDone ? (
+            <span className="mt-0.5 block space-y-0.5">
+              {step.messages.map((message) => (
+                <span
+                  key={message}
+                  data-fabric-guide-message="true"
+                  data-avoidable-partial-guidance={
+                    message === avoidablePartialGuidanceCopy &&
+                    showAvoidablePartialGuidance
+                      ? "true"
+                      : undefined
+                  }
+                  className="block break-words text-[11px] leading-relaxed text-heritage-ink/70"
+                >
+                  {message}
+                </span>
+              ))}
+            </span>
+          ) : null}
+        </span>
+      </li>
+    );
+  };
+  const renderFabricGuide = () => (
+    <DesignStudioStepGuide
+      id={fabricGuideIdPrefix}
+      density="compact"
+      titleId={fabricGuideTitleId}
+      title={FABRIC_GUIDE_TITLE}
+      data-testid="fabric-guide-flow"
+      data-fabric-guide="true"
+      data-fabric-guide-current={fabricGuideFlow.currentStep?.id}
+      data-fabric-quantity-over-allocated={isOverAllocated ? "true" : undefined}
+    >
+      <p className="sr-only" aria-live="polite" data-fabric-guide-announcement="true">
+        {formatFabricGuideCurrentStepAnnouncement(fabricGuideFlow)}
+      </p>
+      <p className="mt-0.5 text-[11px] text-heritage-ink/65">
+        {`${fabricGuideFlow.doneCount} of ${fabricGuideFlow.steps.length} done. Follow the gold highlight to your next step.`}
+      </p>
+      <ol className="mt-1.5 space-y-1" aria-labelledby={fabricGuideTitleId}>
+        {fabricGuideFlow.steps.map(renderFabricGuideStep)}
+      </ol>
+    </DesignStudioStepGuide>
+  );
+
   return (
     <section
       aria-labelledby="future-fabric-step-title"
@@ -2217,6 +2426,7 @@ export const DormantFutureFabricStep = ({
           backDestination="Garment Type"
           onBack={onBack}
           className="mb-5"
+          note={fabricGuideFlow.visible ? renderFabricGuide() : null}
           forward={showContinueAction ? {
             destination: "Design Style",
             onClick: onContinue,
@@ -2429,7 +2639,13 @@ export const DormantFutureFabricStep = ({
                       disabled={!onRepairInvalidFabricAssignment}
                       aria-label={`Remove invalid Fabric assignment for ${garmentLabel}`}
                       data-remove-invalid-fabric-assignment="true"
-                      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl border border-red-300 bg-white px-4 text-xs font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                      data-fabric-guide-beam={
+                        isFabricGuideBeamOn("orphan_repair", targetKey) ? "true" : undefined
+                      }
+                      className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl border border-red-300 bg-white px-4 text-xs font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto ${fabricGuideBeamClass(
+                        "orphan_repair",
+                        targetKey,
+                      )}`}
                     >
                       Remove Invalid Assignment
                     </button>
@@ -2438,15 +2654,6 @@ export const DormantFutureFabricStep = ({
               })}
             </ul>
           </section>
-        ) : null}
-
-        {showAvoidablePartialGuidance ? (
-          <p
-            data-avoidable-partial-guidance="true"
-            className="mt-4 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 px-4 py-3 text-sm leading-relaxed text-heritage-ink/75"
-          >
-            {avoidablePartialGuidanceCopy}
-          </p>
         ) : null}
 
         <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
@@ -2485,7 +2692,15 @@ export const DormantFutureFabricStep = ({
                     garmentCardRefs.current.delete(assignment.garmentKey);
                   }
                 }}
-                className={`flex min-w-0 scroll-mt-28 flex-col rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-4 ${
+                data-fabric-guide-beam={
+                  isFabricGuideBeamOn("garment_card", assignment.garmentKey)
+                    ? "true"
+                    : undefined
+                }
+                className={`flex min-w-0 scroll-mt-28 flex-col rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-4 ${fabricGuideBeamClass(
+                  "garment_card",
+                  assignment.garmentKey,
+                )} ${
                   postAssignmentHighlight?.garmentKey === assignment.garmentKey
                     ? postAssignmentHighlight.kind === "assigned"
                       ? STEP2_ASSIGNED_HIGHLIGHT_CLASS
@@ -2527,6 +2742,18 @@ export const DormantFutureFabricStep = ({
                           type="button"
                           title="Remove Fabric"
                           aria-label={`Remove fabric from ${garmentLabel}`}
+                          ref={(element) => {
+                            if (element) {
+                              garmentRemoveRefs.current.set(assignment.garmentKey, element);
+                            } else {
+                              garmentRemoveRefs.current.delete(assignment.garmentKey);
+                            }
+                          }}
+                          data-fabric-guide-beam={
+                            isFabricGuideBeamOn("garment_remove", assignment.garmentKey)
+                              ? "true"
+                              : undefined
+                          }
                           onClick={() =>
                             removeAssignedFabric(
                               assignment.garmentKey,
@@ -2534,7 +2761,10 @@ export const DormantFutureFabricStep = ({
                               fabric?.name ?? "Selected fabric",
                             )
                           }
-                          className="-mr-2 -mt-1 ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                          className={`-mr-2 -mt-1 ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${fabricGuideBeamClass(
+                            "garment_remove",
+                            assignment.garmentKey,
+                          )}`}
                         >
                           <X aria-hidden="true" size={16} />
                           <span className="sr-only">Remove Fabric</span>
@@ -2621,7 +2851,15 @@ export const DormantFutureFabricStep = ({
                       openCatalogue(event.currentTarget, assignment.garmentKey);
                     }}
                     aria-label={`Change fabric for ${garmentLabel}`}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start"
+                    data-fabric-guide-beam={
+                      isFabricGuideBeamOn("garment_action", assignment.garmentKey)
+                        ? "true"
+                        : undefined
+                    }
+                    className={`${fabricGuideBeamClass(
+                      "garment_action",
+                      assignment.garmentKey,
+                    )} mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start`}
                   >
                     Change Fabric
                   </button>
@@ -2640,7 +2878,15 @@ export const DormantFutureFabricStep = ({
                     }
                     data-testid={`assign-to-fabric-${assignment.garmentKey}`}
                     aria-label={`Assign fabric for ${garmentLabel}`}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:self-start"
+                    data-fabric-guide-beam={
+                      isFabricGuideBeamOn("garment_action", assignment.garmentKey)
+                        ? "true"
+                        : undefined
+                    }
+                    className={`${fabricGuideBeamClass(
+                      "garment_action",
+                      assignment.garmentKey,
+                    )} mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:self-start`}
                   >
                     Assign to Fabric
                   </button>
@@ -2665,7 +2911,15 @@ export const DormantFutureFabricStep = ({
                       openCatalogue(event.currentTarget, assignment.garmentKey);
                     }}
                     aria-label={`Add fabric for ${garmentLabel}`}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start"
+                    data-fabric-guide-beam={
+                      isFabricGuideBeamOn("garment_action", assignment.garmentKey)
+                        ? "true"
+                        : undefined
+                    }
+                    className={`${fabricGuideBeamClass(
+                      "garment_action",
+                      assignment.garmentKey,
+                    )} mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-[10px] font-bold uppercase tracking-wide text-white transition hover:border-heritage-green hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:self-start`}
                   >
                     Add Fabric
                   </button>
@@ -2699,7 +2953,12 @@ export const DormantFutureFabricStep = ({
           <div
             ref={catalogueScrollAnchorRef}
             data-catalogue-scroll-anchor="true"
-            className="mb-4 scroll-mt-24"
+            data-fabric-guide-beam={isFabricGuideBeamOn("catalogue") ? "true" : undefined}
+            className={`mb-4 scroll-mt-24 ${
+              isFabricGuideBeamOn("catalogue")
+                ? `rounded-xl py-2 pl-3 pr-2 ${DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS}`
+                : ""
+            }`}
           >
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
               Fabric Catalogue
@@ -2779,31 +3038,15 @@ export const DormantFutureFabricStep = ({
         </div>
       </div>
 
-      {uniqueBlockers.length > 0 && (
-        <DesignStudioStepGuide
-          role="alert"
-          title="Fabric needs attention"
-          titleClassName="text-sm"
-          data-testid="fabric-needs-attention"
-          data-fabric-needs-attention="true"
-          data-fabric-quantity-over-allocated={
-            isOverAllocated ? "true" : undefined
-          }
-        >
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">
-            {uniqueBlockers.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
-        </DesignStudioStepGuide>
-      )}
-
       {fabricAllocationState.pendingFabricGarment &&
         !fabricAllocationState.awaitingFabricForPendingGarment && (
           <div
             role="dialog"
             aria-labelledby="future-fabric-limit-title"
-            className="rounded-2xl border border-heritage-gold/40 bg-heritage-cream/40 p-5 shadow-sm"
+            data-fabric-guide-beam={isFabricGuideBeamOn("pending_panel") ? "true" : undefined}
+            className={`rounded-2xl border border-heritage-gold/40 bg-heritage-cream/40 p-5 shadow-sm ${fabricGuideBeamClass(
+              "pending_panel",
+            )}`}
           >
             <h3
               id="future-fabric-limit-title"
@@ -2818,6 +3061,7 @@ export const DormantFutureFabricStep = ({
             </p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <button
+                ref={pendingPanelActionRef}
                 type="button"
                 onClick={handleUseSameFabricAgain}
                 className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"

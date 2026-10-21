@@ -1132,6 +1132,10 @@ export default function DesignStudioView({
   const [futureMeasurementState, setFutureMeasurementState] =
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
+  /** Step 7 people panel: wearers whose name is typed but not yet saved (Save / blur). */
+  const [unsavedWearerNameIds, setUnsavedWearerNameIds] = useState<readonly string[]>(
+    () => [],
+  );
   /** People panel open (Add a person / 2+ people). */
   const [, setMeasurementPeopleUiOpen] = useState(false);
   /**
@@ -3853,6 +3857,7 @@ export default function DesignStudioView({
     measurementPlan: futureMeasurementPlan,
     measurementState: reconciledFutureMeasurementState,
     wearerOrder: wearerOrderForPlan,
+    unsavedWearerNameIds,
     wearerRuntimes: wearerMeasurementRuntimes,
     basePricing: futureFabricAuthoritativePricing,
   };
@@ -9417,6 +9422,7 @@ export default function DesignStudioView({
             textByGarmentKey: {},
           },
         measurementState: reconciledFutureMeasurementState,
+        measurementGarmentKeys: activeWearerRuntime?.garmentKeys,
         aiTryOnWorkflowState: futureAiTryOnWorkflow,
         shippingState: futureShippingResolution.state,
         normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
@@ -10854,6 +10860,14 @@ export default function DesignStudioView({
             setActiveWearerId(sole?.wearerId || null);
             setFutureMeasurementState(
               sole?.measurement || createEmptyFutureMeasurementState(),
+            );
+          }}
+          onUnsavedNameWearerIdsChange={(wearerIds) => {
+            setUnsavedWearerNameIds((current) =>
+              current.length === wearerIds.length &&
+              current.every((wearerId, index) => wearerId === wearerIds[index])
+                ? current
+                : [...wearerIds],
             );
           }}
           onPeopleUiChange={(open) => {

@@ -780,7 +780,7 @@ export interface MeasurementRequirementPlan {
   criticalRiskSupported: boolean;
   criticalRiskBlockingGarmentKeys: readonly string[];
   /**
-   * Set by the per-person planner (planWearerOrderMeasurements): garments
+   * Set by the per-person planner (planPersonMeasurementRequirements): garments
    * measured with the standard sizing because of the Step 1 audience.
    * Presentation only; not part of the input fingerprint.
    */
@@ -1375,6 +1375,76 @@ export const planMeasurementRequirements = ({
     criticalRiskSupported,
     criticalRiskBlockingGarmentKeys,
   };
+};
+
+/**
+ * Demographic used to pick one person's measurement profiles. It is the Step 1
+ * Garment Type audience (one picked gender, or "unisex" when several were
+ * picked), never a per-person fit. When Step 1 has no audience, or the audience
+ * cannot pick a profile for one of these garments (for example a dress on a
+ * Male order), the standard "unisex" blueprint is used, which every
+ * measurement profile supports.
+ */
+export const resolveMeasurementPlanningDemographic = ({
+  garments,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+}: {
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): CustomDetailDemographic => {
+  const audience = garmentTypeSelection.demographic;
+  if (!audience) return "unisex";
+  const allResolve = garments.every((garment) =>
+    isGarmentMeasurementEligibleForDemographic({
+      garment,
+      garmentTypeSelection,
+      demographic: audience,
+      additionalGarmentConstructions,
+    }),
+  );
+  return allResolve ? audience : "unisex";
+};
+
+/**
+ * The one way to plan the measurements for one person's garments. Step 7
+ * (planWearerOrderMeasurements) and mid-order garment removal both use it, so
+ * the standard-sizing fallback and its warning can never differ between them.
+ */
+export const planPersonMeasurementRequirements = ({
+  route,
+  garmentTypeSelection,
+  physicalGarments,
+  garmentScopedCustomDetails,
+  additionalGarmentConstructions,
+}: {
+  route: SelectedMeasurementMethod;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  physicalGarments: readonly MeasurementPhysicalGarment[];
+  garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): MeasurementRequirementPlan => {
+  const plan = planMeasurementRequirements({
+    route,
+    garmentTypeSelection: {
+      ...garmentTypeSelection,
+      demographic: resolveMeasurementPlanningDemographic({
+        garments: physicalGarments,
+        garmentTypeSelection,
+        additionalGarmentConstructions,
+      }),
+    },
+    physicalGarments,
+    garmentScopedCustomDetails,
+    additionalGarmentConstructions,
+  });
+  const audienceNotice = resolveMeasurementAudienceNotice({
+    garments: physicalGarments,
+    garmentTypeSelection,
+    additionalGarmentConstructions,
+  });
+  return audienceNotice ? { ...plan, audienceNotice } : plan;
 };
 
 export const inchesToCentimetres = (value: number): number => value * 2.54;

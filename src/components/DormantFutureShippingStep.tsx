@@ -551,29 +551,29 @@ export const DormantFutureShippingStep = ({
                 data-testid="future-shipping-pickup-location"
                 className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 md:col-span-2"
               >
-                <h4 className="font-serif text-lg font-bold text-heritage-green">
+                <h4 className="font-serif text-xl font-bold text-heritage-green">
                   Pickup location
                 </h4>
-                <p className="mt-1.5 flex min-w-0 items-start gap-2 break-words text-sm font-semibold text-heritage-green">
+                <p className="mt-1.5 flex min-w-0 items-start gap-2 break-words text-base font-bold text-heritage-green">
                   <MapPin
                     aria-hidden="true"
                     className="mt-0.5 shrink-0 text-heritage-gold"
-                    size={16}
+                    size={18}
                   />
                   <span className="min-w-0">
                     {state.pickupLocation.trim() || DEFAULT_FUTURE_PICKUP_LOCATION}
                   </span>
                 </p>
-                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
-                  <span className="font-bold uppercase tracking-wider text-heritage-ink/50">
+                <p className="mt-2.5 text-sm leading-relaxed text-heritage-ink/80">
+                  <span className="text-xs font-bold uppercase tracking-wider text-heritage-ink/60">
                     Address
                   </span>
-                  <span className="mt-1 block normal-case tracking-normal">
+                  <span className="mt-1 block font-semibold normal-case tracking-normal">
                     {FUTURE_PICKUP_ATELIER_ADDRESS}
                   </span>
                 </p>
-                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
-                  <span className="font-bold uppercase tracking-wider text-heritage-ink/50">
+                <p className="mt-2.5 text-sm leading-relaxed text-heritage-ink/80">
+                  <span className="text-xs font-bold uppercase tracking-wider text-heritage-ink/60">
                     Phone
                   </span>
                   <a
@@ -581,12 +581,12 @@ export const DormantFutureShippingStep = ({
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-                    className="mt-1 block normal-case tracking-normal font-semibold text-heritage-green underline underline-offset-2"
+                    className="mt-1 block normal-case tracking-normal font-bold text-heritage-green underline underline-offset-2"
                   >
                     {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
                   </a>
                 </p>
-                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/55">
+                <p className="mt-2.5 text-sm font-medium leading-relaxed text-heritage-ink/70">
                   This is where you collect your order in Eindhoven. It is set by the atelier and cannot be edited here.
                 </p>
               </div>
