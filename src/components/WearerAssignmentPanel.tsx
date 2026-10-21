@@ -15,6 +15,9 @@ import {
   type WearerMutationResult,
 } from "../utils/wearerOrder";
 
+/** Caption under For me: For me means the person placing the order. */
+export const FOR_ME_CAPTION = "Person Making Order";
+
 const SOLO_FIRST_COPY =
   "These clothes are for you. Add another person if you are ordering for someone else.";
 
@@ -338,6 +341,7 @@ export const WearerAssignmentPanel = ({
     wearers.length > 1 || peopleExpanded || presentation === "people";
   // For me is the solo first-screen choice; Add a person / people UI deselects it.
   const forMeSelected = !showPeopleUi;
+  const forMeCaptionId = useId();
 
   // Latest callback without re-firing on identity changes.
   const onPeopleUiChangeRef = useRef(onPeopleUiChange);
@@ -384,21 +388,32 @@ export const WearerAssignmentPanel = ({
         data-wearer-solo-first="true"
       >
         <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-wearer-for-me="true"
-            data-wearer-for-me-selected={forMeSelected ? "true" : "false"}
-            aria-pressed={forMeSelected}
-            className={`inline-flex min-h-10 items-center rounded-xl border px-4 py-1.5 text-sm font-bold ${
-              forMeSelected
-                ? "border-heritage-green bg-heritage-green text-white"
-                : "border-heritage-gold/30 bg-white text-heritage-green"
-            }`}
-            onClick={() => collapseToSolo()}
-          >
-            For me
-          </button>
+        <div className="mt-3 flex flex-wrap items-start gap-2">
+          {/* The caption sits under For me and is part of its description. */}
+          <div className="flex flex-col items-stretch gap-1" data-wearer-for-me-group="true">
+            <button
+              type="button"
+              data-wearer-for-me="true"
+              data-wearer-for-me-selected={forMeSelected ? "true" : "false"}
+              aria-pressed={forMeSelected}
+              aria-describedby={forMeCaptionId}
+              className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-4 py-1.5 text-sm font-bold ${
+                forMeSelected
+                  ? "border-heritage-green bg-heritage-green text-white"
+                  : "border-heritage-gold/30 bg-white text-heritage-green"
+              }`}
+              onClick={() => collapseToSolo()}
+            >
+              For me
+            </button>
+            <span
+              id={forMeCaptionId}
+              data-wearer-for-me-caption="true"
+              className="whitespace-nowrap text-center text-[10px] font-extrabold uppercase leading-tight tracking-wider text-heritage-bronze"
+            >
+              {FOR_ME_CAPTION}
+            </span>
+          </div>
           <button
             type="button"
             data-wearer-add-people="true"

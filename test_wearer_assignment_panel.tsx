@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Fragment, useRef, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
-import { NAME_SAVED_FLASH_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
+import { FOR_ME_CAPTION, NAME_SAVED_FLASH_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import type { GarmentTypeStepSelection, WearerOrderStateV2 } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
@@ -1272,6 +1272,30 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
   assert.equal(forMe.props["data-wearer-for-me-selected"], "true", "For me is selected by default");
   assert.equal(forMe.props["aria-pressed"], true);
   assert.match(forMe.props.className, /bg-heritage-green/);
+  // Xavier (2026-10-21): "Person Making Order" sits directly under For me,
+  // in the bold bronze tag style (#929), and is For me's accessible description.
+  const forMeCaption = forMeRenderer.root.findByProps({ "data-wearer-for-me-caption": "true" });
+  assert.equal(textContent(forMeCaption), "Person Making Order");
+  assert.equal(FOR_ME_CAPTION, "Person Making Order");
+  assert.match(forMeCaption.props.className, /font-extrabold/);
+  assert.match(forMeCaption.props.className, /text-heritage-bronze/);
+  assert.match(forMeCaption.props.className, /whitespace-nowrap/);
+  assert.doesNotMatch(forMeCaption.props.className, /text-heritage-gold/, "no low-contrast gold caption");
+  assert.ok(forMeCaption.props.id, "caption has an id");
+  assert.equal(forMe.props["aria-describedby"], forMeCaption.props.id, "For me is described by the caption");
+  const forMeGroup = forMeRenderer.root.findByProps({ "data-wearer-for-me-group": "true" });
+  assert.deepEqual(
+    forMeGroup.children
+      .filter((child): child is ReactTestInstance => typeof child !== "string")
+      .map((child) => child.props["data-wearer-for-me"] ? "button" : child.props["data-wearer-for-me-caption"] ? "caption" : "other"),
+    ["button", "caption"],
+    "caption sits directly under For me",
+  );
+  assert.equal(
+    soloStrip.findAllByProps({ "data-wearer-for-me-caption": "true" }).length,
+    1,
+    "one caption, only with For me",
+  );
   const addPerson = forMeRenderer.root.findByProps({ "data-wearer-add-people": "true" });
   assert.equal(textContent(addPerson), "Add a person");
   assert.equal(
