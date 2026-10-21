@@ -75,6 +75,7 @@
     "test:measurement-audience-warning": "tsx test_measurement_audience_warning.tsx",
     "test:garment-removal-audience-fallback": "tsx test_garment_removal_audience_fallback.ts",
     "test:measurement-chest-borst-labels": "node scripts/tsxWithViteProductionFirebase.mjs test_measurement_chest_borst_labels.ts",
+    "test:review-chest-borst-audience-fallback": "tsx test_review_chest_borst_audience_fallback.ts",
     "test:measurement-sample-cloth": "tsx test_measurement_sample_cloth.ts && tsx test_measurement_sample_cloth_selection.tsx && node scripts/tsxWithViteProductionFirebase.mjs test_measurement_invalid_draft_hydration.tsx",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
     "test:design-studio-resume-locus": "node scripts/tsxWithViteProductionFirebase.mjs test_design_studio_resume_locus.ts",
