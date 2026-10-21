@@ -3152,6 +3152,7 @@ const blankNameSummary = repeatedWearerSummary(
     },
   ),
 );
+// Second person's name not saved yet: no wearer labels (no Person 1 / Person 2).
 assert.deepEqual(
   blankNameSummary.garmentSummary.map((row) => [
     row.garmentKey,
@@ -3159,15 +3160,12 @@ assert.deepEqual(
     row.fitLabel,
   ]),
   [
-    ["base:shirt", "Person 1", null],
-    ["additional:shirt:1", "Person 2", null],
+    ["base:shirt", null, null],
+    ["additional:shirt:1", null, null],
   ],
 );
 const blankCards = renderSummaryGarmentCards(blankNameSummary);
-assert.deepEqual(blankCards.personGroups, [
-  ["wearer", "Person 1", ["base:shirt"]],
-  ["wearer", "Person 2", ["additional:shirt:1"]],
-]);
+assert.deepEqual(blankCards.personGroups, []);
 assert.deepEqual(blankCards.wearerChips, []);
 assert.deepEqual(
   blankCards.fitChips.map((chip) => [
@@ -3184,6 +3182,61 @@ act(() => {
   blankCards.renderer.unmount();
 });
 
+// Second person typing (stored name, still unsaved in Step 7): labels stay off.
+const typingSecondSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-blank", displayName: "", presentationOrder: 0 },
+      { wearerId: "wearer-ada", displayName: "Ad", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-blank",
+      "additional:shirt:1": "wearer-ada",
+    },
+  ),
+  unsavedWearerNameIds: ["wearer-ada"],
+});
+assert.deepEqual(
+  typingSecondSummary.garmentSummary.map((row) => row.wearerLabel),
+  [null, null],
+);
+
+// Second name saved: labels show; a still-blank first person reads Person 1.
+const savedSecondSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerOrder: wearerOrderFor(
+    [
+      { wearerId: "wearer-blank", displayName: "", presentationOrder: 0 },
+      { wearerId: "wearer-ada", displayName: "Ada", presentationOrder: 1 },
+    ],
+    {
+      "base:shirt": "wearer-blank",
+      "additional:shirt:1": "wearer-ada",
+    },
+  ),
+  unsavedWearerNameIds: [],
+});
+assert.deepEqual(
+  savedSecondSummary.garmentSummary.map((row) => [row.garmentKey, row.wearerLabel]),
+  [
+    ["base:shirt", "Person 1"],
+    ["additional:shirt:1", "Ada"],
+  ],
+);
+const savedSecondCards = renderSummaryGarmentCards(savedSecondSummary);
+assert.deepEqual(savedSecondCards.personGroups, [
+  ["wearer", "Person 1", ["base:shirt"]],
+  ["wearer", "Ada", ["additional:shirt:1"]],
+]);
+act(() => {
+  savedSecondCards.renderer.unmount();
+});
+
 const soloWearerSummary = projectFutureDesignStudioSummary({
   ...exactInput,
   wearerOrder: wearerOrderFor(
@@ -3196,7 +3249,8 @@ const soloWearerSummary = projectFutureDesignStudioSummary({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(soloWearerSummary.garmentSummary[0]?.wearerLabel, "Amaka");
+// Solo: no wearer label, even with a saved name.
+assert.equal(soloWearerSummary.garmentSummary[0]?.wearerLabel, null);
 assert.equal(soloWearerSummary.garmentSummary[0]?.fitLabel, null);
 const soloCards = renderSummaryGarmentCards(soloWearerSummary);
 assert.equal(soloCards.cards.length, 1);
@@ -3223,7 +3277,7 @@ const soloBlankNameSummary = projectFutureDesignStudioSummary({
     { "base:shirt": "wearer-blank" },
   ),
 });
-assert.equal(soloBlankNameSummary.garmentSummary[0]?.wearerLabel, "Person 1");
+assert.equal(soloBlankNameSummary.garmentSummary[0]?.wearerLabel, null);
 assert.equal(soloBlankNameSummary.garmentSummary[0]?.fitLabel, null);
 const soloBlankCards = renderSummaryGarmentCards(soloBlankNameSummary);
 assert.deepEqual(soloBlankCards.personGroups, []);
@@ -3250,7 +3304,7 @@ const soloFitUnsetSummary = projectFutureDesignStudioSummary({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(soloFitUnsetSummary.garmentSummary[0]?.wearerLabel, "Amaka");
+assert.equal(soloFitUnsetSummary.garmentSummary[0]?.wearerLabel, null);
 assert.equal(soloFitUnsetSummary.garmentSummary[0]?.fitLabel, null);
 const soloFitUnsetCards = renderSummaryGarmentCards(soloFitUnsetSummary);
 assert.deepEqual(soloFitUnsetCards.wearerChips, []);

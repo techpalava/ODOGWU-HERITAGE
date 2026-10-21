@@ -74,7 +74,8 @@ export interface LiveOrderSummaryLine {
   readonly supportingDetail?: string | null;
   /**
    * Assigned person's public name on a Garments Ordered row.
-   * Set when the summary garment has a wearerLabel.
+   * Set when the summary garment has a wearerLabel (2+ people and every
+   * additional person's name saved in Step 7).
    */
   readonly wearerLabel?: string | null;
   /**
