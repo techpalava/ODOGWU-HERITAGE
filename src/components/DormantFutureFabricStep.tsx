@@ -3308,6 +3308,7 @@ export const DormantFutureFabricStep = ({
           selectedGarmentKeys={pendingStep1FabricAssignment.selectedGarmentKeys}
           selectedCount={step1AssignmentEvaluation.selectedCount}
           selectedCapacityUnits={step1AssignmentEvaluation.selectedCapacityUnits}
+          capacityUnitsInUse={step1AssignmentEvaluation.capacityUnitsInUse}
           maxCapacityUnits={step1AssignmentEvaluation.maxCapacityUnits}
           canAssignSelected={
             !step1AssignmentDialogFabric.unavailableError &&

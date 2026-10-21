@@ -82,6 +82,7 @@ export const Step1FabricAssignmentDialog = ({
   selectedGarmentKeys,
   selectedCount,
   selectedCapacityUnits,
+  capacityUnitsInUse,
   maxCapacityUnits,
   canAssignSelected,
   canUseForAll,
@@ -107,6 +108,11 @@ export const Step1FabricAssignmentDialog = ({
   selectedGarmentKeys: readonly string[];
   selectedCount: number;
   selectedCapacityUnits: number;
+  /**
+   * Header units including garments already on the saved piece (Use Again).
+   * Defaults to selectedCapacityUnits for a new piece.
+   */
+  capacityUnitsInUse?: number;
   maxCapacityUnits: number;
   canAssignSelected: boolean;
   canUseForAll: boolean;
@@ -212,8 +218,9 @@ export const Step1FabricAssignmentDialog = ({
   ]
     .filter(Boolean)
     .join(" ");
+  const headerCapacityUnits = capacityUnitsInUse ?? selectedCapacityUnits;
   const capacityTone = getCapacityGuidanceTone(
-    selectedCapacityUnits,
+    headerCapacityUnits,
     maxCapacityUnits,
     groupingCapacityStatus,
   );
@@ -282,7 +289,7 @@ export const Step1FabricAssignmentDialog = ({
               className={`text-sm font-semibold ${capacityTone.headline}`}
             >
               {formatStep1FabricCapacityProgress(
-                selectedCapacityUnits,
+                headerCapacityUnits,
                 maxCapacityUnits,
               )}
             </p>
