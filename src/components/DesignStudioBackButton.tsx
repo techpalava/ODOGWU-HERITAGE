@@ -13,39 +13,28 @@ export const studioContinueNavInteractionClass =
   "border-2 border-heritage-green bg-heritage-green text-white shadow-sm transition duration-200 ease-out enabled:hover:border-heritage-green enabled:hover:bg-white enabled:hover:text-heritage-green focus-visible:border-heritage-green focus-visible:bg-white focus-visible:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
 /**
- * Gold beam on enabled Design Studio step navigation: Back one step, Continue,
- * and Continue variants such as Review Order. Uses the heritage gold token.
- * Reduced motion gets a static gold ring, and the beam pauses on keyboard
- * focus so the gold focus ring stays legible. Never apply it to a disabled or
- * locked button.
+ * Crisp gold ring on an unlocked (enabled) Design Studio Continue: Continue,
+ * Review Order and "Continue without AI Try-on". 1.5px heritage gold ring with
+ * a 2px white gap that blinks briefly off; no blur, halo or fade. Reduced
+ * motion gets the same ring, static. The blink pauses on keyboard focus so the
+ * gold focus ring stays readable. Never on a disabled or locked Continue, and
+ * never on Back.
  */
-export const STUDIO_NAV_GOLD_BEAM_CLASS =
-  "motion-safe:animate-studio-nav-gold-beam motion-safe:focus-visible:animate-none motion-reduce:studio-nav-gold-beam-static";
-
-/** Gold beam class + data attribute for an enabled step navigation button. */
-export const getStudioNavGoldBeam = (
-  active: boolean,
-): { className: string; "data-studio-nav-beam": "gold" | "off" } => ({
-  className: active ? STUDIO_NAV_GOLD_BEAM_CLASS : "",
-  "data-studio-nav-beam": active ? "gold" : "off",
-});
+export const STUDIO_CONTINUE_RING_BLINK_CLASS =
+  "motion-safe:animate-continue-ring-blink motion-safe:focus-visible:animate-none motion-reduce:continue-ring-static";
 
 /**
- * White glow, kept only for the fabric capacity offer's Continue button
- * (not changed here). Step navigation uses STUDIO_NAV_GOLD_BEAM_CLASS.
- * Original note: white glow on an unlocked (enabled) Continue button. The buttons are heritage
- * green, so the glow is white, never gold. Reduced motion gets a static soft
- * white ring, and the pulse pauses on keyboard focus so the gold focus ring
- * stays legible. Never apply it to a disabled or locked Continue.
+ * White glow, kept only for the "UNUSED FABRIC CAPACITY AVAILABLE" offer's
+ * Continue button. Studio step navigation uses STUDIO_CONTINUE_RING_BLINK_CLASS.
  */
 export const STUDIO_CONTINUE_UNLOCK_GLOW_CLASS =
   "motion-safe:animate-continue-unlock-glow motion-safe:focus-visible:animate-none motion-reduce:shadow-[inset_0_0_0_2px_rgb(255_255_255/0.7),0_0_0_3px_rgb(255_255_255/0.95),0_0_0_4px_rgb(10_41_27/0.18)]";
 
-/** Glow class + data attribute for any Continue / next-step primary button. */
+/** Ring class + data attribute for any Studio Continue / next-step button. */
 export const getStudioContinueUnlockGlow = (
   unlocked: boolean,
 ): { className: string; "data-continue-unlock-glow": "on" | "off" } => ({
-  className: unlocked ? STUDIO_CONTINUE_UNLOCK_GLOW_CLASS : "",
+  className: unlocked ? STUDIO_CONTINUE_RING_BLINK_CLASS : "",
   "data-continue-unlock-glow": unlocked ? "on" : "off",
 });
 
@@ -94,7 +83,6 @@ export const DesignStudioBackButton = ({
     ? "Back one step is unavailable on Garment Type"
     : `Back one step to ${destination}`;
   const showDestination = Boolean(destination) && !disabled;
-  const beam = getStudioNavGoldBeam(!disabled);
 
   return (
     <button
@@ -103,8 +91,7 @@ export const DesignStudioBackButton = ({
       disabled={disabled}
       aria-label={label}
       data-studio-nav="back"
-      data-studio-nav-beam={beam["data-studio-nav-beam"]}
-      className={`${studioNavButtonClass} group border-2 border-heritage-green/75 bg-white text-heritage-ink shadow-sm ${studioOutlinedNavInteractionClass} disabled:cursor-not-allowed disabled:border-heritage-ink/20 disabled:bg-heritage-cream/50 disabled:text-heritage-ink/45 disabled:shadow-none ${beam.className} ${className}`}
+      className={`${studioNavButtonClass} group border-2 border-heritage-green/75 bg-white text-heritage-ink shadow-sm ${studioOutlinedNavInteractionClass} disabled:cursor-not-allowed disabled:border-heritage-ink/20 disabled:bg-heritage-cream/50 disabled:text-heritage-ink/45 disabled:shadow-none ${className}`}
     >
       <ArrowLeft aria-hidden="true" size={16} className="shrink-0" />
       <StudioNavLabel
@@ -150,7 +137,6 @@ export const DesignStudioForwardButton = ({
   const accessible = ariaLabel ?? (destination ? `Continue to ${destination}` : primary);
   const lockedClickable = locked && disabled && Boolean(onLockedClick);
   const unlockGlow = getStudioContinueUnlockGlow(!disabled && !locked);
-  const beam = getStudioNavGoldBeam(!disabled && !locked);
   const Icon = locked || icon === "lock"
     ? LockKeyhole
     : icon === "package"
@@ -167,8 +153,7 @@ export const DesignStudioForwardButton = ({
       aria-describedby={ariaDescribedBy || describedBy}
       data-studio-nav="forward"
       data-continue-unlock-glow={unlockGlow["data-continue-unlock-glow"]}
-      data-studio-nav-beam={beam["data-studio-nav-beam"]}
-      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${beam.className} ${className}`}
+      className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${unlockGlow.className} ${className}`}
     >
       <StudioNavLabel primary={primary} secondary={secondary} emphasis="outline" />
       <Icon aria-hidden="true" size={16} className="shrink-0" />

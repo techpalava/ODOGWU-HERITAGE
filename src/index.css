@@ -21,7 +21,7 @@
   --animate-step-guide-beam: step-guide-beam 3.4s ease-in-out infinite;
   --animate-measurement-guide-flash: measurement-guide-flash 800ms ease-out 1;
   --animate-continue-unlock-glow: continue-unlock-glow 2.4s ease-in-out infinite;
-  --animate-studio-nav-gold-beam: studio-nav-gold-beam 2.4s ease-in-out infinite;
+  --animate-continue-ring-blink: continue-ring-blink 2.4s step-end infinite;
 }
 
 @keyframes step1-select-attention {
@@ -90,34 +90,27 @@
   }
 }
 
-/* Gold beam on Design Studio step navigation (enabled Back and Continue /
-   Review Order). Uses the heritage gold token: an inset gold edge that reads on
-   the green Continue fill, plus a solid gold ring and soft gold halo with a
-   faint green edge so it reads on white and cream cards. */
-@keyframes studio-nav-gold-beam {
+/* Unlocked Design Studio Continue: a crisp 1.5px heritage gold ring with a
+   2px white gap, blinking briefly off once per cycle. No blur, halo or fade.
+   box-shadow only, so nothing shifts. */
+@keyframes continue-ring-blink {
   0%,
-  100% {
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--color-heritage-gold) 55%, transparent),
-      0 0 0 2px color-mix(in srgb, var(--color-heritage-gold) 70%, transparent),
-      0 0 0 3px rgb(10 41 27 / 0.1),
-      0 0 6px 2px color-mix(in srgb, var(--color-heritage-gold) 40%, transparent);
+  78% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--color-heritage-gold);
   }
-  50% {
-    box-shadow:
-      inset 0 0 12px 2px color-mix(in srgb, var(--color-heritage-gold) 70%, transparent),
-      0 0 0 3px var(--color-heritage-gold),
-      0 0 0 4px rgb(10 41 27 / 0.22),
-      0 0 18px 6px color-mix(in srgb, var(--color-heritage-gold) 75%, transparent);
+  79%,
+  86% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px transparent;
+  }
+  87%,
+  100% {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--color-heritage-gold);
   }
 }
 
-/* Reduced motion: a static gold ring instead of the moving beam. */
-@utility studio-nav-gold-beam-static {
-  box-shadow:
-    inset 0 0 0 2px color-mix(in srgb, var(--color-heritage-gold) 70%, transparent),
-    0 0 0 3px var(--color-heritage-gold),
-    0 0 0 4px rgb(10 41 27 / 0.18);
+/* Reduced motion: the same thin gold ring, static. */
+@utility continue-ring-static {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--color-heritage-gold);
 }
 
 @keyframes step-guide-beam {
