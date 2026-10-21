@@ -1335,12 +1335,18 @@ export const DormantFutureCustomDetailsStep = ({
       legendTitle = group.title,
       showOccurrenceHeading = true,
       occurrenceHeading,
+      showGroupHeader = true,
+      statusGroup = group,
     }: {
       legendTitle?: string;
       showOccurrenceHeading?: boolean;
       occurrenceHeading?: (
         occurrence: FutureCustomDetailsCatalogueOccurrence,
       ) => string;
+      /** Arrangement only: when false the group legend is visually hidden (kept for screen readers) and the group helper line is omitted, because an earlier box in the same family already shows them. */
+      showGroupHeader?: boolean;
+      /** Group whose occurrences decide the legend status badge (defaults to the rendered group). */
+      statusGroup?: FutureCustomDetailsCatalogueGroup;
     } = {},
   ) => (
     <fieldset
@@ -1349,12 +1355,18 @@ export const DormantFutureCustomDetailsStep = ({
       data-active-occurrences={group.occurrences.length}
       className={`${CUSTOM_DETAIL_FIELDSET_CLASS} ${layout === "grid" && (group.selectionGroup === "neck_design" || group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP) ? "lg:col-span-2" : ""}`}
     >
-      <legend className={`${CUSTOM_DETAIL_SUBSECTION_HEADING_ROW_CLASS} text-heritage-green`}>
-        <span className={CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS}>{legendTitle}</span>
-        <span className={CUSTOM_DETAIL_STATUS_BADGE_CLASS}>{getGroupStatus(group)}</span>
-      </legend>
-      <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
-      <div className="mt-2.5 space-y-4">
+      {showGroupHeader ? (
+        <>
+          <legend className={`${CUSTOM_DETAIL_SUBSECTION_HEADING_ROW_CLASS} text-heritage-green`}>
+            <span className={CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS}>{legendTitle}</span>
+            <span className={CUSTOM_DETAIL_STATUS_BADGE_CLASS}>{getGroupStatus(statusGroup)}</span>
+          </legend>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
+        </>
+      ) : (
+        <legend className="sr-only">{legendTitle}</legend>
+      )}
+      <div className={showGroupHeader ? "mt-2.5 space-y-4" : "space-y-4"}>
         {group.occurrences.map((occurrence) => (
           <div
             key={occurrence.subject.garmentKey}
@@ -1524,13 +1536,47 @@ export const DormantFutureCustomDetailsStep = ({
         <div>
             {companionGroups.length > 0 ? (
               <div className="overflow-x-hidden">
-                <div
-                  data-dress-additional-layout="companion"
-                  className={CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS}
-                >
-                  <div className="min-w-0 space-y-4">{ownedBlocks}</div>
-                  {renderDressCompanion(companionGroups, headingMode)}
-                </div>
+                {(() => {
+                  // One row per garment: its own card beside (or, when narrow, above) its own extras.
+                  // The family-level extras header is shown once, on the first garment that has extras.
+                  let familyExtrasHeaderShown = false;
+                  return garmentBlockOccurrences.map((occurrence, index) => {
+                    const block = ownedBlocks[index];
+                    if (!block) return null;
+                    const garmentKey = occurrence.subject.garmentKey;
+                    const garmentCompanionGroups = companionGroups
+                      .map((group) => ({
+                        ...group,
+                        occurrences: group.occurrences.filter(
+                          (candidate) => candidate.subject.garmentKey === garmentKey,
+                        ),
+                      }))
+                      .filter((group) => group.occurrences.length > 0);
+                    if (garmentCompanionGroups.length === 0) {
+                      return (
+                        <div key={garmentKey} className="mt-4 min-w-0">
+                          {block}
+                        </div>
+                      );
+                    }
+                    const showFamilyExtrasHeader = !familyExtrasHeaderShown;
+                    familyExtrasHeaderShown = true;
+                    return (
+                      <div
+                        key={garmentKey}
+                        data-dress-additional-layout="companion"
+                        data-companion-garment={garmentKey}
+                        className={CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS}
+                      >
+                        <div className="min-w-0">{block}</div>
+                        {renderDressCompanion(garmentCompanionGroups, headingMode, {
+                          showHeader: showFamilyExtrasHeader,
+                          familyGroups: companionGroups,
+                        })}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             ) : (
             <div className="mt-4 space-y-4">{ownedBlocks}</div>
@@ -1589,6 +1635,15 @@ export const DormantFutureCustomDetailsStep = ({
   const renderDressCompanion = (
     groups: readonly FutureCustomDetailsCatalogueGroup[],
     headingMode: "base" | "added",
+    {
+      showHeader = true,
+      familyGroups = groups,
+    }: {
+      /** Arrangement only: later garments in a family omit the shared extras header already shown above. */
+      showHeader?: boolean;
+      /** Full family groups, so the status badge on the shared header still reflects every garment in the family. */
+      familyGroups?: readonly FutureCustomDetailsCatalogueGroup[];
+    } = {},
   ) => {
     const visibleGroups = groups.filter((group) => group.occurrences.length > 0);
     if (visibleGroups.length === 0) return null;
@@ -1630,14 +1685,26 @@ export const DormantFutureCustomDetailsStep = ({
         aria-label={companionPresentation.ariaLabel}
         className="min-w-0 max-w-full rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:p-4"
       >
-        <h4 className={`min-w-0 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} text-heritage-green`}>
-          Additional Clothes Costs
-        </h4>
-        <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
-          {companionPresentation.helper}
-        </p>
-        <div className="mt-3 min-w-0 space-y-4">
-          {visibleGroups.map((group) => renderGroupFieldset(group, headingMode, "stack"))}
+        {showHeader ? (
+          <>
+            <h4 className={`min-w-0 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} text-heritage-green`}>
+              Additional Clothes Costs
+            </h4>
+            <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+              {companionPresentation.helper}
+            </p>
+          </>
+        ) : null}
+        <div className={`${showHeader ? "mt-3 " : ""}min-w-0 space-y-4`}>
+          {visibleGroups.map((group) =>
+            renderGroupFieldset(group, headingMode, "stack", {
+              showGroupHeader: showHeader,
+              statusGroup:
+                familyGroups.find(
+                  (candidate) => candidate.selectionGroup === group.selectionGroup,
+                ) || group,
+            }),
+          )}
         </div>
       </aside>
     );
