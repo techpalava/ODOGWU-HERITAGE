@@ -110,7 +110,12 @@ export const futureOrderV2ExpressCheckoutShell = (walletsShown: boolean) =>
         className: "pointer-events-none",
       };
 
-const walletFlagsFromChange = (
+/**
+ * Reads the wallet flags from Stripe's availablepaymentmethodschange event.
+ * That event also fires on first render, so it alone decides whether the
+ * wallet box shows. The deprecated ready payload is not used.
+ */
+export const futureOrderV2ExpressWalletsFromChange = (
   paymentMethods:
     | {
         readonly applePay?: { readonly available?: boolean };
@@ -589,9 +594,13 @@ export const FutureOrderV2StripeCard = ({
       allowedPaymentMethodTypes: ["card"],
     });
     const expressCheckout = elements.create("expressCheckout", {
+      // "always" lets Stripe show the wallet wherever it supports it. With "auto"
+      // Google Pay never shows on Safari, any iOS browser, or Firefox, and only
+      // shows elsewhere when a card is already saved. Stripe still hides a wallet
+      // the device or browser cannot use.
       paymentMethods: {
-        applePay: "auto",
-        googlePay: "auto",
+        applePay: "always",
+        googlePay: "always",
         link: "never",
         paypal: "never",
         amazonPay: "never",
@@ -607,11 +616,11 @@ export const FutureOrderV2StripeCard = ({
       if (cancelled) return;
       setExpressCheckoutVisible(isFutureOrderV2ExpressWalletAvailable(flags));
     };
-    expressCheckout.on("ready", (event) => {
-      applyAvailability(event.availablePaymentMethods);
-    });
+    // Only availablepaymentmethodschange drives visibility. It fires on first
+    // render and on every change. The ready event fires after it and its
+    // availablePaymentMethods field is deprecated, so it must not hide the box.
     expressCheckout.on("availablepaymentmethodschange", (event) => {
-      applyAvailability(walletFlagsFromChange(event.paymentMethods));
+      applyAvailability(futureOrderV2ExpressWalletsFromChange(event.paymentMethods));
     });
     expressCheckout.on("click", (event) => {
       if (

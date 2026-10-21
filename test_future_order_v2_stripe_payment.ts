@@ -20,6 +20,7 @@ import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePa
 import {
   FutureOrderV2StripeCard,
   futureOrderV2ExpressCheckoutShell,
+  futureOrderV2ExpressWalletsFromChange,
   isFutureOrderV2ExpressCheckoutAmount,
   isFutureOrderV2ExpressWalletAvailable,
   isFutureOrderV2StripePayReady,
@@ -531,8 +532,19 @@ assert.match(stripeCardSource, /data-future-order-v2-express-checkout/);
 assert.match(stripeCardSource, /stashFutureOrderV2StripeReturnContext/);
 assert.match(stripeCardSource, /klarna:\s*"never"/);
 assert.equal(/klarna:\s*"auto"/.test(stripeCardSource), false);
-assert.match(stripeCardSource, /applePay:\s*"auto"/);
-assert.match(stripeCardSource, /googlePay:\s*"auto"/);
+assert.match(stripeCardSource, /applePay:\s*"always"/);
+assert.match(stripeCardSource, /googlePay:\s*"always"/);
+assert.equal(/applePay:\s*"auto"/.test(stripeCardSource), false);
+assert.equal(/googlePay:\s*"auto"/.test(stripeCardSource), false);
+assert.match(stripeCardSource, /link:\s*"never"/);
+assert.match(stripeCardSource, /paypal:\s*"never"/);
+assert.match(stripeCardSource, /amazonPay:\s*"never"/);
+assert.match(stripeCardSource, /currency:\s*"eur"/);
+// Wallet visibility comes only from availablepaymentmethodschange; the
+// deprecated ready payload must not be able to hide the box.
+assert.match(stripeCardSource, /expressCheckout\.on\("availablepaymentmethodschange"/);
+assert.equal(/expressCheckout\.on\("ready"/.test(stripeCardSource), false);
+assert.equal(stripeCardSource.includes("event.availablePaymentMethods"), false);
 assert.match(stripeCardSource, /allowedPaymentMethodTypes:\s*\["card"\]/);
 assert.equal(/allowedPaymentMethodTypes:\s*\[[^\]]*ideal/.test(stripeCardSource), false);
 assert.equal(stripeCardSource.includes("idealReady"), false);
@@ -570,6 +582,28 @@ assert.match(
 );
 assert.equal(reviewStepSource.includes("cardReady"), false);
 
+assert.equal(futureOrderV2ExpressWalletsFromChange(undefined), undefined);
+assert.deepEqual(
+  futureOrderV2ExpressWalletsFromChange({
+    applePay: { available: false },
+    googlePay: { available: true },
+  }),
+  { applePay: false, googlePay: true },
+);
+assert.deepEqual(futureOrderV2ExpressWalletsFromChange({}), {
+  applePay: false,
+  googlePay: false,
+});
+assert.equal(
+  isFutureOrderV2ExpressWalletAvailable(
+    futureOrderV2ExpressWalletsFromChange({ googlePay: { available: true } }),
+  ),
+  true,
+);
+assert.equal(
+  isFutureOrderV2ExpressWalletAvailable(futureOrderV2ExpressWalletsFromChange(undefined)),
+  false,
+);
 assert.equal(isFutureOrderV2ExpressWalletAvailable(undefined), false);
 assert.equal(isFutureOrderV2ExpressWalletAvailable(null), false);
 assert.equal(isFutureOrderV2ExpressWalletAvailable({}), false);
