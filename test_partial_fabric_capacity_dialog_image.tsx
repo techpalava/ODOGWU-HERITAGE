@@ -5,6 +5,7 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import type { Fabric } from "./src/types";
 import type { FuturePartialFabricAssignmentTargetPresentation } from "./src/utils/designStudioFutureFabricStage";
 import { PartialFabricCapacityAssignmentDialog } from "./src/components/PartialFabricCapacityAssignmentDialog";
+import { setDefaultImageRetryDelaysForTests } from "./src/hooks/useImageLoadRetry";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -84,9 +85,35 @@ assert.ok(
   single.root.findAll((node) => typeof node.props.className === "string" && /flex-col/.test(node.props.className) && /sm:flex-row/.test(node.props.className)).length >= 1,
 );
 
-// A broken image URL falls back instead of leaving an empty frame.
-act(() => singleImage.props.onError());
+// A broken image URL is retried (shared hook; gaps shortened to 1, 2, 4, 8 ms
+// here), then falls back instead of leaving an empty frame.
+setDefaultImageRetryDelaysForTests([1, 2, 4, 8]);
+act(() => single.update(
+  createElement(PartialFabricCapacityAssignmentDialog, {
+    garmentLabel: "Standard Shirt",
+    fabricNameByCode,
+    fabricByCode,
+    targets: [target("alloc-1", "IVORY", 1)],
+    onConfirm: () => undefined,
+    onCancel: () => undefined,
+  }),
+));
+for (let attempt = 0; attempt <= 4; attempt += 1) {
+  act(() => previews(single.root)[0].findByType("img").props.onError());
+  if (attempt < 4) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    assert.equal(previews(single.root)[0].findAllByType("img").length, 1, "still retrying");
+  }
+}
+setDefaultImageRetryDelaysForTests(null);
 assert.equal(previews(single.root)[0].findAllByType("img").length, 0);
+assert.equal(
+  previews(single.root)[0].findAllByProps({ "data-fabric-photo-reload": "true" }).length,
+  1,
+  "a failed photo offers Tap to reload photo",
+);
 assert.match(
   String(previews(single.root)[0].props["aria-label"]),
   /Fabric preview unavailable/,

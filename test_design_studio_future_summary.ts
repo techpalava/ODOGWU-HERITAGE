@@ -81,7 +81,7 @@ import {
   reconcileFutureShippingState,
 } from "./src/utils/designStudioFutureShipping";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
-import { IMAGE_RETRY_DELAY_MS } from "./src/hooks/useImageLoadRetry";
+import { setDefaultImageRetryDelaysForTests } from "./src/hooks/useImageLoadRetry";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -2792,7 +2792,11 @@ const adaOwnBlock =
 assert.match(adaOwnBlock, /data-summary-measurement-person-garments="true" class="[^"]*">Standard Shirt<\/p>/);
 assert.match(adaOwnBlock, /<h5 class="[^"]*">Standard Shirt<\/h5>/);
 assert.equal(adaOwnBlock.includes("Standard Shirt 2"), false);
-assert.ok(chiefAdaOwnMarkup.includes(">Standard Shirt 2</h4>"), "Garments card keeps Standard Shirt 2");
+assert.match(
+  chiefAdaOwnMarkup,
+  /data-garment-removal-row-heading="additional:shirt:1"[^>]*>Standard Shirt 2<\/h5>/,
+  "Garments card keeps Standard Shirt 2 (inside its person group)",
+);
 const adaBlock = chiefAdaMarkup.split('data-summary-measurement-wearer="wearer-ada"')[1] || "";
 assert.match(
   adaBlock,
@@ -2948,12 +2952,30 @@ const renderSummaryGarmentCards = (
       node.type === "span" &&
       typeof node.props["data-summary-garment-fit"] === "string",
   );
+  // Garment headings are h4 in plain cards and h5 inside a person group.
   const headings = renderer.root.findAll(
     (node) =>
-      node.type === "h4" &&
+      (node.type === "h4" || node.type === "h5") &&
       typeof node.props["data-garment-removal-row-heading"] === "string",
   );
-  return { renderer, cards, wearerChips, fitChips, headings };
+  const personGroups = renderer.root
+    .findAll(
+      (node) =>
+        node.type === "section" &&
+        typeof node.props["data-summary-garment-person"] === "string",
+    )
+    .map((group) => [
+      group.props["data-summary-garment-person-kind"],
+      directText(group.find((node) => node.type === "h4")),
+      group
+        .findAll(
+          (node) =>
+            node.type === "article" &&
+            typeof node.props["data-summary-garment-card"] === "string",
+        )
+        .map((card) => card.props["data-summary-garment-card"]),
+    ]);
+  return { renderer, cards, wearerChips, fitChips, headings, personGroups };
 };
 
 const wearerOrderFor = (
@@ -2976,13 +2998,16 @@ const wearerOrderFor = (
   assignmentByGarmentKey,
 });
 
+// The Garments card no longer repeats the fabric capacity line (the Fabrics
+// section shows it), so this is empty for every card.
 const fabricCapacityMeta = (card: ReactTestInstance): string =>
-  directText(
-    card.find(
+  card
+    .findAll(
       (node) =>
         node.type === "p" && directText(node).includes("fabric capacity"),
-    ),
-  );
+    )
+    .map(directText)
+    .join("");
 
 const repeatedWearerSummary = (
   wearerOrder: WearerOrderStateV2,
@@ -3063,16 +3088,12 @@ assert.deepEqual(
     ["additional:shirt:1", "Standard Shirt 2"],
   ],
 );
-assert.deepEqual(
-  namedCards.wearerChips.map((chip) => [
-    chip.props["data-summary-garment-wearer"],
-    directText(chip),
-  ]),
-  [
-    ["base:shirt", "Chief"],
-    ["additional:shirt:1", "Ada"],
-  ],
-);
+// 2+ wearers: one person block each; the per-card wearer chip is gone.
+assert.deepEqual(namedCards.personGroups, [
+  ["wearer", "Chief", ["base:shirt"]],
+  ["wearer", "Ada", ["additional:shirt:1"]],
+]);
+assert.deepEqual(namedCards.wearerChips, []);
 assert.deepEqual(
   namedCards.fitChips.map((chip) => [
     chip.props["data-summary-garment-fit"],
@@ -3143,16 +3164,11 @@ assert.deepEqual(
   ],
 );
 const blankCards = renderSummaryGarmentCards(blankNameSummary);
-assert.deepEqual(
-  blankCards.wearerChips.map((chip) => [
-    chip.props["data-summary-garment-wearer"],
-    directText(chip),
-  ]),
-  [
-    ["base:shirt", "Person 1"],
-    ["additional:shirt:1", "Person 2"],
-  ],
-);
+assert.deepEqual(blankCards.personGroups, [
+  ["wearer", "Person 1", ["base:shirt"]],
+  ["wearer", "Person 2", ["additional:shirt:1"]],
+]);
+assert.deepEqual(blankCards.wearerChips, []);
 assert.deepEqual(
   blankCards.fitChips.map((chip) => [
     chip.props["data-summary-garment-fit"],
@@ -3184,13 +3200,9 @@ assert.equal(soloWearerSummary.garmentSummary[0]?.wearerLabel, "Amaka");
 assert.equal(soloWearerSummary.garmentSummary[0]?.fitLabel, null);
 const soloCards = renderSummaryGarmentCards(soloWearerSummary);
 assert.equal(soloCards.cards.length, 1);
-assert.deepEqual(
-  soloCards.wearerChips.map((chip) => [
-    chip.props["data-summary-garment-wearer"],
-    directText(chip),
-  ]),
-  [["base:shirt", "Amaka"]],
-);
+// One wearer: plain cards, no person block and no wearer chip.
+assert.deepEqual(soloCards.personGroups, []);
+assert.deepEqual(soloCards.wearerChips, []);
 assert.deepEqual(
   soloCards.fitChips.map((chip) => [
     chip.props["data-summary-garment-fit"],
@@ -3214,9 +3226,14 @@ const soloBlankNameSummary = projectFutureDesignStudioSummary({
 assert.equal(soloBlankNameSummary.garmentSummary[0]?.wearerLabel, "Person 1");
 assert.equal(soloBlankNameSummary.garmentSummary[0]?.fitLabel, null);
 const soloBlankCards = renderSummaryGarmentCards(soloBlankNameSummary);
-assert.deepEqual(
-  soloBlankCards.wearerChips.map((chip) => directText(chip)),
-  ["Person 1"],
+assert.deepEqual(soloBlankCards.personGroups, []);
+assert.deepEqual(soloBlankCards.wearerChips, []);
+assert.equal(
+  soloBlankCards.cards.some((card) =>
+    card.findAll((node) => node.children.some((child) => child === "Person 1")).length > 0,
+  ),
+  false,
+  "a sole wearer is never shown as Person 1 on the garment cards",
 );
 assert.deepEqual(
   soloBlankCards.fitChips.map((chip) => directText(chip)),
@@ -3236,10 +3253,7 @@ const soloFitUnsetSummary = projectFutureDesignStudioSummary({
 assert.equal(soloFitUnsetSummary.garmentSummary[0]?.wearerLabel, "Amaka");
 assert.equal(soloFitUnsetSummary.garmentSummary[0]?.fitLabel, null);
 const soloFitUnsetCards = renderSummaryGarmentCards(soloFitUnsetSummary);
-assert.deepEqual(
-  soloFitUnsetCards.wearerChips.map((chip) => directText(chip)),
-  ["Amaka"],
-);
+assert.deepEqual(soloFitUnsetCards.wearerChips, []);
 assert.equal(soloFitUnsetCards.fitChips.length, 0);
 assert.equal(/fit/i.test(fabricCapacityMeta(soloFitUnsetCards.cards[0])), false);
 act(() => {
@@ -3304,13 +3318,11 @@ assert.equal(
   null,
 );
 const partialCards = renderSummaryGarmentCards(partialAssignmentSummary);
-assert.deepEqual(
-  partialCards.wearerChips.map((chip) => [
-    chip.props["data-summary-garment-wearer"],
-    directText(chip),
-  ]),
-  [["base:shirt", "Chief"]],
-);
+// Without measurement wearer groups only one person is named, so the cards
+// stay plain (the Unassigned group is covered with wearer groups in
+// test_summary_garment_cards.tsx).
+assert.deepEqual(partialCards.personGroups, []);
+assert.deepEqual(partialCards.wearerChips, []);
 assert.deepEqual(
   partialCards.fitChips.map((chip) => [
     chip.props["data-summary-garment-fit"],
@@ -3413,6 +3425,29 @@ assert.equal(unresolvedPreviewSummary.fabricSummary[0]?.colorHex, null);
 assert.match(renderFabricSummaryMarkup(unresolvedPreviewSummary), /No preview/);
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+// Production retry gaps are 1, 2, 4, 8 s; shorten them to 5, 10, 20, 40 ms.
+const SUMMARY_TEST_RETRY_DELAYS_MS = [5, 10, 20, 40];
+setDefaultImageRetryDelaysForTests(SUMMARY_TEST_RETRY_DELAYS_MS);
+const failSummaryFabricImageEveryTime = async () => {
+  for (let attempt = 0; attempt <= SUMMARY_TEST_RETRY_DELAYS_MS.length; attempt += 1) {
+    act(() => {
+      fabricPreviewRenderer.root
+        .findByProps({ "data-summary-fabric-image": "true" })
+        .props.onError();
+    });
+    if (attempt < SUMMARY_TEST_RETRY_DELAYS_MS.length) {
+      await act(async () => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, SUMMARY_TEST_RETRY_DELAYS_MS[attempt]! + 30),
+        );
+      });
+      assert.match(
+        fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-image": "true" }).props.src,
+        new RegExp(`imgRetry=${attempt + 1}`),
+      );
+    }
+  }
+};
 let fabricPreviewRenderer!: ReturnType<typeof create>;
 act(() => {
   fabricPreviewRenderer = create(
@@ -3434,24 +3469,8 @@ assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
   1,
 );
-act(() => {
-  fabricPreviewRenderer.root
-    .findByProps({ "data-summary-fabric-image": "true" })
-    .props.onError();
-});
-// One retry after a short pause, then the swatch fallback.
-await act(async () => {
-  await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
-});
-assert.match(
-  fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-image": "true" }).props.src,
-  /imgRetry=1/,
-);
-act(() => {
-  fabricPreviewRenderer.root
-    .findByProps({ "data-summary-fabric-image": "true" })
-    .props.onError();
-});
+// Retries with growing gaps, then the swatch fallback with a reload button.
+await failSummaryFabricImageEveryTime();
 assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
   0,
@@ -3481,26 +3500,38 @@ act(() => {
     }),
   );
 });
-for (let attempt = 0; attempt < 2; attempt += 1) {
-  act(() => {
-    fabricPreviewRenderer.root
-      .findByProps({ "data-summary-fabric-image": "true" })
-      .props.onError();
-  });
-  if (attempt === 0) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
-    });
-  }
-}
+await failSummaryFabricImageEveryTime();
 assert.equal(
   fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-fallback": "true" }).length,
   1,
 );
+const summaryFallbackText = (node: { children: unknown[] }): string =>
+  node.children
+    .map((child) =>
+      typeof child === "string"
+        ? child
+        : summaryFallbackText(child as { children: unknown[] }),
+    )
+    .join("");
 assert.match(
-  fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-fallback": "true" }).children.join(""),
+  summaryFallbackText(
+    fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-fallback": "true" }),
+  ),
   /No preview/,
 );
+// A photo that existed but failed offers "Tap to reload photo", which starts again.
+const summaryReload = fabricPreviewRenderer.root.findByProps({
+  "data-fabric-photo-reload": "true",
+});
+assert.match(String(summaryReload.props["aria-label"]), /^Tap to reload photo/);
+act(() => {
+  summaryReload.props.onClick({ stopPropagation: () => {} });
+});
+assert.equal(
+  fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
+  1,
+);
+setDefaultImageRetryDelaysForTests(null);
 act(() => {
   fabricPreviewRenderer.unmount();
 });

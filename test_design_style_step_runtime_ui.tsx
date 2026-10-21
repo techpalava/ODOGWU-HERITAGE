@@ -21,7 +21,10 @@ import {
   createDesignStyleStepTestModel,
   type DesignStyleStepTestModel,
 } from "./testing/designStyleStepFixtures";
-import { IMAGE_RETRY_DELAY_MS, withImageRetryMarker } from "./src/hooks/useImageLoadRetry";
+import {
+  setDefaultImageRetryDelaysForTests,
+  withImageRetryMarker,
+} from "./src/hooks/useImageLoadRetry";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -1832,6 +1835,8 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     styles: [brokenImageStyle],
     garmentTypeSelection: selection(["shirt"]),
   });
+  // Shorten the retry gaps (1, 2, 4, 8 s in production) to 5, 10, 20, 40 ms.
+  setDefaultImageRetryDelaysForTests([5, 10, 20, 40]);
   const renderer = await renderModel(model);
   const card = renderer.root.findByProps({
     "data-style-name": brokenImageStyle.name,
@@ -1839,21 +1844,33 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   const img = card.findByProps({ "data-style-card-image": "true" });
   assert.equal(img.type, "img");
   assert.equal(img.props.src, brokenImageStyle.image);
-  await act(async () => {
-    img.props.onError(new Error("load failed"));
-  });
-  // A failed image is retried once (smoke test: Storage timeouts) before
-  // the fallback shows.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, IMAGE_RETRY_DELAY_MS + 50));
-  });
-  const retriedImg = renderer.root
-    .findByProps({ "data-style-name": brokenImageStyle.name })
-    .findByProps({ "data-style-card-image": "true" });
-  assert.equal(retriedImg.props.src, withImageRetryMarker(brokenImageStyle.image!, 1));
-  await act(async () => {
-    retriedImg.props.onError(new Error("load failed again"));
-  });
+  // A failed image is retried with growing gaps before the fallback shows;
+  // each retry has a fresh query marker.
+  try {
+    for (let retry = 1; retry <= 4; retry += 1) {
+      await act(async () => {
+        renderer.root
+          .findByProps({ "data-style-name": brokenImageStyle.name })
+          .findByProps({ "data-style-card-image": "true" })
+          .props.onError(new Error("load failed"));
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5 * 2 ** (retry - 1) + 30));
+      });
+      const retriedImg = renderer.root
+        .findByProps({ "data-style-name": brokenImageStyle.name })
+        .findByProps({ "data-style-card-image": "true" });
+      assert.equal(retriedImg.props.src, withImageRetryMarker(brokenImageStyle.image!, retry));
+    }
+    await act(async () => {
+      renderer.root
+        .findByProps({ "data-style-name": brokenImageStyle.name })
+        .findByProps({ "data-style-card-image": "true" })
+        .props.onError(new Error("load failed again"));
+    });
+  } finally {
+    setDefaultImageRetryDelaysForTests(null);
+  }
   const afterCard = renderer.root.findByProps({
     "data-style-name": brokenImageStyle.name,
   });
