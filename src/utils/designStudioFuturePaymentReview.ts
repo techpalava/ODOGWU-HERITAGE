@@ -8,11 +8,7 @@ import type {
   WearerOrderStateV2,
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
-import {
-  isWearerOrderStateV2,
-  resolveWearerMeasurementDemographic,
-  wearerPublicLabel,
-} from "./wearerOrder";
+import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
 import { projectPersonGarmentLabels } from "./occurrenceDisplayLabel";
 import {
   type FutureOrderCandidateBlocker,
@@ -44,6 +40,7 @@ import {
   getMeasurementDefinition,
   resolveMeasurementLabelDemographic,
   resolveMeasurementLabelDemographicForGarments,
+  resolveMeasurementPlanningDemographic,
 } from "./measurementBlueprint";
 
 export const FUTURE_PAYMENT_UNAVAILABLE_MESSAGE =
@@ -534,7 +531,7 @@ const labelDemographicFor = (
   );
   if (audience === "unisex") return audience;
   return resolveMeasurementLabelDemographic(
-    resolveWearerMeasurementDemographic({
+    resolveMeasurementPlanningDemographic({
       garments: scoped.flatMap((garment) =>
         garment.garmentType
           ? [{
