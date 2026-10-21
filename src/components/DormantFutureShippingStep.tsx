@@ -17,6 +17,7 @@ import {
   STEP8_CUSTOMER_COUNTRY_GROUPS,
   STEP8_OTHER_DESTINATION_LABEL,
   STEP8_OTHER_DESTINATION_SELECT_VALUE,
+  STEP8_OVER_20_KG_QUOTE_MESSAGE,
 } from "../config/Step8AdditionalDeliveryConfig";
 import {
   DEFAULT_FUTURE_PICKUP_LOCATION,
@@ -28,7 +29,11 @@ import {
   futureShippingRequiresRegion,
   resolveFutureShippingCityHint,
 } from "../utils/designStudioFutureShipping";
-import { formatStep8CustomerDestination } from "../utils/step8AdditionalDelivery";
+import {
+  formatStep8CustomerDestination,
+  formatStep8ShipmentWeightBreakdown,
+  formatStep8WeightBandPhrase,
+} from "../utils/step8AdditionalDelivery";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
 import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
@@ -269,6 +274,12 @@ export const DormantFutureShippingStep = ({
   const countrySelectValue = isOtherDestination
     ? STEP8_OTHER_DESTINATION_SELECT_VALUE
     : address.countryCode || "";
+  const shipmentWeightBreakdown = formatStep8ShipmentWeightBreakdown(
+    garmentCount,
+    resolution.parcelWeightKg,
+  );
+  const shippingBandPhrase = formatStep8WeightBandPhrase(resolution.weightTier);
+  const shippingRateRegion = resolution.destinationLabel;
   const showDeliverySummary =
     isPickup ||
     (isDelivery &&
@@ -876,32 +887,25 @@ export const DormantFutureShippingStep = ({
                     </p>
                   </dd>
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 sm:col-span-2" data-delivery-shipment-weight="true">
                   <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
                     Shipment Weight
                   </dt>
-                  <dd className="mt-1 font-mono font-semibold text-heritage-green">
-                    {resolution.parcelWeightKg === null
-                      ? "Pending"
-                      : `${resolution.parcelWeightKg.toFixed(1)} kg`}
-                  </dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
-                    Weight Tier
-                  </dt>
                   <dd className="mt-1 font-semibold text-heritage-green">
-                    {resolution.weightTier === "0_2"
-                      ? "0–2 kg"
-                      : resolution.weightTier === "2_5"
-                        ? ">2–5 kg"
-                        : resolution.weightTier === "5_10"
-                          ? ">5–10 kg"
-                          : resolution.weightTier === "10_20"
-                            ? ">10–20 kg"
-                            : resolution.weightTier === "over_20"
-                              ? ">20 kg"
-                              : "Pending"}
+                    {resolution.parcelWeightKg === null ? (
+                      <span className="font-mono">Pending</span>
+                    ) : (
+                      <>
+                        <span className="whitespace-nowrap font-mono">
+                          {`${resolution.parcelWeightKg.toFixed(1)} kg`}
+                        </span>
+                        {shipmentWeightBreakdown && (
+                          <span className="whitespace-nowrap font-normal text-heritage-ink/70">
+                            {` (${shipmentWeightBreakdown})`}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </dd>
                 </div>
               </>
@@ -911,29 +915,37 @@ export const DormantFutureShippingStep = ({
               <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
                 Shipping
               </dt>
-              <dd className="mt-1 font-mono font-bold text-heritage-green">
-                {resolution.quoteRequired
-                  ? "Custom shipping quote required"
-                  : resolution.postEindhovenAdjustmentCents === null
-                    ? "Pending"
-                    : moneyFromCents(resolution.postEindhovenAdjustmentCents)}
+              <dd className="mt-1 text-heritage-green" data-delivery-shipping-line="true">
+                {resolution.quoteRequired ? (
+                  resolution.weightTier === "over_20" ? (
+                    <span className="font-semibold">{STEP8_OVER_20_KG_QUOTE_MESSAGE}</span>
+                  ) : (
+                    <span className="font-mono font-bold">Custom shipping quote required</span>
+                  )
+                ) : resolution.postEindhovenAdjustmentCents === null ? (
+                  <span className="font-mono font-bold">Pending</span>
+                ) : (
+                  <>
+                    <span className="font-mono font-bold">
+                      {moneyFromCents(resolution.postEindhovenAdjustmentCents)}
+                    </span>
+                    {shippingRateRegion && shippingBandPhrase && (
+                      <>
+                        <span aria-hidden="true" className="hidden text-heritage-ink/70 sm:inline">
+                          {" — "}
+                        </span>
+                        <span className="block text-sm text-heritage-ink/70 sm:inline">
+                          {`${shippingRateRegion} rate for parcels `}
+                          <span className="whitespace-nowrap">{shippingBandPhrase}</span>
+                        </span>
+                      </>
+                    )}
+                  </>
+                )}
               </dd>
             </div>
             )}
           </dl>
-          {isDelivery &&
-            resolution.destinationLabel &&
-            !resolution.quoteRequired &&
-            resolution.weightTier &&
-            resolution.weightTier !== "2_5" && (
-              <p className="mt-3 text-xs leading-relaxed text-heritage-ink/55">
-                Typical 2–5 kg rate for this destination is a headline only. Your
-                charge uses the calculated weight tier.
-              </p>
-            )}
-          <p className="mt-2 text-xs text-heritage-ink/55">
-            Physical garments in this order: {garmentCount}
-          </p>
         </section>
       )}
 

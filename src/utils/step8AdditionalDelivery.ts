@@ -15,6 +15,7 @@ import {
   STEP8_REGION_REQUIRED_COUNTRY_CODES,
   STEP8_RULE_IDS,
   STEP8_WEIGHT_TIER_LABELS,
+  STEP8_WEIGHT_BAND_PHRASES,
   formatStep8CountryLabel,
   isStep8CustomerSelectableCountry,
   isSupportedStep8RateVersion,
@@ -111,6 +112,32 @@ export const resolveStep8ShipmentWeightKg = (
     return null;
   }
   return physicalGarmentCount * STEP8_KG_PER_PHYSICAL_GARMENT;
+};
+
+/** Band phrase for a priced tier ("up to 2 kg", "2–5 kg", …); null for over 20 kg or no tier. */
+export const formatStep8WeightBandPhrase = (
+  weightTier: Step8WeightTier | null | undefined,
+): string | null =>
+  weightTier && weightTier !== "over_20" ? STEP8_WEIGHT_BAND_PHRASES[weightTier] : null;
+
+/**
+ * "2 garments × 0.5 kg" for the Delivery Summary weight line, or null when
+ * the count is not a positive whole number or does not explain the weight.
+ */
+export const formatStep8ShipmentWeightBreakdown = (
+  physicalGarmentCount: number,
+  parcelWeightKg: number | null,
+): string | null => {
+  if (
+    !Number.isInteger(physicalGarmentCount) ||
+    physicalGarmentCount <= 0 ||
+    parcelWeightKg === null ||
+    Math.abs(physicalGarmentCount * STEP8_KG_PER_PHYSICAL_GARMENT - parcelWeightKg) > 1e-9
+  ) {
+    return null;
+  }
+  const noun = physicalGarmentCount === 1 ? "garment" : "garments";
+  return `${physicalGarmentCount} ${noun} × ${STEP8_KG_PER_PHYSICAL_GARMENT} kg`;
 };
 
 export const resolveStep8WeightTier = (weightKg: number): Step8WeightTier => {

@@ -36,6 +36,23 @@ export const STEP8_WEIGHT_TIER_LABELS: Readonly<Record<Step8WeightTier, string>>
     over_20: ">20 kg",
   });
 
+/**
+ * Customer wording for a priced weight band on the Delivery Summary, e.g.
+ * "€7.50 — Netherlands rate for parcels up to 2 kg". Over 20 kg has no band
+ * phrase: it always needs a custom quote (STEP8_OVER_20_KG_QUOTE_MESSAGE).
+ */
+export const STEP8_WEIGHT_BAND_PHRASES: Readonly<
+  Record<Exclude<Step8WeightTier, "over_20">, string>
+> = Object.freeze({
+  "0_2": "up to 2 kg",
+  "2_5": "2–5 kg",
+  "5_10": "5–10 kg",
+  "10_20": "10–20 kg",
+});
+
+export const STEP8_OVER_20_KG_QUOTE_MESSAGE =
+  "Over 20 kg — we'll send you a custom shipping quote.";
+
 export const STEP8_DESTINATION_ZONE_LABELS: Readonly<
   Record<Step8DestinationZone, string>
 > = Object.freeze({
