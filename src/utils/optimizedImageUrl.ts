@@ -60,6 +60,27 @@ export const FABRIC_THUMB_IMAGE_PRESET: ResponsiveImagePreset = {
   sizes: "96px",
 };
 
+/** Design Style catalogue cards: 1 column on phones, 2 from `sm`, 3 from `xl` (4:3, object-contain). */
+export const DESIGN_STYLE_CARD_IMAGE_PRESET: ResponsiveImagePreset = {
+  widths: [256, 384, 512],
+  fallbackWidth: 384,
+  sizes: "(min-width: 1280px) 30vw, (min-width: 640px) 46vw, 92vw",
+};
+
+/** Design Style dialog photos (Apply / Read more), up to ~576 CSS px wide. */
+export const DESIGN_STYLE_DIALOG_IMAGE_PRESET: ResponsiveImagePreset = {
+  widths: [384, 512],
+  fallbackWidth: 512,
+  sizes: "(min-width: 640px) 576px, 92vw",
+};
+
+/** Small Design Style thumbs (Step 3 occurrence preview, Summary 96 px thumb). */
+export const DESIGN_STYLE_THUMB_IMAGE_PRESET: ResponsiveImagePreset = {
+  widths: [128, 256],
+  fallbackWidth: 256,
+  sizes: "96px",
+};
+
 export interface OptimizedImageSources {
   src: string;
   srcSet: string;
@@ -100,6 +121,27 @@ export const isOptimizableImageUrl = (url: string | null | undefined): url is st
     return parsed.pathname.startsWith(`/v0/b/${FIREBASE_STORAGE_BUCKET}/o/`);
   }
   return parsed.hostname === FIREBASE_STORAGE_BUCKET;
+};
+
+/**
+ * True only for published catalogue Design Style photos (`styles/` or the
+ * seeded `designs/` folder). Customer uploads stay on their original URL so
+ * they are never cached by the site's image optimiser.
+ */
+export const isCatalogueDesignImageUrl = (url: string | null | undefined): url is string => {
+  if (!isOptimizableImageUrl(url)) return false;
+  let objectPath = "";
+  try {
+    const parsed = new URL(url.trim());
+    const prefix = `/v0/b/${FIREBASE_STORAGE_BUCKET}/o/`;
+    objectPath =
+      parsed.hostname === "firebasestorage.googleapis.com"
+        ? decodeURIComponent(parsed.pathname.slice(prefix.length))
+        : decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+  } catch {
+    return false;
+  }
+  return objectPath.startsWith("styles/") || objectPath.startsWith("designs/");
 };
 
 export const buildVercelImageUrl = (

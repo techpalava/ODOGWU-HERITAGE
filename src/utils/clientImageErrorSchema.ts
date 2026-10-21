@@ -16,6 +16,10 @@ export const CLIENT_IMAGE_ERROR_SURFACES = [
   "fabric-card",
   "fabric-preview",
   "summary-fabric",
+  "design-style-card",
+  "design-style-dialog",
+  "design-style-preview",
+  "summary-design-style",
 ] as const;
 export type ClientImageErrorSurface = (typeof CLIENT_IMAGE_ERROR_SURFACES)[number];
 
@@ -28,7 +32,7 @@ export type ClientImageErrorConnectionType =
   (typeof CLIENT_IMAGE_ERROR_CONNECTION_TYPES)[number];
 
 export interface ClientImageErrorReport {
-  /** Fabric code, e.g. "ODG-012". */
+  /** Fabric code (e.g. "ODG-012") or Design Style id for design-style surfaces. */
   fabricCode: string;
   /** Host of the URL that failed last, e.g. "firebasestorage.googleapis.com" or the site host. */
   imageHost: string;
@@ -52,4 +56,17 @@ export const CLIENT_IMAGE_ERROR_FIELD_LIMITS = {
 } as const;
 
 export const CLIENT_IMAGE_ERROR_FABRIC_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
+/**
+ * Turns any id (Design Style id, garment key) into a value that passes
+ * CLIENT_IMAGE_ERROR_FABRIC_CODE_PATTERN, or "" when nothing usable is left.
+ */
+export const toClientImageErrorCode = (value: string | null | undefined): string => {
+  const cleaned = String(value ?? "")
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, "-")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .slice(0, CLIENT_IMAGE_ERROR_FIELD_LIMITS.fabricCodeMaxLength);
+  return CLIENT_IMAGE_ERROR_FABRIC_CODE_PATTERN.test(cleaned) ? cleaned : "";
+};
+
 export const CLIENT_IMAGE_ERROR_HOST_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::\d{1,5})?$/;
