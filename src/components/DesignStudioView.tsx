@@ -388,7 +388,11 @@ import {
   validatePreparedFutureOrderV2PaymentEligibility,
   type FutureOrderV2PaymentAttempt,
 } from "../utils/futureOrderV2Payment";
-import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import {
+  recordFutureOrderV2Payment,
+  verifyFutureOrderV2PixCheckout,
+} from "../services/futureOrderV2PaymentRecordClient";
+import { resumeFutureOrderV2PixReturn } from "../utils/futureOrderV2Pix";
 import {
   resumeFutureOrderV2StripeReturn,
   stashFutureOrderV2OpenOrderId,
@@ -8526,6 +8530,26 @@ export default function DesignStudioView({
       cancelled = true;
     };
   }, [futureOrderV2TestHooks?.recordPayment]);
+  useEffect(() => {
+    // Hosted Pix Checkout return; same dashboard landing as the bank redirect.
+    if (typeof window === "undefined") return;
+    if (!window.location.search.includes("future_order_v2_pix_return=")) return;
+    void (async () => {
+      const result = await resumeFutureOrderV2PixReturn({
+        search: window.location.search,
+        verify: verifyFutureOrderV2PixCheckout,
+      });
+      if (result.status === "ignored") return;
+      if (result.status === "recorded") {
+        void retireStudioFutureDesignDraft({
+          ...(futureDraftRepository ? { repository: futureDraftRepository } : {}),
+          expectedRevision: cloudFutureDraftRevisionRef.current,
+        });
+      }
+      stashFutureOrderV2OpenOrderId(result.orderId);
+      useAppStore.getState().setActiveTab("dashboard");
+    })();
+  }, []);
   useEffect(() => {
     futureOrderV2TestHooks?.onActions?.({
       seedPaymentReview: (handoff) => {
