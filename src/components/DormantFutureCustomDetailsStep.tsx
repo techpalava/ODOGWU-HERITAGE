@@ -350,106 +350,23 @@ const CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS =
 const CUSTOM_DETAIL_STATUS_BADGE_CLASS =
   "mt-0.5 shrink-0 rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold";
 
-/** Neck collar columns use 20rem auto-fit. Garment Main/Pocket pairs use the same idea with a slightly smaller floor so two readable columns appear when the container is wide enough, then stack instead of squeezing. */
-const CUSTOM_DETAIL_BALANCED_PAIR_GRID_CLASS =
-  "grid min-w-0 w-full items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))]";
+/**
+ * A garment card stacks its construction sections in reading order (Main Garment, that garment's
+ * Additional Clothes Costs, Pocket) as distinct full-width blocks: every section after the first
+ * starts after a 1.25rem gap and a hairline divider. Each section sits in its own wrapper div so the
+ * divider never lands on a <fieldset> (a legend would straddle a fieldset's top border).
+ */
+const CUSTOM_DETAIL_GARMENT_SECTION_STACK_CLASS =
+  "flex min-w-0 w-full flex-col gap-5 [&>*+*]:border-t [&>*+*]:border-heritage-gold/25 [&>*+*]:pt-5";
 
 const CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS =
   "mt-4 grid min-w-0 max-w-full w-full items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]";
-
-/**
- * Garment card + extras rows share five subgrid tracks once the row is wide enough for two columns
- * (2 × 24rem + 1rem gap): 1 card title, 2 group legend, 3 helper / occurrence heading, 4 first option list,
- * 5 the garment's Pocket group. Legends, helper lines and the first option cards then sit on the same lines in
- * both columns. Track 4 is `minmax(min-content,0)` and the extras option list spans tracks 4-5, so a long extras
- * list only grows track 5 and never opens a gap above the garment's Pocket group. Below that width the cards are
- * ordinary blocks (unchanged mobile layout).
- */
-const CUSTOM_DETAIL_ALIGNED_ROW_CONTAINER_CLASS = "@container/extras";
-const CUSTOM_DETAIL_ALIGNED_ROW_GRID_CLASS =
-  "@min-[49rem]/extras:gap-y-0 @min-[49rem]/extras:grid-rows-[auto_auto_auto_minmax(min-content,0)_auto]";
-const CUSTOM_DETAIL_ALIGNED_CARD_CLASS =
-  "@min-[49rem]/extras:grid @min-[49rem]/extras:row-span-5 @min-[49rem]/extras:grid-rows-subgrid @min-[49rem]/extras:content-start";
-const CUSTOM_DETAIL_ALIGNED_CONTENTS_CLASS = "@min-[49rem]/extras:contents";
-
-type CustomDetailAlignedSlots = {
-  fieldset?: string;
-  legend?: string;
-  header?: string;
-  options?: string;
-};
-
-/** Extras column of an aligned garment row (tracks 2-5). */
-const CUSTOM_DETAIL_EXTRAS_COLUMN_SLOTS: CustomDetailAlignedSlots = {
-  fieldset: "@min-[49rem]/extras:contents",
-  legend: "@min-[49rem]/extras:row-start-2",
-  header: "@min-[49rem]/extras:row-start-3",
-  options: "@min-[49rem]/extras:row-[4/span_2]",
-};
-
-/**
- * Main Garment / Pocket side by side inside one garment card (card content at least 2 × 18rem + 1rem wide):
- * the two fieldsets share three row tracks (legend, helper, first option) so both option lists start on the
- * same line even when one helper line wraps. Cards that sit in an extras row use the `guarded` set, which only
- * applies while that row is NOT in its two-column aligned mode (the two modes never overlap).
- */
-const CUSTOM_DETAIL_PAIR_CONTAINER_CLASS = "@container/pair";
-const CUSTOM_DETAIL_PAIR_ALIGNMENT = {
-  plain: {
-    grid: "gap-y-0",
-    main: {
-      fieldset: "@min-[37rem]/pair:contents",
-      legend: "@min-[37rem]/pair:col-start-1 @min-[37rem]/pair:row-start-1",
-      header: "@min-[37rem]/pair:col-start-1 @min-[37rem]/pair:row-start-2",
-      options: "@min-[37rem]/pair:col-start-1 @min-[37rem]/pair:row-start-3",
-    },
-    pocket: {
-      fieldset: "@min-[37rem]/pair:contents",
-      legend: "@min-[37rem]/pair:col-start-2 @min-[37rem]/pair:row-start-1",
-      header: "@min-[37rem]/pair:col-start-2 @min-[37rem]/pair:row-start-2",
-      options: "@min-[37rem]/pair:col-start-2 @min-[37rem]/pair:row-start-3",
-    },
-  },
-  guarded: {
-    grid: "gap-y-0",
-    main: {
-      fieldset: "@max-[49rem]/extras:@min-[37rem]/pair:contents",
-      legend: "@max-[49rem]/extras:@min-[37rem]/pair:col-start-1 @max-[49rem]/extras:@min-[37rem]/pair:row-start-1",
-      header: "@max-[49rem]/extras:@min-[37rem]/pair:col-start-1 @max-[49rem]/extras:@min-[37rem]/pair:row-start-2",
-      options: "@max-[49rem]/extras:@min-[37rem]/pair:col-start-1 @max-[49rem]/extras:@min-[37rem]/pair:row-start-3",
-    },
-    pocket: {
-      fieldset: "@max-[49rem]/extras:@min-[37rem]/pair:contents",
-      legend: "@max-[49rem]/extras:@min-[37rem]/pair:col-start-2 @max-[49rem]/extras:@min-[37rem]/pair:row-start-1",
-      header: "@max-[49rem]/extras:@min-[37rem]/pair:col-start-2 @max-[49rem]/extras:@min-[37rem]/pair:row-start-2",
-      options: "@max-[49rem]/extras:@min-[37rem]/pair:col-start-2 @max-[49rem]/extras:@min-[37rem]/pair:row-start-3",
-    },
-  },
-} as const satisfies Record<"plain" | "guarded", { grid: string; main: CustomDetailAlignedSlots; pocket: CustomDetailAlignedSlots }>;
-
-/** Garment-card side of an aligned extras row: Main Garment on tracks 2-4, Pocket as one block on track 5. */
-const CUSTOM_DETAIL_GARMENT_COLUMN_MAIN_SLOTS: CustomDetailAlignedSlots = {
-  fieldset: "@min-[49rem]/extras:contents",
-  legend: "@min-[49rem]/extras:row-start-2",
-  header: "@min-[49rem]/extras:row-start-3",
-  options: "@min-[49rem]/extras:row-start-4",
-};
-const CUSTOM_DETAIL_GARMENT_COLUMN_POCKET_FIELDSET_CLASS =
-  "@min-[49rem]/extras:row-start-5 @min-[49rem]/extras:mt-4";
-
-const joinSlotClasses = (
-  ...slots: readonly (CustomDetailAlignedSlots | undefined)[]
-): CustomDetailAlignedSlots => {
-  const pick = (key: keyof CustomDetailAlignedSlots) =>
-    slots.map((slot) => slot?.[key]).filter(Boolean).join(" ");
-  return { fieldset: pick("fieldset"), legend: pick("legend"), header: pick("header"), options: pick("options") };
-};
 
 const CUSTOM_DETAIL_FIELDSET_CLASS =
   "min-w-0 w-full max-w-full [min-inline-size:0]";
 
 const customDetailOptionCardClassName = (checked: boolean) =>
-  `flex min-h-20 w-full min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`;
+  `flex h-full min-h-20 w-full min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`;
 
 const getConstructionPresentationPrefix = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
@@ -1169,7 +1086,7 @@ export const DormantFutureCustomDetailsStep = ({
         ? selectedConstructionId === option.id
         : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id);
       return (
-        <div key={option.id} className="min-w-0 w-full">
+        <div key={option.id} className="h-full min-w-0 w-full">
           <label
             htmlFor={optionId}
             className={optionCardClassName(checked)}
@@ -1195,7 +1112,7 @@ export const DormantFutureCustomDetailsStep = ({
                 <span className="min-w-0 flex-1 break-words text-sm font-bold leading-5 text-heritage-green">{option.label}</span>
                 <span className="shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked)}</span>
               </span>
-              {!isPersonalizedRequirement && option.description && <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{option.description}</span>}
+              {!isPersonalizedRequirement && option.description && <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">{option.description}</span>}
               {!isPersonalizedRequirement && option.requiresEvaluation && <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
             </span>
           </label>
@@ -1282,7 +1199,7 @@ export const DormantFutureCustomDetailsStep = ({
         />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-bold leading-5 text-heritage-green">None</span>
-          <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">No selection for this category</span>
+          <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">No selection for this category</span>
         </span>
       </label>
     );
@@ -1290,7 +1207,7 @@ export const DormantFutureCustomDetailsStep = ({
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
       <div
         data-custom-detail-option-grid={group.selectionGroup}
-        className={`grid min-w-0 w-full grid-cols-1 items-start gap-2.5${
+        className={`grid min-w-0 w-full items-stretch gap-2 [grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr))]${
           group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
             ? " sm:grid-cols-2"
             : ""
@@ -1425,7 +1342,6 @@ export const DormantFutureCustomDetailsStep = ({
       occurrenceHeading,
       showGroupHeader = true,
       statusGroup = group,
-      aligned,
       className = "",
     }: {
       legendTitle?: string;
@@ -1437,8 +1353,6 @@ export const DormantFutureCustomDetailsStep = ({
       showGroupHeader?: boolean;
       /** Group whose occurrences decide the legend status badge (defaults to the rendered group). */
       statusGroup?: FutureCustomDetailsCatalogueGroup;
-      /** Arrangement only: render legend / helper / options as separate boxes carrying these track classes (single occurrence). Visually identical to the plain fieldset until a container query activates the tracks. */
-      aligned?: CustomDetailAlignedSlots;
       className?: string;
     } = {},
   ) => {
@@ -1447,45 +1361,6 @@ export const DormantFutureCustomDetailsStep = ({
         ? occurrenceHeading(occurrence)
         : `${getSubjectLabel(occurrence.subject, parentOccurrenceLabels)} - ${headingMode === "added" ? "Added garment" : "Base garment"}`;
     const fieldsetKey = `${group.selectionGroup}-${group.occurrences.map((occurrence) => occurrence.subject.garmentKey).join("-")}`;
-    const alignedOccurrence = aligned && group.occurrences.length === 1 ? group.occurrences[0] : null;
-    if (alignedOccurrence) {
-      const statusText = getGroupStatus(statusGroup);
-      return (
-        <fieldset
-          key={fieldsetKey}
-          data-custom-detail-group={group.selectionGroup}
-          data-active-occurrences={group.occurrences.length}
-          className={`${CUSTOM_DETAIL_FIELDSET_CLASS} ${aligned?.fieldset || ""} ${className}`}
-        >
-          {showGroupHeader ? (
-            <legend className={`${CUSTOM_DETAIL_SUBSECTION_HEADING_ROW_CLASS} text-heritage-green ${aligned?.legend || ""}`}>
-              <span className={CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS}>{legendTitle}</span>
-              <span className={CUSTOM_DETAIL_STATUS_BADGE_CLASS}>{statusText}</span>
-            </legend>
-          ) : (
-            <legend className="sr-only">{legendTitle}</legend>
-          )}
-          {showGroupHeader || showOccurrenceHeading ? (
-            <div className={`min-w-0 ${aligned?.header || ""}`}>
-              {showGroupHeader ? (
-                <p className={`mt-1 text-xs leading-relaxed text-heritage-ink/60${showOccurrenceHeading ? "" : " pb-2.5"}`}>{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
-              ) : null}
-              {showOccurrenceHeading ? (
-                <h4
-                  data-custom-detail-occurrence={alignedOccurrence.subject.garmentKey}
-                  className={`${showGroupHeader ? "mt-2.5 " : ""}mb-1.5 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
-                >
-                  {occurrenceHeadingText(alignedOccurrence)}
-                </h4>
-              ) : null}
-            </div>
-          ) : null}
-          <div className={`min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${aligned?.options || ""}`}>
-            {renderOptions(group, alignedOccurrence)}
-          </div>
-        </fieldset>
-      );
-    }
     return (
     <fieldset
       key={fieldsetKey}
@@ -1588,7 +1463,7 @@ export const DormantFutureCustomDetailsStep = ({
       occurrence: FutureCustomDetailsCatalogueOccurrence,
       legendTitle: string,
       headingMode: "base" | "added" = "base",
-      aligned: { aligned?: CustomDetailAlignedSlots; className?: string } = {},
+      className = "",
     ) =>
       renderGroupFieldset(
         { ...group, occurrences: [occurrence] },
@@ -1597,19 +1472,9 @@ export const DormantFutureCustomDetailsStep = ({
         {
           legendTitle,
           showOccurrenceHeading: false,
-          ...aligned,
+          className,
         },
       );
-    // Garments with exactly one extras group get track-aligned rows (see CUSTOM_DETAIL_ALIGNED_CARD_CLASS).
-    const companionGroupCountByGarmentKey = new Map<string, number>();
-    companionGroups.forEach((group) => {
-      new Set(group.occurrences.map((occurrence) => occurrence.subject.garmentKey)).forEach((garmentKey) => {
-        companionGroupCountByGarmentKey.set(garmentKey, (companionGroupCountByGarmentKey.get(garmentKey) || 0) + 1);
-      });
-    });
-    const garmentKeysWithCompanion = new Set(
-      [...companionGroupCountByGarmentKey].filter(([, count]) => count === 1).map(([garmentKey]) => garmentKey),
-    );
     const getGarmentBlockDataProps = (garmentKey: string) => {
       switch (id) {
         case "shirts":
@@ -1629,127 +1494,89 @@ export const DormantFutureCustomDetailsStep = ({
     const hideDuplicateOccurrenceTitle =
       garmentBlockOccurrences.length === 1 &&
       getGarmentFirstLabel(garmentBlockOccurrences[0], parentOccurrenceLabels).toUpperCase() === title;
+    const companionGroupsForGarment = (garmentKey: string) =>
+      companionGroups
+        .map((group) => ({
+          ...group,
+          occurrences: group.occurrences.filter(
+            (candidate) => candidate.subject.garmentKey === garmentKey,
+          ),
+        }))
+        .filter((group) => group.occurrences.length > 0);
+    // The family-level Additional Clothes Costs header is shown once, on the first garment that has extras.
+    let familyExtrasHeaderShown = false;
     const ownedBlocks = garmentBlockOccurrences.map((occurrence) => {
-      const constructionGroup = groupForOccurrence(
-        constructionGroups,
-        occurrence.subject.garmentKey,
-      );
-      const pocketsGroup = groupForOccurrence(
-        pocketsGroups,
-        occurrence.subject.garmentKey,
-      );
+      const garmentKey = occurrence.subject.garmentKey;
+      const constructionGroup = groupForOccurrence(constructionGroups, garmentKey);
+      const pocketsGroup = groupForOccurrence(pocketsGroups, garmentKey);
       if (!constructionGroup) return null;
       const showOccurrenceTitle =
         headingMode === "added" || !hideDuplicateOccurrenceTitle;
-      const alignRows = garmentKeysWithCompanion.has(occurrence.subject.garmentKey);
-      const pairAlignment = pocketsGroup
-        ? CUSTOM_DETAIL_PAIR_ALIGNMENT[alignRows ? "guarded" : "plain"]
-        : null;
-      return (
+      const garmentCompanionGroups = companionGroupsForGarment(garmentKey);
+      const showFamilyExtrasHeader =
+        garmentCompanionGroups.length > 0 && !familyExtrasHeaderShown;
+      if (garmentCompanionGroups.length > 0) familyExtrasHeaderShown = true;
+      const block = (
         <section
-          key={occurrence.subject.garmentKey}
-          {...getGarmentBlockDataProps(occurrence.subject.garmentKey)}
-          data-custom-detail-occurrence={
-            showOccurrenceTitle ? undefined : occurrence.subject.garmentKey
-          }
-          className={`min-w-0 w-full rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-3 sm:p-4${alignRows ? ` ${CUSTOM_DETAIL_ALIGNED_CARD_CLASS}` : ""}`}
+          key={garmentKey}
+          {...getGarmentBlockDataProps(garmentKey)}
+          data-custom-detail-occurrence={showOccurrenceTitle ? undefined : garmentKey}
+          className="min-w-0 w-full rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-3 sm:p-4"
         >
           {showOccurrenceTitle ? (
             <h4
-              data-custom-detail-occurrence={occurrence.subject.garmentKey}
-              className={`border-b border-heritage-gold/20 pb-2 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}${alignRows ? " @min-[49rem]/extras:row-start-1 @min-[49rem]/extras:mb-3" : ""}`}
+              data-custom-detail-occurrence={garmentKey}
+              className={`border-b border-heritage-gold/20 pb-2 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
             >
               {getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}
             </h4>
           ) : null}
-          {/* The pair grid is its own size container (never the subgridded card: containment would disable subgrid). With a Pocket group its row gap is 0 and the Pocket fieldset carries the 1rem spacing, so the shared legend / helper / option tracks have no gaps between them. */}
-          <div
-            className={`${showOccurrenceTitle ? "mt-3 " : ""}${CUSTOM_DETAIL_BALANCED_PAIR_GRID_CLASS}${alignRows ? ` ${CUSTOM_DETAIL_ALIGNED_CONTENTS_CLASS}` : ""}${pairAlignment ? ` ${CUSTOM_DETAIL_PAIR_CONTAINER_CLASS} ${pairAlignment.grid}` : ""}`}
-          >
-            {renderOccurrenceGroup(
-              constructionGroup,
-              occurrence,
-              "Main Garment",
-              headingMode,
-              alignRows || pairAlignment
-                ? {
-                    aligned: joinSlotClasses(
-                      alignRows ? CUSTOM_DETAIL_GARMENT_COLUMN_MAIN_SLOTS : undefined,
-                      pairAlignment?.main,
-                    ),
-                  }
-                : {},
-            )}
-            {pocketsGroup
-              ? renderOccurrenceGroup(
+          {/* Reading order: Main Garment, then this garment's Additional Clothes Costs, then its Pocket. */}
+          <div className={`${showOccurrenceTitle ? "mt-3 " : ""}${CUSTOM_DETAIL_GARMENT_SECTION_STACK_CLASS}`}>
+            <div className="min-w-0">
+              {renderOccurrenceGroup(constructionGroup, occurrence, "Main Garment", headingMode)}
+            </div>
+            {garmentCompanionGroups.length > 0 ? (
+              <div className="min-w-0">
+                {renderDressCompanion(garmentCompanionGroups, headingMode, {
+                  showHeader: showFamilyExtrasHeader,
+                  familyGroups: companionGroups,
+                })}
+              </div>
+            ) : null}
+            {pocketsGroup ? (
+              <div className="min-w-0">
+                {renderOccurrenceGroup(
                   pocketsGroup,
                   occurrence,
                   `Pocket for ${getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}`,
                   headingMode,
-                  pairAlignment
-                    ? {
-                        aligned: pairAlignment.pocket,
-                        className: alignRows ? `mt-4 ${CUSTOM_DETAIL_GARMENT_COLUMN_POCKET_FIELDSET_CLASS}` : "mt-4",
-                      }
-                    : {},
-                )
-              : null}
+                )}
+              </div>
+            ) : null}
           </div>
         </section>
+      );
+      return garmentCompanionGroups.length > 0 ? (
+        <div
+          key={garmentKey}
+          data-dress-additional-layout="companion"
+          data-companion-garment={garmentKey}
+          className="min-w-0 max-w-full w-full"
+        >
+          {block}
+        </div>
+      ) : (
+        block
       );
     });
 
     const ownedContent =
       useGarmentOwnedBlocks && constructionGroups.length > 0 ? (
         <div>
-            {companionGroups.length > 0 ? (
-              <div className={`overflow-x-hidden ${CUSTOM_DETAIL_ALIGNED_ROW_CONTAINER_CLASS}`}>
-                {(() => {
-                  // One row per garment: its own card beside (or, when narrow, above) its own extras.
-                  // The family-level extras header is shown once, on the first garment that has extras.
-                  let familyExtrasHeaderShown = false;
-                  return garmentBlockOccurrences.map((occurrence, index) => {
-                    const block = ownedBlocks[index];
-                    if (!block) return null;
-                    const garmentKey = occurrence.subject.garmentKey;
-                    const garmentCompanionGroups = companionGroups
-                      .map((group) => ({
-                        ...group,
-                        occurrences: group.occurrences.filter(
-                          (candidate) => candidate.subject.garmentKey === garmentKey,
-                        ),
-                      }))
-                      .filter((group) => group.occurrences.length > 0);
-                    if (garmentCompanionGroups.length === 0) {
-                      return (
-                        <div key={garmentKey} className="mt-4 min-w-0">
-                          {block}
-                        </div>
-                      );
-                    }
-                    const showFamilyExtrasHeader = !familyExtrasHeaderShown;
-                    familyExtrasHeaderShown = true;
-                    return (
-                      <div
-                        key={garmentKey}
-                        data-dress-additional-layout="companion"
-                        data-companion-garment={garmentKey}
-                        className={`${CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS}${garmentCompanionGroups.length === 1 ? ` ${CUSTOM_DETAIL_ALIGNED_ROW_GRID_CLASS}` : ""}`}
-                      >
-                        <div className={`min-w-0 ${CUSTOM_DETAIL_ALIGNED_CONTENTS_CLASS}`}>{block}</div>
-                        {renderDressCompanion(garmentCompanionGroups, headingMode, {
-                          showHeader: showFamilyExtrasHeader,
-                          familyGroups: companionGroups,
-                          alignRows: garmentCompanionGroups.length === 1,
-                        })}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            ) : (
-            <div className="mt-4 space-y-4">{ownedBlocks}</div>
-          )}
+          <div className={`mt-4 min-w-0 space-y-4${companionGroups.length > 0 ? " overflow-x-hidden" : ""}`}>
+            {ownedBlocks}
+          </div>
           {sharedGroups.length > 0 && (
             <div className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
               {sharedGroups.map((group) =>
@@ -1807,20 +1634,15 @@ export const DormantFutureCustomDetailsStep = ({
     {
       showHeader = true,
       familyGroups = groups,
-      alignRows = false,
     }: {
       /** Arrangement only: later garments in a family omit the shared extras header already shown above. */
       showHeader?: boolean;
       /** Full family groups, so the status badge on the shared header still reflects every garment in the family. */
       familyGroups?: readonly FutureCustomDetailsCatalogueGroup[];
-      /** Arrangement only: share the garment row's tracks so legends and first options line up with the garment card. */
-      alignRows?: boolean;
     } = {},
   ) => {
     const visibleGroups = groups.filter((group) => group.occurrences.length > 0);
     if (visibleGroups.length === 0) return null;
-    // Track alignment needs exactly one extras group (true for every current family); otherwise keep the plain stack.
-    const alignedCompanion = alignRows && visibleGroups.length === 1;
     const selectionGroups = new Set(
       visibleGroups.map((group) => group.selectionGroup),
     );
@@ -1857,10 +1679,10 @@ export const DormantFutureCustomDetailsStep = ({
       <aside
         data-custom-detail-section={companionPresentation.section}
         aria-label={companionPresentation.ariaLabel}
-        className={`min-w-0 max-w-full rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:p-4${alignedCompanion ? ` ${CUSTOM_DETAIL_ALIGNED_CARD_CLASS}` : ""}`}
+        className="min-w-0 max-w-full rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:p-4"
       >
         {showHeader ? (
-          <div className={`min-w-0${alignedCompanion ? " @min-[49rem]/extras:row-start-1 @min-[49rem]/extras:mb-3" : ""}`}>
+          <div className="min-w-0">
             <h4 className={`min-w-0 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} text-heritage-green`}>
               Additional Clothes Costs
             </h4>
@@ -1869,7 +1691,7 @@ export const DormantFutureCustomDetailsStep = ({
             </p>
           </div>
         ) : null}
-        <div className={`${showHeader ? "mt-3 " : ""}min-w-0 space-y-4${alignedCompanion ? ` ${CUSTOM_DETAIL_ALIGNED_CONTENTS_CLASS}` : ""}`}>
+        <div className={`${showHeader ? "mt-3 " : ""}min-w-0 space-y-4`}>
           {visibleGroups.map((group) =>
             renderGroupFieldset(group, headingMode, "stack", {
               showGroupHeader: showHeader,
@@ -1877,7 +1699,6 @@ export const DormantFutureCustomDetailsStep = ({
                 familyGroups.find(
                   (candidate) => candidate.selectionGroup === group.selectionGroup,
                 ) || group,
-              aligned: alignedCompanion ? CUSTOM_DETAIL_EXTRAS_COLUMN_SLOTS : undefined,
             }),
           )}
         </div>
