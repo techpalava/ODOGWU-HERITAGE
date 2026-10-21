@@ -16,6 +16,10 @@ import {
   getHomepageJoinBatchLabel,
   type HomepageOrderGatewayState,
 } from "../utils/homepageOrderGateway";
+import {
+  getHomepageProvisionalJoinBatchView,
+  type HomepageJoinBatchCacheEntry,
+} from "../utils/homepageJoinBatchCache";
 
 export const getJoinCurrentBatchButtonLabel = (
   batchName: string | null | undefined,
@@ -32,6 +36,63 @@ interface HomepageOrderGatewayProps {
   onCreatePrivateBatch: () => void;
   onBrowseGallery: () => void;
   onManageSourcingBatches?: () => void;
+  /**
+   * Last Join card outcome from localStorage, used only while isLoading. A
+   * cached batch renders the Join card at once with its button disabled until
+   * the live snapshot confirms it; "none" leaves the Join slot out.
+   */
+  provisionalJoin?: HomepageJoinBatchCacheEntry | null;
+}
+
+export type HomepageJoinSlot =
+  | { kind: "hidden" }
+  | { kind: "placeholder" }
+  | {
+      kind: "live" | "cached";
+      name: string | undefined;
+      text: string;
+      closed: boolean;
+      deadlinePill: string | null;
+      label: string;
+    };
+
+/**
+ * Only the Join card depends on batch data. While the first batches snapshot
+ * loads it shows the cached batch (click blocked) or a placeholder; every
+ * other card renders and works immediately.
+ */
+export function resolveHomepageJoinSlot(
+  joinBatch: Batch | null,
+  isLoading: boolean,
+  provisionalJoin: HomepageJoinBatchCacheEntry | null | undefined,
+  now: Date = new Date(),
+): HomepageJoinSlot {
+  if (!isLoading) {
+    if (!joinBatch) return { kind: "hidden" };
+    const description = getHomepageJoinBatchDescription(joinBatch, now);
+    return {
+      kind: "live",
+      name: joinBatch.name?.trim() || undefined,
+      text: description.text,
+      closed: description.closed,
+      deadlinePill: getHomepageJoinBatchDeadlinePill(joinBatch, now),
+      label: getJoinCurrentBatchButtonLabel(joinBatch.name, false),
+    };
+  }
+  if (provisionalJoin?.kind === "none") return { kind: "hidden" };
+  const view =
+    provisionalJoin?.kind === "batch"
+      ? getHomepageProvisionalJoinBatchView(provisionalJoin.batch, now)
+      : null;
+  if (!view) return { kind: "placeholder" };
+  return {
+    kind: "cached",
+    name: view.name,
+    text: view.text,
+    closed: false,
+    deadlinePill: view.deadlinePill,
+    label: getJoinCurrentBatchButtonLabel(view.name, false),
+  };
 }
 
 const orderGridClassName =
@@ -78,15 +139,10 @@ export default function HomepageOrderGateway({
   onCreatePrivateBatch,
   onBrowseGallery,
   onManageSourcingBatches,
+  provisionalJoin = null,
 }: HomepageOrderGatewayProps) {
   const { joinBatch, minimumGarments } = state;
-  const currentBatchName = joinBatch?.name?.trim();
-  const joinCurrentBatchButtonLabel = getJoinCurrentBatchButtonLabel(
-    joinBatch?.name,
-    isLoading,
-  );
-  const joinBatchDescription = getHomepageJoinBatchDescription(joinBatch);
-  const joinDeadlinePill = getHomepageJoinBatchDeadlinePill(joinBatch);
+  const joinSlot = resolveHomepageJoinSlot(joinBatch, isLoading, provisionalJoin);
   const groupMetaChips = splitMeta(
     `Group minimum: ${minimumGarments} garments total | Shared shipping`,
   );
@@ -122,237 +178,238 @@ export default function HomepageOrderGateway({
         )}
       </div>
 
-      {isLoading ? (
-        <>
-          <div
+      <div
+        className={`${orderGridClassName} ${
+          joinSlot.kind === "hidden" ? "xl:grid-cols-3" : "xl:grid-cols-4"
+        }`}
+      >
+        {joinSlot.kind === "placeholder" && (
+          <article
+            data-join-batch-placeholder
             aria-busy="true"
-            aria-label="Loading current order options"
-            className={`${orderGridClassName} xl:grid-cols-4`}
+            aria-label="Loading the current community batch"
+            className={orderCardFeaturedClassName}
           >
-            {[0, 1, 2, 3].map((item) => (
-              <div
-                key={item}
-                className={`${orderCardClassName} min-h-[20rem] animate-pulse`}
-              >
-                <div className="h-14 w-14 rounded-2xl bg-heritage-cream" />
-                <div className="mt-5 h-5 w-2/3 rounded bg-heritage-cream" />
-                <div className="mt-3 h-3 w-full rounded bg-heritage-cream/70" />
-                <div className="mt-2 h-3 w-4/5 rounded bg-heritage-cream/70" />
-                <div className="mt-4 h-6 w-1/2 rounded-xl bg-heritage-cream/70" />
-                <div className={ctaSpacerClassName} />
-                <div className="h-12 w-full rounded-xl bg-heritage-cream/80" />
-              </div>
-            ))}
-          </div>
-          <div className={`${galleryRowClassName} animate-pulse`}>
-            <div className="h-12 w-full rounded-xl bg-white/80" />
-          </div>
-        </>
-      ) : (
-        <>
-          <div
-            className={`${orderGridClassName} ${
-              joinBatch ? "xl:grid-cols-4" : "xl:grid-cols-3"
-            }`}
-          >
-            {joinBatch && (
-              <article
-                className={
-                  joinBatchDescription.closed
-                    ? orderCardClassName
-                    : orderCardFeaturedClassName
-                }
-              >
-                <div className={cardTopRowClassName}>
-                  <span className={iconWellClassName}>
-                    <Users size={28} aria-hidden="true" />
-                  </span>
-                  {currentBatchName && (
-                    <span
-                      data-join-batch-badge
-                      className="min-w-0 break-words rounded-full bg-heritage-gold px-3 py-1 text-[11px] font-extrabold uppercase tracking-widest text-heritage-green"
-                    >
-                      {currentBatchName}
-                    </span>
-                  )}
-                </div>
-                <h3 className={orderCardTitleClassName}>
-                  Join an Existing Batch or Group
-                </h3>
-
-                <p
-                  className={orderCardBodyClassName}
-                  data-join-batch-state={
-                    joinBatchDescription.closed ? "closed" : "open"
-                  }
-                >
-                  {joinBatchDescription.text}
-                </p>
-                {joinDeadlinePill && (
-                  <p
-                    data-join-batch-deadline
-                    className="mt-4 inline-flex w-fit items-center gap-2 rounded-full bg-heritage-green px-3.5 py-1.5 text-[13px] font-semibold text-heritage-cream"
-                  >
-                    <CalendarClock
-                      size={16}
-                      aria-hidden="true"
-                      className="shrink-0 text-heritage-gold"
-                    />
-                    Closes {joinDeadlinePill}
-                  </p>
-                )}
-                <ul
-                  className={joinDeadlinePill ? "mt-3 flex flex-wrap gap-2" : chipListClassName}
-                >
-                  {groupMetaChips.map((chip) => (
-                    <li key={chip} className={chipClassName}>
-                      {chip}
-                    </li>
-                  ))}
-                </ul>
-
-                <div className={ctaSpacerClassName} />
-                <button
-                  id="btn-quick-join-cohort"
-                  type="button"
-                  onClick={
-                    isLoading || !joinBatch
-                      ? undefined
-                      : () => onJoinBatch(joinBatch)
-                  }
-                  disabled={isLoading}
-                  className={
-                    joinBatchDescription.closed
-                      ? primaryCtaClassName
-                      : featuredCtaClassName
-                  }
-                >
-                  {joinCurrentBatchButtonLabel}
-                  <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
-                </button>
-              </article>
-            )}
-
-            <article className={orderCardClassName}>
-              <span className={iconWellMutedClassName}>
-                <UserPlus size={28} aria-hidden="true" />
+            <div className={cardTopRowClassName}>
+              <span className={iconWellClassName}>
+                <Users size={28} aria-hidden="true" />
               </span>
-              <h3 className={orderCardTitleClassName}>Create a Private Batch</h3>
-
-              <p className={orderCardBodyClassName}>
-                Create a private group for friends, family, colleagues, or
-                community members to order together.
-              </p>
-              <ul className={chipListClassName}>
-                {groupMetaChips.map((chip) => (
-                  <li key={chip} className={chipClassName}>
-                    {chip}
-                  </li>
-                ))}
-              </ul>
-
-              <div className={ctaSpacerClassName} />
-              <button
-                id="btn-create-private-batch"
-                type="button"
-                onClick={isLoading ? undefined : onCreatePrivateBatch}
-                disabled={isLoading}
-                className={primaryCtaClassName}
-              >
-                Create Private Batch
-                <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
-              </button>
-            </article>
-
-            <article className={orderCardClassName}>
-              <span className={iconWellMutedClassName}>
-                <Shirt size={28} aria-hidden="true" />
-              </span>
-              <h3 className={orderCardTitleClassName}>Individual Custom Order</h3>
-
-              <p className={orderCardBodyClassName}>
-                Order custom-made attire without joining a batch or waiting for a
-                group deadline.
-              </p>
-              <ul className={chipListClassName}>
-                <li className={chipClassName}>Independent order</li>
-                <li className={chipWarnClassName}>Higher direct shipping cost</li>
-              </ul>
-
-              <div className={ctaSpacerClassName} />
-              <div className="flex flex-col gap-2">
-                <button
-                  id="btn-start-individual-order"
-                  type="button"
-                  onClick={onStartIndividualOrder}
-                  className={primaryCtaClassName}
-                >
-                  Start Individual Order
-                  <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
-                </button>
-                {unfinishedOrderLabel && onResumeUnfinishedOrder && (
-                  <button
-                    id="btn-resume-unfinished-order"
-                    type="button"
-                    onClick={onResumeUnfinishedOrder}
-                    className={`${ctaBaseClassName} border-2 border-heritage-green bg-white text-heritage-green hover:bg-heritage-green/5`}
-                  >
-                    Resume unfinished order
-                  </button>
-                )}
-              </div>
-            </article>
-
-            <article className={orderCardMutedClassName}>
-              <div className={cardTopRowClassName}>
-                <span className={`${iconWellMutedClassName} text-heritage-green/60`}>
-                  <ShoppingBag size={28} aria-hidden="true" />
-                </span>
-                <span className="rounded-full border border-heritage-green/20 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-heritage-green/60">
-                  Coming soon
-                </span>
-              </div>
-              <h3 className={`${orderCardTitleClassName} text-heritage-green/80`}>
-                Ready to Wear
-              </h3>
-
-              <p className={`${orderCardBodyClassName} text-heritage-ink/70`}>
-                Choose a finished outfit in your size, pay, and have it shipped
-                without entering the custom design flow.
-              </p>
-              <ul className={chipListClassName}>
-                <li className={`${chipClassName} text-heritage-green/70`}>
-                  Shipping from Lagos to Location applies.
+              <span className="h-6 w-24 animate-pulse rounded-full bg-heritage-gold/30" />
+            </div>
+            <h3 className={orderCardTitleClassName}>
+              Join an Existing Batch or Group
+            </h3>
+            {/* Text lines follow how the live description wraps at each width
+                (4 lines at 320 and xl, 3 at 375-1023, 2 at lg) to avoid a jump. */}
+            <div className="mt-3 h-3 w-full animate-pulse rounded bg-heritage-cream" />
+            <div className="mt-[13px] h-3 w-full animate-pulse rounded bg-heritage-cream" />
+            <div className="mt-[13px] h-3 w-11/12 animate-pulse rounded bg-heritage-cream lg:hidden xl:block" />
+            <div className="mt-[13px] hidden h-3 w-3/5 animate-pulse rounded bg-heritage-cream max-[359px]:block xl:block" />
+            <div className="mt-5 h-8 w-40 animate-pulse rounded-full bg-heritage-green/15" />
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {groupMetaChips.map((chip) => (
+                <li key={chip} className={chipClassName}>
+                  {chip}
                 </li>
-              </ul>
+              ))}
+            </ul>
+            <div className={ctaSpacerClassName} />
+            <div className="h-12 w-full animate-pulse rounded-xl bg-heritage-gold/30" />
+          </article>
+        )}
 
-              <div className={ctaSpacerClassName} />
-              <button
-                id="btn-ready-to-wear"
-                type="button"
-                disabled
-                aria-disabled="true"
-                aria-label="Ready to Wear - Coming Soon"
-                className={`${ctaBaseClassName} cursor-not-allowed border border-heritage-green/20 bg-heritage-cream text-heritage-green/50`}
-              >
-                Coming Soon
-              </button>
-            </article>
-          </div>
+        {(joinSlot.kind === "live" || joinSlot.kind === "cached") && (
+          <article
+            data-join-batch-source={joinSlot.kind}
+            className={
+              joinSlot.closed ? orderCardClassName : orderCardFeaturedClassName
+            }
+          >
+            <div className={cardTopRowClassName}>
+              <span className={iconWellClassName}>
+                <Users size={28} aria-hidden="true" />
+              </span>
+              {joinSlot.name && (
+                <span
+                  data-join-batch-badge
+                  className="min-w-0 break-words rounded-full bg-heritage-gold px-3 py-1 text-[11px] font-extrabold uppercase tracking-widest text-heritage-green"
+                >
+                  {joinSlot.name}
+                </span>
+              )}
+            </div>
+            <h3 className={orderCardTitleClassName}>
+              Join an Existing Batch or Group
+            </h3>
 
-          <div className={galleryRowClassName}>
-            <button
-              id="btn-quick-gallery"
-              type="button"
-              onClick={onBrowseGallery}
-              className={`${ctaBaseClassName} border border-heritage-gold/50 bg-white text-heritage-green hover:border-heritage-gold`}
+            <p
+              className={orderCardBodyClassName}
+              data-join-batch-state={joinSlot.closed ? "closed" : "open"}
             >
-              <Camera size={16} aria-hidden="true" />
-              Browse Style Gallery
+              {joinSlot.text}
+            </p>
+            {joinSlot.deadlinePill && (
+              <p
+                data-join-batch-deadline
+                className="mt-4 inline-flex w-fit items-center gap-2 rounded-full bg-heritage-green px-3.5 py-1.5 text-[13px] font-semibold text-heritage-cream"
+              >
+                <CalendarClock
+                  size={16}
+                  aria-hidden="true"
+                  className="shrink-0 text-heritage-gold"
+                />
+                Closes {joinSlot.deadlinePill}
+              </p>
+            )}
+            <ul
+              className={
+                joinSlot.deadlinePill ? "mt-3 flex flex-wrap gap-2" : chipListClassName
+              }
+            >
+              {groupMetaChips.map((chip) => (
+                <li key={chip} className={chipClassName}>
+                  {chip}
+                </li>
+              ))}
+            </ul>
+
+            <div className={ctaSpacerClassName} />
+            <button
+              id="btn-quick-join-cohort"
+              type="button"
+              onClick={
+                joinSlot.kind === "live" && !isLoading && joinBatch
+                  ? () => onJoinBatch(joinBatch)
+                  : undefined
+              }
+              disabled={joinSlot.kind !== "live" || isLoading}
+              aria-busy={joinSlot.kind === "cached" ? true : undefined}
+              className={`${
+                joinSlot.closed ? primaryCtaClassName : featuredCtaClassName
+              } disabled:cursor-wait disabled:opacity-80`}
+            >
+              {joinSlot.label}
+              <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
             </button>
+          </article>
+        )}
+        <article className={orderCardClassName}>
+          <span className={iconWellMutedClassName}>
+            <UserPlus size={28} aria-hidden="true" />
+          </span>
+          <h3 className={orderCardTitleClassName}>Create a Private Batch</h3>
+
+          <p className={orderCardBodyClassName}>
+            Create a private group for friends, family, colleagues, or
+            community members to order together.
+          </p>
+          <ul className={chipListClassName}>
+            {groupMetaChips.map((chip) => (
+              <li key={chip} className={chipClassName}>
+                {chip}
+              </li>
+            ))}
+          </ul>
+
+          <div className={ctaSpacerClassName} />
+          <button
+            id="btn-create-private-batch"
+            type="button"
+            onClick={onCreatePrivateBatch}
+            className={primaryCtaClassName}
+          >
+            Create Private Batch
+            <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
+          </button>
+        </article>
+
+        <article className={orderCardClassName}>
+          <span className={iconWellMutedClassName}>
+            <Shirt size={28} aria-hidden="true" />
+          </span>
+          <h3 className={orderCardTitleClassName}>Individual Custom Order</h3>
+
+          <p className={orderCardBodyClassName}>
+            Order custom-made attire without joining a batch or waiting for a
+            group deadline.
+          </p>
+          <ul className={chipListClassName}>
+            <li className={chipClassName}>Independent order</li>
+            <li className={chipWarnClassName}>Higher direct shipping cost</li>
+          </ul>
+
+          <div className={ctaSpacerClassName} />
+          <div className="flex flex-col gap-2">
+            <button
+              id="btn-start-individual-order"
+              type="button"
+              onClick={onStartIndividualOrder}
+              className={primaryCtaClassName}
+            >
+              Start Individual Order
+              <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
+            </button>
+            {unfinishedOrderLabel && onResumeUnfinishedOrder && (
+              <button
+                id="btn-resume-unfinished-order"
+                type="button"
+                onClick={onResumeUnfinishedOrder}
+                className={`${ctaBaseClassName} border-2 border-heritage-green bg-white text-heritage-green hover:bg-heritage-green/5`}
+              >
+                Resume unfinished order
+              </button>
+            )}
           </div>
-        </>
-      )}
+        </article>
+
+        <article className={orderCardMutedClassName}>
+          <div className={cardTopRowClassName}>
+            <span className={`${iconWellMutedClassName} text-heritage-green/60`}>
+              <ShoppingBag size={28} aria-hidden="true" />
+            </span>
+            <span className="rounded-full border border-heritage-green/20 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-heritage-green/60">
+              Coming soon
+            </span>
+          </div>
+          <h3 className={`${orderCardTitleClassName} text-heritage-green/80`}>
+            Ready to Wear
+          </h3>
+
+          <p className={`${orderCardBodyClassName} text-heritage-ink/70`}>
+            Choose a finished outfit in your size, pay, and have it shipped
+            without entering the custom design flow.
+          </p>
+          <ul className={chipListClassName}>
+            <li className={`${chipClassName} text-heritage-green/70`}>
+              Shipping from Lagos to Location applies.
+            </li>
+          </ul>
+
+          <div className={ctaSpacerClassName} />
+          <button
+            id="btn-ready-to-wear"
+            type="button"
+            disabled
+            aria-disabled="true"
+            aria-label="Ready to Wear - Coming Soon"
+            className={`${ctaBaseClassName} cursor-not-allowed border border-heritage-green/20 bg-heritage-cream text-heritage-green/50`}
+          >
+            Coming Soon
+          </button>
+        </article>
+      </div>
+
+      <div className={galleryRowClassName}>
+        <button
+          id="btn-quick-gallery"
+          type="button"
+          onClick={onBrowseGallery}
+          className={`${ctaBaseClassName} border border-heritage-gold/50 bg-white text-heritage-green hover:border-heritage-gold`}
+        >
+          <Camera size={16} aria-hidden="true" />
+          Browse Style Gallery
+        </button>
+      </div>
     </section>
   );
 }

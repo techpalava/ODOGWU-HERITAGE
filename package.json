@@ -27,7 +27,7 @@
     "test:additional-clothes-costs": "tsx test_additional_clothes_costs.ts",
     "test:guest-checkout": "node scripts/tsxWithViteProductionFirebase.mjs test_guest_checkout.ts",
     "test:footer-join-current-batch": "node scripts/tsxWithViteProductionFirebase.mjs test_footer_join_current_batch.tsx",
-    "test:homepage-gateway": "tsx test_homepage_order_gateway.ts && tsx test_individual_order_start.ts && tsx test_design_studio_nav_entry.ts",
+    "test:homepage-gateway": "tsx test_homepage_order_gateway.ts && tsx test_homepage_gateway_instant_cards.ts && tsx test_individual_order_start.ts && tsx test_design_studio_nav_entry.ts",
     "test:fabric-capacity": "tsx test_fabric_capacity.ts",
     "test:order-aware-fabric-stock-label": "tsx test_order_aware_fabric_stock_label.ts",
     "test:fabric-allocation-state": "tsx test_fabric_allocation_state.ts",
