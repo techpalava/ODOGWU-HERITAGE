@@ -352,12 +352,20 @@ const CUSTOM_DETAIL_STATUS_BADGE_CLASS =
 
 /**
  * A garment card stacks its construction sections in reading order (Main Garment, that garment's
- * Additional Clothes Costs, Pocket) as distinct full-width blocks: every section after the first
- * starts after a 1.25rem gap and a hairline divider. Each section sits in its own wrapper div so the
- * divider never lands on a <fieldset> (a legend would straddle a fieldset's top border).
+ * Additional Clothes Costs, Pocket) as distinct full-width blocks. Every section after the first sits in a
+ * wrapper div that starts with a hairline divider after a 1.25rem gap (a wrapper, never the <fieldset>
+ * itself, because a legend would straddle a fieldset's top border).
  */
-const CUSTOM_DETAIL_GARMENT_SECTION_STACK_CLASS =
-  "flex min-w-0 w-full flex-col gap-5 [&>*+*]:border-t [&>*+*]:border-heritage-gold/25 [&>*+*]:pt-5";
+const CUSTOM_DETAIL_GARMENT_SECTION_STACK_CLASS = "flex min-w-0 w-full flex-col gap-5";
+const CUSTOM_DETAIL_GARMENT_LATER_SECTION_CLASS = "min-w-0 border-t border-heritage-gold/40 pt-5";
+
+/**
+ * Option cards: equal-width tiles, two per row once the group is at least 2 x 17rem + gap wide, one per row
+ * below that; rows stretch to the taller card. Kept as one complete static string: Tailwind only generates
+ * an arbitrary-value class it can read whole from the source (a class glued to a `${...}` is not detected).
+ */
+const CUSTOM_DETAIL_OPTION_TILE_GRID_CLASS =
+  "grid min-w-0 w-full items-stretch gap-2 [grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr))]";
 
 const CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS =
   "mt-4 grid min-w-0 max-w-full w-full items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]";
@@ -1207,7 +1215,7 @@ export const DormantFutureCustomDetailsStep = ({
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
       <div
         data-custom-detail-option-grid={group.selectionGroup}
-        className={`grid min-w-0 w-full items-stretch gap-2 [grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr))]${
+        className={`${CUSTOM_DETAIL_OPTION_TILE_GRID_CLASS}${
           group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
             ? " sm:grid-cols-2"
             : ""
@@ -1537,7 +1545,7 @@ export const DormantFutureCustomDetailsStep = ({
               {renderOccurrenceGroup(constructionGroup, occurrence, "Main Garment", headingMode)}
             </div>
             {garmentCompanionGroups.length > 0 ? (
-              <div className="min-w-0">
+              <div className={CUSTOM_DETAIL_GARMENT_LATER_SECTION_CLASS}>
                 {renderDressCompanion(garmentCompanionGroups, headingMode, {
                   showHeader: showFamilyExtrasHeader,
                   familyGroups: companionGroups,
@@ -1545,7 +1553,7 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             ) : null}
             {pocketsGroup ? (
-              <div className="min-w-0">
+              <div className={CUSTOM_DETAIL_GARMENT_LATER_SECTION_CLASS}>
                 {renderOccurrenceGroup(
                   pocketsGroup,
                   occurrence,
