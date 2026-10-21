@@ -12,6 +12,8 @@ import type { Fabric, FabricAllocationState, GarmentTypeStepSelection } from "./
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
+  assignSameFabricProductToGarments,
+  changeFutureFabricAllocationProduct,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
 } from "./src/utils/designStudioFutureFabricStage";
@@ -19,12 +21,15 @@ import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepSt
 import {
   FABRIC_SELECTION_BADGE_TONES,
   FABRIC_SELECTION_CHANGING_CARD_CLASS,
+  FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS,
   FABRIC_SELECTION_DIMMED_CARD_CLASS,
+  FABRIC_SELECTION_SCROLL_MARGIN_BREATHING_PX,
   getFabricSelectionBadgeClass,
   getFabricSelectionBadgeTone,
   getFabricSelectionCardClass,
   getFirstChangingGarmentKey,
   resolveFabricSelectionCardHighlight,
+  resolveFabricSelectionScrollMarginTopPx,
 } from "./src/utils/fabricSelectionHighlight";
 
 const require = createRequire(import.meta.url);
@@ -65,6 +70,16 @@ assert.match(getFabricSelectionBadgeClass(1), /bg-heritage-gold/);
 
 assert.equal(
   resolveFabricSelectionCardHighlight({
+    isChangingFabric: false,
+    changingSelectionNumber: 1,
+    cardSelectionNumber: 1,
+  }),
+  "idle",
+  "plain assign (no Change Fabric tap) never enters the changing highlight",
+);
+assert.equal(
+  resolveFabricSelectionCardHighlight({
+    isChangingFabric: true,
     changingSelectionNumber: null,
     cardSelectionNumber: 1,
   }),
@@ -72,6 +87,7 @@ assert.equal(
 );
 assert.equal(
   resolveFabricSelectionCardHighlight({
+    isChangingFabric: true,
     changingSelectionNumber: 1,
     cardSelectionNumber: 1,
   }),
@@ -79,6 +95,7 @@ assert.equal(
 );
 assert.equal(
   resolveFabricSelectionCardHighlight({
+    isChangingFabric: true,
     changingSelectionNumber: 1,
     cardSelectionNumber: 2,
   }),
@@ -86,6 +103,7 @@ assert.equal(
 );
 assert.equal(
   resolveFabricSelectionCardHighlight({
+    isChangingFabric: true,
     changingSelectionNumber: 2,
     cardSelectionNumber: null,
   }),
@@ -94,11 +112,18 @@ assert.equal(
 );
 assert.equal(
   resolveFabricSelectionCardHighlight({
+    isChangingFabric: true,
     changingSelectionNumber: 0,
     cardSelectionNumber: 1,
   }),
   "idle",
 );
+assert.equal(
+  resolveFabricSelectionScrollMarginTopPx(80),
+  80 + FABRIC_SELECTION_SCROLL_MARGIN_BREATHING_PX,
+);
+assert.equal(FABRIC_SELECTION_SCROLL_MARGIN_BREATHING_PX, 16);
+assert.match(FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS, /scroll-mt-/);
 assert.equal(
   getFabricSelectionCardClass("changing"),
   FABRIC_SELECTION_CHANGING_CARD_CLASS,
@@ -180,7 +205,24 @@ const assign = (
   return result.state;
 };
 
-const renderStep = (state: FabricAllocationState) => {
+const renderStep = (
+  state: FabricAllocationState,
+  handlers: {
+    onAssignFabricToGarment?: (fabric: Fabric, garmentKey: string) => FabricAllocationState | void;
+    onAssignSameFabricProduct?: (
+      fabricCode: string,
+      garmentKeys: string[],
+    ) => ReturnType<typeof assignSameFabricProductToGarments> | void;
+    onChangeFabricAllocationProduct?: (
+      allocationId: string,
+      fabricCode: string,
+      expectation?: {
+        expectedCurrentFabricCode: string;
+        expectedAssignmentSignature: string;
+      },
+    ) => unknown;
+  } = {},
+) => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: threeGarments,
     fabricAllocationState: state,
@@ -198,11 +240,13 @@ const renderStep = (state: FabricAllocationState) => {
     requiredFabricQuantity: planning.requiredFabricQuantity,
     selectedFabricQuantity: planning.selectedFabricQuantity,
     constructionPrice: 0,
-    onAssignFabricToGarment: () => undefined,
-    onChangeFabricAllocationProduct: () => undefined,
+    onAssignFabricToGarment: handlers.onAssignFabricToGarment || (() => undefined),
+    onChangeFabricAllocationProduct: (handlers.onChangeFabricAllocationProduct ||
+      (() => undefined)) as never,
     onRemoveFabricFromGarment: () => undefined,
     onUseSameFabricForGarment: () => undefined,
-    onAssignSameFabricProduct: () => undefined,
+    onAssignSameFabricProduct:
+      handlers.onAssignSameFabricProduct || (() => undefined),
     onAssignGarmentToExistingAllocation: () => undefined,
     onBack: () => undefined,
     onContinue: () => undefined,
@@ -210,6 +254,42 @@ const renderStep = (state: FabricAllocationState) => {
     onChooseAnotherFabric: () => undefined,
     onCancelPendingFabric: () => undefined,
   });
+};
+
+const clickFabricCard = (root: ReactTestInstance, fabricCode: string) => {
+  const card = root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find(
+      (node) =>
+        node.props["data-fabric-code"] === fabricCode &&
+        typeof node.props.onClick === "function",
+    );
+  assert.ok(card, `fabric card ${fabricCode} should be clickable`);
+  card!.props.onClick();
+};
+
+const assertNotChanging = (root: ReactTestInstance) => {
+  const cards = root.findAll(
+    (node) =>
+      typeof node.props?.["data-garment-key"] === "string" &&
+      typeof node.props?.["data-assignment-status"] === "string",
+  );
+  for (const card of cards) {
+    assert.equal(
+      card.props["data-fabric-selection-highlight"],
+      "idle",
+      `${card.props["data-garment-key"]} must not stay in Changing mode`,
+    );
+  }
+  assert.equal(
+    root.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length,
+    0,
+  );
+  assert.equal(
+    root.findAllByProps({ "data-testid": "fabric-selection-change-heading" }).length,
+    0,
+  );
+  assert.doesNotMatch(textContent(root), /Changing Fabric for Fabric Selection/);
 };
 
 const scrolledKeys: string[] = [];
@@ -225,9 +305,14 @@ const createNodeMock = (element: ReactElement) => {
     isConnected: true,
     tabIndex: typeof props.tabIndex === "number" ? props.tabIndex : 0,
     parentElement: null,
+    style: {} as { scrollMarginTop?: string },
     getAttribute: (name: string) =>
       props[name] == null ? null : String(props[name]),
     hasAttribute: (name: string) => props[name] !== undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    querySelectorAll: () => [],
+    querySelector: () => null,
     focus: () => undefined,
     scrollIntoView: () => {
       if (garmentKey) scrolledKeys.push(garmentKey);
@@ -308,6 +393,12 @@ assert.equal(changingShirt.props["data-fabric-selection-highlight-anchor"], "tru
 assert.equal(changingTrouser.props["data-fabric-selection-highlight-anchor"], undefined);
 assert.match(String(changingShirt.props.className), /ring-heritage-gold/);
 assert.match(String(changingTrouser.props.className), /ring-heritage-gold/);
+assert.ok(
+  String(changingShirt.props.className).includes(
+    FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS,
+  ),
+  "highlighted card gets scroll-margin-top so it sits below the sticky header",
+);
 assert.match(String(dimmedSkirt.props.className), /opacity-60/);
 assert.doesNotMatch(String(changingShirt.props.className), /opacity-60/);
 assert.equal(
@@ -382,4 +473,137 @@ assert.doesNotMatch(String(idleSkirt.props.className), /opacity-60/);
 assert.equal(idleShirt.findByProps({ "data-fabric-selection-badge": "true" }).props["aria-label"], "Fabric Selection 1");
 
 act(() => renderer.unmount());
+
+// ---------------------------------------------------------------------------
+// 3. Changing mode is only for Change Fabric, and it clears after assign.
+// ---------------------------------------------------------------------------
+const liveHandlers = (getState: () => FabricAllocationState, setState: (next: FabricAllocationState) => void) => ({
+  onAssignFabricToGarment: (fabric: Fabric, garmentKey: string) => {
+    const result = assignFutureFabricToGarment({
+      state: getState(),
+      garmentTypeSelection: threeGarments,
+      garmentKey,
+      fabricCode: fabric.code,
+      fabrics,
+    });
+    if (result.status === "assigned") setState(result.state);
+    return result.status === "assigned" ? result.state : undefined;
+  },
+  onAssignSameFabricProduct: (fabricCode: string, garmentKeys: string[]) => {
+    const result = assignSameFabricProductToGarments({
+      state: getState(),
+      garmentTypeSelection: threeGarments,
+      fabricCode,
+      garmentKeys,
+      fabrics,
+    });
+    if (result.status === "assigned") setState(result.state);
+    return result;
+  },
+  onChangeFabricAllocationProduct: (
+    allocationId: string,
+    fabricCode: string,
+    expectation?: {
+      expectedCurrentFabricCode: string;
+      expectedAssignmentSignature: string;
+    },
+  ) => {
+    const result = changeFutureFabricAllocationProduct({
+      state: getState(),
+      allocationId,
+      nextFabricCode: fabricCode,
+      fabrics,
+      expectation,
+    });
+    if (result.status === "assigned") setState(result.state);
+    return result;
+  },
+});
+
+{
+  let liveState = FabricAllocationStateEngine.initialize();
+  let liveRenderer!: ReturnType<typeof create>;
+  const setLiveState = (next: FabricAllocationState) => {
+    liveState = next;
+  };
+  await act(async () => {
+    liveRenderer = create(
+      renderStep(liveState, liveHandlers(() => liveState, setLiveState)),
+      { createNodeMock },
+    );
+  });
+  await act(async () => {
+    liveRenderer.root
+      .findByProps({ "aria-label": "Add fabric for Standard Shirt" })
+      .props.onClick({ currentTarget: {} });
+  });
+  await act(async () => clickFabricCard(liveRenderer.root, "HL-A"));
+  const shirtCheckbox = liveRenderer.root.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:shirt",
+  });
+  await act(async () =>
+    shirtCheckbox.props.onChange({
+      target: { checked: true },
+      currentTarget: { checked: true },
+    }),
+  );
+  await act(async () => {
+    liveRenderer.root
+      .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
+      .props.onClick();
+  });
+  await act(async () => {
+    liveRenderer.update(
+      renderStep(liveState, liveHandlers(() => liveState, setLiveState)),
+    );
+  });
+  assert.equal(
+    liveRenderer.root.findByProps({
+      "data-garment-key": "base:shirt",
+      "data-assignment-status": "assigned",
+    }).props["data-assignment-status"],
+    "assigned",
+  );
+  assertNotChanging(liveRenderer.root);
+  act(() => liveRenderer.unmount());
+}
+
+{
+  let liveState = assign(FabricAllocationStateEngine.initialize(), "base:shirt", "HL-A");
+  liveState = assign(liveState, "base:trouser", "HL-A");
+  liveState = assign(liveState, "base:skirt", "HL-B");
+  let liveRenderer!: ReturnType<typeof create>;
+  const setLiveState = (next: FabricAllocationState) => {
+    liveState = next;
+  };
+  await act(async () => {
+    liveRenderer = create(
+      renderStep(liveState, liveHandlers(() => liveState, setLiveState)),
+      { createNodeMock },
+    );
+  });
+  await act(async () => {
+    liveRenderer.root
+      .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
+      .props.onClick({ currentTarget: {} });
+  });
+  assert.match(
+    textContent(liveRenderer.root),
+    /Changing Fabric for Fabric Selection 1/,
+  );
+  await act(async () => clickFabricCard(liveRenderer.root, "HL-B"));
+  await act(async () => {
+    liveRenderer.root
+      .findByProps({ "data-change-fabric-confirm": "true" })
+      .props.onClick();
+  });
+  await act(async () => {
+    liveRenderer.update(
+      renderStep(liveState, liveHandlers(() => liveState, setLiveState)),
+    );
+  });
+  assertNotChanging(liveRenderer.root);
+  act(() => liveRenderer.unmount());
+}
+
 console.log("test_fabric_selection_highlight: PASS");

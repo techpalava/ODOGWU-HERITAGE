@@ -3,8 +3,9 @@
  *
  * Selection numbers are 1-based Fabric Selection order (allocation order).
  * Cards that share a Fabric share a number, so they share a badge colour.
- * Highlight state is derived from the current Change Fabric target: it is
- * never stored on its own, and it clears as soon as that target is gone.
+ * The Changing outline/tag is shown only while Change Fabric is in progress
+ * (`isChangingFabric`). A leftover catalogue target after a plain assign
+ * must not keep the highlight alive.
  */
 
 export type FabricSelectionCardHighlight = "changing" | "dimmed" | "idle";
@@ -32,6 +33,24 @@ export const FABRIC_SELECTION_CHANGING_CARD_CLASS =
 /** Lower opacity, still readable and clickable. */
 export const FABRIC_SELECTION_DIMMED_CARD_CLASS = "opacity-60";
 
+/** Breathing room under the sticky site header when jumping back to a card. */
+export const FABRIC_SELECTION_SCROLL_MARGIN_BREATHING_PX = 16;
+
+/**
+ * Fallback scroll-margin-top for highlighted cards (header ~80px on desktop,
+ * taller on narrow widths, plus breathing room and the gold outline).
+ */
+export const FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS = "scroll-mt-[8.5rem]";
+
+export const resolveFabricSelectionScrollMarginTopPx = (
+  stickyHeaderHeightPx: number,
+): number => {
+  const header = Number.isFinite(stickyHeaderHeightPx)
+    ? Math.max(0, stickyHeaderHeightPx)
+    : 0;
+  return Math.ceil(header) + FABRIC_SELECTION_SCROLL_MARGIN_BREATHING_PX;
+};
+
 export const getFabricSelectionBadgeTone = (
   selectionNumber: number,
 ): FabricSelectionBadgeTone => {
@@ -48,12 +67,17 @@ export const getFabricSelectionBadgeClass = (selectionNumber: number): string =>
   `inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold leading-none ${getFabricSelectionBadgeTone(selectionNumber).className}`;
 
 export const resolveFabricSelectionCardHighlight = ({
+  isChangingFabric,
   changingSelectionNumber,
   cardSelectionNumber,
 }: {
+  isChangingFabric: boolean;
   changingSelectionNumber: number | null | undefined;
   cardSelectionNumber: number | null | undefined;
 }): FabricSelectionCardHighlight => {
+  if (!isChangingFabric) {
+    return "idle";
+  }
   if (
     changingSelectionNumber == null ||
     !Number.isFinite(changingSelectionNumber) ||
