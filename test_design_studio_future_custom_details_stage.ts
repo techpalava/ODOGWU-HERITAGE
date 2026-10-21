@@ -2175,13 +2175,21 @@ assert.match(textContent(standardDressBlock), /Standard Dress/);
 assert.match(textContent(longDressBlock), /Long Dress/);
 assert.match(
   String(standardDressBlock.findByType("div").props.className),
-  /auto-fit/,
-  "Dress blocks use a container-driven pair grid that stacks when columns would be too narrow",
+  /flex-col/,
+  "Dress blocks stack their construction sections as full-width blocks",
 );
-assert.match(
-  String(standardDressBlock.findByType("div").props.className),
-  /minmax\(min\(100%,18rem\),1fr\)/,
-  "Dress Main Garment and Pocket columns share equal minmax tracks",
+assert.deepEqual(
+  standardDressBlock
+    .findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        (node.props["data-custom-detail-group"] === "dress_construction" ||
+          node.props["data-custom-detail-section"] === "dress-additional-clothes-costs" ||
+          node.props["data-custom-detail-group"] === "dress_pockets"),
+    )
+    .map((node) => node.props["data-custom-detail-group"] || node.props["data-custom-detail-section"]),
+  ["dress_construction", "dress-additional-clothes-costs", "dress_pockets"],
+  "Dress sections read Main Garment, then that garment's Additional Clothes Costs, then its Pocket",
 );
 const standardDressConstruction = assertOccurrenceOwnedGroup({
   block: standardDressBlock,
@@ -2239,13 +2247,21 @@ assert.match(textContent(standardSkirtBlock), /Standard Skirt/);
 assert.match(textContent(longSkirtBlock), /Long Skirt/);
 assert.match(
   String(standardSkirtBlock.findByType("div").props.className),
-  /auto-fit/,
-  "Skirt blocks use a container-driven pair grid that stacks when columns would be too narrow",
+  /flex-col/,
+  "Skirt blocks stack their construction sections as full-width blocks",
 );
-assert.match(
-  String(standardSkirtBlock.findByType("div").props.className),
-  /minmax\(min\(100%,18rem\),1fr\)/,
-  "Skirt Main Garment and Pocket columns share equal minmax tracks",
+assert.deepEqual(
+  standardSkirtBlock
+    .findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        (node.props["data-custom-detail-group"] === "skirt_length" ||
+          node.props["data-custom-detail-section"] === "skirt-additional-clothes-costs" ||
+          node.props["data-custom-detail-group"] === "skirt_pockets"),
+    )
+    .map((node) => node.props["data-custom-detail-group"] || node.props["data-custom-detail-section"]),
+  ["skirt_length", "skirt-additional-clothes-costs", "skirt_pockets"],
+  "Skirt sections read Main Garment, then that garment's Additional Clothes Costs, then its Pocket",
 );
 const standardSkirtConstruction = assertOccurrenceOwnedGroup({
   block: standardSkirtBlock,
@@ -2375,7 +2391,7 @@ assert.ok(
   ordinaryOptionGrids.every(
     (grid) => !String(grid.props.className).includes("sm:grid-cols-2"),
   ),
-  "ordinary Step 4 option groups must keep one vertical option stack inside their category column",
+  "ordinary Step 4 option groups must not use the Personalized Additional Requirement sm:grid-cols-2 layout",
 );
 const ordinaryNoneLabel = ordinaryOptionGrids
   .flatMap((grid) => grid.findAllByType("label"))
