@@ -276,6 +276,10 @@ export const DormantFutureDesignStyleStep = ({
   const [selectedOccurrenceTokens, setSelectedOccurrenceTokens] = useState<
     ReadonlySet<string>
   >(new Set());
+  // Rows with another design that the customer unlocked with "Change".
+  const [unlockedOccurrenceTokens, setUnlockedOccurrenceTokens] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const [dialogView, setDialogView] = useState<"mapping" | "add_garment">(
     "mapping",
   );
@@ -574,6 +578,7 @@ export const DormantFutureDesignStyleStep = ({
   const closeDialog = () => {
     setPendingEntry(null);
     setSelectedOccurrenceTokens(new Set());
+    setUnlockedOccurrenceTokens(new Set());
     setDialogView("mapping");
     mappingScrollTopRef.current = 0;
     dialogTriggerRef.current?.focus?.();
@@ -587,6 +592,7 @@ export const DormantFutureDesignStyleStep = ({
     dialogTriggerRef.current = trigger;
     setPendingEntry(entry);
     setDialogView("mapping");
+    setUnlockedOccurrenceTokens(new Set());
     setSelectedOccurrenceTokens(
       new Set(
         occurrences
@@ -642,6 +648,7 @@ export const DormantFutureDesignStyleStep = ({
     }
     setPendingEntry(null);
     setSelectedOccurrenceTokens(new Set());
+    setUnlockedOccurrenceTokens(new Set());
     onAssignCatalogueStyle(requests);
     if (!completesDesignStep) {
       dialogTriggerRef.current?.focus?.();
@@ -740,6 +747,7 @@ export const DormantFutureDesignStyleStep = ({
     if (!currentEntry) {
       setPendingEntry(null);
       setSelectedOccurrenceTokens(new Set());
+      setUnlockedOccurrenceTokens(new Set());
       return;
     }
     if (currentEntry !== pendingEntry) setPendingEntry(currentEntry);
@@ -1060,16 +1068,48 @@ export const DormantFutureDesignStyleStep = ({
               const checked = selectedOccurrenceTokens.has(token);
               const alreadyUsing = occurrence.assignment?.sourceKind === "catalog" && occurrence.assignment.catalogStyleId === pendingEntry.style.id;
               const willReplace = checked && Boolean(occurrence.assignment && !alreadyUsing);
+              // A garment that already has a different design starts locked: no
+              // checkbox until the customer taps Change (no re-lock until close).
+              const locked = Boolean(occurrence.assignment) && !alreadyUsing && !unlockedOccurrenceTokens.has(token);
+              const rowText = (
+                <span className="min-w-0 break-words">
+                  <span className="font-bold text-heritage-green">{occurrence.label}</span>
+                  {alreadyUsing && <span className="mt-0.5 block text-xs font-semibold text-heritage-ink/60">Using this design</span>}
+                  {!alreadyUsing && occurrence.assignmentLabel && <span className="mt-0.5 block text-xs text-heritage-ink/60">Current design: {occurrence.assignmentLabel}</span>}
+                  {willReplace && <span role="status" data-testid="design-style-replacement-warning" data-occurrence-token={token} className="mt-2 block rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs leading-relaxed text-amber-900">This garment currently uses {occurrence.assignmentLabel}. Applying {pendingDisplayStyleName} will replace it.</span>}
+                </span>
+              );
               return (
-                <label key={token} data-occurrence-token={token} className={`flex min-w-0 items-start gap-3 rounded-xl border border-heritage-green/15 px-3 py-3 text-sm focus-within:ring-2 focus-within:ring-heritage-gold ${alreadyUsing ? "cursor-default bg-heritage-cream/20" : "cursor-pointer"}`}>
-                  <input type="checkbox" checked={checked} disabled={alreadyUsing} onChange={() => { if (alreadyUsing) return; setSelectedOccurrenceTokens((current) => { const next = new Set(current); if (next.has(token)) next.delete(token); else next.add(token); return next; }); }} className="mt-0.5 size-4 shrink-0 accent-heritage-green disabled:cursor-default disabled:opacity-70" />
-                  <span className="min-w-0 break-words">
-                    <span className="font-bold text-heritage-green">{occurrence.label}</span>
-                    {alreadyUsing && <span className="mt-0.5 block text-xs font-semibold text-heritage-ink/60">Using this design</span>}
-                    {!alreadyUsing && occurrence.assignmentLabel && <span className="mt-0.5 block text-xs text-heritage-ink/60">Current design: {occurrence.assignmentLabel}</span>}
-                    {willReplace && <span role="status" data-testid="design-style-replacement-warning" data-occurrence-token={token} className="mt-2 block rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs leading-relaxed text-amber-900">This garment currently uses {occurrence.assignmentLabel}. Applying {pendingDisplayStyleName} will replace it.</span>}
-                  </span>
-                </label>
+                <div key={token} data-occurrence-token={token} data-design-mapping-row-locked={locked ? "true" : "false"} className={`flex min-w-0 items-center gap-2 rounded-xl border border-heritage-green/15 text-sm focus-within:ring-2 focus-within:ring-heritage-gold ${alreadyUsing || locked ? "bg-heritage-cream/20" : ""}`}>
+                  {locked ? (
+                    <div data-testid={`design-mapping-locked-${token}`} className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3">
+                      {rowText}
+                    </div>
+                  ) : (
+                    <label className={`flex min-w-0 flex-1 items-start gap-3 px-3 py-3 ${alreadyUsing ? "cursor-default" : "cursor-pointer"}`}>
+                      <input type="checkbox" checked={checked} disabled={alreadyUsing} onChange={() => { if (alreadyUsing) return; setSelectedOccurrenceTokens((current) => { const next = new Set(current); if (next.has(token)) next.delete(token); else next.add(token); return next; }); }} className="mt-0.5 size-4 shrink-0 accent-heritage-green disabled:cursor-default disabled:opacity-70" />
+                      {rowText}
+                    </label>
+                  )}
+                  {locked && (
+                    <button
+                      type="button"
+                      data-testid={`design-mapping-change-${token}`}
+                      aria-label={`Change design for ${occurrence.label}`}
+                      onClick={(event) => {
+                        event?.stopPropagation?.();
+                        setUnlockedOccurrenceTokens((current) => {
+                          const next = new Set(current);
+                          next.add(token);
+                          return next;
+                        });
+                      }}
+                      className="mr-2 inline-flex min-h-11 min-w-16 shrink-0 items-center justify-center rounded-xl border border-heritage-gold/60 bg-white px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-cream/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                    >
+                      Change
+                    </button>
+                  )}
+                </div>
               );
             })}
           </fieldset>
