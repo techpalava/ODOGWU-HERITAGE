@@ -9422,6 +9422,7 @@ export default function DesignStudioView({
             textByGarmentKey: {},
           },
         measurementState: reconciledFutureMeasurementState,
+        measurementGarmentKeys: activeWearerRuntime?.garmentKeys,
         aiTryOnWorkflowState: futureAiTryOnWorkflow,
         shippingState: futureShippingResolution.state,
         normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
