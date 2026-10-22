@@ -4,9 +4,10 @@
  */
 
 import { useState } from "react";
-import { Eye, Shirt, Sparkles, Camera, Users, Globe, Truck, Box, Package } from "lucide-react";
+import { Eye, Shirt, Sparkles, Camera, Users, Globe, Box, Package } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Showpiece, CommunityPhoto, Fabric, StyleCategory, Batch } from "../types";
+import { COMMUNITY_GROUPS, type CommunityGroup } from "../data/communityStats";
 
 interface GalleryViewProps {
   onSelectStyle: (styleId: string, fabricCode: string) => void;
@@ -18,6 +19,122 @@ interface GalleryViewProps {
   onNavigateToTab: (tab: string) => void;
 }
 
+/**
+ * Showpiece category keys already stored on gallery items.
+ * These stay as category ids. The visible label is the community group name.
+ */
+const GALLERY_GROUP_FILTERS = [
+  { number: 1, filter: "male" },
+  { number: 2, filter: "female" },
+  { number: 3, filter: "fabric" },
+  { number: 4, filter: "group4" },
+  { number: 5, filter: "group5" },
+] as const;
+
+/**
+ * Photos saved before the verified group names still carry the old cohort
+ * string. They match into the verified group and are never used as the heading.
+ */
+const HISTORICAL_COHORT_ALIASES: Readonly<Record<number, readonly string[]>> = {
+  2: ["Group 2 - Transformers"],
+  3: ["Group 3 - Avatars"],
+  5: ["Group 5 - Transformers"],
+};
+
+/**
+ * Production status is not in communityStats. Groups 1 and 2 already showed
+ * Delivered. Groups 3–5 had no verified status, so no status is shown for them.
+ */
+const RETAINED_GALLERY_PRODUCTION_STATUS: Readonly<Partial<Record<number, string>>> = {
+  1: "Delivered",
+  2: "Delivered",
+};
+
+const galleryFilterForGroup = (number: number): string =>
+  GALLERY_GROUP_FILTERS.find((entry) => entry.number === number)?.filter ??
+  `group${number}`;
+
+const communityGroupForBatch = (batch: Batch): CommunityGroup | undefined =>
+  COMMUNITY_GROUPS.find((group) => group.number === batch.batchNumber);
+
+const galleryCohortTitle = (batch: Batch): string => {
+  const group = communityGroupForBatch(batch);
+  if (group) return `Group ${group.number} - ${group.name}`;
+  return `Group ${batch.batchNumber} - ${batch.name}`;
+};
+
+const acceptedCohortNames = (batch: Batch): Set<string> => {
+  const names = new Set<string>([
+    galleryCohortTitle(batch),
+    `Group ${batch.batchNumber} - ${batch.name}`,
+  ]);
+  for (const alias of HISTORICAL_COHORT_ALIASES[batch.batchNumber] ?? []) {
+    names.add(alias);
+  }
+  return names;
+};
+
+function GalleryGroupStats({ group }: { group: CommunityGroup }) {
+  const productionStatus = RETAINED_GALLERY_PRODUCTION_STATUS[group.number];
+
+  return (
+    <div
+      className="mb-10"
+      data-gallery-group={group.name}
+      data-member-count={group.people}
+      data-outfit-count={group.outfits}
+      data-nationality-count={group.nationalities}
+    >
+      <div className="flex items-center gap-4 mb-6">
+        <h2 className="font-serif text-3xl font-bold text-heritage-green">
+          Group {group.number} - {group.name}
+        </h2>
+        <div className="h-px flex-grow bg-heritage-gold/20"></div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
+          <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
+            <Users size={18} />
+          </div>
+          <div>
+            <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Participants</span>
+            <strong className="text-lg font-serif text-heritage-green">{group.people} Members</strong>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
+          <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
+            <Globe size={18} />
+          </div>
+          <div>
+            <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Nationalities</span>
+            <strong className="text-lg font-serif text-heritage-green">{group.nationalities} Nationalities</strong>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
+          <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
+            <Shirt size={18} />
+          </div>
+          <div>
+            <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Traditional Outfits</span>
+            <strong className="text-lg font-serif text-heritage-green">{group.outfits} Outfits</strong>
+          </div>
+        </div>
+        {productionStatus ? (
+          <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
+            <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
+              <Package size={18} />
+            </div>
+            <div>
+              <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Production Status</span>
+              <strong className="text-lg font-serif text-heritage-green">{productionStatus}</strong>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function GalleryView({
   onSelectStyle,
   showpieces = [],
@@ -27,32 +144,17 @@ export default function GalleryView({
   batches = [],
 }: GalleryViewProps) {
   const [filter, setFilter] = useState<string>("all");
-    
-    
-  
-  const getBatchNameFromCategory = (catStr) => {
-    let bNum = 0;
-    if (catStr === "male") bNum = 1;
-    else if (catStr === "female") bNum = 2;
-    else if (catStr === "fabric") bNum = 3;
-    else if (catStr === "group4") bNum = 4;
-    else if (catStr === "group5") bNum = 5;
-    else if (catStr.startsWith("group")) bNum = parseInt(catStr.replace("group", ""));
-    
-    if (bNum > 0) {
-      const b = batches.find(x => x.batchNumber === bNum);
-      if (b) return `Group ${b.batchNumber} - ${b.name}`;
-      return `Group ${bNum}`;
-    }
-    return catStr;
-  };
+  const selectedGroup = COMMUNITY_GROUPS.find(
+    (group) => galleryFilterForGroup(group.number) === filter,
+  );
+
   const filteredItems = showpieces.filter((item) => {
     if (filter === "all") return true;
     return item.category === filter;
   });
 
   const activeCommunityPhotos = communityPhotos
-    .filter((p) => p.status === "active")
+    .filter((photo) => photo.status === "active")
     .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
 
   return (
@@ -95,6 +197,24 @@ export default function GalleryView({
           >
             Community Gallery
           </button>
+          {COMMUNITY_GROUPS.map((group) => {
+            const groupFilter = galleryFilterForGroup(group.number);
+            const selected = filter === groupFilter;
+            return (
+              <button
+                key={group.number}
+                data-gallery-group-filter={group.name}
+                onClick={() => setFilter(groupFilter)}
+                className={`pb-2 px-3 transition whitespace-nowrap ${
+                  selected
+                    ? "border-b-2 border-heritage-green text-heritage-green font-extrabold"
+                    : "text-heritage-ink/55 hover:text-heritage-gold"
+                }`}
+              >
+                Group {group.number} - {group.name}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -119,36 +239,59 @@ export default function GalleryView({
                 </div>
               ) : (
                 (() => {
-                  const groups = batches.sort((a,b) => a.batchNumber - b.batchNumber).map(b => {
-                    const title = `Group ${b.batchNumber} - ${b.name}`;
-                    // some photos might have been saved with old hardcoded names, map them:
-                    let legacyName = "";
-                    if (b.batchNumber === 1) legacyName = "Group 1 - Pioneers";
-                    else if (b.batchNumber === 2) legacyName = "Group 2 - Transformers";
-                    else if (b.batchNumber === 3) legacyName = "Group 3 - Avatars";
-                    else if (b.batchNumber === 4) legacyName = "Group 4 - Executives";
-                    else if (b.batchNumber === 5) legacyName = "Group 5 - Transformers";
-                    
-                    const photos = activeCommunityPhotos.filter(p => p.cohortName === title || (legacyName && p.cohortName === legacyName));
-                    return { title, photos };
+                  const orderedBatches = [...batches].sort(
+                    (a, b) => a.batchNumber - b.batchNumber,
+                  );
+                  const groups = orderedBatches.map((batch) => {
+                    const title = galleryCohortTitle(batch);
+                    const names = acceptedCohortNames(batch);
+                    const photos = activeCommunityPhotos.filter((photo) =>
+                      names.has(photo.cohortName),
+                    );
+                    return {
+                      title,
+                      photos,
+                      communityGroup: communityGroupForBatch(batch),
+                    };
                   });
-                  
-                  const otherPhotos = activeCommunityPhotos.filter(p => {
-                    return !groups.some(g => g.photos.some(photo => photo.id === p.id));
-                  });
-                  
-                  if (otherPhotos.length > 0) {
-                    groups.push({ title: "Other / Uncategorized", photos: otherPhotos });
-                  }
-                  
-                  const activeGroups = groups.filter(g => g.photos.length > 0);
 
-                  return activeGroups.map(group => (
-                    <div key={group.title} className="space-y-6">
+                  const otherPhotos = activeCommunityPhotos.filter((photo) => {
+                    return !groups.some((group) =>
+                      group.photos.some((grouped) => grouped.id === photo.id),
+                    );
+                  });
+
+                  if (otherPhotos.length > 0) {
+                    groups.push({
+                      title: "Other / Uncategorized",
+                      photos: otherPhotos,
+                      communityGroup: undefined,
+                    });
+                  }
+
+                  const activeGroups = groups.filter((group) => group.photos.length > 0);
+
+                  return activeGroups.map((group) => (
+                    <div
+                      key={group.title}
+                      className="space-y-6"
+                      data-gallery-section-title={group.title}
+                      data-gallery-cohort={group.communityGroup?.name}
+                      data-member-count={group.communityGroup?.people}
+                      data-outfit-count={group.communityGroup?.outfits}
+                      data-nationality-count={group.communityGroup?.nationalities}
+                    >
                       <div className="flex items-center gap-4">
-                        <h2 className="font-serif text-2xl font-bold text-heritage-green">
-                          {group.title}
-                        </h2>
+                        <div>
+                          <h2 className="font-serif text-2xl font-bold text-heritage-green">
+                            {group.title}
+                          </h2>
+                          {group.communityGroup ? (
+                            <p className="text-xs text-heritage-ink/60 font-sans mt-1">
+                              {group.communityGroup.people} Members · {group.communityGroup.outfits} Outfits · {group.communityGroup.nationalities} Nationalities
+                            </p>
+                          ) : null}
+                        </div>
                         <div className="h-px flex-grow bg-heritage-gold/20"></div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -188,218 +331,9 @@ export default function GalleryView({
                 })()
               )}
             </div>
-          ) : filter === "fabric" ? (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              <div className="flex items-center gap-4">
-                <div>
-                  <h2 className="font-serif text-3xl font-bold text-heritage-green">
-                    {getBatchNameFromCategory("fabric")}
-                  </h2>
-                  <p className="text-sm font-medium text-heritage-gold uppercase tracking-wider mt-1">Current Batch &bull; Coming Soon</p>
-                </div>
-                <div className="h-px flex-grow bg-heritage-gold/20"></div>
-              </div>
-              <p className="text-heritage-ink/70 max-w-2xl text-sm leading-relaxed mb-6">
-                {batches.find(b => b.batchNumber === 3)?.name || "This group"} represents one of the latest NTCC production batches. Their custom-made traditional garments are presently being designed, tailored in Nigeria, and prepared for shipment to the Netherlands.
-              </p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-3xl border border-heritage-gold/15 p-8 flex flex-col items-center justify-center text-center min-h-[200px] shadow-sm">
-                  <Shirt className="h-10 w-10 text-heritage-gold/40 mb-4" />
-                  <h3 className="font-serif font-bold text-lg text-heritage-green mb-2">Outfit Showcase</h3>
-                  <p className="text-xs text-heritage-ink/60">Coming Soon</p>
-                </div>
-                <div className="bg-white rounded-3xl border border-heritage-gold/15 p-8 flex flex-col items-center justify-center text-center min-h-[200px] shadow-sm">
-                  <Users className="h-10 w-10 text-heritage-gold/40 mb-4" />
-                  <h3 className="font-serif font-bold text-lg text-heritage-green mb-2">Participant Gallery</h3>
-                  <p className="text-xs text-heritage-ink/60">Coming Soon</p>
-                </div>
-                <div className="bg-white rounded-3xl border border-heritage-gold/15 p-8 flex flex-col items-center justify-center text-center min-h-[200px] shadow-sm">
-                  <Globe className="h-10 w-10 text-heritage-gold/40 mb-4" />
-                  <h3 className="font-serif font-bold text-lg text-heritage-green mb-2">Community Stories</h3>
-                  <p className="text-xs text-heritage-ink/60">Coming Soon</p>
-                </div>
-                <div className="bg-white rounded-3xl border border-heritage-gold/15 p-8 flex flex-col items-center justify-center text-center min-h-[200px] shadow-sm">
-                  <Camera className="h-10 w-10 text-heritage-gold/40 mb-4" />
-                  <h3 className="font-serif font-bold text-lg text-heritage-green mb-2">Behind-the-Scenes Photos</h3>
-                  <p className="text-xs text-heritage-ink/60">Coming Soon</p>
-                </div>
-              </div>
-            </div>
           ) : (
             <div className="space-y-8 animate-in fade-in duration-500">
-              {filter === "male" && (
-                <div className="mb-10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <h2 className="font-serif text-3xl font-bold text-heritage-green">
-                      {getBatchNameFromCategory("male")}
-                    </h2>
-                    <div className="h-px flex-grow bg-heritage-gold/20"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Users size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Participants</span>
-                        <strong className="text-lg font-serif text-heritage-green">11 Members</strong>
-                        <div className="text-[10px] text-heritage-ink/60 mt-0.5">10 Gentlemen, 1 Lady</div>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Globe size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Nationalities</span>
-                        <strong className="text-lg font-serif text-heritage-green">6 Origins</strong>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Shirt size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Traditional Outfits</span>
-                        <strong className="text-lg font-serif text-heritage-green">13 Outfits</strong>
-                        <div className="text-[10px] text-heritage-ink/60 mt-0.5">Including 1 Couple / Family</div>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Truck size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Production Status</span>
-                        <strong className="text-lg font-serif text-heritage-green">Delivered</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {filter === "female" && (
-                <div className="mb-10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <h2 className="font-serif text-3xl font-bold text-heritage-green">
-                      {getBatchNameFromCategory("female")}
-                    </h2>
-                    <div className="h-px flex-grow bg-heritage-gold/20"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Users size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Participants</span>
-                        <strong className="text-lg font-serif text-heritage-green">15 Members</strong>
-                        <div className="text-[10px] text-heritage-ink/60 mt-0.5">13 New, 2 Returning</div>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Shirt size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Traditional Outfits</span>
-                        <strong className="text-lg font-serif text-heritage-green">17 Outfits</strong>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Package size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Production Status</span>
-                        <strong className="text-lg font-serif text-heritage-green">Delivered</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {filter === "group4" && (
-                <div className="mb-10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <h2 className="font-serif text-3xl font-bold text-heritage-green">
-                      {getBatchNameFromCategory("group4")}
-                    </h2>
-                    <div className="h-px flex-grow bg-heritage-gold/20"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Users size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Participants</span>
-                        <strong className="text-lg font-serif text-heritage-green">Members (TBD)</strong>
-                        <div className="text-[10px] text-heritage-ink/60 mt-0.5">TBD</div>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Shirt size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Traditional Outfits</span>
-                        <strong className="text-lg font-serif text-heritage-green">Outfits (TBD)</strong>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Package size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Production Status</span>
-                        <strong className="text-lg font-serif text-heritage-green">Coming Soon</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {filter === "group5" && (
-                <div className="mb-10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <h2 className="font-serif text-3xl font-bold text-heritage-green">
-                      {getBatchNameFromCategory("group5")}
-                    </h2>
-                    <div className="h-px flex-grow bg-heritage-gold/20"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Users size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Participants</span>
-                        <strong className="text-lg font-serif text-heritage-green">Members (TBD)</strong>
-                        <div className="text-[10px] text-heritage-ink/60 mt-0.5">TBD</div>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Shirt size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Traditional Outfits</span>
-                        <strong className="text-lg font-serif text-heritage-green">Outfits (TBD)</strong>
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-heritage-gold/15 shadow-sm flex items-center gap-4">
-                      <div className="bg-heritage-cream w-10 h-10 rounded-full flex items-center justify-center text-heritage-gold shrink-0">
-                        <Package size={18} />
-                      </div>
-                      <div>
-                        <span className="block text-[10px] uppercase font-bold text-gray-500 tracking-wider">Production Status</span>
-                        <strong className="text-lg font-serif text-heritage-green">Coming Soon</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {selectedGroup ? <GalleryGroupStats group={selectedGroup} /> : null}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredItems.map((item) => (

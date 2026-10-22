@@ -122,6 +122,7 @@ export const CustomerFutureOrderV2Details = ({
     orderType: candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: candidate.garments.length,
     fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
+    useStoredLagosAmount: true,
   });
   const shipping = candidate.shipping.state;
   const customer = shipping.customerInformation;

@@ -595,9 +595,11 @@ export default function AboutView() {
                 <strong>+€10.00</strong> to the order.
               </li>
               <li>
-                Individual orders use weight-band shipping from Lagos to
-                Eindhoven, starting at <strong>€14</strong>. The cart
-                combines garment pieces into one shipment quote.
+                Individual home delivery uses{" "}
+                <strong>€131.25 per 10 garments (under 5 kg)</strong> for
+                Lagos → Eindhoven shipping. Pickup in Eindhoven has no Lagos
+                shipping charge. The cart combines garment rows into one
+                shipment quote; a set counts as one garment.
               </li>
               <li>
                 Community and personalized batch orders use a flat shipping

@@ -85,13 +85,13 @@ deliveryCandidate.shipping = {
 const deliveryQuote = quoteFutureOrderPayableTotal(deliveryCandidate);
 assert.ok(deliveryQuote);
 assert.equal(deliveryQuote.garmentConstructionSubtotalCents, 6500);
-assert.equal(deliveryQuote.lagosToEindhovenShippingCents, 1400);
+assert.equal(deliveryQuote.lagosToEindhovenShippingCents, 13125);
 assert.equal(
   deliveryQuote.postEindhovenAdjustmentCents,
   1900,
   "Paris final-mile is €19",
 );
-assert.equal(deliveryQuote.exactTotalCents, 9800);
+assert.equal(deliveryQuote.exactTotalCents, 21525);
 
 const communityOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "community-unchanged",
@@ -231,7 +231,7 @@ const parisAligned = cloneCandidate(deliveryCandidate);
 alignToQuote(parisAligned);
 const parisPending = pendingPersonalized(parisAligned);
 assert.equal(recomputeFutureOrderPayableTotal(parisPending).status, "not_exact");
-assert.equal(readFutureOrderV2ChargeableCents(parisPending, null), 9800);
+assert.equal(readFutureOrderV2ChargeableCents(parisPending, null), 21525);
 
 const omittedDeliveryLagos = cloneCandidate(parisPending);
 omittedDeliveryLagos.pricing = {
@@ -305,7 +305,7 @@ assert.equal(
     physicalGarmentCount: 1,
     fulfilmentMethod: deliveredDraft.state.fulfilmentMethod,
   }),
-  1400,
+  13125,
 );
 const persistedDraft = persistFutureShippingState({
   draft: { id: "draft-pickup-switch" },
@@ -344,6 +344,6 @@ assert.equal(
     physicalGarmentCount: 1,
     fulfilmentMethod: "destination_delivery",
   }),
-  1400,
-  "delivery still uses the €14 Lagos band",
+  13125,
+  "delivery uses the €131.25 Lagos block",
 );

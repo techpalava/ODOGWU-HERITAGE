@@ -22,6 +22,7 @@ import {
 } from "./futureOrderCandidate";
 import type { FutureOrderV2PaymentMethod } from "./futureOrderV2Payment";
 import {
+  formatIndividualShippingNote,
   INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE,
   resolveIndividualInboundShippingDisplay,
 } from "./individualInboundShippingDisplay";
@@ -204,6 +205,7 @@ export interface FuturePaymentReviewPricingRow {
   readonly label: string;
   readonly amountCents: number | null;
   readonly presentation: "amount" | "supporting_note" | "included";
+  readonly note?: string;
 }
 
 export const FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE =
@@ -735,6 +737,8 @@ export const getFuturePaymentReviewPricingRows = (
     batchType?: string | null;
     physicalGarmentCount?: number | null;
     fulfilmentMethod?: string | null;
+    /** Paid stored orders keep the Lagos amount actually charged. */
+    useStoredLagosAmount?: boolean;
   } | null,
 ): readonly FuturePaymentReviewPricingRow[] => {
   const includedInbound =
@@ -769,11 +773,22 @@ export const getFuturePaymentReviewPricingRows = (
     },
   ];
   if (includedInbound) {
+    const storedLagos = pricing.components.lagosToEindhovenShipping;
+    const storedAmount =
+      display?.useStoredLagosAmount &&
+      storedLagos.status === "separately_charged" &&
+      typeof storedLagos.amountCents === "number"
+        ? storedLagos.amountCents
+        : includedInbound.amountCents;
     rows.push({
       id: "lagos_eindhoven_included",
       label: includedInbound.label,
-      amountCents: includedInbound.amountCents,
+      amountCents: storedAmount,
       presentation: "amount",
+      note:
+        storedAmount === includedInbound.amountCents
+          ? formatIndividualShippingNote(includedInbound)
+          : undefined,
     });
   }
   rows.push({

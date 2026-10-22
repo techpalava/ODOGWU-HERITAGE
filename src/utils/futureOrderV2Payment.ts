@@ -34,7 +34,7 @@ export type FutureOrderV2PaymentPreparationResult =
 export type FutureOrderV2PaymentAuthorizationResult =
   | { readonly status: "authorized"; readonly providerTransactionReference: string }
   | { readonly status: "redirecting" }
-  | { readonly status: "failed"; readonly message: string };
+  | { readonly status: "failed"; readonly message: string; readonly code?: string };
 
 export type FutureOrderV2PaymentEligibilityResult =
   | { readonly status: "valid" }
@@ -124,6 +124,7 @@ export type FutureOrderV2PaymentOutcome =
       readonly status: "failed";
       readonly attempt: FutureOrderV2PaymentAttempt;
       readonly message: string;
+      readonly code?: string;
     }
   | { readonly status: "invalid"; readonly message: string };
 
@@ -202,7 +203,12 @@ export const executeFutureOrderV2Payment = async ({
     if (result.status === "redirecting") {
       return { status: "redirecting", attempt: payment.attempt };
     }
-    return { status: "failed", attempt: payment.attempt, message: result.message };
+    return {
+      status: "failed",
+      attempt: payment.attempt,
+      message: result.message,
+      code: result.code,
+    };
   } catch {
     return {
       status: "failed",
@@ -461,7 +467,14 @@ export const authorizeFutureOrderV2Payment = async (
         typeof payload.error === "string"
           ? payload.error
           : "Stripe could not start this payment. Retry this same order.";
-      return { status: "failed", message };
+      const code =
+        payload &&
+        typeof payload === "object" &&
+        "code" in payload &&
+        typeof payload.code === "string"
+          ? payload.code
+          : undefined;
+      return { status: "failed", message, code };
     }
   } catch {
     return {
