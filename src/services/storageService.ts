@@ -204,7 +204,12 @@ export const StorageService = {
     });
   },
 
-  subscribeToDocument<T>(collectionName: string, documentId: string, callback: (data: T | null) => void) {
+  subscribeToDocument<T>(
+    collectionName: string,
+    documentId: string,
+    callback: (data: T | null) => void,
+    onError?: (error: Error) => void,
+  ) {
     return onSnapshot(doc(db, collectionName, documentId), (snapshot) => {
       if (snapshot.exists()) {
         callback(legacyCompatMap(collectionName, { id: snapshot.id, ...snapshot.data() } as T));
@@ -213,6 +218,7 @@ export const StorageService = {
       }
     }, (error) => {
       console.error(`Error subscribing to document ${collectionName}/${documentId}:`, error);
+      onError?.(error instanceof Error ? error : new Error(String(error)));
     });
   },
 
