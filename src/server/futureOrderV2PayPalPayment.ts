@@ -1,4 +1,8 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
+import {
+  refuseOutdatedStoredIndividualPayableTotal,
+} from "../utils/futureOrderPayableTotal.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { parsePersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract.js";
@@ -56,6 +60,8 @@ export interface FutureOrderV2PayPalPaymentDependencies {
   createStore?: (db: unknown) => FutureOrderV2PaymentRecordStore;
   now?: () => Date;
   readCommunityBatch?: (batchId: string) => Promise<unknown | null>;
+  /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
+  readCatalog?: () => Promise<unknown>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -72,6 +78,16 @@ const sendError = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const readCustomDetailCatalog = async (db: unknown): Promise<unknown[]> => {
+  if (!db || typeof (db as { collection?: unknown }).collection !== "function") {
+    return [];
+  }
+  const snapshot = await (db as Firestore).collection("custom_detail_catalog").get();
+  return snapshot.docs.map((entry) =>
+    attachCustomDetailCatalogDocumentId(entry.id, entry.data()),
+  );
+};
 
 const getBearerToken = (req: HttpRequest): string | null => {
   const header = req.headers.authorization;
@@ -395,6 +411,7 @@ const readStoredPayableOrder = async (
   store: FutureOrderV2PaymentRecordStore,
   orderId: string,
   ownerUid: string,
+  catalog: unknown = [],
 ): Promise<StoredPayableOrder> => {
   let raw: unknown | null;
   try {
@@ -439,7 +456,27 @@ const readStoredPayableOrder = async (
       message: "This order does not have a confirmed total.",
     };
   }
+  const outdated = refuseOutdatedStoredIndividualPayableTotal(
+    order.value.masterOrder.cartItem.candidate,
+    catalog,
+  );
+  if (outdated.status === "price_outdated") {
+    return {
+      status: "error",
+      httpStatus: 409,
+      code: outdated.code,
+      message: outdated.message,
+    };
+  }
   return { status: "ok", amountCents, order: order.value };
+};
+
+const loadPaymentCatalog = async (
+  dependencies: FutureOrderV2PayPalPaymentDependencies,
+  db: unknown,
+): Promise<unknown> => {
+  if (dependencies.readCatalog) return dependencies.readCatalog();
+  return readCustomDetailCatalog(db);
 };
 
 export const handleFutureOrderV2PayPalConfig = (
@@ -509,7 +546,23 @@ export const handleFutureOrderV2PayPalCreateOrder = async (
   }
 
   const store = createPaymentStore(dependencies, customer.services.db);
-  const stored = await readStoredPayableOrder(store, orderId, customer.uid);
+  let catalog: unknown = [];
+  try {
+    catalog = await loadPaymentCatalog(dependencies, customer.services.db);
+  } catch {
+    return sendError(
+      res,
+      503,
+      "ORDER_LOOKUP_UNAVAILABLE",
+      "The prepared order could not be loaded right now. Retry this same order.",
+    );
+  }
+  const stored = await readStoredPayableOrder(
+    store,
+    orderId,
+    customer.uid,
+    catalog,
+  );
   if (stored.status !== "ok") {
     return sendError(res, stored.httpStatus, stored.code, stored.message);
   }
@@ -716,7 +769,23 @@ export const handleFutureOrderV2PayPalCapture = async (
 
   // Pre-capture guard: the PayPal order must match the stored order and its
   // server-verified total before any money moves.
-  const stored = await readStoredPayableOrder(store, orderId, customer.uid);
+  let catalog: unknown = [];
+  try {
+    catalog = await loadPaymentCatalog(dependencies, services.db);
+  } catch {
+    return sendError(
+      res,
+      503,
+      "ORDER_LOOKUP_UNAVAILABLE",
+      "The prepared order could not be loaded right now. Retry this same order.",
+    );
+  }
+  const stored = await readStoredPayableOrder(
+    store,
+    orderId,
+    customer.uid,
+    catalog,
+  );
   if (stored.status !== "ok") {
     return sendError(res, stored.httpStatus, stored.code, stored.message);
   }

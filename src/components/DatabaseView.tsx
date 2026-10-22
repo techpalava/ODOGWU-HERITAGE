@@ -6895,7 +6895,7 @@ export default function DatabaseView({
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
                               Individual Order Shipping (
-                              {PRICING_CURRENCY})
+                              {PRICING_CURRENCY}) — not used for checkout
                             </label>
                             <input
                               type="number"
@@ -8826,7 +8826,8 @@ export default function DatabaseView({
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-gray-600 font-medium block">
-                              Individual Home Courier Shipping Rate (€)
+                              Individual Home Courier Shipping Rate (€) — not
+                              used for checkout
                             </label>
                             <input
                               type="number"
@@ -8846,6 +8847,10 @@ export default function DatabaseView({
                               }}
                               className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-heritage-gold font-mono"
                             />
+                            <p className="text-[9px] text-gray-400">
+                              Checkout uses €131.25 per 10 garments for Individual
+                              home delivery. This field is not read by pricing.
+                            </p>
                           </div>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

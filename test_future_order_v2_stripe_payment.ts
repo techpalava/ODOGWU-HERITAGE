@@ -35,7 +35,10 @@ import {
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
-import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import {
+  quoteFutureOrderPayableTotal,
+  recomputeFutureOrderPayableTotal,
+} from "./src/utils/futureOrderPayableTotal";
 import { readFutureOrderV2ChargeableCents } from "./src/utils/futureOrderV2PersonalizedPrice";
 import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
 import {
@@ -1264,11 +1267,101 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
       },
     },
   );
-  assert.equal(tamperedResponse.state.statusCode, 400);
+  assert.equal(tamperedResponse.state.statusCode, 409);
   assert.equal(tamperedCharged, false);
+  assert.equal(
+    (tamperedResponse.state.body as { code?: string }).code,
+    "PRICE_OUTDATED",
+  );
   assert.equal(
     recomputeFutureOrderPayableTotal(tampered.masterOrder.cartItem.candidate).status,
     "rejected",
+  );
+}
+
+{
+  const staleParisOrderId = "future-order-stale-paris-14";
+  const staleParis = mutableClone(
+    createCatalogueAuthoritativeFutureOrderV2Fixture(staleParisOrderId),
+  );
+  staleParis.cartItem.candidate.garments = [
+    staleParis.cartItem.candidate.garments[0]!,
+  ];
+  staleParis.cartItem.candidate.shipping.state.fulfilmentMethod =
+    "destination_delivery";
+  staleParis.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.city =
+    "Paris";
+  staleParis.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.countryCode =
+    "FR";
+  const parisQuote = quoteFutureOrderPayableTotal(staleParis.cartItem.candidate);
+  assert.ok(parisQuote);
+  assert.equal(parisQuote.lagosToEindhovenShippingCents, 13125);
+  staleParis.cartItem.candidate.pricing.garmentConstructionSubtotalCents =
+    parisQuote.garmentConstructionSubtotalCents;
+  staleParis.cartItem.candidate.pricing.customDetailsCents =
+    parisQuote.customDetailsCents;
+  staleParis.cartItem.candidate.pricing.selectedDesignTotalCents =
+    parisQuote.selectedDesignTotalCents;
+  staleParis.cartItem.candidate.pricing.postEindhovenAdjustmentCents =
+    parisQuote.postEindhovenAdjustmentCents;
+  staleParis.cartItem.candidate.pricing.exactTotalCents = 9800;
+  staleParis.cartItem.candidate.pricing.components.customDetails = {
+    status: "separately_charged",
+    amountCents: parisQuote.customDetailsCents,
+  };
+  staleParis.cartItem.candidate.pricing.components.postEindhovenDelivery = {
+    status: "separately_charged",
+    amountCents: parisQuote.postEindhovenAdjustmentCents,
+  };
+  staleParis.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+    status: "separately_charged",
+    amountCents: 1400,
+  };
+  staleParis.cartItem.candidate.shipping.additionalDeliveryFeeCents =
+    parisQuote.postEindhovenAdjustmentCents;
+  const staleStored = createPersistedFutureOrderV2({
+    masterOrder: staleParis,
+    owner: { uid: OWNER_UID, isAnonymous: false },
+    customerOwnerUid: OWNER_UID,
+    persistedAt: "2026-10-22T12:00:00.000Z",
+  });
+  assert.equal(staleStored.status, "valid");
+  if (staleStored.status !== "valid") {
+    throw new Error("Expected a stored €14 Paris ledger.");
+  }
+  const staleParisResponse = response();
+  let staleParisCharged = false;
+  await handleFutureOrderV2StripePayment(
+    {
+      method: "POST",
+      headers: ownerAuthHeaders,
+      body: {
+        orderId: staleParisOrderId,
+        paymentReference: `future-v2-payment-${staleParisOrderId}`,
+        masterOrder: staleParis,
+      },
+    },
+    staleParisResponse.res,
+    {
+      ...authDependencies({ order: staleStored.value }),
+      readPersistedOrder: async () => staleStored.value,
+      readPersonalizedPrice: async () => null,
+      readCatalog: async () => [],
+      async createPaymentIntent() {
+        staleParisCharged = true;
+        return {
+          id: "pi_test_stale_paris",
+          clientSecret: "secret",
+          paymentMethodTypes: ["card", "ideal"],
+        };
+      },
+    },
+  );
+  assert.equal(staleParisResponse.state.statusCode, 409);
+  assert.equal(staleParisCharged, false);
+  assert.equal(
+    (staleParisResponse.state.body as { code?: string }).code,
+    "PRICE_OUTDATED",
   );
 }
 
