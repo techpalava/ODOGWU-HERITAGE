@@ -1011,16 +1011,43 @@ service cloud.firestore {
         ]);
     }
 
+    function savedStudioOrderItemPath(ownerUid, savedOrderId) {
+      return /databases/$(database)/documents/savedStudioOrders/$(ownerUid)/items/$(savedOrderId);
+    }
+
+    // The index may change by at most one id per write, and only in step
+    // with the item document in the same transaction: an added id must have
+    // its item written, a removed id must have its item deleted. With the
+    // 5-id limit this keeps the item count per customer at 5 or fewer.
+    function hasConsistentSavedStudioOrderIndexChange(ownerUid, beforeIds, afterIds) {
+      let added = afterIds.removeAll(beforeIds);
+      let removed = beforeIds.removeAll(afterIds);
+      return added.size() <= 1
+        && removed.size() <= 1
+        && (added.size() == 0
+          || existsAfter(savedStudioOrderItemPath(ownerUid, added[0])))
+        && (removed.size() == 0
+          || !existsAfter(savedStudioOrderItemPath(ownerUid, removed[0])));
+    }
+
     match /savedStudioOrders/{ownerUid} {
       allow read: if isAdmin() || ownsDocumentPath(ownerUid);
       allow create: if ownsDocumentPath(ownerUid)
         && hasValidSavedStudioOrderIndexShape(request.resource.data, ownerUid)
-        && request.resource.data.itemIds.size() <= 5
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time
+        && hasConsistentSavedStudioOrderIndexChange(
+          ownerUid,
+          [],
+          request.resource.data.itemIds
+        );
       allow update: if ownsDocumentPath(ownerUid)
         && hasValidSavedStudioOrderIndexShape(request.resource.data, ownerUid)
-        && request.resource.data.itemIds.size() <= 5
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time
+        && hasConsistentSavedStudioOrderIndexChange(
+          ownerUid,
+          resource.data.itemIds,
+          request.resource.data.itemIds
+        );
       allow delete: if false;
     }
 
@@ -1036,6 +1063,7 @@ service cloud.firestore {
         && savedStudioOrderIndexAfter(ownerUid).itemIds.size() <= 5;
       allow update: if ownsDocumentPath(ownerUid)
         && hasValidSavedStudioOrderItemShape(request.resource.data, ownerUid, savedOrderId)
+        && savedStudioOrderIndexAfter(ownerUid).itemIds.hasAny([savedOrderId])
         && request.resource.data.revision == resource.data.revision + 1
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time

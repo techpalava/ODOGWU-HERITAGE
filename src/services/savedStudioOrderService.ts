@@ -74,12 +74,101 @@ type StoredBundle = {
 };
 
 export type SavedStudioOrderMutation =
-  | { type: "upsert"; item: SavedStudioOrderItemV1; itemIds: string[] }
-  | { type: "delete"; savedOrderId: string; itemIds: string[] };
+  | {
+      type: "upsert";
+      item: SavedStudioOrderItemV1;
+      /** Rename/update only: fail with SavedStudioOrderAbsentError if the item is gone. */
+      requireExisting?: boolean;
+    }
+  | { type: "delete"; savedOrderId: string };
+
+export type SavedStudioOrderMutationOutcome = {
+  itemIds: string[];
+  /** Revision actually written (upsert only), taken from the stored item. */
+  revision: number | null;
+  /** True when the upsert created a new item. */
+  created: boolean;
+};
+
+/** Raised inside the write transaction when a new item would exceed the cap. */
+export class SavedStudioOrderCapError extends Error {
+  constructor() {
+    super("saved_studio_order_cap_reached");
+    this.name = "SavedStudioOrderCapError";
+  }
+}
+
+/** Raised inside the write transaction when an update targets a deleted item. */
+export class SavedStudioOrderAbsentError extends Error {
+  constructor() {
+    super("saved_studio_order_absent");
+    this.name = "SavedStudioOrderAbsentError";
+  }
+}
+
+const readStoredIndexIds = (
+  raw: Record<string, unknown> | null | undefined,
+  ownerUid: string,
+): string[] => {
+  if (!raw) return [];
+  const parsed = normalizeSavedStudioOrderIndex(raw, ownerUid);
+  if (parsed.index) return parsed.index.itemIds;
+  // Never silently wipe an index we cannot parse; refuse the write instead.
+  throw new Error(parsed.reason || "invalid_saved_order_index");
+};
+
+const readStoredRevision = (
+  raw: Record<string, unknown> | null | undefined,
+): number | null =>
+  raw && Number.isSafeInteger(raw.revision) && (raw.revision as number) >= 1
+    ? (raw.revision as number)
+    : null;
+
+/**
+ * Pure planning step shared by every adapter. It always works from the
+ * index and item that were read inside the same transaction, so concurrent
+ * saves, renames and deletes cannot drop each other's ids or exceed the cap.
+ */
+export const planSavedStudioOrderMutation = ({
+  currentIds,
+  storedRevision,
+  mutation,
+}: {
+  currentIds: readonly string[];
+  storedRevision: number | null;
+  mutation: SavedStudioOrderMutation;
+}): SavedStudioOrderMutationOutcome => {
+  if (mutation.type === "delete") {
+    return {
+      itemIds: currentIds.filter((id) => id !== mutation.savedOrderId),
+      revision: null,
+      created: false,
+    };
+  }
+  const id = mutation.item.savedOrderId;
+  const listed = currentIds.includes(id);
+  const exists = listed && storedRevision !== null;
+  if (!exists && mutation.requireExisting) throw new SavedStudioOrderAbsentError();
+  if (!exists) {
+    const others = currentIds.filter((entry) => entry !== id);
+    if (others.length >= SAVED_STUDIO_ORDER_MAX_PER_CUSTOMER) {
+      throw new SavedStudioOrderCapError();
+    }
+    return { itemIds: [id, ...others], revision: 1, created: true };
+  }
+  return {
+    itemIds: [...currentIds],
+    revision: (storedRevision as number) + 1,
+    created: false,
+  };
+};
 
 export interface SavedStudioOrderPersistenceAdapter {
   loadBundle(ownerUid: string): Promise<StoredBundle>;
-  mutate(ownerUid: string, mutation: SavedStudioOrderMutation): Promise<void>;
+  mutate(
+    ownerUid: string,
+    mutation: SavedStudioOrderMutation,
+  ): Promise<SavedStudioOrderMutationOutcome>;
   subscribe?(
     ownerUid: string,
     onChange: (bundle: StoredBundle) => void,
@@ -172,28 +261,28 @@ export const createMemorySavedStudioOrderAdapter = (): SavedStudioOrderPersisten
         store.get(ownerUid) ?? { index: null, items: new Map() },
       );
       const nowIso = new Date().toISOString();
+      const targetId =
+        mutation.type === "upsert" ? mutation.item.savedOrderId : mutation.savedOrderId;
+      const stored = current.items.get(targetId);
+      const outcome = planSavedStudioOrderMutation({
+        currentIds: readStoredIndexIds(current.index, ownerUid),
+        storedRevision: readStoredRevision(stored),
+        mutation,
+      });
       if (mutation.type === "upsert") {
-        current.items.set(
-          mutation.item.savedOrderId,
-          toItemRecord(mutation.item, false),
-        );
-        current.index = toIndexRecord(
-          ownerUid,
-          mutation.itemIds,
+        const record = toItemRecord(
+          { ...mutation.item, revision: outcome.revision ?? 1 },
           false,
-          nowIso,
         );
+        if (!outcome.created && stored?.createdAt) record.createdAt = stored.createdAt;
+        current.items.set(mutation.item.savedOrderId, record);
       } else {
         current.items.delete(mutation.savedOrderId);
-        current.index = toIndexRecord(
-          ownerUid,
-          mutation.itemIds,
-          false,
-          nowIso,
-        );
       }
+      current.index = toIndexRecord(ownerUid, outcome.itemIds, false, nowIso);
       store.set(ownerUid, current);
       notify(ownerUid);
+      return outcome;
     },
     subscribe: (ownerUid, onChange) => {
       const set = listeners.get(ownerUid) ?? new Set();
@@ -245,39 +334,56 @@ export const createFirebaseSavedStudioOrderAdapter = (
   },
   mutate: async (ownerUid, mutation) => {
     const indexRef = doc(firestore, SAVED_STUDIO_ORDER_COLLECTION, ownerUid);
-    await runTransaction(firestore, async (transaction) => {
-      await transaction.get(indexRef);
+    const targetId =
+      mutation.type === "upsert" ? mutation.item.savedOrderId : mutation.savedOrderId;
+    const itemRef = doc(
+      firestore,
+      SAVED_STUDIO_ORDER_COLLECTION,
+      ownerUid,
+      "items",
+      targetId,
+    );
+    return runTransaction(firestore, async (transaction) => {
+      // Every decision below uses only what this transaction read, so a
+      // retry after contention recomputes itemIds, the cap and the revision.
+      const indexSnap = await transaction.get(indexRef);
+      const itemSnap = await transaction.get(itemRef);
+      const outcome = planSavedStudioOrderMutation({
+        currentIds: readStoredIndexIds(
+          indexSnap.exists()
+            ? (indexSnap.data() as Record<string, unknown>)
+            : null,
+          ownerUid,
+        ),
+        storedRevision: readStoredRevision(
+          itemSnap.exists() ? (itemSnap.data() as Record<string, unknown>) : null,
+        ),
+        mutation,
+      });
       const nowIso = new Date().toISOString();
       transaction.set(
         indexRef,
-        toIndexRecord(ownerUid, mutation.itemIds, true, nowIso),
-        { merge: false },
+        toIndexRecord(ownerUid, outcome.itemIds, true, nowIso),
       );
       if (mutation.type === "upsert") {
-        const itemRef = doc(
-          firestore,
-          SAVED_STUDIO_ORDER_COLLECTION,
-          ownerUid,
-          "items",
-          mutation.item.savedOrderId,
+        const record = toItemRecord(
+          { ...mutation.item, revision: outcome.revision ?? 1 },
+          true,
         );
-        const record = toItemRecord(mutation.item, true);
-        if (mutation.item.revision > 1) {
-          delete record.createdAt;
-          transaction.set(itemRef, record, { merge: true });
+        if (outcome.created) {
+          transaction.set(itemRef, record);
         } else {
-          transaction.set(itemRef, record, { merge: false });
+          // Replace each top-level field wholesale (no deep merge of the
+          // nested draft map) while keeping the stored createdAt.
+          delete record.createdAt;
+          transaction.set(itemRef, record, {
+            mergeFields: Object.keys(record),
+          });
         }
-        return;
+      } else if (itemSnap.exists()) {
+        transaction.delete(itemRef);
       }
-      const itemRef = doc(
-        firestore,
-        SAVED_STUDIO_ORDER_COLLECTION,
-        ownerUid,
-        "items",
-        mutation.savedOrderId,
-      );
-      transaction.delete(itemRef);
+      return outcome;
     });
   },
   subscribe: (ownerUid, onChange) => {
@@ -408,16 +514,25 @@ export const createSavedStudioOrderRepository = (
         updatedAt: nowIso,
         revision: existing ? existing.revision + 1 : 1,
       };
-      const itemIds = existing
-        ? snapshot.index.itemIds
-        : [savedOrderId, ...snapshot.index.itemIds];
-      await adapter.mutate(input.ownerUid, {
+      const outcome = await adapter.mutate(input.ownerUid, {
         type: "upsert",
         item,
-        itemIds,
       });
-      return existing ? { status: "updated", item } : { status: "saved", item };
-    } catch {
+      const written: SavedStudioOrderItemV1 = {
+        ...item,
+        revision: outcome.revision ?? item.revision,
+      };
+      return outcome.created
+        ? { status: "saved", item: written }
+        : { status: "updated", item: written };
+    } catch (error) {
+      if (error instanceof SavedStudioOrderCapError) {
+        return {
+          status: "cap_reached",
+          item: null,
+          message: SAVED_STUDIO_ORDER_CAP_MESSAGE,
+        };
+      }
       return {
         status: "error",
         item: null,
@@ -453,13 +568,17 @@ export const createSavedStudioOrderRepository = (
         updatedAt: nowIso,
         revision: existing.revision + 1,
       };
-      await adapter.mutate(ownerUid, {
+      const outcome = await adapter.mutate(ownerUid, {
         type: "upsert",
         item,
-        itemIds: snapshot.index.itemIds,
+        requireExisting: true,
       });
-      return { status: "renamed", item };
-    } catch {
+      return {
+        status: "renamed",
+        item: { ...item, revision: outcome.revision ?? item.revision },
+      };
+    } catch (error) {
+      if (error instanceof SavedStudioOrderAbsentError) return { status: "absent" };
       return { status: "error", message: SAVED_STUDIO_ORDER_RETRY_MESSAGE };
     }
   };
@@ -477,11 +596,7 @@ export const createSavedStudioOrderRepository = (
       if (!snapshot.index.itemIds.includes(savedOrderId)) {
         return { status: "absent", savedOrderId };
       }
-      await adapter.mutate(ownerUid, {
-        type: "delete",
-        savedOrderId,
-        itemIds: snapshot.index.itemIds.filter((id) => id !== savedOrderId),
-      });
+      await adapter.mutate(ownerUid, { type: "delete", savedOrderId });
       return { status: "deleted", savedOrderId };
     } catch {
       return { status: "error", message: SAVED_STUDIO_ORDER_RETRY_MESSAGE };
