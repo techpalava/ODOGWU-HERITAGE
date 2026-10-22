@@ -513,6 +513,8 @@ export const DormantFutureFabricStep = ({
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
   const catalogueScrollAnchorRef = useRef<HTMLDivElement>(null);
+  const summaryRowAnchorRef = useRef<HTMLDivElement>(null);
+  const changeOpenedFromSummaryRef = useRef(false);
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
   const catalogueFocusGarmentKeyRef = useRef<string | null>(null);
   const catalogueFocusRequestRef = useRef(0);
@@ -1197,6 +1199,48 @@ export const DormantFutureFabricStep = ({
     restoreCatalogueFocus();
   };
 
+  /**
+   * "Cancel change" keeps the page where the customer started: back on the
+   * Fabric Selection summary row (summary-row changes) or on the trigger that
+   * opened Change Fabric. Runs after focus restoration so nothing else (layout
+   * collapse, scroll FABs) leaves the page parked at the bottom.
+   */
+  const cancelFabricChangeKeepingPlace = () => {
+    const fromSummary = changeOpenedFromSummaryRef.current;
+    const trigger = catalogueTriggerRef.current;
+    const startScrollY =
+      typeof window !== "undefined" && typeof window.scrollY === "number"
+        ? window.scrollY
+        : null;
+    changeOpenedFromSummaryRef.current = false;
+    closeCatalogueForCancellation();
+    if (typeof window === "undefined") return;
+    const request = catalogueFocusRequestRef.current;
+    const settle = () => {
+      if (request !== catalogueFocusRequestRef.current) return;
+      const target = fromSummary
+        ? summaryRowAnchorRef.current
+        : trigger && trigger.isConnected !== false
+          ? trigger
+          : null;
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({
+          behavior: "auto",
+          block: fromSummary ? "start" : "nearest",
+        });
+        return;
+      }
+      if (startScrollY !== null && typeof window.scrollTo === "function") {
+        window.scrollTo({ top: startScrollY, behavior: "auto" });
+      }
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(settle));
+    } else {
+      settle();
+    }
+  };
+
   const focusPostAssignmentDestination = (
     garmentKey: string,
     restoreScrollY: number | null = null,
@@ -1838,6 +1882,8 @@ export const DormantFutureFabricStep = ({
     postAssignmentFocusRequestRef.current += 1;
     catalogueTriggerRef.current = trigger;
     catalogueFocusGarmentKeyRef.current = garmentKey;
+    changeOpenedFromSummaryRef.current =
+      changingFabric && scrollTarget === "selection_cards";
     const request = ++catalogueFocusRequestRef.current;
     setVisibleActionError(null);
     setCatalogueTargetGarmentKey(garmentKey);
@@ -3407,21 +3453,37 @@ export const DormantFutureFabricStep = ({
               {assignmentAnnouncement}
             </p>
           </div>
-          <FabricSelectionSummaryRow
-            items={fabricSelectionSummaryItems}
-            changingAllocationId={changingAllocationId}
-            onSelectSelection={(item, event) =>
-              openChangeFromSummary(item, event.currentTarget)
-            }
-          />
+          <div
+            ref={summaryRowAnchorRef}
+            data-fabric-selection-summary-anchor="true"
+            className="scroll-mt-28"
+          >
+            <FabricSelectionSummaryRow
+              items={fabricSelectionSummaryItems}
+              changingAllocationId={changingAllocationId}
+              onSelectSelection={(item, event) =>
+                openChangeFromSummary(item, event.currentTarget)
+              }
+            />
+          </div>
           {renderVisibleCatalogue(
             "grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
           )}
           {catalogueTargetGarmentKey && (
-            <div className="mt-5">
+            <div
+              className={
+                changeFabricPresentation
+                  ? "mt-5 pr-16 pb-[env(safe-area-inset-bottom,0px)] sm:pr-0"
+                  : "mt-5"
+              }
+            >
               <button
                 type="button"
-                onClick={closeCatalogueForCancellation}
+                onClick={
+                  changeFabricPresentation
+                    ? cancelFabricChangeKeepingPlace
+                    : closeCatalogueForCancellation
+                }
                 data-testid={
                   changeFabricPresentation ? "fabric-change-cancel" : undefined
                 }

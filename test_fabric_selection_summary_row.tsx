@@ -134,8 +134,11 @@ const createNodeMock = (element: ReactElement) => {
     querySelectorAll: () => [],
     querySelector: () => null,
     focus: () => undefined,
-    scrollIntoView: () => {
+    scrollIntoView: (options?: { block?: string }) => {
       if (garmentKey) scrolledKeys.push(garmentKey);
+      if (props["data-fabric-selection-summary-anchor"] === "true") {
+        scrolledKeys.push(`summary-row:${options?.block ?? ""}`);
+      }
     },
   };
 };
@@ -186,6 +189,7 @@ const catalogueCard = (root: ReactTestInstance, code: string) =>
   root.findByProps({ "data-fabric-catalogue-card": "true", "data-fabric-card-code": code });
 const actionButton = (card: ReactTestInstance) =>
   card.find((node) => node.type === "button" && node.props["data-fabric-card"] === "true" && node.props["data-fabric-remove"] !== "true");
+const windowScrollToCalls: Array<number | null> = [];
 // openCatalogue only schedules its scroll when a window exists.
 const withWindow = async (run: () => Promise<void>) => {
   const g = globalThis as unknown as { window?: unknown };
@@ -197,6 +201,10 @@ const withWindow = async (run: () => Promise<void>) => {
       return 0;
     },
     matchMedia: () => ({ matches: true }),
+    scrollY: 1200,
+    scrollTo: (options: { top?: number }) => {
+      windowScrollToCalls.push(options?.top ?? null);
+    },
     setTimeout,
     clearTimeout,
   };
@@ -267,6 +275,23 @@ assert.deepEqual(scrolledKeys, ["base:skirt"], "scrolls the selection's first ga
 assert.equal(summaryButton(renderer.root, 2).props["aria-pressed"], true);
 assert.equal(summaryButton(renderer.root, 2).findAllByProps({ "data-fabric-selection-summary-changing-tag": "true" }).length, 1);
 assert.equal(summaryButton(renderer.root, 1).props["aria-pressed"], false);
+// Polish: the Changing tag is its own element, never inside or truncating the name.
+{
+  const active = summaryButton(renderer.root, 2);
+  const tag = active.findByProps({ "data-fabric-selection-summary-changing-tag": "true" });
+  const name = active.findByProps({ "data-fabric-selection-summary-name": "true" });
+  assert.equal(textContent(tag), "Changing");
+  assert.equal(textContent(name), "Royal Forest Mosaic", "name text stays whole next to the tag");
+  assert.equal(name.findAll((node) => node.props?.["data-fabric-selection-summary-changing-tag"] === "true").length, 0);
+  assert.equal(tag.parent, name.parent, "tag and name are siblings in the column, tag on its own line");
+  assert.ok(tag.parent!.children.indexOf(tag) < tag.parent!.children.indexOf(name), "tag sits above the name");
+  assert.doesNotMatch(String(name.props.className), /\btruncate\b/, "name is not single-line truncated");
+  assert.match(String(name.props.className), /line-clamp-2/, "name wraps to two lines");
+  assert.equal(name.props.title, "Royal Forest Mosaic");
+  assert.match(String(active.props.className), /w-\[min\(16rem,calc\(100vw-7\.5rem\)\)\]/, "mobile button width fits the viewport");
+  const list = renderer.root.findByProps({ "data-fabric-selection-summary-list": "true" });
+  assert.match(String(list.props.className), /\bpr-16\b/, "mobile scroll padding clears the floating buttons");
+}
 
 // Switch target to Selection 1 via its button.
 await withWindow(async () => {
@@ -297,7 +322,14 @@ assert.doesNotMatch(textContent(blocked), /USE AGAIN/);
 // Cancel change.
 const cancel = renderer.root.findByProps({ "data-testid": "fabric-change-cancel" });
 assert.match(textContent(cancel), /Cancel change/);
-await act(async () => cancel.props.onClick());
+assert.match(String(cancel.parent!.props.className), /\bpr-16\b/, "Cancel change sits clear of the floating buttons on mobile");
+scrolledKeys.length = 0;
+windowScrollToCalls.length = 0;
+await withWindow(async () => {
+  await act(async () => cancel.props.onClick());
+});
+assert.deepEqual(scrolledKeys, ["summary-row:start"], "Cancel change returns to the summary row, not the bottom");
+assert.deepEqual(windowScrollToCalls, [], "Cancel change does not scroll the window to the bottom");
 assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for Selection/);
 assert.equal(garmentCard(renderer.root, "base:shirt").props["data-fabric-selection-highlight"], "idle");
 assert.equal(summaryButton(renderer.root, 1).props["aria-pressed"], false);

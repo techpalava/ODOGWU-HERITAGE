@@ -69,12 +69,13 @@ export const FabricSelectionSummaryRow = ({
     <nav
       aria-label="Your Fabric Selections"
       data-fabric-selection-summary-row="true"
-      className="mb-5 min-w-0"
+      className="mb-5 min-w-0 scroll-mt-28"
     >
       <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-ink/60">
         Your Fabric Selections · tap one to change its fabric
       </p>
-      <ul className="-mx-1 flex min-w-0 snap-x gap-3 overflow-x-auto px-1 pb-2 sm:flex-wrap sm:overflow-visible">
+      <ul data-fabric-selection-summary-list="true"
+        className="-mx-1 flex min-w-0 snap-x snap-mandatory scroll-pl-1.5 gap-3 overflow-x-auto overscroll-x-contain pb-3 pl-1.5 pr-16 pt-1.5 sm:snap-none sm:flex-wrap sm:overflow-visible sm:pr-1">
         {items.map((item) => {
           const active = item.allocationId === changingAllocationId;
           const garmentList = formatList(item.garmentLabels);
@@ -90,7 +91,7 @@ export const FabricSelectionSummaryRow = ({
                 data-fabric-selection-summary-allocation={item.allocationId}
                 data-fabric-selection-summary-active={active ? "true" : undefined}
                 onClick={(event) => onSelectSelection(item, event)}
-                className={`flex w-60 min-w-0 items-start gap-3 rounded-xl border bg-white p-3 text-left transition hover:border-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                className={`flex h-full w-[min(16rem,calc(100vw-7.5rem))] min-w-0 items-start gap-2.5 rounded-xl border bg-white p-3 text-left sm:w-60 sm:gap-3 transition hover:border-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                   active
                     ? "border-heritage-gold bg-heritage-gold/10 ring-2 ring-heritage-gold ring-offset-2 ring-offset-white"
                     : "border-heritage-gold/25"
@@ -105,21 +106,20 @@ export const FabricSelectionSummaryRow = ({
                 </span>
                 <SelectionSwatch fabric={item.fabric} fabricCode={item.fabricCode} />
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="flex min-w-0 items-center gap-2">
+                  {active ? (
                     <span
-                      data-fabric-selection-summary-name="true"
-                      className="min-w-0 truncate text-xs font-bold text-heritage-green"
+                      data-fabric-selection-summary-changing-tag="true"
+                      className="self-start rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-0.5 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
                     >
-                      {item.fabricName}
+                      Changing
                     </span>
-                    {active ? (
-                      <span
-                        data-fabric-selection-summary-changing-tag="true"
-                        className="shrink-0 rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
-                      >
-                        Changing
-                      </span>
-                    ) : null}
+                  ) : null}
+                  <span
+                    data-fabric-selection-summary-name="true"
+                    title={item.fabricName}
+                    className="line-clamp-2 min-w-0 break-words text-xs font-bold leading-snug text-heritage-green"
+                  >
+                    {item.fabricName}
                   </span>
                   <span
                     data-fabric-selection-summary-garments="true"
