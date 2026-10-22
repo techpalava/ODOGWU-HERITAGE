@@ -1090,7 +1090,7 @@ await act(async () =>
 );
 assert.match(
   textContent(targetedTwoGarmentRenderer.root),
-  /Changing Fabric for Fabric Selection/,
+  /Choose a new fabric for Selection/,
 );
 assert.match(
   textContent(targetedTwoGarmentRenderer.root),
@@ -2018,7 +2018,7 @@ try {
   assert.equal(activeFocusMock?.label, "catalogue-heading");
   assert.match(
     textContent(focusRenderer.root),
-    /Changing Fabric for Fabric Selection 1/,
+    /Choose a new fabric for Selection 1/,
   );
   assert.match(
     textContent(focusRenderer.root),

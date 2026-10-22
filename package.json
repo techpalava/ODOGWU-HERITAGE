@@ -112,6 +112,8 @@
     "test:continue-unlock-glow": "tsx test_continue_unlock_glow.tsx",
     "test:fabric-assign-feasibility": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_assign_panel_feasibility.tsx",
     "test:fabric-use-again-capacity": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_use_again_capacity.tsx",
+    "test:change-fabric-use-again": "node scripts/tsxWithViteProductionFirebase.mjs test_change_fabric_use_again.tsx",
+    "test:fabric-selection-summary-row": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_selection_summary_row.tsx",
     "test:step1-fabric-assignment-popup": "node scripts/tsxWithViteProductionFirebase.mjs test_step1_fabric_assignment_popup.ts && node scripts/tsxWithViteProductionFirebase.mjs test_step1_fabric_assignment_popup_ui.tsx",
     "test:step2-fabric-allocation-limit": "node scripts/tsxWithViteProductionFirebase.mjs test_step2_fabric_allocation_limit.ts",
     "test:community-text-branding": "node scripts/tsxWithViteProductionFirebase.mjs test_community_text_branding.tsx",
