@@ -516,8 +516,24 @@ const batchManagementSource = readFileSync(
   "utf8",
 );
 assert.match(homeViewSource, /getJoinCurrentBatchButtonLabel\([\s\S]{0,120}joinBatch\?\.name/);
+// Four hero CTAs are plain buttons in HomeView; the fifth is the community
+// showcase button, wired once through its onPrimaryAction prop.
 assert.equal(
   (homeViewSource.match(/onClick=\{handleHeroPrimaryAction\}/g) || []).length,
+  4,
+  "The four direct hero CTAs must use the one no-argument rendered-batch action.",
+);
+assert.equal(
+  (homeViewSource.match(/onPrimaryAction=\{handleHeroPrimaryAction\}/g) || []).length,
+  1,
+  "The community showcase CTA must use the same rendered-batch action, wired once.",
+);
+assert.equal(
+  (
+    homeViewSource.match(
+      /(?:onClick|onPrimaryAction)=\{handleHeroPrimaryAction\}/g,
+    ) || []
+  ).length,
   5,
   "All five hero CTAs must use the one no-argument rendered-batch action.",
 );
