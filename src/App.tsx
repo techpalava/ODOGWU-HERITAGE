@@ -122,6 +122,7 @@ import { AdminAuthGuard } from "./components/AdminAuthGuard";
 import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
 import { IndividualOrderStartDialog } from "./components/IndividualOrderStartDialog";
 import PrivateBatchSetupView, {
+  resolvePrivateBatchSubmitLimits,
   type PrivateBatchSetupSubmission,
   type PrivateBatchSetupValues,
 } from "./components/PrivateBatchSetupView";
@@ -198,6 +199,7 @@ export default function App() {
     setBatches,
     businessSettings,
     setBusinessSettings,
+    hasLoadedBusinessSettings,
   } = store;
 
   // Every toast auto-dismisses here; callers only set the notification.
@@ -834,6 +836,19 @@ export default function App() {
   const createPrivateBatchFromSetup = async (
     values: PrivateBatchSetupValues,
   ): Promise<PrivateBatchSetupSubmission> => {
+    const loadedSettings = useAppStore.getState();
+    const limits = resolvePrivateBatchSubmitLimits(
+      loadedSettings.businessSettings,
+      loadedSettings.hasLoadedBusinessSettings,
+    );
+    if (!limits) {
+      return {
+        status: "error",
+        message:
+          "Private Batch settings are still loading. Please try again in a moment.",
+      };
+    }
+
     const firebaseUser = auth.currentUser;
     if (!currentUser || !firebaseUser || firebaseUser.isAnonymous) {
       store.setPendingRedirect("private-batch-setup");
@@ -845,17 +860,12 @@ export default function App() {
       const created = await createPrivateBatch({
         input: {
           ...values,
-          maxParticipants: businessSettings.batchSettings.maxGarmentsPerBatch,
+          maxParticipants: limits.maxParticipantsAllowed,
           organizerName: currentUser.name,
           deliveryWindow: values.preferredDeliveryMonth,
           status: "OPEN",
         },
-        limits: {
-          minParticipantsRequired:
-            businessSettings.batchSettings.minParticipantsRequired,
-          maxParticipantsAllowed:
-            businessSettings.batchSettings.maxGarmentsPerBatch,
-        },
+        limits,
       });
       setPresetStyleId(null);
       setPresetFabricCode(null);
@@ -1924,6 +1934,7 @@ export default function App() {
             {activeTab === "private-batch-setup" && (
               <PrivateBatchSetupView
                 businessSettings={businessSettings}
+                settingsLoaded={hasLoadedBusinessSettings}
                 externalError={privateBatchSetupError}
                 onBack={() => {
                   setPrivateBatchSetupError(null);
