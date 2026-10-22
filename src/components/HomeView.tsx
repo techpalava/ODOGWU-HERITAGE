@@ -1025,7 +1025,6 @@ export default function HomeView({
       <HomepageCommunityShowcase
         primaryActionLabel={heroPrimaryAction}
         onPrimaryAction={handleHeroPrimaryAction}
-        onClick={handleHeroPrimaryAction}
         onViewGallery={() => {
           const el = document.getElementById("community-gallery");
           if (el) el.scrollIntoView({ behavior: "smooth" });
