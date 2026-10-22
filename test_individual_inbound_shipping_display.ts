@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  formatIndividualShippingNote,
   INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL,
   INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL,
   individualLagosToEindhovenChargeCents,
@@ -8,11 +9,11 @@ import {
 import { calculateIndividualShipping } from "./src/utils/shippingPricing";
 
 const bands = [
-  [1, 14, "0 - 2 kg"],
-  [5, 35, ">2 - 5 kg"],
-  [13, 70, ">5 - 10 kg"],
-  [25, 140, ">10 - 20 kg"],
-  [49, 210, ">20 kg"],
+  [1, 131.25, ">2 - 5 kg"],
+  [5, 131.25, ">2 - 5 kg"],
+  [13, 262.5, ">5 - 10 kg"],
+  [25, 393.75, ">10 - 20 kg"],
+  [49, 656.25, ">20 kg"],
 ] as const;
 
 for (const [pieceCount, priceEur, weightBand] of bands) {
@@ -116,8 +117,49 @@ assert.equal(
     physicalGarmentCount: 1,
     fulfilmentMethod: "destination_delivery",
   }),
-  1400,
-  "address delivery keeps the €14 band",
+  13125,
+  "address delivery uses the €131.25 block",
+);
+
+const baselineNote =
+  "Shipping covers up to 10 garments (under 5 kg).";
+const fourteenNote =
+  "Shipping covers up to 10 garments (under 5 kg). Your order has 14 garments, so it uses the 10 kg range: 2 × €131.25.";
+assert.equal(
+  formatIndividualShippingNote(
+    resolveIndividualInboundShippingDisplay({
+      orderType: "Individual",
+      physicalGarmentCount: 1,
+      fulfilmentMethod: "destination_delivery",
+    })!,
+  ),
+  baselineNote,
+);
+assert.equal(
+  formatIndividualShippingNote(
+    resolveIndividualInboundShippingDisplay({
+      orderType: "Individual",
+      physicalGarmentCount: 14,
+      fulfilmentMethod: "destination_delivery",
+    })!,
+  ),
+  fourteenNote,
+);
+assert.equal(
+  resolveIndividualInboundShippingDisplay({
+    orderType: "Individual",
+    physicalGarmentCount: 14,
+    fulfilmentMethod: "eindhoven_pickup",
+  }),
+  null,
+);
+assert.equal(
+  resolveIndividualInboundShippingDisplay({
+    orderType: "Community",
+    physicalGarmentCount: 14,
+    fulfilmentMethod: "destination_delivery",
+  }),
+  null,
 );
 
 console.log("test_individual_inbound_shipping_display.ts: all assertions passed");

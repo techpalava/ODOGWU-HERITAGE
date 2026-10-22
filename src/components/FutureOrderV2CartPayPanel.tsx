@@ -14,6 +14,7 @@ import {
 } from "../utils/futureOrderV2Payment";
 import {
   createFutureOrderV2PreparationAttempt,
+  createFutureOrderV2PreparationIds,
   getFutureOrderV2CandidateFingerprint,
 } from "../utils/futureOrderV2Preparation";
 import {
@@ -33,7 +34,11 @@ import {
   resolveCommunityBatchClosureStatus,
 } from "../utils/communityBatchOrderClosure";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
-import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
+import {
+  formatIndividualShippingNote,
+  resolveIndividualInboundShippingDisplay,
+} from "../utils/individualInboundShippingDisplay";
+import { FUTURE_ORDER_PRICE_OUTDATED_CODE } from "../utils/futureOrderPayableTotal";
 import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
 
 const moneyFromCents = (amountCents: number): string =>
@@ -99,24 +104,47 @@ export const FutureOrderV2CartPayPanel = ({
     setPaying(true);
     setMessage(null);
     try {
-      const prepared = createFutureOrderV2PreparationAttempt({
+      const preferredIds = {
+        cartItemId: item.cartItemId,
+        orderId: `future-order-${item.cartItemId.replace(/^future-cart-/, "")}`,
+      };
+      let preparedResult = createFutureOrderV2PreparationAttempt({
         candidate: item.candidate,
-        ids: {
-          cartItemId: item.cartItemId,
-          orderId: `future-order-${item.cartItemId.replace(/^future-cart-/, "")}`,
-        },
+        ids: preferredIds,
       });
-      if (prepared.status !== "valid") {
+      if (preparedResult.status !== "valid") {
         setMessage(
-          prepared.blockers[0]?.message ||
+          preparedResult.blockers[0]?.message ||
             "This parked order cannot be prepared for payment.",
         );
         return;
       }
-      const persistResult = await persistFutureOrderV2({
-        masterOrder: prepared.attempt.masterOrder,
+      let prepared = preparedResult.attempt;
+      let persistResult = await persistFutureOrderV2({
+        masterOrder: prepared.masterOrder,
         customerOwnerUid: identity.uid,
       });
+      if (
+        persistResult.status === "conflict" &&
+        persistResult.code === "ORDER_ID_PAYLOAD_CONFLICT"
+      ) {
+        preparedResult = createFutureOrderV2PreparationAttempt({
+          candidate: item.candidate,
+          ids: createFutureOrderV2PreparationIds(),
+        });
+        if (preparedResult.status !== "valid") {
+          setMessage(
+            preparedResult.blockers[0]?.message ||
+              "This parked order cannot be prepared for payment.",
+          );
+          return;
+        }
+        prepared = preparedResult.attempt;
+        persistResult = await persistFutureOrderV2({
+          masterOrder: prepared.masterOrder,
+          customerOwnerUid: identity.uid,
+        });
+      }
       if (
         persistResult.status !== "created" &&
         persistResult.status !== "already_persisted"
@@ -124,24 +152,59 @@ export const FutureOrderV2CartPayPanel = ({
         setMessage("This order could not be prepared for payment. Try again.");
         return;
       }
-      setOrderId(prepared.attempt.orderId);
+      setOrderId(prepared.orderId);
       // Link the payment order to the saved order this cart line came from,
       // so a redirect return removes only that saved order.
-      rememberSavedOrderPaymentLink(
-        prepared.attempt.orderId,
-        peekSavedOrderCartLink(
-          getFutureOrderV2CandidateFingerprint(item.candidate),
-        ),
+      const cartLineSavedOrderId = peekSavedOrderCartLink(
+        getFutureOrderV2CandidateFingerprint(item.candidate),
       );
-      const outcome = await executeFutureOrderV2Payment({
-        prepared: prepared.attempt,
+      rememberSavedOrderPaymentLink(prepared.orderId, cartLineSavedOrderId);
+      let outcome = await executeFutureOrderV2Payment({
+        prepared,
         authorize: authorizeFutureOrderV2Payment,
         validateBeforeAuthorization: () =>
           validatePreparedFutureOrderV2PaymentEligibility({
-            prepared: prepared.attempt,
+            prepared,
             liveBatches: batches,
           }),
       });
+      if (
+        outcome.status === "failed" &&
+        outcome.code === FUTURE_ORDER_PRICE_OUTDATED_CODE
+      ) {
+        preparedResult = createFutureOrderV2PreparationAttempt({
+          candidate: item.candidate,
+          ids: createFutureOrderV2PreparationIds(),
+        });
+        if (preparedResult.status !== "valid") {
+          setMessage(outcome.message);
+          return;
+        }
+        prepared = preparedResult.attempt;
+        persistResult = await persistFutureOrderV2({
+          masterOrder: prepared.masterOrder,
+          customerOwnerUid: identity.uid,
+        });
+        if (
+          persistResult.status !== "created" &&
+          persistResult.status !== "already_persisted"
+        ) {
+          setMessage(outcome.message);
+          return;
+        }
+        setOrderId(prepared.orderId);
+        // Re-priced retry uses a new order id; link it to the same saved order.
+        rememberSavedOrderPaymentLink(prepared.orderId, cartLineSavedOrderId);
+        outcome = await executeFutureOrderV2Payment({
+          prepared,
+          authorize: authorizeFutureOrderV2Payment,
+          validateBeforeAuthorization: () =>
+            validatePreparedFutureOrderV2PaymentEligibility({
+              prepared,
+              liveBatches: batches,
+            }),
+        });
+      }
       if (outcome.status === "redirecting") {
         return;
       }
@@ -150,7 +213,7 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       const recorded = await recordFutureOrderV2Payment({
-        orderId: prepared.attempt.orderId,
+        orderId: prepared.orderId,
         paymentIntentId: outcome.providerTransactionReference,
       });
       if (recorded.status !== "recorded") {
@@ -165,7 +228,7 @@ export const FutureOrderV2CartPayPanel = ({
           getFutureOrderV2CandidateFingerprint(item.candidate),
         ) ?? null;
       const paymentLinkedSavedOrderId = takeSavedOrderPaymentLink(
-        prepared.attempt.orderId,
+        prepared.orderId,
       );
       const paidSavedOrderId = savedOrderId || paymentLinkedSavedOrderId;
       const ownerUid = auth.currentUser?.uid;
@@ -202,6 +265,7 @@ export const FutureOrderV2CartPayPanel = ({
             {totalCents === null ? "Unavailable" : moneyFromCents(totalCents)}
           </p>
           {includedInbound ? (
+            <>
             <p
               data-testid="future-order-v2-included-inbound"
               data-amount-cents={includedInbound.amountCents}
@@ -209,6 +273,13 @@ export const FutureOrderV2CartPayPanel = ({
             >
               Lagos → Eindhoven shipping {moneyFromCents(includedInbound.amountCents)}
             </p>
+            <p
+              data-testid="future-order-v2-lagos-note"
+              className="mt-1 text-[11px] leading-relaxed text-heritage-ink/70"
+            >
+              {formatIndividualShippingNote(includedInbound)}
+            </p>
+            </>
           ) : null}
           <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/70">
             Complete made-to-measure order. Pay with the same Stripe test

@@ -17,7 +17,11 @@ import {
   parseFutureOrderV2PaymentRecord,
 } from "./src/utils/futureOrderV2PaymentRecord";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
-import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import { quoteFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import {
+  createCatalogueAuthoritativeFutureOrderV2Fixture,
+  createFutureOrderV2Fixture,
+} from "./testing/futureOrderV2Fixture";
 
 const preparedResult = createFutureOrderV2PreparationAttempt({
   candidate: createFutureOrderV2Fixture("paypal-payment").cartItem.candidate,
@@ -337,6 +341,114 @@ const runCreate = async (
   assert.equal(state.statusCode, 503);
   assert.equal((state.body as { code: string }).code, "PAYPAL_SANDBOX_REQUIRED");
   assert.equal(created.length, 0);
+}
+
+const staleParisOrderId = "future-order-paypal-stale-paris";
+const staleParisMaster = JSON.parse(
+  JSON.stringify(createCatalogueAuthoritativeFutureOrderV2Fixture(staleParisOrderId)),
+);
+staleParisMaster.cartItem.candidate.garments = [
+  staleParisMaster.cartItem.candidate.garments[0],
+];
+staleParisMaster.cartItem.candidate.shipping.state.fulfilmentMethod =
+  "destination_delivery";
+staleParisMaster.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.city =
+  "Paris";
+staleParisMaster.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.countryCode =
+  "FR";
+const staleParisQuote = quoteFutureOrderPayableTotal(
+  staleParisMaster.cartItem.candidate,
+);
+assert.ok(staleParisQuote);
+staleParisMaster.cartItem.candidate.pricing.garmentConstructionSubtotalCents =
+  staleParisQuote.garmentConstructionSubtotalCents;
+staleParisMaster.cartItem.candidate.pricing.customDetailsCents =
+  staleParisQuote.customDetailsCents;
+staleParisMaster.cartItem.candidate.pricing.selectedDesignTotalCents =
+  staleParisQuote.selectedDesignTotalCents;
+staleParisMaster.cartItem.candidate.pricing.postEindhovenAdjustmentCents =
+  staleParisQuote.postEindhovenAdjustmentCents;
+staleParisMaster.cartItem.candidate.pricing.exactTotalCents = 9800;
+staleParisMaster.cartItem.candidate.pricing.components.customDetails = {
+  status: "separately_charged",
+  amountCents: staleParisQuote.customDetailsCents,
+};
+staleParisMaster.cartItem.candidate.pricing.components.postEindhovenDelivery = {
+  status: "separately_charged",
+  amountCents: staleParisQuote.postEindhovenAdjustmentCents,
+};
+staleParisMaster.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+  status: "separately_charged",
+  amountCents: 1400,
+};
+staleParisMaster.cartItem.candidate.shipping.additionalDeliveryFeeCents =
+  staleParisQuote.postEindhovenAdjustmentCents;
+const staleParisPersisted = createPersistedFutureOrderV2({
+  masterOrder: staleParisMaster,
+  owner: { uid: OWNER_UID, isAnonymous: false },
+  customerOwnerUid: OWNER_UID,
+  persistedAt: "2026-10-22T12:00:00.000Z",
+});
+assert.equal(staleParisPersisted.status, "valid");
+if (staleParisPersisted.status !== "valid") {
+  throw new Error("Expected a stored €14 PayPal ledger.");
+}
+const staleParisStore = {
+  async readOrder(orderId: string) {
+    return orderId === staleParisOrderId ? staleParisPersisted.value : null;
+  },
+  async runTransaction() {
+    throw new Error("must not record a payment");
+  },
+};
+
+{
+  const { state, created } = await runCreate(
+    { authorization: "Bearer valid-token" },
+    { createStore: () => staleParisStore, readCatalog: async () => [] },
+    {
+      orderId: staleParisOrderId,
+      paymentReference: `future-v2-payment-${staleParisOrderId}`,
+      masterOrder: staleParisMaster,
+      amountCents: 1400,
+    },
+  );
+  assert.equal(state.statusCode, 409);
+  assert.equal((state.body as { code: string }).code, "PRICE_OUTDATED");
+  assert.equal(created.length, 0);
+}
+
+{
+  const { res, state } = response();
+  let captured = false;
+  await handleFutureOrderV2PayPalCapture(
+    {
+      method: "POST",
+      headers: { authorization: "Bearer valid-token" },
+      body: {
+        orderId: staleParisOrderId,
+        paypalOrderId: "5O190127TN364715T",
+      },
+    },
+    res,
+    {
+      ...sandboxEnv,
+      getServices: servicesFor(OWNER_UID),
+      createStore: () => staleParisStore,
+      readCatalog: async () => [],
+      async readPayPalOrder() {
+        captured = true;
+        throw new Error("must not read PayPal for an outdated ledger");
+      },
+      async capturePayPalOrder() {
+        captured = true;
+        throw new Error("must not capture");
+      },
+    },
+  );
+  assert.equal(state.statusCode, 409);
+  assert.equal((state.body as { code: string }).code, "PRICE_OUTDATED");
+  assert.equal(captured, false);
 }
 
 // ---- capture: PayPal order amount is checked before capture ----

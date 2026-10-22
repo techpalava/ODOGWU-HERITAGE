@@ -1,7 +1,10 @@
 import Stripe from "stripe";
 import type { Firestore } from "firebase-admin/firestore";
 import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
-import { pendingPersonalizedKnownBaseIsAuthoritative } from "../utils/futureOrderPayableTotal.js";
+import {
+  pendingPersonalizedKnownBaseIsAuthoritative,
+  refuseOutdatedStoredIndividualPayableTotal,
+} from "../utils/futureOrderPayableTotal.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import {
@@ -514,6 +517,23 @@ export const handleFutureOrderV2StripePayment = async (
   }
 
   const candidate = order.value.masterOrder.cartItem.candidate;
+  let catalog: unknown = [];
+  try {
+    catalog = dependencies.readCatalog
+      ? await dependencies.readCatalog()
+      : await readCustomDetailCatalog(services.db);
+  } catch {
+    return sendError(
+      res,
+      503,
+      "ORDER_LOOKUP_UNAVAILABLE",
+      "The prepared order could not be loaded right now. Retry this same order.",
+    );
+  }
+  const outdated = refuseOutdatedStoredIndividualPayableTotal(candidate, catalog);
+  if (outdated.status === "price_outdated") {
+    return sendError(res, 409, outdated.code, outdated.message);
+  }
   let personalizedPrice = null;
   if (
     listPersonalizedEvaluationSeeds(candidate).length > 0 ||
@@ -557,19 +577,6 @@ export const handleFutureOrderV2StripePayment = async (
       (detail) => detail.priceStatus === "evaluation_required",
     )
   ) {
-    let catalog: unknown = [];
-    try {
-      catalog = dependencies.readCatalog
-        ? await dependencies.readCatalog()
-        : await readCustomDetailCatalog(services.db);
-    } catch {
-      return sendError(
-        res,
-        503,
-        "ORDER_LOOKUP_UNAVAILABLE",
-        "The prepared order could not be loaded right now. Retry this same order.",
-      );
-    }
     if (!pendingPersonalizedKnownBaseIsAuthoritative(candidate, catalog)) {
       return sendError(
         res,

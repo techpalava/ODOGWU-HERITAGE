@@ -38,7 +38,10 @@ import {
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 import { OrderContextDetails } from "./CustomerOrderContext";
 import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
-import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
+import {
+  formatIndividualShippingNote,
+  resolveIndividualInboundShippingDisplay,
+} from "../utils/individualInboundShippingDisplay";
 import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 import {
   buildOptimizedImageSources,
@@ -1406,6 +1409,7 @@ export const DormantFutureSummaryStep = ({
             </dd>
           </div>
           {includedInbound ? (
+            <>
             <div
               data-summary-included-inbound="true"
               data-amount-cents={includedInbound.amountCents}
@@ -1416,6 +1420,13 @@ export const DormantFutureSummaryStep = ({
                 {money(includedInbound.priceEur)}
               </dd>
             </div>
+            <p
+              data-summary-lagos-note="true"
+              className="text-xs leading-relaxed text-white/70"
+            >
+              {formatIndividualShippingNote(includedInbound)}
+            </p>
+            </>
           ) : null}
           {deliveryMethod ? (
             <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">

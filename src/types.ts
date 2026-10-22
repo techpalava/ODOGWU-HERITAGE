@@ -547,6 +547,10 @@ export interface IndividualShippingSnapshot {
   priceEur: number;
   priceNgn: number;
   exchangeRateNgnPerEur: number;
+  /** ceil(garment rows / 10). A set is one garment row. */
+  blockCount?: number;
+  garmentsPerBlock?: number;
+  coveredWeightKg?: number;
 }
 
 export interface BatchShippingSnapshot {

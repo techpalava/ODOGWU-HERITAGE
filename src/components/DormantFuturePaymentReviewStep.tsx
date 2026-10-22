@@ -1217,6 +1217,14 @@ export const DormantFuturePaymentReviewStep = ({
                         moneyFromCents(row.amountCents)
                       )}
                     </dd>
+                    {row.note ? (
+                      <p
+                        data-pricing-row-note={row.id}
+                        className="basis-full text-xs leading-relaxed text-heritage-ink/60"
+                      >
+                        {row.note}
+                      </p>
+                    ) : null}
                   </div>
                 )
               ))}

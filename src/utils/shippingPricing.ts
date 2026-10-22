@@ -19,18 +19,21 @@ export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;
 export const BATCH_SHIPPING_PRICING_VERSION = "2026-07-30-flat-v1" as const;
 export const INDIVIDUAL_SHIPPING_PRICING_VERSION =
-  "2026-10-14-individual-v2" as const;
+  "2026-10-22-individual-block-v3" as const;
+/** DHL/cargo block price for Individual Lagos → Eindhoven home delivery. */
+export const INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS = 13125;
+export const INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK = 10;
+export const INDIVIDUAL_SHIPPING_KG_PER_BLOCK = 5;
 export const BATCH_FLAT_RATE_EUR_PER_GARMENT = 15.09;
 export const BATCH_MINIMUM_GARMENTS = 10;
 export const FINAL_MILE_PRICING_VERSION = "2026-07-30-final-mile-v1" as const;
 export const CART_SHIPPING_SNAPSHOT_VERSION =
   "2026-07-30-cart-shipping-v1" as const;
+/** Fingerprint payload for Individual inbound. Replaces the retired weight-band EUR table. */
 const INDIVIDUAL_SHIPPING_RATE_EUR = Object.freeze({
-  "0 - 2 kg": 14,
-  ">2 - 5 kg": 35,
-  ">5 - 10 kg": 70,
-  ">10 - 20 kg": 140,
-  ">20 kg": 210,
+  blockPriceCents: INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
+  garmentsPerBlock: INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
+  kgPerBlock: INDIVIDUAL_SHIPPING_KG_PER_BLOCK,
 });
 
 export const BATCH_SHIPPING_POLICY = Object.freeze({
@@ -579,34 +582,32 @@ export const calculateFinalMileShipping = ({
   };
 };
 
+const individualWeightBandForCoveredKg = (
+  coveredWeightKg: number,
+): IndividualShippingQuote["weightBand"] => {
+  if (coveredWeightKg <= 5) return ">2 - 5 kg";
+  if (coveredWeightKg <= 10) return ">5 - 10 kg";
+  if (coveredWeightKg <= 20) return ">10 - 20 kg";
+  return ">20 kg";
+};
+
+/**
+ * Individual Lagos → Eindhoven DHL/cargo block quote.
+ * Garment count is the number of garment rows (a set counts as 1), which
+ * Design Studio callers pass as `candidate.garments.length`.
+ * Price is ceil(garments / 10) × €131.25, computed in integer cents.
+ */
 export const calculateIndividualShipping = (
   garmentPieceCount: number,
 ): IndividualShippingQuote => {
   const normalizedPieceCount = normalizePositiveInteger(garmentPieceCount);
-  const estimatedWeightKg = Math.max(
-    2,
-    normalizedPieceCount * GARMENT_WEIGHT_KG,
+  const blockCount = Math.ceil(
+    normalizedPieceCount / INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
   );
-
-  let weightBand: IndividualShippingQuote["weightBand"];
-  let priceEur: number;
-
-  if (estimatedWeightKg <= 2) {
-    weightBand = "0 - 2 kg";
-    priceEur = INDIVIDUAL_SHIPPING_RATE_EUR[weightBand];
-  } else if (estimatedWeightKg <= 5) {
-    weightBand = ">2 - 5 kg";
-    priceEur = INDIVIDUAL_SHIPPING_RATE_EUR[weightBand];
-  } else if (estimatedWeightKg <= 10) {
-    weightBand = ">5 - 10 kg";
-    priceEur = INDIVIDUAL_SHIPPING_RATE_EUR[weightBand];
-  } else if (estimatedWeightKg <= 20) {
-    weightBand = ">10 - 20 kg";
-    priceEur = INDIVIDUAL_SHIPPING_RATE_EUR[weightBand];
-  } else {
-    weightBand = ">20 kg";
-    priceEur = INDIVIDUAL_SHIPPING_RATE_EUR[weightBand];
-  }
+  const priceCents = blockCount * INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS;
+  const coveredWeightKg = blockCount * INDIVIDUAL_SHIPPING_KG_PER_BLOCK;
+  const priceEur = priceCents / 100;
+  const weightBand = individualWeightBandForCoveredKg(coveredWeightKg);
 
   return {
     routeId: "LAGOS_EINDHOVEN",
@@ -614,13 +615,16 @@ export const calculateIndividualShipping = (
     origin: "Lagos",
     destination: "Eindhoven",
     garmentPieceCount: normalizedPieceCount,
-    estimatedWeightKg: Number(estimatedWeightKg.toFixed(2)),
+    estimatedWeightKg: coveredWeightKg,
     weightBand,
     priceEur,
     priceNgn: Math.round(
-      priceEur * LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR,
+      (priceCents * LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR) / 100,
     ),
     exchangeRateNgnPerEur: LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR,
+    blockCount,
+    garmentsPerBlock: INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
+    coveredWeightKg,
   };
 };
 
