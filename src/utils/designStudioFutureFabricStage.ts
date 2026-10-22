@@ -2990,6 +2990,98 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
   return { status, action: "select", ...emptyCancelPresentation };
 };
 
+export type FutureFabricChangeCatalogueCardMode =
+  | "change-assigned"
+  | "change-use-again"
+  | "change-select"
+  | "change-blocked";
+
+export interface FutureFabricChangeCatalogueCardPresentation
+  extends FutureFabricCatalogueCardPresentation {
+  changeMode: FutureFabricChangeCatalogueCardMode;
+  blockedReason: ChangeFutureFabricAllocationProductBlockReason | null;
+}
+
+/**
+ * Change Fabric catalogue presentation for one Fabric Selection (allocation).
+ * Unlike the single-garment assign presentation, a Fabric already used by
+ * other selections stays pickable as USE AGAIN: the change keeps a separate
+ * physical piece of that print for this selection. It never exposes cancel
+ * targets for other garments, so the card can't remove other selections'
+ * fabric while changing; only the changing garment's own current fabric keeps
+ * its existing cancel.
+ * Availability comes from the same changeFutureFabricAllocationProduct path
+ * the commit uses.
+ */
+export const resolveFutureFabricChangeCatalogueCardPresentation = ({
+  fabricCode,
+  fabricAllocationState,
+  allocationId,
+  fabrics,
+  targetGarmentKey = null,
+}: {
+  fabricCode: string;
+  fabricAllocationState: FabricAllocationState;
+  allocationId: string;
+  fabrics: readonly Fabric[];
+  /**
+   * The garment whose Change Fabric was tapped. Its current fabric keeps the
+   * existing single-occurrence cancel (it never targets other garments).
+   */
+  targetGarmentKey?: string | null;
+}): FutureFabricChangeCatalogueCardPresentation => {
+  const allocation = fabricAllocationState.fabricAllocations.find(
+    (candidate) => candidate.allocationId === allocationId,
+  );
+  if (allocation && allocation.fabricCode === fabricCode) {
+    const ownsTarget = Boolean(
+      targetGarmentKey &&
+        allocation.garmentAssignments.some(
+          (assignment) => assignment.garmentKey === targetGarmentKey,
+        ),
+    );
+    return {
+      status: "ASSIGNED",
+      ...(ownsTarget && targetGarmentKey
+        ? { action: "cancel" as const, ...singleCancelPresentation(targetGarmentKey) }
+        : { action: "none" as const, ...emptyCancelPresentation }),
+      changeMode: "change-assigned",
+      blockedReason: null,
+    };
+  }
+  const usedByOtherSelection = fabricAllocationState.fabricAllocations.some(
+    (candidate) =>
+      candidate.allocationId !== allocationId &&
+      candidate.fabricCode === fabricCode &&
+      candidate.garmentAssignments.length > 0,
+  );
+  const status: FutureFabricCatalogueCardStatus = usedByOtherSelection
+    ? "USE AGAIN"
+    : "SELECT";
+  const preview = changeFutureFabricAllocationProduct({
+    state: fabricAllocationState,
+    allocationId,
+    nextFabricCode: fabricCode,
+    fabrics,
+  });
+  if (preview.status === "blocked") {
+    return {
+      status,
+      action: "none",
+      ...emptyCancelPresentation,
+      changeMode: "change-blocked",
+      blockedReason: preview.reason,
+    };
+  }
+  return {
+    status,
+    action: usedByOtherSelection ? "use_again" : "select",
+    ...emptyCancelPresentation,
+    changeMode: usedByOtherSelection ? "change-use-again" : "change-select",
+    blockedReason: null,
+  };
+};
+
 /**
  * Cancels one catalogue assignment through the canonical removal path.
  * Additional garments keep their occurrence as a pending fabric assignment

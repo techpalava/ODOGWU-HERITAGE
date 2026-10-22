@@ -78,6 +78,7 @@ import {
   hasFutureReusableHalfCapacityForFabric,
   isPhysicalFabricQuantityOverAllocated,
   resolveFutureFabricCatalogueCardPresentation,
+  resolveFutureFabricChangeCatalogueCardPresentation,
   type FutureFabricAssignmentResult,
   type FutureFabricAssignmentBlockReason,
   type ChangeFutureFabricAllocationExpectation,
@@ -2257,8 +2258,29 @@ export const DormantFutureFabricStep = ({
           step1Presentation.status === "UNAVAILABLE" ||
           unassignedStep1Targets.length > 0),
     );
+    // Change Fabric targets a whole Fabric Selection (allocation). Its cards
+    // must not reuse the single-garment assign presentation: fabrics used by
+    // other selections stay pickable (USE AGAIN) and never expose the X that
+    // would remove another selection's fabric.
+    const changeCardPresentation =
+      isChangeFabricTarget && changeFabricAssignmentTarget
+        ? resolveFutureFabricChangeCatalogueCardPresentation({
+            fabricCode: fabric.code,
+            fabricAllocationState,
+            allocationId: changeFabricAssignmentTarget.allocation.allocationId,
+            fabrics,
+            targetGarmentKey: changeFabricAssignmentTarget.assignment.garmentKey,
+          })
+        : null;
     const cardPresentation: FutureFabricCatalogueCardPresentation =
-      step1Presentation && useStep1CardPresentation
+      changeCardPresentation
+        ? {
+            status: changeCardPresentation.status,
+            action: changeCardPresentation.action,
+            cancelGarmentKey: changeCardPresentation.cancelGarmentKey,
+            cancelGarmentKeys: changeCardPresentation.cancelGarmentKeys,
+          }
+        : step1Presentation && useStep1CardPresentation
         ? adaptUntargetedStep1CatalogueCardPresentation({
             step1Status: step1Presentation.status,
             step1Action: step1Presentation.action,
@@ -2362,14 +2384,31 @@ export const DormantFutureFabricStep = ({
     );
     const singleCancelLabel =
       labeledCancelTargets.length === 1 ? labeledCancelTargets[0]!.label : "";
+    const changeSelectionNumber =
+      changeCardPresentation && changeFabricAssignmentTarget
+        ? fabricAllocationState.fabricAllocations.findIndex(
+            (allocation) =>
+              allocation.allocationId ===
+              changeFabricAssignmentTarget.allocation.allocationId,
+          ) + 1
+        : 0;
     const targetGarmentLabel =
-      cardPresentation.action === "cancel"
+      changeCardPresentation && changeSelectionNumber > 0
+        ? `Fabric Selection ${changeSelectionNumber}`
+        : cardPresentation.action === "cancel"
         ? singleCancelLabel || undefined
         : currentTarget
           ? getFutureGarmentLabel(currentTarget.assignment.garmentType)
           : undefined;
     const handleCatalogueRemove = (event?: { currentTarget: HTMLElement }) => {
       if (
+        (changeCardPresentation &&
+          (changeCardPresentation.changeMode !== "change-assigned" ||
+            cancelGarmentKeys.some(
+              (garmentKey) =>
+                garmentKey !==
+                changeFabricAssignmentTarget?.assignment.garmentKey,
+            ))) ||
         cancelGarmentKeys.length === 0 ||
         getFabricAvailabilityMessage(fabric)
       ) {
@@ -2419,7 +2458,23 @@ export const DormantFutureFabricStep = ({
         onAction={(event) => {
           handleFabricSelection(fabric, event?.currentTarget);
         }}
+        statusLabel={
+          changeCardPresentation?.changeMode === "change-assigned"
+            ? "ASSIGNED"
+            : undefined
+        }
         onRemove={handleCatalogueRemove}
+        dataAttributes={
+          changeCardPresentation
+            ? {
+                "data-fabric-change-card": changeCardPresentation.changeMode,
+                "data-fabric-change-selection":
+                  changeSelectionNumber > 0
+                    ? String(changeSelectionNumber)
+                    : undefined,
+              }
+            : undefined
+        }
       />
     );
   };

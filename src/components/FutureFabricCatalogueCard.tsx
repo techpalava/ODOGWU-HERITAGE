@@ -283,7 +283,7 @@ export const FutureFabricCatalogueCard = ({
               data-fabric-in-use="true"
               className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider text-white"
             >
-              IN USE
+              {statusLabel || "IN USE"}
             </span>
             {removeButton}
           </div>
