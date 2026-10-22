@@ -1,6 +1,7 @@
 import { CheckCircle2, X } from "lucide-react";
 import { useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { handleSavedOrderDialogKeyDown, useReturnFocusOnClose } from "./savedOrderDialogKeyboard";
 import { SAVED_STUDIO_ORDER_CONFIRMATION_MESSAGE } from "../utils/savedStudioOrderModel";
 import type { SaveOrderFocusTarget } from "./SaveOrderActionContext";
 
@@ -27,6 +28,7 @@ export const SavedOrderConfirmationDialog = ({
   const titleId = useId();
   const continueRef = useRef<HTMLButtonElement | null>(null);
 
+  useReturnFocusOnClose(open);
   useLayoutEffect(() => {
     if (!open || typeof document === "undefined") return;
     continueRef.current?.focus({ preventScroll: true });
@@ -34,20 +36,28 @@ export const SavedOrderConfirmationDialog = ({
 
   if (!open) return null;
 
+  const handleContinue = () => {
+    onContinue();
+    restoreFocus(restoreFocusTo);
+  };
+
   const dialog = (
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-heritage-ink/50 p-0 sm:items-center sm:p-4"
       data-testid="saved-order-confirmation"
+      onKeyDown={(event) =>
+        handleSavedOrderDialogKeyDown(event, {
+          onEscape: handleContinue,
+          escapeDisabled: busy,
+        })
+      }
     >
       <button
         type="button"
         tabIndex={-1}
         aria-label="Continue"
         className="absolute inset-0 cursor-default"
-        onClick={() => {
-          onContinue();
-          restoreFocus(restoreFocusTo);
-        }}
+        onClick={handleContinue}
       />
       <div
         role="dialog"
@@ -72,10 +82,7 @@ export const SavedOrderConfirmationDialog = ({
           <button
             type="button"
             aria-label="Continue"
-            onClick={() => {
-              onContinue();
-              restoreFocus(restoreFocusTo);
-            }}
+            onClick={handleContinue}
             className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green"
           >
             <X aria-hidden="true" size={18} />
@@ -87,10 +94,7 @@ export const SavedOrderConfirmationDialog = ({
             type="button"
             data-testid="saved-order-confirmation-continue"
             disabled={busy}
-            onClick={() => {
-              onContinue();
-              restoreFocus(restoreFocusTo);
-            }}
+            onClick={handleContinue}
             className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-sm font-bold text-white"
           >
             Continue

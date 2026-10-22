@@ -1,6 +1,7 @@
 import { AlertTriangle, X } from "lucide-react";
 import { useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { handleSavedOrderDialogKeyDown, useReturnFocusOnClose } from "./savedOrderDialogKeyboard";
 
 export const SavedOrderReplaceDialog = ({
   open,
@@ -21,6 +22,7 @@ export const SavedOrderReplaceDialog = ({
   const descriptionId = useId();
   const saveFirstRef = useRef<HTMLButtonElement | null>(null);
 
+  useReturnFocusOnClose(open);
   useLayoutEffect(() => {
     if (!open) return;
     saveFirstRef.current?.focus({ preventScroll: true });
@@ -32,6 +34,12 @@ export const SavedOrderReplaceDialog = ({
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-heritage-ink/50 p-0 sm:items-center sm:p-4"
       data-testid="saved-order-replace-dialog"
+      onKeyDown={(event) =>
+        handleSavedOrderDialogKeyDown(event, {
+          onEscape: onCancel,
+          escapeDisabled: busy,
+        })
+      }
     >
       <button
         type="button"

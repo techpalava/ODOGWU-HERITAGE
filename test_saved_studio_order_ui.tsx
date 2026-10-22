@@ -59,6 +59,52 @@ assert.equal(gatedButtons[1].props["data-testid"], "save-order-button");
 assert.equal(gatedButtons[1].props.disabled, true);
 assert.match(textOf(gated.root), new RegExp(SAVED_STUDIO_ORDER_GARMENT_GATE_REASON));
 assert.equal(savedFocus, null);
+// Accessible name stays "Save Order"; the gate reason is the description.
+assert.equal(gatedButtons[1].props["aria-label"], "Save Order");
+const gatedReason = gated.root.findByProps({ "data-testid": "save-order-disabled-reason" });
+assert.equal(gatedButtons[1].props["aria-describedby"], gatedReason.props.id);
+// Phones: Save Order wraps onto its own full-width line under Back + Continue.
+const gatedRow = gated.root.findByProps({ "data-studio-step-actions-buttons": "true" });
+assert.match(String(gatedRow.props.className), /max-sm:flex-wrap/);
+assert.match(String(gatedButtons[1].props.className), /max-sm:basis-full/);
+assert.match(String(gatedButtons[1].props.className), /max-sm:order-last/);
+
+// Garment Type: the helper line keeps its space once a garment is chosen.
+const garmentStepActions = (disabled: boolean) => (
+  <SaveOrderActionProvider
+    value={{
+      disabled,
+      disabledReason: disabled ? SAVED_STUDIO_ORDER_GARMENT_GATE_REASON : null,
+      busy: false,
+      onSave: () => undefined,
+    }}
+  >
+    <DesignStudioStepActions
+      slot="footer"
+      backDisabled
+      forward={{ label: "Continue", ariaLabel: "Continue" }}
+    />
+  </SaveOrderActionProvider>
+);
+const garmentStep = render(garmentStepActions(true));
+assert.ok(garmentStep.root.findByProps({ "data-testid": "save-order-disabled-reason" }));
+act(() => {
+  garmentStep.update(garmentStepActions(false));
+});
+const placeholder = garmentStep.root.findByProps({
+  "data-testid": "save-order-disabled-reason-placeholder",
+});
+assert.equal(placeholder.props["aria-hidden"], "true");
+assert.match(String(placeholder.props.className), /invisible/);
+assert.equal(textOf(placeholder), SAVED_STUDIO_ORDER_GARMENT_GATE_REASON);
+assert.equal(
+  garmentStep.root.findAllByProps({ "data-testid": "save-order-disabled-reason" }).length,
+  0,
+);
+assert.equal(
+  garmentStep.root.findAllByType("button")[1].props["aria-describedby"],
+  undefined,
+);
 
 let saveClicks = 0;
 const enabled = render(
@@ -124,6 +170,78 @@ act(() => {
   replace.root.findByProps({ "data-testid": "saved-order-replace-cancel" }).props.onClick();
 });
 assert.deepEqual(choices, ["save", "replace", "cancel"]);
+
+const escapeKey = () => {
+  let prevented = false;
+  return {
+    key: "Escape",
+    preventDefault: () => {
+      prevented = true;
+    },
+    stopPropagation: () => undefined,
+    get prevented() {
+      return prevented;
+    },
+  };
+};
+// Escape cancels the replace dialog, and does nothing while it is busy.
+{
+  const escapeChoices: string[] = [];
+  const props = {
+    unfinishedOrderLabel: "Standard Shirt",
+    onSaveCurrentFirst: () => escapeChoices.push("save"),
+    onReplace: () => escapeChoices.push("replace"),
+    onCancel: () => escapeChoices.push("cancel"),
+  };
+  const dialog = render(<SavedOrderReplaceDialog open {...props} />);
+  const event = escapeKey();
+  act(() => {
+    dialog.root.findByProps({ "data-testid": "saved-order-replace-dialog" }).props.onKeyDown(event);
+  });
+  assert.deepEqual(escapeChoices, ["cancel"]);
+  assert.equal(event.prevented, true);
+  act(() => {
+    dialog.update(<SavedOrderReplaceDialog open busy {...props} />);
+  });
+  act(() => {
+    dialog.root
+      .findByProps({ "data-testid": "saved-order-replace-dialog" })
+      .props.onKeyDown(escapeKey());
+  });
+  assert.deepEqual(escapeChoices, ["cancel"]);
+}
+// Escape on the confirmation means Continue; on the cap dialog it closes.
+{
+  let escContinued = 0;
+  const dialog = render(
+    <SavedOrderConfirmationDialog
+      open
+      restoreFocusTo={null}
+      onContinue={() => {
+        escContinued += 1;
+      }}
+      onStartNewOrder={() => undefined}
+    />,
+  );
+  act(() => {
+    dialog.root.findByProps({ "data-testid": "saved-order-confirmation" }).props.onKeyDown(escapeKey());
+  });
+  assert.equal(escContinued, 1);
+  let capClosed = 0;
+  const capDialog = render(
+    <SavedOrderCapDialog
+      open
+      onClose={() => {
+        capClosed += 1;
+      }}
+      onOpenDashboard={() => undefined}
+    />,
+  );
+  act(() => {
+    capDialog.root.findByProps({ "data-testid": "saved-order-cap-dialog" }).props.onKeyDown(escapeKey());
+  });
+  assert.equal(capClosed, 1);
+}
 
 const cap = render(
   <SavedOrderCapDialog open onClose={() => undefined} onOpenDashboard={() => undefined} />,

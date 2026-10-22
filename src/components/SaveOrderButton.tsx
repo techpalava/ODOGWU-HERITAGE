@@ -1,4 +1,6 @@
 import { Bookmark } from "lucide-react";
+import { useId } from "react";
+import { SAVED_STUDIO_ORDER_GARMENT_GATE_REASON } from "../utils/savedStudioOrderModel";
 import {
   useSaveOrderAction,
   type SaveOrderFocusTarget,
@@ -19,25 +21,30 @@ const captureFocus = (): SaveOrderFocusTarget => ({
 export const SaveOrderButton = ({
   className = "",
   variant = "step-row",
+  describedById,
 }: {
   className?: string;
   variant?: "step-row" | "payment-panel";
+  /** id of the visible helper text that explains why Save Order is disabled. */
+  describedById?: string;
 }) => {
   const action = useSaveOrderAction();
+  const panelReasonId = useId();
   if (!action) return null;
   const { disabled, disabledReason, busy, onSave } = action;
   const label = busy ? "Saving…" : "Save Order";
-  const describedBy = disabled && disabledReason ? "save-order-disabled-reason" : undefined;
+  const showReason = disabled && Boolean(disabledReason);
 
   if (variant === "payment-panel") {
     return (
+      <>
       <button
         type="button"
         data-testid="save-order-button"
         data-studio-nav="save-order"
         disabled={disabled || busy}
-        aria-label={disabledReason || label}
-        aria-describedby={describedBy}
+        aria-label={label}
+        aria-describedby={showReason ? panelReasonId : undefined}
         title={disabledReason || undefined}
         onClick={() => onSave(captureFocus())}
         className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-gold/50 bg-heritage-forest px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-gold hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto ${className}`}
@@ -45,6 +52,12 @@ export const SaveOrderButton = ({
         <Bookmark aria-hidden="true" size={14} />
         {label}
       </button>
+      {showReason ? (
+        <span id={panelReasonId} className="sr-only">
+          {disabledReason}
+        </span>
+      ) : null}
+      </>
     );
   }
 
@@ -54,8 +67,8 @@ export const SaveOrderButton = ({
       data-testid="save-order-button"
       data-studio-nav="save-order"
       disabled={disabled || busy}
-      aria-label={disabledReason || "Save Order"}
-      aria-describedby={describedBy}
+      aria-label={label}
+      aria-describedby={showReason ? describedById : undefined}
       title={disabledReason || undefined}
       onClick={() => onSave(captureFocus())}
       className={`${saveOrderStepRowClass} ${className}`}
@@ -71,16 +84,35 @@ export const SaveOrderButton = ({
   );
 };
 
-export const SaveOrderDisabledReason = () => {
+export const SaveOrderDisabledReason = ({
+  id,
+  reserveSpace = false,
+}: {
+  id: string;
+  /** Keep the line's height when there is no reason, so nothing below shifts. */
+  reserveSpace?: boolean;
+}) => {
   const action = useSaveOrderAction();
-  if (!action?.disabled || !action.disabledReason) return null;
+  const reason = action?.disabled ? action.disabledReason : null;
+  if (!reason) {
+    if (!reserveSpace) return null;
+    return (
+      <p
+        aria-hidden="true"
+        data-testid="save-order-disabled-reason-placeholder"
+        className="invisible text-[11px] font-medium text-heritage-ink/70"
+      >
+        {SAVED_STUDIO_ORDER_GARMENT_GATE_REASON}
+      </p>
+    );
+  }
   return (
     <p
-      id="save-order-disabled-reason"
+      id={id}
       data-testid="save-order-disabled-reason"
       className="text-[11px] font-medium text-heritage-ink/70"
     >
-      {action.disabledReason}
+      {reason}
     </p>
   );
 };

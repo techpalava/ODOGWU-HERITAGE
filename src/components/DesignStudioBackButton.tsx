@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, PackageCheck } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { SaveOrderButton, SaveOrderDisabledReason } from "./SaveOrderButton";
 import { useSaveOrderAction } from "./SaveOrderActionContext";
 
@@ -182,10 +182,15 @@ export const DesignStudioStepActions = ({
   className?: string;
 }) => {
   const saveAction = useSaveOrderAction();
+  const saveReasonId = useId();
   const showDisabledReason = Boolean(
     saveAction?.disabled && saveAction.disabledReason,
   );
-  const showNote = Boolean(note) || showDisabledReason;
+  // Garment Type (the only step with Back disabled) is where the Save Order
+  // gate reason appears. Keep its line reserved after a garment is picked so
+  // the content below does not move.
+  const reserveDisabledReason = Boolean(saveAction) && backDisabled;
+  const showNote = Boolean(note) || showDisabledReason || reserveDisabledReason;
 
   return (
     <div
@@ -193,9 +198,12 @@ export const DesignStudioStepActions = ({
       data-studio-step-actions-slot={slot}
       className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
     >
+      {/* Phones: Back + Continue keep their one-row layout and Save Order takes
+          its own full-width line beneath. sm and up: one row of three. Back and
+          Continue are flex-1 basis-0, so wrapping never splits those two. */}
       <div
         data-studio-step-actions-buttons="true"
-        className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3"
+        className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap"
       >
         <DesignStudioBackButton
           destination={backDestination}
@@ -203,7 +211,12 @@ export const DesignStudioStepActions = ({
           disabled={backDisabled}
           className="min-w-0 flex-1 basis-0 sm:max-w-xs"
         />
-        {saveAction ? <SaveOrderButton /> : null}
+        {saveAction ? (
+          <SaveOrderButton
+            describedById={showDisabledReason ? saveReasonId : undefined}
+            className="max-sm:order-last max-sm:max-w-none max-sm:flex-none max-sm:basis-full"
+          />
+        ) : null}
         {forward ? (
           <DesignStudioForwardButton
             {...forward}
@@ -214,9 +227,12 @@ export const DesignStudioStepActions = ({
       {showNote ? (
         <div data-studio-step-actions-note="true" className="w-full min-w-0">
           {note}
-          {showDisabledReason ? (
+          {showDisabledReason || reserveDisabledReason ? (
             <div className={note ? "mt-2" : undefined}>
-              <SaveOrderDisabledReason />
+              <SaveOrderDisabledReason
+                id={saveReasonId}
+                reserveSpace={reserveDisabledReason}
+              />
             </div>
           ) : null}
         </div>

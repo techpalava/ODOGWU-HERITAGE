@@ -1,6 +1,7 @@
 import { AlertTriangle, X } from "lucide-react";
-import { useId } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { handleSavedOrderDialogKeyDown, useReturnFocusOnClose } from "./savedOrderDialogKeyboard";
 import {
   SAVED_STUDIO_ORDER_CAP_MESSAGE,
   SAVED_STUDIO_ORDER_DASHBOARD_HASH,
@@ -16,12 +17,23 @@ export const SavedOrderCapDialog = ({
   onOpenDashboard: () => void;
 }) => {
   const titleId = useId();
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+
+  useReturnFocusOnClose(open);
+  useLayoutEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus({ preventScroll: true });
+  }, [open]);
+
   if (!open) return null;
 
   const dialog = (
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-heritage-ink/50 p-0 sm:items-center sm:p-4"
       data-testid="saved-order-cap-dialog"
+      onKeyDown={(event) =>
+        handleSavedOrderDialogKeyDown(event, { onEscape: onClose })
+      }
     >
       <button
         type="button"
@@ -74,7 +86,9 @@ export const SavedOrderCapDialog = ({
         </div>
         <footer className="px-4 py-4 sm:px-6">
           <button
+            ref={closeRef}
             type="button"
+            data-testid="saved-order-cap-close"
             onClick={onClose}
             className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/20 px-4 text-sm font-bold text-heritage-green"
           >
