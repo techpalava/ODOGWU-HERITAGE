@@ -42,10 +42,28 @@ const STAT_TILES = [
 const STAT_TILE_CLASS =
   "min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group";
 
+/**
+ * Five items on a tablet-width row wrap unevenly (3+2 or 2+2+1). From `sm`
+ * up to `lg` both the stat tiles and the group cards sit on a six-column grid
+ * where each item spans two columns, so they lay out as three on top and two
+ * centred below at equal widths. From `lg` they form a single row of five.
+ * On phones the stat tiles stay two per row with the last tile full width,
+ * and the group cards stay one per row.
+ */
+const FIVE_ITEM_TABLET_GRID_CLASS = "sm:grid-cols-6 lg:grid-cols-5";
+const FIVE_ITEM_TABLET_SPAN_CLASS = "sm:col-span-2 lg:col-span-1";
+const FIVE_ITEM_TABLET_SECOND_ROW_START_CLASS =
+  "sm:col-start-2 lg:col-start-auto";
+
+const fiveItemTabletOffsetClass = (index: number): string =>
+  index === 3 ? ` ${FIVE_ITEM_TABLET_SECOND_ROW_START_CLASS}` : "";
+
+const statTileLayoutClass = (index: number): string =>
+  ` ${FIVE_ITEM_TABLET_SPAN_CLASS}${fiveItemTabletOffsetClass(index)}${index === STAT_TILES.length - 1 ? " col-span-2" : ""}`;
+
 interface HomepageCommunityShowcaseProps {
   primaryActionLabel: string;
   onPrimaryAction: () => void;
-  onClick?: () => void;
   primaryActionDisabled?: boolean;
   onViewGallery: () => void;
 }
@@ -53,7 +71,6 @@ interface HomepageCommunityShowcaseProps {
 export default function HomepageCommunityShowcase({
   primaryActionLabel,
   onPrimaryAction,
-  onClick = onPrimaryAction,
   primaryActionDisabled = false,
   onViewGallery,
 }: HomepageCommunityShowcaseProps) {
@@ -75,14 +92,16 @@ export default function HomepageCommunityShowcase({
         </div>
 
         <div className="space-y-4">
-          <div className="grid min-w-0 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
+          <div
+            className={`grid min-w-0 grid-cols-2 ${FIVE_ITEM_TABLET_GRID_CLASS} gap-6`}
+          >
             {STAT_TILES.map((tile, index) => (
               <div
                 key={tile.label}
                 role="group"
                 aria-label={`${tile.value} ${tile.label}`}
                 data-stat-value={tile.value}
-                className={`${STAT_TILE_CLASS}${index === STAT_TILES.length - 1 ? " col-span-2 sm:col-span-1" : ""}`}
+                className={`${STAT_TILE_CLASS}${statTileLayoutClass(index)}`}
               >
                 <span
                   className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300"
@@ -102,12 +121,14 @@ export default function HomepageCommunityShowcase({
         </div>
 
         <div className="space-y-5 min-w-0">
-          <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {COMMUNITY_GROUPS.map((group) => (
+          <div
+            className={`grid min-w-0 grid-cols-1 ${FIVE_ITEM_TABLET_GRID_CLASS} gap-3`}
+          >
+            {COMMUNITY_GROUPS.map((group, index) => (
               <div
                 key={group.number}
                 data-community-group={group.name}
-                className="min-w-0 rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-left"
+                className={`min-w-0 ${FIVE_ITEM_TABLET_SPAN_CLASS}${fiveItemTabletOffsetClass(index)} rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-left`}
               >
                 <p className="text-xs font-semibold text-heritage-gold font-sans break-words">
                   Group {group.number} · {group.name}
@@ -138,7 +159,7 @@ export default function HomepageCommunityShowcase({
 
         <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
           <button
-            onClick={onClick}
+            onClick={onPrimaryAction}
             disabled={primaryActionDisabled}
             className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
           >
