@@ -288,9 +288,13 @@ assert.equal(summaryButton(renderer.root, 1).props["aria-pressed"], false);
   assert.doesNotMatch(String(name.props.className), /\btruncate\b/, "name is not single-line truncated");
   assert.match(String(name.props.className), /line-clamp-2/, "name wraps to two lines");
   assert.equal(name.props.title, "Royal Forest Mosaic");
-  assert.match(String(active.props.className), /w-\[min\(16rem,calc\(100vw-7\.5rem\)\)\]/, "mobile button width fits the viewport");
+  assert.match(String(active.parent!.props.className), /w-\[calc\(100%-2rem\)\]/, "mobile button fits inside the row with a peek");
+  assert.match(String(active.props.className), /\bw-full\b/);
   const list = renderer.root.findByProps({ "data-fabric-selection-summary-list": "true" });
-  assert.match(String(list.props.className), /\bpr-16\b/, "mobile scroll padding clears the floating buttons");
+  assert.equal(list.props["data-fabric-selection-summary-safe-area"], "floating-actions");
+  assert.match(String(list.props.className), /(^|\s)mr-14(\s|$)/, "row reserves the floating-button column on mobile (scroll area never sits under it)");
+  assert.match(String(list.props.className), /\boverflow-x-auto\b/, "sideways scroll kept");
+  assert.match(String(list.props.className), /sm:-mr-1/, "safe area only on mobile");
 }
 
 // Switch target to Selection 1 via its button.
@@ -319,7 +323,33 @@ assert.equal(blocked.props["data-fabric-disabled-message"], "true");
 assert.equal(textContent(blocked), formatFabricStockExhaustedCopy());
 assert.doesNotMatch(textContent(blocked), /USE AGAIN/);
 
-// Cancel change.
+// Compact Cancel change next to the heading in Change mode.
+{
+  const anchor = renderer.root.findByProps({ "data-catalogue-scroll-anchor": "true" });
+  const near = anchor.findByProps({ "data-testid": "fabric-change-cancel-heading" });
+  assert.equal(near.type, "button");
+  assert.match(textContent(near), /Cancel change/);
+  assert.equal(near.props["aria-label"], "Cancel change for Fabric Selection 1");
+  const headingRow = anchor.findByProps({ "data-testid": "fabric-selection-change-heading" }).parent!.parent!;
+  assert.ok(headingRow.findAllByProps({ "data-testid": "fabric-change-cancel-heading" }).length === 1, "cancel sits in the heading row");
+  assert.doesNotMatch(String(near.parent!.props.className), /ml-auto/, "left-aligned on mobile, away from the floating buttons");
+  // Tapping it cancels and returns to the summary row; then re-open Selection 1.
+  scrolledKeys.length = 0;
+  windowScrollToCalls.length = 0;
+  await withWindow(async () => {
+    await act(async () => near.props.onClick());
+  });
+  assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for Selection/);
+  assert.deepEqual(scrolledKeys, ["summary-row:start"], "heading Cancel change returns to the summary row");
+  assert.deepEqual(windowScrollToCalls, []);
+  assert.equal(renderer.root.findAllByProps({ "data-testid": "fabric-change-cancel-heading" }).length, 0, "no heading cancel outside Change mode");
+  await withWindow(async () => {
+    await act(async () => summaryButton(renderer.root, 1).props.onClick({ currentTarget: {} }));
+  });
+  assert.match(textContent(renderer.root), /Choose a new fabric for Selection 1/);
+}
+
+// Bottom Cancel change (kept).
 const cancel = renderer.root.findByProps({ "data-testid": "fabric-change-cancel" });
 assert.match(textContent(cancel), /Cancel change/);
 assert.match(String(cancel.parent!.props.className), /\bpr-16\b/, "Cancel change sits clear of the floating buttons on mobile");

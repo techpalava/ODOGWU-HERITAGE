@@ -3366,11 +3366,12 @@ export const DormantFutureFabricStep = ({
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
               Fabric Catalogue
             </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
             <h3
               ref={catalogueHeadingRef}
               aria-live="polite"
               tabIndex={-1}
-              className="mt-1 font-serif text-xl font-bold text-heritage-green"
+              className="min-w-0 font-serif text-xl font-bold text-heritage-green"
             >
               {changeFabricPresentation ? (
                 <button
@@ -3409,6 +3410,24 @@ export const DormantFutureFabricStep = ({
                 "Available Fabrics"
               )}
             </h3>
+            {changeFabricPresentation ? (
+              // Compact Cancel change beside the heading so mobile customers
+              // don't have to scroll past the whole catalogue. Own line and
+              // left-aligned on mobile, clear of the right-side floating buttons.
+              <div className="w-full sm:w-auto" data-fabric-change-cancel-near-heading="true">
+                <button
+                  type="button"
+                  onClick={cancelFabricChangeKeepingPlace}
+                  data-testid="fabric-change-cancel-heading"
+                  aria-label={`Cancel change for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 border-heritage-green bg-white px-3 text-[11px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <X aria-hidden="true" size={13} />
+                  Cancel change
+                </button>
+              </div>
+            ) : null}
+            </div>
             <p
               id="future-fabric-catalogue-help"
               className="mt-2 max-w-2xl break-words text-xs leading-relaxed text-heritage-ink/65"

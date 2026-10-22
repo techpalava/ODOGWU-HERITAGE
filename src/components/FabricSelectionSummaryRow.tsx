@@ -75,12 +75,16 @@ export const FabricSelectionSummaryRow = ({
         Your Fabric Selections · tap one to change its fabric
       </p>
       <ul data-fabric-selection-summary-list="true"
-        className="-mx-1 flex min-w-0 snap-x snap-mandatory scroll-pl-1.5 gap-3 overflow-x-auto overscroll-x-contain pb-3 pl-1.5 pr-16 pt-1.5 sm:snap-none sm:flex-wrap sm:overflow-visible sm:pr-1">
+        data-fabric-selection-summary-safe-area="floating-actions"
+        className="-ml-1 mr-14 flex min-w-0 snap-x snap-mandatory scroll-pl-1.5 gap-3 overflow-x-auto overscroll-x-contain pb-3 pl-1.5 pr-1.5 pt-1.5 sm:-mr-1 sm:snap-none sm:flex-wrap sm:overflow-visible">
         {items.map((item) => {
           const active = item.allocationId === changingAllocationId;
           const garmentList = formatList(item.garmentLabels);
           return (
-            <li key={item.allocationId} className="flex shrink-0 snap-start">
+            <li
+              key={item.allocationId}
+              className="flex w-[calc(100%-2rem)] max-w-64 shrink-0 snap-start sm:w-60 sm:max-w-none"
+            >
               <button
                 type="button"
                 aria-pressed={active}
@@ -91,20 +95,22 @@ export const FabricSelectionSummaryRow = ({
                 data-fabric-selection-summary-allocation={item.allocationId}
                 data-fabric-selection-summary-active={active ? "true" : undefined}
                 onClick={(event) => onSelectSelection(item, event)}
-                className={`flex h-full w-[min(16rem,calc(100vw-7.5rem))] min-w-0 items-start gap-2.5 rounded-xl border bg-white p-3 text-left sm:w-60 sm:gap-3 transition hover:border-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                className={`flex h-full w-full min-w-0 items-start gap-2 rounded-xl border bg-white p-2.5 text-left sm:gap-3 sm:p-3 transition hover:border-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                   active
                     ? "border-heritage-gold bg-heritage-gold/10 ring-2 ring-heritage-gold ring-offset-2 ring-offset-white"
                     : "border-heritage-gold/25"
                 }`}
               >
-                <span
-                  aria-hidden="true"
-                  data-fabric-selection-summary-badge="true"
-                  className={`shrink-0 ${getFabricSelectionBadgeClass(item.selectionNumber)}`}
-                >
-                  {item.selectionNumber}
+                <span className="flex shrink-0 flex-col items-center gap-1.5 sm:flex-row sm:items-start sm:gap-3">
+                  <span
+                    aria-hidden="true"
+                    data-fabric-selection-summary-badge="true"
+                    className={`shrink-0 ${getFabricSelectionBadgeClass(item.selectionNumber)}`}
+                  >
+                    {item.selectionNumber}
+                  </span>
+                  <SelectionSwatch fabric={item.fabric} fabricCode={item.fabricCode} />
                 </span>
-                <SelectionSwatch fabric={item.fabric} fabricCode={item.fabricCode} />
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                   {active ? (
                     <span
