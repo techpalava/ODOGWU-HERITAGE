@@ -652,11 +652,15 @@ assert.equal(
 );
 assert.equal(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.valueLabel,
-  "€14.00",
+  "€131.25",
 );
 assert.equal(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.amountCents,
-  1400,
+  13125,
+);
+assert.equal(
+  earlyIndividual.view.costBreakdown?.includedInboundShipping?.note,
+  "Shipping covers up to 10 garments (under 5 kg).",
 );
 assert.notEqual(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.included,
@@ -665,11 +669,11 @@ assert.notEqual(
 assert.equal(earlyIndividual.view.costBreakdown?.shipping, null);
 assert.equal(
   earlyIndividual.view.totalAmountCents,
-  (early.view.totalAmountCents || 0) + 1400,
-  "Step 1 adds the Individual Lagos band to the live total",
+  (early.view.totalAmountCents || 0) + 13125,
+  "Step 1 adds the Individual Lagos block to the live total",
 );
 assert.equal(
-  (earlyIndividual.view.costBreakdown?.subtotal.amountCents || 0) + 1400,
+  (earlyIndividual.view.costBreakdown?.subtotal.amountCents || 0) + 13125,
   earlyIndividual.view.totalAmountCents,
 );
 assert.equal(
@@ -1676,14 +1680,14 @@ const individualDelivery = buildAuthority({
 });
 assert.equal(
   individualDelivery.view.costBreakdown?.includedInboundShipping?.amountCents,
-  1400,
-  "address delivery still shows the €14 Lagos band",
+  13125,
+  "address delivery still shows the €131.25 Lagos block",
 );
 for (const [pieceCount, amountCents] of [
-  [5, 3500],
-  [13, 7000],
-  [25, 14000],
-  [49, 21000],
+  [5, 13125],
+  [13, 26250],
+  [25, 39375],
+  [49, 65625],
 ] as const) {
   const banded = projectDesignStudioLiveOrderSummary({
     summary: {

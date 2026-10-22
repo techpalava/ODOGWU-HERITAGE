@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const walk = (dir, out = []) => {
@@ -56,7 +56,14 @@ try {
   for (const file of fs.readdirSync(root)) {
     if (file.endsWith(".json")) fs.copyFileSync(path.join(root, file), path.join(outDir, file));
   }
-  fs.symlinkSync(path.join(root, "node_modules"), path.join(outDir, "node_modules"), "dir");
+  const nodeModulesSrc = path.join(root, "node_modules");
+  const nodeModulesDest = path.join(outDir, "node_modules");
+  try {
+    fs.symlinkSync(nodeModulesSrc, nodeModulesDest, "dir");
+  } catch (error) {
+    if (process.platform !== "win32") throw error;
+    fs.symlinkSync(nodeModulesSrc, nodeModulesDest, "junction");
+  }
 
   const failures = [];
   for (const fn of functions) {
@@ -67,7 +74,7 @@ try {
       [
         "--input-type=module",
         "-e",
-        `import(${JSON.stringify(compiled)}).then(()=>process.exit(0)).catch(e=>{console.error((e&&e.code?e.code+": ":"")+String(e&&e.message||e).split("\\n")[0]);process.exit(1)})`,
+        `import(${JSON.stringify(pathToFileURL(compiled).href)}).then(()=>process.exit(0)).catch(e=>{console.error((e&&e.code?e.code+": ":"")+String(e&&e.message||e).split("\\n")[0]);process.exit(1)})`,
       ],
       { cwd: outDir, encoding: "utf8", env: { ...process.env, NODE_ENV: "production" } },
     );

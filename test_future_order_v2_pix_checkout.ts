@@ -52,6 +52,8 @@ import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureSh
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import { individualLagosToEindhovenChargeCents } from "./src/utils/individualInboundShippingDisplay";
+import type { FutureOrderCandidateV2 } from "./src/utils/futureOrderCandidate";
 import type { FutureShippingStateV1 } from "./src/types";
 
 const brazilDelivery = (): FutureShippingStateV1 => {
@@ -198,9 +200,40 @@ const pixInput: FutureOrderV2PixCheckoutInput = {
 
 // --- payment-intent handler: Pix action ----------------------------------
 const OWNER_UID = "pix-owner";
+const applyCurrentLagosLedger = (candidate: FutureOrderCandidateV2): FutureOrderCandidateV2 => {
+  const expectedLagos = individualLagosToEindhovenChargeCents({
+    orderType: candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: candidate.garments.length,
+    fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
+  });
+  const stored = candidate.pricing.components.lagosToEindhovenShipping;
+  const storedLagos =
+    stored.status === "separately_charged" ? stored.amountCents : null;
+  if (storedLagos === expectedLagos) return candidate;
+  const delta = (expectedLagos ?? 0) - (storedLagos ?? 0);
+  const writable = candidate as FutureOrderCandidateV2 & {
+    pricing: FutureOrderCandidateV2["pricing"];
+  };
+  writable.pricing = {
+    ...candidate.pricing,
+    exactTotalCents:
+      candidate.pricing.exactTotalCents === null
+        ? null
+        : candidate.pricing.exactTotalCents + delta,
+    components: {
+      ...candidate.pricing.components,
+      lagosToEindhovenShipping:
+        expectedLagos === null
+          ? { status: "included_in_garment_construction", amountCents: null }
+          : { status: "separately_charged", amountCents: expectedLagos },
+    },
+  };
+  return writable;
+};
 const makePersisted = (shippingState: FutureShippingStateV1 | null) => {
   const candidate = structuredClone(createFutureOrderV2Fixture("pix-order").cartItem.candidate);
   if (shippingState) (candidate.shipping as { state: FutureShippingStateV1 }).state = shippingState;
+  applyCurrentLagosLedger(candidate);
   const prepared = createFutureOrderV2PreparationAttempt({
     candidate,
     ids: { cartItemId: "future-cart-pix", orderId: "future-order-pix" },
@@ -219,7 +252,9 @@ const brazilOrder = makePersisted(brazilDelivery());
 const pickupOrder = makePersisted(null);
 const pixOrderId = brazilOrder.prepared.orderId;
 const pixReference = `future-v2-payment-${pixOrderId}`;
-assert.equal(brazilOrder.prepared.masterOrder.cartItem.candidate.pricing.exactTotalCents, 30000);
+const PIX_BRAZIL_AMOUNT_CENTS =
+  brazilOrder.prepared.masterOrder.cartItem.candidate.pricing.exactTotalCents;
+assert.equal(PIX_BRAZIL_AMOUNT_CENTS, 43125);
 
 const response = () => {
   const state = { statusCode: 200, body: null as unknown, headers: {} as Record<string, string> };
@@ -290,7 +325,7 @@ const pixRequest = (extra: Record<string, unknown> = {}, headers: HttpRequest["h
   });
   assert.equal(state.headers["Cache-Control"], "no-store");
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].amountCents, 30000, "server-side persisted EUR total");
+  assert.equal(calls[0].amountCents, PIX_BRAZIL_AMOUNT_CENTS, "server-side persisted EUR total");
   assert.equal(calls[0].orderId, pixOrderId);
   assert.equal(calls[0].paymentReference, pixReference);
   assert.equal(calls[0].customerEmail, "joana@example.test");
@@ -373,7 +408,7 @@ const pixRequest = (extra: Record<string, unknown> = {}, headers: HttpRequest["h
 const succeededIntent = (overrides: Partial<StripePaymentIntentSummary> = {}): StripePaymentIntentSummary => ({
   id: "pi_test_pix",
   status: "succeeded",
-  amount: 30000,
+  amount: PIX_BRAZIL_AMOUNT_CENTS ?? 43125,
   currency: "eur",
   metadata: { orderId: pixOrderId, paymentReference: pixReference, stage: "Design Studio V2" },
   ...overrides,
@@ -457,7 +492,7 @@ const recordRequest = (body: unknown = { orderId: pixOrderId, checkoutSessionId:
   assert.equal((state.body as { status: string }).status, "recorded");
   const saved = payments.get(pixOrderId) as { paymentIntentId: string; amountCents: number; currency: string };
   assert.equal(saved.paymentIntentId, "pi_test_pix");
-  assert.equal(saved.amountCents, 30000);
+  assert.equal(saved.amountCents, PIX_BRAZIL_AMOUNT_CENTS);
   assert.equal(saved.currency, "eur");
   // Repeating the return is safe.
   const again = response();

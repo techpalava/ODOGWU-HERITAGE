@@ -128,8 +128,19 @@ const exactFiveKgDelivery = resolveFutureFinalMileFromGarmentCount({
 assert.equal(exactFiveKgDelivery.status, "quote_required");
 assert.equal(exactFiveKgDelivery.amountCents, null);
 
+const confirmedInbound = FUTURE_SHIPPING_TARIFF_RULES.find(
+  (rule) => rule.ruleId === "future_inbound_individual_lagos_eindhoven",
+);
+assert.equal(confirmedInbound?.status, "active");
+assert.equal(confirmedInbound?.amountCents, 13125);
+assert.equal(confirmedInbound?.supportedGarmentCountBoundary?.maximumInclusive, 10);
+assert.equal(confirmedInbound?.supportedWeightBoundary?.maximumKgExclusive, 5);
+assert.equal(
+  resolveFuturePendingTariffRule("future_inbound_individual_lagos_eindhoven").status,
+  "rate_unavailable",
+);
+
 const pendingRuleExpectations = [
-  ["future_inbound_individual_lagos_eindhoven", [12500, 13125]],
   ["future_inbound_batch_lagos_eindhoven", undefined],
   ["future_duty_tax_batch_lagos_eindhoven", [300, 350]],
   ["future_duty_tax_individual_lagos_eindhoven", undefined],
@@ -184,16 +195,16 @@ assert.deepEqual(
     return [quote.weightBand, quote.priceEur];
   }),
   [
-    ["0 - 2 kg", 14],
-    [">2 - 5 kg", 35],
-    [">5 - 10 kg", 70],
-    [">10 - 20 kg", 140],
-    [">20 kg", 210],
+    [">2 - 5 kg", 131.25],
+    [">2 - 5 kg", 131.25],
+    [">5 - 10 kg", 262.5],
+    [">10 - 20 kg", 393.75],
+    [">20 kg", 656.25],
   ],
 );
 assert.equal(
   calculateIndividualShipping(1).pricingVersion,
-  "2026-10-14-individual-v2",
+  "2026-10-22-individual-block-v3",
 );
 assert.equal(
   calculateBatchShipping({

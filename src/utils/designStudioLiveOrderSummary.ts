@@ -11,7 +11,10 @@ import {
   garmentConstructionInclusionNote,
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
 } from "./designPriceBreakdownPresentation";
-import { resolveIndividualInboundShippingDisplay } from "./individualInboundShippingDisplay";
+import {
+  formatIndividualShippingNote,
+  resolveIndividualInboundShippingDisplay,
+} from "./individualInboundShippingDisplay";
 import type { FutureShippingStageResolution } from "./designStudioFutureShipping";
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
@@ -155,6 +158,7 @@ export interface LiveOrderSummaryCostBreakdownLine {
   readonly label: string;
   readonly valueLabel: string;
   readonly amountCents: number | null;
+  readonly note?: string;
   /** @deprecated The Lagos band is a priced line and is part of the total. */
   readonly included?: boolean;
 }
@@ -718,6 +722,7 @@ const resolveCostBreakdown = ({
         label: includedInbound.label,
         valueLabel: moneyFromCents(includedInbound.amountCents),
         amountCents: includedInbound.amountCents,
+        note: formatIndividualShippingNote(includedInbound),
       }
     : null;
 
