@@ -13,6 +13,7 @@ import {
   Truck,
 } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { SaveOrderButton } from "./SaveOrderButton";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { DualUnitMeasurementPill } from "./DualUnitMeasurementPill";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
@@ -1422,6 +1423,7 @@ export const DormantFuturePaymentReviewStep = ({
                             : "Add to cart"}
                       </button>
                     ) : null}
+                    <SaveOrderButton variant="payment-panel" />
                   </div>
                 {onParkCompleteOrder && parkCompleteOrderStatus !== "idle" ? (
                   <p className="mt-3 text-xs leading-relaxed text-white/75">

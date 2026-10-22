@@ -120,6 +120,19 @@ import { calculateDesignPricing } from "../utils/designPricing";
 import { projectCustomerGarmentConstructionBreakdown } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import {
+  SAVED_STUDIO_ORDER_RETRY_MESSAGE,
+  getSavedStudioOrderGate,
+  stampLinkedSavedOrderId,
+  rememberSavedOrderCartLink,
+} from "../utils/savedStudioOrderModel";
+import { SaveOrderActionProvider } from "./SaveOrderActionContext";
+import type { SaveOrderFocusTarget } from "./SaveOrderActionContext";
+import { SavedOrderConfirmationDialog } from "./SavedOrderConfirmationDialog";
+import { SavedOrderChangeWarningBanner } from "./SavedOrderChangeWarningBanner";
+import { useSavedStudioOrders } from "./SavedStudioOrderProvider";
+import { getDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { getFutureOrderV2CandidateFingerprint } from "../utils/futureOrderV2Preparation";
+import {
   allowNextStudioFutureDesignDraftSession,
   isStudioFutureDesignDraftRetired,
   retireStudioFutureDesignDraft,
@@ -521,6 +534,7 @@ export interface DesignStudioViewProps {
   initialStyleId?: string | null;
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
+  onStartFreshIndividualOrder?: () => void;
   /** Test-only dependency seam; production uses the Firebase-backed repository. */
   futureDraftRepository?: AuthenticatedFutureDraftRepository;
   /** Test-only deterministic replacement for the production autosave timer. */
@@ -726,6 +740,7 @@ export default function DesignStudioView({
   initialStyleId,
   initialFabricCode,
   clearInitialPreset,
+  onStartFreshIndividualOrder,
   futureDraftRepository,
   futureDraftAutosaveScheduler,
   futureOrderV2TestHooks,
@@ -881,6 +896,13 @@ export default function DesignStudioView({
   const futureDesignStyleDetachedSourceLifecycleRef =
     useRef<UploadedDesignStyleDetachLifecycleOutcome | null>(null);
   const lastPersistedFutureDraftRef = useRef<GuestDesignDraft | null>(null);
+  const latestSaveableDraftRef = useRef<GuestDesignDraft | null>(null);
+  const savedStudioOrders = useSavedStudioOrders();
+  const [saveOrderBusy, setSaveOrderBusy] = useState(false);
+  const [saveOrderConfirmationOpen, setSaveOrderConfirmationOpen] =
+    useState(false);
+  const [saveOrderRestoreFocus, setSaveOrderRestoreFocus] =
+    useState<SaveOrderFocusTarget | null>(null);
   const lastDesignStylePersistenceAcknowledgementRef = useRef<
     ReturnType<typeof createDesignStylePersistenceAcknowledgement>
   >(null);
@@ -6089,6 +6111,9 @@ export default function DesignStudioView({
             futureDraftIdentity.status === "authenticated" &&
             futureDraftIdentity.ownerUid === firebaseUser?.uid &&
             pending.reference.ownerUid === firebaseUser?.uid;
+          if (savedStudioOrders?.isUploadedSourceRetained(sourceRef)) {
+            return;
+          }
           const result = await coordinateUploadedSourceCleanup({
             candidate: pending.candidate,
             acknowledgement,
@@ -6346,6 +6371,7 @@ export default function DesignStudioView({
         result: preparedDesignStyleDraft.hydration,
       });
       const canonicalGuestDraft = preparedDesignStyleDraft.draft;
+      latestSaveableDraftRef.current = canonicalGuestDraft;
       if (
         !shouldReplacePersistedMeasurement({
           persisted: lastPersistedFutureDraftRef.current?.futureMeasurementState,
@@ -8342,12 +8368,20 @@ export default function DesignStudioView({
             },
       );
     });
-    if (result.status === "recorded") {
-      useAppStore.getState().dropPaidFutureOrderV2CartCandidate(candidate);
-      retireCurrentStudioDraft();
-    }
+      if (result.status === "recorded") {
+        useAppStore.getState().dropPaidFutureOrderV2CartCandidate(candidate);
+        const linkedSavedOrderId =
+          lastPersistedFutureDraftRef.current?.linkedSavedOrderId ||
+          latestSaveableDraftRef.current?.linkedSavedOrderId;
+        if (linkedSavedOrderId) {
+          void savedStudioOrders?.removeById(linkedSavedOrderId);
+        }
+        retireCurrentStudioDraft({ removeLinkedSavedOrder: true });
+      }
   };
-  const retireCurrentStudioDraft = () => {
+  const retireCurrentStudioDraft = (
+    options: { removeLinkedSavedOrder?: boolean } = {},
+  ) => {
     const repository =
       futureDraftRepository ??
       createFirebaseAuthenticatedFutureDraftRepository({
@@ -8358,6 +8392,7 @@ export default function DesignStudioView({
     void retireStudioFutureDesignDraft({
       repository,
       expectedRevision: cloudFutureDraftRevisionRef.current,
+      removeLinkedSavedOrder: options.removeLinkedSavedOrder,
     });
   };
   // Guests must sign in before PAY. Return to Design Studio afterwards: the
@@ -8414,6 +8449,15 @@ export default function DesignStudioView({
         });
         return;
       }
+    }
+    const linkedSavedOrderId =
+      lastPersistedFutureDraftRef.current?.linkedSavedOrderId ||
+      latestSaveableDraftRef.current?.linkedSavedOrderId;
+    if (linkedSavedOrderId) {
+      rememberSavedOrderCartLink(
+        getFutureOrderV2CandidateFingerprint(candidate),
+        linkedSavedOrderId,
+      );
     }
     const status = useAppStore.getState().parkFutureOrderV2Candidate(candidate);
     if (status === "blocked") {
@@ -8522,6 +8566,7 @@ export default function DesignStudioView({
             ? { repository: futureDraftRepository }
             : {}),
           expectedRevision: cloudFutureDraftRevisionRef.current,
+          removeLinkedSavedOrder: true,
         });
       }
 
@@ -8548,6 +8593,7 @@ export default function DesignStudioView({
         void retireStudioFutureDesignDraft({
           ...(futureDraftRepository ? { repository: futureDraftRepository } : {}),
           expectedRevision: cloudFutureDraftRevisionRef.current,
+          removeLinkedSavedOrder: true,
         });
       }
       stashFutureOrderV2OpenOrderId(result.orderId);
@@ -10310,7 +10356,76 @@ export default function DesignStudioView({
     DESIGN_STUDIO_STEPS.find((step) => step.id === futureStageId)?.label ||
     "Design Studio";
 
+  const saveOrderGate = getSavedStudioOrderGate({ garmentTypeSelection });
+  const handleSaveCurrentOrder = (focus?: SaveOrderFocusTarget) => {
+    if (!savedStudioOrders) return;
+    if (futureDraftIdentity.status !== "authenticated") {
+      savedStudioOrders.beginGuestSaveSignIn();
+      return;
+    }
+    const draft =
+      latestSaveableDraftRef.current || lastPersistedFutureDraftRef.current;
+    if (!draft || getSavedStudioOrderGate(draft).ok === false) {
+      setNotification({
+        message: SAVED_STUDIO_ORDER_RETRY_MESSAGE,
+        type: "info",
+      });
+      return;
+    }
+    setSaveOrderBusy(true);
+    void (async () => {
+      const result = await savedStudioOrders.saveDraft({
+        draft,
+        savedStage: futureStageId,
+        savedStep: getDesignStudioStepCounter(futureStageId).step,
+        resumeLocus: createDesignStudioResumeLocus({
+          activeWearerId,
+          measurementGarmentKey:
+            futureMeasurementState.activeGarmentKey ||
+            hydratedMeasurementGarmentKey,
+          scrollY:
+            typeof window === "undefined" ? null : Math.round(window.scrollY),
+        }),
+        savedOrderId: draft.linkedSavedOrderId,
+      });
+      setSaveOrderBusy(false);
+      if (result.status === "saved" || result.status === "updated") {
+        const stamped = stampLinkedSavedOrderId(
+          draft,
+          result.item.savedOrderId,
+        );
+        lastPersistedFutureDraftRef.current = stamped;
+        latestSaveableDraftRef.current = stamped;
+        GuestOrderSessionService.saveFutureDesignDraft(stamped);
+        setSaveOrderRestoreFocus(focus ?? null);
+        setSaveOrderConfirmationOpen(true);
+      }
+    })();
+  };
+
+  useEffect(() => {
+    if (
+      !guestDraftHydrated ||
+      futureDraftIdentity.status !== "authenticated" ||
+      !savedStudioOrders
+    ) {
+      return;
+    }
+    if (!savedStudioOrders.consumePendingSave()) return;
+    handleSaveCurrentOrder();
+    // Pending-save runs once after sign-in hydration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestDraftHydrated, futureDraftIdentity.status]);
+
   return (
+    <SaveOrderActionProvider
+      value={{
+        disabled: !saveOrderGate.ok || saveOrderBusy,
+        disabledReason: "reason" in saveOrderGate ? saveOrderGate.reason : null,
+        busy: saveOrderBusy,
+        onSave: handleSaveCurrentOrder,
+      }}
+    >
     <DesignStudioBlockingOverlayProvider ownedOpen={studioBlockingOverlayOpen}>
     <div
       id="design-studio-ten-stage-journey"
@@ -10395,6 +10510,13 @@ export default function DesignStudioView({
         >
           {COMMUNITY_BATCH_CLOSED_MESSAGE}
         </p>
+      ) : null}
+      {savedStudioOrders?.changeWarnings.length ? (
+        <div className="mb-3">
+          <SavedOrderChangeWarningBanner
+            warnings={savedStudioOrders.changeWarnings}
+          />
+        </div>
       ) : null}
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
@@ -11282,5 +11404,15 @@ export default function DesignStudioView({
       )}
     </div>
     </DesignStudioBlockingOverlayProvider>
+    <SavedOrderConfirmationDialog
+      open={saveOrderConfirmationOpen}
+      restoreFocusTo={saveOrderRestoreFocus}
+      onContinue={() => setSaveOrderConfirmationOpen(false)}
+      onStartNewOrder={() => {
+        setSaveOrderConfirmationOpen(false);
+        onStartFreshIndividualOrder?.();
+      }}
+    />
+    </SaveOrderActionProvider>
   );
 }

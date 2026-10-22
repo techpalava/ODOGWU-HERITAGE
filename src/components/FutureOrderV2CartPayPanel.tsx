@@ -12,7 +12,12 @@ import {
   executeFutureOrderV2Payment,
   validatePreparedFutureOrderV2PaymentEligibility,
 } from "../utils/futureOrderV2Payment";
-import { createFutureOrderV2PreparationAttempt } from "../utils/futureOrderV2Preparation";
+import {
+  createFutureOrderV2PreparationAttempt,
+  getFutureOrderV2CandidateFingerprint,
+} from "../utils/futureOrderV2Preparation";
+import { takeSavedOrderCartLink } from "../utils/savedStudioOrderModel";
+import { getSavedStudioOrderRepository } from "../services/savedStudioOrderService";
 import {
   getFutureOrderV2CartLineLabel,
   getFutureOrderV2CartLineTotalCents,
@@ -140,7 +145,17 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       dropFutureOrderV2CartItem(item.cartItemId);
-      void retireStudioFutureDesignDraft();
+      const savedOrderId = takeSavedOrderCartLink(
+        getFutureOrderV2CandidateFingerprint(item.candidate),
+      );
+      const ownerUid = auth.currentUser?.uid;
+      if (savedOrderId && ownerUid) {
+        void getSavedStudioOrderRepository().remove({
+          ownerUid,
+          savedOrderId,
+        });
+      }
+      void retireStudioFutureDesignDraft({ removeLinkedSavedOrder: true });
       setNotification({
         message: "Payment received. This order has left your cart.",
         type: "success",

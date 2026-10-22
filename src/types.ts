@@ -1225,6 +1225,11 @@ export interface GuestDesignDraft {
   futureMeasurementState?: FutureMeasurementStateV1 | WearerOrderStateV2;
   futureShippingState?: FutureShippingStateV1;
   resumeLocus?: DesignStudioResumeLocusV1;
+  /**
+   * When this active Studio draft was created by continuing or saving a
+   * named saved order, later Save Order updates that same item.
+   */
+  linkedSavedOrderId?: string;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;

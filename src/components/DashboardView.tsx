@@ -10,6 +10,8 @@ import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import { StorageService } from "../services/storageService";
 import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
+import { SavedOrdersSection } from "./SavedOrdersSection";
+import { useSavedStudioOrders } from "./SavedStudioOrderProvider";
 import {
   authorizeFutureOrderV2Payment,
   readFutureOrderV2JsonBody,
@@ -76,6 +78,7 @@ export default function DashboardView({
   currentUser,
   batches,
 }: DashboardViewProps) {
+  const savedStudioOrders = useSavedStudioOrders();
   
   const journey = CustomerJourneyEngine.getCurrentJourney({
     currentUser: currentUser as any,
@@ -136,7 +139,7 @@ export default function DashboardView({
       });
       if (cancelled || result.status === "ignored") return;
       if (result.status === "recorded") {
-        void retireStudioFutureDesignDraft();
+        void retireStudioFutureDesignDraft({ removeLinkedSavedOrder: true });
       }
       if (result.orderId) {
         stashFutureOrderV2OpenOrderId(result.orderId);
@@ -158,7 +161,9 @@ export default function DashboardView({
         verify: verifyFutureOrderV2PixCheckout,
       });
       if (result.status === "ignored") return;
-      if (result.status === "recorded") void retireStudioFutureDesignDraft();
+      if (result.status === "recorded") {
+        void retireStudioFutureDesignDraft({ removeLinkedSavedOrder: true });
+      }
       stashFutureOrderV2OpenOrderId(result.orderId);
       setOpenV2OrderId(result.orderId);
     })();
@@ -276,6 +281,20 @@ export default function DashboardView({
               personalizedPricesByOrderId={futureOrderV2PersonalizedPricesByOrderId}
               onDecidePersonalizedPrice={decideFutureOrderV2PersonalizedPrice}
             />
+
+            {savedStudioOrders ? (
+              <SavedOrdersSection
+                items={savedStudioOrders.items}
+                busyId={savedStudioOrders.busy ? "busy" : null}
+                onContinue={(item) => savedStudioOrders.requestContinue(item)}
+                onRename={(item, name) => {
+                  void savedStudioOrders.rename(item, name);
+                }}
+                onDelete={(item) => {
+                  void savedStudioOrders.remove(item);
+                }}
+              />
+            ) : null}
 
             {/* 1. MY DRAFT DESIGNS */}
             {workspace.drafts.length > 0 && (
