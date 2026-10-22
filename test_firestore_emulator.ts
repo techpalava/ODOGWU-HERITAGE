@@ -18,6 +18,7 @@ import {
   setDoc,
   Timestamp,
   where,
+  writeBatch,
 } from "firebase/firestore";
 
 const PROJECT_ID = "demo-odogwu-future-drafts";
@@ -1170,6 +1171,258 @@ try {
     );
   });
 
+  const savedIndexRef = (context: RulesTestContext, ownerUid = OWNER_UID) =>
+    doc(context.firestore(), "savedStudioOrders", ownerUid);
+  const savedItemRef = (
+    context: RulesTestContext,
+    savedOrderId: string,
+    ownerUid = OWNER_UID,
+  ) =>
+    doc(
+      context.firestore(),
+      "savedStudioOrders",
+      ownerUid,
+      "items",
+      savedOrderId,
+    );
+  const validSavedItem = (ownerUid: string, savedOrderId: string) => ({
+    schemaVersion: 1,
+    savedOrderId,
+    ownerUid,
+    name: "Standard Shirt, 22 Oct",
+    garmentSummary: "Standard Shirt",
+    savedStage: "garment_type",
+    savedStep: 1,
+    draft: {
+      journeySchemaVersion: 2,
+      currentStageId: "garment_type",
+    },
+    priceSnapshot: {
+      schemaVersion: 1,
+      total: 65,
+      garmentConstructionSubtotal: 65,
+      customDetailsPrice: 0,
+      capturedAt: "2026-10-22T12:00:00.000Z",
+    },
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    revision: 1,
+  });
+  const commitSavedOrder = async (
+    context: RulesTestContext,
+    savedOrderId: string,
+    itemIds: string[],
+    ownerUid = OWNER_UID,
+    item: Record<string, unknown> = validSavedItem(ownerUid, savedOrderId),
+  ) => {
+    const batch = writeBatch(context.firestore());
+    batch.set(savedIndexRef(context, ownerUid), {
+      schemaVersion: 1,
+      ownerUid,
+      itemIds,
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(savedItemRef(context, savedOrderId, ownerUid), item);
+    return batch.commit();
+  };
+
+  await runCase("saved orders: other users are blocked", async () => {
+    await commitSavedOrder(signedIn(OWNER_UID), "savedord00000001", [
+      "savedord00000001",
+    ]);
+    await assertFails(getDoc(savedItemRef(signedIn(OTHER_UID), "savedord00000001")));
+    await assertFails(
+      commitSavedOrder(signedIn(OTHER_UID), "savedord00000002", [
+        "savedord00000002",
+      ]),
+    );
+  });
+
+  await runCase("saved orders: guests and anonymous are blocked", async () => {
+    await assertFails(
+      getDoc(savedItemRef(testEnvironment.unauthenticatedContext(), "savedord00000001")),
+    );
+    await assertFails(
+      commitSavedOrder(anonymous(), "savedord00000003", ["savedord00000003"]),
+    );
+  });
+
+  await runCase("saved orders: a 6th item is rejected", async () => {
+    const ids = [
+      "savedord00000011",
+      "savedord00000012",
+      "savedord00000013",
+      "savedord00000014",
+      "savedord00000015",
+    ];
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(savedIndexRef(context), {
+        schemaVersion: 1,
+        ownerUid: OWNER_UID,
+        itemIds: ids,
+        updatedAt: Timestamp.now(),
+      });
+      for (const id of ids) {
+        await setDoc(savedItemRef(context, id), {
+          ...validSavedItem(OWNER_UID, id),
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+      }
+    });
+    await assertFails(
+      commitSavedOrder(
+        signedIn(OWNER_UID),
+        "savedord00000016",
+        [...ids, "savedord00000016"],
+      ),
+    );
+  });
+
+  await runCase("saved orders: a bad shape is rejected", async () => {
+    await assertFails(
+      commitSavedOrder(
+        signedIn(OWNER_UID),
+        "savedord00000021",
+        ["savedord00000021"],
+        OWNER_UID,
+        {
+          ...validSavedItem(OWNER_UID, "savedord00000021"),
+          name: "",
+        },
+      ),
+    );
+  });
+
+  await runCase("saved orders: owner delete is allowed", async () => {
+    await commitSavedOrder(signedIn(OWNER_UID), "savedord00000031", [
+      "savedord00000031",
+    ]);
+    const owner = signedIn(OWNER_UID);
+    const batch = writeBatch(owner.firestore());
+    batch.set(savedIndexRef(owner), {
+      schemaVersion: 1,
+      ownerUid: OWNER_UID,
+      itemIds: [],
+      updatedAt: serverTimestamp(),
+    });
+    batch.delete(savedItemRef(owner, "savedord00000031"));
+    await assertSucceeds(batch.commit());
+  });
+
+  await runCase("saved orders: index cannot drop an id while its item still exists", async () => {
+    await commitSavedOrder(signedIn(OWNER_UID), "savedord00000041", [
+      "savedord00000041",
+    ]);
+    const owner = signedIn(OWNER_UID);
+    // Orphaning an item (to dodge the 5 cap) is rejected.
+    await assertFails(
+      setDoc(savedIndexRef(owner), {
+        schemaVersion: 1,
+        ownerUid: OWNER_UID,
+        itemIds: [],
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  await runCase("saved orders: index cannot add two ids in one write", async () => {
+    const owner = signedIn(OWNER_UID);
+    const batch = writeBatch(owner.firestore());
+    batch.set(savedIndexRef(owner), {
+      schemaVersion: 1,
+      ownerUid: OWNER_UID,
+      itemIds: ["savedord00000051", "savedord00000052"],
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(
+      savedItemRef(owner, "savedord00000051"),
+      validSavedItem(OWNER_UID, "savedord00000051"),
+    );
+    batch.set(
+      savedItemRef(owner, "savedord00000052"),
+      validSavedItem(OWNER_UID, "savedord00000052"),
+    );
+    await assertFails(batch.commit());
+  });
+
+  await runCase("saved orders: swapping an id to sneak in a 6th item is rejected", async () => {
+    const ids = [
+      "savedord00000061",
+      "savedord00000062",
+      "savedord00000063",
+      "savedord00000064",
+      "savedord00000065",
+    ];
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(savedIndexRef(context), {
+        schemaVersion: 1,
+        ownerUid: OWNER_UID,
+        itemIds: ids,
+        updatedAt: Timestamp.now(),
+      });
+      for (const id of ids) {
+        await setDoc(savedItemRef(context, id), {
+          ...validSavedItem(OWNER_UID, id),
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+      }
+    });
+    // Drop 61 from the index without deleting it, add 66: still 6 items.
+    await assertFails(
+      commitSavedOrder(signedIn(OWNER_UID), "savedord00000066", [
+        "savedord00000066",
+        ...ids.slice(1),
+      ]),
+    );
+  });
+
+  await runCase("saved orders: re-save updates fields wholesale with the next revision", async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(savedIndexRef(context), {
+        schemaVersion: 1,
+        ownerUid: OWNER_UID,
+        itemIds: ["savedord00000071"],
+        updatedAt: Timestamp.now(),
+      });
+      await setDoc(savedItemRef(context, "savedord00000071"), {
+        ...validSavedItem(OWNER_UID, "savedord00000071"),
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+    });
+    const owner = signedIn(OWNER_UID);
+    const { createdAt: _createdAt, ...rest } = validSavedItem(
+      OWNER_UID,
+      "savedord00000071",
+    );
+    const update = { ...rest, name: "Renamed", revision: 2 };
+    const batch = writeBatch(owner.firestore());
+    batch.set(savedIndexRef(owner), {
+      schemaVersion: 1,
+      ownerUid: OWNER_UID,
+      itemIds: ["savedord00000071"],
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(savedItemRef(owner, "savedord00000071"), update, {
+      mergeFields: Object.keys(update),
+    });
+    await assertSucceeds(batch.commit());
+    // A stale revision is rejected.
+    const stale = writeBatch(owner.firestore());
+    stale.set(savedIndexRef(owner), {
+      schemaVersion: 1,
+      ownerUid: OWNER_UID,
+      itemIds: ["savedord00000071"],
+      updatedAt: serverTimestamp(),
+    });
+    stale.set(savedItemRef(owner, "savedord00000071"), update, {
+      mergeFields: Object.keys(update),
+    });
+    await assertFails(stale.commit());
+  });
+
   await runCase("representative unrelated collection rules are unchanged", async () => {
     const publicFabric = doc(
       testEnvironment.unauthenticatedContext().firestore(),
@@ -1185,8 +1438,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 49);
-  console.log(`Firestore emulator security matrix passed (${passed}/49).`);
+  assert.equal(passed, 58);
+  console.log(`Firestore emulator security matrix passed (${passed}/58).`);
 } finally {
   await testEnvironment.cleanup();
 }
