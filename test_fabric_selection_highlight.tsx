@@ -289,7 +289,7 @@ const assertNotChanging = (root: ReactTestInstance) => {
     root.findAllByProps({ "data-testid": "fabric-selection-change-heading" }).length,
     0,
   );
-  assert.doesNotMatch(textContent(root), /Changing Fabric for Fabric Selection/);
+  assert.doesNotMatch(textContent(root), /Choose a new fabric for Selection/);
 };
 
 const scrolledKeys: string[] = [];
@@ -415,7 +415,7 @@ assert.equal(
 );
 assert.match(
   textContent(renderer.root),
-  /Changing Fabric for Fabric Selection 1/,
+  /Choose a new fabric for Selection 1/,
 );
 assert.match(
   textContent(renderer.root),
@@ -589,7 +589,7 @@ const liveHandlers = (getState: () => FabricAllocationState, setState: (next: Fa
   });
   assert.match(
     textContent(liveRenderer.root),
-    /Changing Fabric for Fabric Selection 1/,
+    /Choose a new fabric for Selection 1/,
   );
   await act(async () => clickFabricCard(liveRenderer.root, "HL-B"));
   await act(async () => {

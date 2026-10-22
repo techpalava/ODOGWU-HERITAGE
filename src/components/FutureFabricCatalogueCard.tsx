@@ -32,6 +32,8 @@ export const FutureFabricCatalogueCard = ({
   removeTargetGarmentLabel,
   dataAttributes,
   orderAllocationOptions,
+  usedBySelectionsLabel,
+  disabledActionMessage,
 }: {
   fabric: Fabric;
   presentation: FutureFabricCatalogueCardPresentation;
@@ -58,6 +60,10 @@ export const FutureFabricCatalogueCard = ({
     availabilityLabel: string;
     onSelect: () => void;
   }>;
+  /** Change Fabric USE AGAIN: which selection(s) already use this print. */
+  usedBySelectionsLabel?: string;
+  /** Shown on the disabled action itself (e.g. stock exhausted while changing). */
+  disabledActionMessage?: string;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
   const isCancelAction =
@@ -81,6 +87,7 @@ export const FutureFabricCatalogueCard = ({
           ? "border-red-200 bg-red-600 text-white"
           : "border-heritage-gold/30 bg-heritage-green text-white";
   const disabled =
+    Boolean(disabledActionMessage) ||
     Boolean(availabilityMessage) ||
     Boolean(actionDisabled) ||
     Boolean(
@@ -232,6 +239,18 @@ export const FutureFabricCatalogueCard = ({
         <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
           {fabric.code}
         </p>
+        {usedBySelectionsLabel ? (
+          <p className="mt-2">
+            <span
+              data-fabric-used-by-selections="true"
+              title={`Already used in ${usedBySelectionsLabel}`}
+              className="inline-flex rounded-full border border-heritage-gold/50 bg-heritage-gold/15 px-2 py-0.5 text-[10px] font-bold leading-tight text-heritage-forest"
+            >
+              <span className="sr-only">Already used in </span>
+              {usedBySelectionsLabel}
+            </span>
+          </p>
+        ) : null}
         {availabilityMessage && (
           <p className="mt-2 text-xs font-semibold text-red-700">
             {availabilityMessage}
@@ -308,6 +327,21 @@ export const FutureFabricCatalogueCard = ({
             </button>
             {removeButton}
           </div>
+        ) : disabledActionMessage ? (
+          <button
+            type="button"
+            disabled
+            data-fabric-card="true"
+            data-fabric-code={fabric.code}
+            data-fabric-status={resolvedStatusLabel}
+            data-fabric-action="none"
+            data-fabric-disabled-message="true"
+            aria-label={`${fabric.name}: ${disabledActionMessage}`}
+            aria-describedby={describedByValue}
+            className="mt-auto inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-semibold leading-snug whitespace-normal break-words text-red-800"
+          >
+            {disabledActionMessage}
+          </button>
         ) : (
           <button
             type="button"

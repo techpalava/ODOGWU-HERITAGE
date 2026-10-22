@@ -36,6 +36,13 @@ import {
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
+import { FabricSelectionSummaryRow } from "./FabricSelectionSummaryRow";
+import {
+  buildFabricSelectionSummaryItems,
+  formatFabricSelectionNumbersBadge,
+  getFabricSelectionNumbersUsingFabric,
+  type FabricSelectionSummaryItem,
+} from "../utils/fabricSelectionSummaryRow";
 import { FabricCatalogueNotice } from "./FabricCatalogueNotice";
 import {
   resolveFabricCatalogueNotice,
@@ -684,6 +691,18 @@ export const DormantFutureFabricStep = ({
         (candidate) => candidate.code === changeFabricPresentation.fabricCode,
       ) ?? null
     : null;
+  const fabricSelectionSummaryItems = useMemo(
+    () =>
+      buildFabricSelectionSummaryItems({
+        fabricAllocationState,
+        garmentTypeSelection,
+        fabrics,
+        garmentLabelByKey: occurrenceConciseLabels,
+      }),
+    [fabricAllocationState, garmentTypeSelection, fabrics, occurrenceConciseLabels],
+  );
+  const changingAllocationId =
+    changeFabricPresentation?.allocationId ?? null;
   const firstChangingGarmentKey = changeFabricPresentation
     ? getFirstChangingGarmentKey(
         targets.map(({ assignment }) => assignment.garmentKey),
@@ -1812,6 +1831,7 @@ export const DormantFutureFabricStep = ({
     garmentKey: string | null = null,
     openDialog = false,
     changingFabric = false,
+    scrollTarget: "catalogue" | "selection_cards" = "catalogue",
   ) => {
     assignmentGenerationRef.current += 1;
     pendingAssignmentAnnouncementRef.current = null;
@@ -1828,6 +1848,12 @@ export const DormantFutureFabricStep = ({
     }
     const scrollToCatalogueHeader = () => {
       if (request !== catalogueFocusRequestRef.current) return;
+      if (scrollTarget === "selection_cards") {
+        // Summary row: bring the selection's garment cards into view and
+        // keep focus on the pressed summary button.
+        scrollToChangingFabricSelection(garmentKey);
+        return;
+      }
       const anchor = catalogueScrollAnchorRef.current;
       if (anchor && typeof anchor.scrollIntoView === "function") {
         anchor.scrollIntoView({
@@ -2233,6 +2259,18 @@ export const DormantFutureFabricStep = ({
     onUseSameFabric();
   };
 
+  const openChangeFromSummary = (
+    item: FabricSelectionSummaryItem,
+    trigger: HTMLElement,
+  ) => {
+    const garmentKey = getFirstChangingGarmentKey(
+      targets.map(({ assignment }) => assignment.garmentKey),
+      item.garmentKeys,
+    );
+    if (!garmentKey) return;
+    openCatalogue(trigger, garmentKey, false, true, "selection_cards");
+  };
+
   const renderCatalogueCard = (fabric: Fabric) => {
     const pendingTargetAssignment = pendingAdditionalAssignment;
     const currentTarget =
@@ -2453,7 +2491,12 @@ export const DormantFutureFabricStep = ({
                   hasReusableHalfCapacity || allowExistingPartialReuse,
               })
         }
-        stockConstraintMessage={stockConstraintMessage}
+        stockConstraintMessage={
+          changeCardPresentation?.changeMode === "change-blocked" &&
+          !getFabricAvailabilityMessage(fabric)
+            ? null
+            : stockConstraintMessage
+        }
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
         onAction={(event) => {
           handleFabricSelection(fabric, event?.currentTarget);
@@ -2461,6 +2504,25 @@ export const DormantFutureFabricStep = ({
         statusLabel={
           changeCardPresentation?.changeMode === "change-assigned"
             ? "ASSIGNED"
+            : undefined
+        }
+        usedBySelectionsLabel={
+          changeCardPresentation?.status === "USE AGAIN" &&
+          changeFabricAssignmentTarget
+            ? formatFabricSelectionNumbersBadge(
+                getFabricSelectionNumbersUsingFabric({
+                  fabricAllocationState,
+                  fabricCode: fabric.code,
+                  excludeAllocationId:
+                    changeFabricAssignmentTarget.allocation.allocationId,
+                }),
+              ) || undefined
+            : undefined
+        }
+        disabledActionMessage={
+          changeCardPresentation?.changeMode === "change-blocked" &&
+          !getFabricAvailabilityMessage(fabric)
+            ? stockConstraintMessage || "This Fabric is unavailable."
             : undefined
         }
         onRemove={handleCatalogueRemove}
@@ -3268,7 +3330,7 @@ export const DormantFutureFabricStep = ({
                 <button
                   type="button"
                   data-testid="fabric-selection-change-heading"
-                  aria-label={`Changing Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}. Jump to highlighted garment cards.`}
+                  aria-label={`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}. Jump to highlighted garment cards.`}
                   onClick={() =>
                     scrollToChangingFabricSelection(firstChangingGarmentKey)
                   }
@@ -3290,7 +3352,7 @@ export const DormantFutureFabricStep = ({
                     />
                   </span>
                   <span>
-                    {`Changing Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                    {`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}`}
                   </span>
                 </button>
               ) : activeCatalogueTarget ? (
@@ -3345,6 +3407,13 @@ export const DormantFutureFabricStep = ({
               {assignmentAnnouncement}
             </p>
           </div>
+          <FabricSelectionSummaryRow
+            items={fabricSelectionSummaryItems}
+            changingAllocationId={changingAllocationId}
+            onSelectSelection={(item, event) =>
+              openChangeFromSummary(item, event.currentTarget)
+            }
+          />
           {renderVisibleCatalogue(
             "grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
           )}
@@ -3353,9 +3422,28 @@ export const DormantFutureFabricStep = ({
               <button
                 type="button"
                 onClick={closeCatalogueForCancellation}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                data-testid={
+                  changeFabricPresentation ? "fabric-change-cancel" : undefined
+                }
+                aria-label={
+                  changeFabricPresentation
+                    ? `Cancel change for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`
+                    : undefined
+                }
+                className={
+                  changeFabricPresentation
+                    ? "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-heritage-green bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                    : "inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                }
               >
-                Cancel
+                {changeFabricPresentation ? (
+                  <>
+                    <X aria-hidden="true" size={14} />
+                    Cancel change
+                  </>
+                ) : (
+                  "Cancel"
+                )}
               </button>
             </div>
           )}

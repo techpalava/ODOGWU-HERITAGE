@@ -323,7 +323,7 @@ await act(async () => {
     .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
     .props.onClick({ currentTarget: {} });
 });
-assert.match(textContent(renderer.root), /Changing Fabric for Fabric Selection 1/);
+assert.match(textContent(renderer.root), /Choose a new fabric for Selection 1/);
 
 const cardA = catalogueCard(renderer.root, "CF-A");
 const cardB = catalogueCard(renderer.root, "CF-B");
@@ -392,7 +392,7 @@ assert.deepEqual(
 await act(async () => {
   renderer.update(renderStep());
 });
-assert.doesNotMatch(textContent(renderer.root), /Changing Fabric for Fabric Selection/);
+assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for Selection/);
 act(() => renderer.unmount());
 
 console.log("test_change_fabric_use_again: PASS");
