@@ -271,23 +271,56 @@ const isFabricSoldOutOrUnlisted = (
   return null;
 };
 
+export const SAVED_STUDIO_ORDER_PRICE_CHANGED_MESSAGE =
+  "Prices have changed since this order was saved. You will be charged current prices.";
+
+/**
+ * Compares the total captured when the order was saved with the total the
+ * Studio recomputes from the live catalogue after Continue. Returns null when
+ * either side is unknown, so a missing catalogue never raises a false alarm.
+ */
+export const evaluateSavedStudioOrderPriceChange = ({
+  savedTotal,
+  liveTotal,
+}: {
+  savedTotal: number | null | undefined;
+  liveTotal: number | null | undefined;
+}): SavedStudioOrderChangeWarning | null => {
+  if (
+    typeof savedTotal !== "number" ||
+    !Number.isFinite(savedTotal) ||
+    typeof liveTotal !== "number" ||
+    !Number.isFinite(liveTotal)
+  ) {
+    return null;
+  }
+  if (Math.abs(savedTotal - liveTotal) < 0.005) return null;
+  return { code: "price_changed", message: SAVED_STUDIO_ORDER_PRICE_CHANGED_MESSAGE };
+};
+
 export const evaluateSavedStudioOrderChangeWarnings = ({
   item,
   liveFabrics,
   liveBatches,
+  fabricCatalogueLoaded = liveFabrics.length > 0,
   recomputedTotal = null,
 }: {
   item: Pick<SavedStudioOrderItemV1, "draft" | "priceSnapshot">;
   liveFabrics: readonly Fabric[];
   liveBatches: readonly Batch[];
+  /** Skip the sold-out/unlisted check until the live catalogue has loaded. */
+  fabricCatalogueLoaded?: boolean;
+  /** Live Studio total recomputed from the current catalogue, if known. */
   recomputedTotal?: number | null;
 }): SavedStudioOrderChangeWarning[] => {
   const warnings: SavedStudioOrderChangeWarning[] = [];
   const fabricCodes = collectDraftFabricCodes(item.draft);
   const unavailable: string[] = [];
-  for (const fabricCode of fabricCodes) {
-    const status = isFabricSoldOutOrUnlisted(fabricCode, liveFabrics);
-    if (status) unavailable.push(fabricCode);
+  if (fabricCatalogueLoaded) {
+    for (const fabricCode of fabricCodes) {
+      const status = isFabricSoldOutOrUnlisted(fabricCode, liveFabrics);
+      if (status) unavailable.push(fabricCode);
+    }
   }
   if (unavailable.length > 0) {
     warnings.push({
@@ -313,20 +346,11 @@ export const evaluateSavedStudioOrderChangeWarnings = ({
     }
   }
 
-  const savedTotal = item.priceSnapshot.total;
-  if (
-    typeof savedTotal === "number" &&
-    Number.isFinite(savedTotal) &&
-    typeof recomputedTotal === "number" &&
-    Number.isFinite(recomputedTotal) &&
-    savedTotal !== recomputedTotal
-  ) {
-    warnings.push({
-      code: "price_changed",
-      message:
-        "Prices have changed since this order was saved. You will be charged current prices.",
-    });
-  }
+  const priceChange = evaluateSavedStudioOrderPriceChange({
+    savedTotal: item.priceSnapshot.total,
+    liveTotal: recomputedTotal,
+  });
+  if (priceChange) warnings.push(priceChange);
 
   return warnings;
 };
@@ -552,6 +576,58 @@ export const takeSavedOrderCartLink = (fingerprint: string): string | null => {
   delete links[fingerprint];
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(CART_SAVED_ORDER_LINKS_KEY, JSON.stringify(links));
+  }
+  return savedOrderId;
+};
+
+export const peekSavedOrderCartLink = (fingerprint: string): string | null => {
+  if (!fingerprint) return null;
+  return readCartSavedOrderLinks()[fingerprint] ?? null;
+};
+
+const PAYMENT_SAVED_ORDER_LINKS_KEY = "odogwu_saved_order_payment_links_v1";
+
+const readPaymentSavedOrderLinks = (): Record<string, string> => {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PAYMENT_SAVED_ORDER_LINKS_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return {};
+    const links: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value) links[key] = value;
+    }
+    return links;
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Records which saved order a prepared payment order came from, so a later
+ * redirect return (iDEAL, Pix) removes exactly that saved order and no other.
+ */
+export const rememberSavedOrderPaymentLink = (
+  orderId: string,
+  savedOrderId: string | null | undefined,
+): void => {
+  if (!orderId || !savedOrderId || typeof localStorage === "undefined") return;
+  const links = readPaymentSavedOrderLinks();
+  links[orderId] = savedOrderId;
+  localStorage.setItem(PAYMENT_SAVED_ORDER_LINKS_KEY, JSON.stringify(links));
+};
+
+export const takeSavedOrderPaymentLink = (
+  orderId: string | null | undefined,
+): string | null => {
+  if (!orderId) return null;
+  const links = readPaymentSavedOrderLinks();
+  const savedOrderId = links[orderId] ?? null;
+  if (!savedOrderId) return null;
+  delete links[orderId];
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(PAYMENT_SAVED_ORDER_LINKS_KEY, JSON.stringify(links));
   }
   return savedOrderId;
 };

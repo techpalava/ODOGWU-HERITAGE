@@ -36,10 +36,18 @@ import {
   rememberSavedOrderCartLink,
   stampLinkedSavedOrderId,
   takeSavedOrderCartLink,
+  peekSavedOrderCartLink,
+  rememberSavedOrderPaymentLink,
+  takeSavedOrderPaymentLink,
+  evaluateSavedStudioOrderPriceChange,
 } from "./src/utils/savedStudioOrderModel";
 import {
+  SavedStudioOrderAbsentError,
+  SavedStudioOrderCapError,
   createMemorySavedStudioOrderAdapter,
   createSavedStudioOrderRepository,
+  planSavedStudioOrderMutation,
+  type SavedStudioOrderPersistenceAdapter,
 } from "./src/services/savedStudioOrderService";
 
 const makeDraft = (
@@ -217,6 +225,8 @@ const unlistedWarnings = evaluateSavedStudioOrderChangeWarnings({
   },
   liveFabrics: [],
   liveBatches: [],
+  // Loaded catalogue without this code = genuinely unlisted.
+  fabricCatalogueLoaded: true,
 });
 assert.equal(
   unlistedWarnings.some((warning) => warning.code === "fabric_unavailable"),
@@ -403,5 +413,165 @@ assert.equal(
   ]),
   false,
 );
+
+// --- B4: price change compares the saved snapshot with a live recomputed total.
+assert.equal(evaluateSavedStudioOrderPriceChange({ savedTotal: 145, liveTotal: 145 }), null);
+assert.equal(evaluateSavedStudioOrderPriceChange({ savedTotal: 145, liveTotal: 145.001 }), null);
+assert.equal(
+  evaluateSavedStudioOrderPriceChange({ savedTotal: 145, liveTotal: 150 })?.code,
+  "price_changed",
+);
+assert.equal(evaluateSavedStudioOrderPriceChange({ savedTotal: null, liveTotal: 150 }), null);
+assert.equal(evaluateSavedStudioOrderPriceChange({ savedTotal: 145, liveTotal: null }), null);
+// Without a live total there is no price warning, even if the draft total differs.
+assert.equal(
+  evaluateSavedStudioOrderChangeWarnings({
+    item: {
+      draft: makeDraft(),
+      priceSnapshot: {
+        schemaVersion: 1,
+        total: 1,
+        garmentConstructionSubtotal: 1,
+        customDetailsPrice: 0,
+        capturedAt: "2026-10-22T12:00:00.000Z",
+      },
+    },
+    liveFabrics: [],
+    liveBatches: [],
+  }).length,
+  0,
+  "no fabric or price warnings before the catalogue loads",
+);
+
+// --- B5: payment links map a prepared order id to exactly one saved order.
+rememberSavedOrderCartLink("fp-pay", "savedordPAY0001");
+assert.equal(peekSavedOrderCartLink("fp-pay"), "savedordPAY0001");
+assert.equal(peekSavedOrderCartLink("fp-pay"), "savedordPAY0001", "peek does not consume");
+rememberSavedOrderPaymentLink("future-order-1", peekSavedOrderCartLink("fp-pay"));
+rememberSavedOrderPaymentLink("future-order-2", null);
+assert.equal(takeSavedOrderPaymentLink("future-order-2"), null);
+assert.equal(takeSavedOrderPaymentLink("future-order-1"), "savedordPAY0001");
+assert.equal(takeSavedOrderPaymentLink("future-order-1"), null);
+assert.equal(takeSavedOrderPaymentLink(undefined), null);
+
+// --- B3: planning always works from the in-transaction read.
+assert.deepEqual(
+  planSavedStudioOrderMutation({
+    currentIds: ["savedordA0000001"],
+    storedRevision: null,
+    mutation: {
+      type: "upsert",
+      item: { ...first.item, savedOrderId: "savedordB0000001", revision: 1 },
+    },
+  }),
+  { itemIds: ["savedordB0000001", "savedordA0000001"], revision: 1, created: true },
+);
+assert.deepEqual(
+  planSavedStudioOrderMutation({
+    currentIds: ["savedordA0000001"],
+    storedRevision: 7,
+    mutation: {
+      type: "upsert",
+      item: { ...first.item, savedOrderId: "savedordA0000001", revision: 2 },
+    },
+  }),
+  { itemIds: ["savedordA0000001"], revision: 8, created: false },
+  "revision comes from the stored item, not the stale client copy",
+);
+assert.throws(
+  () =>
+    planSavedStudioOrderMutation({
+      currentIds: ["savedord0000001", "savedord0000002", "savedord0000003", "savedord0000004", "savedord0000005"],
+      storedRevision: null,
+      mutation: { type: "upsert", item: { ...first.item, savedOrderId: "savedord0000006" } },
+    }),
+  SavedStudioOrderCapError,
+);
+assert.throws(
+  () =>
+    planSavedStudioOrderMutation({
+      currentIds: [],
+      storedRevision: null,
+      mutation: { type: "upsert", item: first.item, requireExisting: true },
+    }),
+  SavedStudioOrderAbsentError,
+);
+
+// Concurrent saves from two devices that both loaded the same 4-item list:
+// both new orders must survive (no lost ids), and a third is capped.
+{
+  const base = createMemorySavedStudioOrderAdapter();
+  const racing: SavedStudioOrderPersistenceAdapter = {
+    ...base,
+    // Both writers see the same stale bundle; the write itself re-reads.
+    loadBundle: (() => {
+      let frozen: ReturnType<typeof base.loadBundle> | null = null;
+      return (uid: string) => {
+        if (!frozen) frozen = base.loadBundle(uid);
+        return frozen;
+      };
+    })(),
+  };
+  const seedRepo = createSavedStudioOrderRepository(base);
+  for (let index = 0; index < 3; index += 1) {
+    const seeded = await seedRepo.save({ ownerUid: "race", draft: makeDraft(), savedStage: "fabric" });
+    assert.equal(seeded.status, "saved");
+  }
+  const raceRepo = createSavedStudioOrderRepository(racing);
+  const [a, b] = await Promise.all([
+    raceRepo.save({ ownerUid: "race", draft: makeDraft(), savedStage: "fabric" }),
+    raceRepo.save({ ownerUid: "race", draft: makeDraft(), savedStage: "summary" }),
+  ]);
+  assert.equal(a.status, "saved");
+  assert.equal(b.status, "saved");
+  const afterRace = await seedRepo.list("race");
+  assert.equal(afterRace.index.itemIds.length, 5, "neither concurrent save dropped the other");
+  assert.equal(afterRace.items.length, 5);
+  // Stale client still believes 4 exist; the transaction-side cap must win.
+  const capped = await raceRepo.save({ ownerUid: "race", draft: makeDraft(), savedStage: "fabric" });
+  assert.equal(capped.status, "cap_reached");
+  assert.equal((await seedRepo.list("race")).items.length, 5);
+
+  // Rename racing a delete: rename must not resurrect the deleted order.
+  const victim = afterRace.items[0];
+  const staleRename = createSavedStudioOrderRepository({
+    ...base,
+    loadBundle: (() => {
+      const snapshot = base.loadBundle("race");
+      return () => snapshot;
+    })(),
+  });
+  const snapshotTaken = staleRename.list("race");
+  await snapshotTaken;
+  assert.equal((await seedRepo.remove({ ownerUid: "race", savedOrderId: victim.savedOrderId })).status, "deleted");
+  const renameAfterDelete = await staleRename.rename({
+    ownerUid: "race",
+    savedOrderId: victim.savedOrderId,
+    name: "Ghost",
+  });
+  assert.equal(renameAfterDelete.status, "absent");
+  const afterDelete = await seedRepo.list("race");
+  assert.equal(afterDelete.items.length, 4);
+  assert.equal(afterDelete.index.itemIds.includes(victim.savedOrderId), false);
+}
+
+// Re-save after a rename takes the stored revision (no stale revision write).
+{
+  const repoRev = createSavedStudioOrderRepository(createMemorySavedStudioOrderAdapter());
+  const saved = await repoRev.save({ ownerUid: "rev", draft: makeDraft(), savedStage: "fabric" });
+  if (saved.status !== "saved") throw new Error("expected saved");
+  const renamedRev = await repoRev.rename({ ownerUid: "rev", savedOrderId: saved.item.savedOrderId, name: "Mine" });
+  if (renamedRev.status !== "renamed") throw new Error("expected renamed");
+  assert.equal(renamedRev.item.revision, 2);
+  const resaved = await repoRev.save({
+    ownerUid: "rev",
+    draft: stampLinkedSavedOrderId(makeDraft(), saved.item.savedOrderId),
+    savedStage: "summary",
+  });
+  if (resaved.status !== "updated") throw new Error("expected updated");
+  assert.equal(resaved.item.revision, 3);
+  assert.equal(resaved.item.name, "Mine");
+  assert.equal((await repoRev.list("rev")).items.length, 1);
+}
 
 console.log("PASS: saved studio order model and service");

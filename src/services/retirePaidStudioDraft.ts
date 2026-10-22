@@ -63,16 +63,18 @@ const clearAuthenticatedStudioDraft = async (
 export const retireStudioFutureDesignDraft = ({
   repository,
   expectedRevision = null,
-  removeLinkedSavedOrder = false,
+  removeSavedOrderId = null,
 }: {
   repository?: Pick<AuthenticatedFutureDraftRepository, "clear"> | null;
   expectedRevision?: number | null;
-  /** Payment success only. Cancel Order and Start another order must leave saved orders. */
-  removeLinkedSavedOrder?: boolean;
+  /**
+   * Payment success only: the saved order linked to the order that was
+   * actually paid. Never inferred from the active draft, so paying one order
+   * cannot remove a different saved order. Cancel Order passes nothing.
+   */
+  removeSavedOrderId?: string | null;
 } = {}): Promise<void> => {
-  const linkedSavedOrderId = removeLinkedSavedOrder
-    ? GuestOrderSessionService.getFutureDesignDraft()?.linkedSavedOrderId
-    : undefined;
+  const linkedSavedOrderId = removeSavedOrderId || undefined;
   const ownerUid = auth.currentUser?.uid;
   retiredUntilNextStudioSession = true;
   GuestOrderSessionService.clearFutureDesignDraft();

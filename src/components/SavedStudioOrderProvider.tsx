@@ -18,6 +18,7 @@ import {
   SAVED_STUDIO_ORDER_RETRY_MESSAGE,
   clearPendingSaveStudioOrder,
   evaluateSavedStudioOrderChangeWarnings,
+  evaluateSavedStudioOrderPriceChange,
   hasConflictingActiveStudioDraft,
   hasPendingSaveStudioOrder,
   isUploadedSourceReferencedBySavedOrders,
@@ -32,9 +33,19 @@ import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 
 export type SavedStudioOrderHydrateMode = "replace" | "overwrite";
 
+export type SavedStudioOrderPriceCheck = {
+  savedOrderId: string;
+  savedTotal: number | null;
+};
+
 export type SavedStudioOrderController = {
   items: SavedStudioOrderItemV1[];
+  /** False until the first snapshot for the signed-in customer arrives. */
+  loaded: boolean;
   busy: boolean;
+  /** Set on Continue; the Studio resolves it once live pricing is ready. */
+  pendingPriceCheck: SavedStudioOrderPriceCheck | null;
+  resolvePriceCheck: (liveTotal: number | null) => void;
   changeWarnings: SavedStudioOrderChangeWarning[];
   setChangeWarnings: (warnings: SavedStudioOrderChangeWarning[]) => void;
   saveDraft: (input: {
@@ -79,9 +90,13 @@ export const SavedStudioOrderProvider = ({
   const setCheckoutIntent = useAppStore((state) => state.setCheckoutIntent);
   const setNotification = useAppStore((state) => state.setNotification);
   const fabrics = useAppStore((state) => state.fabrics);
+  const fabricsLoadState = useAppStore((state) => state.fabricsLoadState);
   const batches = useAppStore((state) => state.batches);
   const ownerUid = currentUser?.ownerUid ?? null;
   const [items, setItems] = useState<SavedStudioOrderItemV1[]>([]);
+  const [loadedOwnerUid, setLoadedOwnerUid] = useState<string | null>(null);
+  const [pendingPriceCheck, setPendingPriceCheck] =
+    useState<SavedStudioOrderPriceCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [capOpen, setCapOpen] = useState(false);
   const [replaceItem, setReplaceItem] = useState<SavedStudioOrderItemV1 | null>(
@@ -93,12 +108,14 @@ export const SavedStudioOrderProvider = ({
   >([]);
 
   useEffect(() => {
+    setLoadedOwnerUid(null);
     if (!ownerUid) {
       setItems([]);
       return;
     }
     return getSavedStudioOrderRepository().subscribe(ownerUid, (snapshot) => {
       setItems(snapshot.items);
+      setLoadedOwnerUid(ownerUid);
     });
   }, [ownerUid]);
 
@@ -151,6 +168,16 @@ export const SavedStudioOrderProvider = ({
           message: "Use a name between 1 and 60 characters.",
           type: "info",
         });
+      } else if (result.status === "absent") {
+        setNotification({
+          message: "This saved order was already deleted.",
+          type: "info",
+        });
+      } else if (result.status === "error") {
+        setNotification({
+          message: "We couldn't rename this saved order. Check your connection and try again.",
+          type: "info",
+        });
       }
     },
     [ownerUid, setNotification],
@@ -159,12 +186,18 @@ export const SavedStudioOrderProvider = ({
   const remove = useCallback(
     async (item: SavedStudioOrderItemV1) => {
       if (!ownerUid) return;
-      await getSavedStudioOrderRepository().remove({
+      const result = await getSavedStudioOrderRepository().remove({
         ownerUid,
         savedOrderId: item.savedOrderId,
       });
+      if (result.status === "error") {
+        setNotification({
+          message: "We couldn't delete this saved order. Check your connection and try again.",
+          type: "info",
+        });
+      }
     },
-    [ownerUid],
+    [ownerUid, setNotification],
   );
 
   const removeById = useCallback(
@@ -177,20 +210,62 @@ export const SavedStudioOrderProvider = ({
 
   const hydrate = useCallback(
     async (item: SavedStudioOrderItemV1, mode: SavedStudioOrderHydrateMode) => {
+      // Price is NOT compared here: the saved draft's own total always equals
+      // the snapshot. The Studio recomputes from the live catalogue after
+      // Continue and calls resolvePriceCheck.
       const warnings = evaluateSavedStudioOrderChangeWarnings({
         item,
         liveFabrics: fabrics,
         liveBatches: batches,
-        recomputedTotal:
-          typeof item.draft.pricingBreakdown?.total === "number"
-            ? item.draft.pricingBreakdown.total
-            : null,
+        fabricCatalogueLoaded: fabricsLoadState === "ready" && fabrics.length > 0,
       });
       setChangeWarnings(warnings);
-      await onHydrateSavedOrder({ item, mode });
+      setPendingPriceCheck({
+        savedOrderId: item.savedOrderId,
+        savedTotal: item.priceSnapshot.total,
+      });
+      try {
+        await onHydrateSavedOrder({ item, mode });
+      } catch {
+        setPendingPriceCheck(null);
+        setChangeWarnings([]);
+        setNotification({
+          message: "We couldn't open this saved order. Check your connection and try again.",
+          type: "info",
+        });
+        return;
+      }
       setActiveTab("design");
     },
-    [batches, fabrics, onHydrateSavedOrder, setActiveTab],
+    [
+      batches,
+      fabrics,
+      fabricsLoadState,
+      onHydrateSavedOrder,
+      setActiveTab,
+      setNotification,
+    ],
+  );
+
+  const resolvePriceCheck = useCallback(
+    (liveTotal: number | null) => {
+      setPendingPriceCheck((check) => {
+        if (!check) return check;
+        const warning = evaluateSavedStudioOrderPriceChange({
+          savedTotal: check.savedTotal,
+          liveTotal,
+        });
+        if (warning) {
+          setChangeWarnings((current) =>
+            current.some((entry) => entry.code === "price_changed")
+              ? current
+              : [...current, warning],
+          );
+        }
+        return null;
+      });
+    },
+    [],
   );
 
   const requestContinue = useCallback(
@@ -228,16 +303,26 @@ export const SavedStudioOrderProvider = ({
     return true;
   }, []);
 
+  const loaded = Boolean(ownerUid) && loadedOwnerUid === ownerUid;
+
+  // Fail safe: while a signed-in customer's saved orders are still loading,
+  // treat every upload as retained so nothing is hard-deleted on a guess.
   const isUploadedSourceRetained = useCallback(
-    (sourceRef: string) =>
-      isUploadedSourceReferencedBySavedOrders(sourceRef, items),
-    [items],
+    (sourceRef: string) => {
+      if (!ownerUid) return false;
+      if (!loaded) return true;
+      return isUploadedSourceReferencedBySavedOrders(sourceRef, items);
+    },
+    [items, loaded, ownerUid],
   );
 
   const value = useMemo<SavedStudioOrderController>(
     () => ({
       items,
+      loaded,
       busy,
+      pendingPriceCheck,
+      resolvePriceCheck,
       changeWarnings,
       setChangeWarnings,
       saveDraft,
@@ -252,6 +337,9 @@ export const SavedStudioOrderProvider = ({
     [
       beginGuestSaveSignIn,
       busy,
+      loaded,
+      pendingPriceCheck,
+      resolvePriceCheck,
       changeWarnings,
       consumePendingSave,
       isUploadedSourceRetained,

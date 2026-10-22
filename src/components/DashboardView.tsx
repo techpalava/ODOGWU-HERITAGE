@@ -12,6 +12,7 @@ import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRe
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
 import { SavedOrdersSection } from "./SavedOrdersSection";
 import { useSavedStudioOrders } from "./SavedStudioOrderProvider";
+import { takeSavedOrderPaymentLink } from "../utils/savedStudioOrderModel";
 import {
   authorizeFutureOrderV2Payment,
   readFutureOrderV2JsonBody,
@@ -139,7 +140,9 @@ export default function DashboardView({
       });
       if (cancelled || result.status === "ignored") return;
       if (result.status === "recorded") {
-        void retireStudioFutureDesignDraft({ removeLinkedSavedOrder: true });
+        void retireStudioFutureDesignDraft({
+          removeSavedOrderId: takeSavedOrderPaymentLink(result.orderId),
+        });
       }
       if (result.orderId) {
         stashFutureOrderV2OpenOrderId(result.orderId);
@@ -162,7 +165,9 @@ export default function DashboardView({
       });
       if (result.status === "ignored") return;
       if (result.status === "recorded") {
-        void retireStudioFutureDesignDraft({ removeLinkedSavedOrder: true });
+        void retireStudioFutureDesignDraft({
+          removeSavedOrderId: takeSavedOrderPaymentLink(result.orderId),
+        });
       }
       stashFutureOrderV2OpenOrderId(result.orderId);
       setOpenV2OrderId(result.orderId);

@@ -16,7 +16,12 @@ import {
   createFutureOrderV2PreparationAttempt,
   getFutureOrderV2CandidateFingerprint,
 } from "../utils/futureOrderV2Preparation";
-import { takeSavedOrderCartLink } from "../utils/savedStudioOrderModel";
+import {
+  peekSavedOrderCartLink,
+  rememberSavedOrderPaymentLink,
+  takeSavedOrderCartLink,
+  takeSavedOrderPaymentLink,
+} from "../utils/savedStudioOrderModel";
 import { getSavedStudioOrderRepository } from "../services/savedStudioOrderService";
 import {
   getFutureOrderV2CartLineLabel,
@@ -120,6 +125,14 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       setOrderId(prepared.attempt.orderId);
+      // Link the payment order to the saved order this cart line came from,
+      // so a redirect return removes only that saved order.
+      rememberSavedOrderPaymentLink(
+        prepared.attempt.orderId,
+        peekSavedOrderCartLink(
+          getFutureOrderV2CandidateFingerprint(item.candidate),
+        ),
+      );
       const outcome = await executeFutureOrderV2Payment({
         prepared: prepared.attempt,
         authorize: authorizeFutureOrderV2Payment,
@@ -145,17 +158,24 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       dropFutureOrderV2CartItem(item.cartItemId);
-      const savedOrderId = takeSavedOrderCartLink(
-        getFutureOrderV2CandidateFingerprint(item.candidate),
+      // Remove only the saved order linked to this paid cart line. The active
+      // Studio draft may belong to a different saved order; leave that alone.
+      const savedOrderId =
+        takeSavedOrderCartLink(
+          getFutureOrderV2CandidateFingerprint(item.candidate),
+        ) ?? null;
+      const paymentLinkedSavedOrderId = takeSavedOrderPaymentLink(
+        prepared.attempt.orderId,
       );
+      const paidSavedOrderId = savedOrderId || paymentLinkedSavedOrderId;
       const ownerUid = auth.currentUser?.uid;
-      if (savedOrderId && ownerUid) {
+      if (paidSavedOrderId && ownerUid) {
         void getSavedStudioOrderRepository().remove({
           ownerUid,
-          savedOrderId,
+          savedOrderId: paidSavedOrderId,
         });
       }
-      void retireStudioFutureDesignDraft({ removeLinkedSavedOrder: true });
+      void retireStudioFutureDesignDraft();
       setNotification({
         message: "Payment received. This order has left your cart.",
         type: "success",

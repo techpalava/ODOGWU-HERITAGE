@@ -231,7 +231,7 @@ assert.match(studio, /beginGuestSaveSignIn/);
 assert.match(studio, /consumePendingSave/);
 assert.match(studio, /handleRequestFreshIndividualOrder|onStartFreshIndividualOrder/);
 assert.match(studio, /isUploadedSourceRetained/);
-assert.match(studio, /removeById/);
+assert.match(studio, /linkedSavedOrderIdRef/);
 assert.match(studio, /SavedOrderConfirmationDialog/);
 
 const cart = readFileSync("src/components/CartDrawer.tsx", "utf8");
@@ -250,8 +250,31 @@ assert.match(payment, /future-order-v2-add-to-cart/);
 
 const retire = readFileSync("src/services/retirePaidStudioDraft.ts", "utf8");
 assert.match(retire, /linkedSavedOrderId/);
-assert.match(retire, /removeLinkedSavedOrder/);
-assert.match(studio, /removeLinkedSavedOrder: true/);
+assert.match(retire, /removeSavedOrderId/);
+// B5: no path infers the saved order to remove from the active draft.
+assert.equal(retire.includes("getFutureDesignDraft()?.linkedSavedOrderId"), false);
+assert.equal(/removeLinkedSavedOrder/.test(studio), false);
+assert.match(studio, /removeSavedOrderId: takeSavedOrderPaymentLink\(result\.orderId\)/);
+const cartPay = readFileSync("src/components/FutureOrderV2CartPayPanel.tsx", "utf8");
+assert.match(cartPay, /rememberSavedOrderPaymentLink\(/);
+assert.match(cartPay, /void retireStudioFutureDesignDraft\(\);/);
+assert.equal(/removeLinkedSavedOrder/.test(cartPay), false);
+const dashboardSrc = readFileSync("src/components/DashboardView.tsx", "utf8");
+assert.equal(/removeLinkedSavedOrder/.test(dashboardSrc), false);
+assert.match(dashboardSrc, /takeSavedOrderPaymentLink\(result\.orderId\)/);
+// B1: autosave writes the saved-order link into every rebuilt draft.
+assert.match(
+  studio,
+  /fabricAllocations: autosaveAllocationResolution\.fabricAllocations,\s*\.\.\.\(linkedSavedOrderIdRef\.current/,
+);
+assert.match(studio, /linkedSavedOrderIdRef\.current = storedDraft\?\.linkedSavedOrderId \|\| null;/);
+// B2: user-initiated upload removal keeps files a saved order still uses.
+assert.match(
+  studio,
+  /retainedBySavedOrder[\s\S]{0,200}deleteDraft: retainedBySavedOrder\s*\? async \(\) => undefined/,
+);
+// B4: live price check after Continue.
+assert.match(studio, /resolvePriceCheck\(savedOrderLivePriceTotal\)/);
 assert.match(studio, /handleConfirmCancelFutureOrder/);
 assert.equal(
   /handleConfirmCancelFutureOrder[\s\S]*?retireCurrentStudioDraft\(\);/.test(studio),
