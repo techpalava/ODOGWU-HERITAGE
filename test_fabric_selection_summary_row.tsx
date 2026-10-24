@@ -6,6 +6,9 @@
  *   garment cards and scrolls them into view; another button switches target;
  * - heading "Choose a new fabric for Selection N"; USE AGAIN "Selection N"
  *   badge; stock-blocked message on the disabled button; "Cancel change".
+ * - Option D polish: compact buttons, bolder info text, gold "Change" chip
+ *   (data-fabric-selection-summary-change-chip), hover/focus/active lift and
+ *   gold name underline.
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -27,6 +30,7 @@ import {
   buildFabricSelectionSummaryItems,
   formatFabricSelectionNumbersBadge,
   formatFabricSelectionSummaryCapacityLabel,
+  formatFabricSelectionSummaryGarmentLine,
   getFabricSelectionNumbersUsingFabric,
 } from "./src/utils/fabricSelectionSummaryRow";
 import { formatFabricStockExhaustedCopy } from "./src/utils/fabricStockAvailability";
@@ -87,6 +91,12 @@ assert.equal(formatFabricSelectionSummaryCapacityLabel(1, 1), "1/2 left");
 assert.equal(formatFabricSelectionNumbersBadge([2]), "Selection 2");
 assert.equal(formatFabricSelectionNumbersBadge([2, 3]), "Selections 2 & 3");
 assert.equal(formatFabricSelectionNumbersBadge([]), "");
+// Compact garment line (Option D): last word, unique, occurrence suffix kept.
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Nikka Shorts"], "compact"), "Shirt + Shorts");
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Nikka Shorts"]), "Standard Shirt + Standard Nikka Shorts");
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Shirt 2"], "compact"), "Shirt + Shirt 2");
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Skirt", "Long Skirt"], "compact"), "Skirt + Long Skirt", "ambiguous short labels fall back to full");
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Long Dress"], "compact"), "Dress");
 const items = buildFabricSelectionSummaryItems({ fabricAllocationState: base, garmentTypeSelection: selection, fabrics });
 assert.deepEqual(
   items.map((item) => [item.selectionNumber, item.fabricName, item.capacityLabel, item.capacityTone, [...item.garmentKeys]]),
@@ -260,6 +270,70 @@ for (const entry of expected) {
 }
 assert.equal(garmentCard(renderer.root, "base:skirt").props["data-fabric-selection-highlight"], "idle");
 
+// Option D: compact buttons, bolder info text, Change chip, hover/focus cues.
+{
+  const intro = row.findByProps({ "data-fabric-selection-summary-intro": "true" });
+  assert.match(textContent(intro), /^Your Fabric Selections · tap one to change its fabric$/);
+  assert.match(String(intro.props.className), /\bfont-extrabold\b/, "intro line is bolder");
+  assert.match(String(intro.props.className), /text-heritage-ink\/85/, "intro line is clearer (darker)");
+  for (const n of [1, 2, 3]) {
+    const button = summaryButton(renderer.root, n);
+    const cls = String(button.props.className);
+    assert.equal(button.props["data-fabric-selection-summary-density"], "compact");
+    assert.match(cls, /\bpx-2\b/);
+    assert.match(cls, /\bpy-1\.5\b/);
+    assert.doesNotMatch(cls, /\bp-3\b|\bsm:p-3\b|\bp-2\.5\b/, "old roomy padding removed");
+    assert.match(String(button.parent!.props.className), /\bsm:w-52\b/, "narrower desktop button");
+    assert.match(String(button.parent!.props.className), /\bmax-w-56\b/, "narrower mobile button");
+    // Hover lift + focus/active (touch) equivalents.
+    assert.equal(button.props["data-fabric-selection-summary-hover-cue"], "lift-underline");
+    for (const token of ["group", "hover:-translate-y-0.5", "hover:shadow-md", "focus-visible:-translate-y-0.5", "focus-visible:shadow-md", "active:-translate-y-0.5", "active:shadow-md", "motion-reduce:transform-none", "cursor-pointer"]) {
+      assert.ok(cls.split(/\s+/).includes(token), `button has ${token}`);
+    }
+    // Swatch is smaller.
+    const swatch = button.find((node) => node.props?.["data-fabric-selection-summary-swatch"] === "image");
+    assert.match(String(swatch.props.className), /\bh-7 w-7\b/);
+    // Name: heavier weight + gold underline on hover/focus/active.
+    const nameEl = button.findByProps({ "data-fabric-selection-summary-name": "true" });
+    const nameCls = String(nameEl.props.className).split(/\s+/);
+    assert.ok(nameCls.includes("font-extrabold"), "name is heavier");
+    assert.ok(nameCls.includes("line-clamp-2"));
+    assert.ok(nameCls.includes("leading-[1.6]"), "clamped name has tall enough lines that the underline is not clipped by overflow");
+    assert.ok(!nameCls.some((token) => /underline|decoration/.test(token)), "underline is not on the clamped (overflow-hidden) box");
+    const underline = nameEl.findByProps({ "data-fabric-selection-summary-name-underline": "true" });
+    assert.equal(underline.type, "span", "underline wraps only the name text, not the card");
+    assert.equal(textContent(underline), textContent(nameEl));
+    const underlineCls = String(underline.props.className).split(/\s+/);
+    for (const token of ["decoration-[#8A6A1F]", "decoration-2", "underline-offset-2", "[text-decoration-skip-ink:none]", "group-hover:underline", "group-focus-visible:underline", "group-active:underline"]) {
+      assert.ok(underlineCls.includes(token), `underline has ${token}`);
+    }
+    assert.ok(!underlineCls.includes("underline"), "no underline at rest");
+    // Capacity heavier weight.
+    const capacity = button.find((node) => typeof node.props?.["data-fabric-selection-summary-capacity"] === "string");
+    assert.match(String(capacity.props.className), /\bfont-extrabold\b/);
+    // Garment line: compact on mobile, full on sm+.
+    const garments = button.findByProps({ "data-fabric-selection-summary-garments": "true" });
+    assert.match(String(garments.props.className), /\bfont-semibold\b/);
+    const compactLine = garments.findByProps({ "data-fabric-selection-summary-garments-compact": "true" });
+    const fullLine = garments.findByProps({ "data-fabric-selection-summary-garments-full": "true" });
+    assert.match(String(compactLine.props.className), /\bsm:hidden\b/);
+    assert.match(String(fullLine.props.className), /\bhidden sm:inline\b/);
+    assert.equal(garments.props.title, textContent(fullLine));
+    // Change chip: inside the button (so tapping it opens Change), pencil + "Change".
+    const chips = button.findAllByProps({ "data-fabric-selection-summary-change-chip": "true" });
+    assert.equal(chips.length, 1, `Selection ${n} has one Change chip`);
+    const chip = chips[0]!;
+    assert.equal(chip.type, "span", "chip is not a nested button");
+    assert.equal(chip.props["aria-hidden"], "true", "button aria-label already says Change fabric");
+    assert.equal(textContent(chip), "Change");
+    assert.match(String(chip.props.className), /\bborder-heritage-gold\b/);
+    assert.match(String(chip.props.className), /\btext-heritage-gold\b/);
+    assert.match(String(chip.props.className), /group-hover:bg-heritage-gold/);
+    assert.ok(chip.findAll((node) => typeof node.type !== "string" || node.type === "svg").length >= 1, "pencil icon");
+  }
+  assert.match(textContent(summaryButton(renderer.root, 1).findByProps({ "data-fabric-selection-summary-garments-compact": "true" })), /^Shirt \+ Trouser/);
+}
+
 // Tap Selection 2: Change Fabric for that selection, highlight + scroll.
 scrolledKeys.length = 0;
 await withWindow(async () => {
@@ -307,6 +381,9 @@ assert.equal(garmentCard(renderer.root, "base:skirt").props["data-fabric-selecti
 assert.equal(summaryButton(renderer.root, 1).props["aria-pressed"], true);
 assert.equal(summaryButton(renderer.root, 2).props["aria-pressed"], false);
 assert.equal(summaryButton(renderer.root, 2).findAllByProps({ "data-fabric-selection-summary-changing-tag": "true" }).length, 0);
+// Active selection keeps its gold outline + CHANGING tag and its Change chip.
+assert.match(String(summaryButton(renderer.root, 1).props.className), /ring-heritage-gold/);
+assert.equal(summaryButton(renderer.root, 1).findAllByProps({ "data-fabric-selection-summary-change-chip": "true" }).length, 1);
 
 // USE AGAIN badge names the selection(s) already using the print.
 const cardB = catalogueCard(renderer.root, "SR-B");
