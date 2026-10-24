@@ -256,6 +256,38 @@ assert.match(
 );
 assert.match(
   rules,
+  /match \/savedStudioOrders\/\{ownerUid\} \{[\s\S]*?allow read: if isAdmin\(\) \|\| ownsDocumentPath\(ownerUid\)/,
+);
+assert.match(
+  rules,
+  /match \/savedStudioOrders\/\{ownerUid\} \{[\s\S]*?allow create: if ownsDocumentPath\(ownerUid\)/,
+);
+assert.match(
+  rules,
+  /function savedStudioOrderIndexAfter\(ownerUid\)/,
+);
+assert.match(
+  rules,
+  /getAfter\(\/databases\/\$\(database\)\/documents\/savedStudioOrders\/\$\(ownerUid\)\)/,
+);
+assert.match(
+  rules,
+  /savedStudioOrderIndexAfter\(ownerUid\)\.itemIds\.size\(\) <= 5/,
+);
+assert.match(
+  rules,
+  /match \/savedStudioOrders\/\{ownerUid\}\/items\/\{savedOrderId\} \{[\s\S]*?allow delete: if ownsDocumentPath\(ownerUid\)/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.revision == resource\.data\.revision \+ 1/,
+);
+assert.doesNotMatch(
+  rules,
+  /match \/savedStudioOrders\/\{ownerUid\} \{[\s\S]*?allow (create|update|delete): if isAdmin\(\)/,
+);
+assert.match(
+  rules,
   /match \/staffPreviewEntitlements\/\{ownerUid\} \{\s*allow get: if ownsDocumentPath\(ownerUid\);\s*allow list, create, update, delete: if false;/,
 );
 assert.match(rules, /function hasValidDesignStyleRecord\(data\)/);
