@@ -4380,6 +4380,14 @@ try {
       .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
       .props.onClick(),
   );
+  // Freer Fabric step (#fabric-assign-freedom): the Trouser would join the
+  // Shirt's piece of the same print, so the Pair vs new piece choice opens
+  // first; pairing keeps the original outcome checked below.
+  await act(async () =>
+    announcedOnlyRenderer.root
+      .findByProps({ "data-fabric-piece-placement-pair": "true" })
+      .props.onClick(),
+  );
   await act(async () =>
     announcedOnlyRenderer.update(
       renderStep(
@@ -5321,6 +5329,15 @@ try {
     0,
     "One remaining Step 1 candidate must assign via USE AGAIN without the popup.",
   );
+  // Freer Fabric step (#fabric-assign-freedom): joining the Shirt's piece is no
+  // longer silent; at the 1-fabric ceiling the customer pairs.
+  await act(async () =>
+    remainingOneRenderer.root
+      .findByProps({ "data-fabric-piece-placement-pair": "true" })
+      .props.onClick(),
+  );
+  await act(async () => remainingOneRenderer.update(renderRemainingOne()));
+  flushAnimationFrames();
   assert.deepEqual(
     remainingOneState.fabricAllocations.flatMap((allocation) =>
       allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
