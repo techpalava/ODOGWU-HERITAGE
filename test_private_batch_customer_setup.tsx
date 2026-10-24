@@ -21,6 +21,7 @@ const businessSettings = {
 const setupMarkup = renderToStaticMarkup(
   createElement(PrivateBatchSetupView, {
     businessSettings,
+    settingsLoaded: true,
     onBack: () => undefined,
     onSubmit: async () => ({ status: "created" as const }),
   }),
@@ -57,9 +58,10 @@ let renderer!: ReturnType<typeof create>;
 await act(async () => {
   renderer = create(
     createElement(PrivateBatchSetupView, {
-      businessSettings,
-      onBack: () => undefined,
-      onSubmit: async (values) => {
+    businessSettings,
+    settingsLoaded: true,
+    onBack: () => undefined,
+    onSubmit: async (values) => {
         submissions += 1;
         assert.equal(values.batchName, "Family Wedding 2026");
         assert.equal(values.occasion, "Wedding");
