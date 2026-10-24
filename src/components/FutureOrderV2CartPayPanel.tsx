@@ -15,7 +15,15 @@ import {
 import {
   createFutureOrderV2PreparationAttempt,
   createFutureOrderV2PreparationIds,
+  getFutureOrderV2CandidateFingerprint,
 } from "../utils/futureOrderV2Preparation";
+import {
+  peekSavedOrderCartLink,
+  rememberSavedOrderPaymentLink,
+  takeSavedOrderCartLink,
+  takeSavedOrderPaymentLink,
+} from "../utils/savedStudioOrderModel";
+import { getSavedStudioOrderRepository } from "../services/savedStudioOrderService";
 import {
   getFutureOrderV2CartLineLabel,
   getFutureOrderV2CartLineTotalCents,
@@ -145,6 +153,12 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       setOrderId(prepared.orderId);
+      // Link the payment order to the saved order this cart line came from,
+      // so a redirect return removes only that saved order.
+      const cartLineSavedOrderId = peekSavedOrderCartLink(
+        getFutureOrderV2CandidateFingerprint(item.candidate),
+      );
+      rememberSavedOrderPaymentLink(prepared.orderId, cartLineSavedOrderId);
       let outcome = await executeFutureOrderV2Payment({
         prepared,
         authorize: authorizeFutureOrderV2Payment,
@@ -179,6 +193,8 @@ export const FutureOrderV2CartPayPanel = ({
           return;
         }
         setOrderId(prepared.orderId);
+        // Re-priced retry uses a new order id; link it to the same saved order.
+        rememberSavedOrderPaymentLink(prepared.orderId, cartLineSavedOrderId);
         outcome = await executeFutureOrderV2Payment({
           prepared,
           authorize: authorizeFutureOrderV2Payment,
@@ -205,6 +221,23 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       dropFutureOrderV2CartItem(item.cartItemId);
+      // Remove only the saved order linked to this paid cart line. The active
+      // Studio draft may belong to a different saved order; leave that alone.
+      const savedOrderId =
+        takeSavedOrderCartLink(
+          getFutureOrderV2CandidateFingerprint(item.candidate),
+        ) ?? null;
+      const paymentLinkedSavedOrderId = takeSavedOrderPaymentLink(
+        prepared.orderId,
+      );
+      const paidSavedOrderId = savedOrderId || paymentLinkedSavedOrderId;
+      const ownerUid = auth.currentUser?.uid;
+      if (paidSavedOrderId && ownerUid) {
+        void getSavedStudioOrderRepository().remove({
+          ownerUid,
+          savedOrderId: paidSavedOrderId,
+        });
+      }
       void retireStudioFutureDesignDraft();
       setNotification({
         message: "Payment received. This order has left your cart.",

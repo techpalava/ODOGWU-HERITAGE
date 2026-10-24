@@ -1,7 +1,9 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, PackageCheck } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+import { SaveOrderButton, SaveOrderDisabledReason } from "./SaveOrderButton";
+import { useSaveOrderAction } from "./SaveOrderActionContext";
 
-const studioNavButtonClass =
+export const studioNavButtonClass =
   "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[11px] font-bold leading-tight sm:gap-2 sm:px-3 sm:text-xs [overflow-wrap:normal] [word-break:normal] transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
 /** Back and other secondary controls: white at rest, heritage green fill with white text on hover and focus. */
@@ -178,33 +180,63 @@ export const DesignStudioStepActions = ({
   forward?: DesignStudioForwardButtonProps;
   note?: ReactNode;
   className?: string;
-}) => (
-  <div
-    data-studio-step-actions="true"
-    data-studio-step-actions-slot={slot}
-    className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
-  >
+}) => {
+  const saveAction = useSaveOrderAction();
+  const saveReasonId = useId();
+  const showDisabledReason = Boolean(
+    saveAction?.disabled && saveAction.disabledReason,
+  );
+  // Garment Type (the only step with Back disabled) is where the Save Order
+  // gate reason appears. Keep its line reserved after a garment is picked so
+  // the content below does not move.
+  const reserveDisabledReason = Boolean(saveAction) && backDisabled;
+  const showNote = Boolean(note) || showDisabledReason || reserveDisabledReason;
+
+  return (
     <div
-      data-studio-step-actions-buttons="true"
-      className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3"
+      data-studio-step-actions="true"
+      data-studio-step-actions-slot={slot}
+      className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
     >
-      <DesignStudioBackButton
-        destination={backDestination}
-        onClick={onBack}
-        disabled={backDisabled}
-        className="min-w-0 flex-1 basis-0 sm:max-w-xs"
-      />
-      {forward ? (
-        <DesignStudioForwardButton
-          {...forward}
-          className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+      {/* Phones: Back + Continue keep their one-row layout and Save Order takes
+          its own full-width line beneath. sm and up: one row of three. Back and
+          Continue are flex-1 basis-0, so wrapping never splits those two. */}
+      <div
+        data-studio-step-actions-buttons="true"
+        className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap"
+      >
+        <DesignStudioBackButton
+          destination={backDestination}
+          onClick={onBack}
+          disabled={backDisabled}
+          className="min-w-0 flex-1 basis-0 sm:max-w-xs"
         />
+        {saveAction ? (
+          <SaveOrderButton
+            describedById={showDisabledReason ? saveReasonId : undefined}
+            className="max-sm:order-last max-sm:max-w-none max-sm:flex-none max-sm:basis-full"
+          />
+        ) : null}
+        {forward ? (
+          <DesignStudioForwardButton
+            {...forward}
+            className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+          />
+        ) : null}
+      </div>
+      {showNote ? (
+        <div data-studio-step-actions-note="true" className="w-full min-w-0">
+          {note}
+          {showDisabledReason || reserveDisabledReason ? (
+            <div className={note ? "mt-2" : undefined}>
+              <SaveOrderDisabledReason
+                id={saveReasonId}
+                reserveSpace={reserveDisabledReason}
+              />
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
-    {note ? (
-      <div data-studio-step-actions-note="true" className="w-full min-w-0">
-        {note}
-      </div>
-    ) : null}
-  </div>
-);
+  );
+};

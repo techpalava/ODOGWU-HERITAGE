@@ -42,6 +42,13 @@ import {
 import {
   resolvePersistedDraftOrderContext,
 } from "./utils/orderContextIdentity";
+import { stampLinkedSavedOrderId } from "./utils/savedStudioOrderModel";
+import { allowNextStudioFutureDesignDraftSession } from "./services/retirePaidStudioDraft";
+import {
+  SavedStudioOrderProvider,
+  type SavedStudioOrderHydrateMode,
+} from "./components/SavedStudioOrderProvider";
+import type { SavedStudioOrderItemV1 } from "./utils/savedStudioOrderModel";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
@@ -486,6 +493,75 @@ export default function App() {
     setPresetFabricCode(null);
     setOrderContext(context);
     setActiveTab("design");
+  };
+
+  const [studioContinueNonce, setStudioContinueNonce] = useState(0);
+
+  const inspectActiveDraftForSavedOrder = async () => {
+    const inspected = await getHomepageDraftReplacementService().inspect();
+    if (inspected.status === "valid") return inspected.existing.draft;
+    return GuestOrderSessionService.getFutureDesignDraft();
+  };
+
+  const hydrateSavedStudioOrder = async ({
+    item,
+    mode,
+  }: {
+    item: SavedStudioOrderItemV1;
+    mode: SavedStudioOrderHydrateMode;
+  }) => {
+    const authority = getHomepageDraftReplacementService();
+    if (mode === "replace") {
+      const inspected = await authority.inspect();
+      if (inspected.status === "valid") {
+        const discarded = await authority.discard(inspected.existing);
+        if (discarded.status !== "discarded") {
+          triggerNotification(
+            "We could not replace your unfinished order safely. It has not been changed.",
+            "info",
+          );
+          return;
+        }
+      } else if (inspected.status !== "empty") {
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+        return;
+      }
+    }
+    const draft = stampLinkedSavedOrderId(
+      {
+        ...item.draft,
+        currentStageId: item.savedStage,
+        currentStep: item.savedStep,
+        resumeLocus: item.resumeLocus ?? item.draft.resumeLocus,
+        updatedAt: new Date().toISOString(),
+      },
+      item.savedOrderId,
+    );
+    GuestOrderSessionService.saveFutureDesignDraft(draft);
+    const firebaseUser = auth.currentUser;
+    if (currentUser && firebaseUser && !firebaseUser.isAnonymous) {
+      const repository = createFirebaseAuthenticatedFutureDraftRepository({
+        customer: currentUser,
+        authResolved: true,
+        firebaseUser,
+      });
+      const loaded = await repository.load();
+      const expectedRevision =
+        loaded.status === "loaded" ? loaded.record.revision : null;
+      await repository.save(draft, expectedRevision);
+    }
+    allowNextStudioFutureDesignDraftSession();
+    const resumeContext =
+      resolvePersistedDraftOrderContext(
+        draft,
+        homepageCurrentBatchesRef.current,
+        homepageDefaultPickupLocationRef.current,
+      ) ?? freshIndividualOrderContext();
+    setStudioContinueNonce((current) => current + 1);
+    openDesignStudioForOrder(resumeContext);
   };
 
   React.useEffect(() => {
@@ -1833,6 +1909,10 @@ export default function App() {
   ]);
 
   return (
+    <SavedStudioOrderProvider
+      onHydrateSavedOrder={hydrateSavedStudioOrder}
+      inspectActiveDraft={inspectActiveDraftForSavedOrder}
+    >
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
       <AppVersionBanner />
       {/* Toast Notification HUD */}
@@ -1935,8 +2015,10 @@ export default function App() {
 
             {activeTab === "design" && (
               <DesignStudioView
+                key={`design-studio-${studioContinueNonce}`}
                 onAddToCart={handleAddToCart}
                 openCartDrawer={() => setIsCartOpen(true)}
+                onStartFreshIndividualOrder={handleRequestFreshIndividualOrder}
                 currentUser={currentUser}
                 orderContext={orderContext}
                 styles={styles}
@@ -2594,5 +2676,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </SavedStudioOrderProvider>
   );
 }
