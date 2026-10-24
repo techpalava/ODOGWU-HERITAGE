@@ -294,11 +294,20 @@ assert.equal(garmentCard(renderer.root, "base:skirt").props["data-fabric-selecti
     const swatch = button.find((node) => node.props?.["data-fabric-selection-summary-swatch"] === "image");
     assert.match(String(swatch.props.className), /\bh-7 w-7\b/);
     // Name: heavier weight + gold underline on hover/focus/active.
-    const nameCls = String(button.findByProps({ "data-fabric-selection-summary-name": "true" }).props.className).split(/\s+/);
-    for (const token of ["font-extrabold", "decoration-heritage-gold", "decoration-2", "group-hover:underline", "group-focus-visible:underline", "group-active:underline"]) {
-      assert.ok(nameCls.includes(token), `name has ${token}`);
+    const nameEl = button.findByProps({ "data-fabric-selection-summary-name": "true" });
+    const nameCls = String(nameEl.props.className).split(/\s+/);
+    assert.ok(nameCls.includes("font-extrabold"), "name is heavier");
+    assert.ok(nameCls.includes("line-clamp-2"));
+    assert.ok(nameCls.includes("leading-[1.6]"), "clamped name has tall enough lines that the underline is not clipped by overflow");
+    assert.ok(!nameCls.some((token) => /underline|decoration/.test(token)), "underline is not on the clamped (overflow-hidden) box");
+    const underline = nameEl.findByProps({ "data-fabric-selection-summary-name-underline": "true" });
+    assert.equal(underline.type, "span", "underline wraps only the name text, not the card");
+    assert.equal(textContent(underline), textContent(nameEl));
+    const underlineCls = String(underline.props.className).split(/\s+/);
+    for (const token of ["decoration-[#8A6A1F]", "decoration-2", "underline-offset-2", "[text-decoration-skip-ink:none]", "group-hover:underline", "group-focus-visible:underline", "group-active:underline"]) {
+      assert.ok(underlineCls.includes(token), `underline has ${token}`);
     }
-    assert.ok(!nameCls.includes("underline"), "no underline at rest");
+    assert.ok(!underlineCls.includes("underline"), "no underline at rest");
     // Capacity heavier weight.
     const capacity = button.find((node) => typeof node.props?.["data-fabric-selection-summary-capacity"] === "string");
     assert.match(String(capacity.props.className), /\bfont-extrabold\b/);

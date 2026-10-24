@@ -137,9 +137,19 @@ export const FabricSelectionSummaryRow = ({
                   <span
                     data-fabric-selection-summary-name="true"
                     title={item.fabricName}
-                    className="line-clamp-2 min-w-0 break-words text-xs font-extrabold leading-tight text-heritage-green decoration-heritage-gold decoration-2 underline-offset-2 group-hover:underline group-focus-visible:underline group-active:underline"
+                    className="line-clamp-2 min-w-0 break-words text-xs font-extrabold leading-[1.6] text-heritage-green"
                   >
-                    {item.fabricName}
+                    {/* Underline lives on the inline text (spans only the name,
+                        not the card). line-clamp-2 clips overflow, so the taller
+                        leading-[1.6] keeps the 2px line inside each line box
+                        (never clipped, no third-line peek). Darker gold
+                        #8A6A1F (~5:1 on white) so it reads clearly. */}
+                    <span
+                      data-fabric-selection-summary-name-underline="true"
+                      className="decoration-[#8A6A1F] decoration-2 underline-offset-2 [text-decoration-skip-ink:none] group-hover:underline group-focus-visible:underline group-active:underline"
+                    >
+                      {item.fabricName}
+                    </span>
                   </span>
                   <span
                     data-fabric-selection-summary-garments="true"
