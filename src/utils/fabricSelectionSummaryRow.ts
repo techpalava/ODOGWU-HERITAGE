@@ -114,3 +114,26 @@ export const formatFabricSelectionNumbersBadge = (
   const head = selectionNumbers.slice(0, -1).join(", ");
   return `Selections ${head} & ${selectionNumbers[selectionNumbers.length - 1]}`;
 };
+
+/**
+ * Compact garment line for the summary buttons on narrow screens
+ * ("Standard Shirt", "Standard Nikka Shorts" -> "Shirt + Shorts").
+ * Each label keeps its last word (plus any " 2" occurrence suffix); if that
+ * would make two garments read the same (e.g. "Skirt" and "Long Skirt"), the
+ * full labels are used instead so the line never becomes ambiguous.
+ */
+export const formatFabricSelectionSummaryGarmentLine = (
+  labels: readonly string[],
+  mode: "full" | "compact" = "full",
+): string => {
+  const trimmed = labels.map((label) => label.trim()).filter(Boolean);
+  if (mode === "full") return trimmed.join(" + ");
+  const short = trimmed.map((label) => {
+    const words = label.split(/\s+/);
+    // Keep an occurrence suffix with its noun: "Standard Shirt 2" -> "Shirt 2".
+    const keep = words.length > 1 && /^\d+$/.test(words[words.length - 1]!) ? 2 : 1;
+    return words.slice(-keep).join(" ");
+  });
+  const unique = new Set(short.map((word) => word.toLowerCase()));
+  return unique.size === short.length ? short.join(" + ") : trimmed.join(" + ");
+};
