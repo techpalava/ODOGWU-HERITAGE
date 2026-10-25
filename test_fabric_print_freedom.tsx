@@ -602,4 +602,129 @@ await mount(shirtOnIvory);
   act(() => renderer.unmount());
 }
 
+// ---------------------------------------------------------------------------
+// 7. Multi-selection "Add to a fabric?" popup: Shirt on Ivory, Trouser on
+//    Royal Forest Mosaic, Long Shirt fits on either piece.
+// ---------------------------------------------------------------------------
+{
+  const shirtTrouserLong = selectionFor(["shirt", "trouser", "kaftan"]);
+  let twoHalves = assignFutureFabricToGarment({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserLong,
+    garmentKey: "base:shirt",
+    fabricCode: "PF-I",
+    fabrics,
+  }).state;
+  twoHalves = assignFutureFabricToGarment({
+    state: twoHalves,
+    garmentTypeSelection: shirtTrouserLong,
+    garmentKey: "base:trouser",
+    fabricCode: "PF-R",
+    fabrics,
+  }).state;
+  assert.deepEqual(layout(twoHalves), [
+    ["PF-I", ["base:shirt"]],
+    ["PF-R", ["base:trouser"]],
+  ]);
+  const ivoryId = twoHalves.fabricAllocations[0]!.allocationId;
+  const royalId = twoHalves.fabricAllocations[1]!.allocationId;
+  const partialDialogs = (root: ReactTestInstance) =>
+    root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props["data-testid"] === "partial-fabric-capacity-assignment-dialog",
+    );
+  const openMulti = async () => {
+    await mount(twoHalves, shirtTrouserLong);
+    await act(async () =>
+      renderer.root.findByProps({ "data-testid": "assign-to-fabric-base:kaftan" }).props.onClick(),
+    );
+    await rerender();
+    const [popup] = partialDialogs(renderer.root);
+    assert.ok(popup, "the multi-selection popup opens");
+    return popup!;
+  };
+
+  // Copy, cards kept, no Cancel.
+  let popup = await openMulti();
+  const popupText = textContent(popup);
+  assert.equal(textContent(popup.findByType("h2")), "Add to a fabric?");
+  assert.match(popupText, /Long Shirt fits on any of these pieces\./);
+  assert.doesNotMatch(popupText, /Assign Long Shirt to a Selected Fabric|Choose which selected Fabric/);
+  assert.equal(popup.findAllByProps({ "data-partial-allocation-id": ivoryId }).length, 1);
+  assert.equal(popup.findAllByProps({ "data-partial-allocation-id": royalId }).length, 1);
+  assert.match(popupText, /Currently: Shirt/);
+  assert.match(popupText, /Currently: Trouser/);
+  assert.deepEqual(
+    popup.findAllByProps({ "data-partial-capacity-progress": "true" }).map(textContent),
+    ["Capacity: 1/2 → 2/2", "Capacity: 1/2 → 2/2"],
+  );
+  assert.equal(popup.findAllByProps({ "data-testid": "partial-fabric-capacity-cancel" }).length, 0);
+  assert.equal(
+    popup.findAll((node) => node.type === "button" && textContent(node).trim() === "Cancel").length,
+    0,
+    "no Cancel button",
+  );
+  const useDifferent = popup.find(
+    (node) =>
+      node.type === "button" &&
+      node.props["data-fabric-complete-assignment-use-different"] === "true" &&
+      node.props["data-fabric-multi-assignment-use-different"] === "true",
+  );
+  assert.equal(textContent(useDifferent), "Use different fabric");
+  assert.match(String(useDifferent.props.className), /border/);
+  assert.ok(popup.findByProps({ "aria-label": "Close fabric assignment" }));
+
+  // Select still assigns to that selection.
+  await act(async () =>
+    popup.findByProps({ "data-testid": `partial-fabric-capacity-select-${royalId}` }).props.onClick(),
+  );
+  await rerender();
+  assert.deepEqual(layout(liveState), [
+    ["PF-I", ["base:shirt"]],
+    ["PF-R", ["base:trouser", "base:kaftan"]],
+  ]);
+  assert.equal(partialDialogs(renderer.root).length, 0);
+  act(() => renderer.unmount());
+
+  // X assigns nothing.
+  popup = await openMulti();
+  await act(async () => popup.findByProps({ "aria-label": "Close fabric assignment" }).props.onClick());
+  await rerender();
+  assert.equal(partialDialogs(renderer.root).length, 0);
+  assert.deepEqual(layout(liveState), layout(twoHalves), "X assigns nothing");
+  act(() => renderer.unmount());
+
+  // Use different fabric: assigns nothing, catalogue targeted at the Long Shirt.
+  popup = await openMulti();
+  await act(async () =>
+    popup
+      .find((node) => node.type === "button" && node.props["data-fabric-multi-assignment-use-different"] === "true")
+      .props.onClick(),
+  );
+  await rerender();
+  assert.equal(partialDialogs(renderer.root).length, 0, "popup closes");
+  assert.deepEqual(layout(liveState), layout(twoHalves), "Use different fabric assigns nothing");
+  assert.equal(
+    renderer.root.findAll((node) => node.type === "button" && textContent(node).trim() === "Cancel").length,
+    1,
+    "the targeted catalogue shows its Cancel (target set to the Long Shirt)",
+  );
+  const lattice = catalogueCard(renderer.root, "PF-L");
+  assert.equal(actionButton(lattice).props.disabled, false, "other prints stay SELECTable");
+  await act(async () => actionButton(lattice).props.onClick({ currentTarget: {} }));
+  await rerender();
+  const rows = renderer.root.findAll(
+    (node) => node.type === "input" && node.props["data-step1-fabric-assignment-checkbox"] !== undefined,
+  );
+  assert.deepEqual(rows.map((row) => row.props["data-step1-fabric-assignment-checkbox"]), ["base:kaftan"]);
+  await confirmGroupingFor("base:kaftan");
+  assert.deepEqual(layout(liveState), [
+    ["PF-I", ["base:shirt"]],
+    ["PF-R", ["base:trouser"]],
+    ["PF-L", ["base:kaftan"]],
+  ]);
+  act(() => renderer.unmount());
+}
+
 console.log("test_fabric_print_freedom: PASS");

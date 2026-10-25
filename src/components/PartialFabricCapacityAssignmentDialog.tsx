@@ -33,8 +33,8 @@ export const PartialFabricCapacityAssignmentDialog = ({
   onConfirm: (allocationId: string) => void;
   onCancel: () => void;
   /**
-   * Single-target popup only: close without assigning and open the catalogue
-   * targeted at this garment so any print can be picked.
+   * Close without assigning and open the catalogue targeted at this garment
+   * so any print can be picked (single- and multi-selection popups).
    */
   onUseDifferentFabric: () => void;
 }) => {
@@ -120,7 +120,7 @@ export const PartialFabricCapacityAssignmentDialog = ({
               id={titleId}
               className="break-words font-serif text-xl font-bold text-heritage-green sm:text-2xl"
             >
-              {singleTarget ? "Add to this fabric?" : `Assign ${garmentLabel} to a Selected Fabric`}
+              {singleTarget ? "Add to this fabric?" : "Add to a fabric?"}
             </h2>
             <p
               id={descriptionId}
@@ -128,7 +128,7 @@ export const PartialFabricCapacityAssignmentDialog = ({
             >
               {singleTarget
                 ? `${garmentLabel} fits on your ${singleFabricName} piece.`
-                : `Choose which selected Fabric should receive ${garmentLabel}.`}
+                : `${garmentLabel} fits on any of these pieces.`}
             </p>
           </div>
           <button
@@ -236,11 +236,13 @@ export const PartialFabricCapacityAssignmentDialog = ({
           <div className="border-t border-heritage-gold/20 px-4 py-4 sm:px-5">
             <button
               type="button"
-              onClick={onCancel}
-              data-testid="partial-fabric-capacity-cancel"
+              onClick={onUseDifferentFabric}
+              data-testid="partial-fabric-capacity-use-different"
+              data-fabric-complete-assignment-use-different="true"
+              data-fabric-multi-assignment-use-different="true"
               className="min-h-11 w-full rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
             >
-              Cancel
+              Use different fabric
             </button>
           </div>
         )}
