@@ -243,10 +243,9 @@ export const FutureFabricCatalogueCard = ({
           <p className="mt-2">
             <span
               data-fabric-used-by-selections="true"
-              title={`Already used in ${usedBySelectionsLabel}`}
+              title={usedBySelectionsLabel}
               className="inline-flex rounded-full border border-heritage-gold/50 bg-heritage-gold/15 px-2 py-0.5 text-[10px] font-bold leading-tight text-heritage-forest"
             >
-              <span className="sr-only">Already used in </span>
               {usedBySelectionsLabel}
             </span>
           </p>

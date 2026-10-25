@@ -418,19 +418,14 @@ const guides = (root: ReactTestInstance) =>
 
 // Over-allocated saved draft: beam lands on the Remove control at fault.
 {
-  // Three half-unit garments need two Fabrics, so Shirt and Trouser may sit on
-  // separate Fabrics (Skirt can still share). An Agbada fixture is no longer
-  // used: the fit check blocks a second lone Fabric that would leave the
-  // Agbada without a whole Fabric.
+  // Holding more pieces than Fabrics Needed is allowed (one piece per garment
+  // is the limit), so over-allocation now means more pieces than garments:
+  // Shirt and Trouser were saved on separate Fabrics, then the Trouser was
+  // removed from the order, leaving two pieces for one garment.
   const threeGarments = selectionFor(["shirt", "trouser", "skirt"]);
-  const agbadaKeys = getFutureGarmentFabricPlanning({
-    garmentTypeSelection: threeGarments,
-    fabricAllocationState: FabricAllocationStateEngine.initialize(),
-  });
-  assert.ok(agbadaKeys.requiredFabricQuantity >= 2, "fixture needs two Fabrics for three garments");
   let state = assign(FabricAllocationStateEngine.initialize(), "base:shirt", "GUIDE-A", threeGarments);
   state = assign(state, "base:trouser", "GUIDE-B", threeGarments);
-  const renderer = await render(state, shirtTrouser);
+  const renderer = await render(state, selectionFor(["shirt"]));
   const [guide] = guides(renderer.root);
   assert.ok(guide);
   assert.equal(guide!.props["data-fabric-guide-current"], "fix_quantity");
@@ -438,7 +433,9 @@ const guides = (root: ReactTestInstance) =>
   assert.match(textContent(guide!), /Fix your fabric quantity/);
   const beamNodes = beams(renderer.root);
   assert.equal(beamNodes.length, 1);
-  assert.equal(beamNodes[0]!.props["aria-label"], "Remove fabric from Trouser");
+  // Trouser is no longer an order garment, so the beam lands on the Remove
+  // control of the remaining garment row.
+  assert.match(String(beamNodes[0]!.props["aria-label"]), /^Remove fabric from /);
 }
 
 // ---------------------------------------------------------------------------

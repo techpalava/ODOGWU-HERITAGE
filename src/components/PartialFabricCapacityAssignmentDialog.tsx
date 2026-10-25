@@ -23,6 +23,7 @@ export const PartialFabricCapacityAssignmentDialog = ({
   targets,
   onConfirm,
   onCancel,
+  onUseDifferentFabric,
 }: {
   garmentLabel: string;
   fabricNameByCode: ReadonlyMap<string, string>;
@@ -31,6 +32,11 @@ export const PartialFabricCapacityAssignmentDialog = ({
   targets: readonly FuturePartialFabricAssignmentTargetPresentation[];
   onConfirm: (allocationId: string) => void;
   onCancel: () => void;
+  /**
+   * Close without assigning and open the catalogue targeted at this garment
+   * so any print can be picked (single- and multi-selection popups).
+   */
+  onUseDifferentFabric: () => void;
 }) => {
   const titleId = useId();
   const descriptionId = useId();
@@ -114,15 +120,15 @@ export const PartialFabricCapacityAssignmentDialog = ({
               id={titleId}
               className="break-words font-serif text-xl font-bold text-heritage-green sm:text-2xl"
             >
-              {singleTarget ? "Complete Fabric Assignment" : `Assign ${garmentLabel} to a Selected Fabric`}
+              {singleTarget ? "Add to this fabric?" : "Add to a fabric?"}
             </h2>
             <p
               id={descriptionId}
               className="mt-2 text-sm leading-relaxed text-heritage-ink/70"
             >
               {singleTarget
-                ? `Add ${garmentLabel} to an existing Fabric selection with available capacity.`
-                : `Choose which selected Fabric should receive ${garmentLabel}.`}
+                ? `${garmentLabel} fits on your ${singleFabricName} piece.`
+                : `${garmentLabel} fits on any of these pieces.`}
             </p>
           </div>
           <button
@@ -145,13 +151,11 @@ export const PartialFabricCapacityAssignmentDialog = ({
                   {singleFabricName}
                 </p>
                 <p className="text-sm text-heritage-ink/75">
-                  <span className="font-semibold text-heritage-green">
-                    Currently assigned:
-                  </span>{" "}
+                  <span className="font-semibold text-heritage-green">On it:</span>{" "}
                   {singleTarget.assignedGarmentLabels.join(", ")}
                 </p>
                 <p className="text-sm text-heritage-ink/75">
-                  <span className="font-semibold text-heritage-green">Add:</span>{" "}
+                  <span className="font-semibold text-heritage-green">Adding:</span>{" "}
                   {singleTarget.addGarmentLabel}
                 </p>
                 <p
@@ -212,11 +216,12 @@ export const PartialFabricCapacityAssignmentDialog = ({
           <div className="flex min-w-0 flex-col gap-3 border-t border-heritage-gold/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <button
               type="button"
-              onClick={onCancel}
-              data-testid="partial-fabric-capacity-cancel"
+              onClick={onUseDifferentFabric}
+              data-testid="partial-fabric-capacity-use-different"
+              data-fabric-complete-assignment-use-different="true"
               className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
-              Cancel
+              Use different fabric
             </button>
             <button
               type="button"
@@ -224,18 +229,20 @@ export const PartialFabricCapacityAssignmentDialog = ({
               data-testid="partial-fabric-capacity-confirm"
               className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
-              Assign
+              Add to this fabric
             </button>
           </div>
         ) : (
           <div className="border-t border-heritage-gold/20 px-4 py-4 sm:px-5">
             <button
               type="button"
-              onClick={onCancel}
-              data-testid="partial-fabric-capacity-cancel"
+              onClick={onUseDifferentFabric}
+              data-testid="partial-fabric-capacity-use-different"
+              data-fabric-complete-assignment-use-different="true"
+              data-fabric-multi-assignment-use-different="true"
               className="min-h-11 w-full rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
             >
-              Cancel
+              Use different fabric
             </button>
           </div>
         )}

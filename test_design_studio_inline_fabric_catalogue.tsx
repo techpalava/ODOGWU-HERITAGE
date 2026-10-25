@@ -25,7 +25,6 @@ import {
   changeFutureFabricAllocationProduct,
   getFutureFabricAllocationAssignmentSignature,
   formatFabricQuantityLimitReachedCopy,
-  formatFabricQuantityOverAllocatedCopy,
   getFutureFabricAssignmentTargets,
   getFutureUnassignedFabricTargets,
   formatRequiredFabricQuantitySentence,
@@ -166,10 +165,13 @@ const assertFabricProgress = (
   garmentsRequired: number,
 ) => {
   const progressRegion = root.findByProps({ "data-fabric-progress": "true" });
+  // fabric-print-freedom: the limit is one piece per garment, so more pieces
+  // than Fabrics Needed still completes.
+  void fabricRequired;
   const complete =
     garmentsRequired > 0 &&
     garmentsAssigned === garmentsRequired &&
-    fabricSelected <= fabricRequired;
+    fabricSelected <= garmentsRequired;
   assert.equal(
     progressRegion.props["data-fabric-progress-state"],
     complete ? "complete" : "in_progress",
@@ -5297,26 +5299,18 @@ try {
   const remainingInlineB = remainingOneRenderer.root
     .findAllByProps({ "data-fabric-card": "true" })
     .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+  // fabric-print-freedom: at Fabrics Needed a new print stays SELECTable (one
+  // piece per garment is the limit). Assigning it is covered in
+  // test_fabric_print_freedom.tsx; this flow continues with USE AGAIN.
   assert.equal(
     remainingInlineB?.props["data-fabric-action"],
-    "none",
-    "A new Fabric product must not keep a SELECT path once the allocation limit is reached.",
+    "select",
+    "A new Fabric product keeps its SELECT path at Fabrics Needed.",
   );
   const remainingInlineA = remainingOneRenderer.root
     .findAllByProps({ "data-fabric-card": "true" })
     .find((card) => card.props["data-fabric-code"] === "INLINE-A");
   assert.equal(remainingInlineA?.props["data-fabric-action"], "use_again");
-  await act(async () =>
-    remainingInlineB!.props.onClick({ currentTarget: {} }),
-  );
-  await act(async () => remainingOneRenderer.update(renderRemainingOne()));
-  assert.deepEqual(
-    remainingOneState.fabricAllocations.flatMap((allocation) =>
-      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-    ).sort(),
-    ["base:shirt"],
-    "A blocked unused Fabric must not assign the remaining garment.",
-  );
   await act(async () =>
     remainingInlineA!.props.onClick({ currentTarget: {} }),
   );
@@ -5458,19 +5452,13 @@ try {
   );
   assert.equal(
     findFabricCard(fourLimitRenderer.root, "INLINE-C")?.props["data-fabric-action"],
-    "none",
-    "An unused Fabric product must not keep a SELECT path once the allocation limit is reached.",
+    "select",
+    "An unused Fabric product keeps its SELECT path at Fabrics Needed (fabric-print-freedom).",
   );
   assert.equal(
     findFabricCard(fourLimitRenderer.root, "INLINE-A")?.props["data-fabric-action"],
     "use_again",
   );
-  await act(async () =>
-    findFabricCard(fourLimitRenderer.root, "INLINE-C")!.props.onClick({
-      currentTarget: {},
-    }),
-  );
-  await act(async () => fourLimitRenderer.update(renderFourLimit()));
   assert.equal(fourLimitState.fabricAllocations.length, 2);
   assert.equal(
     fourLimitState.fabricAllocations.some(
@@ -5524,15 +5512,15 @@ try {
       ),
     );
   });
+  // 4 pieces for 4 garments (2 needed) is within one piece per garment.
   assertFabricProgress(legacyRenderer.root, 4, 2, 4, 4);
-  assert.match(
-    textContent(legacyRenderer.root),
-    new RegExp(
-      formatFabricQuantityOverAllocatedCopy(4, 2).replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&",
-      ),
-    ),
+  assert.equal(
+    legacyRenderer.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props["data-fabric-quantity-over-allocated"] === "true",
+    ).length,
+    0,
   );
   assert.equal(
     getFutureFabricStageCompletion({
@@ -5540,7 +5528,7 @@ try {
       fabricAllocationState: legacyOverAllocatedState,
       fabrics: fourCatalogueFabrics,
     }).isComplete,
-    false,
+    true,
   );
 
   const buildScreenshotPartialState = () => {
@@ -6170,15 +6158,20 @@ try {
     await act(async () => focusPartialRenderer.update(renderFocusPartial()));
     await act(async () =>
       focusPartialRenderer.root
-        .findByProps({ "data-testid": "partial-fabric-capacity-cancel" })
+        .findByProps({ "aria-label": "Close fabric assignment" })
         .props.onClick(),
     );
     await act(async () => focusPartialRenderer.update(renderFocusPartial()));
     flushAnimationFrames();
+    // The single-target popup has no Cancel button (Mockup A); X closes it.
+    assert.equal(
+      focusPartialRenderer.root.findAllByProps({ "data-testid": "partial-fabric-capacity-cancel" }).length,
+      0,
+    );
     assert.equal(
       activeFocusMock?.label,
       "Assign fabric for Trouser",
-      "Cancel must restore focus to the originating Assign to Fabric action.",
+      "Closing with X must restore focus to the originating Assign to Fabric action.",
     );
   }
 
