@@ -88,8 +88,9 @@ base = assign(base, "base:standard_shorts", "SR-E");
 // ---------------------------------------------------------------------------
 assert.equal(formatFabricSelectionSummaryCapacityLabel(2, 0), "2/2");
 assert.equal(formatFabricSelectionSummaryCapacityLabel(1, 1), "1/2 left");
-assert.equal(formatFabricSelectionNumbersBadge([2]), "Selection 2");
-assert.equal(formatFabricSelectionNumbersBadge([2, 3]), "Selections 2 & 3");
+assert.equal(formatFabricSelectionNumbersBadge([2]), "Assigned to Selection 2");
+assert.equal(formatFabricSelectionNumbersBadge([2, 3]), "Assigned to Selections 2 & 3");
+assert.equal(formatFabricSelectionNumbersBadge([1, 2, 4]), "Assigned to Selections 1, 2 & 4");
 assert.equal(formatFabricSelectionNumbersBadge([]), "");
 // Compact garment line (Option D): last word, unique, occurrence suffix kept.
 assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Nikka Shorts"], "compact"), "Shirt + Shorts");
@@ -388,7 +389,7 @@ assert.equal(summaryButton(renderer.root, 1).findAllByProps({ "data-fabric-selec
 // USE AGAIN badge names the selection(s) already using the print.
 const cardB = catalogueCard(renderer.root, "SR-B");
 assert.equal(textContent(actionButton(cardB)), "USE AGAIN");
-assert.equal(textContent(cardB.findByProps({ "data-fabric-used-by-selections": "true" })), "Already used in Selection 2");
+assert.equal(textContent(cardB.findByProps({ "data-fabric-used-by-selections": "true" })), "Assigned to Selection 2");
 assert.equal(catalogueCard(renderer.root, "SR-N").findAllByProps({ "data-fabric-used-by-selections": "true" }).length, 0);
 assert.equal(catalogueCard(renderer.root, "SR-A").findAllByProps({ "data-fabric-used-by-selections": "true" }).length, 0);
 
