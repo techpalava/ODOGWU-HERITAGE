@@ -754,7 +754,32 @@ export const getRequiredPhysicalFabricAllocationCount = ({
 };
 
 /**
- * Fit check. The order may hold at most Fabrics Needed physical Fabrics, so
+ * Piece limit: at most one physical Fabric piece per garment that needs
+ * fabric (the required garments, plus a pending garment when
+ * `countPendingGarmentForCapacity`). Fabrics Needed stays the displayed
+ * recommendation; only this limit blocks a NEW piece, so a garment may go on
+ * a different print even when the order already has its Fabrics Needed.
+ */
+export const getMaxPhysicalFabricAllocationCount = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+  requiredPhysicalOccurrences,
+  countPendingGarmentForCapacity = false,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  countPendingGarmentForCapacity?: boolean;
+}): number =>
+  resolveAssignmentsForFit({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity,
+  }).length;
+
+/**
+ * Fit check. The order may hold at most one physical Fabric per garment, so
  * every garment still waiting for fabric must fit into what is left: whole-
  * fabric garments (Long Dress, Agbada) each need a new Fabric, and half-unit
  * garments first use free halves on saved Fabrics, then pair up on new ones.
@@ -849,9 +874,10 @@ export const getFabricQuantityFit = ({
   const newFabricsNeeded =
     waitingWhole.length +
     Math.ceil(Math.max(0, waitingHalfUnits - freeHalfUnits) / maxUnits);
+  // Slots left under the one-piece-per-garment limit (not Fabrics Needed).
   const remainingFabricSlots = Math.max(
     0,
-    requiredFabricQuantity - committedAllocations.length,
+    assignments.length - committedAllocations.length,
   );
   return {
     requiredFabricQuantity,
@@ -1038,19 +1064,11 @@ export const getFabricQuantityFitBlockedCopyForGarment = (input: {
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): string | null => {
-  const explanation = explainFabricQuantityBlockForGarment(input);
-  if (!explanation) return null;
-  return formatFabricQuantityFitBlockedCopy({
-    garmentLabel: explanation.garmentLabel,
-    strandedGarmentLabels: explanation.strandedGarmentLabels,
-    selectionNumber: explanation.halfFreeAllocation.selectionNumber,
-    fabricName: explanation.halfFreeAllocation.fabricName,
-    requiredFabricQuantity: getRequiredPhysicalFabricAllocationCount({
-      garmentTypeSelection: input.garmentTypeSelection,
-      fabricAllocationState: input.state,
-      requiredPhysicalOccurrences: input.requiredPhysicalOccurrences,
-    }),
-  });
+  // Under the one-piece-per-garment limit a waiting garment can always get its
+  // own piece, so a FABRIC_QUANTITY_LIMIT_REACHED block is the piece limit
+  // itself, not a fit problem; callers fall back to the piece-limit copy.
+  void input;
+  return null;
 };
 
 export const formatFabricUseForAllQuantityNote = (
@@ -1112,10 +1130,10 @@ export const getFabricQuantityIfGarmentsUseFabric = ({
 };
 
 /**
- * Authoritative ceiling: a NEW physical Fabric allocation may be created only
- * while the committed allocation count is below Fabrics Needed. Customers may
- * change which Fabric an allocation uses, but never select more Fabrics than
- * the order needs.
+ * Authoritative limit: a NEW physical Fabric allocation may be created only
+ * while the committed allocation count is below the number of garments that
+ * need fabric (one piece per garment). Fabrics Needed is a recommendation and
+ * no longer blocks a new piece.
  */
 export const canCreatePhysicalFabricAllocation = ({
   state,
@@ -1129,7 +1147,7 @@ export const canCreatePhysicalFabricAllocation = ({
   countPendingGarmentForCapacity?: boolean;
 }): boolean =>
   getCommittedPhysicalFabricAllocationCount(state) <
-  getRequiredPhysicalFabricAllocationCount({
+  getMaxPhysicalFabricAllocationCount({
     garmentTypeSelection,
     fabricAllocationState: state,
     requiredPhysicalOccurrences,
@@ -1145,36 +1163,33 @@ export const isPhysicalFabricAllocationLimitReached = ({
 }): boolean =>
   !canCreatePhysicalFabricAllocation({ state, garmentTypeSelection });
 
-export const isPhysicalFabricQuantityOverAllocated = ({
-  selectedFabricQuantity,
-  requiredFabricQuantity,
-}: {
-  selectedFabricQuantity: number;
-  requiredFabricQuantity: number;
-}): boolean => selectedFabricQuantity > requiredFabricQuantity;
-
 export const formatFabricQuantityLimitReachedCopy = (
   requiredFabricQuantity: number,
 ): string =>
-  `You have selected the ${requiredFabricQuantity} ${fabricWord(
+  `You have the ${requiredFabricQuantity} ${fabricWord(
     requiredFabricQuantity,
-  )} needed for this order. Use one of your selected fabrics for the remaining garments, or change a selected fabric.`;
+  )} needed for this order. You can use a selected fabric again for the remaining garments, or pick a different print.`;
 
+/** Shown when a new piece would exceed one piece per garment. */
 export const formatFabricQuantityLimitChangeCopy = (
-  requiredFabricQuantity: number,
+  maxFabricPieces: number,
 ): string =>
-  `Your order already uses the ${requiredFabricQuantity} ${fabricWord(
-    requiredFabricQuantity,
-  )} required. To use this Fabric, first remove or change another Fabric assignment.`;
+  `Each garment can use at most one fabric piece, and your ${maxFabricPieces} ${
+    maxFabricPieces === 1 ? "garment already has" : "garments already have"
+  } ${maxFabricPieces} ${
+    maxFabricPieces === 1 ? "piece" : "pieces"
+  }. To use this Fabric, first remove or change another Fabric assignment.`;
 
 export const formatFabricQuantityOverAllocatedCopy = (
   selectedFabricQuantity: number,
-  requiredFabricQuantity: number,
+  maxFabricPieces: number,
 ): string =>
-  `Your saved Fabric selections use ${selectedFabricQuantity} ${fabricWord(
-    selectedFabricQuantity,
-  )}, but this order requires ${requiredFabricQuantity}. Remove or change Fabric assignments until ${requiredFabricQuantity} ${
-    requiredFabricQuantity === 1 ? "fabric remains" : "fabrics remain"
+  `Your saved Fabric selections use ${selectedFabricQuantity} fabric ${
+    selectedFabricQuantity === 1 ? "piece" : "pieces"
+  }, but each garment can use at most one piece and this order has ${maxFabricPieces} ${
+    maxFabricPieces === 1 ? "garment" : "garments"
+  }. Remove or change Fabric assignments until ${maxFabricPieces} ${
+    maxFabricPieces === 1 ? "piece remains" : "pieces remain"
   }.`;
 
 /**
@@ -1230,7 +1245,7 @@ export const getFabricQuantityOverAllocationRepair = ({
   }
   const overAllocated =
     getCommittedPhysicalFabricAllocationCount(state) >
-    getRequiredPhysicalFabricAllocationCount({
+    getMaxPhysicalFabricAllocationCount({
       garmentTypeSelection,
       fabricAllocationState: state,
       requiredPhysicalOccurrences,
@@ -2468,18 +2483,21 @@ export const getFutureFabricPiecePlacementChoice = ({
 
 export const formatFabricNewPieceUnavailableCopy = ({
   reason,
-  requiredFabricQuantity,
+  maxFabricPieces,
   pairSelectionNumber,
 }: {
   reason: FutureFabricAssignmentBlockReason | null;
-  requiredFabricQuantity: number;
+  /** One piece per garment: the number of garments that need fabric. */
+  maxFabricPieces: number;
   pairSelectionNumber: number;
 }): string =>
   reason === "FABRIC_STOCK_EXHAUSTED"
     ? `There isn't enough stock for another piece of this fabric. Pair with Selection ${pairSelectionNumber} instead.`
-    : `A new piece isn't available: you already have the ${requiredFabricQuantity} ${fabricWord(
-        requiredFabricQuantity,
-      )} this order needs. Pair with Selection ${pairSelectionNumber}, or change a selection's fabric.`;
+    : `A new piece isn't available: each garment can use at most one fabric piece, and your ${maxFabricPieces} ${
+        maxFabricPieces === 1 ? "garment already has" : "garments already have"
+      } ${maxFabricPieces} ${
+        maxFabricPieces === 1 ? "piece" : "pieces"
+      }. Pair with Selection ${pairSelectionNumber}, or change a selection's fabric.`;
 
 const mapChangeFutureFabricAllocationProductResult = (
   result: ChangeFutureFabricAllocationProductResult,
@@ -3785,15 +3803,14 @@ export const getFutureFabricStageCompletion = ({
     blockers.push({ code: "PENDING_GARMENT_ASSIGNMENT" });
   }
 
-  // Saved drafts may hold more Fabrics than the order now needs (for example
-  // after a garment was removed). Keep the customer's choices, but block
-  // Continue until they remove or move assignments down to Fabrics Needed.
+  // Saved drafts may hold more Fabric pieces than garments (for example after
+  // a garment was removed). Keep the customer's choices, but block Continue
+  // until they are back within one piece per garment. Holding more pieces
+  // than Fabrics Needed is allowed.
   if (
     getCustomerFacingFabricQuantityForAllocations(
       fabricAllocationState.fabricAllocations,
-    ).allocations.length >
-    getCustomerFacingFabricQuantityForAssignments(requiredAssignments)
-      .fabricQuantity
+    ).allocations.length > requiredAssignments.length
   ) {
     blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });
   } else if (

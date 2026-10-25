@@ -9,10 +9,11 @@
  * them used two pieces of the new Fabric, so all 5 Fabrics were chosen with
  * the free space split into halves: the Long Dress could never get fabric.
  *
- * Now: (1) the fit check stops any box/assignment that would strand a waiting
- * garment and points at the Fabric with 1/2 capacity free, (2) opening the
- * panel shows only a neutral Use for All note, and (3) a stuck saved draft
- * gets the one-tap Move rescue with the Guide beam on it.
+ * Since fabric-print-freedom the limit is one piece per garment, not Fabrics
+ * Needed, so that dead end cannot happen: the Long Dress can always take its
+ * own piece. Opening the panel shows no red text and no quantity note, every
+ * box stays enabled, and the old "stuck" draft just needs the Long Dress
+ * assigned (no Move rescue).
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -30,7 +31,6 @@ import {
   getFabricQuantityOverAllocationRepair,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
-  moveFutureGarmentToFabricAllocation,
 } from "./src/utils/designStudioFutureFabricStage";
 import {
   buildStep1FabricAssignmentCandidates,
@@ -150,40 +150,31 @@ const evaluate = (selectedGarmentKeys: string[]) =>
   });
 
 // ---------------------------------------------------------------------------
-// 1. Opening state: no red error, only a neutral Use for All note.
+// 1. Opening state: no red error and no quantity note; Use for All allowed.
 // ---------------------------------------------------------------------------
-const USE_FOR_ALL_NOTE =
-  "Using this Fabric for all remaining garments would need 6 fabrics; your order needs 5.";
 const opened = evaluate([]);
 assert.equal(opened.remainingCapacityMessage, null, "no red Use for All error on open");
 assert.equal(opened.selectedCapacityMessage, null);
 assert.equal(opened.fabricLevelError, null);
-assert.equal(opened.remainingCapacityNote, USE_FOR_ALL_NOTE);
-assert.equal(opened.canUseForAll, false);
+assert.equal(opened.remainingCapacityNote, null, "no Fabrics Needed note: extra pieces are allowed");
+assert.equal(opened.canUseForAll, true);
 assert.deepEqual(Object.values(opened.candidateMessages), [null, null, null, null]);
 assert.ok(Object.values(opened.candidateEnabled).every(Boolean), "every box starts enabled");
 
 // ---------------------------------------------------------------------------
-// 2. Fit check: after Bum Shorts + Dress, the 3rd half-unit box is disabled
-//    with a pointer to the Fabric that has 1/2 free; Long Dress stays enabled.
+// 2. After Bum Shorts + Dress, Long Shirt stays enabled (no fit pointer) and
+//    the old dead-end selection can be assigned.
 // ---------------------------------------------------------------------------
-const POINTER =
-  "Long Dress needs a whole fabric. Put Long Shirt on Fabric Selection 3 (Royal Forest Mosaic), which has 1/2 capacity left.";
 const two = evaluate(["base:bum_shorts", "base:dress"]);
 assert.equal(two.canAssignSelected, true);
-assert.equal(two.candidateEnabled["base:kaftan"], false, "Long Shirt is greyed out");
-assert.equal(two.candidateMessages["base:kaftan"], POINTER);
+assert.equal(two.candidateEnabled["base:kaftan"], true, "Long Shirt stays enabled");
+assert.equal(two.candidateMessages["base:kaftan"], null);
 assert.equal(two.candidateEnabled["base:full_length_gown"], true, "Long Dress stays assignable");
 assert.equal(two.candidateMessages["base:full_length_gown"], null);
 assert.equal(two.remainingCapacityMessage, null);
-// Any order of ticking: whichever half-unit garment comes third is blocked.
-const kaftanFirst = evaluate(["base:kaftan", "base:bum_shorts"]);
-assert.equal(kaftanFirst.candidateEnabled["base:dress"], false);
-assert.match(kaftanFirst.candidateMessages["base:dress"] ?? "", /^Long Dress needs a whole fabric\. Put Standard Dress on Fabric Selection 3 \(Royal Forest Mosaic\)/);
-// The old dead-end selection can no longer be assigned.
-const deadEndSelection = evaluate(["base:bum_shorts", "base:dress", "base:kaftan"]);
-assert.equal(deadEndSelection.canAssignSelected, false, "ASSIGN cannot strand the Long Dress");
-const deadEndCommit = commitStep1FabricAssignment({
+const threeTicked = evaluate(["base:bum_shorts", "base:dress", "base:kaftan"]);
+assert.equal(threeTicked.canAssignSelected, true, "ASSIGN is allowed: Long Dress can still get its own piece");
+const threeCommit = commitStep1FabricAssignment({
   state: base,
   garmentTypeSelection: nine,
   fabrics,
@@ -191,10 +182,20 @@ const deadEndCommit = commitStep1FabricAssignment({
   selectedGarmentKeys: ["base:bum_shorts", "base:dress", "base:kaftan"],
   mode: "selected",
 });
-assert.equal(deadEndCommit.status, "blocked");
-assert.equal(deadEndCommit.state, base, "nothing changes");
+assert.equal(threeCommit.status, "assigned");
+assert.equal(
+  assignFutureFabricToGarment({
+    state: threeCommit.state,
+    garmentTypeSelection: nine,
+    garmentKey: "base:full_length_gown",
+    fabricCode: "FIT-E",
+    fabrics,
+  }).status,
+  "assigned",
+  "Long Dress gets a 6th piece (6 pieces for 9 garments)",
+);
 
-// Single-garment path: Long Shirt alone on a 2nd new Fabric is blocked too.
+// Single-garment path: Long Shirt alone on a new print is allowed too.
 const afterTwo = commitStep1FabricAssignment({
   state: base,
   garmentTypeSelection: nine,
@@ -212,12 +213,10 @@ const loneKaftan = assignFutureFabricToGarment({
   fabricCode: "FIT-E",
   fabrics,
 });
-assert.equal(loneKaftan.status, "blocked");
-assert.equal(loneKaftan.status === "blocked" ? loneKaftan.reason : null, "FABRIC_QUANTITY_LIMIT_REACHED");
+assert.equal(loneKaftan.status, "assigned");
 
 // ---------------------------------------------------------------------------
-// 3. The guided path completes: Long Shirt onto Fabric Selection 3, then Long
-//    Dress on a new Fabric; Continue unlocks with exactly 5 Fabrics.
+// 3. The paired path still completes with exactly 5 Fabrics.
 // ---------------------------------------------------------------------------
 const guided = assignFutureGarmentToExistingFabricAllocation({
   state: twoState,
@@ -228,31 +227,19 @@ const guided = assignFutureGarmentToExistingFabricAllocation({
 assert.equal(guided.status, "assigned");
 let guidedState = guided.state;
 guidedState = assign(guidedState, "base:full_length_gown", "FIT-E");
-const guidedCompletion = getFutureFabricStageCompletion({
-  garmentTypeSelection: nine,
-  fabricAllocationState: guidedState,
-  fabrics,
-});
-assert.equal(guidedCompletion.isComplete, true);
+assert.equal(
+  getFutureFabricStageCompletion({ garmentTypeSelection: nine, fabricAllocationState: guidedState, fabrics })
+    .isComplete,
+  true,
+);
 assert.equal(
   getFutureGarmentFabricPlanning({ garmentTypeSelection: nine, fabricAllocationState: guidedState })
     .selectedFabricQuantity,
   5,
 );
-// Long Dress also stays assignable straight after Bum Shorts + Dress.
-assert.equal(
-  assignFutureFabricToGarment({
-    state: twoState,
-    garmentTypeSelection: nine,
-    garmentKey: "base:full_length_gown",
-    fabricCode: "FIT-E",
-    fabrics,
-  }).status,
-  "assigned",
-);
 
 // ---------------------------------------------------------------------------
-// 4. Rescue: a draft saved in the dead end (5 Fabrics, Long Dress waiting).
+// 4. The old "stuck" draft (5 Fabrics, Long Dress waiting) is no longer stuck.
 // ---------------------------------------------------------------------------
 const record = (garmentKey: string) =>
   assign(FabricAllocationStateEngine.initialize(), garmentKey, "FIT-A").fabricAllocations[0]!
@@ -277,9 +264,9 @@ const stuck: FabricAllocationState = {
 const stuckFit = getFabricQuantityFit({ state: stuck, garmentTypeSelection: nine });
 assert.deepEqual(
   [stuckFit.requiredFabricQuantity, stuckFit.committedFabricQuantity, stuckFit.shortfall],
-  [5, 5, 1],
+  [5, 5, 0],
 );
-for (const code of fabrics.map((item) => item.code)) {
+for (const code of ["FIT-A", "FIT-B", "FIT-C", "FIT-E"]) {
   assert.equal(
     assignFutureFabricToGarment({
       state: stuck,
@@ -288,8 +275,8 @@ for (const code of fabrics.map((item) => item.code)) {
       fabricCode: code,
       fabrics,
     }).status,
-    "blocked",
-    `the dead end: Long Dress cannot use ${code}`,
+    "assigned",
+    `Long Dress can use ${code}`,
   );
 }
 const stuckCompletion = getFutureFabricStageCompletion({
@@ -299,33 +286,8 @@ const stuckCompletion = getFutureFabricStageCompletion({
 });
 assert.deepEqual(stuckCompletion.blockers, [
   { code: "GARMENT_ASSIGNMENT_REQUIRED", garmentKey: "base:full_length_gown" },
-  { code: "FABRIC_QUANTITY_STRANDED", garmentKey: "base:full_length_gown" },
 ]);
-const rescue = getFabricQuantityOverAllocationRepair({ state: stuck, garmentTypeSelection: nine });
-assert.ok(rescue, "a one-move rescue exists");
-assert.deepEqual(
-  [rescue!.kind, rescue!.garmentKey, rescue!.fromSelectionNumber, rescue!.toSelectionNumber, rescue!.toFabricCode, rescue!.strandedGarmentKeys],
-  ["stranded", "base:kaftan", 5, 3, "FIT-C", ["base:full_length_gown"]],
-);
-const rescued = moveFutureGarmentToFabricAllocation({
-  state: stuck,
-  garmentKey: rescue!.garmentKey,
-  allocationId: rescue!.toAllocationId,
-});
-assert.equal(rescued.status, "moved");
-assert.equal(getFabricQuantityFit({ state: rescued.state, garmentTypeSelection: nine }).shortfall, 0);
-assert.equal(
-  getFabricQuantityOverAllocationRepair({ state: rescued.state, garmentTypeSelection: nine }),
-  null,
-);
-const rescuedComplete = assign(rescued.state, "base:full_length_gown", "FIT-E");
-assert.equal(
-  getFutureFabricStageCompletion({ garmentTypeSelection: nine, fabricAllocationState: rescuedComplete, fabrics })
-    .isComplete,
-  true,
-  "Continue unlocks after the rescue move + Long Dress",
-);
-// A within-limit order that is not stuck gets no rescue.
+assert.equal(getFabricQuantityOverAllocationRepair({ state: stuck, garmentTypeSelection: nine }), null);
 assert.equal(getFabricQuantityOverAllocationRepair({ state: base, garmentTypeSelection: nine }), null);
 
 // Guide flow: stranded-only quantity step names the garment and beams the move.
@@ -349,7 +311,7 @@ assert.equal(getFabricQuantityOverAllocationRepair({ state: base, garmentTypeSel
 }
 
 // ---------------------------------------------------------------------------
-// 5. Rendered: panel opening has no red text; stuck draft shows the rescue.
+// 5. Rendered: panel opening has no red text; old stuck draft has no rescue.
 // ---------------------------------------------------------------------------
 const textContent = (node: ReactTestInstance | string | null): string =>
   typeof node === "string"
@@ -400,16 +362,16 @@ const redNodes = (root: ReactTestInstance) =>
   });
   assert.deepEqual(redNodes(renderer.root).map((node) => textContent(node)), [], "no red text on open");
   assert.doesNotMatch(textContent(renderer.root), /already uses the 5 fabrics/);
-  const note = renderer.root.find(
-    (node) => typeof node.type === "string" && node.props["data-testid"] === "step1-fabric-assignment-remaining-capacity-note",
+  assert.equal(
+    renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props["data-testid"] === "step1-fabric-assignment-remaining-capacity-note",
+    ).length,
+    0,
   );
-  assert.equal(textContent(note), USE_FOR_ALL_NOTE);
-  assert.doesNotMatch(String(note.props.className), /red/);
   const useForAll = renderer.root.find(
     (node) => node.type === "button" && node.props["data-testid"] === "step1-fabric-assignment-use-for-all",
   );
-  assert.equal(useForAll.props.disabled, true);
-  assert.equal(useForAll.props.title, USE_FOR_ALL_NOTE);
+  assert.equal(useForAll.props.disabled, false);
 
   await act(async () => {
     renderer.update(renderDialog(["base:bum_shorts", "base:dress"]));
@@ -417,11 +379,7 @@ const redNodes = (root: ReactTestInstance) =>
   const kaftanBox = renderer.root.find(
     (node) => node.type === "input" && node.props["data-step1-fabric-assignment-checkbox"] === "base:kaftan",
   );
-  assert.equal(kaftanBox.props.disabled, true);
-  const kaftanWarning = renderer.root.find(
-    (node) => typeof node.type === "string" && node.props["data-step1-fabric-assignment-row-warning"] === "base:kaftan",
-  );
-  assert.equal(textContent(kaftanWarning), POINTER);
+  assert.equal(kaftanBox.props.disabled, false, "Long Shirt box stays enabled");
   const dressBox = renderer.root.find(
     (node) => node.type === "input" && node.props["data-step1-fabric-assignment-checkbox"] === "base:full_length_gown",
   );
@@ -429,9 +387,7 @@ const redNodes = (root: ReactTestInstance) =>
 }
 
 {
-  const completion = stuckCompletion;
   const plan = getFutureGarmentFabricPlanning({ garmentTypeSelection: nine, fabricAllocationState: stuck });
-  const moveCalls: Array<[string, string]> = [];
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
     renderer = create(
@@ -439,7 +395,7 @@ const redNodes = (root: ReactTestInstance) =>
         fabrics,
         garmentTypeSelection: nine,
         fabricAllocationState: stuck,
-        completion,
+        completion: stuckCompletion,
         requiredFabricQuantity: plan.requiredFabricQuantity,
         selectedFabricQuantity: plan.selectedFabricQuantity,
         constructionPrice: 0,
@@ -449,10 +405,7 @@ const redNodes = (root: ReactTestInstance) =>
         onUseSameFabricForGarment: () => undefined,
         onAssignSameFabricProduct: () => undefined,
         onAssignGarmentToExistingAllocation: () => undefined,
-        onMoveGarmentToFabricAllocation: (garmentKey: string, allocationId: string) => {
-          moveCalls.push([garmentKey, allocationId]);
-          return moveFutureGarmentToFabricAllocation({ state: stuck, garmentKey, allocationId });
-        },
+        onMoveGarmentToFabricAllocation: () => undefined,
         onBack: () => undefined,
         onContinue: () => undefined,
         onUseSameFabric: () => undefined,
@@ -465,26 +418,15 @@ const redNodes = (root: ReactTestInstance) =>
   const guide = renderer.root.find(
     (node) => typeof node.type === "string" && node.props["data-testid"] === "fabric-guide-flow",
   );
-  assert.equal(guide.props["data-fabric-guide-current"], "fix_quantity");
-  assert.equal(guide.props["data-fabric-quantity-stranded"], "true");
-  const text = textContent(guide);
-  assert.match(text, /Make room for Long Dress/);
-  assert.match(
-    text,
-    /Long Dress needs a whole fabric, but all 5 fabrics your order needs are already chosen and the space left is split into halves\. Move a garment to free a whole fabric\./,
+  assert.equal(guide.props["data-fabric-guide-current"], "assign_garment:base:full_length_gown");
+  assert.notEqual(guide.props["data-fabric-quantity-stranded"], "true");
+  assert.equal(
+    renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props["data-testid"] === "fabric-guide-quantity-move",
+    ).length,
+    0,
+    "no Move rescue",
   );
-  assert.match(
-    text,
-    /Long Shirt is the only garment on its Fabric\. Move it onto Fabric Selection 3 \(Royal Forest Mosaic\), which has room for it, so a whole fabric is free for Long Dress\./,
-  );
-  const beams = renderer.root.findAll(
-    (node) => typeof node.type === "string" && node.props["data-fabric-guide-beam"] === "true",
-  );
-  assert.equal(beams.length, 1, "exactly one beam");
-  assert.equal(beams[0]!.props["data-testid"], "fabric-guide-quantity-move");
-  assert.equal(textContent(beams[0]!), "Move Long Shirt to Fabric Selection 3");
-  await act(async () => beams[0]!.props.onClick());
-  assert.deepEqual(moveCalls, [["base:kaftan", "s3"]]);
 }
 
 // The Fabric step wires the neutral note into the panel.

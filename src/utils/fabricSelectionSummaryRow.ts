@@ -110,9 +110,9 @@ export const formatFabricSelectionNumbersBadge = (
   selectionNumbers: readonly number[],
 ): string => {
   if (selectionNumbers.length === 0) return "";
-  if (selectionNumbers.length === 1) return `Selection ${selectionNumbers[0]}`;
+  if (selectionNumbers.length === 1) return `Assigned to Selection ${selectionNumbers[0]}`;
   const head = selectionNumbers.slice(0, -1).join(", ");
-  return `Selections ${head} & ${selectionNumbers[selectionNumbers.length - 1]}`;
+  return `Assigned to Selections ${head} & ${selectionNumbers[selectionNumbers.length - 1]}`;
 };
 
 /**

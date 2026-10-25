@@ -511,19 +511,16 @@ const shirtThenTrouser = assignSameFabricProductToGarments({
   garmentKeys: ["base:trouser"],
 });
 assert.equal(shirtThenTrouser.status, "assigned");
-// Shirt + Trouser need one Fabric, so a second Fabric product is blocked.
-const blockedSecondProduct = assignSameFabricProductToGarments({
+// Shirt + Trouser need one Fabric, but the Trouser may still go on a second
+// print (limit is one piece per garment, not Fabrics Needed).
+const secondProduct = assignSameFabricProductToGarments({
   state: assignOne(twoTypes, "base:shirt", "FAB-A"),
   garmentTypeSelection: createSelection(twoTypes),
   fabricCode: "FAB-B",
   garmentKeys: ["base:trouser"],
 });
-assert.equal(blockedSecondProduct.status, "blocked");
-assert.equal(
-  blockedSecondProduct.status === "blocked" ? blockedSecondProduct.reason : null,
-  "FABRIC_QUANTITY_LIMIT_REACHED",
-);
-assert.equal(blockedSecondProduct.state.fabricAllocations.length, 1);
+assert.equal(secondProduct.status, "assigned");
+assert.equal(secondProduct.state.fabricAllocations.length, 2);
 const unusedZeroCandidate = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-C",
   garmentTypeSelection: createSelection(twoTypes),
@@ -556,8 +553,8 @@ const unusedOneCandidate = resolveStep1FabricCatalogueCardPresentation({
 assert.equal(unusedOneCandidate.status, "SELECT");
 assert.equal(
   unusedOneCandidate.action,
-  "none",
-  "At Fabrics Needed, an unused Fabric product must not offer Select.",
+  "select",
+  "At Fabrics Needed, an unused Fabric product still offers Select (one piece per garment).",
 );
 const usedOneCandidate = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
