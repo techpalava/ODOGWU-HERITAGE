@@ -50,6 +50,7 @@ import {
 } from "../utils/fabricCatalogueNotice";
 import { Step1FabricAssignmentDialog } from "./Step1FabricAssignmentDialog";
 import { ChangeFabricAllocationDialog } from "./ChangeFabricAllocationDialog";
+import { FabricPiecePlacementDialog } from "./FabricPiecePlacementDialog";
 import { PartialFabricCapacityAssignmentDialog } from "./PartialFabricCapacityAssignmentDialog";
 import {
   RemoveFabricAssignmentDialog,
@@ -89,6 +90,10 @@ import {
   type FutureFabricAssignmentResult,
   type FutureFabricAssignmentBlockReason,
   type ChangeFutureFabricAllocationExpectation,
+  type FutureFabricPiecePlacement,
+  type FutureFabricPiecePlacementChoice,
+  getFutureFabricPiecePlacementChoice,
+  formatFabricNewPieceUnavailableCopy,
   type FutureFabricBulkAssignmentResult,
   type FutureFabricCatalogueCancellationResult,
   type FutureFabricCatalogueCardPresentation,
@@ -168,6 +173,7 @@ interface DormantFutureFabricStepProps {
   onAssignFabricToGarment: (
     fabric: Fabric,
     garmentKey: string,
+    placement?: FutureFabricPiecePlacement,
   ) => FabricAllocationState | void;
   onChangeFabricAllocationProduct: (
     allocationId: string,
@@ -184,6 +190,7 @@ interface DormantFutureFabricStepProps {
   onAssignSameFabricProduct: (
     fabricCode: string,
     garmentKeys: string[],
+    placement?: FutureFabricPiecePlacement,
   ) => FutureFabricBulkAssignmentResult | void;
   onAssignGarmentToExistingAllocation: (
     garmentKey: string,
@@ -225,6 +232,9 @@ const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
   garmentType === "other"
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
+
+export const FABRIC_CHANGE_SWAP_FREE_COPY =
+  "Swapping keeps the same number of fabrics, so you can pick any available print.";
 
 const formatGarmentList = (labels: string[]): string => {
   if (labels.length <= 1) return labels[0] || "the selected garment";
@@ -471,6 +481,16 @@ export const DormantFutureFabricStep = ({
   const [focusAfterOrphanRepair, setFocusAfterOrphanRepair] = useState(false);
   const [pendingStep1FabricAssignment, setPendingStep1FabricAssignment] =
     useState<PendingStep1FabricAssignment | null>(null);
+  // Pair vs new piece: asked before a garment joins an existing piece of the
+  // same print, instead of pairing it silently.
+  const [pendingPiecePlacement, setPendingPiecePlacement] = useState<{
+    choice: FutureFabricPiecePlacementChoice;
+    fabricName: string;
+    garmentLabel: string;
+  } | null>(null);
+  const piecePlacementRunRef = useRef<
+    ((placement: FutureFabricPiecePlacement) => void) | null
+  >(null);
   const [pendingPartialFabricAssignment, setPendingPartialFabricAssignment] =
     useState<{ garmentKey: string } | null>(null);
   const [pendingChangeFabricAllocation, setPendingChangeFabricAllocation] =
@@ -831,7 +851,10 @@ export const DormantFutureFabricStep = ({
         requiredPhysicalOccurrences,
       })
     : [];
+  // Changing a selection's fabric swaps the print on an existing piece; it
+  // never adds a piece, so the Fabrics Needed ceiling copy does not apply.
   const showAllocationLimitCopy =
+    !isChangeFabricTarget &&
     !isOverAllocated &&
     selectedFabricQuantity >= requiredFabricQuantity &&
     requiredFabricQuantity > 0 &&
@@ -1624,20 +1647,81 @@ export const DormantFutureFabricStep = ({
     setPostAssignmentNavEpoch((current) => current + 1);
   };
 
+  /**
+   * Runs `run("auto")` straight away unless the garments would join an
+   * existing piece of the same print; then the customer chooses Pair with
+   * Selection N or Use a new piece first.
+   */
+  const requestFabricPiecePlacement = (
+    fabric: Fabric,
+    garmentKeys: readonly string[],
+    run: (placement: FutureFabricPiecePlacement) => void,
+  ) => {
+    const choice = getFutureFabricPiecePlacementChoice({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      fabricCode: fabric.code,
+      garmentKeys,
+      fabrics,
+      requiredPhysicalOccurrences,
+    });
+    if (!choice) {
+      run("auto");
+      return;
+    }
+    const labels = garmentKeys.map((garmentKey) => {
+      const target = targets.find(
+        ({ assignment }) => assignment.garmentKey === garmentKey,
+      );
+      const pendingType =
+        fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey
+          ? fabricAllocationState.pendingFabricGarment.garmentType
+          : null;
+      return target
+        ? occurrenceConciseLabels.get(garmentKey) ||
+            getFutureGarmentLabel(target.assignment.garmentType)
+        : pendingType
+          ? getFutureGarmentLabel(pendingType)
+          : "this garment";
+    });
+    piecePlacementRunRef.current = run;
+    setPendingPiecePlacement({
+      choice,
+      fabricName: fabric.name,
+      garmentLabel: formatGarmentList(labels),
+    });
+  };
+
+  const resolvePendingPiecePlacement = (
+    placement: FutureFabricPiecePlacement | null,
+  ) => {
+    const run = piecePlacementRunRef.current;
+    piecePlacementRunRef.current = null;
+    setPendingPiecePlacement(null);
+    if (!placement) {
+      pendingAssignmentAnnouncementRef.current = null;
+      return;
+    }
+    run?.(placement);
+  };
+
   const applyCommittedStep1FabricAssignment = ({
     fabricCode,
     fabricName,
     assignedGarmentKeys,
     keepDialogOnBlock,
+    placement = "auto",
   }: {
     fabricCode: string;
     fabricName: string;
     assignedGarmentKeys: string[];
     keepDialogOnBlock: boolean;
+    placement?: FutureFabricPiecePlacement;
   }) => {
     const parentResult = onAssignSameFabricProduct(
       fabricCode,
       assignedGarmentKeys,
+      placement,
     );
     if (parentResult && parentResult.status === "blocked") {
       reportBlockedStep1FabricAssignment(
@@ -1668,24 +1752,49 @@ export const DormantFutureFabricStep = ({
       step1AssignmentDialogFabric?.currentFabric?.name ||
       pendingStep1FabricAssignment.displayFabric.fabricName ||
       pendingStep1FabricAssignment.fabricCode;
-    const result = commitStep1FabricAssignment({
-      state: fabricAllocationState,
-      garmentTypeSelection,
-      fabrics,
-      fabricCode: pendingStep1FabricAssignment.fabricCode,
-      selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
-      mode,
-    });
+    const fabricCode = pendingStep1FabricAssignment.fabricCode;
+    const selectedGarmentKeys = pendingStep1FabricAssignment.selectedGarmentKeys;
+    const commit = (placement: FutureFabricPiecePlacement) =>
+      commitStep1FabricAssignment({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        fabrics,
+        fabricCode,
+        selectedGarmentKeys,
+        mode,
+        placement,
+      });
+    const result = commit("auto");
     if (result.status === "blocked") {
       reportBlockedStep1FabricAssignment(result.error, true);
       return;
     }
-    applyCommittedStep1FabricAssignment({
-      fabricCode: pendingStep1FabricAssignment.fabricCode,
-      fabricName,
-      assignedGarmentKeys: result.assignedGarmentKeys,
-      keepDialogOnBlock: true,
-    });
+    const placementFabric =
+      step1AssignmentDialogFabric?.currentFabric ||
+      fabrics.find((candidate) => candidate.code === fabricCode);
+    const apply = (placement: FutureFabricPiecePlacement) => {
+      const placed = placement === "auto" ? result : commit(placement);
+      if (placed.status === "blocked") {
+        reportBlockedStep1FabricAssignment(placed.error, true);
+        return;
+      }
+      applyCommittedStep1FabricAssignment({
+        fabricCode,
+        fabricName,
+        assignedGarmentKeys: placed.assignedGarmentKeys,
+        keepDialogOnBlock: true,
+        placement,
+      });
+    };
+    if (!placementFabric) {
+      apply("auto");
+      return;
+    }
+    requestFabricPiecePlacement(
+      placementFabric,
+      result.assignedGarmentKeys,
+      apply,
+    );
   };
 
   const restorePartialFabricAssignmentFocus = (garmentKey: string) => {
@@ -1760,23 +1869,34 @@ export const DormantFutureFabricStep = ({
       reportBlockedStep1FabricAssignment(unavailable, false);
       return;
     }
-    const result = commitStep1FabricAssignment({
-      state: fabricAllocationState,
-      garmentTypeSelection,
-      fabrics,
-      fabricCode: fabric.code,
-      selectedGarmentKeys: [garmentKey],
-      mode: "selected",
-    });
+    const commit = (placement: FutureFabricPiecePlacement) =>
+      commitStep1FabricAssignment({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        fabrics,
+        fabricCode: fabric.code,
+        selectedGarmentKeys: [garmentKey],
+        mode: "selected",
+        placement,
+      });
+    const result = commit("auto");
     if (result.status === "blocked") {
       reportBlockedStep1FabricAssignment(result.error, false);
       return;
     }
-    applyCommittedStep1FabricAssignment({
-      fabricCode: fabric.code,
-      fabricName: fabric.name,
-      assignedGarmentKeys: result.assignedGarmentKeys,
-      keepDialogOnBlock: false,
+    requestFabricPiecePlacement(fabric, result.assignedGarmentKeys, (placement) => {
+      const placed = placement === "auto" ? result : commit(placement);
+      if (placed.status === "blocked") {
+        reportBlockedStep1FabricAssignment(placed.error, false);
+        return;
+      }
+      applyCommittedStep1FabricAssignment({
+        fabricCode: fabric.code,
+        fabricName: fabric.name,
+        assignedGarmentKeys: placed.assignedGarmentKeys,
+        keepDialogOnBlock: false,
+        placement,
+      });
     });
   };
 
@@ -2167,7 +2287,17 @@ export const DormantFutureFabricStep = ({
       pendingAssignmentAnnouncementRef.current = null;
       return;
     }
-    const nextState = onAssignFabricToGarment(fabric, garmentKey);
+    requestFabricPiecePlacement(fabric, [garmentKey], (placement) =>
+      finishSelectedFabricAssignment(fabric, garmentKey, placement),
+    );
+  };
+
+  const finishSelectedFabricAssignment = (
+    fabric: Fabric,
+    garmentKey: string,
+    placement: FutureFabricPiecePlacement,
+  ) => {
+    const nextState = onAssignFabricToGarment(fabric, garmentKey, placement);
     if (nextState && Array.isArray(nextState.fabricAllocations)) {
       const assigned = nextState.fabricAllocations.some((allocation) =>
         allocation.garmentAssignments.some(
@@ -3438,6 +3568,9 @@ export const DormantFutureFabricStep = ({
               data-fabric-quantity-over-allocated={
                 isOverAllocated ? "true" : undefined
               }
+              data-fabric-change-swap-free={
+                changeFabricPresentation && !isOverAllocated ? "true" : undefined
+              }
             >
               {isOverAllocated
                 ? formatFabricQuantityOverAllocatedCopy(
@@ -3449,9 +3582,9 @@ export const DormantFutureFabricStep = ({
                   : changeFabricPresentation?.isSharedGroup
                     ? `This Fabric is shared by ${formatGarmentList([
                         ...changeFabricPresentation.garmentLabels,
-                      ])}. Changing it will update both garments.`
+                      ])}. Changing it will update both garments. ${FABRIC_CHANGE_SWAP_FREE_COPY}`
                     : changeFabricPresentation
-                      ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}.`
+                      ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}. ${FABRIC_CHANGE_SWAP_FREE_COPY}`
                       : activeCatalogueTarget
                         ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
                             activeCatalogueTarget.assignment.garmentType,
@@ -3744,6 +3877,29 @@ export const DormantFutureFabricStep = ({
             );
           }}
           onCancel={cancelChangeFabricAllocation}
+        />
+      ) : null}
+
+      {pendingPiecePlacement ? (
+        <FabricPiecePlacementDialog
+          fabricName={pendingPiecePlacement.fabricName}
+          garmentLabel={pendingPiecePlacement.garmentLabel}
+          pairSelectionNumber={pendingPiecePlacement.choice.pairSelectionNumber}
+          pairRemainingUnits={pendingPiecePlacement.choice.pairRemainingUnits}
+          newPieceAvailable={pendingPiecePlacement.choice.newPieceAvailable}
+          newPieceBlockedMessage={
+            pendingPiecePlacement.choice.newPieceAvailable
+              ? null
+              : formatFabricNewPieceUnavailableCopy({
+                  reason: pendingPiecePlacement.choice.newPieceBlockedReason,
+                  requiredFabricQuantity,
+                  pairSelectionNumber:
+                    pendingPiecePlacement.choice.pairSelectionNumber,
+                })
+          }
+          onPair={() => resolvePendingPiecePlacement("auto")}
+          onNewPiece={() => resolvePendingPiecePlacement("new_piece")}
+          onCancel={() => resolvePendingPiecePlacement(null)}
         />
       ) : null}
 

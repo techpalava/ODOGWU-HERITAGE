@@ -127,7 +127,7 @@ assert.equal(
 // deliberately keeps its white glow.
 for (const [file, marker, cls] of [
   ["src/components/DormantFutureAiTryOnStep.tsx", "Continue without AI Try-on", /STUDIO_CONTINUE_RING_BLINK_CLASS/],
-  ["src/components/FutureRemainingFabricCapacityOffer.tsx", "Continue to Design Style", /STUDIO_CONTINUE_UNLOCK_GLOW_CLASS/],
+  ["src/components/FutureRemainingFabricCapacityOffer.tsx", "{REMAINING_FABRIC_CAPACITY_OFFER_CONTINUE}", /STUDIO_CONTINUE_UNLOCK_GLOW_CLASS/],
 ] as const) {
   const source = readFileSync(file, "utf8");
   const index = source.indexOf(marker);

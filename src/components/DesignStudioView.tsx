@@ -244,6 +244,7 @@ import {
   cancelFutureFabricCatalogueAssignment,
   changeFutureFabricAllocationProduct,
   type ChangeFutureFabricAllocationExpectation,
+  type FutureFabricPiecePlacement,
   getFutureGarmentFabricPlanning,
   getGarmentTypeStepSelectedFabricQuantity,
   getFutureFabricCapacityComposition,
@@ -3248,6 +3249,7 @@ export default function DesignStudioView({
   const handleAssignFutureFabricToGarment = (
     fabric: Fabric,
     garmentKey: string,
+    placement?: FutureFabricPiecePlacement,
   ) => {
     const nextState = applyFutureFabricCardSelection({
       state: fabricAllocationState,
@@ -3256,6 +3258,7 @@ export default function DesignStudioView({
       fabricCode: fabric.code,
       fabrics,
       requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+      placement,
     });
     if (nextState === fabricAllocationState) {
       return nextState;
@@ -9821,6 +9824,7 @@ export default function DesignStudioView({
   const handleAssignSameFabricProductToGarments = (
     fabricCode: string,
     garmentKeys: string[],
+    placement?: FutureFabricPiecePlacement,
   ) => {
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
@@ -9832,6 +9836,7 @@ export default function DesignStudioView({
       garmentKeys,
       fabrics,
       requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+      placement,
     });
     if (result.status === "assigned") {
       if (result.state !== fabricAllocationState) {
