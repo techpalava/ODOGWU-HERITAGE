@@ -10,6 +10,7 @@ import { resolveCurrentCatalogueFabricForAssignment } from "./additionalGarmentF
 import {
   assignFutureFabricToGarment,
   assignSameFabricProductToGarments,
+  type FutureFabricPiecePlacement,
   formatFabricQuantityLimitChangeCopy,
   formatFabricUseForAllQuantityNote,
   getFabricQuantityFitBlockedCopyForGarment,
@@ -918,6 +919,7 @@ export const commitStep1FabricAssignment = ({
   fabricCode,
   selectedGarmentKeys,
   mode,
+  placement = "auto",
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -925,6 +927,7 @@ export const commitStep1FabricAssignment = ({
   fabricCode: string;
   selectedGarmentKeys: readonly string[];
   mode: "selected" | "all_remaining";
+  placement?: FutureFabricPiecePlacement;
 }): Step1FabricAssignmentCommitResult => {
   const resolved = resolveCurrentCatalogueFabricForAssignment({
     fabrics,
@@ -963,6 +966,7 @@ export const commitStep1FabricAssignment = ({
     fabricCode: currentFabricCode,
     garmentKeys,
     fabrics,
+    placement,
   });
   if (result.status !== "assigned") {
     const requiredFabricQuantity = getFutureGarmentFabricPlanning({

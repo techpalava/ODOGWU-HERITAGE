@@ -1854,7 +1854,7 @@ assert.match(stepSource, /isConnected/);
 assert.match(stepSource, /focus\(\{ preventScroll: true \}\)/);
 assert.match(stepSource, /document\.activeElement === first/);
 assert.match(stepSource, /overflow-x-hidden/);
-assert.match(stepSource, /onAssignFabricToGarment\(fabric, garmentKey\)/);
+assert.match(stepSource, /onAssignFabricToGarment\(fabric, garmentKey, placement\)/);
 assert.match(stepSource, /handleFabricSelection\(/);
 assert.match(stepSource, /removeAssignedFabric\(/);
 assert.match(stepSource, /resolveFutureFabricCatalogueCardPresentation/);

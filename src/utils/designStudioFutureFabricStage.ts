@@ -1937,17 +1937,41 @@ const restoreParkedPendingGarment = (
   };
 };
 
+/**
+ * Where a garment goes when its print already has a piece with room:
+ * "auto" joins that piece (Pair), "new_piece" starts a separate piece.
+ */
+export type FutureFabricPiecePlacement = "auto" | "new_piece";
+
+/** Ids of the existing pieces (allocations with garments) of one print. */
+export const getFutureFabricPieceAllocationIds = (
+  state: FabricAllocationState,
+  fabricCode: string,
+): string[] =>
+  state.fabricAllocations
+    .filter(
+      (allocation) =>
+        allocation.fabricCode === fabricCode &&
+        allocation.garmentAssignments.length > 0,
+    )
+    .map((allocation) => allocation.allocationId);
+
 const tryAppendToMatchingFabricAllocations = ({
   state,
   target,
   fabricCode,
+  avoidAllocationIds,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
+  /** Pieces the garment must not join ("Use a new piece"). */
+  avoidAllocationIds?: readonly string[];
 }): FabricAllocationState | null => {
   const matchingAllocations = state.fabricAllocations.filter(
-    (allocation) => allocation.fabricCode === fabricCode,
+    (allocation) =>
+      allocation.fabricCode === fabricCode &&
+      !avoidAllocationIds?.includes(allocation.allocationId),
   );
   const orderedAllocations = [
     ...matchingAllocations.filter(
@@ -2031,6 +2055,7 @@ const assignTargetToFabricCore = ({
   garmentTypeSelection,
   fabrics,
   requiredPhysicalOccurrences,
+  avoidAllocationIds,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
@@ -2038,11 +2063,13 @@ const assignTargetToFabricCore = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  avoidAllocationIds?: readonly string[];
 }): FutureFabricAssignmentResult => {
   const appended = tryAppendToMatchingFabricAllocations({
     state,
     target,
     fabricCode,
+    avoidAllocationIds,
   });
   if (appended) {
     return finalizeAssignedFabricStock({
@@ -2120,6 +2147,7 @@ const assignTargetToFabric = ({
   garmentTypeSelection,
   fabrics,
   requiredPhysicalOccurrences,
+  avoidAllocationIds,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
@@ -2127,6 +2155,7 @@ const assignTargetToFabric = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  avoidAllocationIds?: readonly string[];
 }): FutureFabricAssignmentResult => {
   if (state.pendingFabricGarment?.garmentKey === target.assignment.garmentKey) {
     const awaitingState = {
@@ -2137,6 +2166,7 @@ const assignTargetToFabric = ({
       state: awaitingState,
       target,
       fabricCode,
+      avoidAllocationIds,
     });
     if (appended) {
       return finalizeAssignedFabricStock({
@@ -2217,6 +2247,7 @@ const assignTargetToFabric = ({
     garmentTypeSelection,
     fabrics,
     requiredPhysicalOccurrences,
+    avoidAllocationIds,
   });
   if (result.status !== "assigned") {
     return { ...result, state };
@@ -2261,6 +2292,7 @@ export const assignSameFabricProductToGarments = ({
   garmentKeys,
   fabrics,
   requiredPhysicalOccurrences,
+  placement = "auto",
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -2268,7 +2300,15 @@ export const assignSameFabricProductToGarments = ({
   garmentKeys: readonly string[];
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  /** "new_piece": the garments share one new piece, never an existing one. */
+  placement?: FutureFabricPiecePlacement;
 }): FutureFabricBulkAssignmentResult => {
+  // Pieces of this print that existed before the batch; "new_piece" keeps the
+  // whole batch off them while still letting the batch fill its own new piece.
+  const avoidAllocationIds =
+    placement === "new_piece"
+      ? getFutureFabricPieceAllocationIds(state, fabricCode)
+      : undefined;
   let workingState = state;
   const assignedGarmentKeys: string[] = [];
   for (const garmentKey of garmentKeys) {
@@ -2292,6 +2332,7 @@ export const assignSameFabricProductToGarments = ({
       fabricCode,
       fabrics,
       requiredPhysicalOccurrences,
+      avoidAllocationIds,
     });
     if (
       result.status !== "assigned" ||
@@ -2323,6 +2364,122 @@ export const assignSameFabricProductToGarments = ({
     assignedGarmentKeys,
   };
 };
+
+export interface FutureFabricPiecePlacementChoice {
+  fabricCode: string;
+  garmentKeys: string[];
+  /** The existing piece the garments would join when paired. */
+  pairAllocationId: string;
+  /** 1-based Fabric Selection number of that piece. */
+  pairSelectionNumber: number;
+  /** Units left on that piece before pairing (e.g. 1 of 2). */
+  pairRemainingUnits: number;
+  /** A separate new piece is possible (within Fabrics Needed and stock). */
+  newPieceAvailable: boolean;
+  newPieceBlockedReason: FutureFabricAssignmentBlockReason | null;
+}
+
+/**
+ * Assigning a print that already has a piece with room used to pair the
+ * garment onto that piece silently. When that would happen, the customer
+ * chooses: Pair with that Selection, or Use a new piece (which still has to
+ * fit Fabrics Needed and stock). Returns null when no existing piece would be
+ * joined, or when the auto assignment itself is blocked (normal errors apply).
+ */
+export const getFutureFabricPiecePlacementChoice = ({
+  state,
+  garmentTypeSelection,
+  fabricCode,
+  garmentKeys,
+  fabrics,
+  requiredPhysicalOccurrences,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricCode: string;
+  garmentKeys: readonly string[];
+  fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): FutureFabricPiecePlacementChoice | null => {
+  const existingPieceIds = getFutureFabricPieceAllocationIds(state, fabricCode);
+  if (existingPieceIds.length === 0 || garmentKeys.length === 0) {
+    return null;
+  }
+  const paired = assignSameFabricProductToGarments({
+    state,
+    garmentTypeSelection,
+    fabricCode,
+    garmentKeys,
+    fabrics,
+    requiredPhysicalOccurrences,
+  });
+  if (paired.status !== "assigned") {
+    return null;
+  }
+  const garmentKeySet = new Set(garmentKeys);
+  const joinedPiece = state.fabricAllocations.find((allocation) => {
+    if (!existingPieceIds.includes(allocation.allocationId)) return false;
+    const after = paired.state.fabricAllocations.find(
+      (candidate) => candidate.allocationId === allocation.allocationId,
+    );
+    return Boolean(
+      after?.garmentAssignments.some(
+        (assignment) =>
+          garmentKeySet.has(assignment.garmentKey) &&
+          !allocation.garmentAssignments.some(
+            (before) => before.garmentKey === assignment.garmentKey,
+          ),
+      ),
+    );
+  });
+  if (!joinedPiece) {
+    return null;
+  }
+  const newPiece = assignSameFabricProductToGarments({
+    state,
+    garmentTypeSelection,
+    fabricCode,
+    garmentKeys,
+    fabrics,
+    requiredPhysicalOccurrences,
+    placement: "new_piece",
+  });
+  const usedUnits = joinedPiece.garmentAssignments.reduce(
+    (total, assignment) => total + assignment.fabricUnits,
+    0,
+  );
+  return {
+    fabricCode,
+    garmentKeys: [...garmentKeys],
+    pairAllocationId: joinedPiece.allocationId,
+    pairSelectionNumber:
+      state.fabricAllocations.findIndex(
+        (allocation) => allocation.allocationId === joinedPiece.allocationId,
+      ) + 1,
+    pairRemainingUnits: Math.max(
+      0,
+      FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION - usedUnits,
+    ),
+    newPieceAvailable: newPiece.status === "assigned",
+    newPieceBlockedReason:
+      newPiece.status === "blocked" ? newPiece.reason : null,
+  };
+};
+
+export const formatFabricNewPieceUnavailableCopy = ({
+  reason,
+  requiredFabricQuantity,
+  pairSelectionNumber,
+}: {
+  reason: FutureFabricAssignmentBlockReason | null;
+  requiredFabricQuantity: number;
+  pairSelectionNumber: number;
+}): string =>
+  reason === "FABRIC_STOCK_EXHAUSTED"
+    ? `There isn't enough stock for another piece of this fabric. Pair with Selection ${pairSelectionNumber} instead.`
+    : `A new piece isn't available: you already have the ${requiredFabricQuantity} ${fabricWord(
+        requiredFabricQuantity,
+      )} this order needs. Pair with Selection ${pairSelectionNumber}, or change a selection's fabric.`;
 
 const mapChangeFutureFabricAllocationProductResult = (
   result: ChangeFutureFabricAllocationProductResult,
@@ -2470,6 +2627,8 @@ export const assignFutureFabricToGarment = ({
   fabricCode,
   fabrics,
   requiredPhysicalOccurrences,
+  placement = "auto",
+  avoidAllocationIds,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -2477,7 +2636,19 @@ export const assignFutureFabricToGarment = ({
   fabricCode: string;
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  /**
+   * "new_piece": never join a piece of this print that already exists; start
+   * a new piece instead (still limited by Fabrics Needed and stock).
+   */
+  placement?: FutureFabricPiecePlacement;
+  /** Explicit pieces to avoid; defaults to this print's pieces for "new_piece". */
+  avoidAllocationIds?: readonly string[];
 }): FutureFabricAssignmentResult => {
+  const resolvedAvoidAllocationIds =
+    avoidAllocationIds ??
+    (placement === "new_piece"
+      ? getFutureFabricPieceAllocationIds(state, fabricCode)
+      : undefined);
   const target = getFutureFabricAssignmentTargetForKey({
     garmentTypeSelection,
     fabricAllocationState: state,
@@ -2501,6 +2672,7 @@ export const assignFutureFabricToGarment = ({
       garmentTypeSelection,
       fabrics,
       requiredPhysicalOccurrences,
+      avoidAllocationIds: resolvedAvoidAllocationIds,
     });
   }
   if (sourceAllocation.fabricCode === fabricCode) {
@@ -2596,6 +2768,7 @@ export const applyFutureFabricCardSelection = ({
   fabricCode,
   fabrics,
   requiredPhysicalOccurrences,
+  placement = "auto",
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -2603,6 +2776,7 @@ export const applyFutureFabricCardSelection = ({
   fabricCode: string;
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  placement?: FutureFabricPiecePlacement;
 }): FabricAllocationState => {
   if (state.pendingFabricGarment?.garmentKey === garmentKey) {
     const result = assignFutureFabricToGarment({
@@ -2612,6 +2786,7 @@ export const applyFutureFabricCardSelection = ({
       fabricCode,
       fabrics,
       requiredPhysicalOccurrences,
+      placement,
     });
     return result.status === "assigned" ? result.state : state;
   }
@@ -2622,6 +2797,18 @@ export const applyFutureFabricCardSelection = ({
     ),
   );
   if (!targetIsAlreadyAssigned) {
+    if (placement === "new_piece") {
+      const result = assignFutureFabricToGarment({
+        state,
+        garmentTypeSelection,
+        garmentKey,
+        fabricCode,
+        fabrics,
+        requiredPhysicalOccurrences,
+        placement,
+      });
+      return result.status === "assigned" ? result.state : state;
+    }
     return selectFutureFabric({
       state,
       garmentTypeSelection,
