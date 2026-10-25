@@ -6158,15 +6158,20 @@ try {
     await act(async () => focusPartialRenderer.update(renderFocusPartial()));
     await act(async () =>
       focusPartialRenderer.root
-        .findByProps({ "data-testid": "partial-fabric-capacity-cancel" })
+        .findByProps({ "aria-label": "Close fabric assignment" })
         .props.onClick(),
     );
     await act(async () => focusPartialRenderer.update(renderFocusPartial()));
     flushAnimationFrames();
+    // The single-target popup has no Cancel button (Mockup A); X closes it.
+    assert.equal(
+      focusPartialRenderer.root.findAllByProps({ "data-testid": "partial-fabric-capacity-cancel" }).length,
+      0,
+    );
     assert.equal(
       activeFocusMock?.label,
       "Assign fabric for Trouser",
-      "Cancel must restore focus to the originating Assign to Fabric action.",
+      "Closing with X must restore focus to the originating Assign to Fabric action.",
     );
   }
 

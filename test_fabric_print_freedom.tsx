@@ -28,6 +28,7 @@ import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAlloca
 import {
   applyFutureFabricCardSelection,
   assignFutureFabricToGarment,
+  assignFutureGarmentToExistingFabricAllocation,
   assignSameFabricProductToGarments,
   canCreatePhysicalFabricAllocation,
   formatFabricNewPieceUnavailableCopy,
@@ -218,7 +219,16 @@ const renderStep = () => {
       if (result.status === "assigned") liveState = result.state;
       return result;
     },
-    onAssignGarmentToExistingAllocation: () => undefined,
+    onAssignGarmentToExistingAllocation: (garmentKey: string, allocationId: string) => {
+      const result = assignFutureGarmentToExistingFabricAllocation({
+        state: liveState,
+        garmentTypeSelection: liveSelection,
+        garmentKey,
+        allocationId,
+      });
+      if (result.status === "assigned") liveState = result.state;
+      return result;
+    },
     onBack: () => undefined,
     onContinue: () => {
       continued += 1;
@@ -493,6 +503,103 @@ await mount(shirtOnIvory);
   assert.ok(splitPrice.garmentSubtotal > 0);
   assert.equal(splitPrice.garmentSubtotal, pairedPrice.garmentSubtotal, "an extra piece adds no charge");
   assert.equal(splitPrice.clothingPrice, pairedPrice.clothingPrice);
+}
+
+// ---------------------------------------------------------------------------
+// 6. "Add to this fabric?" popup (Mockup A, was "Complete Fabric Assignment"):
+//    reached from the Long Shirt's Assign to Fabric button at the needed count.
+// ---------------------------------------------------------------------------
+{
+  const partialDialogs = (root: ReactTestInstance) =>
+    root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props["data-testid"] === "partial-fabric-capacity-assignment-dialog",
+    );
+  const openPopup = async () => {
+    await mount(shirtOnIvory);
+    const assignButton = renderer.root.findByProps({ "data-testid": "assign-to-fabric-base:kaftan" });
+    await act(async () => assignButton.props.onClick());
+    await rerender();
+    const [popup] = partialDialogs(renderer.root);
+    assert.ok(popup, "Add to this fabric? opens from Assign to Fabric");
+    return popup!;
+  };
+
+  // New copy, no Cancel button, X kept.
+  let popup = await openPopup();
+  const popupText = textContent(popup);
+  assert.equal(textContent(popup.findByType("h2")), "Add to this fabric?");
+  assert.match(popupText, /Long Shirt fits on your Classic Ivory Shield piece\./);
+  assert.match(popupText, /On it: Shirt(?!s)/);
+  assert.match(popupText, /Adding: Long Shirt/);
+  assert.equal(
+    textContent(popup.findByProps({ "data-partial-capacity-progress": "true" })),
+    "Capacity: 1/2 → 2/2",
+  );
+  assert.doesNotMatch(popupText, /Complete Fabric Assignment|Currently assigned:|Add Long Shirt to an existing/);
+  assert.equal(popup.findAllByProps({ "data-testid": "partial-fabric-capacity-cancel" }).length, 0);
+  assert.equal(
+    popup.findAll((node) => node.type === "button" && textContent(node).trim() === "Cancel").length,
+    0,
+    "no Cancel button",
+  );
+  const useDifferent = popup.find(
+    (node) => node.type === "button" && node.props["data-fabric-complete-assignment-use-different"] === "true",
+  );
+  assert.equal(textContent(useDifferent), "Use different fabric");
+  assert.match(String(useDifferent.props.className), /border/);
+  const addButton = popup.findByProps({ "data-testid": "partial-fabric-capacity-confirm" });
+  assert.equal(textContent(addButton), "Add to this fabric");
+  assert.match(String(addButton.props.className), /bg-heritage-green/);
+  assert.ok(popup.findByProps({ "aria-label": "Close fabric assignment" }));
+
+  // Add to this fabric assigns (same as the old ASSIGN).
+  await act(async () => addButton.props.onClick());
+  await rerender();
+  assert.deepEqual(layout(liveState), [["PF-I", ["base:shirt", "base:kaftan"]]]);
+  assert.equal(partialDialogs(renderer.root).length, 0);
+  act(() => renderer.unmount());
+
+  // X closes without assigning.
+  popup = await openPopup();
+  await act(async () => popup.findByProps({ "aria-label": "Close fabric assignment" }).props.onClick());
+  await rerender();
+  assert.equal(partialDialogs(renderer.root).length, 0);
+  assert.deepEqual(layout(liveState), layout(shirtOnIvory), "X assigns nothing");
+  act(() => renderer.unmount());
+
+  // Use different fabric: assigns nothing, opens the catalogue targeted at the
+  // Long Shirt (same as its Add Fabric button), other prints SELECTable.
+  popup = await openPopup();
+  await act(async () =>
+    popup
+      .find((node) => node.type === "button" && node.props["data-fabric-complete-assignment-use-different"] === "true")
+      .props.onClick(),
+  );
+  await rerender();
+  assert.equal(partialDialogs(renderer.root).length, 0, "popup closes");
+  assert.deepEqual(layout(liveState), layout(shirtOnIvory), "Use different fabric assigns nothing");
+  assert.equal(
+    renderer.root.findAll((node) => node.type === "button" && textContent(node).trim() === "Cancel").length,
+    1,
+    "the targeted catalogue shows its Cancel (target set to the Long Shirt)",
+  );
+  const royal = catalogueCard(renderer.root, "PF-R");
+  assert.equal(actionButton(royal).props.disabled, false, "other prints stay SELECTable");
+  await act(async () => actionButton(royal).props.onClick({ currentTarget: {} }));
+  await rerender();
+  // Step 1 garment: SELECT opens the grouping panel listing the Long Shirt.
+  const rows = renderer.root.findAll(
+    (node) => node.type === "input" && node.props["data-step1-fabric-assignment-checkbox"] !== undefined,
+  );
+  assert.deepEqual(rows.map((row) => row.props["data-step1-fabric-assignment-checkbox"]), ["base:kaftan"]);
+  await confirmGroupingFor("base:kaftan");
+  assert.deepEqual(layout(liveState), [
+    ["PF-I", ["base:shirt"]],
+    ["PF-R", ["base:kaftan"]],
+  ]);
+  act(() => renderer.unmount());
 }
 
 console.log("test_fabric_print_freedom: PASS");

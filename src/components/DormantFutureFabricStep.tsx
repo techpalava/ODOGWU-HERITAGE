@@ -1877,6 +1877,29 @@ export const DormantFutureFabricStep = ({
     setPendingPartialFabricAssignment({ garmentKey });
   };
 
+  // "Use different fabric" on the single-target Add to this fabric? popup:
+  // assign nothing and open the catalogue targeted at the garment, exactly as
+  // the garment card's Add Fabric button does.
+  const useDifferentFabricForPartialAssignment = () => {
+    const garmentKey = pendingPartialFabricAssignment?.garmentKey;
+    setPendingPartialFabricAssignment(null);
+    if (!garmentKey) return;
+    if (
+      fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey &&
+      !fabricAllocationState.awaitingFabricForPendingGarment
+    ) {
+      onChooseAnotherFabric();
+    }
+    const trigger =
+      garmentActionRefs.current.get(garmentKey) ??
+      (typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
+    if (trigger) {
+      openCatalogue(trigger, garmentKey);
+    }
+  };
+
   const cancelPartialFabricAssignment = () => {
     const garmentKey = pendingPartialFabricAssignment?.garmentKey;
     setPendingPartialFabricAssignment(null);
@@ -3951,6 +3974,7 @@ export const DormantFutureFabricStep = ({
           targets={partialAssignmentPresentations}
           onConfirm={commitPartialFabricAssignment}
           onCancel={cancelPartialFabricAssignment}
+          onUseDifferentFabric={useDifferentFabricForPartialAssignment}
         />
       ) : null}
 
