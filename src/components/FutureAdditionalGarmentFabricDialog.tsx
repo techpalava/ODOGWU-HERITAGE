@@ -12,7 +12,7 @@ import {
   assignFutureFabricToGarment,
   formatFabricQuantityLimitChangeCopy,
   getFutureCompatiblePartialFabricAllocations,
-  getRequiredPhysicalFabricAllocationCount,
+  getMaxPhysicalFabricAllocationCount,
   resolveFutureFabricCatalogueCardPresentation,
 } from "../utils/designStudioFutureFabricStage";
 import {
@@ -136,7 +136,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
     [reusableAllocationOptionsByFabricCode, visibleFabricByCode],
   );
   const quantityLimitMessage = formatFabricQuantityLimitChangeCopy(
-    getRequiredPhysicalFabricAllocationCount({
+    getMaxPhysicalFabricAllocationCount({
       garmentTypeSelection,
       fabricAllocationState,
       requiredPhysicalOccurrences,

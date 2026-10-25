@@ -218,10 +218,10 @@ const catalogStyleIdFor = (
     ),
   );
 
-  // #832 (Xavier, 2026-10-18): customers can't choose more Fabrics than the
-  // order needs. One Fabric makes up to two standard garments, so the second
-  // Shirt cannot open a second Fabric; the order and the base Fabric stay as
-  // they were.
+  // #832 (Xavier, 2026-10-18) capped Fabrics at the number needed; Xavier
+  // replaced that on 2026-10-25 (fabric-print-freedom): the limit is one piece
+  // per garment, so the second Shirt may open its own Fabric. The base Fabric
+  // stays as it was.
   const extraFabric = assignFutureFabricToGarment({
     state: normalOnly.state,
     garmentTypeSelection: step1,
@@ -230,14 +230,9 @@ const catalogStyleIdFor = (
     fabrics,
     requiredPhysicalOccurrences: [base, additional],
   });
-  assert.equal(extraFabric.status, "blocked");
-  assert.equal(
-    extraFabric.status === "blocked" ? extraFabric.reason : null,
-    "FABRIC_QUANTITY_LIMIT_REACHED",
-  );
-  assert.deepEqual(extraFabric.state, normalOnly.state, "a blocked Fabric changes nothing");
+  assert.equal(extraFabric.status, "assigned");
   assert.equal(fabricCodeFor(extraFabric.state, base.garmentKey), "FAB-BASE");
-  assert.equal(fabricCodeFor(extraFabric.state, additional.garmentKey), null);
+  assert.equal(fabricCodeFor(extraFabric.state, additional.garmentKey), "FAB-ADDITIONAL");
 
   // The Additional Garment uses the spare room on the selected Fabric, under
   // its own canonical key, without replacing the same-type base occurrence.

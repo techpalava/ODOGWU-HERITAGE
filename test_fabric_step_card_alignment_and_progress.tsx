@@ -196,7 +196,7 @@ assert.equal(
 assert.equal(progress.findAllByProps({ "data-fabric-selection-progress": "true" }).length, 0);
 assert.match(String(progress.props.className), /heritage-green/);
 
-// --- Over the limit: counts stay, the trim message stays elsewhere ---
+// --- More pieces than Fabrics Needed (one piece per garment) completes ---
 let overState = FabricAllocationStateEngine.createAllocationForFabric(
   FabricAllocationStateEngine.initialize(),
   "ALIGN-A",
@@ -216,15 +216,12 @@ await act(async () => {
   renderer.update(renderStep(overState));
 });
 progress = renderer.root.findByProps({ "data-fabric-progress": "true" });
-assert.equal(progress.props["data-fabric-progress-state"], "in_progress");
+assert.equal(progress.props["data-fabric-progress-state"], "complete");
 assert.equal(
-  textContent(progress.findByProps({ "data-fabric-selection-progress": "true" })),
-  "Fabrics chosen: 2 of 1 needed",
+  textContent(progress.findByProps({ "data-fabric-progress-complete-summary": "true" })),
+  "2 fabrics cover your 2 garments.",
 );
-assert.match(
-  textContent(renderer.root),
-  /Your saved Fabric selections use 2 fabrics, but this order requires 1\./,
-);
+assert.doesNotMatch(textContent(renderer.root), /Your saved Fabric selections use/);
 act(() => renderer.unmount());
 
 console.log("PASS: Step 2 Fabric cards align and the status box wording is clear");

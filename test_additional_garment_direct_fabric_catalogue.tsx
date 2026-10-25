@@ -158,22 +158,23 @@ act(() => {
 assert.deepEqual(selectedExistingAllocationIds, [allocationA]);
 
 // Shirt + Trouser + the new Trouser need two Fabrics and the order already
-// has two, so a third Fabric is blocked with a clear reason. Spare capacity on
-// Fabric A or B ("In Your Order") remains the way to place this garment.
-const blockedFabricCCard = dialog.findByProps({
+// has two. fabric-print-freedom: the limit is one piece per garment, so a
+// third print stays selectable; spare capacity on Fabric A or B ("In Your
+// Order") is still offered.
+const fabricCCard = dialog.findByProps({
   "data-fabric-card": "true",
   "data-fabric-code": fabricC.code,
 });
-assert.equal(blockedFabricCCard.props["data-fabric-action"], "none");
-assert.equal(blockedFabricCCard.props.disabled, true);
-assert.match(
+assert.equal(fabricCCard.props["data-fabric-action"], "select");
+assert.notEqual(fabricCCard.props.disabled, true);
+assert.doesNotMatch(
   textContent(dialog.findByProps({ "data-fabric-card-code": fabricC.code })),
-  /Your order already uses the 2 fabrics required\. To use this Fabric, first remove or change another Fabric assignment\./,
+  /already uses the 2 fabrics required/,
 );
 act(() => {
-  blockedFabricCCard.props.onClick?.();
+  fabricCCard.props.onClick?.();
 });
-assert.deepEqual(selectedNewFabricCodes, [], "a blocked Fabric card must not start a new allocation");
+assert.deepEqual(selectedNewFabricCodes, [fabricC.code], "a new print starts a new piece");
 
 const reused = assignFutureGarmentToExistingFabricAllocation({
   state: pendingState,
@@ -229,7 +230,7 @@ assert.equal(
   "a catalogue-marked one-unit Bum Shorts allocation must assign successfully",
 );
 
-const blockedNewAllocation = applyFutureFabricCardSelection({
+const newPieceAllocation = applyFutureFabricCardSelection({
   state: pendingState,
   garmentTypeSelection,
   garmentKey,
@@ -237,15 +238,17 @@ const blockedNewAllocation = applyFutureFabricCardSelection({
   fabrics,
 });
 assert.equal(
-  blockedNewAllocation.fabricAllocations.length,
-  2,
-  "a Fabric past the number the order needs must not create another allocation",
+  newPieceAllocation.fabricAllocations.length,
+  3,
+  "a new print past Fabrics Needed creates the garment's own piece (one per garment)",
 );
 assert.equal(
-  blockedNewAllocation.fabricAllocations.some((entry) =>
-    entry.garmentAssignments.some((assignment) => assignment.garmentKey === garmentKey),
+  newPieceAllocation.fabricAllocations.some(
+    (entry) =>
+      entry.fabricCode === fabricC.code &&
+      entry.garmentAssignments.some((assignment) => assignment.garmentKey === garmentKey),
   ),
-  false,
+  true,
 );
 
 // When the Additional Garment truly needs another Fabric (Shirt + Trouser

@@ -131,7 +131,8 @@ assert.equal(swapped.status, "assigned");
 assert.deepEqual(layout(swapped.state), [["AF-N", ["base:shirt"]], ["AF-B", ["base:trouser"]]]);
 assert.equal(pieceCount(swapped.state), pieceCount(atCeiling), "a swap never adds a piece");
 
-// The ceiling still blocks a genuinely extra piece for the unassigned Skirt.
+// fabric-print-freedom: at Fabrics Needed the unassigned Skirt may still take
+// its own piece of a new print (limit is one piece per garment).
 const extra = assignFutureFabricToGarment({
   state: atCeiling,
   garmentTypeSelection: selection,
@@ -139,8 +140,8 @@ const extra = assignFutureFabricToGarment({
   fabricCode: "AF-N",
   fabrics,
 });
-assert.equal(extra.status, "blocked");
-assert.equal(extra.status === "blocked" ? extra.reason : null, "FABRIC_QUANTITY_LIMIT_REACHED");
+assert.equal(extra.status, "assigned");
+assert.equal(pieceCount(extra.state), 3);
 
 // ---------------------------------------------------------------------------
 // 3a. Engine: Pair vs Use a new piece.
@@ -200,7 +201,7 @@ assert.deepEqual(layout(bulkNew.state), [
   ["AF-A", ["base:shirt"]],
   ["AF-A", ["base:trouser", "base:skirt"]],
 ]);
-// At the ceiling, a new piece of A for the Skirt is disabled with a reason.
+// At Fabrics Needed, a new piece of A for the Skirt is still available.
 const ceilingChoice = getFutureFabricPiecePlacementChoice({
   state: atCeiling,
   garmentTypeSelection: selection,
@@ -209,8 +210,8 @@ const ceilingChoice = getFutureFabricPiecePlacementChoice({
   fabrics,
 });
 assert.ok(ceilingChoice);
-assert.equal(ceilingChoice!.newPieceAvailable, false);
-assert.equal(ceilingChoice!.newPieceBlockedReason, "FABRIC_QUANTITY_LIMIT_REACHED");
+assert.equal(ceilingChoice!.newPieceAvailable, true);
+assert.equal(ceilingChoice!.newPieceBlockedReason, null);
 
 // ---------------------------------------------------------------------------
 // UI harness (same shape as DesignStudioView wiring).
@@ -346,7 +347,7 @@ await mount(atCeiling);
 assert.equal(
   helpCopy(renderer.root),
   formatFabricQuantityLimitReachedCopy(2),
-  "the plain catalogue still explains the ceiling for the unassigned Skirt",
+  "the plain catalogue shows the neutral needed-count note for the unassigned Skirt",
 );
 await act(async () => {
   renderer.root
@@ -422,8 +423,8 @@ assert.equal(placementDialogs(renderer.root).length, 0);
 act(() => renderer.unmount());
 
 // ---------------------------------------------------------------------------
-// 3c. UI: one garment left at the ceiling (single-tap path) still asks, and
-// Use a new piece is disabled with the reason.
+// 3c. UI: one garment left at Fabrics Needed (single-tap path) still asks, and
+// Use a new piece stays enabled (fabric-print-freedom).
 // ---------------------------------------------------------------------------
 await mount(atCeiling);
 await act(async () =>
@@ -432,11 +433,11 @@ await act(async () =>
 const ceilingDialog = placementDialogs(renderer.root)[0]!;
 assert.ok(ceilingDialog, "at the ceiling the choice still shows (no silent pairing)");
 assert.deepEqual(layout(liveState), layout(atCeiling));
-const disabledNew = ceilingDialog.findByProps({ "data-fabric-piece-placement-new-piece": "true" });
-assert.equal(disabledNew.props.disabled, true);
-assert.match(
-  textContent(ceilingDialog.findByProps({ "data-fabric-piece-placement-new-piece-blocked": "true" })),
-  /already have the 2 fabrics this order needs/,
+const enabledNew = ceilingDialog.findByProps({ "data-fabric-piece-placement-new-piece": "true" });
+assert.equal(enabledNew.props.disabled, false);
+assert.equal(
+  ceilingDialog.findAllByProps({ "data-fabric-piece-placement-new-piece-blocked": "true" }).length,
+  0,
 );
 await act(async () =>
   ceilingDialog.findByProps({ "data-fabric-piece-placement-pair": "true" }).props.onClick(),

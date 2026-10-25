@@ -126,10 +126,9 @@ assert.equal(
   }).requiredFabricQuantity,
   5,
 );
-// Five lone garments on a 9-garment order is a saved draft from before the
-// fit check: the fit check now stops a customer creating it (the fifth lone
-// Fabric would leave the Long Dress without a whole Fabric), so build it as
-// saved data.
+// Five lone garments on a 9-garment order. The limit is one piece per
+// garment (not Fabrics Needed), so a customer can create this; it is also
+// built as saved data for the layouts below.
 const savedFiveLoneDraft = (): FabricAllocationState => {
   const entries: Array<[string, string]> = [
     ["base:shirt", "QTY-A"],
@@ -167,7 +166,11 @@ const savedFiveLoneDraft = (): FabricAllocationState => {
     fabricCode: "QTY-E",
     fabrics,
   });
-  assert.equal(fifth.status, "blocked", "fit check: a fifth lone Fabric would strand the Long Dress");
+  assert.equal(
+    fifth.status,
+    "assigned",
+    "a fifth piece is allowed: 5 pieces for 9 garments is within one piece per garment",
+  );
 }
 let state = savedFiveLoneDraft();
 state = reconcileFutureFabricAllocationState({ state, garmentTypeSelection: eight });
@@ -191,32 +194,30 @@ assert.deepEqual(
   [8, 4, 5],
   "the screenshot state: 8 garments, 4 Fabrics needed, 5 saved",
 );
-const blocked = getFutureFabricStageCompletion({
+const shrunkCompletion = getFutureFabricStageCompletion({
   garmentTypeSelection: eight,
   fabricAllocationState: shrunk,
   fabrics,
 });
-assert.equal(blocked.isComplete, false);
-assert.equal(blocked.assignedGarmentCount, 8, "every garment has fabric");
-assert.deepEqual(blocked.blockers.map((b) => b.code), ["FABRIC_QUANTITY_OVER_ALLOCATED"]);
+// 5 pieces for 8 garments: more than the 4 Fabrics Needed, but within one
+// piece per garment, so Continue is not blocked.
+assert.equal(shrunkCompletion.isComplete, true);
+assert.equal(shrunkCompletion.assignedGarmentCount, 8, "every garment has fabric");
+assert.deepEqual(shrunkCompletion.blockers, []);
 
 // ---------------------------------------------------------------------------
 // 2. Repair plan + atomic move unlock Continue.
 // ---------------------------------------------------------------------------
-const repair = getFabricQuantityOverAllocationRepair({
-  state: shrunk,
-  garmentTypeSelection: eight,
-});
-assert.ok(repair, "a one-move repair exists");
-assert.equal(repair!.garmentKey, "base:standard_shorts", "the latest lone garment moves");
-assert.equal(repair!.fromSelectionNumber, 5);
-assert.equal(repair!.toSelectionNumber, 4);
-assert.equal(repair!.toFabricCode, "QTY-D");
-assert.equal(repair!.sameFabric, false);
+assert.equal(
+  getFabricQuantityOverAllocationRepair({ state: shrunk, garmentTypeSelection: eight }),
+  null,
+  "no repair is pushed while within one piece per garment",
+);
+// The customer may still choose to pair the lone garments.
 const moved = moveFutureGarmentToFabricAllocation({
   state: shrunk,
-  garmentKey: repair!.garmentKey,
-  allocationId: repair!.toAllocationId,
+  garmentKey: "base:standard_shorts",
+  allocationId: shrunk.fabricAllocations[3]!.allocationId,
 });
 assert.equal(moved.status, "moved");
 assert.equal(moved.state.fabricAllocations.length, 4);
@@ -226,12 +227,12 @@ const unlocked = getFutureFabricStageCompletion({
   fabricAllocationState: moved.state,
   fabrics,
 });
-assert.equal(unlocked.isComplete, true, "Continue unlocks after one move");
+assert.equal(unlocked.isComplete, true, "Continue stays unlocked after pairing");
 assert.deepEqual(unlocked.blockers, []);
 assert.equal(
   getFabricQuantityOverAllocationRepair({ state: moved.state, garmentTypeSelection: eight }),
   null,
-  "no repair offered once within Fabrics needed",
+  "no repair offered",
 );
 // Moves never overfill or create allocations.
 const overfill = moveFutureGarmentToFabricAllocation({
@@ -260,13 +261,10 @@ assert.equal(overfill.state, shrunk);
     awaitingFabricForPendingGarment: false,
   };
   const three = selectionFor(["shirt", "trouser", "skirt"]);
-  const sameRepair = getFabricQuantityOverAllocationRepair({
-    state: duplicate,
-    garmentTypeSelection: three,
-  });
-  assert.deepEqual(
-    sameRepair && [sameRepair.garmentKey, sameRepair.toAllocationId, sameRepair.sameFabric],
-    ["base:skirt", "x1", true],
+  // Three pieces for three garments is within the limit: no repair.
+  assert.equal(
+    getFabricQuantityOverAllocationRepair({ state: duplicate, garmentTypeSelection: three }),
+    null,
   );
 }
 
@@ -372,42 +370,30 @@ const createNodeMock = () => ({
   tagName: "DIV",
 });
 {
+  // 5 pieces for 8 garments (4 Fabrics Needed) renders as complete: no Guide,
+  // no Move repair, Continue available.
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
     renderer = create(renderStep(shrunk), { createNodeMock });
-  });
-  const guide = renderer.root.find(
-    (node) => typeof node.type === "string" && node.props["data-testid"] === "fabric-guide-flow",
-  );
-  assert.equal(guide.props["data-fabric-guide-current"], "fix_quantity");
-  const text = textContent(guide);
-  assert.match(text, /use 5 fabrics, but this order requires 4/);
-  assert.match(
-    text,
-    /Standard Nikka Shorts is the only garment on its Fabric\. Move it onto Fabric Selection 4 \(Fabric D\)/,
-  );
-  const beams = renderer.root.findAll(
-    (node) => typeof node.type === "string" && node.props["data-fabric-guide-beam"] === "true",
-  );
-  assert.equal(beams.length, 1, "exactly one beam");
-  assert.equal(beams[0]!.props["data-testid"], "fabric-guide-quantity-move");
-  assert.match(textContent(beams[0]!), /Move Standard Nikka Shorts to Fabric Selection 4/);
-  await act(async () => beams[0]!.props.onClick());
-  assert.deepEqual(moveCalls, [["base:standard_shorts", shrunk.fabricAllocations[3]!.allocationId]]);
-  assert.equal(
-    renderer.root.findAll((node) => node.props["data-testid"] === "future-fabric-continue-action").length,
-    0,
-    "Continue stays locked while over-allocated",
-  );
-  await act(async () => {
-    renderer.update(renderStep(moved.state));
   });
   assert.equal(
     renderer.root.findAll(
       (node) => typeof node.type === "string" && node.props["data-testid"] === "fabric-guide-flow",
     ).length,
     0,
-    "Guide disappears once the move brings the order to 4 Fabrics",
+  );
+  assert.equal(
+    renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props["data-testid"] === "fabric-guide-quantity-move",
+    ).length,
+    0,
+  );
+  assert.equal(
+    renderer.root.findAll(
+      (node) =>
+        typeof node.type === "string" && node.props["data-fabric-quantity-over-allocated"] === "true",
+    ).length,
+    0,
   );
   assert.ok(
     renderer.root.findAll(
@@ -415,6 +401,7 @@ const createNodeMock = () => ({
     ).length > 0,
     "Continue to Design Style is available",
   );
+  assert.deepEqual(moveCalls, []);
 }
 
 console.log("test_fabric_quantity_over_allocation_repair: PASS");

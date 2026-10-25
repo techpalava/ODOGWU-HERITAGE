@@ -84,7 +84,8 @@ import {
   getFutureFabricCatalogueCancelTargets,
   getFutureReusableHalfCapacityGarmentKeys,
   hasFutureReusableHalfCapacityForFabric,
-  isPhysicalFabricQuantityOverAllocated,
+  canCreatePhysicalFabricAllocation,
+  getMaxPhysicalFabricAllocationCount,
   resolveFutureFabricCatalogueCardPresentation,
   resolveFutureFabricChangeCatalogueCardPresentation,
   type FutureFabricAssignmentResult,
@@ -768,11 +769,23 @@ export const DormantFutureFabricStep = ({
     !isChangeFabricTarget &&
     !isPendingAdditionalCatalogueTarget &&
     !isTargetedAdditionalCatalogueTarget;
-  const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
-    selectedFabricQuantity,
-    requiredFabricQuantity,
+  // One fabric piece per garment is the limit; Fabrics Needed is only the
+  // recommendation, so holding more pieces than Fabrics Needed is fine.
+  const maxFabricPieces = getMaxPhysicalFabricAllocationCount({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
   });
-  // Every garment has fabric and the order is within Fabrics needed.
+  const maxFabricPiecesWithPending = getMaxPhysicalFabricAllocationCount({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity: true,
+  });
+  const isOverAllocated = completion.blockers.some(
+    (blocker) => blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED",
+  );
+  // Every garment has fabric and the order is within one piece per garment.
   const fabricProgressComplete =
     completion.requiredGarmentCount > 0 &&
     completion.assignedGarmentCount === completion.requiredGarmentCount &&
@@ -825,6 +838,17 @@ export const DormantFutureFabricStep = ({
     if (compatibleAllocations.length > 0) {
       return "assign_to_fabric";
     }
+    // At Fabrics Needed with no piece it can pair on, the garment may still
+    // take its own new piece (one piece per garment).
+    if (
+      canCreatePhysicalFabricAllocation({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        requiredPhysicalOccurrences,
+      })
+    ) {
+      return "add_fabric";
+    }
     return "blocked";
   };
   const fabricNameByCode = useMemo(
@@ -851,8 +875,9 @@ export const DormantFutureFabricStep = ({
         requiredPhysicalOccurrences,
       })
     : [];
-  // Changing a selection's fabric swaps the print on an existing piece; it
-  // never adds a piece, so the Fabrics Needed ceiling copy does not apply.
+  // Neutral note once the order has its Fabrics Needed and garments remain:
+  // other prints stay selectable. Not shown while changing a selection's
+  // fabric, which swaps the print on an existing piece.
   const showAllocationLimitCopy =
     !isChangeFabricTarget &&
     !isOverAllocated &&
@@ -983,7 +1008,7 @@ export const DormantFutureFabricStep = ({
     blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED"
       ? formatFabricQuantityOverAllocatedCopy(
           selectedFabricQuantity,
-          requiredFabricQuantity,
+          maxFabricPieces,
         )
       : blocker.code === "FABRIC_QUANTITY_STRANDED"
         ? formatFabricQuantityStrandedCopy(
@@ -1071,7 +1096,7 @@ export const DormantFutureFabricStep = ({
               toSelectionNumber: quantityRepair.toSelectionNumber,
               toFabricName: quantityRepairFabricName,
               sameFabric: quantityRepair.sameFabric,
-              requiredFabricQuantity,
+              requiredFabricQuantity: maxFabricPieces,
               makesRoomForLabels:
                 quantityRepair.kind === "stranded"
                   ? quantityRepair.strandedGarmentKeys.map(
@@ -2278,7 +2303,7 @@ export const DormantFutureFabricStep = ({
               fabricCode: fabric.code,
               fabrics,
               requiredPhysicalOccurrences,
-            }) ?? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+            }) ?? formatFabricQuantityLimitChangeCopy(maxFabricPiecesWithPending)
           : preview.reason === "FABRIC_STOCK_EXHAUSTED"
             ? formatFabricStockExhaustedCopy()
             : "That fabric could not be assigned to this garment.";
@@ -3575,7 +3600,7 @@ export const DormantFutureFabricStep = ({
               {isOverAllocated
                 ? formatFabricQuantityOverAllocatedCopy(
                     selectedFabricQuantity,
-                    requiredFabricQuantity,
+                    maxFabricPieces,
                   )
                 : showAllocationLimitCopy
                   ? formatFabricQuantityLimitReachedCopy(requiredFabricQuantity)
@@ -3892,7 +3917,7 @@ export const DormantFutureFabricStep = ({
               ? null
               : formatFabricNewPieceUnavailableCopy({
                   reason: pendingPiecePlacement.choice.newPieceBlockedReason,
-                  requiredFabricQuantity,
+                  maxFabricPieces: maxFabricPiecesWithPending,
                   pairSelectionNumber:
                     pendingPiecePlacement.choice.pairSelectionNumber,
                 })
