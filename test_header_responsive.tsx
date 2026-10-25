@@ -32,28 +32,41 @@ try {
 
   // Layout contract, not a full class-string snapshot: wrapped mobile branding
   // determines row height; the established minimum and sm+ height are retained.
-  // Real pixel containment is checked separately in browser QA at all four widths.
+  // Real pixel containment is checked separately in headless browser QA (320-1920px).
   assert.ok(classes(row).has("min-h-20"), "Retain the existing minimum header height");
   assert.ok(classes(row).has("sm:h-20"), "Preserve tablet/desktop header height");
   assert.ok(![...classes(row)].some(token => /^h-|^max-h-/.test(token)),
     "Mobile row must grow with wrapped branding, without a fixed height cap");
   assert.ok(classes(row).has("items-center"), "Keep logo and actions vertically aligned");
-  assert.ok(classes(brand).has("min-w-0"), "Brand text can wrap in the available width");
-  assert.ok(classes(logo).has("shrink-0"), "Logo size must not collapse");
+  // Phones: 3-column grid so the community line spans under title + controls (max 2 lines at 320px).
+  assert.ok(classes(row).has("grid") && classes(row).has("sm:flex"),
+    "Phone grid layout, single flex row from sm");
+  assert.ok(classes(brand).has("sm:min-w-0"), "Brand text can wrap in the available width");
+  assert.ok(classes(logo).has("shrink-0") && classes(logo).has("row-span-2"),
+    "Logo keeps its size and centres against both brand lines");
 
-  const mobileBrand = brand.findAllByType("div").find(node => classes(node).has("sm:hidden"))!;
-  const brandLines = mobileBrand.findAllByType("span");
-  assert.deepEqual(brandLines.map(text), [
-    "THE ODOGWU HERITAGE",
-    originalState.businessSettings.applicationSettings.tagline ||
-      "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)",
-  ], "Keep both complete branding lines");
-  for (const line of brandLines) {
+  // Screenshot bug (2026-10-25): at 1024-1180px the desktop nav squeezed the brand and
+  // the title rendered as "THE ODOG…". One title, one community line, no ellipsis.
+  const title = header.findByProps({ "data-header-brand-title": true });
+  const community = header.findByProps({ "data-header-community-line": true });
+  assert.equal(text(title), "THE ODOGWU HERITAGE", "Full brand title is present");
+  assert.equal(text(community), originalState.businessSettings.applicationSettings.tagline ||
+    "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)", "Full community line is present");
+  assert.equal(header.findAll(node => node.type === "span" && text(node) === "THE ODOGWU HERITAGE").length, 1,
+    "Exactly one brand title element (no duplicated hidden copies)");
+  assert.ok(classes(community).has("col-span-2"), "Community line uses the full phone width");
+  for (const line of [title, community]) {
     assert.ok(classes(line).has("break-words"));
     assert.ok(![...classes(line)].some(token =>
-      /^(hidden|sr-only|truncate|line-clamp-.*|overflow-hidden)$/.test(token)),
-    "Do not conceal branding to solve overflow");
+      /^(?:[a-z0-9-]+:)?(hidden|sr-only|truncate|text-ellipsis|whitespace-nowrap|line-clamp-.*|overflow-hidden)$/.test(token)),
+    "Do not conceal or ellipsize branding to solve overflow");
   }
+
+  // The full desktop nav only appears from xl, where brand + nav fit side by side.
+  const desktopNavGroup = header.findByType("nav").parent!;
+  assert.ok(classes(desktopNavGroup).has("hidden") && classes(desktopNavGroup).has("xl:flex"),
+    "Desktop nav starts at xl, so 1024-1279px uses the compact controls");
+  assert.ok(classes(desktopNavGroup).has("shrink-0"), "Nav never squeezes into the title");
 
   const menu = header.findByProps({ "aria-label": "Open main navigation menu" });
   const cart = header.findByProps({ "aria-label": "Cart" });

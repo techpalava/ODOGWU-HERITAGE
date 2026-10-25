@@ -48,45 +48,44 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 bg-heritage-green border-b border-heritage-gold/25 shadow-md">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex min-h-20 items-center justify-between sm:h-20">
+        {/* Phones: a 3-column grid so the community line can use the full width
+            under the title and controls. sm+: a single flex row. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 py-2 min-h-20 sm:flex sm:h-20 sm:py-0 sm:justify-between sm:gap-4">
           {/* Logo */}
           <div
             onClick={() => {
               setActiveTab("home");
               setIsMobileMenuOpen(false);
             }}
-            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none min-w-0 flex-1 pr-2"
+            className="contents sm:flex sm:items-center sm:gap-3 sm:min-w-0 sm:flex-1 cursor-pointer select-none"
           >
             <img
               loading="lazy"
               src={odogwuLogo}
               alt="The Odogwu Heritage Logo"
-              className="w-11 h-11 sm:w-11 sm:h-11 rounded-full border border-heritage-gold/35 object-cover bg-heritage-forest shrink-0 shadow-md"
+              className="col-start-1 row-start-1 row-span-2 self-center w-11 h-11 rounded-full border border-heritage-gold/35 object-cover bg-heritage-forest shrink-0 shadow-md cursor-pointer"
               referrerPolicy="no-referrer"
             />
-            <div className="flex flex-col min-w-0">
-              <span className="hidden sm:block text-xs sm:text-sm md:text-base font-bold tracking-[0.1em] sm:tracking-[0.2em] text-heritage-gold uppercase font-display truncate">
+            <div className="contents sm:flex sm:flex-col sm:justify-center sm:min-w-0">
+              <span
+                data-header-brand-title
+                className="col-start-2 row-start-1 self-center sm:self-stretch min-w-0 cursor-pointer text-[12px] min-[380px]:text-[13px] sm:text-sm md:text-base leading-tight font-bold tracking-[0.08em] sm:tracking-[0.16em] xl:tracking-[0.14em] text-heritage-gold uppercase font-display break-words text-balance"
+              >
                 THE ODOGWU HERITAGE
               </span>
-              <span className="hidden sm:block mt-0.5 text-[10px] md:text-[11px] leading-tight tracking-wide text-heritage-beige uppercase font-sans font-extrabold break-words">
+              <span
+                data-header-community-line
+                className="col-start-2 col-span-2 row-start-2 min-w-0 cursor-pointer sm:mt-0.5 text-[10px] md:text-[11px] leading-snug sm:leading-tight tracking-[0.04em] sm:tracking-wide text-heritage-beige uppercase font-sans font-extrabold break-words text-balance"
+              >
                 {businessSettings.applicationSettings.tagline ||
                   "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
               </span>
-              <div className="block sm:hidden leading-[1.15] uppercase min-w-0 pr-1 py-1">
-                <span className="block text-[11px] font-extrabold tracking-[0.05em] text-heritage-gold font-display break-words">
-                  THE ODOGWU HERITAGE
-                </span>
-                <span className="block text-[10px] tracking-[0.05em] text-heritage-beige font-sans font-extrabold mt-0.5 break-words">
-                  {businessSettings.applicationSettings.tagline ||
-                    "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
-                </span>
-              </div>
             </div>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-3">
-            <nav className="flex space-x-1.5 bg-heritage-forest p-1 rounded-2xl border border-heritage-gold/15">
+          <div className="hidden xl:flex items-center gap-2 shrink-0">
+            <nav className="flex space-x-1 bg-heritage-forest p-1 rounded-2xl border border-heritage-gold/15">
               {[
                 { id: "home", label: "Home", icon: Compass },
                 { id: "design", label: "Design Studio", icon: Shirt },
@@ -101,8 +100,10 @@ export function Header() {
                 { id: "gallery", label: "Gallery", icon: Layers },
                 { id: "reviews", label: "Reviews", icon: Star },
                 (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin Portal & DB", icon: Database } : null),
-              ].filter(Boolean).map((tab) => {
+              ].filter(Boolean).map((tab, _index, tabs) => {
                 if (!tab) return null;
+                // Staff see 7 tabs; drop the tab icons then so the full brand title still fits.
+                const showTabIcon = tabs.length <= 6;
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (
@@ -115,13 +116,13 @@ export function Header() {
                       }
                       setActiveTab(tab.id as any);
                     }}
-                    className={`flex items-center gap-2 px-3.5 py-1.5 min-h-[38px] text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-3 py-1.5 min-h-[38px] text-[10px] font-bold uppercase tracking-wider whitespace-nowrap rounded-xl transition-all duration-200 ${
                       isActive
                         ? "bg-heritage-green text-heritage-gold border border-heritage-gold/25 shadow-md font-extrabold"
                         : "text-heritage-beige hover:text-heritage-gold"
                     }`}
                   >
-                    <Icon size={12} />
+                    {showTabIcon && <Icon size={12} className="shrink-0" />}
                     <span>{tab.label}</span>
                   </button>
                 );
@@ -131,7 +132,7 @@ export function Header() {
             <button
               type="button"
               onClick={() => setIsCartOpen(true)}
-              className="relative flex items-center justify-center min-h-[38px] px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/20 cursor-pointer select-none"
+              className="relative flex items-center justify-center min-h-[38px] px-3 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/20 cursor-pointer select-none"
               title="View Tailoring Cart"
             >
               <ShoppingCart size={12} className="mr-1.5 shrink-0" />
@@ -147,7 +148,7 @@ export function Header() {
             <button
               type="button"
               onClick={handleAuth}
-              className="flex items-center justify-center min-h-[38px] px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/20 cursor-pointer select-none"
+              className="flex items-center justify-center min-h-[38px] px-3 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/20 cursor-pointer select-none"
               title={currentUser ? "Logout" : "Login"}
             >
               {currentUser ? (
@@ -162,7 +163,7 @@ export function Header() {
           </div>
 
           {/* Mobile Navigation Controls */}
-          <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+          <div className="col-start-3 row-start-1 self-center flex xl:hidden items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => setIsCartOpen(true)}
