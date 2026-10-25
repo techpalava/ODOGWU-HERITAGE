@@ -41,6 +41,9 @@ assert.equal(formatFabricProgressCompleteSummary(1, 2), "1 fabric covers your 2 
 assert.equal(formatFabricProgressCompleteSummary(2, 3), "2 fabrics cover your 3 garments.");
 assert.equal(formatFabricProgressCompleteSummary(5, 9), "5 fabrics cover your 9 garments.");
 assert.equal(formatFabricSelectionProgress(1, 2), "Fabrics chosen: 1 of 2 needed");
+assert.equal(formatFabricSelectionProgress(2, 2), "Fabrics chosen: 2 of 2 needed");
+assert.equal(formatFabricSelectionProgress(3, 2), "Fabrics chosen: 3 (2 needed)");
+assert.equal(formatFabricSelectionProgress(4, 1), "Fabrics chosen: 4 (1 needed)");
 assert.equal(formatGarmentAssignmentProgress(1, 3), "Garments with fabric: 1 of 3");
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);

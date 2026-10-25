@@ -252,7 +252,9 @@ export const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabrics chosen: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
+  selectedFabricQuantity > requiredFabricQuantity
+    ? `Fabrics chosen: ${selectedFabricQuantity} (${requiredFabricQuantity} needed)`
+    : `Fabrics chosen: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
 
 export const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
@@ -3032,7 +3034,13 @@ export const DormantFutureFabricStep = ({
               </div>
             ) : (
             <div className="min-w-0 flex-1">
-              <p data-fabric-selection-progress="true" className="break-words">
+              <p
+                data-fabric-selection-progress="true"
+                data-fabric-chosen-over-needed={
+                  selectedFabricQuantity > requiredFabricQuantity ? "true" : undefined
+                }
+                className="break-words"
+              >
                 {formatFabricSelectionProgress(
                   selectedFabricQuantity,
                   requiredFabricQuantity,

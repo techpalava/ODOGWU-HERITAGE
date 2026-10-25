@@ -727,4 +727,57 @@ await mount(shirtOnIvory);
   act(() => renderer.unmount());
 }
 
+// ---------------------------------------------------------------------------
+// 8. Counter wording: "Fabrics chosen: X of Y needed" while X <= Y;
+//    "Fabrics chosen: X (Y needed)" once chosen pieces exceed the need.
+// ---------------------------------------------------------------------------
+{
+  const fourGarments = selectionFor(["shirt", "trouser", "kaftan", "standard_shorts"]);
+  const counter = () =>
+    renderer.root.find(
+      (node) => typeof node.type === "string" && node.props["data-fabric-selection-progress"] === "true",
+    );
+  const place = (state: FabricAllocationState, garmentKey: string, fabricCode: string) => {
+    const result = assignFutureFabricToGarment({
+      state,
+      garmentTypeSelection: fourGarments,
+      garmentKey,
+      fabricCode,
+      fabrics,
+    });
+    assert.equal(result.status, "assigned", `${garmentKey} -> ${fabricCode}`);
+    return result.state;
+  };
+  const planned = (state: FabricAllocationState) =>
+    (({ requiredFabricQuantity, selectedFabricQuantity }) => [
+      requiredFabricQuantity,
+      selectedFabricQuantity,
+    ])(getFutureGarmentFabricPlanning({ garmentTypeSelection: fourGarments, fabricAllocationState: state }));
+
+  // Under: 1 of 2.
+  const one = place(FabricAllocationStateEngine.initialize(), "base:shirt", "PF-I");
+  assert.deepEqual(planned(one), [2, 1]);
+  await mount(one, fourGarments);
+  assert.equal(textContent(counter()), "Fabrics chosen: 1 of 2 needed");
+  assert.equal(counter().props["data-fabric-chosen-over-needed"], undefined);
+  act(() => renderer.unmount());
+
+  // Equal: 2 of 2 (one garment still unassigned).
+  const two = place(one, "base:trouser", "PF-R");
+  assert.deepEqual(planned(two), [2, 2]);
+  await mount(two, fourGarments);
+  assert.equal(textContent(counter()), "Fabrics chosen: 2 of 2 needed");
+  assert.equal(counter().props["data-fabric-chosen-over-needed"], undefined);
+  act(() => renderer.unmount());
+
+  // Over: 3 pieces, 2 needed, Shorts still unassigned.
+  const three = place(two, "base:kaftan", "PF-L");
+  assert.deepEqual(planned(three), [2, 3]);
+  await mount(three, fourGarments);
+  assert.equal(textContent(counter()), "Fabrics chosen: 3 (2 needed)");
+  assert.equal(counter().props["data-fabric-chosen-over-needed"], "true");
+  assert.doesNotMatch(textContent(renderer.root), /3 of 2 needed/);
+  act(() => renderer.unmount());
+}
+
 console.log("test_fabric_print_freedom: PASS");
