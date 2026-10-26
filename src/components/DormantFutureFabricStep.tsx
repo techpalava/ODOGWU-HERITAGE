@@ -2843,10 +2843,10 @@ export const DormantFutureFabricStep = ({
           ? "true"
           : undefined
       }
-      className="block break-words text-[11px] leading-relaxed text-heritage-ink/70"
+      className="block break-words text-[11px] leading-relaxed text-heritage-ink/85"
     >
       {options.garmentLabel ? (
-        <span className="font-semibold text-heritage-ink/80">{`${options.garmentLabel}: `}</span>
+        <span className="font-semibold text-heritage-ink">{`${options.garmentLabel}: `}</span>
       ) : null}
       {message}
     </span>
@@ -2886,10 +2886,10 @@ export const DormantFutureFabricStep = ({
               onClick={() => focusFabricGuideTarget(step.target)}
               className={`min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                 isDone
-                  ? "font-medium text-heritage-ink/55 decoration-heritage-ink/25"
+                  ? "font-medium text-heritage-ink/75 decoration-heritage-ink/35"
                   : isCurrent
                     ? "font-bold text-heritage-green decoration-heritage-gold"
-                    : "font-semibold text-heritage-green/80 decoration-heritage-gold/50"
+                    : "font-semibold text-heritage-green decoration-heritage-gold/50"
               }`}
             >
               {step.label}
@@ -2897,7 +2897,7 @@ export const DormantFutureFabricStep = ({
           ) : (
             <span
               className={`break-words ${
-                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/70"
+                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/85"
               }`}
             >
               {step.label}
@@ -2969,10 +2969,10 @@ export const DormantFutureFabricStep = ({
         : "Still to do";
     const headingLinkClass = `min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
       headingIsDone
-        ? "font-medium text-heritage-ink/55 decoration-heritage-ink/25"
+        ? "font-medium text-heritage-ink/75 decoration-heritage-ink/35"
         : headingIsCurrent
           ? "font-bold text-heritage-green decoration-heritage-gold"
-          : "font-semibold text-heritage-green/80 decoration-heritage-gold/50"
+          : "font-semibold text-heritage-green decoration-heritage-gold/50"
     }`;
     const headingContent = (
       <>
@@ -2991,7 +2991,7 @@ export const DormantFutureFabricStep = ({
         ) : (
           <span
             className={`break-words ${
-              headingIsCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/70"
+              headingIsCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/85"
             }`}
           >
             {headingStep.label}
@@ -3000,12 +3000,12 @@ export const DormantFutureFabricStep = ({
       </>
     );
     const chipClass = (status: FabricGuideStep["status"]) =>
-      `inline-flex min-h-7 max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-left text-[11px] leading-tight break-words transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1 ${
+      `inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-2.5 py-0.5 text-left text-[11px] leading-tight break-words transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
         status === "done"
-          ? "border-emerald-300 bg-emerald-50 font-medium text-emerald-800"
+          ? "border-emerald-300 bg-emerald-50 font-medium text-emerald-700 focus-visible:ring-heritage-gold"
           : status === "current"
-            ? "border-heritage-gold bg-heritage-gold/15 font-bold text-heritage-green ring-1 ring-heritage-gold"
-            : "border-heritage-gold/40 bg-white font-semibold text-heritage-green/80 hover:border-heritage-gold"
+            ? "border-heritage-gold bg-heritage-gold font-bold text-heritage-green shadow-sm focus-visible:ring-heritage-green"
+            : "border-heritage-gold bg-white font-semibold text-heritage-green shadow-sm hover:bg-heritage-cream focus-visible:ring-heritage-gold"
       }`;
     const renderChip = (
       step: FabricGuideStep,
@@ -3081,46 +3081,54 @@ export const DormantFutureFabricStep = ({
             <Circle size={16} className="text-heritage-ink/35" />
           )}
         </span>
-        <div className="min-w-0 flex-1">
-          {chooseInHeading && chooseStep ? (
-            <span
-              className="block"
-              data-fabric-guide-step={chooseStep.id}
-              data-fabric-guide-step-kind={chooseStep.kind}
-              data-fabric-guide-step-status={chooseStep.status}
-              aria-current={chooseStep.status === "current" ? "step" : undefined}
-            >
-              {headingContent}
-            </span>
-          ) : (
-            <span className="block" data-fabric-guide-group-heading={headingStep.id}>
-              {headingContent}
-            </span>
-          )}
-          {orderedMessageSteps.length > 0 ? (
-            <span className="mt-0.5 block space-y-0.5">
-              {orderedMessageSteps.flatMap((step) =>
-                step.messages.map((message) =>
-                  renderFabricGuideMessage(message, {
-                    stepId: step.id,
-                    garmentLabel:
-                      step !== headingStep && step.kind === "assign_garment"
-                        ? fabricGuideGarmentLabelForStep(step)
-                        : undefined,
-                  }),
-                ),
-              )}
-            </span>
-          ) : null}
+        <div
+          className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4"
+          data-fabric-guide-group-layout="two-column"
+        >
+          <div className="min-w-0 sm:flex-1" data-fabric-guide-group-main="true">
+            {chooseInHeading && chooseStep ? (
+              <span
+                className="block"
+                data-fabric-guide-step={chooseStep.id}
+                data-fabric-guide-step-kind={chooseStep.kind}
+                data-fabric-guide-step-status={chooseStep.status}
+                aria-current={chooseStep.status === "current" ? "step" : undefined}
+              >
+                {headingContent}
+              </span>
+            ) : (
+              <span className="block" data-fabric-guide-group-heading={headingStep.id}>
+                {headingContent}
+              </span>
+            )}
+            {orderedMessageSteps.length > 0 ? (
+              <span className="mt-0.5 block space-y-0.5">
+                {orderedMessageSteps.flatMap((step) =>
+                  step.messages.map((message) =>
+                    renderFabricGuideMessage(message, {
+                      stepId: step.id,
+                      garmentLabel:
+                        step !== headingStep && step.kind === "assign_garment"
+                          ? fabricGuideGarmentLabelForStep(step)
+                          : undefined,
+                    }),
+                  ),
+                )}
+              </span>
+            ) : null}
+          </div>
           {assignSteps.length > 0 ? (
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+            <div
+              className="mt-1 flex min-w-0 flex-wrap items-center gap-1 sm:mt-0 sm:max-w-[60%] sm:flex-none sm:justify-end"
+              data-fabric-guide-group-chips="true"
+            >
               {chooseInHeading && chooseStep && chooseStep.status !== "done" ? (
-                <span className="text-[11px] font-semibold text-heritage-ink/65">
+                <span className="text-[11px] font-semibold text-heritage-ink/85">
                   Then assign:
                 </span>
               ) : null}
               <ul
-                className="flex min-w-0 flex-wrap items-center gap-1"
+                className="flex min-w-0 flex-wrap items-center gap-1 sm:justify-end"
                 aria-label="Garments to assign fabric to"
               >
                 {chooseStep && !chooseInHeading
@@ -3160,7 +3168,7 @@ export const DormantFutureFabricStep = ({
       <p className="sr-only" aria-live="polite" data-fabric-guide-announcement="true">
         {formatFabricGuideCurrentStepAnnouncement(fabricGuideFlow)}
       </p>
-      <p className="mt-0.5 text-[11px] text-heritage-ink/65">
+      <p className="mt-0.5 text-[11px] text-heritage-ink/85">
         {`${fabricGuideFlow.doneCount} of ${fabricGuideFlow.steps.length} done. Follow the gold highlight to your next step.`}
       </p>
       <ol className="mt-1.5 space-y-1" aria-labelledby={fabricGuideTitleId}>

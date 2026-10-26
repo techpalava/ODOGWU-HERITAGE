@@ -470,6 +470,19 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.match(textContent(card!), /^1Current step, step 1: Choose a fabric from the catalogue/);
   assert.match(textContent(card!), /Choose a fabric for every selected garment\./, "hint still shown");
   assert.match(textContent(card!), /Then assign:/);
+  // Two columns from sm up: heading + hint left, chips right (stacked on mobile).
+  const layout = card!.find((node) => node.props["data-fabric-guide-group-layout"] === "two-column");
+  assert.match(String(layout.props.className), /sm:flex sm:items-center sm:justify-between sm:gap-4/);
+  const mainColumn = layout.find((node) => node.props["data-fabric-guide-group-main"] === "true");
+  assert.match(String(mainColumn.props.className), /min-w-0/);
+  assert.match(textContent(mainColumn), /Choose a fabric from the catalogue/);
+  assert.match(textContent(mainColumn), /Choose a fabric for every selected garment\./);
+  const chipColumn = layout.find((node) => node.props["data-fabric-guide-group-chips"] === "true");
+  assert.match(String(chipColumn.props.className), /flex-wrap/);
+  assert.match(String(chipColumn.props.className), /sm:justify-end/);
+  assert.match(String(chipColumn.props.className), /sm:max-w-\[60%\]/);
+  assert.match(textContent(chipColumn), /^Then assign:/);
+  assert.equal(chips(chipColumn).length, 2, "chips live in the right column");
   const chipNodes = chips(card!);
   assert.deepEqual(
     chipNodes.map((chip) => [chip.type, chip.props["data-fabric-guide-step"], chip.props["data-fabric-guide-step-status"]]),
@@ -483,7 +496,13 @@ const stepItems = (guide: ReactTestInstance) =>
     assert.match(String(chip.props["aria-label"]), /^Assign fabric to /);
     assert.equal(chip.props["aria-current"], undefined, "no garment chip is current before a fabric is chosen");
     assert.equal(chip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 0);
-    assert.doesNotMatch(String(chip.props.className), /bg-heritage-gold\/15/);
+    assert.doesNotMatch(String(chip.props.className), /(^|\s)bg-heritage-gold(\s|$)/);
+    // Upcoming chips stand out from the cream card: white, solid gold border.
+    assert.match(String(chip.props.className), /(^|\s)bg-white(\s|$)/);
+    assert.match(String(chip.props.className), /(^|\s)border-heritage-gold(\s|$)/);
+    assert.match(String(chip.props.className), /(^|\s)text-heritage-green(\s|$)/);
+    assert.match(String(chip.props.className), /shadow-sm/);
+    assert.match(String(chip.props.className), /min-h-8/, "tap target at least 32px tall");
     assert.match(String(chip.props.className), /motion-reduce:transition-none/);
   }
   // A chip runs the same target its old row did (the garment's action button).
@@ -515,10 +534,13 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.match(String(shirtChip.props["aria-label"]), / has fabric$/);
   assert.equal(shirtChip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 1, "tick on assigned chip");
   assert.match(String(shirtChip.props.className), /bg-emerald-50/);
+  assert.match(String(shirtChip.props.className), /border-emerald-300/);
+  assert.match(String(shirtChip.props.className), /text-emerald-700/);
   const trouserChip = byStep.get("assign_garment:base:trouser")!;
   assert.equal(trouserChip.props["aria-current"], "step");
   assert.equal(trouserChip.props["aria-label"], "Assign fabric to Trouser");
-  assert.match(String(trouserChip.props.className), /bg-heritage-gold\/15/, "current chip is gold");
+  assert.match(String(trouserChip.props.className), /(^|\s)bg-heritage-gold(\s|$)/, "current chip is filled gold");
+  assert.match(String(trouserChip.props.className), /(^|\s)text-heritage-green(\s|$)/, "dark-green text on gold passes AA");
   assert.equal(trouserChip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 0);
   // Heading link runs the current step's target too.
   focusLog.length = 0;
@@ -529,6 +551,24 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.deepEqual(focusLog, ["Assign fabric for Trouser"]);
   // Exactly one current marker in the whole Guide.
   assert.equal(guide!.findAll((node) => typeof node.type === "string" && node.props["aria-current"] === "step").length, 1);
+}
+
+// Guide text is deep enough to read: no faded ink below 75% anywhere inside.
+{
+  const renderer = await render(FabricAllocationStateEngine.initialize());
+  const [guide] = guides(renderer.root);
+  const faded = guide!.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      /(^|\s)text-heritage-(ink|green)\/([0-6]\d|70)(\s|$)/.test(String(node.props.className ?? "")),
+  );
+  assert.equal(faded.length, 0, "no faded text in the Fabric guide");
+  const countLine = guide!.find(
+    (node) => node.type === "p" && /done\. Follow the gold highlight/.test(textContent(node)),
+  );
+  assert.match(String(countLine.props.className), /text-heritage-ink\/85/);
+  const hint = guide!.find((node) => typeof node.type === "string" && node.props["data-fabric-guide-message"] === "true");
+  assert.match(String(hint.props.className), /text-heritage-ink\/85/);
 }
 
 // Blocking steps keep their own rows; the choose/assign card follows them.
