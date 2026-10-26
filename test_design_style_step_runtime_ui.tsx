@@ -791,6 +791,40 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
           model.projection.occurrences[occurrenceIndex]!.target.occurrenceToken,
       })
       .findByType("input");
+  const rowFor = (dialog: ReactTestInstance, occurrenceIndex: number) =>
+    dialog.findByProps({
+      "data-occurrence-token":
+        model.projection.occurrences[occurrenceIndex]!.target.occurrenceToken,
+    });
+  const changeButtonsFor = (dialog: ReactTestInstance, occurrenceIndex: number) =>
+    dialog.findAllByProps({
+      "data-testid": `design-mapping-change-${
+        model.projection.occurrences[occurrenceIndex]!.target.occurrenceToken
+      }`,
+    }).filter((node) => node.type === "button");
+  const assertLockedCheckbox = (dialog: ReactTestInstance, occurrenceIndex: number, message?: string) => {
+    const row = rowFor(dialog, occurrenceIndex);
+    const inputs = row.findAllByType("input");
+    assert.equal(inputs.length, 1, message ?? "A locked row still shows its checkbox.");
+    assert.equal(inputs[0]!.props.disabled, true, "The locked checkbox is disabled.");
+    assert.equal(inputs[0]!.props.checked, false, "The locked checkbox is unticked.");
+    assert.equal(inputs[0]!.props["data-design-mapping-locked-checkbox"], "true");
+    const hintId = inputs[0]!.props["aria-describedby"];
+    assert.ok(hintId, "The locked checkbox is described as locked.");
+    assert.match(
+      textContent(row.find((node) => node.props.id === hintId)),
+      /^Locked\. .*Tap Change/,
+    );
+    assert.equal(row.props["data-design-mapping-row-locked"], "true");
+    // Interacting with the locked checkbox does nothing.
+    inputs[0]!.props.onChange();
+    assert.equal(rowFor(dialog, occurrenceIndex).findAllByType("input")[0]!.props.checked, false);
+  };
+  const tapChange = async (dialog: ReactTestInstance, occurrenceIndex: number) => {
+    const [button] = changeButtonsFor(dialog, occurrenceIndex);
+    assert.ok(button, "Expected a Change button on the locked row.");
+    await act(async () => button.props.onClick({ stopPropagation: () => undefined }));
+  };
 
   // Exact stored IDs, including legacy ODG IDs, determine the initial checked
   // set. Repeated shirts remain separate physical occurrences.
@@ -800,7 +834,22 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     /Choose the garments you want to use this design on\./,
   );
   const sameStyleCheckbox = checkboxFor(dialog, 0);
+  assert.equal(changeButtonsFor(dialog, 0).length, 0, "Same-style rows have no Change button.");
+  // A garment with a different design starts locked: no checkbox, a Change button.
+  assertLockedCheckbox(dialog, 1);
+  assert.equal(rowFor(dialog, 1).props["data-design-mapping-row-locked"], "true");
+  const [changeButton] = changeButtonsFor(dialog, 1);
+  assert.equal(changeButton!.props.type, "button");
+  assert.equal(textContent(changeButton!), "Change");
+  assert.match(changeButton!.props["aria-label"], /^Change design for /);
+  assert.equal(rowFor(dialog, 1).findAllByType("label").length, 0, "Change is not inside a label.");
+  await tapChange(dialog, 1);
+  assert.equal(changeButtonsFor(dialog, 1).length, 0, "Change disappears after unlocking.");
+  assert.equal(rowFor(dialog, 1).props["data-design-mapping-row-locked"], "false");
   const differentStyleCheckbox = checkboxFor(dialog, 1);
+  assert.equal(differentStyleCheckbox.props.disabled, false, "Change enables the checkbox.");
+  assert.equal(differentStyleCheckbox.props["data-design-mapping-locked-checkbox"], undefined);
+  assert.equal(rowFor(dialog, 1).findAllByType("label").length, 1);
   assert.equal(sameStyleCheckbox.props.checked, true);
   assert.equal(sameStyleCheckbox.props.disabled, true);
   await act(async () => sameStyleCheckbox.props.onChange());
@@ -851,9 +900,12 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   );
 
   // A checked different-style row shows a row-level warning only while the
-  // customer has explicitly selected that replacement.
+  // customer has explicitly selected that replacement. Reopening re-locks it.
   dialog = await openStyle(casualNative.name);
+  assertLockedCheckbox(dialog, 1, "Reopening resets the unlocked rows.");
+  await tapChange(dialog, 1);
   const additionalCheckbox = checkboxFor(dialog, 1);
+  assert.equal(additionalCheckbox.props.checked, false, "Unlocking does not tick the row.");
   await act(async () => additionalCheckbox.props.onChange());
   const warning = dialog.findByProps({
     "data-testid": "design-style-replacement-warning",
@@ -872,6 +924,8 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       .length,
     0,
   );
+  assert.equal(changeButtonsFor(dialog, 1).length, 0, "Unticking does not re-lock the row.");
+  assert.equal(rowFor(dialog, 1).findAllByType("input").length, 1);
   await act(async () => additionalCheckbox.props.onChange());
   const apply = dialog.findByProps({ "data-testid": "apply-design-mapping" });
   assert.equal(textContent(apply), "Apply to 2 garments");
@@ -913,7 +967,8 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   // New ODGH IDs use the same exact-ID comparison. An unassigned card starts
   // with no checked rows and neither opening path creates a warning.
   dialog = await openStyle(contemporaryAnkara.name);
-  assert.equal(checkboxFor(dialog, 0).props.checked, false);
+  assertLockedCheckbox(dialog, 0);
+  assert.equal(changeButtonsFor(dialog, 0).length, 1);
   assert.equal(checkboxFor(dialog, 1).props.checked, true);
   assert.equal(
     dialog.findAllByProps({ "data-testid": "design-style-replacement-warning" })
@@ -926,6 +981,10 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       .props.onClick(),
   );
   dialog = await openStyle(unassignedStyle.name);
+  assert.equal(changeButtonsFor(dialog, 0).length, 1);
+  assert.equal(changeButtonsFor(dialog, 1).length, 1);
+  await tapChange(dialog, 0);
+  await tapChange(dialog, 1);
   assert.equal(checkboxFor(dialog, 0).props.checked, false);
   assert.equal(checkboxFor(dialog, 1).props.checked, false);
   assert.equal(

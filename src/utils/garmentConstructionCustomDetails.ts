@@ -1,3 +1,4 @@
+import { resolveConstructionPhysicalGarmentType } from "./garmentLengthVariant.js";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailOption,
@@ -32,6 +33,9 @@ export const isGarmentBaseConstructionSelectionGroup = (
 ): boolean => isClothingPriceSelectionGroup(group);
 
 export interface GarmentConstructionSummaryRow {
+  /** The main garment's key, from its Step 1 card. */
+  garmentKey: string;
+  /** The garment the order holds: the Step 1 card, or its other length after a Step 4 switch. */
   garmentType: CanonicalPhysicalGarmentType;
   garmentLabel: string;
   label: string;
@@ -159,10 +163,15 @@ export const resolveLockedGarmentConstructionBridge = ({
       (total, component) => total + component.priceCents,
       0,
     );
-    const garmentLabel = getStep1GarmentDisplayLabel(resolution.garmentType);
+    const garmentType = resolveConstructionPhysicalGarmentType(
+      resolution.garmentType,
+      resolution,
+    );
+    const garmentLabel = getStep1GarmentDisplayLabel(garmentType);
     return [
       {
-        garmentType: resolution.garmentType,
+        garmentKey: `base:${resolution.garmentType}`,
+        garmentType,
         garmentLabel,
         label: `${garmentLabel} construction`,
         sourceLabel: "Included from Garment Type" as const,

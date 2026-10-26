@@ -3,20 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Sparkles, ArrowRight, ShieldCheck, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Batch, CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { CapacityService } from "../services/CapacityService";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import CustomerReviewsSlider from "./CustomerReviewsSlider";
+import HomepageCommunityShowcase from "./HomepageCommunityShowcase";
 import HomepageOrderGateway, {
   getJoinCurrentBatchButtonLabel,
 } from "./HomepageOrderGateway";
 import HomepageCardRow, {
   homepageCardRowItemClassName,
 } from "./HomepageCardRow";
+import { COMMUNITY_HEADLINE_STATS } from "../data/communityStats";
 import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 import { createJoinRenderedBatchAction } from "../utils/homepageCurrentBatchAction";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
@@ -66,7 +67,6 @@ export default function HomeView({
   const { 
     businessSettings, 
     currentUser,
-    customers,
     orders,
     batches,
     hasLoadedBatches,
@@ -234,16 +234,6 @@ export default function HomeView({
 
   const featuredShowpieces = [...showpieces].filter((s) => s.image).slice(0, 8);
 
-  const participantCount =
-    batches?.reduce((acc, b) => acc + (b.currentCustomers || 0), 0) ||
-    (customers && customers.length > 0 ? customers.length : 24);
-  const socialProofHeadline =
-    participantCount >= 100
-      ? "Join Hundreds Celebrating Nigerian Culture"
-      : "Join Our Growing Community Celebrating Nigerian Culture";
-
-  
-
   return (
     <div id="home-view-container" className="space-y-16">
       {/* Slim review band sits directly above Start Your Order; the tight
@@ -378,7 +368,7 @@ export default function HomeView({
             Join a Growing Community
           </h3>
           <p className="text-sm text-heritage-ink/75 leading-relaxed">
-            Wear your culture with hundreds of community members.
+            Wear your culture with {COMMUNITY_HEADLINE_STATS.participants} members from {COMMUNITY_HEADLINE_STATS.nationalities} nationalities.
           </p>
         </div>
       </section>
@@ -1032,89 +1022,15 @@ export default function HomeView({
         )}
       </section>
 
-      {/* Community Impact Social Proof Section */}
-      <section className="bg-heritage-green text-white rounded-3xl p-8 sm:p-12 text-center max-w-5xl mx-auto shadow-2xl border border-heritage-gold/20 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1606744824163-985d376605aa?auto=format&fit=crop&q=80')] opacity-5 mix-blend-overlay"></div>
-        <div className="relative z-10 space-y-10">
-          <div className="space-y-4 max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold text-heritage-gold tracking-tight">
-              {socialProofHeadline}
-            </h2>
-            <p className="text-base sm:text-lg text-white/80 font-sans leading-relaxed max-w-2xl mx-auto">
-              Become part of a growing multicultural community in the
-              Netherlands discovering the beauty of authentic Nigerian
-              traditional clothing.
-            </p>
-          </div>
-
-          <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
-              <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
-                <CountUpNumber
-                  value={participantCount}
-                />
-              </span>
-              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
-                Participants
-              </span>
-            </div>
-
-            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
-              <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
-                <CountUpNumber
-                  value={
-                    batches?.reduce(
-                      (acc, b) => acc + CapacityService.getReservedCapacity(b),
-                      0,
-                    ) || (orders && orders.length > 0 ? orders.length : 30)
-                  }
-                />
-              </span>
-              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
-                Traditional Outfits
-              </span>
-            </div>
-
-            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
-              <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
-                <CountUpNumber value={6} />
-              </span>
-              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
-                Nationalities
-              </span>
-            </div>
-
-            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
-              <div className="h-12 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-                <Sparkles className="text-heritage-gold" size={32} />
-              </div>
-              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
-                Growing Every Batch
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
-            <button
-              onClick={handleHeroPrimaryAction}
-              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
-            >
-              {heroPrimaryAction} <ArrowRight size={16} />
-            </button>
-
-            <button
-              onClick={() => {
-                const el = document.getElementById("community-gallery");
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-                else onNavigateToTab("gallery");
-              }}
-              className="w-full sm:w-auto text-white hover:text-heritage-gold transition duration-300 px-6 py-4 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer"
-            >
-              View Community Gallery
-            </button>
-          </div>
-        </div>
-      </section>
+      <HomepageCommunityShowcase
+        primaryActionLabel={heroPrimaryAction}
+        onPrimaryAction={handleHeroPrimaryAction}
+        onViewGallery={() => {
+          const el = document.getElementById("community-gallery");
+          if (el) el.scrollIntoView({ behavior: "smooth" });
+          else onNavigateToTab("gallery");
+        }}
+      />
 
       {/* Cohort Concept Showcase & Mission */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -1224,47 +1140,4 @@ export default function HomeView({
       </section>
     </div>
   );
-}
-
-function CountUpNumber({ value }: { value: number }) {
-  const [displayValue, setDisplayValue] = useState(0);
-  const elementRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    let hasAnimated = false;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !hasAnimated) {
-          hasAnimated = true;
-
-          let startTime: number;
-          const duration = 2000;
-
-          const animateCount = (timestamp: number) => {
-            if (!startTime) startTime = timestamp;
-            const progress = Math.min((timestamp - startTime) / duration, 1);
-
-            const easeOut = 1 - Math.pow(1 - progress, 4);
-            setDisplayValue(Math.floor(easeOut * value));
-
-            if (progress < 1) {
-              requestAnimationFrame(animateCount);
-            }
-          };
-
-          requestAnimationFrame(animateCount);
-        }
-      },
-      { threshold: 0.1 },
-    );
-
-    if (elementRef.current) {
-      observer.observe(elementRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, [value]);
-
-  return <span ref={elementRef}>{displayValue}</span>;
 }

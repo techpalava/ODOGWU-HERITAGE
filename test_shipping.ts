@@ -115,19 +115,25 @@ const makeItem = (
 
 assert.equal(
   INDIVIDUAL_SHIPPING_PRICING_VERSION,
-  "2026-10-14-individual-v2",
+  "2026-10-22-individual-block-v3",
 );
 assert.deepEqual(
   [1, 5, 13, 25, 49].map((pieces) => {
     const quote = calculateIndividualShipping(pieces);
-    return [quote.weightBand, quote.priceEur, quote.pricingVersion];
+    return [
+      quote.weightBand,
+      quote.priceEur,
+      quote.pricingVersion,
+      quote.blockCount,
+      quote.coveredWeightKg,
+    ];
   }),
   [
-    ["0 - 2 kg", 14, INDIVIDUAL_SHIPPING_PRICING_VERSION],
-    [">2 - 5 kg", 35, INDIVIDUAL_SHIPPING_PRICING_VERSION],
-    [">5 - 10 kg", 70, INDIVIDUAL_SHIPPING_PRICING_VERSION],
-    [">10 - 20 kg", 140, INDIVIDUAL_SHIPPING_PRICING_VERSION],
-    [">20 kg", 210, INDIVIDUAL_SHIPPING_PRICING_VERSION],
+    [">2 - 5 kg", 131.25, INDIVIDUAL_SHIPPING_PRICING_VERSION, 1, 5],
+    [">2 - 5 kg", 131.25, INDIVIDUAL_SHIPPING_PRICING_VERSION, 1, 5],
+    [">5 - 10 kg", 262.5, INDIVIDUAL_SHIPPING_PRICING_VERSION, 2, 10],
+    [">10 - 20 kg", 393.75, INDIVIDUAL_SHIPPING_PRICING_VERSION, 3, 15],
+    [">20 kg", 656.25, INDIVIDUAL_SHIPPING_PRICING_VERSION, 5, 25],
   ],
 );
 
@@ -553,12 +559,12 @@ assert.equal(mixedCart.batchShippingQuotes.length, 2);
 closeTo(mixedCart.garmentSubtotal, 300, "mixed garment subtotal");
 closeTo(
   mixedCart.shippingTotal,
-  14 + 30.18 + 45.27,
+  131.25 + 30.18 + 45.27,
   "mixed route shipping",
 );
 closeTo(
   mixedCart.depositDueNow,
-  150 + 14 + 30.18 + 45.27,
+  150 + 131.25 + 30.18 + 45.27,
   "mixed route due now",
 );
 closeTo(mixedCart.remainingDue, 150, "mixed route remaining");
@@ -645,7 +651,7 @@ closeTo(
 );
 closeTo(
   mixedArrivalDeliveryCart.totalShipping,
-  14 + 30.18 + 45.27 + 38 * 3,
+  131.25 + 30.18 + 45.27 + 38 * 3,
   "mixed route shipping remains additive",
 );
 
@@ -1021,7 +1027,7 @@ closeTo(
 );
 closeTo(
   changedRateSnapshot?.updatedShippingTotal ?? null,
-  14,
+  131.25,
   "legacy shipping is repriced with the current configuration",
 );
 assert.equal(
@@ -1049,12 +1055,12 @@ closeTo(
 );
 closeTo(
   confirmedChangedRatePricing.totalShipping,
-  14,
+  131.25,
   "confirmed migration uses the accurate shipping total",
 );
 closeTo(
   confirmedChangedRatePricing.total,
-  114,
+  231.25,
   "confirmed migration produces the accurate cart total",
 );
 

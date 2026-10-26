@@ -34,7 +34,7 @@ try {
   const header = tree!.root.findByType("header");
   const headerTaglines = header.findAll(node =>
     typeof node.type === "string" && node.type === "span" && text(node) === tagline);
-  assert.equal(headerTaglines.length, 2, "Header keeps the mobile and sm+ community lines");
+  assert.equal(headerTaglines.length, 1, "Header renders one responsive community line for all widths");
   for (const line of headerTaglines) {
     const tokens = classes(line);
     assert.ok(tokens.has("font-extrabold"), `Header community text is extrabold: ${line.props.className}`);

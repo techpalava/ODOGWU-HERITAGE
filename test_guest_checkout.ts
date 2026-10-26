@@ -482,11 +482,11 @@ assert.equal(
 );
 assert.equal(
   taxInclusiveValidation.pricing.lagosToEindhovenShipping,
-  14,
+  131.25,
 );
 assert.equal(
   taxInclusiveValidation.pricing.total,
-  23.64,
+  140.89,
   "checkout adds tax and inbound shipping exactly once",
 );
 

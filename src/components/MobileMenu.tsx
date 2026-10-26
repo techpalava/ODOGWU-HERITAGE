@@ -56,7 +56,7 @@ export function MobileMenu() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsMobileMenuOpen(false)}
-            className="fixed inset-0 z-50 bg-heritage-green/75 backdrop-blur-xs lg:hidden"
+            className="fixed inset-0 z-50 bg-heritage-green/75 backdrop-blur-xs xl:hidden"
             aria-hidden="true"
           />
 
@@ -69,7 +69,7 @@ export function MobileMenu() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 220 }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-[310px] bg-heritage-green border-l border-heritage-gold/25 p-5 sm:p-6 shadow-2xl flex flex-col justify-between lg:hidden font-sans"
+            className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-[310px] bg-heritage-green border-l border-heritage-gold/25 p-5 sm:p-6 shadow-2xl flex flex-col justify-between xl:hidden font-sans"
           >
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-heritage-gold/15 pb-4">

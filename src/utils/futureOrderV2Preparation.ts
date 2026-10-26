@@ -232,22 +232,38 @@ export const prepareFutureOrderV2Submission = async ({
       blockers: preparation.blockers,
     };
   }
-  try {
-    const result = await persist({
-      masterOrder: preparation.attempt.masterOrder,
+  const persistAttempt = async (attempt: FutureOrderV2PreparationAttempt) =>
+    persist({
+      masterOrder: attempt.masterOrder,
       customerOwnerUid: identity.uid,
       privateBatchCapabilityFactory,
       resolvePersonalizedGroupAuthority,
     });
+
+  try {
+    let attempt = preparation.attempt;
+    let result = await persistAttempt(attempt);
+    if (
+      result.status === "conflict" &&
+      result.code === "ORDER_ID_PAYLOAD_CONFLICT"
+    ) {
+      const retry = createFutureOrderV2PreparationAttempt({
+        candidate: reviewedResolution.candidate,
+      });
+      if (retry.status === "valid") {
+        attempt = retry.attempt;
+        result = await persistAttempt(attempt);
+      }
+    }
     return result.status === "created" || result.status === "already_persisted"
       ? {
           status: "prepared",
-          attempt: preparation.attempt,
+          attempt,
           result,
           privateBatchCapability: result.privateBatchCapability,
           personalizedGroupAuthority: result.personalizedGroupAuthority,
         }
-      : { status: "persistence_failed", attempt: preparation.attempt, result };
+      : { status: "persistence_failed", attempt, result };
   } catch {
     return {
       status: "persistence_failed",

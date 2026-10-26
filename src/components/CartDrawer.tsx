@@ -46,6 +46,11 @@ import {
 import { customerDesignOrderTransferClient } from "../services/customerDesignOrderTransfer";
 import { createAnonymousUploadedDesignClaims } from "../utils/uploadedDesignCheckoutPreparation";
 import { FutureOrderV2CartPayPanel } from "./FutureOrderV2CartPayPanel";
+import { useSavedStudioOrders } from "./SavedStudioOrderProvider";
+import {
+  formatSavedStudioOrderDate,
+  getSavedStudioOrderStageTitle,
+} from "../utils/savedStudioOrderModel";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -90,15 +95,17 @@ export function CartDrawer() {
   const fabrics = useAppStore((state) => state.fabrics);
   const styles = useAppStore((state) => state.styles);
   const customDetailCatalog = useAppStore((state) => state.customDetailCatalog);
+  const savedStudioOrders = useSavedStudioOrders();
+  const savedOrderItems = savedStudioOrders?.items ?? [];
+  const [pendingSavedOrderDeleteId, setPendingSavedOrderDeleteId] = useState<
+    string | null
+  >(null);
 
   if (!isCartOpen) return null;
 
   const handleRemoveFromCart = (id: string) => {
     setCartItems(cartItems.filter((item) => item.id !== id));
     setNotification({ message: "Garment removed from cart.", type: "info" });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
   };
 
   const openShippingEditor = (item: CartItem) => {
@@ -181,7 +188,6 @@ export function CartDrawer() {
       message: "Shipping details updated. Please review the current amount.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const acceptUpdatedShipping = () => {
@@ -192,7 +198,6 @@ export function CartDrawer() {
       message: "Updated shipping amount accepted.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const acceptUpdatedGarmentPricing = () => {
@@ -203,7 +208,6 @@ export function CartDrawer() {
       message: "Updated garment price accepted.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const continueAsIndividualOrder = (itemId: string) => {
@@ -218,7 +222,6 @@ export function CartDrawer() {
         "The design was preserved and moved to an individual order route.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const handleCheckout = async () => {
@@ -243,9 +246,6 @@ export function CartDrawer() {
           "Review the cart before payment.",
         type: "info",
       });
-      setTimeout(() => {
-        setNotification(null);
-      }, 5000);
       return;
     }
 
@@ -265,7 +265,6 @@ export function CartDrawer() {
               "We couldn't securely prepare your uploaded design for checkout. Please try again.",
             type: "info",
           });
-          setTimeout(() => setNotification(null), 5000);
           return;
         } finally {
           setIsPreparingUploadedDesign(false);
@@ -279,7 +278,6 @@ export function CartDrawer() {
           "Sign in or create an account to securely complete your order.",
         type: "info",
       });
-      setTimeout(() => setNotification(null), 4000);
       return;
     }
 
@@ -346,8 +344,10 @@ export function CartDrawer() {
                   Shopping Cart
                 </h2>
                 <p className="text-[10px] text-heritage-beige/70 mt-0.5">
-                  {cartItems.length + futureOrderV2CartItems.length} custom
-                  items in your cart
+                  {cartItems.length +
+                    futureOrderV2CartItems.length +
+                    savedOrderItems.length}{" "}
+                  custom items in your cart
                 </p>
               </div>
             </div>
@@ -361,7 +361,9 @@ export function CartDrawer() {
 
           {/* Drawer Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {cartItems.length === 0 && futureOrderV2CartItems.length === 0 ? (
+            {cartItems.length === 0 &&
+            futureOrderV2CartItems.length === 0 &&
+            savedOrderItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 select-none">
                 <div className="h-16 w-16 rounded-full bg-heritage-gold/10 border border-heritage-gold/20 flex items-center justify-center text-heritage-gold animate-bounce">
                   <ShoppingBag size={28} />
@@ -387,6 +389,70 @@ export function CartDrawer() {
               </div>
             ) : (
               <div className="space-y-4">
+                {savedOrderItems.map((item) => (
+                  <article
+                    key={item.savedOrderId}
+                    data-testid="saved-order-cart-item"
+                    data-saved-order-unfinished="true"
+                    className="rounded-2xl border border-dashed border-heritage-gold/40 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="rounded bg-heritage-gold/10 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-heritage-green">
+                          Unfinished
+                        </span>
+                        <h4 className="mt-1.5 font-serif text-xs font-bold text-heritage-green">
+                          {item.name}
+                        </h4>
+                        <p className="mt-0.5 text-[10px] font-semibold text-heritage-ink/60">
+                          {item.garmentSummary || "Saved order"}
+                        </p>
+                        <p className="text-[10px] font-medium text-heritage-ink/60">
+                          {getSavedStudioOrderStageTitle(item.savedStage)} ·{" "}
+                          {formatSavedStudioOrderDate(item.updatedAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        data-testid="saved-order-cart-continue"
+                        onClick={() => {
+                          setIsCartOpen(false);
+                          savedStudioOrders?.requestContinue(item);
+                        }}
+                        className="min-h-11 flex-1 rounded-lg bg-heritage-green px-3 text-[10px] font-bold uppercase text-white"
+                      >
+                        Continue
+                      </button>
+                      {pendingSavedOrderDeleteId === item.savedOrderId ? (
+                        <button
+                          type="button"
+                          data-testid="saved-order-cart-delete-confirm"
+                          onClick={() => {
+                            void savedStudioOrders?.remove(item);
+                            setPendingSavedOrderDeleteId(null);
+                          }}
+                          className="min-h-11 rounded-lg bg-red-600 px-3 text-[10px] font-bold uppercase text-white"
+                        >
+                          Confirm delete
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          data-testid="saved-order-cart-delete"
+                          onClick={() =>
+                            setPendingSavedOrderDeleteId(item.savedOrderId)
+                          }
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 text-red-600"
+                          aria-label="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
                 {futureOrderV2CartItems.map((item) => (
                   <FutureOrderV2CartPayPanel
                     key={item.cartItemId}

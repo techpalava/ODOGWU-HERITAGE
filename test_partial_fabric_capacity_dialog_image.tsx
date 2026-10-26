@@ -58,6 +58,7 @@ const render = (targets: FuturePartialFabricAssignmentTargetPresentation[]) => {
         targets,
         onConfirm: () => undefined,
         onCancel: () => undefined,
+        onUseDifferentFabric: () => undefined,
       }),
     );
   });
@@ -67,7 +68,7 @@ const render = (targets: FuturePartialFabricAssignmentTargetPresentation[]) => {
 const previews = (root: ReactTestInstance) =>
   root.findAllByProps({ "data-assigned-fabric-preview": "true" });
 
-// Single target: "Complete Fabric Assignment" shows the Fabric image.
+// Single target: "Add to this fabric?" shows the Fabric image.
 const single = render([target("alloc-1", "IVORY", 1)]);
 const singlePreviews = previews(single.root);
 assert.equal(singlePreviews.length, 1, "the Fabric card must show its image");
@@ -96,6 +97,7 @@ act(() => single.update(
     targets: [target("alloc-1", "IVORY", 1)],
     onConfirm: () => undefined,
     onCancel: () => undefined,
+    onUseDifferentFabric: () => undefined,
   }),
 ));
 for (let attempt = 0; attempt <= 4; attempt += 1) {

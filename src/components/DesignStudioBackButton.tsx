@@ -1,7 +1,9 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, PackageCheck } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+import { SaveOrderButton, SaveOrderDisabledReason } from "./SaveOrderButton";
+import { useSaveOrderAction } from "./SaveOrderActionContext";
 
-const studioNavButtonClass =
+export const studioNavButtonClass =
   "inline-flex min-h-12 max-w-full min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[11px] font-bold leading-tight sm:gap-2 sm:px-3 sm:text-xs [overflow-wrap:normal] [word-break:normal] transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
 /** Back and other secondary controls: white at rest, heritage green fill with white text on hover and focus. */
@@ -13,19 +15,28 @@ export const studioContinueNavInteractionClass =
   "border-2 border-heritage-green bg-heritage-green text-white shadow-sm transition duration-200 ease-out enabled:hover:border-heritage-green enabled:hover:bg-white enabled:hover:text-heritage-green focus-visible:border-heritage-green focus-visible:bg-white focus-visible:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
 
 /**
- * White glow on an unlocked (enabled) Continue button. The buttons are heritage
- * green, so the glow is white, never gold. Reduced motion gets a static soft
- * white ring, and the pulse pauses on keyboard focus so the gold focus ring
- * stays legible. Never apply it to a disabled or locked Continue.
+ * Crisp gold ring on an unlocked (enabled) Design Studio Continue: Continue,
+ * Review Order and "Continue without AI Try-on". 1.5px heritage gold ring with
+ * a 2px white gap that blinks briefly off; no blur, halo or fade. Reduced
+ * motion gets the same ring, static. The blink pauses on keyboard focus so the
+ * gold focus ring stays readable. Never on a disabled or locked Continue, and
+ * never on Back.
+ */
+export const STUDIO_CONTINUE_RING_BLINK_CLASS =
+  "motion-safe:animate-continue-ring-blink motion-safe:focus-visible:animate-none motion-reduce:continue-ring-static";
+
+/**
+ * White glow, kept only for the "UNUSED FABRIC CAPACITY AVAILABLE" offer's
+ * Continue button. Studio step navigation uses STUDIO_CONTINUE_RING_BLINK_CLASS.
  */
 export const STUDIO_CONTINUE_UNLOCK_GLOW_CLASS =
   "motion-safe:animate-continue-unlock-glow motion-safe:focus-visible:animate-none motion-reduce:shadow-[inset_0_0_0_2px_rgb(255_255_255/0.7),0_0_0_3px_rgb(255_255_255/0.95),0_0_0_4px_rgb(10_41_27/0.18)]";
 
-/** Glow class + data attribute for any Continue / next-step primary button. */
+/** Ring class + data attribute for any Studio Continue / next-step button. */
 export const getStudioContinueUnlockGlow = (
   unlocked: boolean,
 ): { className: string; "data-continue-unlock-glow": "on" | "off" } => ({
-  className: unlocked ? STUDIO_CONTINUE_UNLOCK_GLOW_CLASS : "",
+  className: unlocked ? STUDIO_CONTINUE_RING_BLINK_CLASS : "",
   "data-continue-unlock-glow": unlocked ? "on" : "off",
 });
 
@@ -169,33 +180,63 @@ export const DesignStudioStepActions = ({
   forward?: DesignStudioForwardButtonProps;
   note?: ReactNode;
   className?: string;
-}) => (
-  <div
-    data-studio-step-actions="true"
-    data-studio-step-actions-slot={slot}
-    className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
-  >
+}) => {
+  const saveAction = useSaveOrderAction();
+  const saveReasonId = useId();
+  const showDisabledReason = Boolean(
+    saveAction?.disabled && saveAction.disabledReason,
+  );
+  // Garment Type (the only step with Back disabled) is where the Save Order
+  // gate reason appears. Keep its line reserved after a garment is picked so
+  // the content below does not move.
+  const reserveDisabledReason = Boolean(saveAction) && backDisabled;
+  const showNote = Boolean(note) || showDisabledReason || reserveDisabledReason;
+
+  return (
     <div
-      data-studio-step-actions-buttons="true"
-      className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3"
+      data-studio-step-actions="true"
+      data-studio-step-actions-slot={slot}
+      className={`flex w-full min-w-0 flex-col gap-3 ${className}`}
     >
-      <DesignStudioBackButton
-        destination={backDestination}
-        onClick={onBack}
-        disabled={backDisabled}
-        className="min-w-0 flex-1 basis-0 sm:max-w-xs"
-      />
-      {forward ? (
-        <DesignStudioForwardButton
-          {...forward}
-          className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+      {/* Phones: Back + Continue keep their one-row layout and Save Order takes
+          its own full-width line beneath. sm and up: one row of three. Back and
+          Continue are flex-1 basis-0, so wrapping never splits those two. */}
+      <div
+        data-studio-step-actions-buttons="true"
+        className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap"
+      >
+        <DesignStudioBackButton
+          destination={backDestination}
+          onClick={onBack}
+          disabled={backDisabled}
+          className="min-w-0 flex-1 basis-0 sm:max-w-xs"
         />
+        {saveAction ? (
+          <SaveOrderButton
+            describedById={showDisabledReason ? saveReasonId : undefined}
+            className="max-sm:order-last max-sm:max-w-none max-sm:flex-none max-sm:basis-full"
+          />
+        ) : null}
+        {forward ? (
+          <DesignStudioForwardButton
+            {...forward}
+            className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+          />
+        ) : null}
+      </div>
+      {showNote ? (
+        <div data-studio-step-actions-note="true" className="w-full min-w-0">
+          {note}
+          {showDisabledReason || reserveDisabledReason ? (
+            <div className={note ? "mt-2" : undefined}>
+              <SaveOrderDisabledReason
+                id={saveReasonId}
+                reserveSpace={reserveDisabledReason}
+              />
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
-    {note ? (
-      <div data-studio-step-actions-note="true" className="w-full min-w-0">
-        {note}
-      </div>
-    ) : null}
-  </div>
-);
+  );
+};

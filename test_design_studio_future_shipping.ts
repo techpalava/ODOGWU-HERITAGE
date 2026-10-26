@@ -877,7 +877,7 @@ assert.match(shippingSource, /aria-live="polite"/);
 assert.match(shippingSource, /min-h-11/);
 assert.doesNotMatch(shippingSource, /calculateIndividualShipping/);
 assert.doesNotMatch(shippingSource, /calculateFinalMileShipping/);
-assert.doesNotMatch(shippingSource, /131\.25/);
+assert.match(shippingSource, /€131\.25 per 10 garments/);
 assert.doesNotMatch(shippingSource, /15\.09/);
 assert.match(shippingSource, /Delivery Country/);
 assert.match(shippingSource, /STEP8_OTHER_DESTINATION_LABEL/);
@@ -1094,6 +1094,9 @@ assert.equal(individualPickupMarkup.includes("data-shipping-lagos-inbound"), fal
 assert.equal(individualPickupMarkup.includes("data-amount-cents=\"1400\""), false);
 assert.equal(individualPickupMarkup.includes("Lagos → Eindhoven shipping"), false);
 assert.equal(individualPickupMarkup.includes("€14.00"), false);
+assert.equal(individualPickupMarkup.includes("€131.25"), false);
+assert.equal(individualPickupMarkup.includes("13125"), false);
+assert.equal(individualPickupMarkup.includes("data-shipping-lagos-note"), false);
 assert.match(individualPickupMarkup, /€65\.00/);
 assert.match(individualPickupMarkup, /data-shipping-displayed-total-cents="6500"/);
 assert.match(individualPickupMarkup, /€65\.00/);
@@ -1127,11 +1130,16 @@ const parisDelivery = reconcileFutureShippingState({
 assert.equal(parisDelivery.postEindhovenAdjustmentCents, 1900);
 assert.equal(parisDelivery.projectedTotalCents, 8400);
 const parisMarkup = renderPricedShippingStep(parisDelivery, "Individual");
-assert.match(parisMarkup, /data-amount-cents="1400"/);
-assert.match(parisMarkup, /€14\.00/);
+assert.match(parisMarkup, /data-amount-cents="13125"/);
+assert.match(parisMarkup, /€131\.25/);
 assert.match(parisMarkup, /€19\.00/);
-assert.match(parisMarkup, /data-shipping-displayed-total-cents="9800"/);
-assert.match(parisMarkup, /€98\.00/);
+assert.match(parisMarkup, /data-shipping-displayed-total-cents="21525"/);
+assert.match(parisMarkup, /€215\.25/);
+assert.match(parisMarkup, /data-shipping-lagos-note="true"/);
+assert.match(
+  parisMarkup,
+  /Shipping covers up to 10 garments \(under 5 kg\)\./,
+);
 assert.equal(parisMarkup.includes(">Included<"), false);
 assert.equal(parisMarkup.includes("already included"), false);
 
@@ -1140,6 +1148,7 @@ const communityPickupMarkup = renderPricedShippingStep(
   "Community",
 );
 assert.equal(communityPickupMarkup.includes("data-shipping-lagos-inbound"), false);
+assert.equal(communityPickupMarkup.includes("data-shipping-lagos-note"), false);
 assert.equal(communityPickupMarkup.includes("€14.00"), false);
 assert.match(communityPickupMarkup, /data-shipping-displayed-total-cents="6500"/);
 assert.match(communityPickupMarkup, /€65\.00/);

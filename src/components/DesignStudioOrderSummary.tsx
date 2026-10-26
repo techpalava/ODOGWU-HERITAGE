@@ -588,6 +588,7 @@ export const DesignStudioOrderSummary = ({
                 </dd>
               </div>
               {view.costBreakdown.includedInboundShipping ? (
+                <>
                 <div
                   data-testid="live-order-summary-included-inbound"
                   data-amount-cents={
@@ -603,6 +604,15 @@ export const DesignStudioOrderSummary = ({
                     {view.costBreakdown.includedInboundShipping.valueLabel}
                   </dd>
                 </div>
+                {view.costBreakdown.includedInboundShipping.note ? (
+                  <p
+                    data-testid="live-order-summary-lagos-note"
+                    className="text-[11px] leading-relaxed text-heritage-ink/60"
+                  >
+                    {view.costBreakdown.includedInboundShipping.note}
+                  </p>
+                ) : null}
+                </>
               ) : null}
               {view.costBreakdown.shipping ? (
                 <div

@@ -36,6 +36,13 @@ import {
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
+import { FabricSelectionSummaryRow } from "./FabricSelectionSummaryRow";
+import {
+  buildFabricSelectionSummaryItems,
+  formatFabricSelectionNumbersBadge,
+  getFabricSelectionNumbersUsingFabric,
+  type FabricSelectionSummaryItem,
+} from "../utils/fabricSelectionSummaryRow";
 import { FabricCatalogueNotice } from "./FabricCatalogueNotice";
 import {
   resolveFabricCatalogueNotice,
@@ -43,6 +50,7 @@ import {
 } from "../utils/fabricCatalogueNotice";
 import { Step1FabricAssignmentDialog } from "./Step1FabricAssignmentDialog";
 import { ChangeFabricAllocationDialog } from "./ChangeFabricAllocationDialog";
+import { FabricPiecePlacementDialog } from "./FabricPiecePlacementDialog";
 import { PartialFabricCapacityAssignmentDialog } from "./PartialFabricCapacityAssignmentDialog";
 import {
   RemoveFabricAssignmentDialog,
@@ -64,27 +72,46 @@ import {
   changeFutureFabricAllocationProduct,
   formatFabricQuantityLimitChangeCopy,
   formatFabricQuantityLimitReachedCopy,
+  formatFabricQuantityMoveCopy,
   formatFabricQuantityOverAllocatedCopy,
+  formatFabricQuantityStrandedCopy,
+  getFabricQuantityFitBlockedCopyForGarment,
   formatFutureFabricStockOverAllocatedBlockerMessage,
+  getFabricQuantityOverAllocationRepair,
   formatRequiredFabricQuantitySentence,
   getFutureFabricAllocationGroupChangePresentation,
   getFutureFabricAllocationAssignmentSignature,
   getFutureFabricCatalogueCancelTargets,
   getFutureReusableHalfCapacityGarmentKeys,
   hasFutureReusableHalfCapacityForFabric,
-  isPhysicalFabricQuantityOverAllocated,
+  canCreatePhysicalFabricAllocation,
+  getMaxPhysicalFabricAllocationCount,
   resolveFutureFabricCatalogueCardPresentation,
+  resolveFutureFabricChangeCatalogueCardPresentation,
   type FutureFabricAssignmentResult,
   type FutureFabricAssignmentBlockReason,
   type ChangeFutureFabricAllocationExpectation,
+  type FutureFabricPiecePlacement,
+  type FutureFabricPiecePlacementChoice,
+  getFutureFabricPiecePlacementChoice,
+  formatFabricNewPieceUnavailableCopy,
   type FutureFabricBulkAssignmentResult,
   type FutureFabricCatalogueCancellationResult,
   type FutureFabricCatalogueCardPresentation,
   type FutureFabricStageCompletion,
   type HydratedOrphanFabricAssignmentRepairResult,
   type HydratedOrphanFabricAssignmentRepairTarget,
+  type MoveFutureGarmentToFabricAllocationResult,
 } from "../utils/designStudioFutureFabricStage";
 import { resolveStep2PostAssignmentDestination } from "../utils/step2PostAssignmentDestination";
+import {
+  FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS,
+  getFabricSelectionBadgeClass,
+  getFabricSelectionCardClass,
+  getFirstChangingGarmentKey,
+  resolveFabricSelectionCardHighlight,
+  resolveFabricSelectionScrollMarginTopPx,
+} from "../utils/fabricSelectionHighlight";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import {
   buildStep1FabricAssignmentCandidates,
@@ -125,6 +152,8 @@ const blockerMessages: Record<
   MALFORMED_ASSIGNMENT: "One garment assignment needs review before this step can continue.",
   FABRIC_QUANTITY_OVER_ALLOCATED:
     "Your saved Fabric selections use more fabrics than this order requires. Remove or change Fabric assignments until the required number remains.",
+  FABRIC_QUANTITY_STRANDED:
+    "A garment needs a whole fabric, but the space left on your chosen fabrics is split into halves. Move a garment to free a whole fabric.",
   FABRIC_STOCK_OVER_ALLOCATED:
     "One or more Fabric selections exceed available stock. Remove or change a Fabric Selection.",
   RAW_FABRIC_INTEGRITY_BLOCKED:
@@ -145,6 +174,7 @@ interface DormantFutureFabricStepProps {
   onAssignFabricToGarment: (
     fabric: Fabric,
     garmentKey: string,
+    placement?: FutureFabricPiecePlacement,
   ) => FabricAllocationState | void;
   onChangeFabricAllocationProduct: (
     allocationId: string,
@@ -161,11 +191,20 @@ interface DormantFutureFabricStepProps {
   onAssignSameFabricProduct: (
     fabricCode: string,
     garmentKeys: string[],
+    placement?: FutureFabricPiecePlacement,
   ) => FutureFabricBulkAssignmentResult | void;
   onAssignGarmentToExistingAllocation: (
     garmentKey: string,
     allocationId: string,
   ) => FutureFabricAssignmentResult | void;
+  /**
+   * One-tap repair when the order holds more Fabrics than it needs: move a
+   * garment that sits alone on a Fabric onto another selected Fabric.
+   */
+  onMoveGarmentToFabricAllocation?: (
+    garmentKey: string,
+    allocationId: string,
+  ) => MoveFutureGarmentToFabricAllocationResult | void;
   onBack: () => void;
   onContinue: () => void;
   onUseSameFabric: () => void;
@@ -195,6 +234,9 @@ const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
 
+export const FABRIC_CHANGE_SWAP_FREE_COPY =
+  "Swapping keeps the same number of fabrics, so you can pick any available print.";
+
 const formatGarmentList = (labels: string[]): string => {
   if (labels.length <= 1) return labels[0] || "the selected garment";
   if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
@@ -210,7 +252,9 @@ export const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabrics chosen: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
+  selectedFabricQuantity > requiredFabricQuantity
+    ? `Fabrics chosen: ${selectedFabricQuantity} (${requiredFabricQuantity} needed)`
+    : `Fabrics chosen: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
 
 export const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
@@ -405,6 +449,7 @@ export const DormantFutureFabricStep = ({
   onUseSameFabricForGarment,
   onAssignSameFabricProduct,
   onAssignGarmentToExistingAllocation,
+  onMoveGarmentToFabricAllocation,
   onBack,
   onContinue,
   onUseSameFabric,
@@ -426,6 +471,8 @@ export const DormantFutureFabricStep = ({
   const [catalogueTargetGarmentKey, setCatalogueTargetGarmentKey] = useState<
     string | null
   >(null);
+  const [isChangingFabricSelection, setIsChangingFabricSelection] =
+    useState(false);
   const [assignmentAnnouncement, setAssignmentAnnouncement] = useState("");
   const [visibleActionError, setVisibleActionError] = useState<string | null>(
     null,
@@ -437,6 +484,16 @@ export const DormantFutureFabricStep = ({
   const [focusAfterOrphanRepair, setFocusAfterOrphanRepair] = useState(false);
   const [pendingStep1FabricAssignment, setPendingStep1FabricAssignment] =
     useState<PendingStep1FabricAssignment | null>(null);
+  // Pair vs new piece: asked before a garment joins an existing piece of the
+  // same print, instead of pairing it silently.
+  const [pendingPiecePlacement, setPendingPiecePlacement] = useState<{
+    choice: FutureFabricPiecePlacementChoice;
+    fabricName: string;
+    garmentLabel: string;
+  } | null>(null);
+  const piecePlacementRunRef = useRef<
+    ((placement: FutureFabricPiecePlacement) => void) | null
+  >(null);
   const [pendingPartialFabricAssignment, setPendingPartialFabricAssignment] =
     useState<{ garmentKey: string } | null>(null);
   const [pendingChangeFabricAllocation, setPendingChangeFabricAllocation] =
@@ -479,6 +536,8 @@ export const DormantFutureFabricStep = ({
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
   const catalogueScrollAnchorRef = useRef<HTMLDivElement>(null);
+  const summaryRowAnchorRef = useRef<HTMLDivElement>(null);
+  const changeOpenedFromSummaryRef = useRef(false);
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
   const catalogueFocusGarmentKeyRef = useRef<string | null>(null);
   const catalogueFocusRequestRef = useRef(0);
@@ -487,6 +546,7 @@ export const DormantFutureFabricStep = ({
   const garmentCardRefs = useRef(new Map<string, HTMLElement>());
   const garmentRemoveRefs = useRef(new Map<string, HTMLButtonElement>());
   const pendingPanelActionRef = useRef<HTMLButtonElement>(null);
+  const quantityMoveActionRef = useRef<HTMLButtonElement>(null);
   const pendingPostAssignmentNavRef = useRef<{
     assignedGarmentKeys: string[];
     destinationGarmentKey: string;
@@ -561,6 +621,7 @@ export const DormantFutureFabricStep = ({
   useEffect(() => {
     if (catalogueTargetGarmentKey && !activeCatalogueTarget) {
       setCatalogueTargetGarmentKey(null);
+      setIsChangingFabricSelection(false);
     }
   }, [activeCatalogueTarget, catalogueTargetGarmentKey]);
   useEffect(
@@ -630,7 +691,7 @@ export const DormantFutureFabricStep = ({
     ? assignmentByGarmentKey.get(catalogueTargetGarmentKey) ?? null
     : null;
   const changeFabricPresentation = useMemo(() => {
-    if (!changeFabricAssignmentTarget) {
+    if (!isChangingFabricSelection || !changeFabricAssignmentTarget) {
       return null;
     }
     return getFutureFabricAllocationGroupChangePresentation({
@@ -641,12 +702,38 @@ export const DormantFutureFabricStep = ({
       garmentLabelByKey: occurrenceConciseLabels,
     });
   }, [
+    isChangingFabricSelection,
     changeFabricAssignmentTarget,
     fabricAllocationState,
     fabrics,
     garmentTypeSelection,
     occurrenceConciseLabels,
   ]);
+  const changingSelectionNumber =
+    changeFabricPresentation?.fabricSelectionNumber ?? null;
+  const changingFabric = changeFabricPresentation
+    ? fabrics.find(
+        (candidate) => candidate.code === changeFabricPresentation.fabricCode,
+      ) ?? null
+    : null;
+  const fabricSelectionSummaryItems = useMemo(
+    () =>
+      buildFabricSelectionSummaryItems({
+        fabricAllocationState,
+        garmentTypeSelection,
+        fabrics,
+        garmentLabelByKey: occurrenceConciseLabels,
+      }),
+    [fabricAllocationState, garmentTypeSelection, fabrics, occurrenceConciseLabels],
+  );
+  const changingAllocationId =
+    changeFabricPresentation?.allocationId ?? null;
+  const firstChangingGarmentKey = changeFabricPresentation
+    ? getFirstChangingGarmentKey(
+        targets.map(({ assignment }) => assignment.garmentKey),
+        changeFabricPresentation.garmentKeys,
+      )
+    : null;
   const pendingChangeFabricPresentation = useMemo(() => {
     if (!pendingChangeFabricAllocation) {
       return null;
@@ -684,11 +771,23 @@ export const DormantFutureFabricStep = ({
     !isChangeFabricTarget &&
     !isPendingAdditionalCatalogueTarget &&
     !isTargetedAdditionalCatalogueTarget;
-  const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
-    selectedFabricQuantity,
-    requiredFabricQuantity,
+  // One fabric piece per garment is the limit; Fabrics Needed is only the
+  // recommendation, so holding more pieces than Fabrics Needed is fine.
+  const maxFabricPieces = getMaxPhysicalFabricAllocationCount({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
   });
-  // Every garment has fabric and the order is within Fabrics needed.
+  const maxFabricPiecesWithPending = getMaxPhysicalFabricAllocationCount({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+    countPendingGarmentForCapacity: true,
+  });
+  const isOverAllocated = completion.blockers.some(
+    (blocker) => blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED",
+  );
+  // Every garment has fabric and the order is within one piece per garment.
   const fabricProgressComplete =
     completion.requiredGarmentCount > 0 &&
     completion.assignedGarmentCount === completion.requiredGarmentCount &&
@@ -741,6 +840,17 @@ export const DormantFutureFabricStep = ({
     if (compatibleAllocations.length > 0) {
       return "assign_to_fabric";
     }
+    // At Fabrics Needed with no piece it can pair on, the garment may still
+    // take its own new piece (one piece per garment).
+    if (
+      canCreatePhysicalFabricAllocation({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        requiredPhysicalOccurrences,
+      })
+    ) {
+      return "add_fabric";
+    }
     return "blocked";
   };
   const fabricNameByCode = useMemo(
@@ -767,7 +877,11 @@ export const DormantFutureFabricStep = ({
         requiredPhysicalOccurrences,
       })
     : [];
+  // Neutral note once the order has its Fabrics Needed and garments remain:
+  // other prints stay selectable. Not shown while changing a selection's
+  // fabric, which swaps the print on an existing piece.
   const showAllocationLimitCopy =
+    !isChangeFabricTarget &&
     !isOverAllocated &&
     selectedFabricQuantity >= requiredFabricQuantity &&
     requiredFabricQuantity > 0 &&
@@ -874,14 +988,35 @@ export const DormantFutureFabricStep = ({
   ]);
   const showContinueAction =
     completion.isComplete && !isCatalogueOpen && !pendingStep1FabricAssignment;
+  const labelForQuantityGarmentKey = (garmentKey: string): string => {
+    const concise = occurrenceConciseLabels.get(garmentKey);
+    if (concise) return concise;
+    const target = targets.find(
+      ({ assignment }) => assignment.garmentKey === garmentKey,
+    );
+    return target ? getFutureGarmentLabel(target.assignment.garmentType) : "A garment";
+  };
+  const quantityStrandedBlockers = completion.blockers.filter(
+    (blocker) => blocker.code === "FABRIC_QUANTITY_STRANDED",
+  );
+  const isQuantityStranded = quantityStrandedBlockers.length > 0;
+  const quantityStrandedGarmentLabels = quantityStrandedBlockers
+    .map((blocker) => blocker.garmentKey)
+    .filter((garmentKey): garmentKey is string => Boolean(garmentKey))
+    .map(labelForQuantityGarmentKey);
   const formatBlockerMessage = (
     blocker: FutureFabricStageCompletion["blockers"][number],
   ): string =>
     blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED"
       ? formatFabricQuantityOverAllocatedCopy(
           selectedFabricQuantity,
-          requiredFabricQuantity,
+          maxFabricPieces,
         )
+      : blocker.code === "FABRIC_QUANTITY_STRANDED"
+        ? formatFabricQuantityStrandedCopy(
+            quantityStrandedGarmentLabels,
+            requiredFabricQuantity,
+          )
       : blocker.code === "FABRIC_STOCK_OVER_ALLOCATED"
         ? formatFutureFabricStockOverAllocatedBlockerMessage(
             fabrics,
@@ -889,26 +1024,53 @@ export const DormantFutureFabricStep = ({
             blocker.fabricCode,
           )
         : blockerMessages[blocker.code];
+  const quantityRepair =
+    (isOverAllocated || isQuantityStranded) && onMoveGarmentToFabricAllocation
+      ? getFabricQuantityOverAllocationRepair({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          requiredPhysicalOccurrences,
+        })
+      : null;
+  const quantityRepairGarmentLabel = quantityRepair
+    ? occurrenceConciseLabels.get(quantityRepair.garmentKey) ??
+      (() => {
+          const assignment = fabricAllocationState.fabricAllocations
+            .flatMap((allocation) => allocation.garmentAssignments)
+            .find((candidate) => candidate.garmentKey === quantityRepair.garmentKey);
+          return assignment
+            ? getFutureGarmentLabel(assignment.garmentType)
+            : "This garment";
+        })()
+    : null;
+  const quantityRepairFabricName = quantityRepair
+    ? fabrics.find((fabric) => fabric.code === quantityRepair.toFabricCode)?.name ??
+      quantityRepair.toFabricCode
+    : null;
   // One merged Guide: the old "Fabric needs attention" messages, the
   // avoidable-partial hint and the next-garment cue are steps in this flow.
   // It is hidden whenever the canonical completion says Continue can unlock.
+  const fabricGuideGarments = targets.map(({ assignment }) => {
+    const assigned = assignmentByGarmentKey.get(assignment.garmentKey);
+    return {
+      garmentKey: assignment.garmentKey,
+      label:
+        occurrenceConciseLabels.get(assignment.garmentKey) ??
+        getFutureGarmentLabel(assignment.garmentType),
+      assigned: Boolean(assigned),
+      fabricCode: assigned?.allocation.fabricCode ?? null,
+      allocationId: assigned?.allocation.allocationId ?? null,
+      action: assigned
+        ? null
+        : resolveUnassignedGarmentFabricAction(assignment.garmentKey),
+    };
+  });
+  const fabricGuideGarmentLabels = new Map(
+    fabricGuideGarments.map((garment) => [garment.garmentKey, garment.label]),
+  );
   const fabricGuideFlow = buildFabricGuideFlow({
     isComplete: completion.isComplete,
-    garments: targets.map(({ assignment }) => {
-      const assigned = assignmentByGarmentKey.get(assignment.garmentKey);
-      return {
-        garmentKey: assignment.garmentKey,
-        label:
-          occurrenceConciseLabels.get(assignment.garmentKey) ??
-          getFutureGarmentLabel(assignment.garmentType),
-        assigned: Boolean(assigned),
-        fabricCode: assigned?.allocation.fabricCode ?? null,
-        allocationId: assigned?.allocation.allocationId ?? null,
-        action: assigned
-          ? null
-          : resolveUnassignedGarmentFabricAction(assignment.garmentKey),
-      };
-    }),
+    garments: fabricGuideGarments,
     blockers: completion.blockers.map((blocker) => ({
       code: blocker.code,
       message: formatBlockerMessage(blocker),
@@ -931,6 +1093,25 @@ export const DormantFutureFabricStep = ({
       ? avoidablePartialGuidanceCopy
       : null,
     noCapacityMessage: UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE,
+    quantityRepair:
+      quantityRepair && quantityRepairGarmentLabel && quantityRepairFabricName
+        ? {
+            garmentKey: quantityRepair.garmentKey,
+            message: formatFabricQuantityMoveCopy({
+              garmentLabel: quantityRepairGarmentLabel,
+              toSelectionNumber: quantityRepair.toSelectionNumber,
+              toFabricName: quantityRepairFabricName,
+              sameFabric: quantityRepair.sameFabric,
+              requiredFabricQuantity: maxFabricPieces,
+              makesRoomForLabels:
+                quantityRepair.kind === "stranded"
+                  ? quantityRepair.strandedGarmentKeys.map(
+                      labelForQuantityGarmentKey,
+                    )
+                  : undefined,
+            }),
+          }
+        : null,
   });
   const fabricGuideBeamTarget: FabricGuideTarget | null =
     fabricGuideFlow.visible && fabricGuideFlow.currentStep
@@ -942,7 +1123,12 @@ export const DormantFutureFabricStep = ({
   ): boolean => {
     const target = fabricGuideBeamTarget;
     if (!target || target.type !== type) return false;
-    if (target.type === "garment_action" || target.type === "garment_card" || target.type === "garment_remove") {
+    if (
+      target.type === "garment_action" ||
+      target.type === "garment_card" ||
+      target.type === "garment_remove" ||
+      target.type === "quantity_move"
+    ) {
       return target.garmentKey === key;
     }
     if (target.type === "orphan_repair") return target.repairKey === key;
@@ -973,6 +1159,27 @@ export const DormantFutureFabricStep = ({
     if (catalogueHeadingRef.current) {
       focusElementSafely(catalogueHeadingRef.current);
     }
+  };
+
+  const scrollToChangingFabricSelection = (garmentKey: string | null) => {
+    if (!garmentKey) return;
+    const card = garmentCardRefs.current.get(garmentKey);
+    if (!card || typeof card.scrollIntoView !== "function") return;
+    let headerHeight = 80;
+    if (typeof document !== "undefined" && typeof document.querySelector === "function") {
+      const header = document.querySelector("header");
+      if (header && typeof header.getBoundingClientRect === "function") {
+        headerHeight = header.getBoundingClientRect().height || headerHeight;
+      }
+    }
+    const marginTop = resolveFabricSelectionScrollMarginTopPx(headerHeight);
+    if (card.style) {
+      card.style.scrollMarginTop = `${marginTop}px`;
+    }
+    card.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
   };
 
   const renderVisibleCatalogue = (gridClassName: string) => (
@@ -1042,7 +1249,50 @@ export const DormantFutureFabricStep = ({
     setPendingChangeFabricAllocation(null);
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
+    setIsChangingFabricSelection(false);
     restoreCatalogueFocus();
+  };
+
+  /**
+   * "Cancel change" keeps the page where the customer started: back on the
+   * Fabric Selection summary row (summary-row changes) or on the trigger that
+   * opened Change Fabric. Runs after focus restoration so nothing else (layout
+   * collapse, scroll FABs) leaves the page parked at the bottom.
+   */
+  const cancelFabricChangeKeepingPlace = () => {
+    const fromSummary = changeOpenedFromSummaryRef.current;
+    const trigger = catalogueTriggerRef.current;
+    const startScrollY =
+      typeof window !== "undefined" && typeof window.scrollY === "number"
+        ? window.scrollY
+        : null;
+    changeOpenedFromSummaryRef.current = false;
+    closeCatalogueForCancellation();
+    if (typeof window === "undefined") return;
+    const request = catalogueFocusRequestRef.current;
+    const settle = () => {
+      if (request !== catalogueFocusRequestRef.current) return;
+      const target = fromSummary
+        ? summaryRowAnchorRef.current
+        : trigger && trigger.isConnected !== false
+          ? trigger
+          : null;
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({
+          behavior: "auto",
+          block: fromSummary ? "start" : "nearest",
+        });
+        return;
+      }
+      if (startScrollY !== null && typeof window.scrollTo === "function") {
+        window.scrollTo({ top: startScrollY, behavior: "auto" });
+      }
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(settle));
+    } else {
+      settle();
+    }
   };
 
   const focusPostAssignmentDestination = (
@@ -1132,6 +1382,7 @@ export const DormantFutureFabricStep = ({
     catalogueFocusGarmentKeyRef.current = null;
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
+    setIsChangingFabricSelection(false);
     focusPostAssignmentDestination(garmentKey);
   };
 
@@ -1412,6 +1663,9 @@ export const DormantFutureFabricStep = ({
     catalogueFocusRequestRef.current += 1;
     catalogueTriggerRef.current = null;
     catalogueFocusGarmentKeyRef.current = null;
+    setCatalogueTargetGarmentKey(null);
+    setIsChangingFabricSelection(false);
+    setIsCatalogueOpen(false);
     pendingPostAssignmentNavRef.current = destination
       ? {
           assignedGarmentKeys: assignedKeys,
@@ -1424,20 +1678,81 @@ export const DormantFutureFabricStep = ({
     setPostAssignmentNavEpoch((current) => current + 1);
   };
 
+  /**
+   * Runs `run("auto")` straight away unless the garments would join an
+   * existing piece of the same print; then the customer chooses Pair with
+   * Selection N or Use a new piece first.
+   */
+  const requestFabricPiecePlacement = (
+    fabric: Fabric,
+    garmentKeys: readonly string[],
+    run: (placement: FutureFabricPiecePlacement) => void,
+  ) => {
+    const choice = getFutureFabricPiecePlacementChoice({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      fabricCode: fabric.code,
+      garmentKeys,
+      fabrics,
+      requiredPhysicalOccurrences,
+    });
+    if (!choice) {
+      run("auto");
+      return;
+    }
+    const labels = garmentKeys.map((garmentKey) => {
+      const target = targets.find(
+        ({ assignment }) => assignment.garmentKey === garmentKey,
+      );
+      const pendingType =
+        fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey
+          ? fabricAllocationState.pendingFabricGarment.garmentType
+          : null;
+      return target
+        ? occurrenceConciseLabels.get(garmentKey) ||
+            getFutureGarmentLabel(target.assignment.garmentType)
+        : pendingType
+          ? getFutureGarmentLabel(pendingType)
+          : "this garment";
+    });
+    piecePlacementRunRef.current = run;
+    setPendingPiecePlacement({
+      choice,
+      fabricName: fabric.name,
+      garmentLabel: formatGarmentList(labels),
+    });
+  };
+
+  const resolvePendingPiecePlacement = (
+    placement: FutureFabricPiecePlacement | null,
+  ) => {
+    const run = piecePlacementRunRef.current;
+    piecePlacementRunRef.current = null;
+    setPendingPiecePlacement(null);
+    if (!placement) {
+      pendingAssignmentAnnouncementRef.current = null;
+      return;
+    }
+    run?.(placement);
+  };
+
   const applyCommittedStep1FabricAssignment = ({
     fabricCode,
     fabricName,
     assignedGarmentKeys,
     keepDialogOnBlock,
+    placement = "auto",
   }: {
     fabricCode: string;
     fabricName: string;
     assignedGarmentKeys: string[];
     keepDialogOnBlock: boolean;
+    placement?: FutureFabricPiecePlacement;
   }) => {
     const parentResult = onAssignSameFabricProduct(
       fabricCode,
       assignedGarmentKeys,
+      placement,
     );
     if (parentResult && parentResult.status === "blocked") {
       reportBlockedStep1FabricAssignment(
@@ -1468,24 +1783,49 @@ export const DormantFutureFabricStep = ({
       step1AssignmentDialogFabric?.currentFabric?.name ||
       pendingStep1FabricAssignment.displayFabric.fabricName ||
       pendingStep1FabricAssignment.fabricCode;
-    const result = commitStep1FabricAssignment({
-      state: fabricAllocationState,
-      garmentTypeSelection,
-      fabrics,
-      fabricCode: pendingStep1FabricAssignment.fabricCode,
-      selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
-      mode,
-    });
+    const fabricCode = pendingStep1FabricAssignment.fabricCode;
+    const selectedGarmentKeys = pendingStep1FabricAssignment.selectedGarmentKeys;
+    const commit = (placement: FutureFabricPiecePlacement) =>
+      commitStep1FabricAssignment({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        fabrics,
+        fabricCode,
+        selectedGarmentKeys,
+        mode,
+        placement,
+      });
+    const result = commit("auto");
     if (result.status === "blocked") {
       reportBlockedStep1FabricAssignment(result.error, true);
       return;
     }
-    applyCommittedStep1FabricAssignment({
-      fabricCode: pendingStep1FabricAssignment.fabricCode,
-      fabricName,
-      assignedGarmentKeys: result.assignedGarmentKeys,
-      keepDialogOnBlock: true,
-    });
+    const placementFabric =
+      step1AssignmentDialogFabric?.currentFabric ||
+      fabrics.find((candidate) => candidate.code === fabricCode);
+    const apply = (placement: FutureFabricPiecePlacement) => {
+      const placed = placement === "auto" ? result : commit(placement);
+      if (placed.status === "blocked") {
+        reportBlockedStep1FabricAssignment(placed.error, true);
+        return;
+      }
+      applyCommittedStep1FabricAssignment({
+        fabricCode,
+        fabricName,
+        assignedGarmentKeys: placed.assignedGarmentKeys,
+        keepDialogOnBlock: true,
+        placement,
+      });
+    };
+    if (!placementFabric) {
+      apply("auto");
+      return;
+    }
+    requestFabricPiecePlacement(
+      placementFabric,
+      result.assignedGarmentKeys,
+      apply,
+    );
   };
 
   const restorePartialFabricAssignmentFocus = (garmentKey: string) => {
@@ -1543,6 +1883,29 @@ export const DormantFutureFabricStep = ({
     setPendingPartialFabricAssignment({ garmentKey });
   };
 
+  // "Use different fabric" on the single-target Add to this fabric? popup:
+  // assign nothing and open the catalogue targeted at the garment, exactly as
+  // the garment card's Add Fabric button does.
+  const useDifferentFabricForPartialAssignment = () => {
+    const garmentKey = pendingPartialFabricAssignment?.garmentKey;
+    setPendingPartialFabricAssignment(null);
+    if (!garmentKey) return;
+    if (
+      fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey &&
+      !fabricAllocationState.awaitingFabricForPendingGarment
+    ) {
+      onChooseAnotherFabric();
+    }
+    const trigger =
+      garmentActionRefs.current.get(garmentKey) ??
+      (typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
+    if (trigger) {
+      openCatalogue(trigger, garmentKey);
+    }
+  };
+
   const cancelPartialFabricAssignment = () => {
     const garmentKey = pendingPartialFabricAssignment?.garmentKey;
     setPendingPartialFabricAssignment(null);
@@ -1560,23 +1923,34 @@ export const DormantFutureFabricStep = ({
       reportBlockedStep1FabricAssignment(unavailable, false);
       return;
     }
-    const result = commitStep1FabricAssignment({
-      state: fabricAllocationState,
-      garmentTypeSelection,
-      fabrics,
-      fabricCode: fabric.code,
-      selectedGarmentKeys: [garmentKey],
-      mode: "selected",
-    });
+    const commit = (placement: FutureFabricPiecePlacement) =>
+      commitStep1FabricAssignment({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        fabrics,
+        fabricCode: fabric.code,
+        selectedGarmentKeys: [garmentKey],
+        mode: "selected",
+        placement,
+      });
+    const result = commit("auto");
     if (result.status === "blocked") {
       reportBlockedStep1FabricAssignment(result.error, false);
       return;
     }
-    applyCommittedStep1FabricAssignment({
-      fabricCode: fabric.code,
-      fabricName: fabric.name,
-      assignedGarmentKeys: result.assignedGarmentKeys,
-      keepDialogOnBlock: false,
+    requestFabricPiecePlacement(fabric, result.assignedGarmentKeys, (placement) => {
+      const placed = placement === "auto" ? result : commit(placement);
+      if (placed.status === "blocked") {
+        reportBlockedStep1FabricAssignment(placed.error, false);
+        return;
+      }
+      applyCommittedStep1FabricAssignment({
+        fabricCode: fabric.code,
+        fabricName: fabric.name,
+        assignedGarmentKeys: placed.assignedGarmentKeys,
+        keepDialogOnBlock: false,
+        placement,
+      });
     });
   };
 
@@ -1674,21 +2048,32 @@ export const DormantFutureFabricStep = ({
     trigger: HTMLElement,
     garmentKey: string | null = null,
     openDialog = false,
+    changingFabric = false,
+    scrollTarget: "catalogue" | "selection_cards" = "catalogue",
   ) => {
     assignmentGenerationRef.current += 1;
     pendingAssignmentAnnouncementRef.current = null;
     postAssignmentFocusRequestRef.current += 1;
     catalogueTriggerRef.current = trigger;
     catalogueFocusGarmentKeyRef.current = garmentKey;
+    changeOpenedFromSummaryRef.current =
+      changingFabric && scrollTarget === "selection_cards";
     const request = ++catalogueFocusRequestRef.current;
     setVisibleActionError(null);
     setCatalogueTargetGarmentKey(garmentKey);
+    setIsChangingFabricSelection(changingFabric);
     setIsCatalogueOpen(openDialog);
     if (openDialog || typeof window === "undefined") {
       return;
     }
     const scrollToCatalogueHeader = () => {
       if (request !== catalogueFocusRequestRef.current) return;
+      if (scrollTarget === "selection_cards") {
+        // Summary row: bring the selection's garment cards into view and
+        // keep focus on the pressed summary button.
+        scrollToChangingFabricSelection(garmentKey);
+        return;
+      }
       const anchor = catalogueScrollAnchorRef.current;
       if (anchor && typeof anchor.scrollIntoView === "function") {
         anchor.scrollIntoView({
@@ -1940,7 +2325,14 @@ export const DormantFutureFabricStep = ({
     if (preview.status === "blocked") {
       const blockedMessage =
         preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
-          ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+          ? getFabricQuantityFitBlockedCopyForGarment({
+              state: fabricAllocationState,
+              garmentTypeSelection,
+              garmentKey,
+              fabricCode: fabric.code,
+              fabrics,
+              requiredPhysicalOccurrences,
+            }) ?? formatFabricQuantityLimitChangeCopy(maxFabricPiecesWithPending)
           : preview.reason === "FABRIC_STOCK_EXHAUSTED"
             ? formatFabricStockExhaustedCopy()
             : "That fabric could not be assigned to this garment.";
@@ -1949,7 +2341,17 @@ export const DormantFutureFabricStep = ({
       pendingAssignmentAnnouncementRef.current = null;
       return;
     }
-    const nextState = onAssignFabricToGarment(fabric, garmentKey);
+    requestFabricPiecePlacement(fabric, [garmentKey], (placement) =>
+      finishSelectedFabricAssignment(fabric, garmentKey, placement),
+    );
+  };
+
+  const finishSelectedFabricAssignment = (
+    fabric: Fabric,
+    garmentKey: string,
+    placement: FutureFabricPiecePlacement,
+  ) => {
+    const nextState = onAssignFabricToGarment(fabric, garmentKey, placement);
     if (nextState && Array.isArray(nextState.fabricAllocations)) {
       const assigned = nextState.fabricAllocations.some((allocation) =>
         allocation.garmentAssignments.some(
@@ -2029,6 +2431,7 @@ export const DormantFutureFabricStep = ({
     setPendingFabricRemoval(null);
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
+    setIsChangingFabricSelection(false);
     catalogueFocusRequestRef.current += 1;
     catalogueTriggerRef.current = null;
     catalogueFocusGarmentKeyRef.current = null;
@@ -2086,6 +2489,18 @@ export const DormantFutureFabricStep = ({
     onUseSameFabric();
   };
 
+  const openChangeFromSummary = (
+    item: FabricSelectionSummaryItem,
+    trigger: HTMLElement,
+  ) => {
+    const garmentKey = getFirstChangingGarmentKey(
+      targets.map(({ assignment }) => assignment.garmentKey),
+      item.garmentKeys,
+    );
+    if (!garmentKey) return;
+    openCatalogue(trigger, garmentKey, false, true, "selection_cards");
+  };
+
   const renderCatalogueCard = (fabric: Fabric) => {
     const pendingTargetAssignment = pendingAdditionalAssignment;
     const currentTarget =
@@ -2111,8 +2526,29 @@ export const DormantFutureFabricStep = ({
           step1Presentation.status === "UNAVAILABLE" ||
           unassignedStep1Targets.length > 0),
     );
+    // Change Fabric targets a whole Fabric Selection (allocation). Its cards
+    // must not reuse the single-garment assign presentation: fabrics used by
+    // other selections stay pickable (USE AGAIN) and never expose the X that
+    // would remove another selection's fabric.
+    const changeCardPresentation =
+      isChangeFabricTarget && changeFabricAssignmentTarget
+        ? resolveFutureFabricChangeCatalogueCardPresentation({
+            fabricCode: fabric.code,
+            fabricAllocationState,
+            allocationId: changeFabricAssignmentTarget.allocation.allocationId,
+            fabrics,
+            targetGarmentKey: changeFabricAssignmentTarget.assignment.garmentKey,
+          })
+        : null;
     const cardPresentation: FutureFabricCatalogueCardPresentation =
-      step1Presentation && useStep1CardPresentation
+      changeCardPresentation
+        ? {
+            status: changeCardPresentation.status,
+            action: changeCardPresentation.action,
+            cancelGarmentKey: changeCardPresentation.cancelGarmentKey,
+            cancelGarmentKeys: changeCardPresentation.cancelGarmentKeys,
+          }
+        : step1Presentation && useStep1CardPresentation
         ? adaptUntargetedStep1CatalogueCardPresentation({
             step1Status: step1Presentation.status,
             step1Action: step1Presentation.action,
@@ -2216,14 +2652,31 @@ export const DormantFutureFabricStep = ({
     );
     const singleCancelLabel =
       labeledCancelTargets.length === 1 ? labeledCancelTargets[0]!.label : "";
+    const changeSelectionNumber =
+      changeCardPresentation && changeFabricAssignmentTarget
+        ? fabricAllocationState.fabricAllocations.findIndex(
+            (allocation) =>
+              allocation.allocationId ===
+              changeFabricAssignmentTarget.allocation.allocationId,
+          ) + 1
+        : 0;
     const targetGarmentLabel =
-      cardPresentation.action === "cancel"
+      changeCardPresentation && changeSelectionNumber > 0
+        ? `Fabric Selection ${changeSelectionNumber}`
+        : cardPresentation.action === "cancel"
         ? singleCancelLabel || undefined
         : currentTarget
           ? getFutureGarmentLabel(currentTarget.assignment.garmentType)
           : undefined;
     const handleCatalogueRemove = (event?: { currentTarget: HTMLElement }) => {
       if (
+        (changeCardPresentation &&
+          (changeCardPresentation.changeMode !== "change-assigned" ||
+            cancelGarmentKeys.some(
+              (garmentKey) =>
+                garmentKey !==
+                changeFabricAssignmentTarget?.assignment.garmentKey,
+            ))) ||
         cancelGarmentKeys.length === 0 ||
         getFabricAvailabilityMessage(fabric)
       ) {
@@ -2268,12 +2721,52 @@ export const DormantFutureFabricStep = ({
                   hasReusableHalfCapacity || allowExistingPartialReuse,
               })
         }
-        stockConstraintMessage={stockConstraintMessage}
+        stockConstraintMessage={
+          changeCardPresentation?.changeMode === "change-blocked" &&
+          !getFabricAvailabilityMessage(fabric)
+            ? null
+            : stockConstraintMessage
+        }
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
         onAction={(event) => {
           handleFabricSelection(fabric, event?.currentTarget);
         }}
+        statusLabel={
+          changeCardPresentation?.changeMode === "change-assigned"
+            ? "ASSIGNED"
+            : undefined
+        }
+        usedBySelectionsLabel={
+          changeCardPresentation?.status === "USE AGAIN" &&
+          changeFabricAssignmentTarget
+            ? formatFabricSelectionNumbersBadge(
+                getFabricSelectionNumbersUsingFabric({
+                  fabricAllocationState,
+                  fabricCode: fabric.code,
+                  excludeAllocationId:
+                    changeFabricAssignmentTarget.allocation.allocationId,
+                }),
+              ) || undefined
+            : undefined
+        }
+        disabledActionMessage={
+          changeCardPresentation?.changeMode === "change-blocked" &&
+          !getFabricAvailabilityMessage(fabric)
+            ? stockConstraintMessage || "This Fabric is unavailable."
+            : undefined
+        }
         onRemove={handleCatalogueRemove}
+        dataAttributes={
+          changeCardPresentation
+            ? {
+                "data-fabric-change-card": changeCardPresentation.changeMode,
+                "data-fabric-change-selection":
+                  changeSelectionNumber > 0
+                    ? String(changeSelectionNumber)
+                    : undefined,
+              }
+            : undefined
+        }
       />
     );
   };
@@ -2294,6 +2787,9 @@ export const DormantFutureFabricStep = ({
     } else if (target.type === "garment_remove") {
       scrollElement = garmentCardRefs.current.get(target.garmentKey);
       focusElement = garmentRemoveRefs.current.get(target.garmentKey);
+    } else if (target.type === "quantity_move") {
+      focusElement = quantityMoveActionRef.current;
+      scrollElement = focusElement;
     } else if (target.type === "pending_panel") {
       focusElement = pendingPanelActionRef.current;
       scrollElement = focusElement;
@@ -2312,7 +2808,49 @@ export const DormantFutureFabricStep = ({
     }
   };
 
+  const handleQuantityRepairMove = () => {
+    if (!quantityRepair || !onMoveGarmentToFabricAllocation) return;
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    const result = onMoveGarmentToFabricAllocation(
+      quantityRepair.garmentKey,
+      quantityRepair.toAllocationId,
+    );
+    if (result && result.status !== "moved") {
+      const message = "That garment could not be moved. Remove or change a Fabric assignment instead.";
+      setVisibleActionError(message);
+      setAssignmentAnnouncement(message);
+      return;
+    }
+    setVisibleActionError(null);
+    setAssignmentAnnouncement(
+      `${quantityRepairGarmentLabel ?? "Garment"} moved to Fabric Selection ${quantityRepair.toSelectionNumber}.`,
+    );
+  };
+
   const fabricGuideTitleId = `${fabricGuideIdPrefix}-title`;
+  const renderFabricGuideMessage = (
+    message: string,
+    options: { stepId?: string; garmentLabel?: string } = {},
+  ) => (
+    <span
+      key={options.stepId ? `${options.stepId}:${message}` : message}
+      data-fabric-guide-message="true"
+      data-fabric-guide-message-step={options.stepId}
+      data-avoidable-partial-guidance={
+        message === avoidablePartialGuidanceCopy &&
+        showAvoidablePartialGuidance
+          ? "true"
+          : undefined
+      }
+      className="block break-words text-pretty text-[11px] leading-relaxed text-heritage-ink/85"
+    >
+      {options.garmentLabel ? (
+        <span className="font-semibold text-heritage-ink">{`${options.garmentLabel}: `}</span>
+      ) : null}
+      {message}
+    </span>
+  );
   const renderFabricGuideStep = (step: FabricGuideStep, index: number) => {
     const isCurrent = step.status === "current";
     const isDone = step.status === "done";
@@ -2348,10 +2886,10 @@ export const DormantFutureFabricStep = ({
               onClick={() => focusFabricGuideTarget(step.target)}
               className={`min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                 isDone
-                  ? "font-medium text-heritage-ink/55 decoration-heritage-ink/25"
+                  ? "font-medium text-heritage-ink/75 decoration-heritage-ink/35"
                   : isCurrent
                     ? "font-bold text-heritage-green decoration-heritage-gold"
-                    : "font-semibold text-heritage-green/80 decoration-heritage-gold/50"
+                    : "font-semibold text-heritage-green decoration-heritage-gold/50"
               }`}
             >
               {step.label}
@@ -2359,7 +2897,7 @@ export const DormantFutureFabricStep = ({
           ) : (
             <span
               className={`break-words ${
-                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/70"
+                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/85"
               }`}
             >
               {step.label}
@@ -2367,26 +2905,273 @@ export const DormantFutureFabricStep = ({
           )}
           {step.messages.length > 0 && !isDone ? (
             <span className="mt-0.5 block space-y-0.5">
-              {step.messages.map((message) => (
-                <span
-                  key={message}
-                  data-fabric-guide-message="true"
-                  data-avoidable-partial-guidance={
-                    message === avoidablePartialGuidanceCopy &&
-                    showAvoidablePartialGuidance
-                      ? "true"
-                      : undefined
-                  }
-                  className="block break-words text-[11px] leading-relaxed text-heritage-ink/70"
-                >
-                  {message}
-                </span>
-              ))}
+              {step.messages.map((message) => renderFabricGuideMessage(message))}
             </span>
+          ) : null}
+          {step.kind === "fix_quantity" &&
+          step.target.type === "quantity_move" &&
+          !isDone &&
+          quantityRepair &&
+          quantityRepairGarmentLabel ? (
+            <button
+              ref={quantityMoveActionRef}
+              type="button"
+              data-testid="fabric-guide-quantity-move"
+              data-fabric-guide-beam={
+                isFabricGuideBeamOn("quantity_move", quantityRepair.garmentKey)
+                  ? "true"
+                  : undefined
+              }
+              onClick={handleQuantityRepairMove}
+              className={`mt-1.5 inline-flex min-h-11 max-w-full items-center justify-center rounded-lg border border-heritage-green bg-heritage-green px-3 text-center text-[10px] font-bold uppercase tracking-wide text-white transition hover:bg-white hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${fabricGuideBeamClass(
+                "quantity_move",
+                quantityRepair.garmentKey,
+              )}`}
+            >
+              {`Move ${quantityRepairGarmentLabel} to Fabric Selection ${quantityRepair.toSelectionNumber}`}
+            </button>
           ) : null}
         </span>
       </li>
     );
+  };
+  // Choose-a-fabric and every per-garment assign step share ONE highlighted
+  // card. The heading shows the group's current step; garments are compact
+  // chips on one wrapping line. Each chip keeps its step's data attributes,
+  // label (as aria-label) and target, so counts and links are unchanged.
+  const isFabricGuideGroupStep = (step: FabricGuideStep) =>
+    step.kind === "choose_fabric" || step.kind === "assign_garment";
+  const fabricGuideGarmentLabelForStep = (step: FabricGuideStep): string =>
+    fabricGuideGarmentLabels.get(step.id.slice("assign_garment:".length)) ?? step.label;
+  const renderFabricGuideChooseAssignGroup = () => {
+    const allSteps = fabricGuideFlow.steps;
+    const groupSteps = allSteps.filter(isFabricGuideGroupStep);
+    const chooseStep = groupSteps.find((step) => step.kind === "choose_fabric");
+    const assignSteps = groupSteps.filter((step) => step.kind === "assign_garment");
+    const focusStep =
+      groupSteps.find((step) => step.status === "current") ??
+      groupSteps.find((step) => step.status !== "done") ??
+      null;
+    const groupStatus = groupSteps.some((step) => step.status === "current")
+      ? "current"
+      : groupSteps.every((step) => step.status === "done")
+        ? "done"
+        : "upcoming";
+    const headingStep = focusStep ?? chooseStep ?? groupSteps[0]!;
+    const headingIndex = allSteps.indexOf(headingStep);
+    const chooseInHeading = Boolean(chooseStep && headingStep === chooseStep);
+    const headingIsCurrent = headingStep.status === "current";
+    const headingIsDone = headingStep.status === "done";
+    const headingStatusText = headingIsDone
+      ? "Done"
+      : headingIsCurrent
+        ? "Current step"
+        : "Still to do";
+    const headingLinkClass = `min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+      headingIsDone
+        ? "font-medium text-heritage-ink/75 decoration-heritage-ink/35"
+        : headingIsCurrent
+          ? "font-bold text-heritage-green decoration-heritage-gold"
+          : "font-semibold text-heritage-green decoration-heritage-gold/50"
+    }`;
+    const headingContent = (
+      <>
+        <span className="sr-only">{`${headingStatusText}, step ${headingIndex + 1}: `}</span>
+        {headingStep.target.type !== "none" ? (
+          <button
+            type="button"
+            {...(chooseInHeading
+              ? { "data-fabric-guide-link": headingStep.id }
+              : { "data-fabric-guide-heading-link": headingStep.id })}
+            onClick={() => focusFabricGuideTarget(headingStep.target)}
+            className={headingLinkClass}
+          >
+            {headingStep.label}
+          </button>
+        ) : (
+          <span
+            className={`break-words ${
+              headingIsCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/85"
+            }`}
+          >
+            {headingStep.label}
+          </span>
+        )}
+      </>
+    );
+    const chipClass = (status: FabricGuideStep["status"]) =>
+      `inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-left text-[11px] leading-tight break-words transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+        status === "done"
+          ? "border-emerald-300 bg-emerald-50 font-medium text-emerald-700 focus-visible:ring-heritage-gold"
+          : status === "current"
+            ? "border-heritage-gold bg-heritage-gold font-bold text-heritage-green shadow-sm focus-visible:ring-heritage-green"
+            : "border-heritage-gold bg-white font-semibold text-heritage-green shadow-sm hover:bg-heritage-cream focus-visible:ring-heritage-gold"
+      }`;
+    const renderChip = (
+      step: FabricGuideStep,
+      visibleLabel: string,
+      ariaLabel: string,
+      options: { tickText?: boolean } = {},
+    ) => {
+      const isChipDone = step.status === "done";
+      const isChipCurrent = step.status === "current";
+      const chipProps = {
+        "data-fabric-guide-step": step.id,
+        "data-fabric-guide-step-kind": step.kind,
+        "data-fabric-guide-step-status": step.status,
+        "data-fabric-guide-chip": "true",
+        "aria-current": isChipCurrent ? ("step" as const) : undefined,
+        "aria-label": ariaLabel,
+        // "Fabric chosen" is plain tick text (no pill) so it never reads as a
+        // garment chip.
+        className: options.tickText
+          ? "inline-flex min-h-8 items-center gap-1 rounded px-0.5 text-left text-[11px] font-medium leading-tight text-emerald-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
+          : chipClass(step.status),
+      };
+      const chipBody = (
+        <>
+          {isChipDone ? (
+            <CheckCircle2
+              size={12}
+              aria-hidden="true"
+              data-fabric-guide-chip-tick="true"
+              className="shrink-0 text-emerald-700"
+            />
+          ) : null}
+          <span className="min-w-0 break-words">{visibleLabel}</span>
+        </>
+      );
+      return (
+        <li
+          key={step.id}
+          className={options.tickText ? "flex max-w-full shrink-0 items-center whitespace-nowrap" : "max-w-full"}
+        >
+          {step.target.type !== "none" ? (
+            <button
+              type="button"
+              {...chipProps}
+              data-fabric-guide-link={step.id}
+              onClick={() => focusFabricGuideTarget(step.target)}
+            >
+              {chipBody}
+            </button>
+          ) : (
+            <span {...chipProps}>{chipBody}</span>
+          )}
+          {options.tickText ? (
+            <span
+              aria-hidden="true"
+              data-fabric-guide-chip-divider="true"
+              className="ml-2 mr-1 h-5 w-px shrink-0 bg-heritage-gold/40"
+            />
+          ) : null}
+        </li>
+      );
+    };
+    const messageSteps = groupSteps.filter(
+      (step) => step.status !== "done" && step.messages.length > 0,
+    );
+    const orderedMessageSteps = [
+      ...messageSteps.filter((step) => step === headingStep),
+      ...messageSteps.filter((step) => step !== headingStep),
+    ];
+    return (
+      <li
+        key="fabric-guide-choose-assign"
+        data-fabric-guide-group="choose_assign"
+        data-fabric-guide-group-status={groupStatus}
+        data-fabric-guide-group-current={headingStep.id}
+        className={`flex min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 ${
+          groupStatus === "current" ? "bg-white/90 ring-1 ring-heritage-gold/60" : ""
+        }`}
+      >
+        <span aria-hidden="true" className="mt-0.5 shrink-0">
+          {groupStatus === "done" ? (
+            <CheckCircle2 size={16} className="text-emerald-700" />
+          ) : headingIsCurrent ? (
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-heritage-gold text-[9px] font-bold text-white">
+              {headingIndex + 1}
+            </span>
+          ) : (
+            <Circle size={16} className="text-heritage-ink/35" />
+          )}
+        </span>
+        <div
+          className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4"
+          data-fabric-guide-group-layout="two-column"
+        >
+          <div className="min-w-0 sm:min-w-[13rem] sm:flex-1" data-fabric-guide-group-main="true">
+            {chooseInHeading && chooseStep ? (
+              <span
+                className="block"
+                data-fabric-guide-step={chooseStep.id}
+                data-fabric-guide-step-kind={chooseStep.kind}
+                data-fabric-guide-step-status={chooseStep.status}
+                aria-current={chooseStep.status === "current" ? "step" : undefined}
+              >
+                {headingContent}
+              </span>
+            ) : (
+              <span className="block" data-fabric-guide-group-heading={headingStep.id}>
+                {headingContent}
+              </span>
+            )}
+            {orderedMessageSteps.length > 0 ? (
+              <span className="mt-0.5 block space-y-0.5">
+                {orderedMessageSteps.flatMap((step) =>
+                  step.messages.map((message) =>
+                    renderFabricGuideMessage(message, {
+                      stepId: step.id,
+                      garmentLabel:
+                        step !== headingStep && step.kind === "assign_garment"
+                          ? fabricGuideGarmentLabelForStep(step)
+                          : undefined,
+                    }),
+                  ),
+                )}
+              </span>
+            ) : null}
+          </div>
+          {assignSteps.length > 0 ? (
+            <div
+              className="mt-1 flex min-w-0 flex-wrap items-start gap-1 sm:mt-0 sm:flex-initial sm:flex-nowrap sm:justify-end"
+              data-fabric-guide-group-chips="true"
+            >
+              {chooseInHeading && chooseStep && chooseStep.status !== "done" ? (
+                <span
+                  className="inline-flex min-h-8 shrink-0 items-center text-[11px] font-semibold text-heritage-ink/85"
+                  data-fabric-guide-chips-label="true"
+                >
+                  Then assign:
+                </span>
+              ) : null}
+              <ul
+                className="contents sm:flex sm:min-w-0 sm:flex-wrap sm:items-center sm:justify-start sm:gap-1"
+                aria-label="Garments to assign fabric to"
+              >
+                {chooseStep && !chooseInHeading
+                  ? renderChip(chooseStep, "Fabric chosen", `${chooseStep.label}: done`, {
+                      tickText: true,
+                    })
+                  : null}
+                {assignSteps.map((step) =>
+                  renderChip(step, fabricGuideGarmentLabelForStep(step), step.label),
+                )}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </li>
+    );
+  };
+  const renderFabricGuideSteps = () => {
+    let groupRendered = false;
+    return fabricGuideFlow.steps.flatMap((step, index) => {
+      if (!isFabricGuideGroupStep(step)) return [renderFabricGuideStep(step, index)];
+      if (groupRendered) return [];
+      groupRendered = true;
+      return [renderFabricGuideChooseAssignGroup()];
+    });
   };
   const renderFabricGuide = () => (
     <DesignStudioStepGuide
@@ -2398,15 +3183,16 @@ export const DormantFutureFabricStep = ({
       data-fabric-guide="true"
       data-fabric-guide-current={fabricGuideFlow.currentStep?.id}
       data-fabric-quantity-over-allocated={isOverAllocated ? "true" : undefined}
+      data-fabric-quantity-stranded={isQuantityStranded ? "true" : undefined}
     >
       <p className="sr-only" aria-live="polite" data-fabric-guide-announcement="true">
         {formatFabricGuideCurrentStepAnnouncement(fabricGuideFlow)}
       </p>
-      <p className="mt-0.5 text-[11px] text-heritage-ink/65">
+      <p className="mt-0.5 text-[11px] text-heritage-ink/85">
         {`${fabricGuideFlow.doneCount} of ${fabricGuideFlow.steps.length} done. Follow the gold highlight to your next step.`}
       </p>
       <ol className="mt-1.5 space-y-1" aria-labelledby={fabricGuideTitleId}>
-        {fabricGuideFlow.steps.map(renderFabricGuideStep)}
+        {renderFabricGuideSteps()}
       </ol>
     </DesignStudioStepGuide>
   );
@@ -2498,7 +3284,13 @@ export const DormantFutureFabricStep = ({
               </div>
             ) : (
             <div className="min-w-0 flex-1">
-              <p data-fabric-selection-progress="true" className="break-words">
+              <p
+                data-fabric-selection-progress="true"
+                data-fabric-chosen-over-needed={
+                  selectedFabricQuantity > requiredFabricQuantity ? "true" : undefined
+                }
+                className="break-words"
+              >
                 {formatFabricSelectionProgress(
                   selectedFabricQuantity,
                   requiredFabricQuantity,
@@ -2682,6 +3474,13 @@ export const DormantFutureFabricStep = ({
             const unassignedFabricAction = assigned
               ? null
               : resolveUnassignedGarmentFabricAction(assignment.garmentKey);
+            const selectionHighlight = resolveFabricSelectionCardHighlight({
+              isChangingFabric: isChangingFabricSelection,
+              changingSelectionNumber,
+              cardSelectionNumber: selectionNumber,
+            });
+            const selectionHighlightClass =
+              getFabricSelectionCardClass(selectionHighlight);
             return (
               <article
                 key={assignment.garmentKey}
@@ -2697,10 +3496,15 @@ export const DormantFutureFabricStep = ({
                     ? "true"
                     : undefined
                 }
-                className={`flex min-w-0 scroll-mt-28 flex-col rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-4 ${fabricGuideBeamClass(
+                className={`relative flex min-w-0 flex-col rounded-xl border bg-heritage-cream/25 p-4 transition-opacity ${
+                  selectionHighlight === "changing"
+                    ? `border-heritage-gold ${FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS}`
+                    : "scroll-mt-28 border-heritage-gold/20"
+                } ${fabricGuideBeamClass(
                   "garment_card",
                   assignment.garmentKey,
-                )} ${
+                )} ${selectionHighlightClass} ${
+                  selectionHighlight === "idle" &&
                   postAssignmentHighlight?.garmentKey === assignment.garmentKey
                     ? postAssignmentHighlight.kind === "assigned"
                       ? STEP2_ASSIGNED_HIGHLIGHT_CLASS
@@ -2709,6 +3513,16 @@ export const DormantFutureFabricStep = ({
                 }`}
                 data-garment-key={assignment.garmentKey}
                 data-assignment-status={assigned ? "assigned" : "unassigned"}
+                data-fabric-selection-highlight={selectionHighlight}
+                data-fabric-selection-number={
+                  selectionNumber != null ? String(selectionNumber) : undefined
+                }
+                data-fabric-selection-highlight-anchor={
+                  selectionHighlight === "changing" &&
+                  assignment.garmentKey === firstChangingGarmentKey
+                    ? "true"
+                    : undefined
+                }
                 data-post-assignment-highlight={
                   postAssignmentHighlight?.garmentKey === assignment.garmentKey
                     ? postAssignmentHighlight.kind
@@ -2718,7 +3532,19 @@ export const DormantFutureFabricStep = ({
                 {/* Same layout for every card: details beside a fixed-size image
                     slot, content grows so the action button pins to the bottom. */}
                 <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start">
-                  <div className="min-w-0 flex-1">
+                  {selectionNumber != null ? (
+                    <span
+                      data-fabric-selection-badge="true"
+                      role="img"
+                      aria-label={`Fabric Selection ${selectionNumber}`}
+                      className={`pointer-events-none absolute left-3 top-3 z-10 ${getFabricSelectionBadgeClass(
+                        selectionNumber,
+                      )}`}
+                    >
+                      {selectionNumber}
+                    </span>
+                  ) : null}
+                  <div className="min-w-0 flex-1 pl-8">
                     <div className="flex min-w-0 items-start gap-2">
                       {/* Title on its own line and the badge always below it,
                           so every card lines up whatever the name length. */}
@@ -2736,6 +3562,14 @@ export const DormantFutureFabricStep = ({
                         >
                           {assigned ? "Assigned" : "Needs fabric"}
                         </span>
+                        {selectionHighlight === "changing" ? (
+                          <span
+                            data-fabric-selection-changing-tag="true"
+                            className="shrink-0 rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
+                          >
+                            Changing
+                          </span>
+                        ) : null}
                       </div>
                       {assigned && (
                         <button
@@ -2848,7 +3682,12 @@ export const DormantFutureFabricStep = ({
                       ) {
                         onChooseAnotherFabric();
                       }
-                      openCatalogue(event.currentTarget, assignment.garmentKey);
+                      openCatalogue(
+                        event.currentTarget,
+                        assignment.garmentKey,
+                        false,
+                        true,
+                      );
                     }}
                     aria-label={`Change fabric for ${garmentLabel}`}
                     data-fabric-guide-beam={
@@ -2963,20 +3802,68 @@ export const DormantFutureFabricStep = ({
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
               Fabric Catalogue
             </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
             <h3
               ref={catalogueHeadingRef}
               aria-live="polite"
               tabIndex={-1}
-              className="mt-1 font-serif text-xl font-bold text-heritage-green"
+              className="min-w-0 font-serif text-xl font-bold text-heritage-green"
             >
-              {changeFabricPresentation
-                ? `Changing Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`
-                : activeCatalogueTarget
-                  ? `Choosing fabric for: ${getFutureGarmentLabel(
-                      activeCatalogueTarget.assignment.garmentType,
-                    )}`
-                  : "Available Fabrics"}
+              {changeFabricPresentation ? (
+                <button
+                  type="button"
+                  data-testid="fabric-selection-change-heading"
+                  aria-label={`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}. Jump to highlighted garment cards.`}
+                  onClick={() =>
+                    scrollToChangingFabricSelection(firstChangingGarmentKey)
+                  }
+                  className="inline-flex max-w-full items-center gap-3 rounded-lg text-left font-serif text-xl font-bold text-heritage-green transition hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <span
+                    data-fabric-selection-heading-thumb="true"
+                    className="inline-flex shrink-0"
+                    aria-hidden="true"
+                  >
+                    <AssignedFabricPreview
+                      fabric={changingFabric}
+                      garmentKey="fabric-selection-change-heading"
+                      garmentLabel={`Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                      fabricCode={changeFabricPresentation.fabricCode}
+                      size="thumb"
+                      className="h-8 w-8 overflow-hidden rounded-full border border-heritage-gold/40 bg-heritage-cream/40"
+                      imageAlt=""
+                    />
+                  </span>
+                  <span>
+                    {`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                  </span>
+                </button>
+              ) : activeCatalogueTarget ? (
+                `Choosing fabric for: ${getFutureGarmentLabel(
+                  activeCatalogueTarget.assignment.garmentType,
+                )}`
+              ) : (
+                "Available Fabrics"
+              )}
             </h3>
+            {changeFabricPresentation ? (
+              // Compact Cancel change beside the heading so mobile customers
+              // don't have to scroll past the whole catalogue. Own line and
+              // left-aligned on mobile, clear of the right-side floating buttons.
+              <div className="w-full sm:w-auto" data-fabric-change-cancel-near-heading="true">
+                <button
+                  type="button"
+                  onClick={cancelFabricChangeKeepingPlace}
+                  data-testid="fabric-change-cancel-heading"
+                  aria-label={`Cancel change for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 border-heritage-green bg-white px-3 text-[11px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <X aria-hidden="true" size={13} />
+                  Cancel change
+                </button>
+              </div>
+            ) : null}
+            </div>
             <p
               id="future-fabric-catalogue-help"
               className="mt-2 max-w-2xl break-words text-xs leading-relaxed text-heritage-ink/65"
@@ -2987,20 +3874,23 @@ export const DormantFutureFabricStep = ({
               data-fabric-quantity-over-allocated={
                 isOverAllocated ? "true" : undefined
               }
+              data-fabric-change-swap-free={
+                changeFabricPresentation && !isOverAllocated ? "true" : undefined
+              }
             >
               {isOverAllocated
                 ? formatFabricQuantityOverAllocatedCopy(
                     selectedFabricQuantity,
-                    requiredFabricQuantity,
+                    maxFabricPieces,
                   )
                 : showAllocationLimitCopy
                   ? formatFabricQuantityLimitReachedCopy(requiredFabricQuantity)
                   : changeFabricPresentation?.isSharedGroup
                     ? `This Fabric is shared by ${formatGarmentList([
                         ...changeFabricPresentation.garmentLabels,
-                      ])}. Changing it will update both garments.`
+                      ])}. Changing it will update both garments. ${FABRIC_CHANGE_SWAP_FREE_COPY}`
                     : changeFabricPresentation
-                      ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}.`
+                      ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}. ${FABRIC_CHANGE_SWAP_FREE_COPY}`
                       : activeCatalogueTarget
                         ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
                             activeCatalogueTarget.assignment.garmentType,
@@ -3021,17 +3911,59 @@ export const DormantFutureFabricStep = ({
               {assignmentAnnouncement}
             </p>
           </div>
+          <div
+            ref={summaryRowAnchorRef}
+            data-fabric-selection-summary-anchor="true"
+            className="scroll-mt-28"
+          >
+            <FabricSelectionSummaryRow
+              items={fabricSelectionSummaryItems}
+              changingAllocationId={changingAllocationId}
+              onSelectSelection={(item, event) =>
+                openChangeFromSummary(item, event.currentTarget)
+              }
+            />
+          </div>
           {renderVisibleCatalogue(
             "grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
           )}
           {catalogueTargetGarmentKey && (
-            <div className="mt-5">
+            <div
+              className={
+                changeFabricPresentation
+                  ? "mt-5 pr-16 pb-[env(safe-area-inset-bottom,0px)] sm:pr-0"
+                  : "mt-5"
+              }
+            >
               <button
                 type="button"
-                onClick={closeCatalogueForCancellation}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                onClick={
+                  changeFabricPresentation
+                    ? cancelFabricChangeKeepingPlace
+                    : closeCatalogueForCancellation
+                }
+                data-testid={
+                  changeFabricPresentation ? "fabric-change-cancel" : undefined
+                }
+                aria-label={
+                  changeFabricPresentation
+                    ? `Cancel change for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`
+                    : undefined
+                }
+                className={
+                  changeFabricPresentation
+                    ? "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-heritage-green bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                    : "inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                }
               >
-                Cancel
+                {changeFabricPresentation ? (
+                  <>
+                    <X aria-hidden="true" size={14} />
+                    Cancel change
+                  </>
+                ) : (
+                  "Cancel"
+                )}
               </button>
             </div>
           )}
@@ -3169,6 +4101,7 @@ export const DormantFutureFabricStep = ({
           selectedGarmentKeys={pendingStep1FabricAssignment.selectedGarmentKeys}
           selectedCount={step1AssignmentEvaluation.selectedCount}
           selectedCapacityUnits={step1AssignmentEvaluation.selectedCapacityUnits}
+          capacityUnitsInUse={step1AssignmentEvaluation.capacityUnitsInUse}
           maxCapacityUnits={step1AssignmentEvaluation.maxCapacityUnits}
           canAssignSelected={
             !step1AssignmentDialogFabric.unavailableError &&
@@ -3188,6 +4121,7 @@ export const DormantFutureFabricStep = ({
           remainingCapacityMessage={
             step1AssignmentEvaluation.remainingCapacityMessage
           }
+          remainingCapacityNote={step1AssignmentEvaluation.remainingCapacityNote}
           candidateEnabled={step1AssignmentEvaluation.candidateEnabled}
           candidateMessages={step1AssignmentEvaluation.candidateMessages}
           selectedFailure={step1AssignmentEvaluation.selectedFailure}
@@ -3252,6 +4186,29 @@ export const DormantFutureFabricStep = ({
         />
       ) : null}
 
+      {pendingPiecePlacement ? (
+        <FabricPiecePlacementDialog
+          fabricName={pendingPiecePlacement.fabricName}
+          garmentLabel={pendingPiecePlacement.garmentLabel}
+          pairSelectionNumber={pendingPiecePlacement.choice.pairSelectionNumber}
+          pairRemainingUnits={pendingPiecePlacement.choice.pairRemainingUnits}
+          newPieceAvailable={pendingPiecePlacement.choice.newPieceAvailable}
+          newPieceBlockedMessage={
+            pendingPiecePlacement.choice.newPieceAvailable
+              ? null
+              : formatFabricNewPieceUnavailableCopy({
+                  reason: pendingPiecePlacement.choice.newPieceBlockedReason,
+                  maxFabricPieces: maxFabricPiecesWithPending,
+                  pairSelectionNumber:
+                    pendingPiecePlacement.choice.pairSelectionNumber,
+                })
+          }
+          onPair={() => resolvePendingPiecePlacement("auto")}
+          onNewPiece={() => resolvePendingPiecePlacement("new_piece")}
+          onCancel={() => resolvePendingPiecePlacement(null)}
+        />
+      ) : null}
+
       {pendingPartialFabricAssignment &&
       partialAssignmentPresentations.length > 0 ? (
         <PartialFabricCapacityAssignmentDialog
@@ -3275,6 +4232,7 @@ export const DormantFutureFabricStep = ({
           targets={partialAssignmentPresentations}
           onConfirm={commitPartialFabricAssignment}
           onCancel={cancelPartialFabricAssignment}
+          onUseDifferentFabric={useDifferentFabricForPartialAssignment}
         />
       ) : null}
 

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, Suspense } from "react";
+import { useNotificationAutoDismiss } from "./hooks/useNotificationAutoDismiss";
 
 import {
   Check,
@@ -41,6 +42,13 @@ import {
 import {
   resolvePersistedDraftOrderContext,
 } from "./utils/orderContextIdentity";
+import { stampLinkedSavedOrderId } from "./utils/savedStudioOrderModel";
+import { allowNextStudioFutureDesignDraftSession } from "./services/retirePaidStudioDraft";
+import {
+  SavedStudioOrderProvider,
+  type SavedStudioOrderHydrateMode,
+} from "./components/SavedStudioOrderProvider";
+import type { SavedStudioOrderItemV1 } from "./utils/savedStudioOrderModel";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
@@ -121,6 +129,7 @@ import { AdminAuthGuard } from "./components/AdminAuthGuard";
 import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
 import { IndividualOrderStartDialog } from "./components/IndividualOrderStartDialog";
 import PrivateBatchSetupView, {
+  resolvePrivateBatchSubmitLimits,
   type PrivateBatchSetupSubmission,
   type PrivateBatchSetupValues,
 } from "./components/PrivateBatchSetupView";
@@ -197,7 +206,11 @@ export default function App() {
     setBatches,
     businessSettings,
     setBusinessSettings,
+    hasLoadedBusinessSettings,
   } = store;
+
+  // Every toast auto-dismisses here; callers only set the notification.
+  useNotificationAutoDismiss(notification, setNotification);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -387,9 +400,6 @@ export default function App() {
     type: "success" | "info" = "success",
   ) => {
     setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
   };
 
   const resolveCurrentHomepageCommunityEntry = (batchId: string) =>
@@ -485,6 +495,75 @@ export default function App() {
     setPresetFabricCode(null);
     setOrderContext(context);
     setActiveTab("design");
+  };
+
+  const [studioContinueNonce, setStudioContinueNonce] = useState(0);
+
+  const inspectActiveDraftForSavedOrder = async () => {
+    const inspected = await getHomepageDraftReplacementService().inspect();
+    if (inspected.status === "valid") return inspected.existing.draft;
+    return GuestOrderSessionService.getFutureDesignDraft();
+  };
+
+  const hydrateSavedStudioOrder = async ({
+    item,
+    mode,
+  }: {
+    item: SavedStudioOrderItemV1;
+    mode: SavedStudioOrderHydrateMode;
+  }) => {
+    const authority = getHomepageDraftReplacementService();
+    if (mode === "replace") {
+      const inspected = await authority.inspect();
+      if (inspected.status === "valid") {
+        const discarded = await authority.discard(inspected.existing);
+        if (discarded.status !== "discarded") {
+          triggerNotification(
+            "We could not replace your unfinished order safely. It has not been changed.",
+            "info",
+          );
+          return;
+        }
+      } else if (inspected.status !== "empty") {
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+        return;
+      }
+    }
+    const draft = stampLinkedSavedOrderId(
+      {
+        ...item.draft,
+        currentStageId: item.savedStage,
+        currentStep: item.savedStep,
+        resumeLocus: item.resumeLocus ?? item.draft.resumeLocus,
+        updatedAt: new Date().toISOString(),
+      },
+      item.savedOrderId,
+    );
+    GuestOrderSessionService.saveFutureDesignDraft(draft);
+    const firebaseUser = auth.currentUser;
+    if (currentUser && firebaseUser && !firebaseUser.isAnonymous) {
+      const repository = createFirebaseAuthenticatedFutureDraftRepository({
+        customer: currentUser,
+        authResolved: true,
+        firebaseUser,
+      });
+      const loaded = await repository.load();
+      const expectedRevision =
+        loaded.status === "loaded" ? loaded.record.revision : null;
+      await repository.save(draft, expectedRevision);
+    }
+    allowNextStudioFutureDesignDraftSession();
+    const resumeContext =
+      resolvePersistedDraftOrderContext(
+        draft,
+        homepageCurrentBatchesRef.current,
+        homepageDefaultPickupLocationRef.current,
+      ) ?? freshIndividualOrderContext();
+    setStudioContinueNonce((current) => current + 1);
+    openDesignStudioForOrder(resumeContext);
   };
 
   React.useEffect(() => {
@@ -833,6 +912,19 @@ export default function App() {
   const createPrivateBatchFromSetup = async (
     values: PrivateBatchSetupValues,
   ): Promise<PrivateBatchSetupSubmission> => {
+    const loadedSettings = useAppStore.getState();
+    const limits = resolvePrivateBatchSubmitLimits(
+      loadedSettings.businessSettings,
+      loadedSettings.hasLoadedBusinessSettings,
+    );
+    if (!limits) {
+      return {
+        status: "error",
+        message:
+          "Private Batch settings are still loading. Please try again in a moment.",
+      };
+    }
+
     const firebaseUser = auth.currentUser;
     if (!currentUser || !firebaseUser || firebaseUser.isAnonymous) {
       store.setPendingRedirect("private-batch-setup");
@@ -844,17 +936,12 @@ export default function App() {
       const created = await createPrivateBatch({
         input: {
           ...values,
-          maxParticipants: businessSettings.batchSettings.maxGarmentsPerBatch,
+          maxParticipants: limits.maxParticipantsAllowed,
           organizerName: currentUser.name,
           deliveryWindow: values.preferredDeliveryMonth,
           status: "OPEN",
         },
-        limits: {
-          minParticipantsRequired:
-            businessSettings.batchSettings.minParticipantsRequired,
-          maxParticipantsAllowed:
-            businessSettings.batchSettings.maxGarmentsPerBatch,
-        },
+        limits,
       });
       setPresetStyleId(null);
       setPresetFabricCode(null);
@@ -1832,6 +1919,10 @@ export default function App() {
   ]);
 
   return (
+    <SavedStudioOrderProvider
+      onHydrateSavedOrder={hydrateSavedStudioOrder}
+      inspectActiveDraft={inspectActiveDraftForSavedOrder}
+    >
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
       <AppVersionBanner />
       {/* Toast Notification HUD */}
@@ -1923,6 +2014,7 @@ export default function App() {
             {activeTab === "private-batch-setup" && (
               <PrivateBatchSetupView
                 businessSettings={businessSettings}
+                settingsLoaded={hasLoadedBusinessSettings}
                 externalError={privateBatchSetupError}
                 onBack={() => {
                   setPrivateBatchSetupError(null);
@@ -1934,8 +2026,10 @@ export default function App() {
 
             {activeTab === "design" && (
               <DesignStudioView
+                key={`design-studio-${studioContinueNonce}`}
                 onAddToCart={handleAddToCart}
                 openCartDrawer={() => setIsCartOpen(true)}
+                onStartFreshIndividualOrder={handleRequestFreshIndividualOrder}
                 currentUser={currentUser}
                 orderContext={orderContext}
                 styles={styles}
@@ -2593,5 +2687,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </SavedStudioOrderProvider>
   );
 }

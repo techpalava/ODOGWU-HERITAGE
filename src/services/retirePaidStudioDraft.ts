@@ -63,13 +63,30 @@ const clearAuthenticatedStudioDraft = async (
 export const retireStudioFutureDesignDraft = ({
   repository,
   expectedRevision = null,
+  removeSavedOrderId = null,
 }: {
   repository?: Pick<AuthenticatedFutureDraftRepository, "clear"> | null;
   expectedRevision?: number | null;
+  /**
+   * Payment success only: the saved order linked to the order that was
+   * actually paid. Never inferred from the active draft, so paying one order
+   * cannot remove a different saved order. Cancel Order passes nothing.
+   */
+  removeSavedOrderId?: string | null;
 } = {}): Promise<void> => {
+  const linkedSavedOrderId = removeSavedOrderId || undefined;
+  const ownerUid = auth.currentUser?.uid;
   retiredUntilNextStudioSession = true;
   GuestOrderSessionService.clearFutureDesignDraft();
   useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+  if (linkedSavedOrderId && ownerUid) {
+    void import("./savedStudioOrderService").then(({ getSavedStudioOrderRepository }) => {
+      void getSavedStudioOrderRepository().remove({
+        ownerUid,
+        savedOrderId: linkedSavedOrderId,
+      });
+    });
+  }
   const resolved =
     repository ?? createLiveAuthenticatedStudioDraftRepository();
   return clearAuthenticatedStudioDraft(resolved, expectedRevision);

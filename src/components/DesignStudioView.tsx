@@ -28,6 +28,7 @@ import {
   GuestDesignDraft,
   FabricAllocation,
   FabricAllocationState,
+  GarmentConstructionPricingResolution,
   CustomDetailDemographic,
   FabricGarmentType,
   GarmentTypeStepSelection,
@@ -119,6 +120,21 @@ import {
 import { calculateDesignPricing } from "../utils/designPricing";
 import { projectCustomerGarmentConstructionBreakdown } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
+import {
+  SAVED_STUDIO_ORDER_RETRY_MESSAGE,
+  getSavedStudioOrderGate,
+  stampLinkedSavedOrderId,
+  rememberSavedOrderCartLink,
+  rememberSavedOrderPaymentLink,
+  takeSavedOrderPaymentLink,
+} from "../utils/savedStudioOrderModel";
+import { SaveOrderActionProvider } from "./SaveOrderActionContext";
+import type { SaveOrderFocusTarget } from "./SaveOrderActionContext";
+import { SavedOrderConfirmationDialog } from "./SavedOrderConfirmationDialog";
+import { SavedOrderChangeWarningBanner } from "./SavedOrderChangeWarningBanner";
+import { useSavedStudioOrders } from "./SavedStudioOrderProvider";
+import { getDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { getFutureOrderV2CandidateFingerprint } from "../utils/futureOrderV2Preparation";
 import {
   allowNextStudioFutureDesignDraftSession,
   isStudioFutureDesignDraftRetired,
@@ -224,10 +240,12 @@ import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
   assignFutureGarmentToExistingFabricAllocation,
+  moveFutureGarmentToFabricAllocation,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
   changeFutureFabricAllocationProduct,
   type ChangeFutureFabricAllocationExpectation,
+  type FutureFabricPiecePlacement,
   getFutureGarmentFabricPlanning,
   getGarmentTypeStepSelectedFabricQuantity,
   getFutureFabricCapacityComposition,
@@ -457,8 +475,19 @@ import {
   createEmptyAdditionalGarmentConstructionState,
   reconcileAdditionalGarmentConstructionState,
   removeAdditionalGarmentConstruction,
-  selectAdditionalGarmentConstructionOption,
 } from "../utils/additionalGarmentConstructionState";
+import {
+  getBaseGarmentConstruction,
+  getStep1LengthSwitchNote,
+  parseBaseGarmentTypeFromKey,
+} from "../utils/garmentLengthVariant";
+import {
+  placeLengthSwitchedGarmentOnFabric,
+  planGarmentLengthSwitch,
+  previewLengthSwitchedOccurrences,
+  type GarmentLengthSwitchPlan,
+  type LengthSwitchFabricChoice,
+} from "../utils/garmentLengthSwitch";
 import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
@@ -520,6 +549,7 @@ export interface DesignStudioViewProps {
   initialStyleId?: string | null;
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
+  onStartFreshIndividualOrder?: () => void;
   /** Test-only dependency seam; production uses the Firebase-backed repository. */
   futureDraftRepository?: AuthenticatedFutureDraftRepository;
   /** Test-only deterministic replacement for the production autosave timer. */
@@ -725,6 +755,7 @@ export default function DesignStudioView({
   initialStyleId,
   initialFabricCode,
   clearInitialPreset,
+  onStartFreshIndividualOrder,
   futureDraftRepository,
   futureDraftAutosaveScheduler,
   futureOrderV2TestHooks,
@@ -880,6 +911,24 @@ export default function DesignStudioView({
   const futureDesignStyleDetachedSourceLifecycleRef =
     useRef<UploadedDesignStyleDetachLifecycleOutcome | null>(null);
   const lastPersistedFutureDraftRef = useRef<GuestDesignDraft | null>(null);
+  const latestSaveableDraftRef = useRef<GuestDesignDraft | null>(null);
+  /**
+   * The saved order this active Studio draft belongs to (set by Continue or a
+   * successful Save Order). Autosave rebuilds the draft from Studio state, so
+   * the id lives here and is written into every autosaved draft.
+   */
+  const linkedSavedOrderIdRef = useRef<string | null>(null);
+  /** A Save Order tap waiting for autosave to produce a saveable draft. */
+  const queuedSaveOrderRef = useRef<{
+    focus: SaveOrderFocusTarget | null;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
+  const savedStudioOrders = useSavedStudioOrders();
+  const [saveOrderBusy, setSaveOrderBusy] = useState(false);
+  const [saveOrderConfirmationOpen, setSaveOrderConfirmationOpen] =
+    useState(false);
+  const [saveOrderRestoreFocus, setSaveOrderRestoreFocus] =
+    useState<SaveOrderFocusTarget | null>(null);
   const lastDesignStylePersistenceAcknowledgementRef = useRef<
     ReturnType<typeof createDesignStylePersistenceAcknowledgement>
   >(null);
@@ -1550,7 +1599,6 @@ export default function DesignStudioView({
               message: COMMUNITY_BATCH_CLOSED_MESSAGE,
               type: "info",
             });
-            window.setTimeout(() => setNotification(null), 4000);
           }
         } else if (closureStatus === "open") {
           closedBatchToastIdRef.current = null;
@@ -1564,7 +1612,6 @@ export default function DesignStudioView({
             message: COMMUNITY_BATCH_CLOSED_MESSAGE,
             type: "info",
           });
-          window.setTimeout(() => setNotification(null), 4000);
           setBatchType("alone");
         } else {
           setBatchType("community");
@@ -1613,6 +1660,18 @@ export default function DesignStudioView({
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
   const [fabricAllocationState, setFabricAllocationState] =
     useState<FabricAllocationState>(FabricAllocationStateEngine.initialize());
+  // Step 4 length switch waiting for the customer to pick a fabric for the bigger garment.
+  const [futureLengthSwitchFabricPicker, setFutureLengthSwitchFabricPicker] =
+    useState<{
+      parentGarmentKey: string;
+      isMainGarment: boolean;
+      stepOneGarmentType: CanonicalPhysicalGarmentType;
+      selectionGroup: CustomDetailSelectionGroup;
+      optionId: string;
+      resolution: GarmentConstructionPricingResolution;
+      plan: Extract<GarmentLengthSwitchPlan, { status: "needs_fabric" }>;
+      errorMessage: string | null;
+    } | null>(null);
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
@@ -1750,6 +1809,13 @@ export default function DesignStudioView({
           additionalGarmentConstructionState:
             authoritativeAdditionalGarmentConstructionState,
         });
+  // Step 1 keeps the card the customer picked and notes a Step 4 length switch under it.
+  const garmentTypeStepLengthSwitchNotes = Object.fromEntries(
+    garmentTypeSelection.garmentTypes.flatMap((garmentType) => {
+      const note = getStep1LengthSwitchNote(garmentTypeSelection, garmentType);
+      return note ? [[garmentType, note] as const] : [];
+    }),
+  ) as Partial<Record<CanonicalPhysicalGarmentType, string>>;
   const provisionalAdditionalGarmentKey =
     additionalGarmentFabricTransaction?.origin === "new_addition"
       ? additionalGarmentFabricTransaction.garmentKey
@@ -3088,9 +3154,16 @@ export default function DesignStudioView({
     setIsRemovingDesign(true);
     setUploadedDesignError("");
 
+    // A saved order may still show this upload. Detach it from the active
+    // draft but keep the stored file (unknown saved-order state = keep).
+    const retainedBySavedOrder = Boolean(
+      savedStudioOrders?.isUploadedSourceRetained(reference.designReferenceId),
+    );
     const result = await deleteUploadedDesignBeforeSourceChange({
       reference,
-      deleteDraft: CustomerDesignUploadService.deleteCustomerDesignDraft,
+      deleteDraft: retainedBySavedOrder
+        ? async () => undefined
+        : CustomerDesignUploadService.deleteCustomerDesignDraft,
       commitSourceChange: () => {
         if (
           deletionGeneration !== uploadedDesignDeletionGenerationRef.current
@@ -3207,6 +3280,7 @@ export default function DesignStudioView({
   const handleAssignFutureFabricToGarment = (
     fabric: Fabric,
     garmentKey: string,
+    placement?: FutureFabricPiecePlacement,
   ) => {
     const nextState = applyFutureFabricCardSelection({
       state: fabricAllocationState,
@@ -3215,6 +3289,7 @@ export default function DesignStudioView({
       fabricCode: fabric.code,
       fabrics,
       requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+      placement,
     });
     if (nextState === fabricAllocationState) {
       return nextState;
@@ -4405,6 +4480,8 @@ export default function DesignStudioView({
     clearFutureDesignStyleRuntimeHydration();
     setDesignStyleFailedRestoreNotice(false);
     lastPersistedFutureDraftRef.current = null;
+    latestSaveableDraftRef.current = null;
+    linkedSavedOrderIdRef.current = null;
     lastDesignStylePersistenceAcknowledgementRef.current = null;
     uploadedSourceCleanupCandidatesRef.current.clear();
     uploadedSourceCleanupInFlightRef.current.clear();
@@ -4966,6 +5043,7 @@ export default function DesignStudioView({
       }
       lastPersistedFutureDraftRef.current = storedDraft;
       lastScheduledFutureDraftRef.current = storedDraft;
+      linkedSavedOrderIdRef.current = storedDraft?.linkedSavedOrderId || null;
       replaceFutureUploadedDesignSources(
         restoredUploadedSources.sourcesByUploadedSourceRef,
       );
@@ -6090,6 +6168,9 @@ export default function DesignStudioView({
             futureDraftIdentity.status === "authenticated" &&
             futureDraftIdentity.ownerUid === firebaseUser?.uid &&
             pending.reference.ownerUid === firebaseUser?.uid;
+          if (savedStudioOrders?.isUploadedSourceRetained(sourceRef)) {
+            return;
+          }
           const result = await coordinateUploadedSourceCleanup({
             candidate: pending.candidate,
             acknowledgement,
@@ -6274,6 +6355,9 @@ export default function DesignStudioView({
         },
         shippingSnapshot: {},
         fabricAllocations: autosaveAllocationResolution.fabricAllocations,
+        ...(linkedSavedOrderIdRef.current
+          ? { linkedSavedOrderId: linkedSavedOrderIdRef.current }
+          : {}),
         updatedAt: new Date().toISOString(),
       } as GuestDesignDraft;
       const futureDraft = persistFutureShippingState({
@@ -6347,6 +6431,15 @@ export default function DesignStudioView({
         result: preparedDesignStyleDraft.hydration,
       });
       const canonicalGuestDraft = preparedDesignStyleDraft.draft;
+      latestSaveableDraftRef.current = canonicalGuestDraft;
+      if (queuedSaveOrderRef.current && isSaveOrderDraftReady(canonicalGuestDraft)) {
+        const queued = queuedSaveOrderRef.current;
+        queuedSaveOrderRef.current = null;
+        if (queued.timer) clearTimeout(queued.timer);
+        const runQueuedSave = () => runSaveCurrentOrder(canonicalGuestDraft, queued.focus);
+        if (typeof queueMicrotask === "function") queueMicrotask(runQueuedSave);
+        else void Promise.resolve().then(runQueuedSave);
+      }
       if (
         !shouldReplacePersistedMeasurement({
           persisted: lastPersistedFutureDraftRef.current?.futureMeasurementState,
@@ -8123,6 +8216,10 @@ export default function DesignStudioView({
         outcome.privateBatchCapability ?? null;
       futureOrderV2PreparationPersonalizedAuthorityRef.current =
         outcome.personalizedGroupAuthority ?? null;
+      rememberSavedOrderPaymentLink(
+        outcome.attempt.orderId,
+        linkedSavedOrderIdRef.current,
+      );
       const preparedHandoff = createFutureOrderV2PaymentReviewHandoff(
         outcome.attempt.candidate,
         {
@@ -8343,12 +8440,21 @@ export default function DesignStudioView({
             },
       );
     });
-    if (result.status === "recorded") {
-      useAppStore.getState().dropPaidFutureOrderV2CartCandidate(candidate);
-      retireCurrentStudioDraft();
-    }
+      if (result.status === "recorded") {
+        useAppStore.getState().dropPaidFutureOrderV2CartCandidate(candidate);
+        // This handoff paid the active Studio order, so its own link (or the
+        // link recorded when this order id was prepared) is the one to remove.
+        const paidSavedOrderId =
+          takeSavedOrderPaymentLink(preparation.orderId) ||
+          linkedSavedOrderIdRef.current;
+        linkedSavedOrderIdRef.current = null;
+        retireCurrentStudioDraft({ removeSavedOrderId: paidSavedOrderId });
+      }
   };
-  const retireCurrentStudioDraft = () => {
+  const retireCurrentStudioDraft = (
+    options: { removeSavedOrderId?: string | null } = {},
+  ) => {
+    linkedSavedOrderIdRef.current = null;
     const repository =
       futureDraftRepository ??
       createFirebaseAuthenticatedFutureDraftRepository({
@@ -8359,6 +8465,7 @@ export default function DesignStudioView({
     void retireStudioFutureDesignDraft({
       repository,
       expectedRevision: cloudFutureDraftRevisionRef.current,
+      removeSavedOrderId: options.removeSavedOrderId ?? null,
     });
   };
   // Guests must sign in before PAY. Return to Design Studio afterwards: the
@@ -8415,6 +8522,13 @@ export default function DesignStudioView({
         });
         return;
       }
+    }
+    const linkedSavedOrderId = linkedSavedOrderIdRef.current;
+    if (linkedSavedOrderId) {
+      rememberSavedOrderCartLink(
+        getFutureOrderV2CandidateFingerprint(candidate),
+        linkedSavedOrderId,
+      );
     }
     const status = useAppStore.getState().parkFutureOrderV2Candidate(candidate);
     if (status === "blocked") {
@@ -8523,6 +8637,7 @@ export default function DesignStudioView({
             ? { repository: futureDraftRepository }
             : {}),
           expectedRevision: cloudFutureDraftRevisionRef.current,
+          removeSavedOrderId: takeSavedOrderPaymentLink(result.orderId),
         });
       }
 
@@ -8549,6 +8664,7 @@ export default function DesignStudioView({
         void retireStudioFutureDesignDraft({
           ...(futureDraftRepository ? { repository: futureDraftRepository } : {}),
           expectedRevision: cloudFutureDraftRevisionRef.current,
+          removeSavedOrderId: takeSavedOrderPaymentLink(result.orderId),
         });
       }
       stashFutureOrderV2OpenOrderId(result.orderId);
@@ -8765,41 +8881,181 @@ export default function DesignStudioView({
     selectionGroup: CustomDetailSelectionGroup,
     optionId: string,
   ) => {
-    if (parentGarmentKey.startsWith("base:")) {
-      setGarmentTypeSelection((current) => {
-        const resolution = current.constructionByGarment[garmentType];
-        if (!resolution) return current;
-        const selected = selectGarmentConstructionOption({
-          resolution,
-          selectionGroup,
-          optionId,
-          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        });
-        return selected.status === "selected"
-          ? {
-              ...current,
-              constructionByGarment: {
-                ...current.constructionByGarment,
-                [garmentType]: selected.resolution,
-              },
-            }
-          : current;
+    const isMainGarment = parentGarmentKey.startsWith("base:");
+    // Main garment constructions stay stored under the Step 1 card (the key's type).
+    const stepOneGarmentType =
+      parseBaseGarmentTypeFromKey(parentGarmentKey) ?? garmentType;
+    const currentResolution = isMainGarment
+      ? garmentTypeSelection.constructionByGarment[stepOneGarmentType]
+      : designSelections.additionalGarmentConstructions?.byGarmentKey[
+          parentGarmentKey
+        ];
+    if (!currentResolution) return;
+    const selected = selectGarmentConstructionOption({
+      resolution: currentResolution,
+      selectionGroup,
+      optionId,
+      normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+    });
+    if (selected.status !== "selected") return;
+
+    // Picking the other length's option switches the garment type in the order (Standard Shirt
+    // <-> Long Shirt, etc.). The garment keeps its key, so its custom details, measurements,
+    // design style and links stay attached; its type, price and fabric size follow the option.
+    const lengthSwitch = planGarmentLengthSwitch({
+      parentGarmentKey,
+      currentGarmentType: garmentType,
+      selectionGroup,
+      optionId,
+      fabricAllocationState,
+      fabrics,
+    });
+    if (lengthSwitch.status === "needs_fabric") {
+      // Keep the previous option until the customer picks a fabric for the bigger garment.
+      setFutureLengthSwitchFabricPicker({
+        parentGarmentKey,
+        isMainGarment,
+        stepOneGarmentType,
+        selectionGroup,
+        optionId,
+        resolution: selected.resolution,
+        plan: lengthSwitch,
+        errorMessage: null,
       });
       return;
     }
-    setDesignSelections((current) => ({
-      ...current,
-      additionalGarmentConstructions:
-        selectAdditionalGarmentConstructionOption({
-          state:
-            current.additionalGarmentConstructions ||
-            createEmptyAdditionalGarmentConstructionState(),
-          garmentKey: parentGarmentKey,
-          selectionGroup,
-          optionId,
-          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        }),
-    }));
+    applyFutureConstructionSelection({
+      parentGarmentKey,
+      isMainGarment,
+      stepOneGarmentType,
+      resolution: selected.resolution,
+      toGarmentType:
+        lengthSwitch.status === "switch" ? lengthSwitch.toGarmentType : null,
+      fabricAllocationState:
+        lengthSwitch.status === "switch"
+          ? lengthSwitch.fabricAllocationState
+          : null,
+    });
+  };
+  const applyFutureConstructionSelection = ({
+    parentGarmentKey,
+    isMainGarment,
+    stepOneGarmentType,
+    resolution,
+    toGarmentType,
+    fabricAllocationState: nextFabricAllocationState,
+  }: {
+    parentGarmentKey: string;
+    isMainGarment: boolean;
+    stepOneGarmentType: CanonicalPhysicalGarmentType;
+    resolution: GarmentConstructionPricingResolution;
+    /** Set when the option switches the garment to the other length. */
+    toGarmentType: CanonicalPhysicalGarmentType | null;
+    fabricAllocationState: FabricAllocationState | null;
+  }) => {
+    if (nextFabricAllocationState) {
+      // Same update as the construction, so reconciliation never sees a fabric assignment whose
+      // size disagrees with the garment.
+      setFabricAllocationState(nextFabricAllocationState);
+    }
+    if (isMainGarment) {
+      setGarmentTypeSelection((current) => ({
+        ...current,
+        constructionByGarment: {
+          ...current.constructionByGarment,
+          [stepOneGarmentType]: resolution,
+        },
+      }));
+      return;
+    }
+    const nextResolution = toGarmentType
+      ? { ...resolution, garmentType: toGarmentType }
+      : resolution;
+    setDesignSelections((current) => {
+      const state =
+        current.additionalGarmentConstructions ||
+        createEmptyAdditionalGarmentConstructionState();
+      if (!state.byGarmentKey[parentGarmentKey]) return current;
+      return {
+        ...current,
+        additionalGarmentConstructions: {
+          ...state,
+          byGarmentKey: {
+            ...state.byGarmentKey,
+            // An added garment carries the garment type it now is.
+            [parentGarmentKey]: nextResolution,
+          },
+        },
+      };
+    });
+  };
+  // The order as it will be once the waiting length switch applies (for the fabric picker).
+  const futureLengthSwitchFabricPreview = futureLengthSwitchFabricPicker
+    ? {
+        garmentTypeSelection: futureLengthSwitchFabricPicker.isMainGarment
+          ? {
+              ...effectiveJourneyGarmentTypeSelection,
+              constructionByGarment: {
+                ...effectiveJourneyGarmentTypeSelection.constructionByGarment,
+                [futureLengthSwitchFabricPicker.stepOneGarmentType]:
+                  futureLengthSwitchFabricPicker.resolution,
+              },
+            }
+          : effectiveJourneyGarmentTypeSelection,
+        requiredPhysicalOccurrences: previewLengthSwitchedOccurrences(
+          authoritativePhysicalOccurrencesForDomain,
+          futureLengthSwitchFabricPicker.parentGarmentKey,
+          futureLengthSwitchFabricPicker.plan.toGarmentType,
+        ),
+      }
+    : null;
+  useEffect(() => {
+    // Leaving Step 4 closes a waiting fabric picker; the previous option stays.
+    if (futureStageId !== "custom_details") setFutureLengthSwitchFabricPicker(null);
+  }, [futureStageId]);
+  const handleFutureLengthSwitchFabricChoice = (
+    choice: LengthSwitchFabricChoice,
+  ) => {
+    const picker = futureLengthSwitchFabricPicker;
+    if (!picker || !futureLengthSwitchFabricPreview) return;
+    // The picker was opened on the fabric state it shows; refuse a pick on a stale order.
+    const current = planGarmentLengthSwitch({
+      parentGarmentKey: picker.parentGarmentKey,
+      currentGarmentType: picker.plan.fromGarmentType,
+      selectionGroup: picker.selectionGroup,
+      optionId: picker.optionId,
+      fabricAllocationState,
+      fabrics,
+    });
+    if (current.status !== "needs_fabric") {
+      setFutureLengthSwitchFabricPicker(null);
+      return;
+    }
+    const placement = placeLengthSwitchedGarmentOnFabric({
+      plan: current,
+      parentGarmentKey: picker.parentGarmentKey,
+      garmentTypeSelection: futureLengthSwitchFabricPreview.garmentTypeSelection,
+      requiredPhysicalOccurrences:
+        futureLengthSwitchFabricPreview.requiredPhysicalOccurrences,
+      fabrics,
+      choice,
+    });
+    if (placement.status !== "assigned") {
+      setFutureLengthSwitchFabricPicker({
+        ...picker,
+        errorMessage: placement.reason,
+      });
+      return;
+    }
+    setFutureLengthSwitchFabricPicker(null);
+    applyFutureConstructionSelection({
+      parentGarmentKey: picker.parentGarmentKey,
+      isMainGarment: picker.isMainGarment,
+      stepOneGarmentType: picker.stepOneGarmentType,
+      resolution: picker.resolution,
+      toGarmentType: current.toGarmentType,
+      fabricAllocationState: placement.fabricAllocationState,
+    });
   };
   const handleFutureMultiCustomDetailToggle = (
     garmentKey: string,
@@ -9275,7 +9531,10 @@ export default function DesignStudioView({
         : null;
     const sourceConstruction = sourceSubject
       ? sourceSubject.parentGarmentKey.startsWith("base:")
-        ? garmentTypeSelection.constructionByGarment[deferredPrompt.garmentType]
+        ? getBaseGarmentConstruction(
+            garmentTypeSelection,
+            sourceSubject.parentGarmentKey,
+          )
         : futureAdditionalConstructionReconciliation.state.byGarmentKey[
             sourceSubject.parentGarmentKey
           ]
@@ -9297,7 +9556,9 @@ export default function DesignStudioView({
     }
     const construction =
       choice.mode === "copy"
-        ? sourceConstruction!
+        ? // The source may be a main garment switched to this length in Step 4: its construction
+          // is stored under its Step 1 card, so name the added garment's own type.
+          { ...sourceConstruction!, garmentType: deferredPrompt.garmentType }
         : resolveGarmentConstructionPricing(
             deferredPrompt.garmentType,
             normalizedGarmentTypeCatalog,
@@ -9739,6 +10000,7 @@ export default function DesignStudioView({
   const handleAssignSameFabricProductToGarments = (
     fabricCode: string,
     garmentKeys: string[],
+    placement?: FutureFabricPiecePlacement,
   ) => {
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
@@ -9750,6 +10012,7 @@ export default function DesignStudioView({
       garmentKeys,
       fabrics,
       requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+      placement,
     });
     if (result.status === "assigned") {
       if (result.state !== fabricAllocationState) {
@@ -9783,6 +10046,27 @@ export default function DesignStudioView({
           nextState: result.state,
         });
       }
+      setFabricAllocationState(result.state);
+    }
+    return result;
+  };
+  const handleMoveFutureGarmentToFabricAllocation = (
+    garmentKey: string,
+    allocationId: string,
+  ) => {
+    const result = moveFutureGarmentToFabricAllocation({
+      state: fabricAllocationState,
+      garmentKey,
+      allocationId,
+    });
+    if (result.status === "moved") {
+      if (activeUploadedDesignSource) {
+        setFuturePriceActivatedFabricCode(null);
+      }
+      revalidatePreservedFabricIntegrityAfterMutation({
+        previousState: fabricAllocationState,
+        nextState: result.state,
+      });
       setFabricAllocationState(result.state);
     }
     return result;
@@ -10290,7 +10574,141 @@ export default function DesignStudioView({
     DESIGN_STUDIO_STEPS.find((step) => step.id === futureStageId)?.label ||
     "Design Studio";
 
+  const saveOrderGate = getSavedStudioOrderGate({ garmentTypeSelection });
+  function isSaveOrderDraftReady(draft: GuestDesignDraft | null): draft is GuestDesignDraft {
+    return Boolean(
+      draft &&
+        getSavedStudioOrderGate(draft).ok &&
+        // Guest uploads still moving to the account would leave the saved copy
+        // pointing at the old owner; wait for the transfer to settle.
+        !draft.uploadedDesignOwnershipTransition,
+    );
+  }
+  function runSaveCurrentOrder(
+    draft: GuestDesignDraft,
+    focus: SaveOrderFocusTarget | null,
+  ) {
+    if (!savedStudioOrders) return;
+    setSaveOrderBusy(true);
+    void (async () => {
+      const result = await savedStudioOrders.saveDraft({
+        draft,
+        savedStage: futureStageId,
+        savedStep: getDesignStudioStepCounter(futureStageId).step,
+        resumeLocus: createDesignStudioResumeLocus({
+          activeWearerId,
+          measurementGarmentKey:
+            futureMeasurementState.activeGarmentKey ||
+            hydratedMeasurementGarmentKey,
+          scrollY:
+            typeof window === "undefined" ? null : Math.round(window.scrollY),
+        }),
+        savedOrderId: linkedSavedOrderIdRef.current || draft.linkedSavedOrderId,
+      });
+      setSaveOrderBusy(false);
+      if (result.status === "saved" || result.status === "updated") {
+        linkedSavedOrderIdRef.current = result.item.savedOrderId;
+        const stamped = stampLinkedSavedOrderId(
+          draft,
+          result.item.savedOrderId,
+        );
+        lastPersistedFutureDraftRef.current = stamped;
+        latestSaveableDraftRef.current = stamped;
+        GuestOrderSessionService.saveFutureDesignDraft(stamped);
+        setSaveOrderRestoreFocus(focus);
+        setSaveOrderConfirmationOpen(true);
+      }
+    })();
+  }
+  const handleSaveCurrentOrder = (focus?: SaveOrderFocusTarget) => {
+    if (!savedStudioOrders) return;
+    if (futureDraftIdentity.status !== "authenticated") {
+      savedStudioOrders.beginGuestSaveSignIn();
+      return;
+    }
+    const draft =
+      latestSaveableDraftRef.current || lastPersistedFutureDraftRef.current;
+    if (isSaveOrderDraftReady(draft)) {
+      runSaveCurrentOrder(draft, focus ?? null);
+      return;
+    }
+    // The live selection says the order is saveable but autosave has not
+    // produced the matching draft yet (just picked a garment, or right after
+    // sign-in). Queue the save for the next autosave pass instead of failing.
+    if (queuedSaveOrderRef.current?.timer) {
+      clearTimeout(queuedSaveOrderRef.current.timer);
+    }
+    setSaveOrderBusy(true);
+    queuedSaveOrderRef.current = {
+      focus: focus ?? null,
+      timer: setTimeout(() => {
+        if (!queuedSaveOrderRef.current) return;
+        queuedSaveOrderRef.current = null;
+        setSaveOrderBusy(false);
+        setNotification({
+          message: SAVED_STUDIO_ORDER_RETRY_MESSAGE,
+          type: "info",
+        });
+      }, 6000),
+    };
+  };
+
+  useEffect(
+    () => () => {
+      if (queuedSaveOrderRef.current?.timer) {
+        clearTimeout(queuedSaveOrderRef.current.timer);
+      }
+      queuedSaveOrderRef.current = null;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      !guestDraftHydrated ||
+      futureDraftIdentity.status !== "authenticated" ||
+      !savedStudioOrders
+    ) {
+      return;
+    }
+    if (!savedStudioOrders.consumePendingSave()) return;
+    handleSaveCurrentOrder();
+    // Pending-save runs once after sign-in hydration; if the draft is not
+    // ready yet, handleSaveCurrentOrder queues it for the next autosave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestDraftHydrated, futureDraftIdentity.status]);
+
+  // Decision 10: after Continue, compare the saved total with the total the
+  // Studio recomputes from the live catalogue (not the saved draft's copy).
+  const savedOrderLivePriceTotal =
+    futureSummary.pricingSummary.selectedDesignPrice?.finalOrderSubtotal ??
+    futureSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice ??
+    null;
+  const savedOrderPriceCatalogueReady =
+    guestDraftHydrated &&
+    fabricsLoadState === "ready" &&
+    stylesLoadState === "ready";
+  useEffect(() => {
+    const check = savedStudioOrders?.pendingPriceCheck;
+    if (!check || !savedOrderPriceCatalogueReady) return;
+    if (linkedSavedOrderIdRef.current !== check.savedOrderId) return;
+    if (typeof savedOrderLivePriceTotal !== "number") return;
+    savedStudioOrders?.resolvePriceCheck(savedOrderLivePriceTotal);
+  }, [
+    savedStudioOrders,
+    savedOrderPriceCatalogueReady,
+    savedOrderLivePriceTotal,
+  ]);
+
   return (
+    <SaveOrderActionProvider
+      value={{
+        disabled: !saveOrderGate.ok || saveOrderBusy,
+        disabledReason: "reason" in saveOrderGate ? saveOrderGate.reason : null,
+        busy: saveOrderBusy,
+        onSave: handleSaveCurrentOrder,
+      }}
+    >
     <DesignStudioBlockingOverlayProvider ownedOpen={studioBlockingOverlayOpen}>
     <div
       id="design-studio-ten-stage-journey"
@@ -10376,6 +10794,13 @@ export default function DesignStudioView({
           {COMMUNITY_BATCH_CLOSED_MESSAGE}
         </p>
       ) : null}
+      {savedStudioOrders?.changeWarnings.length ? (
+        <div className="mb-3">
+          <SavedOrderChangeWarningBanner
+            warnings={savedStudioOrders.changeWarnings}
+          />
+        </div>
+      ) : null}
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
         highestUnlockedStageIndex={highestUnlockedStageIndex}
@@ -10441,6 +10866,7 @@ export default function DesignStudioView({
             onContinue={handleOpenDormantFabricStage}
             continueDisabled={!garmentTypeStageCompletion.isComplete}
             stageBlockers={garmentTypeStageCompletion.blockers}
+            lengthSwitchNotes={garmentTypeStepLengthSwitchNotes}
           />
         </div>
       ) : futureStageId === "fabric" ? (
@@ -10486,6 +10912,9 @@ export default function DesignStudioView({
           onAssignSameFabricProduct={handleAssignSameFabricProductToGarments}
           onAssignGarmentToExistingAllocation={
             handleAssignGarmentToExistingAllocation
+          }
+          onMoveGarmentToFabricAllocation={
+            handleMoveFutureGarmentToFabricAllocation
           }
           onBack={() => handleBackDuringSummaryEdit("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
@@ -11178,6 +11607,43 @@ export default function DesignStudioView({
           }}
         />
       )}
+      {futureLengthSwitchFabricPicker &&
+        futureLengthSwitchFabricPreview &&
+        futureStageId === "custom_details" && (
+        <FutureAdditionalGarmentFabricDialog
+          transaction={{
+            transactionId: 0,
+            phase: "catalogue",
+            origin: "change_existing",
+            garmentKey: futureLengthSwitchFabricPicker.parentGarmentKey,
+            garmentType: futureLengthSwitchFabricPicker.plan.toGarmentType,
+          }}
+          eyebrow={null}
+          fabrics={fabrics}
+          garmentTypeSelection={futureLengthSwitchFabricPreview.garmentTypeSelection}
+          fabricAllocationState={
+            futureLengthSwitchFabricPicker.plan.fabricAllocationStateWithoutGarment
+          }
+          requiredPhysicalOccurrences={
+            futureLengthSwitchFabricPreview.requiredPhysicalOccurrences
+          }
+          errorMessage={futureLengthSwitchFabricPicker.errorMessage}
+          // Pre-selected when it can still hold the garment at its new length.
+          preselectedFabricCode={futureLengthSwitchFabricPicker.plan.fromFabricCode}
+          cancelLabel="Cancel, Keep Standard Length"
+          onSelectFabric={(fabricCode) =>
+            handleFutureLengthSwitchFabricChoice({ kind: "fabric", fabricCode })
+          }
+          onSelectExistingAllocation={(allocationId) =>
+            handleFutureLengthSwitchFabricChoice({
+              kind: "allocation",
+              allocationId,
+            })
+          }
+          // Closing without a pick keeps the previous option and fabric.
+          onCancel={() => setFutureLengthSwitchFabricPicker(null)}
+        />
+      )}
       {showAdditionalGarmentFabricDialog &&
         additionalGarmentFabricTransaction && (
         <FutureAdditionalGarmentFabricDialog
@@ -11259,5 +11725,17 @@ export default function DesignStudioView({
       )}
     </div>
     </DesignStudioBlockingOverlayProvider>
+    <SavedOrderConfirmationDialog
+      open={saveOrderConfirmationOpen}
+      restoreFocusTo={saveOrderRestoreFocus}
+      onContinue={() => setSaveOrderConfirmationOpen(false)}
+      onStartNewOrder={() => {
+        setSaveOrderConfirmationOpen(false);
+        // The new order must never update the order that was just saved.
+        linkedSavedOrderIdRef.current = null;
+        onStartFreshIndividualOrder?.();
+      }}
+    />
+    </SaveOrderActionProvider>
   );
 }

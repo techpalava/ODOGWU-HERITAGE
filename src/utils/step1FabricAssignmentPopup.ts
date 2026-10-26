@@ -10,7 +10,11 @@ import { resolveCurrentCatalogueFabricForAssignment } from "./additionalGarmentF
 import {
   assignFutureFabricToGarment,
   assignSameFabricProductToGarments,
+  type FutureFabricPiecePlacement,
   formatFabricQuantityLimitChangeCopy,
+  formatFabricUseForAllQuantityNote,
+  getFabricQuantityFitBlockedCopyForGarment,
+  getFabricQuantityIfGarmentsUseFabric,
   getFutureFabricBulkChoiceCandidates,
   getFutureFabricStep1AssignmentTargets,
   getFutureGarmentFabricPlanning,
@@ -33,6 +37,8 @@ export const STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE =
 export const STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE = "Fabric capacity complete.";
 export const STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE =
   "Select garments to use this Fabric.";
+export const STEP1_EXISTING_FABRIC_PIECE_FULL_MESSAGE =
+  "Your saved piece of this Fabric is full (2/2). Garments you tick here will use a new piece of this Fabric.";
 export const STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE =
   "1/2 fabric capacity will remain available.";
 export const formatStep1FabricCapacityProgress = (
@@ -123,7 +129,18 @@ export type Step1FabricAssignmentFailure = {
 
 export type Step1FabricAssignmentEvaluation = {
   selectedCount: number;
+  /** Units of the ticked garments only. */
   selectedCapacityUnits: number;
+  /**
+   * Units already used on the saved piece of this Fabric that ticked half-unit
+   * garments join first (Use Again). 0 when there is no partly used piece.
+   */
+  existingCapacityUnits: number;
+  /**
+   * Header value for "Fabric Capacity: X/2": the saved piece's units after the
+   * ticked garments are projected onto it, or the ticked units for a new piece.
+   */
+  capacityUnitsInUse: number;
   maxCapacityUnits: number;
   canAssignSelected: boolean;
   canUseForAll: boolean;
@@ -132,6 +149,12 @@ export type Step1FabricAssignmentEvaluation = {
   fabricLevelError: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
+  /**
+   * Neutral (non-error) note for YES — Use for All when using this Fabric for
+   * every remaining garment would exceed Fabrics Needed. Never red: the
+   * customer has done nothing wrong by opening the panel.
+   */
+  remainingCapacityNote: string | null;
   /**
    * Candidate interactivity is projected from the same bulk assignment
    * transaction used by the confirmation action. Selected rows deliberately
@@ -486,7 +509,13 @@ export const buildStep1FabricAssignmentCandidates = ({
           ? null
           : result.status === "blocked" &&
               result.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
-            ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+            ? getFabricQuantityFitBlockedCopyForGarment({
+                state: fabricAllocationState,
+                garmentTypeSelection,
+                garmentKey: assignment.garmentKey,
+                fabricCode,
+                fabrics,
+              }) ?? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
             : STEP1_INSUFFICIENT_CAPACITY_REASON,
     };
   });
@@ -532,6 +561,45 @@ const globalMessageForBlockedDryRun = ({
     return formatFabricStockExhaustedCopy();
   }
   return fallback;
+};
+
+const allocationUsedUnits = (
+  allocation: FabricAllocationState["fabricAllocations"][number],
+): number =>
+  allocation.garmentAssignments.reduce(
+    (total, assignment) => total + assignment.fabricUnits,
+    0,
+  );
+
+/**
+ * The saved piece of `fabricCode` that a ticked half-unit garment joins first:
+ * the active allocation when it matches, then the others in order (mirrors
+ * the assignment engine's append order). Only partly used pieces count.
+ */
+export const getExistingPartialFabricPiece = (
+  state: FabricAllocationState,
+  fabricCode: string,
+): FabricAllocationState["fabricAllocations"][number] | null => {
+  const matching = state.fabricAllocations.filter(
+    (allocation) =>
+      allocation.fabricCode === fabricCode &&
+      allocation.garmentAssignments.length > 0,
+  );
+  const ordered = [
+    ...matching.filter(
+      (allocation) => allocation.allocationId === state.activeAllocationId,
+    ),
+    ...matching.filter(
+      (allocation) => allocation.allocationId !== state.activeAllocationId,
+    ),
+  ];
+  return (
+    ordered.find(
+      (allocation) =>
+        allocationUsedUnits(allocation) <
+        FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION,
+    ) ?? null
+  );
 };
 
 export const evaluateStep1FabricAssignmentSelection = ({
@@ -602,15 +670,51 @@ export const evaluateStep1FabricAssignmentSelection = ({
     0,
   );
   const maxCapacityUnits = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION;
+  // Use Again: ticked garments first join the saved piece of this Fabric that
+  // still has room (same order as the assignment engine), so the capacity
+  // summary must start from that piece's used units, not from 0.
+  const existingPiece = getExistingPartialFabricPiece(
+    fabricAllocationState,
+    fabricCode,
+  );
+  const existingCapacityUnits = existingPiece
+    ? allocationUsedUnits(existingPiece)
+    : 0;
+  const projectedExistingPiece =
+    existingPiece && selectedResult?.status === "assigned"
+      ? selectedResult.state.fabricAllocations.find(
+          (allocation) => allocation.allocationId === existingPiece.allocationId,
+        )
+      : undefined;
+  const capacityUnitsInUse = existingPiece
+    ? projectedExistingPiece
+      ? allocationUsedUnits(projectedExistingPiece)
+      : Math.min(maxCapacityUnits, existingCapacityUnits + selectedCapacityUnits)
+    : selectedCapacityUnits;
+  const savedPieceFull =
+    !existingPiece &&
+    fabricAllocationState.fabricAllocations.some(
+      (allocation) =>
+        allocation.fabricCode === fabricCode &&
+        allocation.garmentAssignments.length > 0,
+    );
   let groupingCapacityStatus: string | null = null;
   if (selected.length === 0) {
-    groupingCapacityStatus = STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE;
-  } else if (selectedCapacityUnits >= maxCapacityUnits) {
+    groupingCapacityStatus = savedPieceFull
+      ? STEP1_EXISTING_FABRIC_PIECE_FULL_MESSAGE
+      : STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE;
+  } else if (capacityUnitsInUse >= maxCapacityUnits) {
     groupingCapacityStatus = STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE;
   } else {
     groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
   }
   const selectedKeySet = new Set(selected);
+  // State as if the ticked garments were already assigned; per-row guidance
+  // points at Fabrics with free capacity in this projected state.
+  const selectedProjectedState =
+    selectedResult?.status === "assigned"
+      ? selectedResult.state
+      : fabricAllocationState;
   const candidateEnabled: Record<string, boolean> = {};
   const candidateMessages: Record<string, string | null> = {};
   for (const candidate of candidates) {
@@ -628,13 +732,25 @@ export const evaluateStep1FabricAssignmentSelection = ({
     const canAddCandidate = projectedResult?.status === "assigned";
     candidateEnabled[candidate.garmentKey] = isSelected || canAddCandidate;
     if (!isSelected && !canAddCandidate) {
-      messages.push(
+      const fitCopy =
         projectedResult?.status === "blocked" &&
-        (projectedResult.reason === "FABRIC_STOCK_EXHAUSTED" ||
-          projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED")
-          ? formatPredictiveCandidateFailure(projectedResult)
-          : candidate.disabledReason ??
-              formatPredictiveCandidateFailure(projectedResult),
+        projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+          ? getFabricQuantityFitBlockedCopyForGarment({
+              state: selectedProjectedState,
+              garmentTypeSelection,
+              garmentKey: candidate.garmentKey,
+              fabricCode,
+              fabrics,
+            })
+          : null;
+      messages.push(
+        fitCopy ??
+          (projectedResult?.status === "blocked" &&
+          (projectedResult.reason === "FABRIC_STOCK_EXHAUSTED" ||
+            projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED")
+            ? formatPredictiveCandidateFailure(projectedResult)
+            : candidate.disabledReason ??
+                formatPredictiveCandidateFailure(projectedResult)),
       );
     } else if (candidate.disabledReason) {
       messages.push(candidate.disabledReason);
@@ -648,9 +764,31 @@ export const evaluateStep1FabricAssignmentSelection = ({
     candidateMessages[candidate.garmentKey] = [...new Set(messages)][0] ?? null;
   }
 
+  const remainingQuantityIfUsedForAll =
+    remainingResult?.status === "blocked" &&
+    remainingResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+      ? getFabricQuantityIfGarmentsUseFabric({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys: remainingKeys,
+        })
+      : null;
+  const remainingCapacityNote =
+    !fabricLevelError &&
+    remainingQuantityIfUsedForAll !== null &&
+    remainingQuantityIfUsedForAll > requiredFabricQuantity
+      ? formatFabricUseForAllQuantityNote(
+          remainingQuantityIfUsedForAll,
+          requiredFabricQuantity,
+        )
+      : null;
+
   return {
     selectedCount: selected.length,
     selectedCapacityUnits,
+    existingCapacityUnits,
+    capacityUnitsInUse,
     maxCapacityUnits,
     canAssignSelected,
     canUseForAll,
@@ -665,8 +803,10 @@ export const evaluateStep1FabricAssignmentSelection = ({
             requiredFabricQuantity,
           })
         : null,
+    remainingCapacityNote,
     remainingCapacityMessage:
       !fabricLevelError &&
+      !remainingCapacityNote &&
       !(
         remainingResult?.status === "blocked" &&
         remainingResult.reason === "FABRIC_STOCK_EXHAUSTED"
@@ -779,6 +919,7 @@ export const commitStep1FabricAssignment = ({
   fabricCode,
   selectedGarmentKeys,
   mode,
+  placement = "auto",
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -786,6 +927,7 @@ export const commitStep1FabricAssignment = ({
   fabricCode: string;
   selectedGarmentKeys: readonly string[];
   mode: "selected" | "all_remaining";
+  placement?: FutureFabricPiecePlacement;
 }): Step1FabricAssignmentCommitResult => {
   const resolved = resolveCurrentCatalogueFabricForAssignment({
     fabrics,
@@ -824,6 +966,7 @@ export const commitStep1FabricAssignment = ({
     fabricCode: currentFabricCode,
     garmentKeys,
     fabrics,
+    placement,
   });
   if (result.status !== "assigned") {
     const requiredFabricQuantity = getFutureGarmentFabricPlanning({

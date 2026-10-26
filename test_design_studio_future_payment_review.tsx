@@ -344,19 +344,31 @@ assert.deepEqual(
   [
     ["garment_construction", "Garment Construction Subtotal", 30000, "amount"],
     ["included_components", INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE, null, "supporting_note"],
-    ["lagos_eindhoven_included", "Lagos → Eindhoven shipping", 1400, "amount"],
+    ["lagos_eindhoven_included", "Lagos → Eindhoven shipping", 13125, "amount"],
     ["custom_details", "Custom Details Subtotal", 2400, "amount"],
     ["post_eindhoven", "Shipping", 2660, "amount"],
   ],
   "Individual payment review shows the Lagos band as a priced line",
 );
+assert.equal(
+  individualPricingRows.find((row) => row.id === "lagos_eindhoven_included")?.note,
+  "Shipping covers up to 10 garments (under 5 kg).",
+);
+assert.equal(
+  getFuturePaymentReviewPricingRows(candidate.pricing, {
+    orderType: "Individual",
+    physicalGarmentCount: 14,
+    fulfilmentMethod: "destination_delivery",
+  }).find((row) => row.id === "lagos_eindhoven_included")?.note,
+  "Shipping covers up to 10 garments (under 5 kg). Your order has 14 garments, so it uses the 10 kg range: 2 × €131.25.",
+);
 assert.equal(candidate.pricing.exactTotalCents, 35060);
 for (const [pieceCount, amountCents] of [
-  [1, 1400],
-  [5, 3500],
-  [13, 7000],
-  [25, 14000],
-  [49, 21000],
+  [1, 13125],
+  [5, 13125],
+  [13, 26250],
+  [25, 39375],
+  [49, 65625],
 ] as const) {
   assert.equal(
     getFuturePaymentReviewPricingRows(candidate.pricing, {
@@ -427,12 +439,12 @@ const individualChargedResult: FutureOrderCandidateBuildResult = {
     ...candidate,
     pricing: {
       ...candidate.pricing,
-      exactTotalCents: 36460,
+      exactTotalCents: 48185,
       components: {
         ...candidate.pricing.components,
         lagosToEindhovenShipping: {
           status: "separately_charged",
-          amountCents: 1400,
+          amountCents: 13125,
         },
       },
     },
@@ -567,9 +579,11 @@ assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
 assert.equal(reviewMarkup.includes("Material price"), false);
 assert.equal(reviewMarkup.includes("€10.00"), false);
 assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
+// The breakdown ends where the payment column starts; that column repeats
+// the total once in its order card (asserted separately below).
 const priceBreakdownMarkup = reviewMarkup.slice(
   reviewMarkup.indexOf("Price breakdown"),
-  reviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
+  reviewMarkup.indexOf("data-payment-review-pay-column"),
 );
 assert.ok(priceBreakdownMarkup.includes(INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE));
 assert.equal(priceBreakdownMarkup.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE), false);
@@ -578,8 +592,12 @@ assert.equal(reviewMarkup.includes("included in Garment Construction"), false);
 assert.ok(reviewMarkup.includes("Lagos → Eindhoven shipping is added to the total."));
 assert.equal((priceBreakdownMarkup.match(/>Included</g) || []).length, 0);
 assert.ok(priceBreakdownMarkup.includes("Lagos → Eindhoven shipping"));
-assert.equal((priceBreakdownMarkup.match(/€14\.00/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€131\.25/g) || []).length, 1);
 assert.ok(priceBreakdownMarkup.includes('data-pricing-row="lagos_eindhoven_included"'));
+assert.ok(priceBreakdownMarkup.includes('data-pricing-row-note="lagos_eindhoven_included"'));
+assert.ok(
+  priceBreakdownMarkup.includes("Shipping covers up to 10 garments (under 5 kg)."),
+);
 assert.equal(priceBreakdownMarkup.includes("data-excluded-from-total"), false);
 assert.ok(
   priceBreakdownMarkup.indexOf("Garment Construction Subtotal") <
@@ -591,7 +609,7 @@ assert.ok(
 assert.equal((priceBreakdownMarkup.match(/€300\.00/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/€24\.00/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/€26\.60/g) || []).length, 1);
-assert.equal((priceBreakdownMarkup.match(/€364\.60/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€481\.85/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/€350\.60/g) || []).length, 0);
 assert.equal((priceBreakdownMarkup.match(/data-pricing-final-total/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/>Total</g) || []).length, 1);
@@ -612,10 +630,11 @@ const communityReviewMarkup = renderToStaticMarkup(
 );
 const communityPriceBreakdown = communityReviewMarkup.slice(
   communityReviewMarkup.indexOf("Price breakdown"),
-  communityReviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
+  communityReviewMarkup.indexOf("data-payment-review-pay-column"),
 );
 assert.equal(communityPriceBreakdown.includes("Lagos → Eindhoven shipping"), false);
 assert.equal(communityPriceBreakdown.includes("data-pricing-row=\"lagos_eindhoven_included\""), false);
+assert.equal(communityPriceBreakdown.includes("data-pricing-row-note=\"lagos_eindhoven_included\""), false);
 assert.ok(communityPriceBreakdown.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE));
 assert.equal((communityPriceBreakdown.match(/€350\.60/g) || []).length, 1);
 assert.ok(communityReviewMarkup.includes("Standard Shipping to Eindhoven is included in Garment Construction."));

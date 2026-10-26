@@ -1,5 +1,6 @@
 import type { FabricGarmentType, FutureMeasurementStateV1 } from "../types.js";
 import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
+import { STEP_1_GARMENT_DISPLAY_LABELS } from "./garmentConstructionPricing.js";
 import {
   isFutureMeasurementStateV1,
   MEASUREMENT_METHOD_STAFF_LABELS,
@@ -44,11 +45,16 @@ const orderKeysForOccurrenceLabels = (garmentKeys: readonly string[]): string[] 
 /** Concise labels for the full physical key set. Ownership subsets reuse this map. */
 const conciseLabelsForGarmentKeys = (
   garmentKeys: readonly string[],
+  garmentTypeByKey: Readonly<Record<string, string>> = {},
 ): ReadonlyMap<string, string> => {
   const ordered = orderKeysForOccurrenceLabels(garmentKeys);
   const labels = projectOccurrenceDisplayLabels(
     ordered.flatMap((garmentKey) => {
-      const garmentType = garmentTypeFromKey(garmentKey);
+      // The order's garment type wins: a garment switched to its other length in Step 4 keeps
+      // the key it was created with.
+      const garmentType =
+        (garmentTypeByKey[garmentKey] as FabricGarmentType | undefined) ||
+        garmentTypeFromKey(garmentKey);
       return garmentType ? [{ garmentKey, garmentType }] : [];
     }),
   );
@@ -97,13 +103,46 @@ const readoutFromBag = ({
   })),
 });
 
+/**
+ * Garment type per garment key from an order's fabric allocations (the order's own record of each
+ * garment, which follows a Step 4 length switch). Unknown or malformed entries are skipped, so the
+ * readout falls back to the type in the garment key.
+ */
+export const garmentTypeByKeyFromFabricAllocations = (
+  fabricAllocations: unknown,
+): Record<string, string> => {
+  if (!Array.isArray(fabricAllocations)) return {};
+  const byKey: Record<string, string> = {};
+  for (const allocation of fabricAllocations) {
+    const assignments = (allocation as { garmentAssignments?: unknown } | null)?.garmentAssignments;
+    if (!Array.isArray(assignments)) continue;
+    for (const assignment of assignments) {
+      const { garmentKey, garmentType } = (assignment ?? {}) as {
+        garmentKey?: unknown;
+        garmentType?: unknown;
+      };
+      if (
+        typeof garmentKey === "string" &&
+        typeof garmentType === "string" &&
+        Object.prototype.hasOwnProperty.call(STEP_1_GARMENT_DISPLAY_LABELS, garmentType)
+      ) {
+        byKey[garmentKey] = garmentType;
+      }
+    }
+  }
+  return byKey;
+};
+
 /** Readable wearer → exact garment → method → values. Null when the payload is not a measurement document. */
 export const projectTailoringMeasurementReadout = (
   measurements: unknown,
+  /** Garment type per garment key from the order, when the caller has it. */
+  garmentTypeByKey: Readonly<Record<string, string>> = {},
 ): readonly TailoringWearerReadout[] | null => {
   if (isWearerOrderStateV2(measurements)) {
     const conciseLabels = conciseLabelsForGarmentKeys(
       Object.keys(measurements.assignmentByGarmentKey),
+      garmentTypeByKey,
     );
     return [...measurements.wearers]
       .sort((left, right) => left.presentationOrder - right.presentationOrder)
@@ -133,7 +172,7 @@ export const projectTailoringMeasurementReadout = (
       displayName: "You",
       measurement: measurements,
       garmentKeys,
-      conciseLabels: conciseLabelsForGarmentKeys(garmentKeys),
+      conciseLabels: conciseLabelsForGarmentKeys(garmentKeys, garmentTypeByKey),
     }),
   ];
 };

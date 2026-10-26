@@ -1,3 +1,4 @@
+import { resolveConstructionPhysicalGarmentType } from "./garmentLengthVariant.js";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type {
   AdditionalGarmentConstructionStateV1,
@@ -123,7 +124,8 @@ export const projectYourGarmentsConstructionDisplayLabels = ({
     });
     if (
       resolution?.status === "resolved" &&
-      resolution.garmentType !== physical.garmentType
+      resolveConstructionPhysicalGarmentType(resolution.garmentType, resolution) !==
+        physical.garmentType
     ) {
       return [];
     }
