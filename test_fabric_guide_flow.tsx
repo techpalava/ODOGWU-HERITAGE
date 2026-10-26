@@ -439,6 +439,125 @@ const guides = (root: ReactTestInstance) =>
 }
 
 // ---------------------------------------------------------------------------
+// 2b. Compact layout: choose + every assign step share ONE highlighted card,
+// garments are small chips on one wrapping line.
+// ---------------------------------------------------------------------------
+const groupCards = (root: ReactTestInstance) =>
+  root.findAll(
+    (node) => typeof node.type === "string" && node.props["data-fabric-guide-group"] === "choose_assign",
+  );
+const chips = (root: ReactTestInstance) =>
+  root.findAll(
+    (node) => typeof node.type === "string" && node.props["data-fabric-guide-chip"] === "true",
+  );
+const stepItems = (guide: ReactTestInstance) =>
+  guide.find((node) => node.type === "ol").children.filter(
+    (child): child is ReactTestInstance => typeof child !== "string",
+  );
+
+// First visit: one card, heading = choose, chips for every garment.
+{
+  const renderer = await render(FabricAllocationStateEngine.initialize());
+  const [guide] = guides(renderer.root);
+  const items = stepItems(guide!);
+  assert.equal(items.length, 1, "choose + assign steps render as one card, not one row per garment");
+  const [card] = groupCards(guide!);
+  assert.ok(card);
+  assert.equal(items[0], card);
+  assert.equal(card!.props["data-fabric-guide-group-status"], "current");
+  assert.equal(card!.props["data-fabric-guide-group-current"], "choose_fabric");
+  assert.match(String(card!.props.className), /ring-heritage-gold/, "the card is highlighted");
+  assert.match(textContent(card!), /^1Current step, step 1: Choose a fabric from the catalogue/);
+  assert.match(textContent(card!), /Choose a fabric for every selected garment\./, "hint still shown");
+  assert.match(textContent(card!), /Then assign:/);
+  const chipNodes = chips(card!);
+  assert.deepEqual(
+    chipNodes.map((chip) => [chip.type, chip.props["data-fabric-guide-step"], chip.props["data-fabric-guide-step-status"]]),
+    [
+      ["button", "assign_garment:base:shirt", "upcoming"],
+      ["button", "assign_garment:base:trouser", "upcoming"],
+    ],
+    "one chip per garment, as real buttons",
+  );
+  for (const chip of chipNodes) {
+    assert.match(String(chip.props["aria-label"]), /^Assign fabric to /);
+    assert.equal(chip.props["aria-current"], undefined, "no garment chip is current before a fabric is chosen");
+    assert.equal(chip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 0);
+    assert.doesNotMatch(String(chip.props.className), /bg-heritage-gold\/15/);
+    assert.match(String(chip.props.className), /motion-reduce:transition-none/);
+  }
+  // A chip runs the same target its old row did (the garment's action button).
+  focusLog.length = 0;
+  await act(async () => chipNodes[1]!.props.onClick());
+  assert.deepEqual(focusLog, ["Add fabric for Trouser"]);
+}
+
+// After the Shirt has fabric: heading switches to the first unassigned
+// garment, the Shirt chip shows a tick, the Trouser chip is gold/current.
+{
+  const state = assign(FabricAllocationStateEngine.initialize(), "base:shirt", "GUIDE-A");
+  const renderer = await render(state);
+  const [guide] = guides(renderer.root);
+  assert.equal(stepItems(guide!).length, 1);
+  assert.match(textContent(guide!), /2 of 3 done\./, "done count semantics unchanged");
+  const [card] = groupCards(guide!);
+  assert.equal(card!.props["data-fabric-guide-group-current"], "assign_garment:base:trouser");
+  const heading = card!.find((node) => node.props["data-fabric-guide-group-heading"] === "assign_garment:base:trouser");
+  assert.match(textContent(heading), /Current step, step 3: Assign fabric to Trouser/);
+  assert.doesNotMatch(textContent(card!), /Then assign:/);
+  const byStep = new Map(chips(card!).map((chip) => [chip.props["data-fabric-guide-step"], chip]));
+  assert.deepEqual([...byStep.keys()], ["choose_fabric", "assign_garment:base:shirt", "assign_garment:base:trouser"]);
+  const chooseChip = byStep.get("choose_fabric")!;
+  assert.equal(chooseChip.props["data-fabric-guide-step-status"], "done");
+  assert.equal(textContent(chooseChip), "Fabric chosen");
+  const shirtChip = byStep.get("assign_garment:base:shirt")!;
+  assert.equal(shirtChip.props["data-fabric-guide-step-status"], "done");
+  assert.match(String(shirtChip.props["aria-label"]), / has fabric$/);
+  assert.equal(shirtChip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 1, "tick on assigned chip");
+  assert.match(String(shirtChip.props.className), /bg-emerald-50/);
+  const trouserChip = byStep.get("assign_garment:base:trouser")!;
+  assert.equal(trouserChip.props["aria-current"], "step");
+  assert.equal(trouserChip.props["aria-label"], "Assign fabric to Trouser");
+  assert.match(String(trouserChip.props.className), /bg-heritage-gold\/15/, "current chip is gold");
+  assert.equal(trouserChip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 0);
+  // Heading link runs the current step's target too.
+  focusLog.length = 0;
+  const headingLink = card!.find(
+    (node) => node.type === "button" && node.props["data-fabric-guide-heading-link"] === "assign_garment:base:trouser",
+  );
+  await act(async () => headingLink.props.onClick());
+  assert.deepEqual(focusLog, ["Assign fabric for Trouser"]);
+  // Exactly one current marker in the whole Guide.
+  assert.equal(guide!.findAll((node) => typeof node.type === "string" && node.props["aria-current"] === "step").length, 1);
+}
+
+// Blocking steps keep their own rows; the choose/assign card follows them.
+{
+  const threeGarments = selectionFor(["shirt", "trouser", "skirt"]);
+  let state = assign(FabricAllocationStateEngine.initialize(), "base:shirt", "GUIDE-A", threeGarments);
+  state = assign(state, "base:trouser", "GUIDE-B", threeGarments);
+  const renderer = await render(state, selectionFor(["shirt"]));
+  const [guide] = guides(renderer.root);
+  const items = stepItems(guide!);
+  assert.deepEqual(
+    items.map((item) => item.props["data-fabric-guide-step"] ?? item.props["data-fabric-guide-group"]),
+    ["fix_quantity", "review", "choose_assign"],
+  );
+  const fix = items[0]!;
+  assert.equal(fix.type, "li");
+  assert.equal(fix.props["data-fabric-guide-step-kind"], "fix_quantity");
+  assert.equal(fix.props["aria-current"], "step");
+  assert.match(textContent(fix), /Current step, step 1: Fix your fabric quantity/);
+  const review = items[1]!;
+  assert.equal(review.type, "li");
+  assert.equal(review.props["data-fabric-guide-step-status"], "upcoming");
+  assert.match(textContent(review), /Still to do, step 2: Review your fabric assignments/);
+  assert.equal(groupCards(fix).length + groupCards(review).length, 0, "blocking rows hold no chips");
+  assert.equal(items[2]!.props["data-fabric-guide-group-status"], "done");
+  assert.doesNotMatch(String(items[2]!.props.className), /ring-heritage-gold/, "only the current card is highlighted");
+}
+
+// ---------------------------------------------------------------------------
 // 3. Source: one cue, not two.
 // ---------------------------------------------------------------------------
 const source = readFileSync("src/components/DormantFutureFabricStep.tsx", "utf8");
