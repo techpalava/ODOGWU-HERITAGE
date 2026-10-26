@@ -9,6 +9,8 @@ import {
   handleAuthBootstrap,
   handlePinLogin,
   handlePinRegister,
+  handleEmailCodeRequest,
+  handleEmailCodeVerify,
 } from "./src/server/authHttp";
 import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransferHttp";
 import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
@@ -90,6 +92,8 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.post("/api/auth/bootstrap", handleAuthBootstrap);
 app.post("/api/auth/pin-login", handlePinLogin);
 app.post("/api/auth/pin-register", handlePinRegister);
+app.post("/api/auth/email-code/request", handleEmailCodeRequest);
+app.post("/api/auth/email-code/verify", handleEmailCodeVerify);
 app.post("/api/orders/transfer-uploaded-design", handleUploadedDesignTransfer);
 app.post(
   "/api/orders/create-uploaded-design-ownership-claim",

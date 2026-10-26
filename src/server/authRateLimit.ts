@@ -38,6 +38,26 @@ export const AUTH_RATE_LIMITS = {
     limit: 5,
     windowMs: 60 * MINUTE,
   },
+  emailCodeRequestPerIp: {
+    bucket: "email-code-request-ip",
+    limit: 10,
+    windowMs: 15 * MINUTE,
+  },
+  emailCodeRequestPerEmail: {
+    bucket: "email-code-request-email",
+    limit: 5,
+    windowMs: 60 * MINUTE,
+  },
+  emailCodeVerifyPerIp: {
+    bucket: "email-code-verify-ip",
+    limit: 30,
+    windowMs: 15 * MINUTE,
+  },
+  emailCodeVerifyPerEmail: {
+    bucket: "email-code-verify-email",
+    limit: 10,
+    windowMs: 15 * MINUTE,
+  },
   bootstrapPerIp: { bucket: "bootstrap-ip", limit: 300, windowMs: 10 * MINUTE },
   bootstrapPerUser: {
     bucket: "bootstrap-uid",

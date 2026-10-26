@@ -30,8 +30,10 @@ type StoredCustomer = Customer & {
   passcodeHash?: string;
   authFailedAttempts?: number;
   authLockedUntil?: string | null;
-  pinDisabledAt?: string;
-  pinDisabledReason?: string;
+  /** Set once the mailbox is proven (email code or verified Google). */
+  emailProvenAt?: string;
+  /** Set once the PIN holder has also proven the mailbox. */
+  pinProvenAt?: string;
 };
 
 export type PublicCustomer = Omit<
@@ -40,8 +42,8 @@ export type PublicCustomer = Omit<
   | "passcodeHash"
   | "authFailedAttempts"
   | "authLockedUntil"
-  | "pinDisabledAt"
-  | "pinDisabledReason"
+  | "emailProvenAt"
+  | "pinProvenAt"
 >;
 
 export function hashPin(pin: string, salt = randomBytes(16).toString("hex")) {
@@ -73,8 +75,8 @@ function toPublicCustomer(customer: StoredCustomer): PublicCustomer {
     passcodeHash: _passcodeHash,
     authFailedAttempts: _authFailedAttempts,
     authLockedUntil: _authLockedUntil,
-    pinDisabledAt: _pinDisabledAt,
-    pinDisabledReason: _pinDisabledReason,
+    emailProvenAt: _emailProvenAt,
+    pinProvenAt: _pinProvenAt,
     ...publicCustomer
   } = customer;
   return publicCustomer;
@@ -299,6 +301,7 @@ export async function bootstrapFirebaseCustomer(
   }
 
   const canonicalEmail = getCanonicalEmail(email);
+  const emailProven = firebaseUser.emailVerified === true;
   const admin = await setServerRole(auth, token.uid, canonicalEmail);
   if (admin) {
     await migrateLegacyPins(db);
@@ -316,18 +319,11 @@ export async function bootstrapFirebaseCustomer(
       role: admin ? "Super Administrator" : "Customer",
       orderStatus: "Fresh Passport Activation",
       method: "gmail",
+      ...(emailProven ? { emailProvenAt: new Date().toISOString() } : {}),
     });
     customerDocument = await newDocument.get();
   } else {
     const existing = customerDocument.data() as StoredCustomer;
-    // Pre-registration takeover guard: a PIN can be set by anyone who types
-    // an address, without proving the mailbox. Once the real mailbox owner
-    // signs in with a verified email, that unproven PIN stops working. The
-    // hash is kept (not deleted) so the change is reversible by an admin.
-    const disableUnprovenPin =
-      firebaseUser.emailVerified === true &&
-      !existing.pinDisabledAt &&
-      Boolean(existing.passcodeHash || existing.passcode);
     await customerDocument.ref.set(
       {
         ownerUid: token.uid,
@@ -335,11 +331,8 @@ export async function bootstrapFirebaseCustomer(
         email: canonicalEmail,
         role: admin ? "Super Administrator" : "Customer",
         method: existing.method || "gmail",
-        ...(disableUnprovenPin
-          ? {
-              pinDisabledAt: new Date().toISOString(),
-              pinDisabledReason: "verified-email-sign-in",
-            }
+        ...(emailProven && !existing.emailProvenAt
+          ? { emailProvenAt: new Date().toISOString() }
           : {}),
       },
       { merge: true },
@@ -351,7 +344,7 @@ export async function bootstrapFirebaseCustomer(
   // PIN accounts are created unverified, so they never reach this branch.
   // The raw provider address is passed so both its lowercase form and the
   // canonical form are matched (e.g. dotted Gmail addresses on old orders).
-  if (firebaseUser.emailVerified === true) {
+  if (emailProven) {
     await migrateOwnedOrders(db, token.uid, email);
   }
   return {
@@ -360,11 +353,23 @@ export async function bootstrapFirebaseCustomer(
   };
 }
 
+export type PinLoginOptions = {
+  /** 6-digit code for the one-time mailbox confirmation step. */
+  emailCode?: string;
+  sendConfirmationCode?: (canonicalEmail: string) => Promise<void>;
+  /** Must throw when the code is wrong, expired or used. */
+  verifyConfirmationCode?: (
+    canonicalEmail: string,
+    code: string,
+  ) => Promise<void>;
+};
+
 export async function loginWithPin(
   db: Firestore,
   auth: Auth,
   identifier: string,
   pin: string,
+  options: PinLoginOptions = {},
 ) {
   if (!validateLoginPin(pin)) {
     throw new Error("INVALID_CREDENTIALS");
@@ -389,10 +394,9 @@ export async function loginWithPin(
     if (lockedUntil > Date.now()) return "PIN_LOCKED" as const;
 
     const matches =
-      !latest.pinDisabledAt &&
-      (verifyPin(pin, latest.passcodeHash) ||
-        (typeof latest.passcode === "string" && latest.passcode === pin));
-    if (matches) return "MATCHED" as const;
+      verifyPin(pin, latest.passcodeHash) ||
+      (typeof latest.passcode === "string" && latest.passcode === pin);
+    if (matches) return { status: "MATCHED" as const, latest };
 
     const failedAttempts = (latest.authFailedAttempts || 0) + 1;
     transaction.set(
@@ -410,7 +414,29 @@ export async function loginWithPin(
       ? ("PIN_LOCKED" as const)
       : ("INVALID_CREDENTIALS" as const);
   });
-  if (outcome !== "MATCHED") throw new Error(outcome);
+  if (typeof outcome === "string") throw new Error(outcome);
+
+  // Takeover guard that keeps PIN and Google/email-code working together:
+  // a PIN set without mailbox proof (anyone could type the address) must be
+  // confirmed once with an emailed code after the mailbox owner has proven
+  // the address. Until then the PIN alone cannot open the account.
+  const pinNeedsMailboxProof =
+    Boolean(outcome.latest.emailProvenAt) && !outcome.latest.pinProvenAt;
+  let pinProvenNow = false;
+  if (pinNeedsMailboxProof) {
+    const canonical = getCanonicalEmail(outcome.latest.email || account.email);
+    if (!options.emailCode) {
+      if (options.sendConfirmationCode) {
+        await options.sendConfirmationCode(canonical);
+      }
+      throw new Error("PIN_EMAIL_CONFIRMATION_REQUIRED");
+    }
+    if (!options.verifyConfirmationCode) {
+      throw new Error("PIN_EMAIL_CONFIRMATION_REQUIRED");
+    }
+    await options.verifyConfirmationCode(canonical, options.emailCode);
+    pinProvenNow = true;
+  }
 
   const canonicalEmail = getCanonicalEmail(account.email);
   const firebaseUser = await ensureFirebaseUser(
@@ -429,11 +455,12 @@ export async function loginWithPin(
       authFailedAttempts: FieldValue.delete(),
       authLockedUntil: FieldValue.delete(),
       role: "Customer",
+      ...(pinProvenNow ? { pinProvenAt: new Date().toISOString() } : {}),
     },
     { merge: true },
   );
   // A PIN does not prove mailbox ownership, so older unowned orders are not
-  // linked here. They link after a verified sign-in (Google today).
+  // linked here. They link after an email code or a verified Google sign-in.
 
   const customToken = await auth.createCustomToken(firebaseUser.uid, {
     admin: false,
@@ -490,6 +517,72 @@ export async function registerWithPin(
     authMethod: "pin",
   });
   return { customToken, customer: toPublicCustomer(customer) };
+}
+
+/**
+ * Completes a passwordless sign-in or sign-up after the caller has verified
+ * a one-time email code for `email`. The code proves the mailbox, so this
+ * is the one non-Google path that may link older unowned orders.
+ */
+export async function completeEmailCodeSignIn(
+  db: Firestore,
+  auth: Auth,
+  input: { email: string; name?: string },
+) {
+  const canonicalEmail = getCanonicalEmail(input.email);
+  if (!canonicalEmail.includes("@")) throw new Error("INVALID_EMAIL");
+  if (isAllowedAdminEmail(canonicalEmail)) {
+    throw new Error("ADMIN_GOOGLE_REQUIRED");
+  }
+
+  const existingDocument = await findCustomerDocument(db, canonicalEmail);
+  const existing = existingDocument?.data() as StoredCustomer | undefined;
+  const name =
+    existing?.name || input.name?.trim().slice(0, 120) || "Customer";
+  const firebaseUser = await ensureFirebaseUser(auth, canonicalEmail, name);
+  await setServerRole(auth, firebaseUser.uid, canonicalEmail);
+  const provenAt = new Date().toISOString();
+
+  let customerReference;
+  if (!existingDocument) {
+    customerReference = db.collection("customers").doc(canonicalEmail);
+    await customerReference.set({
+      ownerUid: firebaseUser.uid,
+      canonicalEmail,
+      name,
+      email: canonicalEmail,
+      phone: "",
+      role: "Customer",
+      orderStatus: "Fresh Passport Activation",
+      method: "email-code",
+      emailProvenAt: provenAt,
+    });
+  } else {
+    customerReference = existingDocument.ref;
+    await customerReference.set(
+      {
+        ownerUid: firebaseUser.uid,
+        canonicalEmail,
+        email: canonicalEmail,
+        role: "Customer",
+        ...(existing?.emailProvenAt ? {} : { emailProvenAt: provenAt }),
+      },
+      { merge: true },
+    );
+  }
+
+  await migrateOwnedOrders(db, firebaseUser.uid, input.email);
+
+  const customToken = await auth.createCustomToken(firebaseUser.uid, {
+    admin: false,
+    authMethod: "email-code",
+  });
+  const refreshed = await customerReference.get();
+  return {
+    customToken,
+    created: !existingDocument,
+    customer: toPublicCustomer(refreshed.data() as StoredCustomer),
+  };
 }
 
 export function syntheticPhoneEmail(phone: string): string {

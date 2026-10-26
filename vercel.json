@@ -27,6 +27,14 @@
     {
       "source": "/api/client-image-error",
       "destination": "/api/health?route=client-image-error"
+    },
+    {
+      "source": "/api/auth/email-code/request",
+      "destination": "/api/auth/pin-login?route=email-code-request"
+    },
+    {
+      "source": "/api/auth/email-code/verify",
+      "destination": "/api/auth/pin-login?route=email-code-verify"
     }
   ],
   "headers": [
