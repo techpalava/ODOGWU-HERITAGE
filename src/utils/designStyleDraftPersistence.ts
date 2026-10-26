@@ -1,4 +1,9 @@
+import {
+  areLengthVariantsOfSameGarment,
+  getOriginalGarmentTypeFromKey,
+} from "./garmentLengthVariant.js";
 import type {
+  CanonicalPhysicalGarmentType,
   DesignSource,
   GarmentTypeStepSelection,
   GuestDesignDraft,
@@ -767,13 +772,32 @@ export const buildDesignStyleDraftValidationAuthority = ({
     activeOccurrences.forEach((occurrence) => {
       const occurrenceToken = occurrenceTokenFor(occurrence);
       if (!occurrenceToken) return;
-      const compatibility = resolveFutureDesignStyleCompatibility({
-        garmentTypeSelection: {
-          ...garmentTypeSelection,
-          garmentTypes: [occurrence.garmentType],
-        },
-        style,
-      });
+      const compatibilityFor = (garmentType: CanonicalPhysicalGarmentType) =>
+        resolveFutureDesignStyleCompatibility({
+          garmentTypeSelection: {
+            ...garmentTypeSelection,
+            garmentTypes: [garmentType],
+          },
+          style,
+        });
+      // A garment switched to its other length in Step 4 keeps its design style: judge it as the
+      // garment it was chosen as too, and keep whichever reading is more permissive.
+      const chosenAsType = getOriginalGarmentTypeFromKey(occurrence.garmentKey);
+      const physicalCompatibility = compatibilityFor(occurrence.garmentType);
+      const chosenAsCompatibility =
+        chosenAsType &&
+        chosenAsType !== occurrence.garmentType &&
+        areLengthVariantsOfSameGarment(chosenAsType, occurrence.garmentType)
+          ? compatibilityFor(chosenAsType)
+          : null;
+      const compatibilityRank = (status: string) =>
+        status === "exact_match" ? 0 : status === "adaptable" ? 1 : 2;
+      const compatibility =
+        chosenAsCompatibility &&
+        compatibilityRank(chosenAsCompatibility.status) <
+          compatibilityRank(physicalCompatibility.status)
+          ? chosenAsCompatibility
+          : physicalCompatibility;
       if (compatibility.status === "exact_match") {
         occurrenceEligibilityByToken[occurrenceToken] = { status: "eligible" };
         return;

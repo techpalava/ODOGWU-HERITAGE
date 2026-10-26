@@ -1,3 +1,4 @@
+import { getBaseGarmentConstruction } from "./garmentLengthVariant.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   FabricGarmentAssignment,
@@ -185,7 +186,10 @@ export const projectCustomerGarmentConstructionBreakdown = ({
         ? ("additional" as const)
         : null;
     const construction = role === "main"
-      ? reconciledGarmentTypeSelection.constructionByGarment[occurrence.parentGarmentType]
+      ? getBaseGarmentConstruction(
+          reconciledGarmentTypeSelection,
+          occurrence.parentGarmentKey,
+        )
       : role === "additional"
         ? additionalGarmentConstructions.byGarmentKey[occurrence.parentGarmentKey]
         : undefined;

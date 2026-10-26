@@ -1,3 +1,7 @@
+import {
+  areLengthVariantsOfSameGarment,
+  resolveBasePhysicalGarmentType,
+} from "./garmentLengthVariant.js";
 import { createStyleBaseGarmentSpec, getFabricGarmentSelectionsForComposition } from "../config/StyleFabricCapacityConfig.js";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine.js";
 import {
@@ -448,9 +452,14 @@ export interface FutureFabricStageCompletion {
 export const getFutureFabricCapacityComposition = (
   selection: GarmentTypeStepSelection,
 ): FabricCapacityGarmentSpec[] =>
-  selection.garmentTypes.map((garmentType) =>
-    createStyleBaseGarmentSpec(garmentType),
-  );
+  selection.garmentTypes.map((garmentType) => {
+    // Keyed by the Step 1 card; sized by the length the Main Garment option chose in Step 4.
+    const physicalType = resolveBasePhysicalGarmentType(selection, garmentType);
+    return {
+      ...createStyleBaseGarmentSpec(physicalType),
+      key: createStyleBaseGarmentSpec(garmentType).key,
+    };
+  });
 
 export const getFutureFabricGarmentSelections = (
   selection: GarmentTypeStepSelection,
@@ -3473,15 +3482,34 @@ export const reconcileFutureFabricAllocationState = ({
   );
   const retainedKeys = new Set<string>();
   const fabricAllocations = state.fabricAllocations.flatMap((allocation) => {
+    // A garment whose length changed (Step 4 switch, or a Step 1 change resetting it) keeps its
+    // fabric while the resized garment still fits on it.
+    const unitsAfterLengthChanges = allocation.garmentAssignments.reduce(
+      (total, assignment) => {
+        const required = requiredByKey.get(assignment.garmentKey);
+        return (
+          total +
+          (required &&
+          areLengthVariantsOfSameGarment(required.garmentType, assignment.garmentType)
+            ? required.fabricUnits
+            : assignment.fabricUnits)
+        );
+      },
+      0,
+    );
     const garmentAssignments = allocation.garmentAssignments.flatMap(
       (assignment) => {
         const required = requiredByKey.get(assignment.garmentKey);
-        if (
-          !required ||
-          retainedKeys.has(assignment.garmentKey) ||
-          required.garmentType !== assignment.garmentType ||
-          required.fabricUnits !== assignment.fabricUnits
-        ) {
+        if (!required || retainedKeys.has(assignment.garmentKey)) return [];
+        const sameGarment =
+          required.garmentType === assignment.garmentType &&
+          required.fabricUnits === assignment.fabricUnits;
+        const lengthChangedAndFits =
+          required.garmentType !== assignment.garmentType &&
+          areLengthVariantsOfSameGarment(required.garmentType, assignment.garmentType) &&
+          (required.fabricUnits <= assignment.fabricUnits ||
+            unitsAfterLengthChanges <= FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION);
+        if (!sameGarment && !lengthChangedAndFits) {
           return [];
         }
         retainedKeys.add(assignment.garmentKey);

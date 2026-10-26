@@ -34,6 +34,7 @@ export const FutureFabricCatalogueCard = ({
   orderAllocationOptions,
   usedBySelectionsLabel,
   disabledActionMessage,
+  preselected = false,
 }: {
   fabric: Fabric;
   presentation: FutureFabricCatalogueCardPresentation;
@@ -64,6 +65,8 @@ export const FutureFabricCatalogueCard = ({
   usedBySelectionsLabel?: string;
   /** Shown on the disabled action itself (e.g. stock exhausted while changing). */
   disabledActionMessage?: string;
+  /** Shown as the pre-selected choice: highlighted, its Select button pressed. */
+  preselected?: boolean;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
   const isCancelAction =
@@ -171,9 +174,12 @@ export const FutureFabricCatalogueCard = ({
 
   return (
     <article
-      className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
+      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm ${
+        preselected ? "border-heritage-green ring-2 ring-heritage-gold/60" : "border-gray-200"
+      }`}
       data-fabric-catalogue-card="true"
       data-fabric-card-code={fabric.code}
+      data-fabric-preselected={preselected ? "true" : undefined}
       {...Object.fromEntries(
         Object.entries(dataAttributes || {}).filter(
           ([, value]) => value !== undefined,
@@ -239,6 +245,17 @@ export const FutureFabricCatalogueCard = ({
         <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
           {fabric.code}
         </p>
+        {preselected ? (
+          <p className="mt-2">
+            <span
+              data-fabric-current="true"
+              className="inline-flex items-center gap-1 rounded-full border border-heritage-green/40 bg-heritage-green/10 px-2 py-0.5 text-[10px] font-bold leading-tight text-heritage-green"
+            >
+              <Check aria-hidden="true" size={12} />
+              Current Fabric
+            </span>
+          </p>
+        ) : null}
         {usedBySelectionsLabel ? (
           <p className="mt-2">
             <span
@@ -345,7 +362,7 @@ export const FutureFabricCatalogueCard = ({
           <button
             type="button"
             disabled={disabled}
-            aria-pressed={actionPressed}
+            aria-pressed={actionPressed ?? (preselected || undefined)}
             onClick={onAction}
             data-fabric-card="true"
             data-fabric-code={fabric.code}

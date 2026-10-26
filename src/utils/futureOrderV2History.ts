@@ -113,6 +113,9 @@ export const presentFutureOrderV2History = (
       monogramLines,
       tailoringMeasurements: projectTailoringMeasurementReadout(
         candidate.measurements,
+        Object.fromEntries(
+          candidate.garments.map((garment) => [garment.garmentKey, garment.garmentType]),
+        ),
       ),
       occurrences: candidate.occurrenceStyleSnapshots.map((snapshot) => ({
         orderId: parsed.value.orderId,

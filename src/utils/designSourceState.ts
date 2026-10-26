@@ -37,6 +37,12 @@ import {
 } from "./uploadedDesignStep1.js";
 import { normalizeCustomDetailCatalog } from "./catalogHelpers.js";
 import {
+  getBaseGarmentConstruction,
+  isAdditionalKeyOfGarmentLengthVariant,
+  parseBaseGarmentTypeFromKey,
+  resolveBasePhysicalGarmentType,
+} from "./garmentLengthVariant.js";
+import {
   getPhysicalGarmentOccurrenceGeneration,
   reconcilePhysicalGarmentOccurrenceIdentityState,
 } from "./physicalGarmentOccurrenceIdentity.js";
@@ -373,9 +379,10 @@ export const physicalOccurrencesToFabricRequirements = (
       isCustomerSelectableGarmentType(occurrence.garmentType) &&
       occurrence.fabricUnits ===
         FABRIC_GARMENT_CAPACITY_UNITS[occurrence.garmentType] &&
-      new RegExp(
-        `^additional:${occurrence.garmentType}:[1-9][0-9]*$`,
-      ).test(occurrence.garmentKey);
+      isAdditionalKeyOfGarmentLengthVariant(
+        occurrence.garmentKey,
+        occurrence.garmentType,
+      );
 
     return {
       garmentKey: occurrence.garmentKey,
@@ -452,25 +459,57 @@ const projectAuthorizedAdditionalPhysicalOccurrences = ({
   return occurrences;
 };
 
+/**
+ * Physical type and fabric units of a main garment. A Standard/Long garment follows the length of
+ * its chosen Main Garment option (stored under its Step 1 type, which the key keeps).
+ */
+const resolveBaseOccurrencePhysicalShape = (
+  garmentKey: string,
+  storedType: CanonicalPhysicalGarmentType,
+  storedFabricUnits: number,
+  constructionSelection: GarmentTypeStepSelection,
+): { garmentType: CanonicalPhysicalGarmentType; fabricUnits: number } => {
+  const stepOneType = parseBaseGarmentTypeFromKey(garmentKey);
+  if (!stepOneType || stepOneType !== storedType) {
+    return { garmentType: storedType, fabricUnits: storedFabricUnits };
+  }
+  const garmentType = resolveBasePhysicalGarmentType(
+    constructionSelection,
+    stepOneType,
+  );
+  return garmentType === storedType
+    ? { garmentType, fabricUnits: storedFabricUnits }
+    : {
+        garmentType,
+        fabricUnits: createStyleBaseGarmentSpec(garmentType).fabricUnits,
+      };
+};
+
 const projectSourceBasePhysicalOccurrences = ({
   sourceKind,
   step1GarmentTypeSelection,
+  constructionSelection = step1GarmentTypeSelection,
   uploadedCompositionSpecs,
 }: {
   sourceKind: "catalogue" | "uploaded";
   step1GarmentTypeSelection: GarmentTypeStepSelection;
+  constructionSelection?: GarmentTypeStepSelection;
   uploadedCompositionSpecs?: readonly FabricCapacityGarmentSpec[] | null;
 }): PhysicalGarmentOccurrence[] => {
   if (sourceKind === "uploaded" && uploadedCompositionSpecs?.length) {
     return uploadedCompositionSpecs.map((spec) => ({
       garmentKey: spec.key,
-      garmentType: spec.garmentType as CanonicalPhysicalGarmentType,
+      ...resolveBaseOccurrencePhysicalShape(
+        spec.key,
+        spec.garmentType as CanonicalPhysicalGarmentType,
+        spec.fabricUnits,
+        constructionSelection,
+      ),
       sourceRole: inferOccurrenceRole(
         spec.key,
         spec.garmentType,
         step1GarmentTypeSelection.garmentTypes,
       ),
-      fabricUnits: spec.fabricUnits,
     }));
   }
 
@@ -478,9 +517,13 @@ const projectSourceBasePhysicalOccurrences = ({
     const spec = createStyleBaseGarmentSpec(garmentType);
     return {
       garmentKey: spec.key,
-      garmentType,
+      ...resolveBaseOccurrencePhysicalShape(
+        spec.key,
+        garmentType,
+        spec.fabricUnits,
+        constructionSelection,
+      ),
       sourceRole: "main" as const,
-      fabricUnits: spec.fabricUnits,
     };
   });
 };
@@ -573,7 +616,12 @@ export const resolveOccurrenceConstruction = ({
   if (sourceRole === "additional" || garmentKey.startsWith("additional:")) {
     return additionalGarmentConstructionState?.byGarmentKey[garmentKey];
   }
-  return garmentTypeSelection.constructionByGarment[garmentType];
+  // A main garment's construction lives under its Step 1 type (the key), which stays the same
+  // when Step 4 switches the garment to the other length.
+  return getBaseGarmentConstruction(
+    garmentTypeSelection,
+    parseBaseGarmentTypeFromKey(garmentKey) ? garmentKey : garmentType,
+  );
 };
 
 export type AuthoritativePhysicalOrderDiagnostic = {
@@ -651,6 +699,7 @@ export const buildAuthoritativePhysicalOccurrences = ({
   const baseOccurrences = projectSourceBasePhysicalOccurrences({
     sourceKind,
     step1GarmentTypeSelection,
+    constructionSelection: effectiveGarmentTypeSelection,
     uploadedCompositionSpecs,
   });
   const additionalOccurrences = projectAuthorizedAdditionalPhysicalOccurrences({
@@ -860,9 +909,13 @@ export const resolveAuthoritativePhysicalOrder = ({
   return finalizeResolution({
     sourceKind: "catalogue",
     effectiveGarmentTypeSelection,
-    basePhysicalSpecs: garmentTypeSelection.garmentTypes.map(
-      createStyleBaseGarmentSpec,
-    ),
+    basePhysicalSpecs: physicalOccurrences
+      .filter((occurrence) => occurrence.sourceRole === "main")
+      .map((occurrence) => ({
+        key: occurrence.garmentKey,
+        garmentType: occurrence.garmentType,
+        fabricUnits: occurrence.fabricUnits as FabricUnitCount,
+      })),
     physicalOccurrences,
   });
 };
