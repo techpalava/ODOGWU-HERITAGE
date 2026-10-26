@@ -5,6 +5,13 @@ import {
   registerWithPin,
 } from "./customerAuth.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
+import {
+  AUTH_RATE_LIMITS,
+  AuthRateLimitError,
+  consumeAuthRateLimit,
+  getClientIp,
+} from "./authRateLimit.js";
+import { getCanonicalEmail } from "../security/authIdentity.js";
 
 export function authErrorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -36,6 +43,12 @@ export function authErrorResponse(error: unknown) {
         message:
           "This email is already registered. Sign in with Google or your existing PIN.",
       };
+    case "RATE_LIMITED":
+      return {
+        status: 429,
+        message:
+          "Too many attempts. Please wait a few minutes and try again.",
+      };
     case "INVALID_REGISTRATION":
       return {
         status: 400,
@@ -64,6 +77,9 @@ function getRequestHeader(req: HttpRequest, name: string) {
 function sendAuthError(res: HttpResponse, error: unknown) {
   const mapped = authErrorResponse(error);
   setNoStore(res);
+  if (error instanceof AuthRateLimitError) {
+    res.setHeader("Retry-After", String(error.retryAfterSeconds));
+  }
   return res.status(mapped.status).json({ error: mapped.message });
 }
 
@@ -91,7 +107,17 @@ export async function handleAuthBootstrap(
     }
 
     const { auth: adminAuth, db: adminDb } = getAdminServices();
+    await consumeAuthRateLimit(
+      adminDb,
+      AUTH_RATE_LIMITS.bootstrapPerIp,
+      getClientIp(req),
+    );
     const decodedToken = await adminAuth.verifyIdToken(bearer.slice(7));
+    await consumeAuthRateLimit(
+      adminDb,
+      AUTH_RATE_LIMITS.bootstrapPerUser,
+      decodedToken.uid,
+    );
     const result = await bootstrapFirebaseCustomer(
       adminDb,
       adminAuth,
@@ -121,6 +147,18 @@ export async function handlePinLogin(req: HttpRequest, res: HttpResponse) {
     }
 
     const { auth: adminAuth, db: adminDb } = getAdminServices();
+    await consumeAuthRateLimit(
+      adminDb,
+      AUTH_RATE_LIMITS.pinLoginPerIp,
+      getClientIp(req),
+    );
+    await consumeAuthRateLimit(
+      adminDb,
+      AUTH_RATE_LIMITS.pinLoginPerIdentifier,
+      identifier.includes("@")
+        ? getCanonicalEmail(identifier)
+        : identifier.trim(),
+    );
     const result = await loginWithPin(
       adminDb,
       adminAuth,
@@ -147,6 +185,18 @@ export async function handlePinRegister(
         : {};
     const { name, email, pin } = body;
     const { auth: adminAuth, db: adminDb } = getAdminServices();
+    await consumeAuthRateLimit(
+      adminDb,
+      AUTH_RATE_LIMITS.pinRegisterPerIp,
+      getClientIp(req),
+    );
+    if (typeof email === "string" && email.trim()) {
+      await consumeAuthRateLimit(
+        adminDb,
+        AUTH_RATE_LIMITS.pinRegisterPerEmail,
+        getCanonicalEmail(email),
+      );
+    }
     const result = await registerWithPin(adminDb, adminAuth, {
       name: typeof name === "string" ? name : "",
       email: typeof email === "string" ? email : "",

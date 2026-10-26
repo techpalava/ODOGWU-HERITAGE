@@ -98,6 +98,26 @@ const createHarness = (options?: { failCreateAsExisting?: boolean }) => {
   });
 
   const db = {
+    async runTransaction<T>(
+      update: (transaction: {
+        get: (reference: { get: () => Promise<unknown> }) => Promise<unknown>;
+        set: (
+          reference: { set: (value: Record<string, unknown>, options?: { merge?: boolean }) => Promise<void> },
+          value: Record<string, unknown>,
+          options?: { merge?: boolean },
+        ) => void;
+      }) => Promise<T>,
+    ): Promise<T> {
+      const writes: Array<() => Promise<void>> = [];
+      const result = await update({
+        get: (reference) => reference.get(),
+        set: (reference, value, options) => {
+          writes.push(() => reference.set(value, options));
+        },
+      });
+      for (const write of writes) await write();
+      return result;
+    },
     batch() {
       return {
         set() {

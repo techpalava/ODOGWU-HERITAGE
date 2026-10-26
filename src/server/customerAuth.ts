@@ -9,7 +9,11 @@ import {
   type DocumentSnapshot,
   type Firestore,
 } from "firebase-admin/firestore";
-import type { Auth, DecodedIdToken } from "firebase-admin/auth";
+import type {
+  Auth,
+  DecodedIdToken,
+  UserRecord,
+} from "firebase-admin/auth";
 import type { Customer } from "../types.js";
 import { isAllowedAdminEmail } from "./adminAllowlist.js";
 import {
@@ -26,6 +30,8 @@ type StoredCustomer = Customer & {
   passcodeHash?: string;
   authFailedAttempts?: number;
   authLockedUntil?: string | null;
+  pinDisabledAt?: string;
+  pinDisabledReason?: string;
 };
 
 export type PublicCustomer = Omit<
@@ -34,6 +40,8 @@ export type PublicCustomer = Omit<
   | "passcodeHash"
   | "authFailedAttempts"
   | "authLockedUntil"
+  | "pinDisabledAt"
+  | "pinDisabledReason"
 >;
 
 export function hashPin(pin: string, salt = randomBytes(16).toString("hex")) {
@@ -65,11 +73,29 @@ function toPublicCustomer(customer: StoredCustomer): PublicCustomer {
     passcodeHash: _passcodeHash,
     authFailedAttempts: _authFailedAttempts,
     authLockedUntil: _authLockedUntil,
+    pinDisabledAt: _pinDisabledAt,
+    pinDisabledReason: _pinDisabledReason,
     ...publicCustomer
   } = customer;
   return publicCustomer;
 }
 
+async function firstMatch(
+  customers: ReturnType<Firestore["collection"]>,
+  field: string,
+  candidates: string[],
+): Promise<DocumentSnapshot | null> {
+  for (const candidate of [...new Set(candidates.filter(Boolean))]) {
+    const match = await customers.where(field, "==", candidate).limit(1).get();
+    if (!match.empty) return match.docs[0];
+  }
+  return null;
+}
+
+/**
+ * Indexed lookups only. A miss must never read the whole collection: that
+ * let any anonymous login attempt trigger a full `customers` scan.
+ */
 async function findCustomerDocument(
   db: Firestore,
   identifier: string,
@@ -79,46 +105,20 @@ async function findCustomerDocument(
 
   if (normalizedIdentifier.includes("@")) {
     const canonicalEmail = getCanonicalEmail(normalizedIdentifier);
-    const canonicalMatch = await customers
-      .where("canonicalEmail", "==", canonicalEmail)
-      .limit(1)
-      .get();
-    if (!canonicalMatch.empty) return canonicalMatch.docs[0];
-
-    const directCandidates = [
-      ...new Set([normalizedIdentifier.toLowerCase(), canonicalEmail]),
-    ];
-    for (const candidate of directCandidates) {
-      const directMatch = await customers
-        .where("email", "==", candidate)
-        .limit(1)
-        .get();
-      if (!directMatch.empty) return directMatch.docs[0];
-    }
-
-    const legacySnapshot = await customers.get();
     return (
-      legacySnapshot.docs.find(
-        (document) =>
-          getCanonicalEmail(document.data().email) === canonicalEmail,
-      ) || null
+      (await firstMatch(customers, "canonicalEmail", [canonicalEmail])) ||
+      (await firstMatch(customers, "email", [
+        normalizedIdentifier.toLowerCase(),
+        canonicalEmail,
+        normalizedIdentifier,
+      ]))
     );
   }
 
-  const normalizedPhone = normalizePhone(normalizedIdentifier);
-  const phoneMatch = await customers
-    .where("phone", "==", normalizedIdentifier)
-    .limit(1)
-    .get();
-  if (!phoneMatch.empty) return phoneMatch.docs[0];
-
-  const legacySnapshot = await customers.get();
-  return (
-    legacySnapshot.docs.find(
-      (document) =>
-        normalizePhone(document.data().phone) === normalizedPhone,
-    ) || null
-  );
+  return firstMatch(customers, "phone", [
+    normalizedIdentifier,
+    normalizePhone(normalizedIdentifier),
+  ]);
 }
 
 async function readFirebaseUserByEmail(auth: Auth, email: string) {
@@ -163,18 +163,41 @@ async function createUnverifiedPinUser(
   }
 }
 
+/**
+ * Links older orders that have no owner to the signed-in account. Callers
+ * must only invoke this after the email address is proven (Google-verified
+ * or verified by Firebase). Uses equality queries instead of reading every
+ * order.
+ */
 async function migrateOwnedOrders(
   db: Firestore,
   ownerUid: string,
   email: string,
 ) {
   const canonicalEmail = getCanonicalEmail(email);
-  const orders = await db.collection("orders").get();
+  const lowerEmail = email.trim().toLowerCase();
+  const orders = db.collection("orders");
+  const queries: Array<[string, string]> = [
+    ["customer.canonicalEmail", canonicalEmail],
+    ["customer.email", canonicalEmail],
+  ];
+  if (lowerEmail && lowerEmail !== canonicalEmail) {
+    queries.push(["customer.email", lowerEmail]);
+  }
+
+  const candidates = new Map<string, DocumentSnapshot>();
+  for (const [field, value] of queries) {
+    const snapshot = await orders.where(field, "==", value).get();
+    for (const orderDocument of snapshot.docs) {
+      candidates.set(orderDocument.id, orderDocument);
+    }
+  }
+
   const batch = db.batch();
   let migratedCount = 0;
 
-  for (const orderDocument of orders.docs) {
-    const order = orderDocument.data();
+  for (const orderDocument of candidates.values()) {
+    const order = orderDocument.data() || {};
     if (
       !order.ownerUid &&
       getCanonicalEmail(order.customer?.email) === canonicalEmail
@@ -201,7 +224,11 @@ async function migrateOwnedOrders(
 }
 
 async function migrateLegacyPins(db: Firestore) {
-  const customers = await db.collection("customers").get();
+  // Only documents that still hold a plaintext string `passcode`.
+  const customers = await db
+    .collection("customers")
+    .where("passcode", ">=", "")
+    .get();
   const legacyCustomers = customers.docs.filter((document) => {
     const customer = document.data() as StoredCustomer;
     return Boolean(customer.passcode && !customer.passcodeHash);
@@ -226,13 +253,33 @@ async function migrateLegacyPins(db: Firestore) {
   return legacyCustomers.length;
 }
 
+/**
+ * Administrator access needs all three: an allowlisted email, a verified
+ * email, and a linked Google identity for that same address.
+ */
+function hasVerifiedGoogleIdentity(
+  user: UserRecord,
+  canonicalEmail: string,
+): boolean {
+  return (
+    user.emailVerified === true &&
+    (user.providerData || []).some(
+      (provider) =>
+        provider?.providerId === "google.com" &&
+        getCanonicalEmail(provider.email || user.email) === canonicalEmail,
+    )
+  );
+}
+
 async function setServerRole(
   auth: Auth,
   uid: string,
   email: string,
 ) {
   const user = await auth.getUser(uid);
-  const admin = isAllowedAdminEmail(email);
+  const admin =
+    isAllowedAdminEmail(email) &&
+    hasVerifiedGoogleIdentity(user, getCanonicalEmail(email));
   const existingClaims = user.customClaims || {};
   if (existingClaims.admin !== admin) {
     await auth.setCustomUserClaims(uid, { ...existingClaims, admin });
@@ -272,20 +319,41 @@ export async function bootstrapFirebaseCustomer(
     });
     customerDocument = await newDocument.get();
   } else {
+    const existing = customerDocument.data() as StoredCustomer;
+    // Pre-registration takeover guard: a PIN can be set by anyone who types
+    // an address, without proving the mailbox. Once the real mailbox owner
+    // signs in with a verified email, that unproven PIN stops working. The
+    // hash is kept (not deleted) so the change is reversible by an admin.
+    const disableUnprovenPin =
+      firebaseUser.emailVerified === true &&
+      !existing.pinDisabledAt &&
+      Boolean(existing.passcodeHash || existing.passcode);
     await customerDocument.ref.set(
       {
         ownerUid: token.uid,
         canonicalEmail,
         email: canonicalEmail,
         role: admin ? "Super Administrator" : "Customer",
-        method: customerDocument.data()?.method || "gmail",
+        method: existing.method || "gmail",
+        ...(disableUnprovenPin
+          ? {
+              pinDisabledAt: new Date().toISOString(),
+              pinDisabledReason: "verified-email-sign-in",
+            }
+          : {}),
       },
       { merge: true },
     );
     customerDocument = await customerDocument.ref.get();
   }
 
-  await migrateOwnedOrders(db, token.uid, canonicalEmail);
+  // Only a proven mailbox may claim older orders that have no owner.
+  // PIN accounts are created unverified, so they never reach this branch.
+  // The raw provider address is passed so both its lowercase form and the
+  // canonical form are matched (e.g. dotted Gmail addresses on old orders).
+  if (firebaseUser.emailVerified === true) {
+    await migrateOwnedOrders(db, token.uid, email);
+  }
   return {
     customer: toPublicCustomer(customerDocument.data() as StoredCustomer),
     admin,
@@ -310,18 +378,25 @@ export async function loginWithPin(
     throw new Error("ADMIN_GOOGLE_REQUIRED");
   }
 
-  const lockedUntil = account.authLockedUntil
-    ? new Date(account.authLockedUntil).getTime()
-    : 0;
-  if (lockedUntil > Date.now()) throw new Error("PIN_LOCKED");
+  // Check the lock, verify the PIN, and count a failure in one transaction so
+  // parallel requests cannot exceed MAX_PIN_FAILURES.
+  const outcome = await db.runTransaction(async (transaction) => {
+    const current = await transaction.get(customerDocument.ref);
+    const latest = (current.data() || account) as StoredCustomer;
+    const lockedUntil = latest.authLockedUntil
+      ? new Date(latest.authLockedUntil).getTime()
+      : 0;
+    if (lockedUntil > Date.now()) return "PIN_LOCKED" as const;
 
-  const matches =
-    verifyPin(pin, account.passcodeHash) ||
-    (typeof account.passcode === "string" && account.passcode === pin);
+    const matches =
+      !latest.pinDisabledAt &&
+      (verifyPin(pin, latest.passcodeHash) ||
+        (typeof latest.passcode === "string" && latest.passcode === pin));
+    if (matches) return "MATCHED" as const;
 
-  if (!matches) {
-    const failedAttempts = (account.authFailedAttempts || 0) + 1;
-    await customerDocument.ref.set(
+    const failedAttempts = (latest.authFailedAttempts || 0) + 1;
+    transaction.set(
+      customerDocument.ref,
       {
         authFailedAttempts: failedAttempts,
         authLockedUntil:
@@ -331,10 +406,11 @@ export async function loginWithPin(
       },
       { merge: true },
     );
-    throw new Error(
-      failedAttempts >= MAX_PIN_FAILURES ? "PIN_LOCKED" : "INVALID_CREDENTIALS",
-    );
-  }
+    return failedAttempts >= MAX_PIN_FAILURES
+      ? ("PIN_LOCKED" as const)
+      : ("INVALID_CREDENTIALS" as const);
+  });
+  if (outcome !== "MATCHED") throw new Error(outcome);
 
   const canonicalEmail = getCanonicalEmail(account.email);
   const firebaseUser = await ensureFirebaseUser(
@@ -356,7 +432,8 @@ export async function loginWithPin(
     },
     { merge: true },
   );
-  await migrateOwnedOrders(db, firebaseUser.uid, canonicalEmail);
+  // A PIN does not prove mailbox ownership, so older unowned orders are not
+  // linked here. They link after a verified sign-in (Google today).
 
   const customToken = await auth.createCustomToken(firebaseUser.uid, {
     admin: false,
