@@ -365,7 +365,7 @@ export function CartDrawer() {
             futureOrderV2CartItems.length === 0 &&
             savedOrderItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 select-none">
-                <div className="h-16 w-16 rounded-full bg-heritage-gold/10 border border-heritage-gold/20 flex items-center justify-center text-heritage-gold animate-bounce">
+                <div className="h-16 w-16 rounded-full bg-heritage-gold/10 border border-heritage-gold/20 flex items-center justify-center text-heritage-bronze animate-bounce">
                   <ShoppingBag size={28} />
                 </div>
                 <div className="space-y-1.5">
@@ -404,10 +404,10 @@ export function CartDrawer() {
                         <h4 className="mt-1.5 font-serif text-xs font-bold text-heritage-green">
                           {item.name}
                         </h4>
-                        <p className="mt-0.5 text-[10px] font-semibold text-heritage-ink/60">
+                        <p className="mt-0.5 text-[10px] font-semibold text-heritage-ink/70">
                           {item.garmentSummary || "Saved order"}
                         </p>
-                        <p className="text-[10px] font-medium text-heritage-ink/60">
+                        <p className="text-[10px] font-medium text-heritage-ink/70">
                           {getSavedStudioOrderStageTitle(item.savedStage)} ·{" "}
                           {formatSavedStudioOrderDate(item.updatedAt)}
                         </p>
@@ -444,7 +444,7 @@ export function CartDrawer() {
                           onClick={() =>
                             setPendingSavedOrderDeleteId(item.savedOrderId)
                           }
-                          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 text-red-600"
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-500 text-red-600"
                           aria-label="Delete"
                         >
                           <Trash2 size={14} />
@@ -513,7 +513,7 @@ export function CartDrawer() {
                           <h4 className="font-serif font-bold text-heritage-green text-xs mt-1.5 leading-tight">
                             {getCartDesignLabel(item)}
                           </h4>
-                          <p className="text-[10px] text-heritage-ink/60 font-semibold mt-0.5">
+                          <p className="text-[10px] text-heritage-ink/70 font-semibold mt-0.5">
                             {item.garment.type} (
                             {item.measurements.unit || "inch"})
                           </p>
@@ -625,7 +625,7 @@ export function CartDrawer() {
                             DRESS_LINING_OPTION_ID,
                           ) && (
                           <p>
-                            ✨ L5 Lining: <strong className="text-heritage-gold">Included (+€10.00)</strong>
+                            ✨ L5 Lining: <strong className="text-heritage-bronze">Included (+€10.00)</strong>
                           </p>
                         )}
                         {item.design.optionalAccessories && item.design.optionalAccessories.length > 0 && (
@@ -748,7 +748,7 @@ export function CartDrawer() {
                           ) : (
                             <div className="space-y-3">
                               <div className="grid grid-cols-2 gap-2">
-                                <label className="text-[9px] font-bold uppercase text-heritage-ink/60">
+                                <label className="text-[9px] font-bold uppercase text-heritage-ink/70">
                                   Order route
                                   <select
                                     value={shippingEditorRoute}
@@ -759,7 +759,7 @@ export function CartDrawer() {
                                         >,
                                       )
                                     }
-                                    className="mt-1 min-h-[40px] w-full border border-gray-200 px-2 text-[10px] font-normal normal-case"
+                                    className="mt-1 min-h-[40px] w-full border border-gray-500 px-2 text-[10px] font-normal normal-case"
                                   >
                                     <option value="alone">
                                       Individual order
@@ -775,7 +775,7 @@ export function CartDrawer() {
                                     </option>
                                   </select>
                                 </label>
-                                <label className="text-[9px] font-bold uppercase text-heritage-ink/60">
+                                <label className="text-[9px] font-bold uppercase text-heritage-ink/70">
                                   Garment quantity
                                   <input
                                     type="number"
@@ -787,7 +787,7 @@ export function CartDrawer() {
                                         event.target.value,
                                       )
                                     }
-                                    className="mt-1 min-h-[40px] w-full border border-gray-200 px-3 text-[10px] font-normal normal-case"
+                                    className="mt-1 min-h-[40px] w-full border border-gray-500 px-3 text-[10px] font-normal normal-case"
                                   />
                                 </label>
                               </div>
@@ -802,7 +802,7 @@ export function CartDrawer() {
                                         event.target.value,
                                       )
                                     }
-                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                    className="min-h-[40px] border border-gray-500 px-3 text-[10px]"
                                   />
                                   <input
                                     aria-label="Batch name"
@@ -813,7 +813,7 @@ export function CartDrawer() {
                                         event.target.value,
                                       )
                                     }
-                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                    className="min-h-[40px] border border-gray-500 px-3 text-[10px]"
                                   />
                                 </div>
                               )}
@@ -828,8 +828,8 @@ export function CartDrawer() {
                                       }
                                       className={`min-h-[40px] border px-3 text-[9px] font-bold uppercase cursor-pointer ${
                                         shippingEditorMethod === method
-                                          ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
-                                          : "border-gray-200 text-heritage-ink/60"
+                                          ? "border-heritage-bronze bg-heritage-gold/10 text-heritage-green"
+                                          : "border-gray-500 text-heritage-ink/70"
                                       }`}
                                     >
                                       {method === "PICKUP"
@@ -851,7 +851,7 @@ export function CartDrawer() {
                                         addressLine1: event.target.value,
                                       }))
                                     }
-                                    className="col-span-2 min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                    className="col-span-2 min-h-[40px] border border-gray-500 px-3 text-[10px]"
                                   />
                                   <input
                                     aria-label="City"
@@ -863,7 +863,7 @@ export function CartDrawer() {
                                         city: event.target.value,
                                       }))
                                     }
-                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                    className="min-h-[40px] border border-gray-500 px-3 text-[10px]"
                                   />
                                   <input
                                     aria-label="Postal code"
@@ -875,7 +875,7 @@ export function CartDrawer() {
                                         postalCode: event.target.value,
                                       }))
                                     }
-                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                    className="min-h-[40px] border border-gray-500 px-3 text-[10px]"
                                   />
                                   <select
                                     aria-label="Country"
@@ -886,7 +886,7 @@ export function CartDrawer() {
                                         countryCode: event.target.value,
                                       }))
                                     }
-                                    className="col-span-2 min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                    className="col-span-2 min-h-[40px] border border-gray-500 px-3 text-[10px]"
                                   >
                                     {FINAL_MILE_COUNTRY_OPTIONS.map(
                                       (country) => (
@@ -914,7 +914,7 @@ export function CartDrawer() {
                                   onClick={() =>
                                     setShippingEditorItemId(null)
                                   }
-                                  className="min-h-[40px] text-[9px] font-bold uppercase text-heritage-ink/60 cursor-pointer"
+                                  className="min-h-[40px] text-[9px] font-bold uppercase text-heritage-ink/70 cursor-pointer"
                                 >
                                   Cancel
                                 </button>
@@ -924,7 +924,7 @@ export function CartDrawer() {
                       </div>
 
                       <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                        <span className="text-[9px] text-heritage-ink/40 font-semibold font-mono">
+                        <span className="text-[9px] text-heritage-ink/70 font-semibold font-mono">
                           ID: {item.id.split("-").slice(0, 2).join("-")}
                         </span>
                         <button
@@ -1048,7 +1048,7 @@ export function CartDrawer() {
                         {cartPricing.individualShippingQuote.priceEur.toFixed(2)}
                       </span>
                     </div>
-                    <p className="text-[9px] text-heritage-ink/45 mt-0.5">
+                    <p className="text-[9px] text-heritage-ink/70 mt-0.5">
                       {cartPricing.individualShippingQuote.garmentPieceCount} garment piece
                       {cartPricing.individualShippingQuote.garmentPieceCount === 1
                         ? ""
@@ -1069,7 +1069,7 @@ export function CartDrawer() {
                         {quote.priceEur.toFixed(2)}
                       </span>
                     </div>
-                    <p className="text-[9px] text-heritage-ink/45 mt-0.5">
+                    <p className="text-[9px] text-heritage-ink/70 mt-0.5">
                       {quote.garmentPieceCount} garment piece
                       {quote.garmentPieceCount === 1 ? "" : "s"} ·{" "}
                       {currencySymbol}
@@ -1145,7 +1145,7 @@ export function CartDrawer() {
                       : ""}
                     ):
                   </span>
-                  <span className="font-mono font-semibold text-heritage-gold">
+                  <span className="font-mono font-semibold text-heritage-bronze">
                     {depositAmount === null
                       ? "Unavailable"
                       : `${currencySymbol}${depositAmount.toFixed(2)}`}
@@ -1162,7 +1162,7 @@ export function CartDrawer() {
               </div>
 
               <div className="p-3 bg-heritage-cream/50 border border-heritage-gold/15 rounded-xl text-[9px] leading-relaxed text-heritage-ink/75 flex items-start gap-2">
-                <span className="text-heritage-gold text-xs leading-none">
+                <span className="text-heritage-bronze text-xs leading-none">
                   🛡️
                 </span>
                 <div>

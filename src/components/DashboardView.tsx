@@ -194,6 +194,7 @@ export default function DashboardView({
     [currentUser?.email],
   );
   const { businessSettings } = useAppStore();
+  const fabrics = useAppStore((state) => state.fabrics);
   const profileName = currentUser?.name || "Guest";
   const profileEmail = currentUser?.email || "guest@example.com";
   const profilePhone = currentUser?.phone || "+1234567890";
@@ -285,6 +286,7 @@ export default function DashboardView({
               workshopByOrderId={futureOrderV2WorkshopByOrderId}
               personalizedPricesByOrderId={futureOrderV2PersonalizedPricesByOrderId}
               onDecidePersonalizedPrice={decideFutureOrderV2PersonalizedPrice}
+              fabrics={fabrics}
             />
 
             {savedStudioOrders ? (

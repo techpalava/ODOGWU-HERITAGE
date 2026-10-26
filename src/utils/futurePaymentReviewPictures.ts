@@ -58,9 +58,27 @@ const referenceImageFor = (garmentType: string): string | null =>
   getSummaryGarmentReferenceImage(garmentType as CanonicalPhysicalGarmentType)
     ?.src ?? null;
 
+/**
+ * Optional fallback for surfaces without a Studio summary (cart lines and
+ * dashboard orders). It is consulted only when the summary has no matching
+ * fabric, so Stage 10, which always passes its summary, is unaffected.
+ */
+export type FuturePaymentReviewFabricLookup = (allocation: {
+  readonly fabricId: string | null;
+  readonly fabricCode: string;
+}) => {
+  readonly image?: string | null;
+  readonly colorHex?: string | null;
+} | null;
+
+export interface FuturePaymentReviewGarmentPictureOptions {
+  readonly fabricLookup?: FuturePaymentReviewFabricLookup;
+}
+
 export const getFuturePaymentReviewGarmentPictures = (
   candidate: FuturePaymentReviewCandidate | null,
   summary: FutureDesignStudioSummary | null,
+  options: FuturePaymentReviewGarmentPictureOptions = {},
 ): FuturePaymentReviewGarmentPicture[] => {
   const summaryFabrics = summary?.fabricSummary ?? [];
   const summaryDesigns = summary?.designStyleOccurrences ?? [];
@@ -129,10 +147,13 @@ export const getFuturePaymentReviewGarmentPictures = (
           ),
         )
         .map((allocation) => {
-          const match = summaryFabricFor(
-            allocation.allocationId,
-            allocation.fabricCode,
-          );
+          const match =
+            summaryFabricFor(allocation.allocationId, allocation.fabricCode) ??
+            options.fabricLookup?.({
+              fabricId: allocation.fabricId,
+              fabricCode: allocation.fabricCode,
+            }) ??
+            null;
           return {
             allocationId: allocation.allocationId,
             fabricName: allocation.fabricName,
