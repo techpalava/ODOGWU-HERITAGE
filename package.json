@@ -50,7 +50,7 @@
     "test:uploaded-design-auth-continuity": "node scripts/tsxWithViteProductionFirebase.mjs test_uploaded_design_auth_continuity.ts",
     "test:foreign-uploaded-design-sources": "node scripts/tsxWithViteProductionFirebase.mjs test_foreign_uploaded_design_sources.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
-    "test:auth-hardening": "tsx test_pin_register_email_verified.ts && tsx test_auth_login_hardening.ts",
+    "test:auth-hardening": "tsx test_pin_register_email_verified.ts && tsx test_auth_login_hardening.ts && tsx test_auth_email_code.ts && tsx test_normalize_order_email_case.ts",
     "test:login-view": "node scripts/tsxWithViteProductionFirebase.mjs test_login_view_accessibility.tsx",
     "test:customer-reviews": "tsx test_customer_reviews.ts",
     "test:site-feedback": "node scripts/tsxWithViteProductionFirebase.mjs test_site_feedback.tsx",
@@ -137,7 +137,8 @@
     "test:staff-preview-entitlement-cli": "tsx test_staff_preview_entitlement_cli.ts",
     "test:staff-preview-client-gate": "tsx test_staff_preview_client_gate.ts",
     "test:staff-preview-client-gate-react": "tsx test_staff_preview_client_gate_react.tsx",
-    "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts"
+    "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts",
+    "orders:normalize-email-case": "tsx src/scripts/normalizeOrderEmailCase.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
