@@ -1,5 +1,6 @@
 import type { FabricGarmentType, FutureMeasurementStateV1 } from "../types.js";
 import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
+import { STEP_1_GARMENT_DISPLAY_LABELS } from "./garmentConstructionPricing.js";
 import {
   isFutureMeasurementStateV1,
   MEASUREMENT_METHOD_STAFF_LABELS,
@@ -101,6 +102,36 @@ const readoutFromBag = ({
     values: valuesFromBag(measurement.entered.byGarmentKey[garmentKey] || {}),
   })),
 });
+
+/**
+ * Garment type per garment key from an order's fabric allocations (the order's own record of each
+ * garment, which follows a Step 4 length switch). Unknown or malformed entries are skipped, so the
+ * readout falls back to the type in the garment key.
+ */
+export const garmentTypeByKeyFromFabricAllocations = (
+  fabricAllocations: unknown,
+): Record<string, string> => {
+  if (!Array.isArray(fabricAllocations)) return {};
+  const byKey: Record<string, string> = {};
+  for (const allocation of fabricAllocations) {
+    const assignments = (allocation as { garmentAssignments?: unknown } | null)?.garmentAssignments;
+    if (!Array.isArray(assignments)) continue;
+    for (const assignment of assignments) {
+      const { garmentKey, garmentType } = (assignment ?? {}) as {
+        garmentKey?: unknown;
+        garmentType?: unknown;
+      };
+      if (
+        typeof garmentKey === "string" &&
+        typeof garmentType === "string" &&
+        Object.prototype.hasOwnProperty.call(STEP_1_GARMENT_DISPLAY_LABELS, garmentType)
+      ) {
+        byKey[garmentKey] = garmentType;
+      }
+    }
+  }
+  return byKey;
+};
 
 /** Readable wearer → exact garment → method → values. Null when the payload is not a measurement document. */
 export const projectTailoringMeasurementReadout = (

@@ -70,6 +70,11 @@ import {
   setFutureMeasurementInput,
 } from "./src/utils/measurementBlueprint";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
+import {
+  garmentTypeByKeyFromFabricAllocations,
+  projectTailoringMeasurementReadout,
+} from "./src/utils/tailoringMeasurementProjection";
+import { readFileSync } from "node:fs";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import {
   quoteFutureOrderPayableTotal,
@@ -1288,6 +1293,58 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
   act(() => chips()[1]!.props.onClick());
   assert.deepEqual(heading(), ["Long Shirt 2 Measurements"]);
   act(() => renderer.unmount());
+}
+
+// --- Staff order editor: measurement labels follow the switched garment type. ---------------
+{
+  const shirtStep1 = step1(["shirt", "kaftan"], "male");
+  const twoLong = switched(shirtStep1, "shirt", "shirt_construction", "shirt_long_short");
+  const physicalGarments = getMeasurementPhysicalGarments({
+    garmentTypeSelection: twoLong,
+    physicalOccurrences: buildAuthoritativePhysicalOccurrences({
+      sourceKind: "catalogue",
+      step1GarmentTypeSelection: twoLong,
+      effectiveGarmentTypeSelection: twoLong,
+    }),
+  });
+  const plan = planMeasurementRequirements({ route: "low_risk", garmentTypeSelection: twoLong, physicalGarments });
+  let measurements = createEmptyFutureMeasurementState("low_risk", "inch");
+  for (const requirement of plan.requirements.filter((candidate) => candidate.measurementId === "shirt_length_long")) {
+    measurements = setFutureMeasurementInput({ state: measurements, requirement, displayValue: 30 });
+  }
+  const fabricAllocations = [
+    allocation("a1", "F1", [
+      { garmentKey: "base:shirt", code: "BASE_KAFTAN", garmentType: "kaftan", fabricUnits: 1, sourceRole: "main" },
+      { garmentKey: "base:kaftan", code: "BASE_KAFTAN", garmentType: "kaftan", fabricUnits: 1, sourceRole: "main" },
+    ]),
+  ];
+  assert.deepEqual(garmentTypeByKeyFromFabricAllocations(fabricAllocations), {
+    "base:shirt": "kaftan",
+    "base:kaftan": "kaftan",
+  });
+  const labels = (types: Record<string, string>) =>
+    projectTailoringMeasurementReadout(measurements, types)?.flatMap((wearer) =>
+      wearer.garments.map((garment) => [garment.garmentKey, garment.label]),
+    );
+  assert.deepEqual(
+    labels(garmentTypeByKeyFromFabricAllocations(fabricAllocations)),
+    [["base:kaftan", "Long Shirt"], ["base:shirt", "Long Shirt 2"]],
+    "The switched Standard Shirt reads Long Shirt; duplicates are numbered in garment-key order",
+  );
+  // Without the order's types the key's type is used (the gap this fixes).
+  assert.deepEqual(labels({}), [["base:kaftan", "Long Shirt"], ["base:shirt", "Standard Shirt"]]);
+  // Malformed allocations are ignored.
+  assert.deepEqual(garmentTypeByKeyFromFabricAllocations(undefined), {});
+  assert.deepEqual(
+    garmentTypeByKeyFromFabricAllocations([{ garmentAssignments: [{ garmentKey: "base:shirt", garmentType: "not-a-type" }] }, null]),
+    {},
+  );
+  // The staff order editor passes the order's fabric allocations to the readout.
+  const databaseViewSource = readFileSync("./src/components/DatabaseView.tsx", "utf8");
+  assert.match(
+    databaseViewSource,
+    /projectTailoringMeasurementReadout\(\s*editingItem\.measurements,\s*garmentTypeByKeyFromFabricAllocations\(editingItem\.fabricAllocations\),?\s*\)/,
+  );
 }
 
 console.log("garment length switch tests passed");
