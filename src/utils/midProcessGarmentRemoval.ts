@@ -1,3 +1,4 @@
+import { parseBaseGarmentTypeFromKey } from "./garmentLengthVariant.js";
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
 import type {
@@ -669,6 +670,10 @@ export const removeFuturePhysicalGarmentOccurrence = (
   ];
   let nextAdditionalGarmentConstructionState =
     input.additionalGarmentConstructionState;
+  // A main garment's Step 1 card is its key's type; Step 4 may have switched the garment itself
+  // to the other length.
+  const targetStepOneGarmentType =
+    parseBaseGarmentTypeFromKey(target.garmentKey) ?? target.garmentType;
 
   if (additionalMembership) {
     nextAdditionalGarmentConstructionState =
@@ -678,11 +683,11 @@ export const removeFuturePhysicalGarmentOccurrence = (
       );
   } else if (uploadedSource) {
     if (
-      input.garmentTypeSelection.garmentTypes.includes(target.garmentType)
+      input.garmentTypeSelection.garmentTypes.includes(targetStepOneGarmentType)
     ) {
       nextGarmentTypeSelection = removeStep1GarmentType({
         state: input.garmentTypeSelection,
-        garmentType: target.garmentType,
+        garmentType: targetStepOneGarmentType,
         normalizedCustomDetailCatalog: input.normalizedCustomDetailCatalog,
       });
     }
@@ -706,7 +711,7 @@ export const removeFuturePhysicalGarmentOccurrence = (
   } else {
     nextGarmentTypeSelection = removeStep1GarmentType({
       state: input.garmentTypeSelection,
-      garmentType: target.garmentType,
+      garmentType: targetStepOneGarmentType,
       normalizedCustomDetailCatalog: input.normalizedCustomDetailCatalog,
     });
   }

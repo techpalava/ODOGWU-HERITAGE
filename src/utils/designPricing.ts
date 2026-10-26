@@ -31,7 +31,6 @@ import {
   type ResolvedFabricAllocationPricing,
 } from "./fabricAllocationPricing.js";
 import {
-  createStyleBaseGarmentSpec,
   getDefaultGarmentDetailsForSpec,
 } from "../config/StyleFabricCapacityConfig.js";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
@@ -574,7 +573,7 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
 
   const candidateBaseGarmentPriceRows = isLockedConstructionMode
     ? constructionBridge.readOnlyConstructionRows.map((row) => ({
-        garmentKey: createStyleBaseGarmentSpec(row.garmentType).key,
+        garmentKey: row.garmentKey,
         garmentType: row.garmentType,
         label: row.garmentLabel,
         price: roundMoney(row.price),

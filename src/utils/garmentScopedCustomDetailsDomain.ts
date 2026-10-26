@@ -1,3 +1,4 @@
+import { resolveBasePhysicalGarmentType } from "./garmentLengthVariant.js";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailDemographic,
@@ -371,9 +372,15 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
   const selectedTypes = new Set(selection.garmentTypes);
   const subjects: FutureCustomDetailPhysicalSubject[] = [];
 
-  FUTURE_CUSTOM_DETAIL_GARMENT_ORDER.forEach((parentGarmentType) => {
-    if (!selectedTypes.has(parentGarmentType)) return;
-    const parentGarmentKey = createStyleBaseGarmentSpec(parentGarmentType).key;
+  FUTURE_CUSTOM_DETAIL_GARMENT_ORDER.forEach((stepOneGarmentType) => {
+    if (!selectedTypes.has(stepOneGarmentType)) return;
+    const parentGarmentKey = createStyleBaseGarmentSpec(stepOneGarmentType).key;
+    // The key and the stored construction keep the Step 1 card; the subject describes the garment
+    // the order now holds (Step 4 may have switched it to the other length).
+    const parentGarmentType = resolveBasePhysicalGarmentType(
+      selection,
+      stepOneGarmentType,
+    );
     const components = resolveCustomDetailPhysicalComponents({
       parentGarmentKey,
       garmentType: parentGarmentType,
@@ -390,7 +397,7 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
       return;
     }
 
-    const construction = selection.constructionByGarment[parentGarmentType];
+    const construction = selection.constructionByGarment[stepOneGarmentType];
     if (!construction || construction.status === "unresolved") {
       diagnostics.push({
         code: "construction_unresolved",
@@ -403,7 +410,8 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
     }
 
     components.components.forEach((component) => {
-      const parentOrder = GARMENT_ORDER.get(parentGarmentType) || 0;
+      // Order by the Step 1 card so a garment does not move when its length switches.
+      const parentOrder = GARMENT_ORDER.get(stepOneGarmentType) || 0;
       subjects.push({
         garmentKey: component.garmentKey,
         parentGarmentKey,
@@ -415,7 +423,7 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
         componentOrder: component.order,
         lockedSelectionGroups: resolveLockedGroupsForSubject(
           selection,
-          parentGarmentType,
+          stepOneGarmentType,
           component.garmentGroups,
         ),
         designStyleContext: unassignedDesignStyleContext(),
