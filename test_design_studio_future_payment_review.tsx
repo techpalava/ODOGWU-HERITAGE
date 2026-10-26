@@ -579,9 +579,11 @@ assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
 assert.equal(reviewMarkup.includes("Material price"), false);
 assert.equal(reviewMarkup.includes("€10.00"), false);
 assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
+// The breakdown ends where the payment column starts; that column repeats
+// the total once in its order card (asserted separately below).
 const priceBreakdownMarkup = reviewMarkup.slice(
   reviewMarkup.indexOf("Price breakdown"),
-  reviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
+  reviewMarkup.indexOf("data-payment-review-pay-column"),
 );
 assert.ok(priceBreakdownMarkup.includes(INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE));
 assert.equal(priceBreakdownMarkup.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE), false);
@@ -628,7 +630,7 @@ const communityReviewMarkup = renderToStaticMarkup(
 );
 const communityPriceBreakdown = communityReviewMarkup.slice(
   communityReviewMarkup.indexOf("Price breakdown"),
-  communityReviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
+  communityReviewMarkup.indexOf("data-payment-review-pay-column"),
 );
 assert.equal(communityPriceBreakdown.includes("Lagos → Eindhoven shipping"), false);
 assert.equal(communityPriceBreakdown.includes("data-pricing-row=\"lagos_eindhoven_included\""), false);
