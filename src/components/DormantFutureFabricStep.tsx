@@ -1050,23 +1050,27 @@ export const DormantFutureFabricStep = ({
   // One merged Guide: the old "Fabric needs attention" messages, the
   // avoidable-partial hint and the next-garment cue are steps in this flow.
   // It is hidden whenever the canonical completion says Continue can unlock.
+  const fabricGuideGarments = targets.map(({ assignment }) => {
+    const assigned = assignmentByGarmentKey.get(assignment.garmentKey);
+    return {
+      garmentKey: assignment.garmentKey,
+      label:
+        occurrenceConciseLabels.get(assignment.garmentKey) ??
+        getFutureGarmentLabel(assignment.garmentType),
+      assigned: Boolean(assigned),
+      fabricCode: assigned?.allocation.fabricCode ?? null,
+      allocationId: assigned?.allocation.allocationId ?? null,
+      action: assigned
+        ? null
+        : resolveUnassignedGarmentFabricAction(assignment.garmentKey),
+    };
+  });
+  const fabricGuideGarmentLabels = new Map(
+    fabricGuideGarments.map((garment) => [garment.garmentKey, garment.label]),
+  );
   const fabricGuideFlow = buildFabricGuideFlow({
     isComplete: completion.isComplete,
-    garments: targets.map(({ assignment }) => {
-      const assigned = assignmentByGarmentKey.get(assignment.garmentKey);
-      return {
-        garmentKey: assignment.garmentKey,
-        label:
-          occurrenceConciseLabels.get(assignment.garmentKey) ??
-          getFutureGarmentLabel(assignment.garmentType),
-        assigned: Boolean(assigned),
-        fabricCode: assigned?.allocation.fabricCode ?? null,
-        allocationId: assigned?.allocation.allocationId ?? null,
-        action: assigned
-          ? null
-          : resolveUnassignedGarmentFabricAction(assignment.garmentKey),
-      };
-    }),
+    garments: fabricGuideGarments,
     blockers: completion.blockers.map((blocker) => ({
       code: blocker.code,
       message: formatBlockerMessage(blocker),
@@ -2825,6 +2829,28 @@ export const DormantFutureFabricStep = ({
   };
 
   const fabricGuideTitleId = `${fabricGuideIdPrefix}-title`;
+  const renderFabricGuideMessage = (
+    message: string,
+    options: { stepId?: string; garmentLabel?: string } = {},
+  ) => (
+    <span
+      key={options.stepId ? `${options.stepId}:${message}` : message}
+      data-fabric-guide-message="true"
+      data-fabric-guide-message-step={options.stepId}
+      data-avoidable-partial-guidance={
+        message === avoidablePartialGuidanceCopy &&
+        showAvoidablePartialGuidance
+          ? "true"
+          : undefined
+      }
+      className="block break-words text-pretty text-[11px] leading-relaxed text-heritage-ink/85"
+    >
+      {options.garmentLabel ? (
+        <span className="font-semibold text-heritage-ink">{`${options.garmentLabel}: `}</span>
+      ) : null}
+      {message}
+    </span>
+  );
   const renderFabricGuideStep = (step: FabricGuideStep, index: number) => {
     const isCurrent = step.status === "current";
     const isDone = step.status === "done";
@@ -2860,10 +2886,10 @@ export const DormantFutureFabricStep = ({
               onClick={() => focusFabricGuideTarget(step.target)}
               className={`min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                 isDone
-                  ? "font-medium text-heritage-ink/55 decoration-heritage-ink/25"
+                  ? "font-medium text-heritage-ink/75 decoration-heritage-ink/35"
                   : isCurrent
                     ? "font-bold text-heritage-green decoration-heritage-gold"
-                    : "font-semibold text-heritage-green/80 decoration-heritage-gold/50"
+                    : "font-semibold text-heritage-green decoration-heritage-gold/50"
               }`}
             >
               {step.label}
@@ -2871,7 +2897,7 @@ export const DormantFutureFabricStep = ({
           ) : (
             <span
               className={`break-words ${
-                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/70"
+                isCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/85"
               }`}
             >
               {step.label}
@@ -2879,21 +2905,7 @@ export const DormantFutureFabricStep = ({
           )}
           {step.messages.length > 0 && !isDone ? (
             <span className="mt-0.5 block space-y-0.5">
-              {step.messages.map((message) => (
-                <span
-                  key={message}
-                  data-fabric-guide-message="true"
-                  data-avoidable-partial-guidance={
-                    message === avoidablePartialGuidanceCopy &&
-                    showAvoidablePartialGuidance
-                      ? "true"
-                      : undefined
-                  }
-                  className="block break-words text-[11px] leading-relaxed text-heritage-ink/70"
-                >
-                  {message}
-                </span>
-              ))}
+              {step.messages.map((message) => renderFabricGuideMessage(message))}
             </span>
           ) : null}
           {step.kind === "fix_quantity" &&
@@ -2923,6 +2935,244 @@ export const DormantFutureFabricStep = ({
       </li>
     );
   };
+  // Choose-a-fabric and every per-garment assign step share ONE highlighted
+  // card. The heading shows the group's current step; garments are compact
+  // chips on one wrapping line. Each chip keeps its step's data attributes,
+  // label (as aria-label) and target, so counts and links are unchanged.
+  const isFabricGuideGroupStep = (step: FabricGuideStep) =>
+    step.kind === "choose_fabric" || step.kind === "assign_garment";
+  const fabricGuideGarmentLabelForStep = (step: FabricGuideStep): string =>
+    fabricGuideGarmentLabels.get(step.id.slice("assign_garment:".length)) ?? step.label;
+  const renderFabricGuideChooseAssignGroup = () => {
+    const allSteps = fabricGuideFlow.steps;
+    const groupSteps = allSteps.filter(isFabricGuideGroupStep);
+    const chooseStep = groupSteps.find((step) => step.kind === "choose_fabric");
+    const assignSteps = groupSteps.filter((step) => step.kind === "assign_garment");
+    const focusStep =
+      groupSteps.find((step) => step.status === "current") ??
+      groupSteps.find((step) => step.status !== "done") ??
+      null;
+    const groupStatus = groupSteps.some((step) => step.status === "current")
+      ? "current"
+      : groupSteps.every((step) => step.status === "done")
+        ? "done"
+        : "upcoming";
+    const headingStep = focusStep ?? chooseStep ?? groupSteps[0]!;
+    const headingIndex = allSteps.indexOf(headingStep);
+    const chooseInHeading = Boolean(chooseStep && headingStep === chooseStep);
+    const headingIsCurrent = headingStep.status === "current";
+    const headingIsDone = headingStep.status === "done";
+    const headingStatusText = headingIsDone
+      ? "Done"
+      : headingIsCurrent
+        ? "Current step"
+        : "Still to do";
+    const headingLinkClass = `min-h-6 max-w-full break-words text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+      headingIsDone
+        ? "font-medium text-heritage-ink/75 decoration-heritage-ink/35"
+        : headingIsCurrent
+          ? "font-bold text-heritage-green decoration-heritage-gold"
+          : "font-semibold text-heritage-green decoration-heritage-gold/50"
+    }`;
+    const headingContent = (
+      <>
+        <span className="sr-only">{`${headingStatusText}, step ${headingIndex + 1}: `}</span>
+        {headingStep.target.type !== "none" ? (
+          <button
+            type="button"
+            {...(chooseInHeading
+              ? { "data-fabric-guide-link": headingStep.id }
+              : { "data-fabric-guide-heading-link": headingStep.id })}
+            onClick={() => focusFabricGuideTarget(headingStep.target)}
+            className={headingLinkClass}
+          >
+            {headingStep.label}
+          </button>
+        ) : (
+          <span
+            className={`break-words ${
+              headingIsCurrent ? "font-bold text-heritage-green" : "font-semibold text-heritage-ink/85"
+            }`}
+          >
+            {headingStep.label}
+          </span>
+        )}
+      </>
+    );
+    const chipClass = (status: FabricGuideStep["status"]) =>
+      `inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-left text-[11px] leading-tight break-words transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+        status === "done"
+          ? "border-emerald-300 bg-emerald-50 font-medium text-emerald-700 focus-visible:ring-heritage-gold"
+          : status === "current"
+            ? "border-heritage-gold bg-heritage-gold font-bold text-heritage-green shadow-sm focus-visible:ring-heritage-green"
+            : "border-heritage-gold bg-white font-semibold text-heritage-green shadow-sm hover:bg-heritage-cream focus-visible:ring-heritage-gold"
+      }`;
+    const renderChip = (
+      step: FabricGuideStep,
+      visibleLabel: string,
+      ariaLabel: string,
+      options: { tickText?: boolean } = {},
+    ) => {
+      const isChipDone = step.status === "done";
+      const isChipCurrent = step.status === "current";
+      const chipProps = {
+        "data-fabric-guide-step": step.id,
+        "data-fabric-guide-step-kind": step.kind,
+        "data-fabric-guide-step-status": step.status,
+        "data-fabric-guide-chip": "true",
+        "aria-current": isChipCurrent ? ("step" as const) : undefined,
+        "aria-label": ariaLabel,
+        // "Fabric chosen" is plain tick text (no pill) so it never reads as a
+        // garment chip.
+        className: options.tickText
+          ? "inline-flex min-h-8 items-center gap-1 rounded px-0.5 text-left text-[11px] font-medium leading-tight text-emerald-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
+          : chipClass(step.status),
+      };
+      const chipBody = (
+        <>
+          {isChipDone ? (
+            <CheckCircle2
+              size={12}
+              aria-hidden="true"
+              data-fabric-guide-chip-tick="true"
+              className="shrink-0 text-emerald-700"
+            />
+          ) : null}
+          <span className="min-w-0 break-words">{visibleLabel}</span>
+        </>
+      );
+      return (
+        <li
+          key={step.id}
+          className={options.tickText ? "flex max-w-full shrink-0 items-center whitespace-nowrap" : "max-w-full"}
+        >
+          {step.target.type !== "none" ? (
+            <button
+              type="button"
+              {...chipProps}
+              data-fabric-guide-link={step.id}
+              onClick={() => focusFabricGuideTarget(step.target)}
+            >
+              {chipBody}
+            </button>
+          ) : (
+            <span {...chipProps}>{chipBody}</span>
+          )}
+          {options.tickText ? (
+            <span
+              aria-hidden="true"
+              data-fabric-guide-chip-divider="true"
+              className="ml-2 mr-1 h-5 w-px shrink-0 bg-heritage-gold/40"
+            />
+          ) : null}
+        </li>
+      );
+    };
+    const messageSteps = groupSteps.filter(
+      (step) => step.status !== "done" && step.messages.length > 0,
+    );
+    const orderedMessageSteps = [
+      ...messageSteps.filter((step) => step === headingStep),
+      ...messageSteps.filter((step) => step !== headingStep),
+    ];
+    return (
+      <li
+        key="fabric-guide-choose-assign"
+        data-fabric-guide-group="choose_assign"
+        data-fabric-guide-group-status={groupStatus}
+        data-fabric-guide-group-current={headingStep.id}
+        className={`flex min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 ${
+          groupStatus === "current" ? "bg-white/90 ring-1 ring-heritage-gold/60" : ""
+        }`}
+      >
+        <span aria-hidden="true" className="mt-0.5 shrink-0">
+          {groupStatus === "done" ? (
+            <CheckCircle2 size={16} className="text-emerald-700" />
+          ) : headingIsCurrent ? (
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-heritage-gold text-[9px] font-bold text-white">
+              {headingIndex + 1}
+            </span>
+          ) : (
+            <Circle size={16} className="text-heritage-ink/35" />
+          )}
+        </span>
+        <div
+          className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4"
+          data-fabric-guide-group-layout="two-column"
+        >
+          <div className="min-w-0 sm:min-w-[13rem] sm:flex-1" data-fabric-guide-group-main="true">
+            {chooseInHeading && chooseStep ? (
+              <span
+                className="block"
+                data-fabric-guide-step={chooseStep.id}
+                data-fabric-guide-step-kind={chooseStep.kind}
+                data-fabric-guide-step-status={chooseStep.status}
+                aria-current={chooseStep.status === "current" ? "step" : undefined}
+              >
+                {headingContent}
+              </span>
+            ) : (
+              <span className="block" data-fabric-guide-group-heading={headingStep.id}>
+                {headingContent}
+              </span>
+            )}
+            {orderedMessageSteps.length > 0 ? (
+              <span className="mt-0.5 block space-y-0.5">
+                {orderedMessageSteps.flatMap((step) =>
+                  step.messages.map((message) =>
+                    renderFabricGuideMessage(message, {
+                      stepId: step.id,
+                      garmentLabel:
+                        step !== headingStep && step.kind === "assign_garment"
+                          ? fabricGuideGarmentLabelForStep(step)
+                          : undefined,
+                    }),
+                  ),
+                )}
+              </span>
+            ) : null}
+          </div>
+          {assignSteps.length > 0 ? (
+            <div
+              className="mt-1 flex min-w-0 flex-wrap items-start gap-1 sm:mt-0 sm:flex-initial sm:flex-nowrap sm:justify-end"
+              data-fabric-guide-group-chips="true"
+            >
+              {chooseInHeading && chooseStep && chooseStep.status !== "done" ? (
+                <span
+                  className="inline-flex min-h-8 shrink-0 items-center text-[11px] font-semibold text-heritage-ink/85"
+                  data-fabric-guide-chips-label="true"
+                >
+                  Then assign:
+                </span>
+              ) : null}
+              <ul
+                className="contents sm:flex sm:min-w-0 sm:flex-wrap sm:items-center sm:justify-start sm:gap-1"
+                aria-label="Garments to assign fabric to"
+              >
+                {chooseStep && !chooseInHeading
+                  ? renderChip(chooseStep, "Fabric chosen", `${chooseStep.label}: done`, {
+                      tickText: true,
+                    })
+                  : null}
+                {assignSteps.map((step) =>
+                  renderChip(step, fabricGuideGarmentLabelForStep(step), step.label),
+                )}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </li>
+    );
+  };
+  const renderFabricGuideSteps = () => {
+    let groupRendered = false;
+    return fabricGuideFlow.steps.flatMap((step, index) => {
+      if (!isFabricGuideGroupStep(step)) return [renderFabricGuideStep(step, index)];
+      if (groupRendered) return [];
+      groupRendered = true;
+      return [renderFabricGuideChooseAssignGroup()];
+    });
+  };
   const renderFabricGuide = () => (
     <DesignStudioStepGuide
       id={fabricGuideIdPrefix}
@@ -2938,11 +3188,11 @@ export const DormantFutureFabricStep = ({
       <p className="sr-only" aria-live="polite" data-fabric-guide-announcement="true">
         {formatFabricGuideCurrentStepAnnouncement(fabricGuideFlow)}
       </p>
-      <p className="mt-0.5 text-[11px] text-heritage-ink/65">
+      <p className="mt-0.5 text-[11px] text-heritage-ink/85">
         {`${fabricGuideFlow.doneCount} of ${fabricGuideFlow.steps.length} done. Follow the gold highlight to your next step.`}
       </p>
       <ol className="mt-1.5 space-y-1" aria-labelledby={fabricGuideTitleId}>
-        {fabricGuideFlow.steps.map(renderFabricGuideStep)}
+        {renderFabricGuideSteps()}
       </ol>
     </DesignStudioStepGuide>
   );
