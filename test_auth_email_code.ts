@@ -509,6 +509,78 @@ const MINUTE = 60_000;
   assert.equal(result.brevo.calls(), 1);
   assert.equal(result.gmail.sent.length, 0);
 
+  // At the limit and Gmail fails: Brevo is tried once as a last resort and counted.
+  {
+    const { db: lastDb, table: lastTable } = createFakeDb();
+    const lastUsage = createBrevoDailyUsage(lastDb as never, {
+      environment: { BREVO_DAILY_LIMIT: "1" },
+      now: () => Date.parse("2026-10-26T12:00:00.000Z"),
+    });
+    await lastUsage.recordSend();
+    const gmailFails = () => {
+      const sent: unknown[] = [];
+      return {
+        sent,
+        factory: () => ({
+          async sendMail(message: unknown) {
+            sent.push(message);
+            throw Object.assign(new Error("boom"), { code: "ECONNECTION" });
+          },
+        }),
+      };
+    };
+    const lines: string[] = [];
+    const brevo = brevoOk();
+    const gmail = gmailFails();
+    const provider = await sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+      environment: bothEnv,
+      fetchImpl: brevo.impl,
+      createGmailTransport: gmail.factory,
+      brevoUsage: lastUsage,
+      log: (line) => lines.push(line),
+    });
+    assert.equal(provider, "brevo");
+    assert.equal(gmail.sent.length, 1, "Gmail is tried first at the limit");
+    assert.equal(brevo.calls(), 1, "Brevo is tried exactly once as the last resort");
+    assert.equal(lastTable(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-26")!.count, 2);
+    assert.ok(lines.some((line) => /last resort/.test(line)));
+    assert.equal(lines.join("\n").includes("482913"), false);
+
+    // Both fail: the usual send-failed error, Brevo still tried only once, nothing counted.
+    let brevoCalls = 0;
+    await assert.rejects(
+      sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+        environment: bothEnv,
+        fetchImpl: (async () => {
+          brevoCalls += 1;
+          return new Response("{}", { status: 402 });
+        }) as unknown as typeof fetch,
+        createGmailTransport: gmailFails().factory,
+        brevoUsage: lastUsage,
+        log: () => {},
+      }),
+      /EMAIL_SEND_FAILED/,
+    );
+    assert.equal(brevoCalls, 1);
+    assert.equal(lastTable(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-26")!.count, 2);
+
+    // Below the limit, a Gmail failure after a Brevo failure does not retry Brevo.
+    let belowCalls = 0;
+    await assert.rejects(
+      sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+        environment: bothEnv,
+        fetchImpl: (async () => {
+          belowCalls += 1;
+          return new Response("{}", { status: 500 });
+        }) as unknown as typeof fetch,
+        createGmailTransport: gmailFails().factory,
+        log: () => {},
+      }),
+      /EMAIL_SEND_FAILED/,
+    );
+    assert.equal(belowCalls, 1);
+  }
+
   // Concurrent successful sends are all counted (transactional increment).
   await Promise.all(Array.from({ length: 5 }, () => usage.recordSend()));
   assert.equal(table(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-27")!.count, 6);

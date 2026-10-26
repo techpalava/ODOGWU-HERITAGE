@@ -287,32 +287,33 @@ export async function sendLoginCodeEmail(
     }
   }
 
+  // Sends through Brevo and counts the send if it succeeded.
+  const sendViaBrevo = async (config: AuthEmailConfig) => {
+    await sendBrevoEmail(config, message, options.fetchImpl);
+    log(`Login code email sent via ${PROVIDER_LABEL.brevo}.`);
+    if (options.brevoUsage) {
+      try {
+        await options.brevoUsage.recordSend();
+      } catch {
+        // The code was delivered; a missed count must not fail the sign-in.
+        log(`Login code email: could not update the ${PROVIDER_LABEL.brevo} daily counter.`);
+      }
+    }
+    return "brevo" as const;
+  };
+
   if (brevo && brevoDailyLimitReached) {
     log(
       `Login code email: ${PROVIDER_LABEL.brevo} daily limit (${options.brevoUsage!.limit}) reached; using ${PROVIDER_LABEL["gmail-smtp"]}.`,
     );
   } else if (brevo) {
-    let sent = false;
     try {
-      await sendBrevoEmail(brevo, message, options.fetchImpl);
-      sent = true;
+      return await sendViaBrevo(brevo);
     } catch (error) {
       log(
         `Login code email: ${PROVIDER_LABEL.brevo} failed (${failureReason(error)})${gmail ? `; falling back to ${PROVIDER_LABEL["gmail-smtp"]}` : ""}.`,
       );
       if (!gmail) throw new Error("EMAIL_SEND_FAILED");
-    }
-    if (sent) {
-      log(`Login code email sent via ${PROVIDER_LABEL.brevo}.`);
-      if (options.brevoUsage) {
-        try {
-          await options.brevoUsage.recordSend();
-        } catch {
-          // The code was delivered; a missed count must not fail the sign-in.
-          log(`Login code email: could not update the ${PROVIDER_LABEL.brevo} daily counter.`);
-        }
-      }
-      return "brevo";
     }
   } else {
     log(
@@ -324,8 +325,18 @@ export async function sendLoginCodeEmail(
     await sendGmailSmtpEmail(gmail!, message, options.createGmailTransport);
   } catch (error) {
     log(
-      `Login code email: ${PROVIDER_LABEL["gmail-smtp"]} failed (${failureReason(error)}).`,
+      `Login code email: ${PROVIDER_LABEL["gmail-smtp"]} failed (${failureReason(error)})${brevo && brevoDailyLimitReached ? `; trying ${PROVIDER_LABEL.brevo} once as a last resort` : ""}.`,
     );
+    if (brevo && brevoDailyLimitReached) {
+      // Daily limit was only our own safety margin; Brevo may still deliver.
+      try {
+        return await sendViaBrevo(brevo);
+      } catch (brevoError) {
+        log(
+          `Login code email: ${PROVIDER_LABEL.brevo} last resort failed (${failureReason(brevoError)}).`,
+        );
+      }
+    }
     throw new Error("EMAIL_SEND_FAILED");
   }
   log(`Login code email sent via ${PROVIDER_LABEL["gmail-smtp"]}.`);
