@@ -84,7 +84,7 @@ export async function issueEmailCode(
   options: {
     purpose: EmailCodePurpose;
     name?: string;
-    send: (code: string) => Promise<void>;
+    send: (code: string) => Promise<unknown>;
     now?: () => number;
     generate?: () => string;
   },

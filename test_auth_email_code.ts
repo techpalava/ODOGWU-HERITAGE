@@ -12,6 +12,9 @@ import {
   readAuthEmailConfig,
   renderLoginCodeEmail,
   sendBrevoEmail,
+  readGmailSmtpConfig,
+  requireAuthEmailConfig,
+  type GmailSmtpConfig,
   sendLoginCodeEmail,
 } from "./src/server/brevoEmail";
 import {
@@ -198,6 +201,7 @@ const MINUTE = 60_000;
   await sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
     environment: { BREVO_API_KEY: "test-key", AUTH_EMAIL_FROM: "login@example.test" },
     fetchImpl: fakeFetch,
+    log: () => {},
   });
   assert.equal(calls[0].url, BREVO_SEND_URL);
   assert.equal((calls[0].init.headers as Record<string, string>)["api-key"], "test-key");
@@ -207,7 +211,7 @@ const MINUTE = 60_000;
   assert.match(body.htmlContent, /482913/);
 
   await assert.rejects(
-    sendLoginCodeEmail("a@b.test", "1", "sign-in", { environment: {} }),
+    sendLoginCodeEmail("a@b.test", "1", "sign-in", { environment: {}, log: () => {} }),
     /EMAIL_NOT_CONFIGURED/,
   );
   const failing = (async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
@@ -218,6 +222,179 @@ const MINUTE = 60_000;
       failing,
     ),
     /EMAIL_SEND_FAILED/,
+  );
+}
+
+// --- Gmail SMTP fallback ----------------------------------------------------
+{
+  const brevoEnv = { BREVO_API_KEY: "brevo-secret-key", AUTH_EMAIL_FROM: "login@example.test" };
+  const gmailEnv = {
+    GMAIL_SMTP_USER: "odogwu.shop@gmail.com",
+    GMAIL_SMTP_APP_PASSWORD: "abcd efgh ijkl mnop",
+  };
+  const bothEnv = { ...brevoEnv, ...gmailEnv, AUTH_EMAIL_FROM_NAME: "Odogwu" };
+
+  assert.equal(readGmailSmtpConfig({}), null);
+  assert.equal(readGmailSmtpConfig({ GMAIL_SMTP_USER: "x@gmail.com" }), null);
+  assert.deepEqual(readGmailSmtpConfig({ ...gmailEnv, APP_URL: "https://s.test/" }), {
+    user: "odogwu.shop@gmail.com",
+    appPassword: "abcdefghijklmnop",
+    fromName: "The Odogwu Heritage",
+    siteUrl: "https://s.test",
+  });
+  assert.throws(() => requireAuthEmailConfig({}), /EMAIL_NOT_CONFIGURED/);
+  assert.deepEqual(requireAuthEmailConfig(gmailEnv), ["gmail-smtp"]);
+  assert.deepEqual(requireAuthEmailConfig(bothEnv), ["brevo", "gmail-smtp"]);
+
+  const fakeGmail = (behaviour: "ok" | "fail") => {
+    const sent: Array<{ config: GmailSmtpConfig; message: Record<string, unknown> }> = [];
+    const factory = (config: GmailSmtpConfig) => ({
+      async sendMail(message: Record<string, unknown>) {
+        sent.push({ config, message });
+        if (behaviour === "fail") {
+          throw Object.assign(new Error("Invalid login: 535 secret detail"), {
+            code: "EAUTH",
+            responseCode: 535,
+          });
+        }
+        return { messageId: "gmail-id" };
+      },
+    });
+    return { sent, factory };
+  };
+  const brevoReturning = (status: number) => {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      return new Response("{}", { status });
+    }) as unknown as typeof fetch;
+    return { impl, calls: () => calls };
+  };
+  const logger = () => {
+    const lines: string[] = [];
+    return { lines, log: (line: string) => lines.push(line) };
+  };
+  const assertNoSecretsLogged = (lines: string[]) => {
+    const text = lines.join("\n");
+    for (const forbidden of ["482913", "brevo-secret-key", "abcd", "abcdefghijklmnop", "ada@example.test", "secret detail"]) {
+      assert.equal(text.includes(forbidden), false, `log must not contain ${forbidden}`);
+    }
+  };
+
+  // 1. Brevo works: Gmail is never touched.
+  {
+    const brevo = brevoReturning(201);
+    const gmail = fakeGmail("ok");
+    const { lines, log } = logger();
+    const provider = await sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+      environment: bothEnv,
+      fetchImpl: brevo.impl,
+      createGmailTransport: gmail.factory,
+      log,
+    });
+    assert.equal(provider, "brevo");
+    assert.equal(brevo.calls(), 1);
+    assert.equal(gmail.sent.length, 0);
+    assert.deepEqual(lines, ["Login code email sent via Brevo."]);
+    assertNoSecretsLogged(lines);
+  }
+
+  // 2. Brevo quota/rate-limit errors (429, 402) and other failures fall back to Gmail.
+  for (const status of [429, 402, 500]) {
+    const brevo = brevoReturning(status);
+    const gmail = fakeGmail("ok");
+    const { lines, log } = logger();
+    const provider = await sendLoginCodeEmail("ada@example.test", "482913", "pin-confirmation", {
+      environment: bothEnv,
+      fetchImpl: brevo.impl,
+      createGmailTransport: gmail.factory,
+      log,
+    });
+    assert.equal(provider, "gmail-smtp");
+    assert.equal(gmail.sent.length, 1);
+    const { config, message } = gmail.sent[0];
+    assert.equal(config.user, "odogwu.shop@gmail.com");
+    assert.equal(config.appPassword, "abcdefghijklmnop");
+    assert.deepEqual(message.from, { name: "Odogwu", address: "odogwu.shop@gmail.com" });
+    assert.equal(message.to, "ada@example.test");
+    assert.equal(message.subject, "482913 is your Odogwu code");
+    assert.match(String(message.html), /font-size:40px[^>]*>482913</);
+    assert.match(lines[0], new RegExp(`Brevo failed \\(HTTP ${status}`));
+    if (status !== 500) assert.match(lines[0], /quota or rate limit/);
+    assert.equal(lines.at(-1), "Login code email sent via Gmail SMTP.");
+    assertNoSecretsLogged(lines);
+  }
+
+  // 3. Brevo network error falls back too.
+  {
+    const gmail = fakeGmail("ok");
+    const { log } = logger();
+    const provider = await sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+      environment: bothEnv,
+      fetchImpl: (async () => {
+        throw new Error("offline");
+      }) as unknown as typeof fetch,
+      createGmailTransport: gmail.factory,
+      log,
+    });
+    assert.equal(provider, "gmail-smtp");
+  }
+
+  // 4. Brevo not configured: Gmail sends directly.
+  {
+    const gmail = fakeGmail("ok");
+    let fetched = false;
+    const { lines, log } = logger();
+    const provider = await sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+      environment: gmailEnv,
+      fetchImpl: (async () => {
+        fetched = true;
+        return new Response("{}", { status: 201 });
+      }) as unknown as typeof fetch,
+      createGmailTransport: gmail.factory,
+      log,
+    });
+    assert.equal(provider, "gmail-smtp");
+    assert.equal(fetched, false);
+    assert.equal(lines.at(-1), "Login code email sent via Gmail SMTP.");
+  }
+
+  // 5. Both fail: EMAIL_SEND_FAILED (503), and logs stay free of secrets.
+  {
+    const gmail = fakeGmail("fail");
+    const { lines, log } = logger();
+    await assert.rejects(
+      sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+        environment: bothEnv,
+        fetchImpl: brevoReturning(429).impl,
+        createGmailTransport: gmail.factory,
+        log,
+      }),
+      /EMAIL_SEND_FAILED/,
+    );
+    assert.equal(gmail.sent.length, 1);
+    assert.match(lines.at(-1)!, /Gmail SMTP failed \(EAUTH SMTP 535\)/);
+    assertNoSecretsLogged(lines);
+  }
+
+  // 6. Brevo fails with no Gmail configured: EMAIL_SEND_FAILED, no fallback.
+  {
+    const { lines, log } = logger();
+    await assert.rejects(
+      sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+        environment: brevoEnv,
+        fetchImpl: brevoReturning(402).impl,
+        log,
+      }),
+      /EMAIL_SEND_FAILED/,
+    );
+    assert.equal(lines.some((line) => /falling back/.test(line)), false);
+  }
+
+  // 7. Neither configured: EMAIL_NOT_CONFIGURED (still 503).
+  await assert.rejects(
+    sendLoginCodeEmail("ada@example.test", "482913", "sign-in", { environment: {}, log: () => {} }),
+    /EMAIL_NOT_CONFIGURED/,
   );
 }
 
@@ -325,8 +502,8 @@ const MINUTE = 60_000;
   // Secrets stay server-side.
   for (const file of ["src/components/LoginView.tsx", "src/services/firebaseCustomerAuth.ts"]) {
     const source = readFileSync(file, "utf8");
-    assert.equal(/BREVO|brevoEmail|AUTH_EMAIL_FROM/.test(source), false, file);
+    assert.equal(/BREVO|brevoEmail|AUTH_EMAIL_FROM|GMAIL_SMTP|nodemailer/.test(source), false, file);
   }
 }
 
-console.log("PASS: email-code sign-in (hashing, expiry, single use, tries, cooldown, Brevo, routing)");
+console.log("PASS: email-code sign-in (hashing, expiry, single use, tries, cooldown, Brevo + Gmail fallback, routing)");

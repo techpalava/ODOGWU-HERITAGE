@@ -1,11 +1,18 @@
+import nodemailer from "nodemailer";
+
 /**
- * Server-only transactional email through the Brevo API.
+ * Server-only transactional email for login codes.
+ * Brevo's API is the primary sender; Gmail SMTP is the automatic fallback
+ * when Brevo is not configured, fails, or hits its quota/rate limit.
  * Every sender and site detail comes from the environment so a future
  * custom domain needs no code change:
- *   BREVO_API_KEY          Brevo API key (required)
- *   AUTH_EMAIL_FROM        verified sender address (required)
- *   AUTH_EMAIL_FROM_NAME   sender name, default "The Odogwu Heritage"
- *   PUBLIC_SITE_URL        site link in the email (falls back to APP_URL)
+ *   BREVO_API_KEY            Brevo API key
+ *   AUTH_EMAIL_FROM          Brevo-verified sender address
+ *   GMAIL_SMTP_USER          Gmail address used for fallback (also its From address)
+ *   GMAIL_SMTP_APP_PASSWORD  Google app password for GMAIL_SMTP_USER
+ *   AUTH_EMAIL_FROM_NAME     sender name for both, default "The Odogwu Heritage"
+ *   PUBLIC_SITE_URL          site link in the email (falls back to APP_URL)
+ * At least one sender (Brevo or Gmail) must be configured.
  */
 export const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 export const DEFAULT_AUTH_EMAIL_FROM_NAME = "The Odogwu Heritage";
@@ -17,34 +24,75 @@ export type AuthEmailConfig = {
   siteUrl: string;
 };
 
+export const GMAIL_SMTP_HOST = "smtp.gmail.com";
+export const GMAIL_SMTP_PORT = 465;
+
+export type GmailSmtpConfig = {
+  user: string;
+  appPassword: string;
+  fromName: string;
+  siteUrl: string;
+};
+
+export type LoginCodeEmailProvider = "brevo" | "gmail-smtp";
+
 type Environment = Record<string, string | undefined>;
 
+const readFromName = (environment: Environment) =>
+  environment.AUTH_EMAIL_FROM_NAME?.trim() || DEFAULT_AUTH_EMAIL_FROM_NAME;
+
+const readSiteUrl = (environment: Environment) => {
+  const siteUrl = (
+    environment.PUBLIC_SITE_URL?.trim() ||
+    environment.APP_URL?.trim() ||
+    ""
+  ).replace(/\/+$/, "");
+  return /^https?:\/\//i.test(siteUrl) ? siteUrl : "";
+};
+
+/** Brevo sender settings, or null when Brevo is not configured. */
 export function readAuthEmailConfig(
   environment: Environment = process.env,
 ): AuthEmailConfig | null {
   const apiKey = environment.BREVO_API_KEY?.trim() || "";
   const fromEmail = environment.AUTH_EMAIL_FROM?.trim() || "";
   if (!apiKey || !fromEmail.includes("@")) return null;
-  const siteUrl = (
-    environment.PUBLIC_SITE_URL?.trim() ||
-    environment.APP_URL?.trim() ||
-    ""
-  ).replace(/\/+$/, "");
   return {
     apiKey,
     fromEmail,
-    fromName:
-      environment.AUTH_EMAIL_FROM_NAME?.trim() || DEFAULT_AUTH_EMAIL_FROM_NAME,
-    siteUrl: /^https?:\/\//i.test(siteUrl) ? siteUrl : "",
+    fromName: readFromName(environment),
+    siteUrl: readSiteUrl(environment),
   };
 }
 
+/** Gmail SMTP fallback settings, or null when Gmail is not configured. */
+export function readGmailSmtpConfig(
+  environment: Environment = process.env,
+): GmailSmtpConfig | null {
+  const user = environment.GMAIL_SMTP_USER?.trim() || "";
+  // Google shows app passwords in groups of four separated by spaces.
+  const appPassword = (environment.GMAIL_SMTP_APP_PASSWORD || "").replace(
+    /\s+/g,
+    "",
+  );
+  if (!user.includes("@") || !appPassword) return null;
+  return {
+    user,
+    appPassword,
+    fromName: readFromName(environment),
+    siteUrl: readSiteUrl(environment),
+  };
+}
+
+/** Throws EMAIL_NOT_CONFIGURED unless Brevo or Gmail SMTP is configured. */
 export function requireAuthEmailConfig(
   environment: Environment = process.env,
-): AuthEmailConfig {
-  const config = readAuthEmailConfig(environment);
-  if (!config) throw new Error("EMAIL_NOT_CONFIGURED");
-  return config;
+): LoginCodeEmailProvider[] {
+  const providers: LoginCodeEmailProvider[] = [];
+  if (readAuthEmailConfig(environment)) providers.push("brevo");
+  if (readGmailSmtpConfig(environment)) providers.push("gmail-smtp");
+  if (providers.length === 0) throw new Error("EMAIL_NOT_CONFIGURED");
+  return providers;
 }
 
 const escapeHtml = (value: string) =>
@@ -96,6 +144,16 @@ ${siteLink}
   return { subject, html };
 }
 
+/** Thrown for any send failure; `reason` is safe to log (no codes, no secrets). */
+export class EmailSendError extends Error {
+  constructor(
+    readonly reason: string,
+    readonly quotaOrRateLimited = false,
+  ) {
+    super("EMAIL_SEND_FAILED");
+  }
+}
+
 export async function sendBrevoEmail(
   config: AuthEmailConfig,
   message: { to: string; subject: string; html: string },
@@ -119,32 +177,125 @@ export async function sendBrevoEmail(
       }),
     });
   } catch {
-    throw new Error("EMAIL_SEND_FAILED");
+    throw new EmailSendError("network error");
   }
   if (!response.ok) {
-    console.error(
-      `Brevo transactional email failed with HTTP ${response.status}.`,
+    // 429 = rate limited, 402 = out of credits / daily limit reached.
+    const quota = response.status === 429 || response.status === 402;
+    throw new EmailSendError(
+      `HTTP ${response.status}${quota ? " (quota or rate limit)" : ""}`,
+      quota,
     );
-    throw new Error("EMAIL_SEND_FAILED");
   }
 }
 
+export type GmailTransport = {
+  sendMail(message: {
+    from: { name: string; address: string };
+    to: string;
+    subject: string;
+    html: string;
+  }): Promise<unknown>;
+};
+
+export const createGmailTransport = (config: GmailSmtpConfig): GmailTransport =>
+  nodemailer.createTransport({
+    host: GMAIL_SMTP_HOST,
+    port: GMAIL_SMTP_PORT,
+    secure: true,
+    auth: { user: config.user, pass: config.appPassword },
+  });
+
+export async function sendGmailSmtpEmail(
+  config: GmailSmtpConfig,
+  message: { to: string; subject: string; html: string },
+  createTransport: (config: GmailSmtpConfig) => GmailTransport = createGmailTransport,
+): Promise<void> {
+  try {
+    await createTransport(config).sendMail({
+      // Gmail only sends as the authenticated account, so the From address
+      // is always GMAIL_SMTP_USER.
+      from: { name: config.fromName, address: config.user },
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+    });
+  } catch (error) {
+    const details = error as { code?: unknown; responseCode?: unknown };
+    const parts = [
+      typeof details?.code === "string" ? details.code : "",
+      typeof details?.responseCode === "number"
+        ? `SMTP ${details.responseCode}`
+        : "",
+    ].filter(Boolean);
+    throw new EmailSendError(parts.join(" ") || "send error");
+  }
+}
+
+const PROVIDER_LABEL: Record<LoginCodeEmailProvider, string> = {
+  brevo: "Brevo",
+  "gmail-smtp": "Gmail SMTP",
+};
+
+const failureReason = (error: unknown) =>
+  error instanceof EmailSendError ? error.reason : "unexpected error";
+
+/**
+ * Sends a login code, Brevo first and Gmail SMTP as the fallback.
+ * Logs only which provider sent it (or why one failed): never the code,
+ * the recipient or any secret.
+ */
 export async function sendLoginCodeEmail(
   to: string,
   code: string,
   purpose: "sign-in" | "pin-confirmation",
-  options: { environment?: Environment; fetchImpl?: typeof fetch } = {},
-) {
-  const config = requireAuthEmailConfig(options.environment);
+  options: {
+    environment?: Environment;
+    fetchImpl?: typeof fetch;
+    createGmailTransport?: (config: GmailSmtpConfig) => GmailTransport;
+    log?: (line: string) => void;
+  } = {},
+): Promise<LoginCodeEmailProvider> {
+  const environment = options.environment ?? process.env;
+  const log = options.log ?? ((line: string) => console.info(line));
+  requireAuthEmailConfig(environment);
+  const brevo = readAuthEmailConfig(environment);
+  const gmail = readGmailSmtpConfig(environment);
+  const fromName = (brevo ?? gmail)!.fromName;
+  const siteUrl = (brevo ?? gmail)!.siteUrl;
   const rendered = renderLoginCodeEmail({
     code,
-    brandName: config.fromName,
-    siteUrl: config.siteUrl,
+    brandName: fromName,
+    siteUrl,
     purpose,
   });
-  await sendBrevoEmail(
-    config,
-    { to, subject: rendered.subject, html: rendered.html },
-    options.fetchImpl,
-  );
+  const message = { to, subject: rendered.subject, html: rendered.html };
+
+  if (brevo) {
+    try {
+      await sendBrevoEmail(brevo, message, options.fetchImpl);
+      log(`Login code email sent via ${PROVIDER_LABEL.brevo}.`);
+      return "brevo";
+    } catch (error) {
+      log(
+        `Login code email: ${PROVIDER_LABEL.brevo} failed (${failureReason(error)})${gmail ? `; falling back to ${PROVIDER_LABEL["gmail-smtp"]}` : ""}.`,
+      );
+      if (!gmail) throw new Error("EMAIL_SEND_FAILED");
+    }
+  } else {
+    log(
+      `Login code email: ${PROVIDER_LABEL.brevo} not configured; using ${PROVIDER_LABEL["gmail-smtp"]}.`,
+    );
+  }
+
+  try {
+    await sendGmailSmtpEmail(gmail!, message, options.createGmailTransport);
+  } catch (error) {
+    log(
+      `Login code email: ${PROVIDER_LABEL["gmail-smtp"]} failed (${failureReason(error)}).`,
+    );
+    throw new Error("EMAIL_SEND_FAILED");
+  }
+  log(`Login code email sent via ${PROVIDER_LABEL["gmail-smtp"]}.`);
+  return "gmail-smtp";
 }
