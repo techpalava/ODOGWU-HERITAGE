@@ -51,6 +51,8 @@ export const FutureAdditionalGarmentFabricDialog = ({
   onSelectExistingAllocation,
   onCancel,
   eyebrow = "Optional Extra Garment",
+  cancelLabel,
+  preselectedFabricCode = null,
 }: {
   transaction: AdditionalGarmentFabricTransaction;
   fabrics: readonly Fabric[];
@@ -63,6 +65,10 @@ export const FutureAdditionalGarmentFabricDialog = ({
   onCancel: () => void;
   /** Small heading above the title; null hides it (a garment that is not an extra garment). */
   eyebrow?: string | null;
+  /** Label of the cancel button; defaults to the label for the transaction's origin. */
+  cancelLabel?: string;
+  /** A fabric to show pre-selected, when it can hold this garment. */
+  preselectedFabricCode?: string | null;
 }) => {
   const titleId = useId();
   const descriptionId = useId();
@@ -127,17 +133,6 @@ export const FutureAdditionalGarmentFabricDialog = ({
     transaction.garmentKey,
     visibleFabricByCode,
   ]);
-  const visibleFabrics = useMemo(
-    () =>
-      Array.from(visibleFabricByCode.values())
-        .sort((left, right) => {
-          const leftReusable = reusableAllocationOptionsByFabricCode.has(left.code);
-          const rightReusable = reusableAllocationOptionsByFabricCode.has(right.code);
-          if (leftReusable !== rightReusable) return leftReusable ? -1 : 1;
-          return left.name.localeCompare(right.name);
-        }),
-    [reusableAllocationOptionsByFabricCode, visibleFabricByCode],
-  );
   const quantityLimitMessage = formatFabricQuantityLimitChangeCopy(
     getMaxPhysicalFabricAllocationCount({
       garmentTypeSelection,
@@ -146,6 +141,69 @@ export const FutureAdditionalGarmentFabricDialog = ({
       countPendingGarmentForCapacity: true,
     }),
   );
+  const fabricCards = Array.from(visibleFabricByCode.values()).map((fabric) => {
+    const reusableAllocationOptions =
+      reusableAllocationOptionsByFabricCode.get(fabric.code);
+    const presentation = resolveFutureFabricCatalogueCardPresentation({
+      fabricCode: fabric.code,
+      garmentTypeSelection,
+      fabricAllocationState,
+      currentTargetGarmentKey: transaction.garmentKey,
+      fabrics,
+      requiredPhysicalOccurrences,
+    });
+    // A different Fabric would need a new allocation. Once the order
+    // already has the Fabrics it needs, only spare capacity on a
+    // selected Fabric ("In Your Order") can serve this garment.
+    const quantityLimitReached =
+      !reusableAllocationOptions?.length &&
+      (() => {
+        const preview = assignFutureFabricToGarment({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          garmentKey: transaction.garmentKey,
+          fabricCode: fabric.code,
+          fabrics,
+          requiredPhysicalOccurrences,
+        });
+        return (
+          preview.status === "blocked" &&
+          preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+        );
+      })();
+    // A Fabric already offering "In Your Order" reuse options can
+    // still serve this garment, so it must not also claim that
+    // no stock is available.
+    const stockConstraintMessage = quantityLimitReached
+      ? quantityLimitMessage
+      : getFabricNewAllocationStockConstraintMessage(
+          fabric,
+          fabricAllocationState,
+          Boolean(reusableAllocationOptions?.length),
+        );
+    // Pre-selected only when its Select This Fabric button is enabled (the fabric can hold it).
+    const preselected =
+      fabric.code === preselectedFabricCode &&
+      !reusableAllocationOptions?.length &&
+      !quantityLimitReached &&
+      !stockConstraintMessage &&
+      !getFabricAvailabilityMessage(fabric);
+    return {
+      fabric,
+      reusableAllocationOptions,
+      presentation,
+      quantityLimitReached,
+      stockConstraintMessage,
+      preselected,
+    };
+  });
+  const visibleFabricCards = fabricCards.sort((left, right) => {
+    if (left.preselected !== right.preselected) return left.preselected ? -1 : 1;
+    const leftReusable = Boolean(left.reusableAllocationOptions);
+    const rightReusable = Boolean(right.reusableAllocationOptions);
+    if (leftReusable !== rightReusable) return leftReusable ? -1 : 1;
+    return left.fabric.name.localeCompare(right.fabric.name);
+  });
   const isFinishing =
     transaction.phase === "assigning" ||
     transaction.phase === "awaiting_commit";
@@ -278,46 +336,14 @@ export const FutureAdditionalGarmentFabricDialog = ({
                 Choose a fabric card to assign it to {garmentLabel}.
               </p>
               <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {visibleFabrics.map((fabric) => {
-                  const reusableAllocationOptions =
-                    reusableAllocationOptionsByFabricCode.get(fabric.code);
-                  const presentation = resolveFutureFabricCatalogueCardPresentation({
-                    fabricCode: fabric.code,
-                    garmentTypeSelection,
-                    fabricAllocationState,
-                    currentTargetGarmentKey: transaction.garmentKey,
-                    fabrics,
-                    requiredPhysicalOccurrences,
-                  });
-                  // A different Fabric would need a new allocation. Once the order
-                  // already has the Fabrics it needs, only spare capacity on a
-                  // selected Fabric ("In Your Order") can serve this garment.
-                  const quantityLimitReached =
-                    !reusableAllocationOptions?.length &&
-                    (() => {
-                      const preview = assignFutureFabricToGarment({
-                        state: fabricAllocationState,
-                        garmentTypeSelection,
-                        garmentKey: transaction.garmentKey,
-                        fabricCode: fabric.code,
-                        fabrics,
-                        requiredPhysicalOccurrences,
-                      });
-                      return (
-                        preview.status === "blocked" &&
-                        preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
-                      );
-                    })();
-                  // A Fabric already offering "In Your Order" reuse options can
-                  // still serve this garment, so it must not also claim that
-                  // no stock is available.
-                  const stockConstraintMessage = quantityLimitReached
-                    ? quantityLimitMessage
-                    : getFabricNewAllocationStockConstraintMessage(
-                        fabric,
-                        fabricAllocationState,
-                        Boolean(reusableAllocationOptions?.length),
-                      );
+                {visibleFabricCards.map(({
+                  fabric,
+                  reusableAllocationOptions,
+                  presentation,
+                  quantityLimitReached,
+                  stockConstraintMessage,
+                  preselected,
+                }) => {
                   return (
                     <FutureFabricCatalogueCard
                       key={fabric.code}
@@ -341,6 +367,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
                       stockConstraintMessage={stockConstraintMessage}
                       describedBy={helpId}
                       actionLabel="Select This Fabric"
+                      preselected={preselected}
                       onAction={() => {
                         if (!quantityLimitReached) onSelectFabric(fabric.code);
                       }}
@@ -362,11 +389,12 @@ export const FutureAdditionalGarmentFabricDialog = ({
                   data-fabric-dialog-action="cancel"
                   className="min-h-11 rounded-xl border border-red-200 px-4 text-xs font-bold uppercase tracking-wider text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                 >
-                  {transaction.origin === "change_existing"
+                  {cancelLabel ??
+                    (transaction.origin === "change_existing"
                     ? "Keep Current Fabric"
                     : transaction.origin === "repair_missing"
                       ? "Cancel"
-                      : "Cancel Adding Garment"}
+                      : "Cancel Adding Garment")}
                 </button>
               </div>
             </div>

@@ -4,7 +4,7 @@
  * in the order while the garment keeps its key (and everything stored against it).
  */
 import assert from "node:assert/strict";
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import { GarmentTypeStep } from "./src/components/GarmentTypeStep";
@@ -61,7 +61,15 @@ import {
 import { inspectDraftFabricAllocations } from "./src/utils/fabricAllocationPersistence";
 import { reconcileAdditionalGarmentDependencies } from "./src/utils/additionalGarmentDomain";
 import { reconcileAdditionalGarmentConstructionState } from "./src/utils/additionalGarmentConstructionState";
-import { resolveMeasurementProfile } from "./src/utils/measurementBlueprint";
+import {
+  createEmptyFutureMeasurementState,
+  getMeasurementPhysicalGarments,
+  planMeasurementRequirements,
+  reconcileFutureMeasurementState,
+  resolveMeasurementProfile,
+  setFutureMeasurementInput,
+} from "./src/utils/measurementBlueprint";
+import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import {
   quoteFutureOrderPayableTotal,
@@ -137,11 +145,9 @@ const MAIN_GARMENT_GROUP: Partial<Record<CanonicalPhysicalGarmentType, string>> 
 
 const renderCustomDetails = ({
   selection,
-  block = null,
   constructionEvents = [],
 }: {
   selection: GarmentTypeStepSelection;
-  block?: { parentGarmentKey: string; message: string } | null;
   constructionEvents?: string[][];
 }) => {
   const reconciliation = reconcileGarmentScopedCustomDetails({
@@ -184,10 +190,6 @@ const renderCustomDetails = ({
         onClearSelection: () => undefined,
         onConstructionSelect: (...event: string[]) => {
           constructionEvents.push(event);
-        },
-        constructionLengthSwitchBlock: block,
-        onOpenFabricStep: () => {
-          constructionEvents.push(["open-fabric"]);
         },
         onToggleMultiSelect: () => undefined,
         onPersonalizedTextChange: () => undefined,
@@ -705,18 +707,100 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
   picked = [];
   act(() => pickerRenderer.unmount());
 
+  // Q5: in the length switch the close button says the length stays; elsewhere it is unchanged.
+  const renderPicker = (props: {
+    fabrics: Fabric[];
+    preselectedFabricCode?: string | null;
+    cancelLabel?: string;
+  }) => {
+    let pickerRenderer!: ReturnType<typeof create>;
+    act(() => {
+      pickerRenderer = create(
+        createElement(FutureAdditionalGarmentFabricDialog, {
+          transaction: { transactionId: 0, phase: "catalogue", origin: "change_existing", garmentKey: "base:dress", garmentType: "full_length_gown" },
+          eyebrow: null,
+          garmentTypeSelection: dressShirtLong,
+          fabricAllocationState: needsFabric.fabricAllocationStateWithoutGarment,
+          requiredPhysicalOccurrences: previewOccurrences,
+          errorMessage: null,
+          onSelectFabric: (code: string) => picked.push(code),
+          onSelectExistingAllocation: (id: string) => picked.push(`allocation:${id}`),
+          onCancel: () => picked.push("cancel"),
+          ...props,
+        }),
+      );
+    });
+    return pickerRenderer;
+  };
+  const cancelText = (root: ReturnType<typeof create>) =>
+    textContent(root.root.find((node) => node.props["data-fabric-dialog-action"] === "cancel"));
+  const preselectedCodes = (root: ReturnType<typeof create>) =>
+    root.root
+      .findAll((node) => node.type === "article" && node.props["data-fabric-preselected"] === "true")
+      .map((node) => node.props["data-fabric-card-code"]);
+  const cardOrder = (root: ReturnType<typeof create>) =>
+    root.root
+      .findAll((node) => node.type === "article" && typeof node.props["data-fabric-card-code"] === "string")
+      .map((node) => node.props["data-fabric-card-code"]);
+  const defaultPicker = renderPicker({ fabrics });
+  assert.equal(cancelText(defaultPicker), "Keep Current Fabric", "Other uses keep their label");
+  assert.deepEqual(preselectedCodes(defaultPicker), [], "Nothing is pre-selected unless asked");
+  act(() => defaultPicker.unmount());
+
+  // Q3: the dress's current fabric is pre-selected (first, highlighted) when it can hold the
+  // Long Dress; picking it is one tap.
+  const lengthSwitchPicker = renderPicker({
+    fabrics: [fabricOf("F2"), fabricOf("F1")],
+    preselectedFabricCode: "F1",
+    cancelLabel: "Cancel, Keep Standard Length",
+  });
+  assert.equal(cancelText(lengthSwitchPicker), "Cancel, Keep Standard Length");
+  assert.deepEqual(preselectedCodes(lengthSwitchPicker), ["F1"]);
+  assert.equal(cardOrder(lengthSwitchPicker)[0], "F1", "The current fabric is shown first");
+  assert.match(
+    textContent(lengthSwitchPicker.root.find((node) => node.type === "article" && node.props["data-fabric-card-code"] === "F1")),
+    /Current Fabric/,
+  );
+  const preselectedButton = lengthSwitchPicker.root.find(
+    (node) => node.type === "button" && node.props["data-fabric-code"] === "F1" && node.props["data-fabric-card"] === "true",
+  );
+  assert.equal(preselectedButton.props["aria-pressed"], true);
+  assert.equal(preselectedButton.props.disabled, false);
+  act(() => preselectedButton.props.onClick());
+  assert.deepEqual(picked, ["F1"], "One tap keeps the current fabric");
+  picked = [];
+  act(() =>
+    lengthSwitchPicker.root.find((node) => node.props["data-fabric-dialog-action"] === "cancel").props.onClick(),
+  );
+  assert.deepEqual(picked, ["cancel"], "Cancel, Keep Standard Length only closes the picker");
+  picked = [];
+  act(() => lengthSwitchPicker.unmount());
+  // The current fabric has no stock for another piece: shown unavailable, nothing pre-selected.
+  const noRoomPicker = renderPicker({
+    fabrics: [fabricOf("F1", { stock: 1 }), fabricOf("F2")],
+    preselectedFabricCode: "F1",
+    cancelLabel: "Cancel, Keep Standard Length",
+  });
+  assert.deepEqual(preselectedCodes(noRoomPicker), []);
+  assert.equal(
+    noRoomPicker.root.find(
+      (node) => node.type === "button" && node.props["data-fabric-code"] === "F1" && node.props["data-fabric-card"] === "true",
+    ).props.disabled,
+    true,
+  );
+  act(() => noRoomPicker.unmount());
+  assert.equal(needsFabric.fromFabricCode, "F1");
+
+  // Q4: the length-switch notice on the dress card is gone; the step renders no block notice.
   const events: string[][] = [];
   const renderer = renderCustomDetails({
     selection: step1(["dress"], "female"),
-    block: { parentGarmentKey: "base:dress", message: "Blocked message" },
     constructionEvents: events,
   });
-  const notice = renderer.root.find((node) => node.props["data-construction-length-switch-blocked"] === "true");
-  assert.match(textContent(notice), /Blocked message/);
-  act(() => {
-    notice.findByType("button").props.onClick();
-  });
-  assert.deepEqual(events, [["open-fabric"]], "The message links back to the Fabric step");
+  assert.equal(
+    renderer.root.findAll((node) => node.props["data-construction-length-switch-blocked"] === "true").length,
+    0,
+  );
   const dressInputs = mainGarmentInputs(renderer, "base:dress", "dress_construction");
   assert.equal(
     dressInputs.find((node) => node.props.checked)?.props.id,
@@ -767,7 +851,8 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
     );
   }
 
-  // Out of stock: a bigger garment cannot go on it.
+  // Q4: alone on an out-of-stock fabric, the switch asks for a fabric (the same picker as a
+  // shared fabric) instead of refusing; its piece leaves the order until a fabric is picked.
   const outOfStock = planGarmentLengthSwitch({
     parentGarmentKey: "base:dress",
     currentGarmentType: "dress",
@@ -776,7 +861,73 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
     fabricAllocationState: alone,
     fabrics: [{ code: "F1", stock: 0, stockStatus: "OUT_OF_STOCK" }],
   });
-  assert.equal(outOfStock.status === "blocked" && outOfStock.reason, "fabric_out_of_stock");
+  assert.equal(outOfStock.status, "needs_fabric");
+  assert.ok(outOfStock.status === "needs_fabric");
+  assert.equal(outOfStock.fromFabricCode, "F1");
+  assert.deepEqual(outOfStock.fabricAllocationStateWithoutGarment.fabricAllocations, []);
+  assert.equal(outOfStock.fabricAllocationStateWithoutGarment.activeAllocationId, null);
+  {
+    const dressOnly = step1(["dress"], "female");
+    const dressOnlyLong = switched(dressOnly, "dress", "dress_construction", "dress_long_midlong");
+    const occurrences = previewLengthSwitchedOccurrences(
+      buildAuthoritativePhysicalOccurrences({
+        sourceKind: "catalogue",
+        step1GarmentTypeSelection: dressOnly,
+        effectiveGarmentTypeSelection: dressOnly,
+      }),
+      "base:dress",
+      "full_length_gown",
+    );
+    const fixture = (code: string, overrides: Partial<Fabric> = {}): Fabric => ({
+      code, name: `Fabric ${code}`, description: "Fixture", color: "Green", colorHex: "#0A4A33",
+      priceMultiplier: 1, stockStatus: "IN_STOCK", category: "HiTarget Ankara", price: 10, stock: 5, ...overrides,
+    });
+    const soldOutFabrics = [fixture("F1", { stock: 0, stockStatus: "OUT_OF_STOCK" }), fixture("F2")];
+    const placeAlone = (fabricCode: string) =>
+      placeLengthSwitchedGarmentOnFabric({
+        plan: outOfStock,
+        parentGarmentKey: "base:dress",
+        garmentTypeSelection: dressOnlyLong,
+        requiredPhysicalOccurrences: occurrences,
+        fabrics: soldOutFabrics,
+        choice: { kind: "fabric", fabricCode },
+      });
+    const onOther = placeAlone("F2");
+    assert.ok(onOther.status === "assigned", "Another fabric takes the Long Dress");
+    assert.deepEqual(
+      onOther.fabricAllocationState.fabricAllocations.map((candidate) => [
+        candidate.fabricCode,
+        candidate.garmentAssignments.map((assignment) => `${assignment.garmentKey}:${assignment.garmentType}:${assignment.fabricUnits}`),
+      ]),
+      [["F2", ["base:dress:full_length_gown:2"]]],
+    );
+    assert.equal(placeAlone("F1").status, "blocked", "The sold-out fabric can't be picked");
+    // The picker does not pre-select the sold-out current fabric.
+    let pickerRenderer!: ReturnType<typeof create>;
+    act(() => {
+      pickerRenderer = create(
+        createElement(FutureAdditionalGarmentFabricDialog, {
+          transaction: { transactionId: 0, phase: "catalogue", origin: "change_existing", garmentKey: "base:dress", garmentType: "full_length_gown" },
+          eyebrow: null,
+          fabrics: soldOutFabrics,
+          garmentTypeSelection: dressOnlyLong,
+          fabricAllocationState: outOfStock.fabricAllocationStateWithoutGarment,
+          requiredPhysicalOccurrences: occurrences,
+          errorMessage: null,
+          preselectedFabricCode: outOfStock.fromFabricCode,
+          cancelLabel: "Cancel, Keep Standard Length",
+          onSelectFabric: () => undefined,
+          onSelectExistingAllocation: () => undefined,
+          onCancel: () => undefined,
+        }),
+      );
+    });
+    assert.equal(
+      pickerRenderer.root.findAll((node) => node.props["data-fabric-preselected"] === "true").length,
+      0,
+    );
+    act(() => pickerRenderer.unmount());
+  }
 
   // Long Dress -> Standard Dress always fits and frees half the fabric.
   const shrunk = planGarmentLengthSwitch({
@@ -1067,6 +1218,76 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
   candidate.pricing = pricing as unknown as FutureOrderCandidateV2["pricing"];
   const recomputed = recomputeFutureOrderPayableTotal(candidate as FutureOrderCandidateV2);
   assert.equal(recomputed.status, "exact", "Server recompute agrees with the switched price");
+}
+
+// --- Q6: two garments of one type keep separate measurements; the second is "Long Shirt 2". ---
+{
+  const before = step1(["shirt", "kaftan"], "male");
+  const after = switched(before, "shirt", "shirt_construction", "shirt_long_short");
+  const physicalGarments = getMeasurementPhysicalGarments({
+    garmentTypeSelection: after,
+    physicalOccurrences: buildAuthoritativePhysicalOccurrences({
+      sourceKind: "catalogue",
+      step1GarmentTypeSelection: after,
+      effectiveGarmentTypeSelection: after,
+    }),
+  });
+  assert.deepEqual(
+    physicalGarments.map((garment) => [garment.garmentKey, garment.garmentType]),
+    [["base:shirt", "kaftan"], ["base:kaftan", "kaftan"]],
+  );
+  const plan = planMeasurementRequirements({ route: "low_risk", garmentTypeSelection: after, physicalGarments });
+  const garmentKeysOf = (measurementId: string) =>
+    plan.requirements
+      .filter((requirement) => requirement.scope === "garment" && requirement.measurementId === measurementId)
+      .map((requirement) => requirement.garmentKey);
+  assert.deepEqual(garmentKeysOf("shirt_length_long").sort(), ["base:kaftan", "base:shirt"], "Each Long Shirt has its own length");
+  const shirtLength = plan.requirements.find(
+    (requirement) => requirement.garmentKey === "base:shirt" && requirement.measurementId === "shirt_length_long",
+  )!;
+  const kaftanLength = plan.requirements.find(
+    (requirement) => requirement.garmentKey === "base:kaftan" && requirement.measurementId === "shirt_length_long",
+  )!;
+  assert.notEqual(shirtLength.key, kaftanLength.key);
+  const entered = setFutureMeasurementInput({
+    state: createEmptyFutureMeasurementState("low_risk", "inch"),
+    requirement: shirtLength,
+    displayValue: 30,
+  });
+  assert.ok(entered.entered.byGarmentKey["base:shirt"]?.shirt_length_long, "The first Long Shirt's length is saved");
+  assert.equal(entered.entered.byGarmentKey["base:kaftan"]?.shirt_length_long, undefined, "The second Long Shirt's length is not");
+
+  const Harness = () => {
+    const [state, setState] = useState(entered);
+    return createElement(DormantFutureMeasurementStep, {
+      plan,
+      state: reconcileFutureMeasurementState({ state, plan }),
+      physicalGarments,
+      onChange: setState,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    });
+  };
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(Harness));
+  });
+  const chips = () =>
+    renderer.root.findAll((node) => node.type === "button" && typeof node.props["data-measurement-garment"] === "string");
+  assert.deepEqual(
+    chips().map((chip) => [chip.props["data-measurement-garment"], textContent(chip.children[0] as ReactTestInstance)]),
+    [["base:shirt", "Long Shirt"], ["base:kaftan", "Long Shirt 2"]],
+    "Measurement step labels the second one Long Shirt 2",
+  );
+  const heading = () =>
+    renderer.root
+      .findAll((node) => node.type === "h4" && typeof node.props["data-measurement-group-heading"] === "string" && node.props["data-measurement-group-heading"] !== "shared")
+      .map((node) => textContent(node));
+  assert.deepEqual(heading(), ["Long Shirt Measurements"]);
+  act(() => chips()[1]!.props.onClick());
+  assert.deepEqual(heading(), ["Long Shirt 2 Measurements"]);
+  act(() => renderer.unmount());
 }
 
 console.log("garment length switch tests passed");

@@ -1660,10 +1660,6 @@ export default function DesignStudioView({
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
   const [fabricAllocationState, setFabricAllocationState] =
     useState<FabricAllocationState>(FabricAllocationStateEngine.initialize());
-  const [
-    futureConstructionLengthSwitchBlock,
-    setFutureConstructionLengthSwitchBlock,
-  ] = useState<{ parentGarmentKey: string; message: string } | null>(null);
   // Step 4 length switch waiting for the customer to pick a fabric for the bigger garment.
   const [futureLengthSwitchFabricPicker, setFutureLengthSwitchFabricPicker] =
     useState<{
@@ -8916,9 +8912,6 @@ export default function DesignStudioView({
     });
     if (lengthSwitch.status === "needs_fabric") {
       // Keep the previous option until the customer picks a fabric for the bigger garment.
-      setFutureConstructionLengthSwitchBlock((current) =>
-        current?.parentGarmentKey === parentGarmentKey ? null : current,
-      );
       setFutureLengthSwitchFabricPicker({
         parentGarmentKey,
         isMainGarment,
@@ -8931,17 +8924,6 @@ export default function DesignStudioView({
       });
       return;
     }
-    if (lengthSwitch.status === "blocked") {
-      // Keep the previous option; the step shows the message next to the Main Garment options.
-      setFutureConstructionLengthSwitchBlock({
-        parentGarmentKey,
-        message: lengthSwitch.message,
-      });
-      return;
-    }
-    setFutureConstructionLengthSwitchBlock((current) =>
-      current?.parentGarmentKey === parentGarmentKey ? null : current,
-    );
     applyFutureConstructionSelection({
       parentGarmentKey,
       isMainGarment,
@@ -11098,8 +11080,6 @@ export default function DesignStudioView({
           onSingleSelect={handleFutureSingleCustomDetailSelect}
           onClearSelection={handleFutureCustomDetailClear}
           onConstructionSelect={handleFutureConstructionSelect}
-          constructionLengthSwitchBlock={futureConstructionLengthSwitchBlock}
-          onOpenFabricStep={() => navigateToFutureStage("fabric")}
           onToggleMultiSelect={handleFutureMultiCustomDetailToggle}
           onPersonalizedTextChange={handleFuturePersonalizedTextChange}
           onDecorativeFeatureEnable={handleFutureDecorativeFeatureEnable}
@@ -11648,6 +11628,9 @@ export default function DesignStudioView({
             futureLengthSwitchFabricPreview.requiredPhysicalOccurrences
           }
           errorMessage={futureLengthSwitchFabricPicker.errorMessage}
+          // Pre-selected when it can still hold the garment at its new length.
+          preselectedFabricCode={futureLengthSwitchFabricPicker.plan.fromFabricCode}
+          cancelLabel="Cancel, Keep Standard Length"
           onSelectFabric={(fabricCode) =>
             handleFutureLengthSwitchFabricChoice({ kind: "fabric", fabricCode })
           }

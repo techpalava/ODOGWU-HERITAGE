@@ -146,13 +146,6 @@ interface DormantFutureCustomDetailsStepProps {
   onSingleSelect: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onClearSelection: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup) => void;
   onConstructionSelect: (parentGarmentKey: string, garmentType: CanonicalPhysicalGarmentType, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
-  /** The last length switch that was refused because the assigned fabric cannot hold it. */
-  constructionLengthSwitchBlock?: {
-    readonly parentGarmentKey: string;
-    readonly message: string;
-  } | null;
-  /** Opens the Fabric step, offered next to a refused length switch. */
-  onOpenFabricStep?: () => void;
   onToggleMultiSelect: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onPersonalizedTextChange: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string, text: string) => void;
   onDecorativeFeatureEnable: (feature: DecorativeFeature) => void;
@@ -547,8 +540,6 @@ export const DormantFutureCustomDetailsStep = ({
   onSingleSelect,
   onClearSelection,
   onConstructionSelect,
-  constructionLengthSwitchBlock = null,
-  onOpenFabricStep,
   onToggleMultiSelect,
   onPersonalizedTextChange,
   onDecorativeFeatureEnable,
@@ -1116,12 +1107,6 @@ export const DormantFutureCustomDetailsStep = ({
       group.selectionGroup,
     );
     const optionCardClassName = customDetailOptionCardClassName;
-    const lengthSwitchBlockMessage =
-      group.isConstruction &&
-      constructionLengthSwitchBlock?.parentGarmentKey ===
-        occurrence.subject.parentGarmentKey
-        ? constructionLengthSwitchBlock.message
-        : null;
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
       const isPersonalizedRequirement =
@@ -1304,26 +1289,6 @@ export const DormantFutureCustomDetailsStep = ({
             })}
           </div>
         ) : renderOptionGrid(presentationOptions)}
-        {lengthSwitchBlockMessage && (
-          <div
-            role="alert"
-            aria-live="assertive"
-            data-construction-length-switch-blocked="true"
-            className="rounded-2xl border border-red-300/50 bg-red-50/80 px-4 py-3"
-          >
-            <p className="text-sm font-bold text-red-800">Fabric assignment notice</p>
-            <p className="mt-1 text-sm text-red-900/90">{lengthSwitchBlockMessage}</p>
-            {onOpenFabricStep && (
-              <button
-                type="button"
-                onClick={onOpenFabricStep}
-                className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
-              >
-                Go to Fabric
-              </button>
-            )}
-          </div>
-        )}
         {presentationOptions.map(renderPersonalizedRequirementDetail)}
         {presentationOptions.length === 0 && <p className="text-xs text-heritage-ink/60">No current catalogue options are available.</p>}
         {groupBlocker && <p className="text-xs text-red-700">{groupBlocker.message}</p>}

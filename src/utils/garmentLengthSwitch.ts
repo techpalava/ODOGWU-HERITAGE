@@ -8,7 +8,6 @@ import type {
   FabricGarmentAssignment,
   FabricUnitCount,
 } from "../types.js";
-import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing.js";
 import type { GarmentTypeStepSelection } from "../types.js";
 import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import {
@@ -36,22 +35,20 @@ export type GarmentLengthSwitchPlan =
   | { readonly status: "same_length" }
   | {
       /**
-       * The garment's fabric is shared and cannot hold the bigger garment: the customer picks a
-       * fabric for it (a new piece of the same fabric or another one) before the switch applies.
+       * The garment's fabric cannot hold the bigger garment (it is shared and too full, or it is
+       * out of stock): the customer picks a fabric for it (a new piece of the same fabric or
+       * another one) before the switch applies.
        */
       readonly status: "needs_fabric";
       readonly fromGarmentType: CanonicalPhysicalGarmentType;
       readonly toGarmentType: CanonicalPhysicalGarmentType;
       readonly toLength: GarmentLength;
+      /** The fabric the garment is on now; the fabric picker pre-selects it when it fits. */
+      readonly fromFabricCode: string;
       /** The resized assignment, to place on the fabric the customer picks. */
       readonly assignment: FabricGarmentAssignment;
       /** The fabric state without this garment, which the fabric picker places it into. */
       readonly fabricAllocationStateWithoutGarment: FabricAllocationState;
-    }
-  | {
-      readonly status: "blocked";
-      readonly reason: "fabric_out_of_stock";
-      readonly message: string;
     }
   | {
       readonly status: "switch";
@@ -61,9 +58,6 @@ export type GarmentLengthSwitchPlan =
       /** The fabric state with this garment's assignment resized to the new garment type. */
       readonly fabricAllocationState: FabricAllocationState;
     };
-
-const lengthLabel = (length: GarmentLength): string =>
-  length === "long" ? "Long Length" : "Standard Length";
 
 const renameAssignmentCode = (
   code: string,
@@ -110,8 +104,8 @@ const resizeAssignment = (
  * Picking an option of the other length switches the garment to the other garment type of its
  * family (Standard Shirt <-> Long Shirt, Standard Dress <-> Long Dress, Standard Skirt <-> Long
  * Skirt). Every garment may switch, also when the order then holds two garments of one type.
- * When the garment's shared fabric cannot hold the bigger garment the customer picks a fabric for
- * it first. Going to a smaller garment always fits.
+ * When the garment's fabric cannot hold the bigger garment (shared and too full, or out of stock)
+ * the customer picks a fabric for it first. Going to a smaller garment always fits.
  */
 export const planGarmentLengthSwitch = ({
   parentGarmentKey,
@@ -154,34 +148,10 @@ export const planGarmentLengthSwitch = ({
           : total + assignment.fabricUnits,
       0,
     );
-    if (usedByOthers + toUnits > FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION) {
-      const current = allocation.garmentAssignments.find(
-        (assignment) => assignment.garmentKey === parentGarmentKey,
-      )!;
-      return {
-        status: "needs_fabric",
-        fromGarmentType: currentGarmentType,
-        toGarmentType,
-        toLength,
-        assignment: resizeAssignment(current, currentGarmentType, toGarmentType),
-        fabricAllocationStateWithoutGarment: {
-          ...fabricAllocationState,
-          fabricAllocations: fabricAllocationState.fabricAllocations.map((candidate) =>
-            candidate.allocationId === allocation.allocationId
-              ? {
-                  ...candidate,
-                  garmentAssignments: candidate.garmentAssignments.filter(
-                    (assignment) => assignment.garmentKey !== parentGarmentKey,
-                  ),
-                }
-              : candidate,
-          ),
-        },
-      };
-    }
-    // Alone on its fabric the bigger garment uses the rest of the same piece.
-    const toLabel = getStep1GarmentDisplayLabel(toGarmentType);
-    const ask = `Choose another Fabric for this garment, then pick ${lengthLabel(toLength)} again.`;
+    const sharedFabricFull =
+      usedByOthers + toUnits > FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION;
+    // Alone on its fabric the bigger garment uses the rest of the same piece, unless that fabric
+    // is out of stock.
     const fabric = fabrics.find((candidate) => candidate.code === allocation.fabricCode);
     const outOfStock = Boolean(
       fabric &&
@@ -190,11 +160,39 @@ export const planGarmentLengthSwitch = ({
         (isAuthoritativeNumericFabricStock(fabric.stock) &&
           fabric.stock < getFabricPhysicalAllocationCount(fabricAllocationState, fabric.code))),
     );
-    if (outOfStock) {
+    if (sharedFabricFull || outOfStock) {
+      const current = allocation.garmentAssignments.find(
+        (assignment) => assignment.garmentKey === parentGarmentKey,
+      )!;
+      const fabricAllocations = fabricAllocationState.fabricAllocations
+        .map((candidate) =>
+          candidate.allocationId === allocation.allocationId
+            ? {
+                ...candidate,
+                garmentAssignments: candidate.garmentAssignments.filter(
+                  (assignment) => assignment.garmentKey !== parentGarmentKey,
+                ),
+              }
+            : candidate,
+        )
+        // A piece the garment was alone on is no longer in the order.
+        .filter((candidate) => candidate.garmentAssignments.length > 0);
       return {
-        status: "blocked",
-        reason: "fabric_out_of_stock",
-        message: `The Fabric on this garment is out of stock, so it can't be made as a ${toLabel}. ${ask}`,
+        status: "needs_fabric",
+        fromGarmentType: currentGarmentType,
+        toGarmentType,
+        toLength,
+        fromFabricCode: allocation.fabricCode,
+        assignment: resizeAssignment(current, currentGarmentType, toGarmentType),
+        fabricAllocationStateWithoutGarment: {
+          ...fabricAllocationState,
+          fabricAllocations,
+          activeAllocationId: fabricAllocations.some(
+            (candidate) => candidate.allocationId === fabricAllocationState.activeAllocationId,
+          )
+            ? fabricAllocationState.activeAllocationId
+            : fabricAllocations[0]?.allocationId ?? null,
+        },
       };
     }
   }
