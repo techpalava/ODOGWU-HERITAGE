@@ -656,6 +656,11 @@ assert.equal(
   continueEnabledMarkup.includes("data-step1-audience-needed"),
   false,
 );
+assert.equal(
+  continueEnabledMarkup.includes("animate-step1-audience-beam"),
+  false,
+  "The audience beam stops once Continue to Fabric unlocks",
+);
 
 const stuckSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt"],
@@ -701,6 +706,15 @@ assert.ok(
 );
 assert.ok(stuckMarkup.includes('href="#garment-type-step-audience"'));
 assert.ok(stuckMarkup.includes('data-step1-audience-needed="true"'));
+assert.ok(
+  stuckMarkup.includes("motion-safe:animate-step1-audience-beam"),
+  "The audience question beams softly while it blocks Continue to Fabric",
+);
+assert.ok(
+  !stuckMarkup.includes("border-2 border-heritage-gold") &&
+    !stuckMarkup.includes("ring-2 ring-heritage-gold/80"),
+  "The audience question uses the same thin border as the garment cards",
+);
 assert.ok(stuckMarkup.includes("Still needed to continue to Fabric."));
 assert.ok(stuckMarkup.includes('aria-describedby="garment-type-step-still-needed"'));
 assert.equal(
