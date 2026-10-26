@@ -423,7 +423,7 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
-- Open PR to main, not released: **Batch "Keep open after end date (ongoing)" toggle** (Xavier, 2026-10-26, after
+- [#1108](https://github.com/techpalava/ODOGWU-HERITAGE/pull/1108) open PR to main, not released: **Batch "Keep open after end date (ongoing)" toggle** (Xavier, 2026-10-26, after
   Avatars showed "This batch is closed" in the Studio while admin showed MANUAL / OPEN past its 2026-09-30 end date).
   Root cause: `BatchBusinessRules.canAcceptOrders` let MANUAL + OPEN ignore the end date, but
   `isCommunityBatchClosedForOrders` (#785) re-checked the end date, so the homepage, footer and admin save message
