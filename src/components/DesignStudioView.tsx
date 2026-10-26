@@ -28,6 +28,7 @@ import {
   GuestDesignDraft,
   FabricAllocation,
   FabricAllocationState,
+  GarmentConstructionPricingResolution,
   CustomDetailDemographic,
   FabricGarmentType,
   GarmentTypeStepSelection,
@@ -479,9 +480,14 @@ import {
   getBaseGarmentConstruction,
   getStep1LengthSwitchNote,
   parseBaseGarmentTypeFromKey,
-  resolveGarmentLengthSwitchLocks,
 } from "../utils/garmentLengthVariant";
-import { planGarmentLengthSwitch } from "../utils/garmentLengthSwitch";
+import {
+  placeLengthSwitchedGarmentOnFabric,
+  planGarmentLengthSwitch,
+  previewLengthSwitchedOccurrences,
+  type GarmentLengthSwitchPlan,
+  type LengthSwitchFabricChoice,
+} from "../utils/garmentLengthSwitch";
 import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
@@ -1658,6 +1664,18 @@ export default function DesignStudioView({
     futureConstructionLengthSwitchBlock,
     setFutureConstructionLengthSwitchBlock,
   ] = useState<{ parentGarmentKey: string; message: string } | null>(null);
+  // Step 4 length switch waiting for the customer to pick a fabric for the bigger garment.
+  const [futureLengthSwitchFabricPicker, setFutureLengthSwitchFabricPicker] =
+    useState<{
+      parentGarmentKey: string;
+      isMainGarment: boolean;
+      stepOneGarmentType: CanonicalPhysicalGarmentType;
+      selectionGroup: CustomDetailSelectionGroup;
+      optionId: string;
+      resolution: GarmentConstructionPricingResolution;
+      plan: Extract<GarmentLengthSwitchPlan, { status: "needs_fabric" }>;
+      errorMessage: string | null;
+    } | null>(null);
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
@@ -1795,14 +1813,6 @@ export default function DesignStudioView({
           additionalGarmentConstructionState:
             authoritativeAdditionalGarmentConstructionState,
         });
-  // Same-family rule for Step 4 length switches, judged over every garment in the order.
-  const futureConstructionLengthLocks = useMemo(
-    () =>
-      resolveGarmentLengthSwitchLocks(
-        authoritativePhysicalOccurrencesForDomain,
-      ),
-    [authoritativePhysicalOccurrencesForDomain],
-  );
   // Step 1 keeps the card the customer picked and notes a Step 4 length switch under it.
   const garmentTypeStepLengthSwitchNotes = Object.fromEntries(
     garmentTypeSelection.garmentTypes.flatMap((garmentType) => {
@@ -8901,11 +8911,26 @@ export default function DesignStudioView({
       currentGarmentType: garmentType,
       selectionGroup,
       optionId,
-      lock: futureConstructionLengthLocks[parentGarmentKey],
       fabricAllocationState,
       fabrics,
     });
-    if (lengthSwitch.status === "locked") return;
+    if (lengthSwitch.status === "needs_fabric") {
+      // Keep the previous option until the customer picks a fabric for the bigger garment.
+      setFutureConstructionLengthSwitchBlock((current) =>
+        current?.parentGarmentKey === parentGarmentKey ? null : current,
+      );
+      setFutureLengthSwitchFabricPicker({
+        parentGarmentKey,
+        isMainGarment,
+        stepOneGarmentType,
+        selectionGroup,
+        optionId,
+        resolution: selected.resolution,
+        plan: lengthSwitch,
+        errorMessage: null,
+      });
+      return;
+    }
     if (lengthSwitch.status === "blocked") {
       // Keep the previous option; the step shows the message next to the Main Garment options.
       setFutureConstructionLengthSwitchBlock({
@@ -8917,25 +8942,53 @@ export default function DesignStudioView({
     setFutureConstructionLengthSwitchBlock((current) =>
       current?.parentGarmentKey === parentGarmentKey ? null : current,
     );
-    if (lengthSwitch.status === "switch") {
+    applyFutureConstructionSelection({
+      parentGarmentKey,
+      isMainGarment,
+      stepOneGarmentType,
+      resolution: selected.resolution,
+      toGarmentType:
+        lengthSwitch.status === "switch" ? lengthSwitch.toGarmentType : null,
+      fabricAllocationState:
+        lengthSwitch.status === "switch"
+          ? lengthSwitch.fabricAllocationState
+          : null,
+    });
+  };
+  const applyFutureConstructionSelection = ({
+    parentGarmentKey,
+    isMainGarment,
+    stepOneGarmentType,
+    resolution,
+    toGarmentType,
+    fabricAllocationState: nextFabricAllocationState,
+  }: {
+    parentGarmentKey: string;
+    isMainGarment: boolean;
+    stepOneGarmentType: CanonicalPhysicalGarmentType;
+    resolution: GarmentConstructionPricingResolution;
+    /** Set when the option switches the garment to the other length. */
+    toGarmentType: CanonicalPhysicalGarmentType | null;
+    fabricAllocationState: FabricAllocationState | null;
+  }) => {
+    if (nextFabricAllocationState) {
       // Same update as the construction, so reconciliation never sees a fabric assignment whose
       // size disagrees with the garment.
-      setFabricAllocationState(lengthSwitch.fabricAllocationState);
+      setFabricAllocationState(nextFabricAllocationState);
     }
     if (isMainGarment) {
       setGarmentTypeSelection((current) => ({
         ...current,
         constructionByGarment: {
           ...current.constructionByGarment,
-          [stepOneGarmentType]: selected.resolution,
+          [stepOneGarmentType]: resolution,
         },
       }));
       return;
     }
-    const nextResolution =
-      lengthSwitch.status === "switch"
-        ? { ...selected.resolution, garmentType: lengthSwitch.toGarmentType }
-        : selected.resolution;
+    const nextResolution = toGarmentType
+      ? { ...resolution, garmentType: toGarmentType }
+      : resolution;
     setDesignSelections((current) => {
       const state =
         current.additionalGarmentConstructions ||
@@ -8952,6 +9005,74 @@ export default function DesignStudioView({
           },
         },
       };
+    });
+  };
+  // The order as it will be once the waiting length switch applies (for the fabric picker).
+  const futureLengthSwitchFabricPreview = futureLengthSwitchFabricPicker
+    ? {
+        garmentTypeSelection: futureLengthSwitchFabricPicker.isMainGarment
+          ? {
+              ...effectiveJourneyGarmentTypeSelection,
+              constructionByGarment: {
+                ...effectiveJourneyGarmentTypeSelection.constructionByGarment,
+                [futureLengthSwitchFabricPicker.stepOneGarmentType]:
+                  futureLengthSwitchFabricPicker.resolution,
+              },
+            }
+          : effectiveJourneyGarmentTypeSelection,
+        requiredPhysicalOccurrences: previewLengthSwitchedOccurrences(
+          authoritativePhysicalOccurrencesForDomain,
+          futureLengthSwitchFabricPicker.parentGarmentKey,
+          futureLengthSwitchFabricPicker.plan.toGarmentType,
+        ),
+      }
+    : null;
+  useEffect(() => {
+    // Leaving Step 4 closes a waiting fabric picker; the previous option stays.
+    if (futureStageId !== "custom_details") setFutureLengthSwitchFabricPicker(null);
+  }, [futureStageId]);
+  const handleFutureLengthSwitchFabricChoice = (
+    choice: LengthSwitchFabricChoice,
+  ) => {
+    const picker = futureLengthSwitchFabricPicker;
+    if (!picker || !futureLengthSwitchFabricPreview) return;
+    // The picker was opened on the fabric state it shows; refuse a pick on a stale order.
+    const current = planGarmentLengthSwitch({
+      parentGarmentKey: picker.parentGarmentKey,
+      currentGarmentType: picker.plan.fromGarmentType,
+      selectionGroup: picker.selectionGroup,
+      optionId: picker.optionId,
+      fabricAllocationState,
+      fabrics,
+    });
+    if (current.status !== "needs_fabric") {
+      setFutureLengthSwitchFabricPicker(null);
+      return;
+    }
+    const placement = placeLengthSwitchedGarmentOnFabric({
+      plan: current,
+      parentGarmentKey: picker.parentGarmentKey,
+      garmentTypeSelection: futureLengthSwitchFabricPreview.garmentTypeSelection,
+      requiredPhysicalOccurrences:
+        futureLengthSwitchFabricPreview.requiredPhysicalOccurrences,
+      fabrics,
+      choice,
+    });
+    if (placement.status !== "assigned") {
+      setFutureLengthSwitchFabricPicker({
+        ...picker,
+        errorMessage: placement.reason,
+      });
+      return;
+    }
+    setFutureLengthSwitchFabricPicker(null);
+    applyFutureConstructionSelection({
+      parentGarmentKey: picker.parentGarmentKey,
+      isMainGarment: picker.isMainGarment,
+      stepOneGarmentType: picker.stepOneGarmentType,
+      resolution: picker.resolution,
+      toGarmentType: current.toGarmentType,
+      fabricAllocationState: placement.fabricAllocationState,
     });
   };
   const handleFutureMultiCustomDetailToggle = (
@@ -10977,7 +11098,6 @@ export default function DesignStudioView({
           onSingleSelect={handleFutureSingleCustomDetailSelect}
           onClearSelection={handleFutureCustomDetailClear}
           onConstructionSelect={handleFutureConstructionSelect}
-          constructionLengthLocks={futureConstructionLengthLocks}
           constructionLengthSwitchBlock={futureConstructionLengthSwitchBlock}
           onOpenFabricStep={() => navigateToFutureStage("fabric")}
           onToggleMultiSelect={handleFutureMultiCustomDetailToggle}
@@ -11505,6 +11625,40 @@ export default function DesignStudioView({
               allocationId,
             });
           }}
+        />
+      )}
+      {futureLengthSwitchFabricPicker &&
+        futureLengthSwitchFabricPreview &&
+        futureStageId === "custom_details" && (
+        <FutureAdditionalGarmentFabricDialog
+          transaction={{
+            transactionId: 0,
+            phase: "catalogue",
+            origin: "change_existing",
+            garmentKey: futureLengthSwitchFabricPicker.parentGarmentKey,
+            garmentType: futureLengthSwitchFabricPicker.plan.toGarmentType,
+          }}
+          eyebrow={null}
+          fabrics={fabrics}
+          garmentTypeSelection={futureLengthSwitchFabricPreview.garmentTypeSelection}
+          fabricAllocationState={
+            futureLengthSwitchFabricPicker.plan.fabricAllocationStateWithoutGarment
+          }
+          requiredPhysicalOccurrences={
+            futureLengthSwitchFabricPreview.requiredPhysicalOccurrences
+          }
+          errorMessage={futureLengthSwitchFabricPicker.errorMessage}
+          onSelectFabric={(fabricCode) =>
+            handleFutureLengthSwitchFabricChoice({ kind: "fabric", fabricCode })
+          }
+          onSelectExistingAllocation={(allocationId) =>
+            handleFutureLengthSwitchFabricChoice({
+              kind: "allocation",
+              allocationId,
+            })
+          }
+          // Closing without a pick keeps the previous option and fabric.
+          onCancel={() => setFutureLengthSwitchFabricPicker(null)}
         />
       )}
       {showAdditionalGarmentFabricDialog &&

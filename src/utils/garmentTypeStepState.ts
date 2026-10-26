@@ -16,10 +16,7 @@ import {
   resolveGarmentConstructionPricing,
 } from "./garmentConstructionPricing.js";
 import { isClothingPriceSelectionGroup } from "./catalogHelpers.js";
-import {
-  getLengthVariantGarmentTypes,
-  getOptionGarmentLength,
-} from "./garmentLengthVariant.js";
+import { getOptionGarmentLength } from "./garmentLengthVariant.js";
 
 const CANONICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
@@ -364,13 +361,9 @@ export const reconcileGarmentTypeStepSelection = ({
         saved,
         canonicalDefault,
         normalizedCustomDetailCatalog,
-        {
-          // Same-family rule: with both a Standard and a Long card of this family in Step 1,
-          // neither may hold the other length, so a cross-length construction is repaired.
-          allowLengthSwitch: !getLengthVariantGarmentTypes(garmentType).every(
-            (variant) => (garmentTypes as readonly string[]).includes(variant),
-          ),
-        },
+        // Any Standard or Long card may hold the other length (switched in Step 4), also when
+        // Step 1 holds both cards of the family.
+        { allowLengthSwitch: true },
       ) || canonicalDefault;
     constructionByGarment[garmentType] = current;
 

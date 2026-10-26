@@ -1,4 +1,3 @@
-import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing.js";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailSelectionGroup,
@@ -206,50 +205,4 @@ export const isAdditionalKeyOfGarmentLengthVariant = (
 ): boolean => {
   const keyType = parseAdditionalGarmentKeyType(garmentKey);
   return Boolean(keyType && areLengthVariantsOfSameGarment(keyType, garmentType));
-};
-
-export interface GarmentLengthSwitchLock {
-  /** The length this garment may not switch to. */
-  readonly lockedLength: GarmentLength;
-  readonly reason: string;
-}
-
-/**
- * Same-family rule: when the order holds both a Standard and a Long garment of one family (judged
- * by the garment each was chosen as, in Step 1 or as an added garment), none of that family's
- * garments may switch length in Step 4: each stays at the length it was chosen as.
- *
- * Keyed by parent garment key. Garments outside a locked family are absent.
- */
-export const resolveGarmentLengthSwitchLocks = (
-  parentGarments: readonly {
-    readonly garmentKey: string;
-    /** The garment type the order holds now (after any switch). */
-    readonly garmentType: CanonicalPhysicalGarmentType;
-  }[],
-): Readonly<Record<string, GarmentLengthSwitchLock>> => {
-  const chosenLengthsByFamily = new Map<GarmentLengthFamily["id"], Set<GarmentLength>>();
-  parentGarments.forEach(({ garmentKey, garmentType }) => {
-    const chosenAs = getOriginalGarmentTypeFromKey(garmentKey) ?? garmentType;
-    const family = getGarmentLengthFamily(chosenAs);
-    const length = getGarmentLength(chosenAs);
-    if (!family || !length) return;
-    const lengths = chosenLengthsByFamily.get(family.id) ?? new Set<GarmentLength>();
-    lengths.add(length);
-    chosenLengthsByFamily.set(family.id, lengths);
-  });
-
-  const locks: Record<string, GarmentLengthSwitchLock> = {};
-  parentGarments.forEach(({ garmentKey, garmentType }) => {
-    // "Its own length" is the length it was chosen as.
-    const chosenAs = getOriginalGarmentTypeFromKey(garmentKey) ?? garmentType;
-    const family = getGarmentLengthFamily(chosenAs);
-    const length = getGarmentLength(chosenAs);
-    if (!family || !length || chosenLengthsByFamily.get(family.id)?.size !== 2) return;
-    locks[garmentKey] = {
-      lockedLength: length === "standard" ? "long" : "standard",
-      reason: `Your order has both a ${getStep1GarmentDisplayLabel(family.standard)} and a ${getStep1GarmentDisplayLabel(family.long)}, so each keeps its own length.`,
-    };
-  });
-  return locks;
 };

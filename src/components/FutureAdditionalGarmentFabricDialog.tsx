@@ -50,6 +50,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
   onSelectFabric,
   onSelectExistingAllocation,
   onCancel,
+  eyebrow = "Optional Extra Garment",
 }: {
   transaction: AdditionalGarmentFabricTransaction;
   fabrics: readonly Fabric[];
@@ -60,6 +61,8 @@ export const FutureAdditionalGarmentFabricDialog = ({
   onSelectFabric: (fabricCode: string) => void;
   onSelectExistingAllocation: (allocationId: string) => void;
   onCancel: () => void;
+  /** Small heading above the title; null hides it (a garment that is not an extra garment). */
+  eyebrow?: string | null;
 }) => {
   const titleId = useId();
   const descriptionId = useId();
@@ -214,9 +217,11 @@ export const FutureAdditionalGarmentFabricDialog = ({
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-heritage-gold/20 bg-white px-4 py-4 sm:px-5">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-              Optional Extra Garment
-            </p>
+            {eyebrow && (
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
+                {eyebrow}
+              </p>
+            )}
             <h2
               id={titleId}
               className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"

@@ -105,8 +105,6 @@ import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmat
 import {
   getGarmentLengthFamily,
   getGarmentLengthFamilyForSelectionGroup,
-  getOptionGarmentLength,
-  type GarmentLengthSwitchLock,
 } from "../utils/garmentLengthVariant";
 
 const formatStepMonogramDetail = (
@@ -148,8 +146,6 @@ interface DormantFutureCustomDetailsStepProps {
   onSingleSelect: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onClearSelection: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup) => void;
   onConstructionSelect: (parentGarmentKey: string, garmentType: CanonicalPhysicalGarmentType, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
-  /** Same-family rule: per parent garment key, the length its Main Garment may not switch to. */
-  constructionLengthLocks?: Readonly<Record<string, GarmentLengthSwitchLock>>;
   /** The last length switch that was refused because the assigned fabric cannot hold it. */
   constructionLengthSwitchBlock?: {
     readonly parentGarmentKey: string;
@@ -551,7 +547,6 @@ export const DormantFutureCustomDetailsStep = ({
   onSingleSelect,
   onClearSelection,
   onConstructionSelect,
-  constructionLengthLocks = {},
   constructionLengthSwitchBlock = null,
   onOpenFabricStep,
   onToggleMultiSelect,
@@ -1121,16 +1116,6 @@ export const DormantFutureCustomDetailsStep = ({
       group.selectionGroup,
     );
     const optionCardClassName = customDetailOptionCardClassName;
-    const lengthLock =
-      group.isConstruction && constructionPresentationPrefix === null
-        ? constructionLengthLocks[occurrence.subject.parentGarmentKey] ?? null
-        : null;
-    const isLengthLocked = (option: CustomDetailOption) =>
-      Boolean(
-        lengthLock &&
-        getOptionGarmentLength(group.selectionGroup, option.id) ===
-          lengthLock.lockedLength,
-      );
     const lengthSwitchBlockMessage =
       group.isConstruction &&
       constructionLengthSwitchBlock?.parentGarmentKey ===
@@ -1139,7 +1124,6 @@ export const DormantFutureCustomDetailsStep = ({
         : null;
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
-      const locked = isLengthLocked(option);
       const isPersonalizedRequirement =
         group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP &&
         option.id === PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID;
@@ -1150,18 +1134,14 @@ export const DormantFutureCustomDetailsStep = ({
         <div key={option.id} className="h-full min-w-0 w-full">
           <label
             htmlFor={optionId}
-            data-construction-length-locked={locked || undefined}
-            className={`${optionCardClassName(checked)}${locked ? " cursor-not-allowed opacity-45 hover:border-heritage-green/65" : ""}`}
+            className={optionCardClassName(checked)}
           >
             <input
               id={optionId}
               type={group.allowMultiple ? "checkbox" : "radio"}
               name={group.allowMultiple ? undefined : groupId}
               checked={checked}
-              disabled={locked || undefined}
-              aria-describedby={locked ? `${groupId}-length-lock` : undefined}
               onChange={() => {
-                if (locked) return;
                 if (group.isConstruction) {
                   onConstructionSelect(occurrence.subject.parentGarmentKey, occurrence.subject.parentGarmentType, group.selectionGroup, option.id);
                 } else if (group.allowMultiple) {
@@ -1318,15 +1298,6 @@ export const DormantFutureCustomDetailsStep = ({
                   className="min-w-0 space-y-2"
                 >
                   <p className="text-[11px] font-bold uppercase tracking-wide text-heritage-ink/55">{heading}</p>
-                  {lengthLock && options.some(isLengthLocked) && (
-                    <p
-                      id={`${groupId}-length-lock`}
-                      data-construction-length-lock-reason="true"
-                      className="break-words text-[11px] leading-relaxed text-heritage-ink/60"
-                    >
-                      {lengthLock.reason}
-                    </p>
-                  )}
                   {renderOptionGrid(options)}
                 </div>
               );
