@@ -74,6 +74,10 @@ export const STEP1_GARMENT_REFERENCE_FRAME_CLASS =
 export const STEP1_GARMENT_SELECT_ATTENTION_CLASS =
   "motion-safe:animate-step1-select-attention motion-reduce:animate-none";
 
+/** Soft gold beam on the audience question while it still blocks Continue to Fabric. */
+export const STEP1_AUDIENCE_GUIDE_BEAM_CLASS =
+  "motion-safe:animate-step1-audience-beam motion-reduce:animate-none";
+
 export const STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS =
   "mt-2.5 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2 active:scale-[0.97]";
 
@@ -662,7 +666,7 @@ export const GarmentTypeStep = ({
           data-step1-audience-needed={audienceNeeded ? "true" : undefined}
           className={
             audienceNeeded
-              ? "mt-7 min-w-0 scroll-mt-24 rounded-2xl border-2 border-heritage-gold bg-heritage-cream/50 px-4 pb-5 pt-4 ring-2 ring-heritage-gold/80"
+              ? `mt-7 min-w-0 scroll-mt-24 rounded-2xl border border-heritage-gold bg-heritage-cream/50 px-4 pb-5 pt-4 ${STEP1_AUDIENCE_GUIDE_BEAM_CLASS}`
               : "mt-7 min-w-0 scroll-mt-24 border-t border-heritage-gold/15 pt-6"
           }
         >
