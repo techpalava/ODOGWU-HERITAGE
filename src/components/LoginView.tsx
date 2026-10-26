@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import {
@@ -18,6 +18,7 @@ import {
   Loader2,
   Copy,
   ExternalLink,
+  KeyRound,
 } from "lucide-react";
 import { GoogleSignInButton } from "./GoogleSignInButton";
 import {
@@ -56,7 +57,7 @@ export default function LoginView({
   // Navigation active login/register mode: 'login' | 'register'
   const [activeMode, setActiveMode] = useState<"login" | "register">("login");
   const [pendingAction, setPendingAction] = useState<
-    "pin-login" | "register" | "google" | null
+    "pin-login" | "send-code" | "verify-code" | "google" | null
   >(null);
   const isBusy = pendingAction !== null;
 
@@ -129,12 +130,88 @@ export default function LoginView({
   // Register inputs (Common / Email)
   const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
-  const [regPIN, setRegPIN] = useState("");
+
+  // "Log in" tab: one-time email codes by default; existing customers can
+  // still use their PIN.
+  const [loginMethod, setLoginMethod] = useState<"code" | "pin">("code");
+  const [infoMsg, setInfoMsg] = useState("");
+
+  // One-time code step, shared by sign-in, sign-up and PIN confirmation.
+  type CodeStep = {
+    email: string;
+    purpose: "sign-in" | "pin-confirmation";
+    resendAt: number;
+  };
+  const [codeStep, setCodeStep] = useState<CodeStep | null>(null);
+  const [emailCode, setEmailCode] = useState("");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!codeStep) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [codeStep]);
+  const resendSeconds = codeStep
+    ? Math.max(0, Math.ceil((codeStep.resendAt - now) / 1000))
+    : 0;
+
+  const messageOf = (failure: unknown, fallback: string) =>
+    failure instanceof Error && failure.message ? failure.message : fallback;
+  const codeOf = (failure: unknown) =>
+    failure && typeof failure === "object" && "code" in failure
+      ? String((failure as { code?: unknown }).code)
+      : "";
+  const looksLikeEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+  const leaveCodeStep = () => {
+    setCodeStep(null);
+    setEmailCode("");
+    setError("");
+    setInfoMsg("");
+  };
+
+  const runPinLogin = async (
+    identifier: string,
+    pin: string,
+    confirmationCode?: string,
+  ) => {
+    if (isBusy) return;
+    setPendingAction(confirmationCode ? "verify-code" : "pin-login");
+    try {
+      if (!(await prepareGuestUploadTransition())) return;
+      const customer = await FirebaseCustomerAuth.signInWithPin(
+        identifier,
+        pin,
+        confirmationCode,
+      );
+      if (await finishAuthenticatedLogin(customer)) {
+        setSuccessMsg(`Welcome back, ${customer.name}!`);
+      }
+    } catch (loginError) {
+      if (codeOf(loginError) === "PIN_EMAIL_CONFIRMATION_REQUIRED") {
+        // The PIN was right, but this PIN has never been confirmed by the
+        // mailbox owner. Ask for the code we just emailed.
+        setError("");
+        setEmailCode("");
+        setNow(Date.now());
+        setCodeStep({
+          email: identifier,
+          purpose: "pin-confirmation",
+          resendAt: Date.now() + 60_000,
+        });
+        return;
+      }
+      setError(messageOf(loginError, "Secure login failed. Please try again."));
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   // Handle Sign In submission
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setInfoMsg("");
 
     if (!loginIdentifier.trim()) {
       setError("Please enter your registered email address or phone number.");
@@ -145,26 +222,100 @@ export default function LoginView({
       return;
     }
 
+    await runPinLogin(loginIdentifier.trim(), loginPasscode);
+  };
+
+  const startEmailCode = async (email: string, name?: string) => {
+    setError("");
+    setInfoMsg("");
+    if (!looksLikeEmail(email)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
     if (isBusy) return;
-    setPendingAction("pin-login");
+    setPendingAction("send-code");
     try {
-      if (!(await prepareGuestUploadTransition())) return;
-      const customer = await FirebaseCustomerAuth.signInWithPin(
-        loginIdentifier.trim(),
-        loginPasscode,
+      const result = await FirebaseCustomerAuth.requestEmailCode(
+        email.trim(),
+        name,
       );
-      if (await finishAuthenticatedLogin(customer)) {
-        setSuccessMsg(`Welcome back, ${customer.name}!`);
-      }
-    } catch (loginError) {
+      setEmailCode("");
+      setNow(Date.now());
+      setCodeStep({
+        email: email.trim(),
+        purpose: "sign-in",
+        resendAt: Date.now() + result.resendAfterSeconds * 1000,
+      });
+    } catch (sendError) {
       setError(
-        loginError instanceof Error
-          ? loginError.message
-          : "Secure login failed. Please try again.",
+        messageOf(sendError, "We couldn't send the code. Please try again."),
       );
     } finally {
       setPendingAction(null);
     }
+  };
+
+  const handleSendLoginCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await startEmailCode(loginIdentifier);
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!codeStep) return;
+    if (!/^\d{6}$/.test(emailCode)) {
+      setError("Enter the 6-digit code from your email.");
+      return;
+    }
+    if (codeStep.purpose === "pin-confirmation") {
+      await runPinLogin(codeStep.email, loginPasscode, emailCode);
+      return;
+    }
+    if (isBusy) return;
+    setPendingAction("verify-code");
+    try {
+      if (!(await prepareGuestUploadTransition())) return;
+      const { customer, created } =
+        await FirebaseCustomerAuth.signInWithEmailCode(
+          codeStep.email,
+          emailCode,
+        );
+      if (await finishAuthenticatedLogin(customer)) {
+        setSuccessMsg(
+          created
+            ? "Account created successfully!"
+            : `Welcome back, ${customer.name}!`,
+        );
+      }
+    } catch (verifyError) {
+      setError(
+        messageOf(verifyError, "That code didn't work. Please try again."),
+      );
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!codeStep || resendSeconds > 0) return;
+    if (codeStep.purpose === "pin-confirmation") {
+      await runPinLogin(codeStep.email, loginPasscode);
+      return;
+    }
+    await startEmailCode(
+      codeStep.email,
+      activeMode === "register" ? regName.trim() : undefined,
+    );
+  };
+
+  const handleForgotPin = () => {
+    setLoginMethod("code");
+    setLoginPasscode("");
+    setError("");
+    setInfoMsg(
+      "No problem. We'll email you a one-time code to sign in. No PIN needed.",
+    );
   };
 
   const handleGoogleSignIn = async () => {
@@ -240,7 +391,9 @@ export default function LoginView({
   };
 
   
-  // Register with Email
+
+  // Create account: passwordless. The account is created when the emailed
+  // code is confirmed.
   const handleRegisterEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -253,36 +406,7 @@ export default function LoginView({
       setError("Please enter an email address.");
       return;
     }
-    if (!regEmail.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-    if (!/^\d{6}$/.test(regPIN)) {
-      setError("Please set a 6-digit security PIN.");
-      return;
-    }
-
-    if (isBusy) return;
-    setPendingAction("register");
-    try {
-      if (!(await prepareGuestUploadTransition())) return;
-      const customer = await FirebaseCustomerAuth.registerWithPin({
-        name: regName.trim(),
-        email: regEmail.trim(),
-        pin: regPIN,
-      });
-      if (await finishAuthenticatedLogin(customer)) {
-        setSuccessMsg("Account created successfully!");
-      }
-    } catch (registrationError) {
-      setError(
-        registrationError instanceof Error
-          ? registrationError.message
-          : "Secure account creation failed. Please try again.",
-      );
-    } finally {
-      setPendingAction(null);
-    }
+    await startEmailCode(regEmail, regName.trim());
   };
 
   const fieldIds = useId();
@@ -296,8 +420,8 @@ export default function LoginView({
     loginPinHint: `${fieldIds}-login-pin-hint`,
     regName: `${fieldIds}-register-name`,
     regEmail: `${fieldIds}-register-email`,
-    regPin: `${fieldIds}-register-pin`,
-    regPinHint: `${fieldIds}-register-pin-hint`,
+    code: `${fieldIds}-email-code`,
+    codeHint: `${fieldIds}-email-code-hint`,
   };
   const loginTabRef = useRef<HTMLButtonElement>(null);
   const registerTabRef = useRef<HTMLButtonElement>(null);
@@ -325,6 +449,9 @@ export default function LoginView({
   const switchMode = (mode: "login" | "register", moveFocus = false) => {
     setActiveMode(mode);
     setError("");
+    setInfoMsg("");
+    setCodeStep(null);
+    setEmailCode("");
     if (moveFocus) {
       (mode === "login" ? loginTabRef : registerTabRef).current?.focus();
     }
@@ -354,12 +481,15 @@ export default function LoginView({
     "block w-full pl-10 pr-4 py-3 bg-heritage-cream/40 border border-gray-300 rounded-xl text-base focus:ring-2 focus:ring-heritage-gold focus:border-heritage-gold outline-none text-heritage-ink disabled:opacity-60";
   const primaryButtonClass =
     "w-full mt-2 min-h-11 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition duration-300 py-3 rounded-xl text-[15px] font-semibold flex items-center justify-center gap-2 shadow-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
+  const linkButtonClass =
+    "inline-flex min-h-11 items-center px-1 text-sm font-semibold text-heritage-green underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold rounded disabled:cursor-not-allowed disabled:opacity-60";
   const tabClass = (selected: boolean) =>
     `flex-1 min-h-11 py-3 text-sm font-semibold transition-colors flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold ${
       selected
         ? "bg-white text-heritage-green border-b-2 border-heritage-gold"
         : "text-heritage-ink/70 hover:text-heritage-green hover:bg-white/50"
     }`;
+
 
   return (
     <div className="max-w-md mx-auto my-6 font-sans">
@@ -433,6 +563,15 @@ export default function LoginView({
             </div>
           )}
 
+          {infoMsg && !error && (
+            <div
+              role="status"
+              className="mb-5 p-3 bg-heritage-cream/50 text-heritage-ink text-sm rounded-xl border border-heritage-gold/40"
+            >
+              {infoMsg}
+            </div>
+          )}
+
           {inAppBrowser && (
             <div
               data-testid="in-app-browser-notice"
@@ -476,7 +615,7 @@ export default function LoginView({
           <div className="relative flex items-center my-5">
             <div className="flex-grow border-t border-gray-200" />
             <span className="flex-shrink mx-3 text-sm text-heritage-ink/70">
-              or use your email and PIN
+              or continue with email
             </span>
             <div className="flex-grow border-t border-gray-200" />
           </div>
@@ -517,8 +656,182 @@ export default function LoginView({
             </button>
           </div>
 
-          {/* MODE 1: LOGIN */}
-          {activeMode === "login" && (
+          {/* One-time code step (sign-in, sign-up or PIN confirmation) */}
+          {codeStep && (
+            <form
+              onSubmit={handleVerifyCode}
+              className="space-y-4"
+              role="tabpanel"
+              id={activeMode === "login" ? ids.loginPanel : ids.registerPanel}
+              aria-labelledby={
+                activeMode === "login" ? ids.loginTab : ids.registerTab
+              }
+              aria-busy={pendingAction === "verify-code" || undefined}
+            >
+              <div>
+                <h3 className="text-base font-semibold text-heritage-green">
+                  Check your email
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-heritage-ink/80">
+                  {codeStep.purpose === "pin-confirmation" ? (
+                    <>
+                      For your security, enter the 6-digit code we emailed to{" "}
+                      <strong className="break-all">{codeStep.email}</strong>.
+                      Your PIN keeps working afterwards.
+                    </>
+                  ) : (
+                    <>
+                      We sent a 6-digit code to{" "}
+                      <strong className="break-all">{codeStep.email}</strong>.
+                      It expires in 10 minutes.
+                    </>
+                  )}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor={ids.code} className={labelClass}>
+                  6-digit code
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/40">
+                    <KeyRound size={16} aria-hidden="true" />
+                  </div>
+                  <input
+                    id={ids.code}
+                    name="one-time-code"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    aria-describedby={ids.codeHint}
+                    value={emailCode}
+                    onChange={(e) =>
+                      setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="6 digits"
+                    disabled={isBusy}
+                    className={`${inputClass} font-mono text-lg tracking-[0.4em]`}
+                  />
+                </div>
+                <p id={ids.codeHint} className="text-xs text-heritage-ink/70">
+                  Can't find it? Check your spam or promotions folder.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isBusy}
+                aria-busy={pendingAction === "verify-code" || undefined}
+                className={primaryButtonClass}
+              >
+                {pendingAction === "verify-code" ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                    Verifying…
+                  </>
+                ) : (
+                  <>
+                    Verify and continue <ArrowRight size={16} aria-hidden="true" />
+                  </>
+                )}
+              </button>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleResendCode()}
+                  disabled={isBusy || resendSeconds > 0}
+                  className={linkButtonClass}
+                >
+                  {resendSeconds > 0
+                    ? `Resend code in ${resendSeconds}s`
+                    : "Resend code"}
+                </button>
+                <button
+                  type="button"
+                  onClick={leaveCodeStep}
+                  disabled={isBusy}
+                  className={linkButtonClass}
+                >
+                  Use a different email
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* MODE 1: LOGIN — email code (default) */}
+          {!codeStep && activeMode === "login" && loginMethod === "code" && (
+            <form
+              onSubmit={handleSendLoginCode}
+              className="space-y-4"
+              role="tabpanel"
+              id={ids.loginPanel}
+              aria-labelledby={ids.loginTab}
+              aria-busy={pendingAction === "send-code" || undefined}
+            >
+              <div className="space-y-1.5">
+                <label htmlFor={ids.loginEmail} className={labelClass}>
+                  Email address
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/40">
+                    <Mail size={16} aria-hidden="true" />
+                  </div>
+                  <input
+                    id={ids.loginEmail}
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={loginIdentifier}
+                    onChange={(e) => setLoginIdentifier(e.target.value)}
+                    placeholder="johndoe@gmail.com"
+                    disabled={isBusy}
+                    className={inputClass}
+                  />
+                </div>
+                <p className="text-xs text-heritage-ink/70">
+                  We'll email you a 6-digit code. No password needed.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isBusy}
+                aria-busy={pendingAction === "send-code" || undefined}
+                className={primaryButtonClass}
+              >
+                {pendingAction === "send-code" ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                    Sending code…
+                  </>
+                ) : (
+                  <>
+                    Email me a code <ArrowRight size={16} aria-hidden="true" />
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginMethod("pin");
+                  setError("");
+                  setInfoMsg("");
+                }}
+                disabled={isBusy}
+                className={`${linkButtonClass} w-full justify-center`}
+              >
+                Sign in with your PIN instead
+              </button>
+            </form>
+          )}
+
+          {/* MODE 1b: LOGIN — existing PIN */}
+          {!codeStep && activeMode === "login" && loginMethod === "pin" && (
             <form
               onSubmit={handleSignIn}
               className="space-y-4"
@@ -527,6 +840,27 @@ export default function LoginView({
               aria-labelledby={ids.loginTab}
               aria-busy={pendingAction === "pin-login" || undefined}
             >
+              <div
+                data-testid="pin-switch-prompt"
+                className="rounded-xl border border-heritage-gold/40 bg-heritage-cream/40 p-3 text-sm text-heritage-ink"
+              >
+                <p className="leading-snug">
+                  We're replacing PINs with one-time email codes. Your PIN
+                  still works, or you can switch now.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMethod("code");
+                    setError("");
+                  }}
+                  disabled={isBusy}
+                  className={`${linkButtonClass} mt-1`}
+                >
+                  Email me a code instead
+                </button>
+              </div>
+
               <div className="space-y-1.5">
                 <label htmlFor={ids.loginEmail} className={labelClass}>
                   Email address
@@ -556,9 +890,14 @@ export default function LoginView({
                   <label htmlFor={ids.loginPin} className={labelClass}>
                     4- or 6-digit security PIN
                   </label>
-                  <span className="text-xs text-heritage-gold hover:text-heritage-green cursor-pointer transition-colors">
+                  <button
+                    type="button"
+                    onClick={handleForgotPin}
+                    disabled={isBusy}
+                    className={linkButtonClass}
+                  >
                     Forgot PIN?
-                  </span>
+                  </button>
                 </div>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/40">
@@ -606,15 +945,15 @@ export default function LoginView({
             </form>
           )}
 
-          {/* MODE 2: CREATE ACCOUNT */}
-          {activeMode === "register" && (
+          {/* MODE 2: CREATE ACCOUNT (passwordless) */}
+          {!codeStep && activeMode === "register" && (
             <form
               onSubmit={handleRegisterEmail}
               className="space-y-4"
               role="tabpanel"
               id={ids.registerPanel}
               aria-labelledby={ids.registerTab}
-              aria-busy={pendingAction === "register" || undefined}
+              aria-busy={pendingAction === "send-code" || undefined}
             >
               <div className="space-y-1.5">
                 <label htmlFor={ids.regName} className={labelClass}>
@@ -660,52 +999,26 @@ export default function LoginView({
                     className={inputClass}
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor={ids.regPin} className={labelClass}>
-                  Choose a 6-digit security PIN
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/40">
-                    <Lock size={16} aria-hidden="true" />
-                  </div>
-                  <input
-                    id={ids.regPin}
-                    name="new-password"
-                    type="password"
-                    inputMode="numeric"
-                    autoComplete="new-password"
-                    maxLength={6}
-                    aria-describedby={ids.regPinHint}
-                    value={regPIN}
-                    onChange={(e) =>
-                      setRegPIN(e.target.value.replace(/\D/g, ""))
-                    }
-                    placeholder="Choose code (e.g. 123456)"
-                    disabled={isBusy}
-                    className={`${inputClass} font-mono tracking-widest`}
-                  />
-                </div>
-                <p id={ids.regPinHint} className="sr-only">
-                  Numbers only, exactly 6 digits.
+                <p className="text-xs text-heritage-ink/70">
+                  We'll email you a 6-digit code to create your account. No
+                  password needed.
                 </p>
               </div>
 
               <button
                 type="submit"
                 disabled={isBusy}
-                aria-busy={pendingAction === "register" || undefined}
+                aria-busy={pendingAction === "send-code" || undefined}
                 className={primaryButtonClass}
               >
-                {pendingAction === "register" ? (
+                {pendingAction === "send-code" ? (
                   <>
                     <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-                    Creating account…
+                    Sending code…
                   </>
                 ) : (
                   <>
-                    Create my account <ArrowRight size={16} aria-hidden="true" />
+                    Email me a code <ArrowRight size={16} aria-hidden="true" />
                   </>
                 )}
               </button>

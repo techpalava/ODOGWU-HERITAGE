@@ -72,6 +72,31 @@ async function render(props: Partial<Parameters<typeof LoginView>[0]> = {}) {
   return renderer;
 }
 
+const findButton = (root: ReactTestInstance, text: string | RegExp) =>
+  root
+    .findAllByType("button")
+    .find((button) =>
+      typeof text === "string" ? textOf(button).trim() === text : text.test(textOf(button)),
+    );
+
+// Every visible input has a label pointing at it, plus autocomplete.
+const checkFields = (
+  root: ReactTestInstance,
+  expected: Record<string, { autoComplete: string; inputMode?: string }>,
+) => {
+  const inputs = root.findAllByType("input");
+  const labels = root.findAllByType("label");
+  assert.equal(inputs.length, Object.keys(expected).length);
+  for (const input of inputs) {
+    const label = labels.find((candidate) => candidate.props.htmlFor === input.props.id);
+    assert.ok(label, `input ${input.props.name} has a label`);
+    const want = expected[textOf(label!).trim()];
+    assert.ok(want, `unexpected label ${textOf(label!)}`);
+    assert.equal(input.props.autoComplete, want.autoComplete);
+    assert.equal(input.props.inputMode, want.inputMode);
+  }
+};
+
 for (const checkoutMode of [false, true]) {
   const renderer = await render({ checkoutMode, onCancel: () => undefined });
   const root = renderer.root;
@@ -88,40 +113,58 @@ for (const checkoutMode of [false, true]) {
   assert.equal(tabs[0].props["aria-selected"], true);
   assert.equal(root.findAll((node) => node.props.role === "tablist").length, 1);
 
-  // Every visible input has a label pointing at it, plus autocomplete.
-  const checkFields = (expected: Record<string, { autoComplete: string; inputMode?: string }>) => {
-    const inputs = root.findAllByType("input");
-    const labels = root.findAllByType("label");
-    assert.equal(inputs.length, Object.keys(expected).length);
-    for (const input of inputs) {
-      const label = labels.find((candidate) => candidate.props.htmlFor === input.props.id);
-      assert.ok(label, `input ${input.props.name} has a label`);
-      const want = expected[textOf(label!).trim()];
-      assert.ok(want, `unexpected label ${textOf(label!)}`);
-      assert.equal(input.props.autoComplete, want.autoComplete);
-      assert.equal(input.props.inputMode, want.inputMode);
-    }
-  };
-  checkFields({
+  // Default login is a one-time email code.
+  checkFields(root, { "Email address": { autoComplete: "email" } });
+  assert.ok(findButton(root, "Email me a code"));
+
+  // Existing customers can still use their PIN, with a prompt to switch.
+  await act(async () => {
+    findButton(root, "Sign in with your PIN instead")!.props.onClick();
+  });
+  checkFields(root, {
     "Email address": { autoComplete: "username" },
     "4- or 6-digit security PIN": { autoComplete: "current-password", inputMode: "numeric" },
   });
+  assert.equal(root.findAll((node) => node.props["data-testid"] === "pin-switch-prompt").length, 1);
 
-  // Arrow key moves to the Create account tab.
+  // "Forgot PIN?" is a real button into the email-code flow, keeping the email.
+  const [pinEmail] = root.findAllByType("input");
   await act(async () => {
-    tabs[0].props.onKeyDown({ key: "ArrowRight", preventDefault() {} });
+    pinEmail.props.onChange({ target: { value: "ada@example.test" } });
+  });
+  const forgot = findButton(root, "Forgot PIN?");
+  assert.equal(forgot?.type, "button");
+  await act(async () => {
+    forgot!.props.onClick();
+  });
+  checkFields(root, { "Email address": { autoComplete: "email" } });
+  assert.equal(root.findAllByType("input")[0].props.value, "ada@example.test");
+  assert.match(
+    textOf(root.find((node) => node.props.role === "status")),
+    /one-time code/,
+  );
+
+  // Arrow key moves to the Create account tab (passwordless sign-up).
+  await act(async () => {
+    root.findAll((node) => node.props.role === "tab")[0].props.onKeyDown({
+      key: "ArrowRight",
+      preventDefault() {},
+    });
   });
   assert.equal(root.findAll((node) => node.props.role === "tab")[1].props["aria-selected"], true);
-  checkFields({
+  checkFields(root, {
     "Full name": { autoComplete: "name" },
     "Email address": { autoComplete: "email" },
-    "Choose a 6-digit security PIN": { autoComplete: "new-password", inputMode: "numeric" },
   });
+  assert.equal(
+    JSON.stringify(renderer.toJSON()).includes("123456"),
+    false,
+    "no weak example code or PIN in hints",
+  );
 
   // Validation errors are announced.
-  const registerForm = root.findByType("form");
   await act(async () => {
-    registerForm.props.onSubmit({ preventDefault() {} });
+    root.findByType("form").props.onSubmit({ preventDefault() {} });
   });
   const alert = root.find((node) => node.props.role === "alert");
   assert.equal(textOf(alert).trim(), "Please enter your full name.");
@@ -131,6 +174,116 @@ for (const checkoutMode of [false, true]) {
     .filter((button) => textOf(button) === "Back to Cart");
   assert.equal(backToCart.length, checkoutMode ? 1 : 0, "Back to Cart only in checkout mode");
   renderer.unmount();
+}
+
+// Email-code flow: send, then verify with a one-time-code field.
+{
+  const original = {
+    request: FirebaseCustomerAuth.requestEmailCode,
+    verify: FirebaseCustomerAuth.signInWithEmailCode,
+  };
+  const requests: Array<[string, string | undefined]> = [];
+  const verifications: Array<[string, string]> = [];
+  FirebaseCustomerAuth.requestEmailCode = async (email, name) => {
+    requests.push([email, name]);
+    return { expiresInSeconds: 600, resendAfterSeconds: 60 };
+  };
+  FirebaseCustomerAuth.signInWithEmailCode = async (email, code) => {
+    verifications.push([email, code]);
+    throw Object.assign(new Error("That code is incorrect or has expired."), { code: "INVALID_CODE" });
+  };
+  try {
+    const renderer = await render();
+    const root = renderer.root;
+    await act(async () => {
+      root.findAll((node) => node.props.role === "tab")[1].props.onClick();
+    });
+    const [name, email] = root.findAllByType("input");
+    await act(async () => {
+      name.props.onChange({ target: { value: "Ada Lovelace" } });
+      email.props.onChange({ target: { value: "ada@example.test" } });
+    });
+    await act(async () => {
+      await root.findByType("form").props.onSubmit({ preventDefault() {} });
+    });
+    assert.deepEqual(requests, [["ada@example.test", "Ada Lovelace"]]);
+    checkFields(root, { "6-digit code": { autoComplete: "one-time-code", inputMode: "numeric" } });
+    assert.match(textOf(root.findByType("form")), /ada@example\.test/);
+    const resend = findButton(root, /Resend code/)!;
+    assert.equal(resend.props.disabled, true, "resend waits for the cooldown");
+    assert.match(textOf(resend), /Resend code in \d+s/);
+
+    const [codeInput] = root.findAllByType("input");
+    await act(async () => {
+      codeInput.props.onChange({ target: { value: "48-29 13x" } });
+    });
+    assert.equal(root.findAllByType("input")[0].props.value, "482913", "digits only");
+    await act(async () => {
+      await root.findByType("form").props.onSubmit({ preventDefault() {} });
+    });
+    assert.deepEqual(verifications, [["ada@example.test", "482913"]]);
+    assert.equal(
+      textOf(root.find((node) => node.props.role === "alert")).trim(),
+      "That code is incorrect or has expired.",
+    );
+
+    await act(async () => {
+      findButton(root, "Use a different email")!.props.onClick();
+    });
+    checkFields(root, {
+      "Full name": { autoComplete: "name" },
+      "Email address": { autoComplete: "email" },
+    });
+    renderer.unmount();
+  } finally {
+    FirebaseCustomerAuth.requestEmailCode = original.request;
+    FirebaseCustomerAuth.signInWithEmailCode = original.verify;
+  }
+}
+
+// PIN that needs a one-time mailbox confirmation moves to the code step,
+// then signs in with PIN + code.
+{
+  const original = FirebaseCustomerAuth.signInWithPin;
+  const calls: Array<[string, string, string | undefined]> = [];
+  FirebaseCustomerAuth.signInWithPin = async (identifier, pin, emailCode) => {
+    calls.push([identifier, pin, emailCode]);
+    throw Object.assign(
+      new Error(emailCode ? "That code is incorrect or has expired." : "confirm"),
+      { code: emailCode ? "INVALID_CODE" : "PIN_EMAIL_CONFIRMATION_REQUIRED" },
+    );
+  };
+  try {
+    const renderer = await render();
+    const root = renderer.root;
+    await act(async () => {
+      findButton(root, "Sign in with your PIN instead")!.props.onClick();
+    });
+    const [email, pin] = root.findAllByType("input");
+    await act(async () => {
+      email.props.onChange({ target: { value: "ada@example.test" } });
+      pin.props.onChange({ target: { value: "482619" } });
+    });
+    await act(async () => {
+      await root.findByType("form").props.onSubmit({ preventDefault() {} });
+    });
+    assert.equal(root.findAll((node) => node.props.role === "alert").length, 0);
+    assert.match(textOf(root.findByType("form")), /Your PIN keeps working afterwards/);
+    const [codeInput] = root.findAllByType("input");
+    await act(async () => {
+      codeInput.props.onChange({ target: { value: "123123" } });
+    });
+    await act(async () => {
+      await root.findByType("form").props.onSubmit({ preventDefault() {} });
+    });
+    assert.deepEqual(calls, [
+      ["ada@example.test", "482619", undefined],
+      ["ada@example.test", "482619", "123123"],
+    ]);
+    renderer.unmount();
+  } finally {
+    FirebaseCustomerAuth.signInWithPin = original;
+  }
 }
 
 // Loading state: buttons disable and the label changes while signing in.
@@ -144,6 +297,9 @@ for (const checkoutMode of [false, true]) {
   try {
     const renderer = await render();
     const root = renderer.root;
+    await act(async () => {
+      findButton(root, "Sign in with your PIN instead")!.props.onClick();
+    });
     const [email, pin] = root.findAllByType("input");
     await act(async () => {
       email.props.onChange({ target: { value: "ada@example.test" } });
@@ -176,4 +332,4 @@ for (const checkoutMode of [false, true]) {
   }
 }
 
-console.log("PASS: login view is Google-first, labelled, autocomplete-ready and announces errors");
+console.log("PASS: login view is Google-first, passwordless by default, labelled and announces errors");
