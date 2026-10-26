@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import type { BrevoDailyUsage } from "./brevoDailyCounter.js";
 
 /**
  * Server-only transactional email for login codes.
@@ -254,6 +255,8 @@ export async function sendLoginCodeEmail(
     fetchImpl?: typeof fetch;
     createGmailTransport?: (config: GmailSmtpConfig) => GmailTransport;
     log?: (line: string) => void;
+    /** Daily Brevo counter; when today's limit is reached, Gmail sends instead. */
+    brevoUsage?: BrevoDailyUsage;
   } = {},
 ): Promise<LoginCodeEmailProvider> {
   const environment = options.environment ?? process.env;
@@ -271,16 +274,45 @@ export async function sendLoginCodeEmail(
   });
   const message = { to, subject: rendered.subject, html: rendered.html };
 
-  if (brevo) {
+  let brevoDailyLimitReached = false;
+  if (brevo && gmail && options.brevoUsage) {
+    try {
+      const count = await options.brevoUsage.readCount();
+      brevoDailyLimitReached = count >= options.brevoUsage.limit;
+    } catch {
+      // Counter unavailable: fall back safely to trying Brevo.
+      log(
+        `Login code email: ${PROVIDER_LABEL.brevo} daily counter unavailable; trying ${PROVIDER_LABEL.brevo}.`,
+      );
+    }
+  }
+
+  if (brevo && brevoDailyLimitReached) {
+    log(
+      `Login code email: ${PROVIDER_LABEL.brevo} daily limit (${options.brevoUsage!.limit}) reached; using ${PROVIDER_LABEL["gmail-smtp"]}.`,
+    );
+  } else if (brevo) {
+    let sent = false;
     try {
       await sendBrevoEmail(brevo, message, options.fetchImpl);
-      log(`Login code email sent via ${PROVIDER_LABEL.brevo}.`);
-      return "brevo";
+      sent = true;
     } catch (error) {
       log(
         `Login code email: ${PROVIDER_LABEL.brevo} failed (${failureReason(error)})${gmail ? `; falling back to ${PROVIDER_LABEL["gmail-smtp"]}` : ""}.`,
       );
       if (!gmail) throw new Error("EMAIL_SEND_FAILED");
+    }
+    if (sent) {
+      log(`Login code email sent via ${PROVIDER_LABEL.brevo}.`);
+      if (options.brevoUsage) {
+        try {
+          await options.brevoUsage.recordSend();
+        } catch {
+          // The code was delivered; a missed count must not fail the sign-in.
+          log(`Login code email: could not update the ${PROVIDER_LABEL.brevo} daily counter.`);
+        }
+      }
+      return "brevo";
     }
   } else {
     log(

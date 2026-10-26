@@ -31,6 +31,12 @@ import {
 } from "./src/server/customerAuth";
 import { ALLOWED_ADMIN_EMAILS } from "./src/server/adminAllowlist";
 import { createFakeAuth, createFakeDb } from "./testing/authFirestoreFake";
+import {
+  BREVO_DAILY_USAGE_COLLECTION,
+  createBrevoDailyUsage,
+  readBrevoDailyLimit,
+  type BrevoDailyUsage,
+} from "./src/server/brevoDailyCounter";
 
 const MINUTE = 60_000;
 
@@ -398,6 +404,116 @@ const MINUTE = 60_000;
   );
 }
 
+// --- Brevo daily send counter -----------------------------------------------
+{
+  assert.equal(readBrevoDailyLimit({}), 290);
+  assert.equal(readBrevoDailyLimit({ BREVO_DAILY_LIMIT: "120" }), 120);
+  for (const bad of ["0", "-5", "abc", "12.5", ""]) {
+    assert.equal(readBrevoDailyLimit({ BREVO_DAILY_LIMIT: bad }), 290, bad);
+  }
+
+  const bothEnv = {
+    BREVO_API_KEY: "brevo-secret-key",
+    AUTH_EMAIL_FROM: "login@example.test",
+    GMAIL_SMTP_USER: "odogwu.shop@gmail.com",
+    GMAIL_SMTP_APP_PASSWORD: "abcdefghijklmnop",
+  };
+  const brevoOk = () => {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      return new Response("{}", { status: 201 });
+    }) as unknown as typeof fetch;
+    return { impl, calls: () => calls };
+  };
+  const gmailOk = () => {
+    const sent: unknown[] = [];
+    return {
+      sent,
+      factory: () => ({
+        async sendMail(message: unknown) {
+          sent.push(message);
+          return {};
+        },
+      }),
+    };
+  };
+
+  // Counter on the fake Firestore: per-UTC-day documents, transactional increment, TTL field.
+  const { db, table } = createFakeDb();
+  let now = Date.parse("2026-10-26T23:59:58.000Z");
+  const usage = createBrevoDailyUsage(db as never, {
+    environment: { BREVO_DAILY_LIMIT: "2" },
+    now: () => now,
+  });
+  assert.equal(usage.limit, 2);
+  assert.equal(await usage.readCount(), 0);
+
+  const send = (environment: Record<string, string>, brevo = brevoOk(), gmail = gmailOk(), counter: BrevoDailyUsage = usage) =>
+    sendLoginCodeEmail("ada@example.test", "482913", "sign-in", {
+      environment,
+      fetchImpl: brevo.impl,
+      createGmailTransport: gmail.factory,
+      brevoUsage: counter,
+      log: () => {},
+    }).then((provider) => ({ provider, brevo, gmail }));
+
+  // Under the limit: Brevo sends and each success is counted.
+  let result = await send(bothEnv);
+  assert.equal(result.provider, "brevo");
+  assert.equal(result.gmail.sent.length, 0);
+  result = await send(bothEnv);
+  assert.equal(result.provider, "brevo");
+  const doc = table(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-26")!;
+  assert.equal(doc.count, 2);
+  assert.equal(doc.day, "2026-10-26");
+  assert.equal((doc.expiresAt as Date).toISOString(), "2026-10-28T00:00:00.000Z");
+
+  // At the limit: straight to Gmail, Brevo not called, count unchanged.
+  result = await send(bothEnv);
+  assert.equal(result.provider, "gmail-smtp");
+  assert.equal(result.brevo.calls(), 0);
+  assert.equal(result.gmail.sent.length, 1);
+  assert.equal(table(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-26")!.count, 2);
+
+  // At the limit but Gmail not configured: keep using Brevo.
+  result = await send({ BREVO_API_KEY: "k", AUTH_EMAIL_FROM: "login@example.test" });
+  assert.equal(result.provider, "brevo");
+  assert.equal(result.brevo.calls(), 1);
+
+  // Midnight UTC: a new day starts at zero and Brevo is used again.
+  now = Date.parse("2026-10-27T00:00:01.000Z");
+  assert.equal(await usage.readCount(), 0);
+  result = await send(bothEnv);
+  assert.equal(result.provider, "brevo");
+  assert.equal(table(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-27")!.count, 1);
+
+  // Failed Brevo sends are not counted.
+  const failing = (async () => new Response("{}", { status: 500 })) as unknown as typeof fetch;
+  result = await send(bothEnv, { impl: failing, calls: () => 1 });
+  assert.equal(result.provider, "gmail-smtp");
+  assert.equal(table(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-27")!.count, 1);
+
+  // Counter read failure: still sends, trying Brevo first.
+  const broken: BrevoDailyUsage = {
+    limit: 290,
+    readCount: async () => {
+      throw new Error("firestore down");
+    },
+    recordSend: async () => {
+      throw new Error("firestore down");
+    },
+  };
+  result = await send(bothEnv, brevoOk(), gmailOk(), broken);
+  assert.equal(result.provider, "brevo");
+  assert.equal(result.brevo.calls(), 1);
+  assert.equal(result.gmail.sent.length, 0);
+
+  // Concurrent successful sends are all counted (transactional increment).
+  await Promise.all(Array.from({ length: 5 }, () => usage.recordSend()));
+  assert.equal(table(BREVO_DAILY_USAGE_COLLECTION).get("brevo-2026-10-27")!.count, 6);
+}
+
 // --- Completing a code sign-in ---------------------------------------------
 {
   // New address: the account is created, the email counts as proven, and
@@ -506,4 +622,4 @@ const MINUTE = 60_000;
   }
 }
 
-console.log("PASS: email-code sign-in (hashing, expiry, single use, tries, cooldown, Brevo + Gmail fallback, routing)");
+console.log("PASS: email-code sign-in (hashing, expiry, single use, tries, cooldown, Brevo + Gmail fallback, Brevo daily counter, routing)");

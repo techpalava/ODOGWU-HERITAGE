@@ -11,6 +11,7 @@ import {
   verifyEmailCode,
 } from "./authEmailCode.js";
 import { requireAuthEmailConfig, sendLoginCodeEmail } from "./brevoEmail.js";
+import { createBrevoDailyUsage } from "./brevoDailyCounter.js";
 import { isAllowedAdminEmail } from "./adminAllowlist.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import {
@@ -208,7 +209,10 @@ export async function handleEmailCodeRequest(
     const result = await issueEmailCode(adminDb, canonicalEmail, {
       purpose: "sign-in",
       name,
-      send: (code) => sendLoginCodeEmail(email, code, "sign-in"),
+      send: (code) =>
+        sendLoginCodeEmail(email, code, "sign-in", {
+          brevoUsage: createBrevoDailyUsage(adminDb),
+        }),
     });
     setNoStore(res);
     return res.json({
@@ -341,7 +345,9 @@ export async function handlePinLogin(req: HttpRequest, res: HttpResponse) {
         await issueEmailCode(adminDb, canonicalEmail, {
           purpose: "pin-confirmation",
           send: (code) =>
-            sendLoginCodeEmail(canonicalEmail, code, "pin-confirmation"),
+            sendLoginCodeEmail(canonicalEmail, code, "pin-confirmation", {
+              brevoUsage: createBrevoDailyUsage(adminDb),
+            }),
         });
       },
       verifyConfirmationCode: async (canonicalEmail, code) => {
