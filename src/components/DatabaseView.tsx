@@ -5,7 +5,10 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { projectTailoringMeasurementReadout } from "../utils/tailoringMeasurementProjection";
+import {
+  garmentTypeByKeyFromFabricAllocations,
+  projectTailoringMeasurementReadout,
+} from "../utils/tailoringMeasurementProjection";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Database,
@@ -3712,8 +3715,10 @@ export default function DatabaseView({
                       />
                     </div>
                     {(() => {
+                      // Label each garment by the order's garment type (follows a length switch).
                       const tailoringReadout = projectTailoringMeasurementReadout(
                         editingItem.measurements,
+                        garmentTypeByKeyFromFabricAllocations(editingItem.fabricAllocations),
                       );
                       if (!tailoringReadout) return null;
                       return (

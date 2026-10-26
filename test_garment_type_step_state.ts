@@ -193,8 +193,10 @@ const repairedSkirtPair = reconcileGarmentTypeStepSelection({
   normalizedCustomDetailCatalog: catalog,
 }).selection;
 assert.deepEqual(repairedSkirtPair.constructionByGarment.skirt, standardSkirt);
-assert.deepEqual(repairedSkirtPair.constructionByGarment.long_skirt, longSkirt,
-  "Malformed long_skirt + skirt_std must repair to the catalogue's skirt_long / EUR80 default.");
+// Step 4 length switch (#1091): a Long Skirt card switched to Standard Length legitimately holds
+// skirt_std, also next to a Standard Skirt card, so it is kept (no longer repaired).
+assert.deepEqual(repairedSkirtPair.constructionByGarment.long_skirt, malformedSkirtPair.constructionByGarment.long_skirt,
+  "A Long Skirt card switched to Standard Length keeps skirt_std next to a Standard Skirt card.");
 const repairedOccurrences = buildAuthoritativePhysicalOccurrences({
   sourceKind: "catalogue",
   step1GarmentTypeSelection: repairedSkirtPair,
@@ -206,7 +208,7 @@ assert.deepEqual(repairedOccurrences.map((garment) => {
   return result.status === "resolved"
     ? [garment.garmentKey, result.profile.id, result.constructionOptionId]
     : null;
-}), [["base:skirt", "L", "skirt_std"], ["base:long_skirt", "M", "skirt_long"]]);
+}), [["base:skirt", "L", "skirt_std"], ["base:long_skirt", "L", "skirt_std"]]);
 
 const deselected = reconcileGarmentTypeStepSelection({
   persistedSelection: initial.selection,
