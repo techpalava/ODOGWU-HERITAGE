@@ -2843,7 +2843,7 @@ export const DormantFutureFabricStep = ({
           ? "true"
           : undefined
       }
-      className="block break-words text-[11px] leading-relaxed text-heritage-ink/85"
+      className="block break-words text-pretty text-[11px] leading-relaxed text-heritage-ink/85"
     >
       {options.garmentLabel ? (
         <span className="font-semibold text-heritage-ink">{`${options.garmentLabel}: `}</span>
@@ -3011,6 +3011,7 @@ export const DormantFutureFabricStep = ({
       step: FabricGuideStep,
       visibleLabel: string,
       ariaLabel: string,
+      options: { tickText?: boolean } = {},
     ) => {
       const isChipDone = step.status === "done";
       const isChipCurrent = step.status === "current";
@@ -3021,7 +3022,11 @@ export const DormantFutureFabricStep = ({
         "data-fabric-guide-chip": "true",
         "aria-current": isChipCurrent ? ("step" as const) : undefined,
         "aria-label": ariaLabel,
-        className: chipClass(step.status),
+        // "Fabric chosen" is plain tick text (no pill) so it never reads as a
+        // garment chip.
+        className: options.tickText
+          ? "inline-flex min-h-8 items-center gap-1 rounded px-0.5 text-left text-[11px] font-medium leading-tight text-emerald-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
+          : chipClass(step.status),
       };
       const chipBody = (
         <>
@@ -3037,7 +3042,10 @@ export const DormantFutureFabricStep = ({
         </>
       );
       return (
-        <li key={step.id} className="max-w-full">
+        <li
+          key={step.id}
+          className={options.tickText ? "flex max-w-full shrink-0 items-center whitespace-nowrap" : "max-w-full"}
+        >
           {step.target.type !== "none" ? (
             <button
               type="button"
@@ -3050,6 +3058,13 @@ export const DormantFutureFabricStep = ({
           ) : (
             <span {...chipProps}>{chipBody}</span>
           )}
+          {options.tickText ? (
+            <span
+              aria-hidden="true"
+              data-fabric-guide-chip-divider="true"
+              className="ml-2 mr-1 h-5 w-px shrink-0 bg-heritage-gold/40"
+            />
+          ) : null}
         </li>
       );
     };
@@ -3085,7 +3100,7 @@ export const DormantFutureFabricStep = ({
           className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4"
           data-fabric-guide-group-layout="two-column"
         >
-          <div className="min-w-0 sm:max-w-[50%] sm:flex-none" data-fabric-guide-group-main="true">
+          <div className="min-w-0 sm:min-w-[13rem] sm:flex-1" data-fabric-guide-group-main="true">
             {chooseInHeading && chooseStep ? (
               <span
                 className="block"
@@ -3119,7 +3134,7 @@ export const DormantFutureFabricStep = ({
           </div>
           {assignSteps.length > 0 ? (
             <div
-              className="mt-1 flex min-w-0 flex-wrap items-start gap-1 sm:mt-0 sm:flex-1 sm:flex-nowrap sm:justify-end"
+              className="mt-1 flex min-w-0 flex-wrap items-start gap-1 sm:mt-0 sm:flex-initial sm:flex-nowrap sm:justify-end"
               data-fabric-guide-group-chips="true"
             >
               {chooseInHeading && chooseStep && chooseStep.status !== "done" ? (
@@ -3135,7 +3150,9 @@ export const DormantFutureFabricStep = ({
                 aria-label="Garments to assign fabric to"
               >
                 {chooseStep && !chooseInHeading
-                  ? renderChip(chooseStep, "Fabric chosen", `${chooseStep.label}: done`)
+                  ? renderChip(chooseStep, "Fabric chosen", `${chooseStep.label}: done`, {
+                      tickText: true,
+                    })
                   : null}
                 {assignSteps.map((step) =>
                   renderChip(step, fabricGuideGarmentLabelForStep(step), step.label),

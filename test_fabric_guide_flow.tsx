@@ -497,13 +497,17 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.match(String(chipRowParts[1]!.props.className), /sm:flex(\s|$)/);
   assert.match(String(chipRowParts[1]!.props.className), /sm:flex-wrap/);
   assert.match(String(chipRowParts[1]!.props.className), /sm:justify-start/);
-  // The chips take whatever width the heading and hint do not need (no hard
-  // cap that wraps chips early); the heading column shrinks to its content.
+  // On sm+ the chip group takes only its content width (no hard cap, so it
+  // wraps only when it has to) and the heading/hint column takes the rest.
   assert.doesNotMatch(String(chipColumn.props.className), /max-w-/);
-  assert.match(String(chipColumn.props.className), /sm:flex-1/);
+  assert.match(String(chipColumn.props.className), /sm:flex-initial/);
   assert.match(String(chipColumn.props.className), /min-w-0/);
-  assert.match(String(mainColumn.props.className), /sm:flex-none/);
-  assert.match(String(mainColumn.props.className), /sm:max-w-\[50%\]/);
+  assert.match(String(mainColumn.props.className), /sm:flex-1/);
+  assert.doesNotMatch(String(mainColumn.props.className), /max-w-/);
+  // Hint/message lines avoid single-word orphans.
+  for (const message of card!.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-message"] === "true")) {
+    assert.match(String(message.props.className), /text-pretty/);
+  }
   assert.match(textContent(chipColumn), /^Then assign:/);
   assert.equal(chips(chipColumn).length, 2, "chips live in the right column");
   const chipNodes = chips(card!);
@@ -552,6 +556,28 @@ const stepItems = (guide: ReactTestInstance) =>
   const chooseChip = byStep.get("choose_fabric")!;
   assert.equal(chooseChip.props["data-fabric-guide-step-status"], "done");
   assert.equal(textContent(chooseChip), "Fabric chosen");
+  // "Fabric chosen" is plain green tick text, not a pill, so it cannot be
+  // mistaken for a garment chip; still a button with its link and focus ring.
+  assert.equal(chooseChip.type, "button");
+  assert.equal(chooseChip.props["aria-label"], "Choose a fabric from the catalogue: done");
+  assert.equal(chooseChip.props["data-fabric-guide-link"], "choose_fabric");
+  const chooseClass = String(chooseChip.props.className);
+  assert.doesNotMatch(chooseClass, /(^|\s)(border|rounded-full|shadow|bg-)[\w-]*/);
+  assert.match(chooseClass, /text-emerald-700/);
+  assert.match(chooseClass, /hover:underline/);
+  assert.match(chooseClass, /focus-visible:ring-2/);
+  assert.equal(chooseChip.findAll((node) => typeof node.type === "string" && node.props["data-fabric-guide-chip-tick"] === "true").length, 1);
+  // Thin divider sits after it in the same non-wrapping unit (never starts a
+  // line or stands alone), hidden from assistive tech.
+  const chooseItem = chooseChip.parent!;
+  assert.equal(chooseItem.type, "li");
+  assert.match(String(chooseItem.props.className), /whitespace-nowrap/);
+  const itemParts = chooseItem.children.filter((child): child is ReactTestInstance => typeof child !== "string");
+  assert.equal(itemParts.length, 2);
+  assert.equal(itemParts[0], chooseChip);
+  assert.equal(itemParts[1]!.props["data-fabric-guide-chip-divider"], "true");
+  assert.equal(itemParts[1]!.props["aria-hidden"], "true");
+  assert.match(String(itemParts[1]!.props.className), /w-px/);
   const shirtChip = byStep.get("assign_garment:base:shirt")!;
   assert.equal(shirtChip.props["data-fabric-guide-step-status"], "done");
   assert.match(String(shirtChip.props["aria-label"]), / has fabric$/);
