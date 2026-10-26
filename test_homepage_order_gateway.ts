@@ -338,30 +338,42 @@ assert.equal(
   "The button must disappear after the date-only registration window ends",
 );
 
+const manualOverrideBatches = (overrides: Partial<Batch> = {}) => [
+  makeBatch({
+    id: "batch-auto",
+    name: "Automatic Batch",
+    startDate: "2026-07-01",
+    endDate: "2026-07-31",
+    displayOrder: 1,
+  }),
+  makeBatch({
+    id: "batch-manual",
+    name: "Admin Override",
+    startDate: "2025-01-01",
+    endDate: "2025-01-31",
+    status: "Open" as Batch["status"],
+    isAutoScheduled: false,
+    isActive: true,
+    displayOrder: 2,
+    ...overrides,
+  }),
+];
 const manualOverrideState = getHomepageOrderGatewayState(
-  [
-    makeBatch({
-      id: "batch-auto",
-      name: "Automatic Batch",
-      displayOrder: 1,
-    }),
-    makeBatch({
-      id: "batch-manual",
-      name: "Admin Override",
-      startDate: "2025-01-01",
-      endDate: "2025-01-31",
-      status: "Open" as Batch["status"],
-      isAutoScheduled: false,
-      isActive: true,
-      displayOrder: 2,
-    }),
-  ],
+  manualOverrideBatches({ keepOpenAfterEndDate: true }),
   closingDay,
 );
 assert.equal(
   manualOverrideState.joinBatch?.name,
   "Admin Override",
-  "An active manual override must take precedence over an automatic batch",
+  "An active manual override kept open after its end date must take precedence over an automatic batch",
+);
+// MANUAL + OPEN alone no longer reopens a batch past its end date (#785):
+// the homepage never offers a batch the Studio, cart and server call closed.
+assert.equal(
+  getHomepageOrderGatewayState(manualOverrideBatches(), closingDay).joinBatch
+    ?.name,
+  "Automatic Batch",
+  "A manual OPEN batch past its end date without the keep-open toggle is not the homepage batch",
 );
 
 const inactiveManualState = getHomepageOrderGatewayState(

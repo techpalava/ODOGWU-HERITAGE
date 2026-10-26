@@ -11,6 +11,7 @@ import {
 import type { Batch } from "../types";
 import { HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID } from "../utils/footerBatchLink";
 import {
+  getHomepageJoinBatchDeadlineLabel,
   getHomepageJoinBatchDeadlinePill,
   getHomepageJoinBatchDescription,
   getHomepageJoinBatchLabel,
@@ -53,6 +54,8 @@ export type HomepageJoinSlot =
       text: string;
       closed: boolean;
       deadlinePill: string | null;
+      /** Full pill text: "Closes …", "Open until …" or "Open · ongoing". */
+      deadlineLabel: string | null;
       label: string;
     };
 
@@ -76,6 +79,7 @@ export function resolveHomepageJoinSlot(
       text: description.text,
       closed: description.closed,
       deadlinePill: getHomepageJoinBatchDeadlinePill(joinBatch, now),
+      deadlineLabel: getHomepageJoinBatchDeadlineLabel(joinBatch, now),
       label: getJoinCurrentBatchButtonLabel(joinBatch.name, false),
     };
   }
@@ -91,6 +95,7 @@ export function resolveHomepageJoinSlot(
     text: view.text,
     closed: false,
     deadlinePill: view.deadlinePill,
+    deadlineLabel: view.deadlineLabel,
     label: getJoinCurrentBatchButtonLabel(view.name, false),
   };
 }
@@ -248,7 +253,7 @@ export default function HomepageOrderGateway({
             >
               {joinSlot.text}
             </p>
-            {joinSlot.deadlinePill && (
+            {joinSlot.deadlineLabel && (
               <p
                 data-join-batch-deadline
                 className="mt-4 inline-flex w-fit items-center gap-2 rounded-full bg-heritage-green px-3.5 py-1.5 text-[13px] font-semibold text-heritage-cream"
@@ -258,12 +263,12 @@ export default function HomepageOrderGateway({
                   aria-hidden="true"
                   className="shrink-0 text-heritage-gold"
                 />
-                Closes {joinSlot.deadlinePill}
+                {joinSlot.deadlineLabel}
               </p>
             )}
             <ul
               className={
-                joinSlot.deadlinePill ? "mt-3 flex flex-wrap gap-2" : chipListClassName
+                joinSlot.deadlineLabel ? "mt-3 flex flex-wrap gap-2" : chipListClassName
               }
             >
               {groupMetaChips.map((chip) => (

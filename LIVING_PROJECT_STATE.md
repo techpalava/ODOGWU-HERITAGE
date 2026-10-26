@@ -423,6 +423,24 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
+- Open PR to main, not released: **Batch "Keep open after end date (ongoing)" toggle** (Xavier, 2026-10-26, after
+  Avatars showed "This batch is closed" in the Studio while admin showed MANUAL / OPEN past its 2026-09-30 end date).
+  Root cause: `BatchBusinessRules.canAcceptOrders` let MANUAL + OPEN ignore the end date, but
+  `isCommunityBatchClosedForOrders` (#785) re-checked the end date, so the homepage, footer and admin save message
+  offered a batch the Studio, cart and server called closed. Decisions: a passed end date closes ordering in AUTO
+  and MANUAL alike unless the new per-batch `keepOpenAfterEndDate` toggle is on; optional `ongoingUntil`
+  (YYYY-MM-DD, blank = until an admin closes it, closes at end of day +01:00, never before `endDate`). The toggle
+  overrides only the date check (allowOrders, capacity, manual non-open and production statuses still close).
+  One rule: `getBatchDateWindow` (`src/utils/batchDateRange.ts`) inside `BatchBusinessRules`, read through
+  `getBatchOrderWindow` (`src/utils/batchOrderWindow.ts`); `communityBatchFromRecord` reads both fields so the server
+  gate agrees. Customers: Step 1 shows the closed notice (`CommunityBatchClosedNotice`) with "Join next open batch:
+  {name}" (the current registration batch, only by choice) and "Start an individual order instead", and Continue to
+  Fabric is disabled. Upcoming batches whose window has passed are no longer offered. Homepage Join pill reads
+  "Open · ongoing" / "Open until {date}" / "Closes {date}". Admin Edit Timeline has the toggle and an "Open until
+  (optional)" date; the status column shows what customers see (for example
+  "OPEN (expired 30 Sept 2026 — customers see closed)" or "OPEN · ongoing"). No Firestore writes; Xavier fixes the
+  batch 7/8 timelines and the Avatars "Sep 31" duration in admin. Tests: `npm run test:batch-order-window`.
+
 - Pending follow-up to #1096: show the same per-garment pictures and the more detailed order layout
   in the cart (`FutureOrderV2CartPayPanel`) and the dashboard order dialog / pay section
   (`CustomerFutureOrderV2Details`). Xavier kept these out of scope for #1096, so wait for his go-ahead.

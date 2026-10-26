@@ -2030,6 +2030,7 @@ export default function App() {
                 onAddToCart={handleAddToCart}
                 openCartDrawer={() => setIsCartOpen(true)}
                 onStartFreshIndividualOrder={handleRequestFreshIndividualOrder}
+                onJoinCommunityBatch={handleJoinCommunityBatch}
                 currentUser={currentUser}
                 orderContext={orderContext}
                 styles={styles}

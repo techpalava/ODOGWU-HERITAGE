@@ -1,6 +1,9 @@
 import { Batch, OrderContext } from "../types.js";
 import { CapacityService } from "../services/CapacityService.js";
-import { parseBatchDateBoundary } from "../utils/batchDateRange.js";
+import {
+  getBatchDateWindow,
+  parseBatchDateBoundary,
+} from "../utils/batchDateRange.js";
 import {
   normalizeBatchStatus,
   PRODUCTION_OR_CLOSED_STATUSES,
@@ -44,6 +47,8 @@ export class BatchBusinessRules {
     let allowOrders = true;
     let status = "";
     let isManualSchedule = false;
+    let keepOpenAfterEndDate = false;
+    let ongoingUntil: string | undefined;
     const isOrderContext = "expectedParticipants" in data;
     if (isOrderContext) {
       const ctx = data as OrderContext;
@@ -51,6 +56,8 @@ export class BatchBusinessRules {
       startDateStr = ""; 
       allowOrders = ctx.allowOrders !== false;
       status = ctx.batchStatus || "";
+      keepOpenAfterEndDate = ctx.keepOpenAfterEndDate === true;
+      ongoingUntil = ctx.ongoingUntil;
     } else {
       const batch = data as Batch;
       endDateStr = batch.endDate || "";
@@ -58,7 +65,13 @@ export class BatchBusinessRules {
       allowOrders = batch.allowOrders !== false;
       status = normalizeBatchStatus(batch.status) || "";
       isManualSchedule = batch.isAutoScheduled === false;
+      keepOpenAfterEndDate = batch.keepOpenAfterEndDate === true;
+      ongoingUntil = batch.ongoingUntil;
     }
+    const dateWindow = getBatchDateWindow(
+      { endDate: endDateStr, keepOpenAfterEndDate, ongoingUntil },
+      now,
+    );
 
     const capacitySummary = CapacityService.getCapacitySummary(data);
     const remainingCapacity = capacitySummary.remainingGarments;
@@ -80,8 +93,9 @@ export class BatchBusinessRules {
     const isManualNonJoinableStatus =
       isManualSchedule && !isManualOpenOverride;
     const startDate = parseBatchDateBoundary(startDateStr, "start");
-    const endDate = parseBatchDateBoundary(endDateStr, "end");
-    const isTimeUp = !isManualOpenOverride && Boolean(endDate && now > endDate);
+    // A passed end date closes ordering in AUTO and MANUAL alike (#785). Only
+    // the per-batch keep-open toggle moves that boundary (getBatchDateWindow).
+    const isTimeUp = !dateWindow.open;
     const isFull = capacitySummary.capacityStatus === "FULL" || capacitySummary.capacityStatus === "OVERCAPACITY";
 
     let timeDiff = 0;
@@ -90,7 +104,7 @@ export class BatchBusinessRules {
     let minutesRemaining = 0;
 
     if (endDateStr) {
-      const resolvedEndDate = parseBatchDateBoundary(endDateStr, "end");
+      const resolvedEndDate = dateWindow.effectiveCloseDate;
       timeDiff = resolvedEndDate
         ? resolvedEndDate.getTime() - now.getTime()
         : 0;
