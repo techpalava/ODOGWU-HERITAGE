@@ -436,7 +436,10 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
   gate agrees. Customers: Step 1 shows the closed notice (`CommunityBatchClosedNotice`) with "Join next open batch:
   {name}" (the current registration batch, only by choice) and "Start an individual order instead", and Continue to
   Fabric is disabled. Upcoming batches whose window has passed are no longer offered. Homepage Join pill reads
-  "Open · ongoing" / "Open until {date}" / "Closes {date}". Admin Edit Timeline has the toggle and an "Open until
+  "Open · ongoing" / "Open until {date}" / "Closes {date}". While the current batch is closed by its date
+  (`getHomepageClosedCurrentBatch`), the homepage keeps its Join card marked closed ("The Avatars batch closed on
+  30 Sept 2026.") with a "Join next open batch: {name}" button only when `getNextOpenCommunityBatch` finds one
+  (no button otherwise); the footer link then points at the homepage order section. Admin Edit Timeline has the toggle and an "Open until
   (optional)" date; the status column shows what customers see (for example
   "OPEN (expired 30 Sept 2026 — customers see closed)" or "OPEN · ongoing"). No Firestore writes; Xavier fixes the
   batch 7/8 timelines and the Avatars "Sep 31" duration in admin. Tests: `npm run test:batch-order-window`.

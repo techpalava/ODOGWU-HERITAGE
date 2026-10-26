@@ -56,8 +56,21 @@ export type HomepageJoinSlot =
       deadlinePill: string | null;
       /** Full pill text: "Closes …", "Open until …" or "Open · ongoing". */
       deadlineLabel: string | null;
-      label: string;
+      /** Button text, or null for a closed card with no next open batch. */
+      label: string | null;
+      /** Batch the button joins (live card only). */
+      joinTarget: Batch | null;
     };
+
+export interface HomepageClosedJoinBatch {
+  /** Current batch whose end date closed it (getHomepageClosedCurrentBatch). */
+  closedBatch?: Batch | null;
+  /** Next truly joinable batch (getNextOpenCommunityBatch), or null. */
+  nextOpenBatch?: Batch | null;
+}
+
+export const getJoinNextOpenBatchButtonLabel = (batchName: string): string =>
+  `Join next open batch: ${batchName}`;
 
 /**
  * Only the Join card depends on batch data. While the first batches snapshot
@@ -69,18 +82,31 @@ export function resolveHomepageJoinSlot(
   isLoading: boolean,
   provisionalJoin: HomepageJoinBatchCacheEntry | null | undefined,
   now: Date = new Date(),
+  { closedBatch = null, nextOpenBatch = null }: HomepageClosedJoinBatch = {},
 ): HomepageJoinSlot {
   if (!isLoading) {
-    if (!joinBatch) return { kind: "hidden" };
-    const description = getHomepageJoinBatchDescription(joinBatch, now);
+    // A closed current batch keeps its card; it never moves the customer.
+    const cardBatch = closedBatch ?? joinBatch;
+    if (!cardBatch) return { kind: "hidden" };
+    const description = getHomepageJoinBatchDescription(cardBatch, now);
+    const nextBatch =
+      description.closed && nextOpenBatch && nextOpenBatch.id !== cardBatch.id
+        ? nextOpenBatch
+        : null;
+    const joinTarget = description.closed ? nextBatch : cardBatch;
     return {
       kind: "live",
-      name: joinBatch.name?.trim() || undefined,
+      name: cardBatch.name?.trim() || undefined,
       text: description.text,
       closed: description.closed,
-      deadlinePill: getHomepageJoinBatchDeadlinePill(joinBatch, now),
-      deadlineLabel: getHomepageJoinBatchDeadlineLabel(joinBatch, now),
-      label: getJoinCurrentBatchButtonLabel(joinBatch.name, false),
+      deadlinePill: getHomepageJoinBatchDeadlinePill(cardBatch, now),
+      deadlineLabel: getHomepageJoinBatchDeadlineLabel(cardBatch, now),
+      label: description.closed
+        ? nextBatch
+          ? getJoinNextOpenBatchButtonLabel(nextBatch.name)
+          : null
+        : getJoinCurrentBatchButtonLabel(cardBatch.name, false),
+      joinTarget,
     };
   }
   if (provisionalJoin?.kind === "none") return { kind: "hidden" };
@@ -97,6 +123,7 @@ export function resolveHomepageJoinSlot(
     deadlinePill: view.deadlinePill,
     deadlineLabel: view.deadlineLabel,
     label: getJoinCurrentBatchButtonLabel(view.name, false),
+    joinTarget: null,
   };
 }
 
@@ -146,8 +173,14 @@ export default function HomepageOrderGateway({
   onManageSourcingBatches,
   provisionalJoin = null,
 }: HomepageOrderGatewayProps) {
-  const { joinBatch, minimumGarments } = state;
-  const joinSlot = resolveHomepageJoinSlot(joinBatch, isLoading, provisionalJoin);
+  const { joinBatch, minimumGarments, closedBatch = null, nextOpenBatch = null } = state;
+  const joinSlot = resolveHomepageJoinSlot(
+    joinBatch,
+    isLoading,
+    provisionalJoin,
+    new Date(),
+    { closedBatch, nextOpenBatch },
+  );
   const groupMetaChips = splitMeta(
     `Group minimum: ${minimumGarments} garments total | Shared shipping`,
   );
@@ -279,23 +312,27 @@ export default function HomepageOrderGateway({
             </ul>
 
             <div className={ctaSpacerClassName} />
-            <button
-              id="btn-quick-join-cohort"
-              type="button"
-              onClick={
-                joinSlot.kind === "live" && !isLoading && joinBatch
-                  ? () => onJoinBatch(joinBatch)
-                  : undefined
-              }
-              disabled={joinSlot.kind !== "live" || isLoading}
-              aria-busy={joinSlot.kind === "cached" ? true : undefined}
-              className={`${
-                joinSlot.closed ? primaryCtaClassName : featuredCtaClassName
-              } disabled:cursor-wait disabled:opacity-80`}
-            >
-              {joinSlot.label}
-              <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
-            </button>
+            {joinSlot.label && (
+              <button
+                id="btn-quick-join-cohort"
+                type="button"
+                data-join-next-open-batch={joinSlot.closed ? "true" : undefined}
+                onClick={(() => {
+                  const target = joinSlot.joinTarget;
+                  return joinSlot.kind === "live" && !isLoading && target
+                    ? () => onJoinBatch(target)
+                    : undefined;
+                })()}
+                disabled={joinSlot.kind !== "live" || isLoading}
+                aria-busy={joinSlot.kind === "cached" ? true : undefined}
+                className={`${
+                  joinSlot.closed ? primaryCtaClassName : featuredCtaClassName
+                } disabled:cursor-wait disabled:opacity-80`}
+              >
+                {joinSlot.label}
+                <ArrowRight size={16} aria-hidden="true" className="shrink-0" />
+              </button>
+            )}
           </article>
         )}
         <article className={orderCardClassName}>

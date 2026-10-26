@@ -40,6 +40,10 @@ interface HomeViewProps {
   onResumeUnfinishedOrder?: () => void;
   onJoinCommunityBatch: (batch: Batch) => void;
   joinBatch?: Batch | null;
+  /** Current batch closed by its end date; its Join card stays, marked closed. */
+  closedJoinBatch?: Batch | null;
+  /** Target of the closed card's "Join next open batch" button. */
+  nextOpenBatch?: Batch | null;
   onCreatePrivateBatch: () => void;
   onManageSourcingBatches?: () => void;
   communityPhotos?: CommunityPhoto[];
@@ -56,6 +60,8 @@ export default function HomeView({
   onResumeUnfinishedOrder,
   onJoinCommunityBatch,
   joinBatch,
+  closedJoinBatch = null,
+  nextOpenBatch = null,
   onCreatePrivateBatch,
   onManageSourcingBatches,
   communityPhotos,
@@ -87,6 +93,8 @@ export default function HomeView({
   const orderGatewayState: HomepageOrderGatewayState = {
     joinBatch: joinBatch ?? null,
     minimumGarments: BATCH_MINIMUM_GARMENTS,
+    closedBatch: closedJoinBatch,
+    nextOpenBatch,
   };
   const isBatchGatewayLoading = !hasLoadedBatches;
   const canJoinActiveBatch = Boolean(orderGatewayState.joinBatch);
@@ -101,8 +109,9 @@ export default function HomeView({
   );
   useEffect(() => {
     if (!hasLoadedBatches) return;
-    writeHomepageJoinBatchCache(joinBatch ?? null);
-  }, [hasLoadedBatches, joinBatch]);
+    // A closed current batch caches as "none", as before.
+    writeHomepageJoinBatchCache(closedJoinBatch ?? joinBatch ?? null);
+  }, [hasLoadedBatches, joinBatch, closedJoinBatch]);
 
   // While batches load the other order options already work, so the hero
   // button leads to them instead of showing a disabled loading label.

@@ -8,6 +8,7 @@ import {
 } from "./src/utils/batchOrderWindow";
 import {
   getCurrentRegistrationBatch,
+  getHomepageClosedCurrentBatch,
   getNextOpenCommunityBatch,
   getNextUpcomingBatches,
   processDynamicBatches,
@@ -30,6 +31,7 @@ import {
 } from "./src/utils/homepageJoinBatchCache";
 import { getAdminBatchOrderState } from "./src/utils/adminBatchOrderState";
 import { resolveFooterBatchLink } from "./src/utils/footerBatchLink";
+import { resolveHomepageJoinSlot } from "./src/components/HomepageOrderGateway";
 
 // 2026-10-26 12:00 WAT, the day Avatars showed "This batch is closed".
 const NOW = new Date("2026-10-26T12:00:00.000+01:00");
@@ -276,6 +278,77 @@ const firestoreBatches = (avatarsOverrides: Record<string, unknown> = {}) => [
       NOW,
     )?.deadlineLabel,
     "Closes 16 Nov 2026",
+  );
+}
+
+// --- Homepage keeps a closed Join card for the current batch ---------------
+{
+  // Today's data: Avatars closed by its end date and nothing else open.
+  const batches = firestoreBatches();
+  assert.equal(getHomepageClosedCurrentBatch(batches, NOW)?.id, "batch-6");
+  const state = getHomepageOrderGatewayState(batches, NOW);
+  assert.equal(state.closedBatch?.id, "batch-6");
+  assert.equal(state.nextOpenBatch, null);
+  assert.equal(state.joinBatch, null);
+  const slot = resolveHomepageJoinSlot(state.joinBatch, false, null, NOW, state);
+  assert.equal(slot.kind, "live");
+  if (slot.kind === "live") {
+    assert.equal(slot.name, "Avatars");
+    assert.equal(slot.closed, true);
+    assert.match(slot.text, /^The Avatars batch closed on 30 Sept? 2026\./);
+    assert.equal(slot.label, null, "No next open batch: no join button");
+    assert.equal(slot.joinTarget, null);
+  }
+
+  // Musketeers opened by the admin: the closed card offers it, never moves anyone.
+  const withMusketeers = batches.map((b) =>
+    b.id === "batch-8" ? { ...b, status: "OPEN", isActive: true } as Batch : b,
+  );
+  const nextState = getHomepageOrderGatewayState(withMusketeers, NOW);
+  assert.equal(nextState.closedBatch?.id, "batch-6");
+  assert.equal(nextState.nextOpenBatch?.id, "batch-8");
+  const nextSlot = resolveHomepageJoinSlot(nextState.joinBatch, false, null, NOW, nextState);
+  assert.equal(nextSlot.kind, "live");
+  if (nextSlot.kind === "live") {
+    assert.equal(nextSlot.name, "Avatars");
+    assert.equal(nextSlot.closed, true);
+    assert.equal(nextSlot.label, "Join next open batch: Musketeers");
+    assert.equal(nextSlot.joinTarget?.id, "batch-8");
+  }
+  // The next batch is one the join flow accepts.
+  assert.ok(resolveHomepageCommunityBatchEntry(withMusketeers, "batch-8", "Eindhoven", NOW));
+
+  // A stale OPEN batch whose window passed is never offered as next.
+  const stale = batches.map((b) =>
+    b.id === "batch-7" ? { ...b, status: "OPEN" } as Batch : b,
+  );
+  assert.equal(getHomepageOrderGatewayState(stale, NOW).nextOpenBatch, null);
+
+  // Kept open (ongoing): no closed card, Avatars is the open Join card.
+  const ongoing = getHomepageOrderGatewayState(
+    firestoreBatches({ keepOpenAfterEndDate: true }),
+    NOW,
+  );
+  assert.equal(ongoing.closedBatch, null);
+  assert.equal(ongoing.joinBatch?.id, "batch-6");
+  // "Open until" date passed: closed card dated to that day.
+  const untilPassed = firestoreBatches({ keepOpenAfterEndDate: true, ongoingUntil: "2026-10-20" });
+  const untilState = getHomepageOrderGatewayState(untilPassed, NOW);
+  assert.equal(untilState.closedBatch?.id, "batch-6");
+  assert.match(
+    getHomepageJoinBatchDescription(untilState.closedBatch, NOW).text,
+    /^The Avatars batch closed on 20 Oct 2026\./,
+  );
+  // Closed by orders being turned off, not by its date: no closed card.
+  assert.equal(getHomepageClosedCurrentBatch(firestoreBatches({ allowOrders: false }), NOW), undefined);
+  // Inactive manual batch past its dates is not the current batch.
+  assert.equal(getHomepageClosedCurrentBatch(firestoreBatches({ isActive: false }), NOW), undefined);
+
+  // Footer: App passes no join batch while the closed card shows, so the
+  // footer link points at the homepage order section.
+  assert.deepEqual(
+    resolveFooterBatchLink({ hasLoadedBatches: true, joinBatch: null }).target,
+    { kind: "home-order-gateway" },
   );
 }
 

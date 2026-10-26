@@ -136,21 +136,23 @@ export function getNextUpcomingBatches(
   return getUpcomingBatchesWithLiveWindow(batches, now).slice(0, count);
 }
 
-/**
- * Public community batches a customer can join right now, best first: the
- * manual active batch, then the active batch, then any other open batch.
- * Joinability is BatchBusinessRules.canAcceptOrders (via getBatchOrderWindow
- * elsewhere), so a batch the Studio calls closed is never offered here.
- */
-export function getJoinableRegistrationBatches(
+type RegistrationBatchFilter = "joinable" | "ignore_end_date";
+
+function rankRegistrationBatches(
   batches: Batch[],
-  now: Date = new Date(),
+  now: Date,
+  filter: RegistrationBatchFilter,
 ): Batch[] {
   const processedBatches = processDynamicBatches(batches, now);
 
-  const joinableBatches = processedBatches.filter((batch) => {
+  const candidates = processedBatches.filter((batch) => {
     const status = normalizeBatchStatus(batch.status);
-    const eligibility = BatchBusinessRules.canAcceptOrders(batch, now);
+    const eligibility = BatchBusinessRules.canAcceptOrders(
+      filter === "ignore_end_date"
+        ? { ...batch, keepOpenAfterEndDate: true, ongoingUntil: undefined }
+        : batch,
+      now,
+    );
     const isEnabledManualOverride =
       batch.isAutoScheduled !== false || batch.isActive === true;
 
@@ -163,7 +165,7 @@ export function getJoinableRegistrationBatches(
     );
   });
 
-  return joinableBatches.sort((a, b) => {
+  return candidates.sort((a, b) => {
     const priority = (batch: Batch) => {
       if (batch.isAutoScheduled === false && batch.isActive) return 0;
       if (batch.isActive) return 1;
@@ -171,6 +173,37 @@ export function getJoinableRegistrationBatches(
     };
     return priority(a) - priority(b);
   });
+}
+
+/**
+ * Public community batches a customer can join right now, best first: the
+ * manual active batch, then the active batch, then any other open batch.
+ * Joinability is BatchBusinessRules.canAcceptOrders (via getBatchOrderWindow
+ * elsewhere), so a batch the Studio calls closed is never offered here.
+ */
+export function getJoinableRegistrationBatches(
+  batches: Batch[],
+  now: Date = new Date(),
+): Batch[] {
+  return rankRegistrationBatches(batches, now, "joinable");
+}
+
+/**
+ * The homepage's current community batch when only its end date (or its
+ * keep-open "Open until" date) has closed it: the batch that would be the
+ * current registration batch if the date had not passed. The homepage keeps
+ * a closed Join card for it. Undefined when the top batch is open, or when
+ * anything other than the date closes it (status, allowOrders, capacity).
+ */
+export function getHomepageClosedCurrentBatch(
+  batches: Batch[],
+  now: Date = new Date(),
+): Batch | undefined {
+  const current = rankRegistrationBatches(batches, now, "ignore_end_date")[0];
+  if (!current) return undefined;
+  return BatchBusinessRules.canAcceptOrders(current, now).canAcceptOrders
+    ? undefined
+    : current;
 }
 
 export function getCurrentRegistrationBatch(

@@ -1,6 +1,10 @@
 import type { Batch, OrderContext } from "../types";
 import { CapacityService } from "../services/CapacityService";
-import { getCurrentRegistrationBatch } from "./batchUtils";
+import {
+  getCurrentRegistrationBatch,
+  getHomepageClosedCurrentBatch,
+  getNextOpenCommunityBatch,
+} from "./batchUtils";
 import { BATCH_MINIMUM_GARMENTS } from "./shippingPricing";
 import { isCommunityBatchClosedForOrders } from "./communityBatchOrderClosure";
 import {
@@ -9,8 +13,16 @@ import {
 } from "./batchOrderWindow";
 
 export interface HomepageOrderGatewayState {
+  /** The batch a customer can join now (getCurrentRegistrationBatch). */
   joinBatch: Batch | null;
   minimumGarments: number;
+  /**
+   * The current batch when its end date has closed it
+   * (getHomepageClosedCurrentBatch). The Join card then shows it as closed.
+   */
+  closedBatch?: Batch | null;
+  /** The "Join next open batch" target for a closed card (getNextOpenCommunityBatch). */
+  nextOpenBatch?: Batch | null;
 }
 
 export interface HomepageCommunityBatchEntry {
@@ -51,11 +63,6 @@ export const formatHomepageBatchDeadline = (
   }).format(date);
 };
 
-export interface HomepageJoinBatchDescription {
-  closed: boolean;
-  text: string;
-}
-
 /** "Open · ongoing" pill/label for a batch kept open with no end date. */
 export const HOMEPAGE_ONGOING_BATCH_LABEL = "Open \u00b7 ongoing" as const;
 
@@ -81,17 +88,34 @@ export function getHomepageJoinBatchDeadline(
   now: Date = new Date(),
 ): HomepageJoinBatchDeadline | null {
   if (!batch || isCommunityBatchClosedForOrders(batch, now)) return null;
-  const window = getBatchOrderWindow(batch, now);
-  if (!window.keepOpenAfterEndDate) {
+  const orderWindow = getBatchOrderWindow(batch, now);
+  if (!orderWindow.keepOpenAfterEndDate) {
     return batch.endDate ? { kind: "closes", date: batch.endDate } : { kind: "none" };
   }
-  if (!window.effectiveCloseDate) {
-    return window.endDate ? { kind: "ongoing" } : { kind: "none" };
+  if (!orderWindow.effectiveCloseDate) {
+    return orderWindow.endDate ? { kind: "ongoing" } : { kind: "none" };
   }
-  const date = window.ongoingUntil && window.ongoing
-    ? window.ongoingUntil
-    : toDateOnly(window.effectiveCloseDate);
-  return window.ongoing ? { kind: "open_until", date } : { kind: "closes", date };
+  const date = orderWindow.ongoingUntil && orderWindow.ongoing
+    ? orderWindow.ongoingUntil
+    : toDateOnly(orderWindow.effectiveCloseDate);
+  return orderWindow.ongoing ? { kind: "open_until", date } : { kind: "closes", date };
+}
+
+/**
+ * "30 Sept 2026": the day a batch's dates closed ordering (its end date, or
+ * its keep-open "Open until" date), or null when something else closed it.
+ */
+export function getHomepageBatchClosedOnDate(
+  batch: Batch,
+  now: Date = new Date(),
+): string | null {
+  const orderWindow = getBatchOrderWindow(batch, now);
+  if (orderWindow.open) return null;
+  if (orderWindow.dateReason !== "ended" && orderWindow.dateReason !== "ongoing_ended") {
+    return null;
+  }
+  if (!orderWindow.effectiveCloseDate) return null;
+  return formatHomepageBatchDeadline(toDateOnly(orderWindow.effectiveCloseDate), "short");
 }
 
 export interface HomepageJoinBatchDescription {
@@ -113,11 +137,15 @@ export function getHomepageJoinBatchDescription(
   const name = batch?.name?.trim();
   const deadline = getHomepageJoinBatchDeadline(batch, now);
   if (!batch || !deadline) {
+    const closedOn = batch ? getHomepageBatchClosedOnDate(batch, now) : null;
+    const subject = name ? `The ${name} batch` : "This community batch";
     return {
       closed: true,
       text: `${
-        name ? `The ${name} batch` : "This community batch"
-      } is closed and is no longer accepting new orders. You can still start an individual order or create a private batch.`,
+        closedOn
+          ? `${subject} closed on ${closedOn}.`
+          : `${subject} is closed and is no longer accepting new orders.`
+      } You can still start an individual order or create a private batch.`,
     };
   }
   return { closed: false, text: getHomepageJoinBatchDeadlineText(deadline) };
@@ -204,9 +232,14 @@ export function getHomepageOrderGatewayState(
   batches: Batch[],
   now: Date = new Date(),
 ): HomepageOrderGatewayState {
+  const closedBatch = getHomepageClosedCurrentBatch(batches, now) || null;
   return {
     joinBatch: getCurrentRegistrationBatch(batches, now) || null,
     minimumGarments: BATCH_MINIMUM_GARMENTS,
+    closedBatch,
+    nextOpenBatch: closedBatch
+      ? getNextOpenCommunityBatch(batches, closedBatch.id, now) || null
+      : null,
   };
 }
 
