@@ -491,7 +491,13 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.match(String(chipRowParts[0]!.props.className), /items-center/);
   assert.match(String(chipRowParts[1]!.props.className), /flex-wrap/);
   assert.match(String(chipRowParts[1]!.props.className), /justify-start/);
-  assert.match(String(chipColumn.props.className), /sm:max-w-\[60%\]/);
+  // The chips take whatever width the heading and hint do not need (no hard
+  // cap that wraps chips early); the heading column shrinks to its content.
+  assert.doesNotMatch(String(chipColumn.props.className), /max-w-/);
+  assert.match(String(chipColumn.props.className), /sm:flex-1/);
+  assert.match(String(chipColumn.props.className), /min-w-0/);
+  assert.match(String(mainColumn.props.className), /sm:flex-none/);
+  assert.match(String(mainColumn.props.className), /sm:max-w-\[50%\]/);
   assert.match(textContent(chipColumn), /^Then assign:/);
   assert.equal(chips(chipColumn).length, 2, "chips live in the right column");
   const chipNodes = chips(card!);

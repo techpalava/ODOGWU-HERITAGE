@@ -3000,7 +3000,7 @@ export const DormantFutureFabricStep = ({
       </>
     );
     const chipClass = (status: FabricGuideStep["status"]) =>
-      `inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-2.5 py-0.5 text-left text-[11px] leading-tight break-words transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+      `inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-left text-[11px] leading-tight break-words transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
         status === "done"
           ? "border-emerald-300 bg-emerald-50 font-medium text-emerald-700 focus-visible:ring-heritage-gold"
           : status === "current"
@@ -3085,7 +3085,7 @@ export const DormantFutureFabricStep = ({
           className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4"
           data-fabric-guide-group-layout="two-column"
         >
-          <div className="min-w-0 sm:flex-1" data-fabric-guide-group-main="true">
+          <div className="min-w-0 sm:max-w-[50%] sm:flex-none" data-fabric-guide-group-main="true">
             {chooseInHeading && chooseStep ? (
               <span
                 className="block"
@@ -3119,7 +3119,7 @@ export const DormantFutureFabricStep = ({
           </div>
           {assignSteps.length > 0 ? (
             <div
-              className="mt-1 flex min-w-0 items-start gap-1.5 sm:mt-0 sm:max-w-[60%] sm:flex-none sm:justify-end"
+              className="mt-1 flex min-w-0 items-start gap-1 sm:mt-0 sm:flex-1 sm:justify-end"
               data-fabric-guide-group-chips="true"
             >
               {chooseInHeading && chooseStep && chooseStep.status !== "done" ? (
