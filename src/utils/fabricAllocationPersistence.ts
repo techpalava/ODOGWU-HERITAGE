@@ -20,6 +20,10 @@ import {
   isCanonicalPhysicalGarmentType,
   isCustomerSelectableGarmentType,
 } from "./garmentConstructionPricing.js";
+import {
+  getLengthVariantGarmentTypes,
+  isAdditionalKeyOfGarmentLengthVariant,
+} from "./garmentLengthVariant.js";
 
 type LowerGarmentType = "trousers" | "skirt";
 const GARMENT_TYPES: readonly FabricGarmentType[] = [
@@ -74,6 +78,11 @@ const normalizeAdditionalEligibilityRule = (
 type ReservedCanonicalOccurrenceIdentity = {
   sourceRole: FabricGarmentRole;
   garmentType: FabricGarmentType;
+  /**
+   * The key's type, plus its other length when it has one: Step 4 can switch a Standard/Long
+   * garment to the other length while its key keeps the type it was created as.
+   */
+  allowedGarmentTypes: readonly FabricGarmentType[];
   allowedCodes: readonly string[];
 };
 
@@ -97,13 +106,15 @@ const getReservedCanonicalOccurrenceIdentity = (
       return null;
     }
     const sequence = additionalMatch[2];
+    const allowedGarmentTypes = getLengthVariantGarmentTypes(garmentType);
     return {
       sourceRole: "additional",
       garmentType,
-      allowedCodes: [
-        `ADDITIONAL_${garmentType.toUpperCase()}`,
-        `ADDITIONAL_${garmentType.toUpperCase()}_${sequence}`,
-      ],
+      allowedGarmentTypes,
+      allowedCodes: allowedGarmentTypes.flatMap((type) => [
+        `ADDITIONAL_${type.toUpperCase()}`,
+        `ADDITIONAL_${type.toUpperCase()}_${sequence}`,
+      ]),
     };
   }
 
@@ -117,13 +128,15 @@ const getReservedCanonicalOccurrenceIdentity = (
     ) {
       return null;
     }
+    const allowedGarmentTypes = getLengthVariantGarmentTypes(garmentType);
     return {
       sourceRole: "main",
       garmentType,
-      allowedCodes: [
-        `BASE_${garmentType.toUpperCase()}`,
-        `STYLE_BASE_${garmentType.toUpperCase()}`,
-      ],
+      allowedGarmentTypes,
+      allowedCodes: allowedGarmentTypes.flatMap((type) => [
+        `BASE_${type.toUpperCase()}`,
+        `STYLE_BASE_${type.toUpperCase()}`,
+      ]),
     };
   }
 
@@ -150,7 +163,7 @@ const isCanonicalCatalogueAdditionalOccurrence = ({
   isCustomerSelectableGarmentType(garmentType) &&
   fabricUnits === FABRIC_GARMENT_CAPACITY_UNITS[garmentType] &&
   code === `ADDITIONAL_${garmentType.toUpperCase()}` &&
-  new RegExp(`^additional:${garmentType}:[1-9][0-9]*$`).test(garmentKey);
+  isAdditionalKeyOfGarmentLengthVariant(garmentKey, garmentType);
 
 /**
  * Reserved occurrence keys are complete identities. They always validate their
@@ -171,8 +184,8 @@ const hasCoherentCanonicalOccurrenceIdentity = ({
   }
   return (
     assignment.sourceRole === identity.sourceRole &&
-    assignment.garmentType === identity.garmentType &&
-    assignment.fabricUnits === FABRIC_GARMENT_CAPACITY_UNITS[identity.garmentType] &&
+    identity.allowedGarmentTypes.includes(assignment.garmentType) &&
+    assignment.fabricUnits === FABRIC_GARMENT_CAPACITY_UNITS[assignment.garmentType] &&
     identity.allowedCodes.includes(assignment.code)
   );
 };
