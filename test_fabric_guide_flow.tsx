@@ -478,8 +478,19 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.match(textContent(mainColumn), /Choose a fabric from the catalogue/);
   assert.match(textContent(mainColumn), /Choose a fabric for every selected garment\./);
   const chipColumn = layout.find((node) => node.props["data-fabric-guide-group-chips"] === "true");
-  assert.match(String(chipColumn.props.className), /flex-wrap/);
-  assert.match(String(chipColumn.props.className), /sm:justify-end/);
+  assert.match(String(chipColumn.props.className), /sm:justify-end/, "chip group sits right-aligned on sm+");
+  // Label inline before the first chip; it never wraps onto its own line, and
+  // wrapped chips line up under the first chip (their own wrapping list).
+  assert.doesNotMatch(String(chipColumn.props.className), /flex-wrap/);
+  const chipRowParts = chipColumn.children.filter(
+    (child): child is ReactTestInstance => typeof child !== "string",
+  );
+  assert.deepEqual(chipRowParts.map((part) => part.type), ["span", "ul"]);
+  assert.equal(chipRowParts[0]!.props["data-fabric-guide-chips-label"], "true");
+  assert.match(String(chipRowParts[0]!.props.className), /shrink-0/);
+  assert.match(String(chipRowParts[0]!.props.className), /items-center/);
+  assert.match(String(chipRowParts[1]!.props.className), /flex-wrap/);
+  assert.match(String(chipRowParts[1]!.props.className), /justify-start/);
   assert.match(String(chipColumn.props.className), /sm:max-w-\[60%\]/);
   assert.match(textContent(chipColumn), /^Then assign:/);
   assert.equal(chips(chipColumn).length, 2, "chips live in the right column");
