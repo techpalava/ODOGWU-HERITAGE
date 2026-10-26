@@ -99,7 +99,7 @@
     "test:future-order-payment-review-v2-handoff": "tsx test_future_order_payment_review_v2_handoff.tsx",
     "test:future-order-v2-persistence": "node scripts/tsxWithViteProductionFirebase.mjs test_future_order_v2_persistence.ts",
     "test:future-cart-order-occurrence-styles": "tsx test_future_cart_order_occurrence_styles.ts",
-    "test:future-payment-review": "tsx test_design_studio_future_payment_review.tsx",
+    "test:future-payment-review": "tsx test_design_studio_future_payment_review.tsx && node scripts/tsxWithViteProductionFirebase.mjs test_stage10_review_rebuild.tsx",
     "test:future-order-v2-stripe-payment": "tsx test_future_order_v2_stripe_payment.ts",
     "test:future-order-v2-pix-checkout": "node scripts/tsxWithViteProductionFirebase.mjs test_future_order_v2_pix_checkout.ts",
     "test:future-order-v2-paypal-payment": "tsx test_future_order_v2_paypal_payment.ts",
