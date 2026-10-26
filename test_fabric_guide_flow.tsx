@@ -481,7 +481,11 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.match(String(chipColumn.props.className), /sm:justify-end/, "chip group sits right-aligned on sm+");
   // Label inline before the first chip; it never wraps onto its own line, and
   // wrapped chips line up under the first chip (their own wrapping list).
-  assert.doesNotMatch(String(chipColumn.props.className), /flex-wrap/);
+  // Below sm the label and chips share one wrapping row (wrapped chips start
+  // under the label); from sm up the row does not wrap and the chip list wraps
+  // on its own, so wrapped chips line up under the first chip.
+  assert.match(String(chipColumn.props.className), /(^|\s)flex-wrap(\s|$)/);
+  assert.match(String(chipColumn.props.className), /sm:flex-nowrap/);
   const chipRowParts = chipColumn.children.filter(
     (child): child is ReactTestInstance => typeof child !== "string",
   );
@@ -489,8 +493,10 @@ const stepItems = (guide: ReactTestInstance) =>
   assert.equal(chipRowParts[0]!.props["data-fabric-guide-chips-label"], "true");
   assert.match(String(chipRowParts[0]!.props.className), /shrink-0/);
   assert.match(String(chipRowParts[0]!.props.className), /items-center/);
-  assert.match(String(chipRowParts[1]!.props.className), /flex-wrap/);
-  assert.match(String(chipRowParts[1]!.props.className), /justify-start/);
+  assert.match(String(chipRowParts[1]!.props.className), /(^|\s)contents(\s|$)/);
+  assert.match(String(chipRowParts[1]!.props.className), /sm:flex(\s|$)/);
+  assert.match(String(chipRowParts[1]!.props.className), /sm:flex-wrap/);
+  assert.match(String(chipRowParts[1]!.props.className), /sm:justify-start/);
   // The chips take whatever width the heading and hint do not need (no hard
   // cap that wraps chips early); the heading column shrinks to its content.
   assert.doesNotMatch(String(chipColumn.props.className), /max-w-/);

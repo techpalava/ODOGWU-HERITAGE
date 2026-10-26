@@ -3119,7 +3119,7 @@ export const DormantFutureFabricStep = ({
           </div>
           {assignSteps.length > 0 ? (
             <div
-              className="mt-1 flex min-w-0 items-start gap-1 sm:mt-0 sm:flex-1 sm:justify-end"
+              className="mt-1 flex min-w-0 flex-wrap items-start gap-1 sm:mt-0 sm:flex-1 sm:flex-nowrap sm:justify-end"
               data-fabric-guide-group-chips="true"
             >
               {chooseInHeading && chooseStep && chooseStep.status !== "done" ? (
@@ -3131,7 +3131,7 @@ export const DormantFutureFabricStep = ({
                 </span>
               ) : null}
               <ul
-                className="flex min-w-0 flex-wrap items-center justify-start gap-1"
+                className="contents sm:flex sm:min-w-0 sm:flex-wrap sm:items-center sm:justify-start sm:gap-1"
                 aria-label="Garments to assign fabric to"
               >
                 {chooseStep && !chooseInHeading
