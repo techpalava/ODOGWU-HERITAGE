@@ -474,8 +474,14 @@ import {
   createEmptyAdditionalGarmentConstructionState,
   reconcileAdditionalGarmentConstructionState,
   removeAdditionalGarmentConstruction,
-  selectAdditionalGarmentConstructionOption,
 } from "../utils/additionalGarmentConstructionState";
+import {
+  getBaseGarmentConstruction,
+  getStep1LengthSwitchNote,
+  parseBaseGarmentTypeFromKey,
+  resolveGarmentLengthSwitchLocks,
+} from "../utils/garmentLengthVariant";
+import { planGarmentLengthSwitch } from "../utils/garmentLengthSwitch";
 import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
@@ -1648,6 +1654,10 @@ export default function DesignStudioView({
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
   const [fabricAllocationState, setFabricAllocationState] =
     useState<FabricAllocationState>(FabricAllocationStateEngine.initialize());
+  const [
+    futureConstructionLengthSwitchBlock,
+    setFutureConstructionLengthSwitchBlock,
+  ] = useState<{ parentGarmentKey: string; message: string } | null>(null);
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
@@ -1785,6 +1795,21 @@ export default function DesignStudioView({
           additionalGarmentConstructionState:
             authoritativeAdditionalGarmentConstructionState,
         });
+  // Same-family rule for Step 4 length switches, judged over every garment in the order.
+  const futureConstructionLengthLocks = useMemo(
+    () =>
+      resolveGarmentLengthSwitchLocks(
+        authoritativePhysicalOccurrencesForDomain,
+      ),
+    [authoritativePhysicalOccurrencesForDomain],
+  );
+  // Step 1 keeps the card the customer picked and notes a Step 4 length switch under it.
+  const garmentTypeStepLengthSwitchNotes = Object.fromEntries(
+    garmentTypeSelection.garmentTypes.flatMap((garmentType) => {
+      const note = getStep1LengthSwitchNote(garmentTypeSelection, garmentType);
+      return note ? [[garmentType, note] as const] : [];
+    }),
+  ) as Partial<Record<CanonicalPhysicalGarmentType, string>>;
   const provisionalAdditionalGarmentKey =
     additionalGarmentFabricTransaction?.origin === "new_addition"
       ? additionalGarmentFabricTransaction.garmentKey
@@ -8850,41 +8875,84 @@ export default function DesignStudioView({
     selectionGroup: CustomDetailSelectionGroup,
     optionId: string,
   ) => {
-    if (parentGarmentKey.startsWith("base:")) {
-      setGarmentTypeSelection((current) => {
-        const resolution = current.constructionByGarment[garmentType];
-        if (!resolution) return current;
-        const selected = selectGarmentConstructionOption({
-          resolution,
-          selectionGroup,
-          optionId,
-          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        });
-        return selected.status === "selected"
-          ? {
-              ...current,
-              constructionByGarment: {
-                ...current.constructionByGarment,
-                [garmentType]: selected.resolution,
-              },
-            }
-          : current;
+    const isMainGarment = parentGarmentKey.startsWith("base:");
+    // Main garment constructions stay stored under the Step 1 card (the key's type).
+    const stepOneGarmentType =
+      parseBaseGarmentTypeFromKey(parentGarmentKey) ?? garmentType;
+    const currentResolution = isMainGarment
+      ? garmentTypeSelection.constructionByGarment[stepOneGarmentType]
+      : designSelections.additionalGarmentConstructions?.byGarmentKey[
+          parentGarmentKey
+        ];
+    if (!currentResolution) return;
+    const selected = selectGarmentConstructionOption({
+      resolution: currentResolution,
+      selectionGroup,
+      optionId,
+      normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+    });
+    if (selected.status !== "selected") return;
+
+    // Picking the other length's option switches the garment type in the order (Standard Shirt
+    // <-> Long Shirt, etc.). The garment keeps its key, so its custom details, measurements,
+    // design style and links stay attached; its type, price and fabric size follow the option.
+    const lengthSwitch = planGarmentLengthSwitch({
+      parentGarmentKey,
+      currentGarmentType: garmentType,
+      selectionGroup,
+      optionId,
+      lock: futureConstructionLengthLocks[parentGarmentKey],
+      fabricAllocationState,
+      fabrics,
+    });
+    if (lengthSwitch.status === "locked") return;
+    if (lengthSwitch.status === "blocked") {
+      // Keep the previous option; the step shows the message next to the Main Garment options.
+      setFutureConstructionLengthSwitchBlock({
+        parentGarmentKey,
+        message: lengthSwitch.message,
       });
       return;
     }
-    setDesignSelections((current) => ({
-      ...current,
-      additionalGarmentConstructions:
-        selectAdditionalGarmentConstructionOption({
-          state:
-            current.additionalGarmentConstructions ||
-            createEmptyAdditionalGarmentConstructionState(),
-          garmentKey: parentGarmentKey,
-          selectionGroup,
-          optionId,
-          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        }),
-    }));
+    setFutureConstructionLengthSwitchBlock((current) =>
+      current?.parentGarmentKey === parentGarmentKey ? null : current,
+    );
+    if (lengthSwitch.status === "switch") {
+      // Same update as the construction, so reconciliation never sees a fabric assignment whose
+      // size disagrees with the garment.
+      setFabricAllocationState(lengthSwitch.fabricAllocationState);
+    }
+    if (isMainGarment) {
+      setGarmentTypeSelection((current) => ({
+        ...current,
+        constructionByGarment: {
+          ...current.constructionByGarment,
+          [stepOneGarmentType]: selected.resolution,
+        },
+      }));
+      return;
+    }
+    const nextResolution =
+      lengthSwitch.status === "switch"
+        ? { ...selected.resolution, garmentType: lengthSwitch.toGarmentType }
+        : selected.resolution;
+    setDesignSelections((current) => {
+      const state =
+        current.additionalGarmentConstructions ||
+        createEmptyAdditionalGarmentConstructionState();
+      if (!state.byGarmentKey[parentGarmentKey]) return current;
+      return {
+        ...current,
+        additionalGarmentConstructions: {
+          ...state,
+          byGarmentKey: {
+            ...state.byGarmentKey,
+            // An added garment carries the garment type it now is.
+            [parentGarmentKey]: nextResolution,
+          },
+        },
+      };
+    });
   };
   const handleFutureMultiCustomDetailToggle = (
     garmentKey: string,
@@ -9360,7 +9428,10 @@ export default function DesignStudioView({
         : null;
     const sourceConstruction = sourceSubject
       ? sourceSubject.parentGarmentKey.startsWith("base:")
-        ? garmentTypeSelection.constructionByGarment[deferredPrompt.garmentType]
+        ? getBaseGarmentConstruction(
+            garmentTypeSelection,
+            sourceSubject.parentGarmentKey,
+          )
         : futureAdditionalConstructionReconciliation.state.byGarmentKey[
             sourceSubject.parentGarmentKey
           ]
@@ -9382,7 +9453,9 @@ export default function DesignStudioView({
     }
     const construction =
       choice.mode === "copy"
-        ? sourceConstruction!
+        ? // The source may be a main garment switched to this length in Step 4: its construction
+          // is stored under its Step 1 card, so name the added garment's own type.
+          { ...sourceConstruction!, garmentType: deferredPrompt.garmentType }
         : resolveGarmentConstructionPricing(
             deferredPrompt.garmentType,
             normalizedGarmentTypeCatalog,
@@ -10690,6 +10763,7 @@ export default function DesignStudioView({
             onContinue={handleOpenDormantFabricStage}
             continueDisabled={!garmentTypeStageCompletion.isComplete}
             stageBlockers={garmentTypeStageCompletion.blockers}
+            lengthSwitchNotes={garmentTypeStepLengthSwitchNotes}
           />
         </div>
       ) : futureStageId === "fabric" ? (
@@ -10903,6 +10977,9 @@ export default function DesignStudioView({
           onSingleSelect={handleFutureSingleCustomDetailSelect}
           onClearSelection={handleFutureCustomDetailClear}
           onConstructionSelect={handleFutureConstructionSelect}
+          constructionLengthLocks={futureConstructionLengthLocks}
+          constructionLengthSwitchBlock={futureConstructionLengthSwitchBlock}
+          onOpenFabricStep={() => navigateToFutureStage("fabric")}
           onToggleMultiSelect={handleFutureMultiCustomDetailToggle}
           onPersonalizedTextChange={handleFuturePersonalizedTextChange}
           onDecorativeFeatureEnable={handleFutureDecorativeFeatureEnable}

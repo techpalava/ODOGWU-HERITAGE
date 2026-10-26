@@ -16,6 +16,10 @@ import {
   resolveGarmentConstructionPricing,
 } from "./garmentConstructionPricing.js";
 import { isClothingPriceSelectionGroup } from "./catalogHelpers.js";
+import {
+  getLengthVariantGarmentTypes,
+  getOptionGarmentLength,
+} from "./garmentLengthVariant.js";
 
 const CANONICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
@@ -225,6 +229,14 @@ export const reconcileGarmentConstructionResolution = (
   previous: GarmentConstructionPricingResolution | undefined,
   canonicalDefault: GarmentConstructionPricingResolution,
   normalizedCustomDetailCatalog: readonly CustomDetailOption[],
+  options: {
+    /**
+     * Step 1 constructions are stored under the Step 1 card. A Long Skirt card whose garment was
+     * switched to Standard Length in Step 4 legitimately holds the standard skirt length.
+     * Callers that price a garment by its physical type (server recompute) leave this off.
+     */
+    readonly allowLengthSwitch?: boolean;
+  } = {},
 ): GarmentConstructionPricingResolution | null => {
   if (
     previous?.status !== "resolved" ||
@@ -241,7 +253,12 @@ export const reconcileGarmentConstructionResolution = (
     // caller applies the existing deterministic canonical-default repair.
     if (
       canonicalDefault.garmentType === "long_skirt" &&
-      component.optionId !== expected.optionId
+      component.optionId !== expected.optionId &&
+      !(
+        options.allowLengthSwitch &&
+        getOptionGarmentLength(component.selectionGroup, component.optionId) ===
+          "standard"
+      )
     ) {
       return [];
     }
@@ -347,6 +364,13 @@ export const reconcileGarmentTypeStepSelection = ({
         saved,
         canonicalDefault,
         normalizedCustomDetailCatalog,
+        {
+          // Same-family rule: with both a Standard and a Long card of this family in Step 1,
+          // neither may hold the other length, so a cross-length construction is repaired.
+          allowLengthSwitch: !getLengthVariantGarmentTypes(garmentType).every(
+            (variant) => (garmentTypes as readonly string[]).includes(variant),
+          ),
+        },
       ) || canonicalDefault;
     constructionByGarment[garmentType] = current;
 

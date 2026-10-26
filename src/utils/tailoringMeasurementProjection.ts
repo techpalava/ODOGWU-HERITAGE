@@ -44,11 +44,16 @@ const orderKeysForOccurrenceLabels = (garmentKeys: readonly string[]): string[] 
 /** Concise labels for the full physical key set. Ownership subsets reuse this map. */
 const conciseLabelsForGarmentKeys = (
   garmentKeys: readonly string[],
+  garmentTypeByKey: Readonly<Record<string, string>> = {},
 ): ReadonlyMap<string, string> => {
   const ordered = orderKeysForOccurrenceLabels(garmentKeys);
   const labels = projectOccurrenceDisplayLabels(
     ordered.flatMap((garmentKey) => {
-      const garmentType = garmentTypeFromKey(garmentKey);
+      // The order's garment type wins: a garment switched to its other length in Step 4 keeps
+      // the key it was created with.
+      const garmentType =
+        (garmentTypeByKey[garmentKey] as FabricGarmentType | undefined) ||
+        garmentTypeFromKey(garmentKey);
       return garmentType ? [{ garmentKey, garmentType }] : [];
     }),
   );
@@ -100,10 +105,13 @@ const readoutFromBag = ({
 /** Readable wearer → exact garment → method → values. Null when the payload is not a measurement document. */
 export const projectTailoringMeasurementReadout = (
   measurements: unknown,
+  /** Garment type per garment key from the order, when the caller has it. */
+  garmentTypeByKey: Readonly<Record<string, string>> = {},
 ): readonly TailoringWearerReadout[] | null => {
   if (isWearerOrderStateV2(measurements)) {
     const conciseLabels = conciseLabelsForGarmentKeys(
       Object.keys(measurements.assignmentByGarmentKey),
+      garmentTypeByKey,
     );
     return [...measurements.wearers]
       .sort((left, right) => left.presentationOrder - right.presentationOrder)
@@ -133,7 +141,7 @@ export const projectTailoringMeasurementReadout = (
       displayName: "You",
       measurement: measurements,
       garmentKeys,
-      conciseLabels: conciseLabelsForGarmentKeys(garmentKeys),
+      conciseLabels: conciseLabelsForGarmentKeys(garmentKeys, garmentTypeByKey),
     }),
   ];
 };

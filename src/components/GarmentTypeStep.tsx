@@ -197,6 +197,11 @@ export interface GarmentTypeStepProps {
    * When omitted, the step derives the same three codes from its own props.
    */
   stageBlockers?: readonly GarmentTypeStageBlocker[];
+  /**
+   * A note under a selected card whose garment was switched to its other length in Step 4
+   * (the card stays selected: it is what the customer picked here).
+   */
+  lengthSwitchNotes?: Readonly<Partial<Record<FabricGarmentType, string>>>;
 }
 
 export const formatGarmentTypeStepEuro = (price: number): string =>
@@ -309,6 +314,7 @@ export const GarmentTypeStep = ({
   onContinue,
   continueDisabled = false,
   stageBlockers,
+  lengthSwitchNotes = {},
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
   const presentation = getGarmentTypeStepPresentation({
@@ -607,6 +613,14 @@ export const GarmentTypeStep = ({
                     <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
                       {category.fabricCapacityUsage}
                     </p>
+                    {category.selected && lengthSwitchNotes[category.garmentType] && (
+                      <p
+                        data-garment-type-length-switch-note={category.garmentType}
+                        className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
+                      >
+                        {lengthSwitchNotes[category.garmentType]}
+                      </p>
+                    )}
                     {category.selected && !isResolved && (
                       <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
                         <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />

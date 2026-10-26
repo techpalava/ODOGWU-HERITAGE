@@ -1,4 +1,8 @@
 import {
+  parseBaseGarmentTypeFromKey,
+  resolveBasePhysicalGarmentType,
+} from "./garmentLengthVariant.js";
+import {
   MEASUREMENT_BLUEPRINT_VERSION,
   MEASUREMENT_DEFINITIONS,
   MEASUREMENT_FORMULA_VERSION,
@@ -462,9 +466,11 @@ const getOccurrenceConstructionOptionIds = ({
       ? additionalResolution.components.map((component) => component.optionId)
       : null;
   }
+  // A main garment's construction is stored under its Step 1 type (its key), which stays the
+  // same when Step 4 switches it to the other length.
   return getBaseConstructionOptionIds(
     garmentTypeSelection,
-    garment.garmentType,
+    parseBaseGarmentTypeFromKey(garment.garmentKey) ?? garment.garmentType,
   );
 };
 
@@ -512,7 +518,13 @@ export const getMeasurementPhysicalGarments = ({
         }))
       : garmentTypeSelection.garmentTypes.map((garmentType) => {
           const spec = createStyleBaseGarmentSpec(garmentType);
-          return { garmentKey: spec.key, garmentType };
+          return {
+            garmentKey: spec.key,
+            garmentType: resolveBasePhysicalGarmentType(
+              garmentTypeSelection,
+              garmentType,
+            ),
+          };
         });
   const seen = new Set<string>();
   return source.filter(({ garmentKey }) => {

@@ -102,6 +102,12 @@ import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+import {
+  getGarmentLengthFamily,
+  getGarmentLengthFamilyForSelectionGroup,
+  getOptionGarmentLength,
+  type GarmentLengthSwitchLock,
+} from "../utils/garmentLengthVariant";
 
 const formatStepMonogramDetail = (
   selections: DesignSelections,
@@ -142,6 +148,15 @@ interface DormantFutureCustomDetailsStepProps {
   onSingleSelect: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onClearSelection: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup) => void;
   onConstructionSelect: (parentGarmentKey: string, garmentType: CanonicalPhysicalGarmentType, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
+  /** Same-family rule: per parent garment key, the length its Main Garment may not switch to. */
+  constructionLengthLocks?: Readonly<Record<string, GarmentLengthSwitchLock>>;
+  /** The last length switch that was refused because the assigned fabric cannot hold it. */
+  constructionLengthSwitchBlock?: {
+    readonly parentGarmentKey: string;
+    readonly message: string;
+  } | null;
+  /** Opens the Fabric step, offered next to a refused length switch. */
+  onOpenFabricStep?: () => void;
   onToggleMultiSelect: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onPersonalizedTextChange: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string, text: string) => void;
   onDecorativeFeatureEnable: (feature: DecorativeFeature) => void;
@@ -380,22 +395,40 @@ const getConstructionPresentationPrefix = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
   selectionGroup: CustomDetailSelectionGroup,
 ): string | null => {
+  // Standard and Long garments of one family offer every length option of that family; the chosen
+  // option decides Standard vs Long (Layout B below). Any other parent of these groups (Agbada's
+  // shirt) keeps its Standard options only.
+  if (
+    getGarmentLengthFamilyForSelectionGroup(selectionGroup)?.id ===
+    getGarmentLengthFamily(occurrence.subject.parentGarmentType)?.id &&
+    getGarmentLengthFamily(occurrence.subject.parentGarmentType)
+  ) {
+    return null;
+  }
   switch (selectionGroup) {
     case "shirt_construction":
-      return occurrence.subject.parentGarmentType === "kaftan"
-        ? "shirt_long_"
-        : "shirt_std_";
+      return "shirt_std_";
     case "dress_construction":
-      return occurrence.subject.parentGarmentType === "full_length_gown"
-        ? "dress_long_"
-        : "dress_std_";
+      return "dress_std_";
     case "skirt_length":
-      return occurrence.subject.parentGarmentType === "long_skirt"
-        ? "skirt_long"
-        : "skirt_std";
+      return "skirt_std";
     default:
       return null;
   }
+};
+
+const lengthGroups = (stdPrefix: string, longPrefix: string) =>
+  [
+    { heading: "Standard Length", prefix: stdPrefix },
+    { heading: "Long Length", prefix: longPrefix },
+  ] as const;
+
+const CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP: Partial<
+  Record<CustomDetailSelectionGroup, ReturnType<typeof lengthGroups>>
+> = {
+  shirt_construction: lengthGroups("shirt_std_", "shirt_long_"),
+  dress_construction: lengthGroups("dress_std_", "dress_long_"),
+  skirt_length: lengthGroups("skirt_std", "skirt_long"),
 };
 
 const getGarmentFirstDetailLabel = (
@@ -518,6 +551,9 @@ export const DormantFutureCustomDetailsStep = ({
   onSingleSelect,
   onClearSelection,
   onConstructionSelect,
+  constructionLengthLocks = {},
+  constructionLengthSwitchBlock = null,
+  onOpenFabricStep,
   onToggleMultiSelect,
   onPersonalizedTextChange,
   onDecorativeFeatureEnable,
@@ -1085,8 +1121,25 @@ export const DormantFutureCustomDetailsStep = ({
       group.selectionGroup,
     );
     const optionCardClassName = customDetailOptionCardClassName;
+    const lengthLock =
+      group.isConstruction && constructionPresentationPrefix === null
+        ? constructionLengthLocks[occurrence.subject.parentGarmentKey] ?? null
+        : null;
+    const isLengthLocked = (option: CustomDetailOption) =>
+      Boolean(
+        lengthLock &&
+        getOptionGarmentLength(group.selectionGroup, option.id) ===
+          lengthLock.lockedLength,
+      );
+    const lengthSwitchBlockMessage =
+      group.isConstruction &&
+      constructionLengthSwitchBlock?.parentGarmentKey ===
+        occurrence.subject.parentGarmentKey
+        ? constructionLengthSwitchBlock.message
+        : null;
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
+      const locked = isLengthLocked(option);
       const isPersonalizedRequirement =
         group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP &&
         option.id === PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID;
@@ -1097,14 +1150,18 @@ export const DormantFutureCustomDetailsStep = ({
         <div key={option.id} className="h-full min-w-0 w-full">
           <label
             htmlFor={optionId}
-            className={optionCardClassName(checked)}
+            data-construction-length-locked={locked || undefined}
+            className={`${optionCardClassName(checked)}${locked ? " cursor-not-allowed opacity-45 hover:border-heritage-green/65" : ""}`}
           >
             <input
               id={optionId}
               type={group.allowMultiple ? "checkbox" : "radio"}
               name={group.allowMultiple ? undefined : groupId}
               checked={checked}
+              disabled={locked || undefined}
+              aria-describedby={locked ? `${groupId}-length-lock` : undefined}
               onChange={() => {
+                if (locked) return;
                 if (group.isConstruction) {
                   onConstructionSelect(occurrence.subject.parentGarmentKey, occurrence.subject.parentGarmentType, group.selectionGroup, option.id);
                 } else if (group.allowMultiple) {
@@ -1246,7 +1303,56 @@ export const DormantFutureCustomDetailsStep = ({
               })}
             </div>
           </>
+        ) : constructionPresentationPrefix === null &&
+          CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP[group.selectionGroup] ? (
+          <div className="min-w-0 space-y-4">
+            {CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP[group.selectionGroup]?.map(({ heading, prefix }) => {
+              const options = presentationOptions.filter((option) =>
+                option.id.startsWith(prefix),
+              );
+              if (options.length === 0) return null;
+              return (
+                <div
+                  key={prefix}
+                  data-construction-length-group={prefix}
+                  className="min-w-0 space-y-2"
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-heritage-ink/55">{heading}</p>
+                  {lengthLock && options.some(isLengthLocked) && (
+                    <p
+                      id={`${groupId}-length-lock`}
+                      data-construction-length-lock-reason="true"
+                      className="break-words text-[11px] leading-relaxed text-heritage-ink/60"
+                    >
+                      {lengthLock.reason}
+                    </p>
+                  )}
+                  {renderOptionGrid(options)}
+                </div>
+              );
+            })}
+          </div>
         ) : renderOptionGrid(presentationOptions)}
+        {lengthSwitchBlockMessage && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-construction-length-switch-blocked="true"
+            className="rounded-2xl border border-red-300/50 bg-red-50/80 px-4 py-3"
+          >
+            <p className="text-sm font-bold text-red-800">Fabric assignment notice</p>
+            <p className="mt-1 text-sm text-red-900/90">{lengthSwitchBlockMessage}</p>
+            {onOpenFabricStep && (
+              <button
+                type="button"
+                onClick={onOpenFabricStep}
+                className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
+              >
+                Go to Fabric
+              </button>
+            )}
+          </div>
+        )}
         {presentationOptions.map(renderPersonalizedRequirementDetail)}
         {presentationOptions.length === 0 && <p className="text-xs text-heritage-ink/60">No current catalogue options are available.</p>}
         {groupBlocker && <p className="text-xs text-red-700">{groupBlocker.message}</p>}
