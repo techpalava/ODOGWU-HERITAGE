@@ -1,6 +1,6 @@
-import { BatchBusinessRules } from "../engine/BatchBusinessRules.js";
-import { CapacityService } from "../services/CapacityService.js";
-import type { Batch, OrderContext } from "../types.js";
+import { normalizeBatchOngoingUntil } from "./batchDateRange.js";
+import { getBatchOrderWindow } from "./batchOrderWindow.js";
+import type { Batch } from "../types.js";
 import type { CanonicalOrderIdentity } from "./orderContextIdentity.js";
 
 export const COMMUNITY_BATCH_CLOSED_CODE = "COMMUNITY_BATCH_CLOSED" as const;
@@ -27,28 +27,17 @@ const numberOrZero = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
 /**
- * A passed registration date closes ordering even when an administrator left
- * the batch status OPEN with auto-scheduling off. The customer-facing order
- * context does not carry that manual schedule, so cart and payment must use
- * the same deadline.
+ * A passed end date closes ordering even when an administrator left the batch
+ * status OPEN with auto-scheduling off (#785), unless the batch's
+ * "Keep open after end date (ongoing)" toggle is on. One rule for Studio,
+ * cart, payment, homepage and server: getBatchOrderWindow.
  */
 export const isCommunityBatchClosedForOrders = (
   batch: Batch | null | undefined,
   now: Date = new Date(),
 ): boolean => {
   if (!batch) return true;
-  if (!BatchBusinessRules.canAcceptOrders(batch, now).canAcceptOrders) return true;
-  const projected: OrderContext = {
-    orderType: "Community",
-    batchId: batch.id,
-    batchName: batch.name,
-    closingDate: batch.endDate || "",
-    expectedParticipants: CapacityService.getTargetCapacity(batch),
-    currentMembers: CapacityService.getReservedCapacity(batch),
-    allowOrders: batch.allowOrders,
-    batchStatus: batch.status,
-  };
-  return !BatchBusinessRules.canAcceptOrders(projected, now).canAcceptOrders;
+  return !getBatchOrderWindow(batch, now).open;
 };
 
 export const communityBatchClosureForIdentity = (
@@ -118,6 +107,15 @@ export const communityBatchFromRecord = (
     status: status as Batch["status"],
     allowOrders: record.allowOrders !== false,
     isAutoScheduled: record.isAutoScheduled === false ? false : record.isAutoScheduled === true ? true : undefined,
+    // Same keep-open fields the client reads, so the server agrees.
+    ...(record.keepOpenAfterEndDate === true
+      ? {
+          keepOpenAfterEndDate: true,
+          ...(normalizeBatchOngoingUntil(record.ongoingUntil)
+            ? { ongoingUntil: normalizeBatchOngoingUntil(record.ongoingUntil) }
+            : {}),
+        }
+      : {}),
     isActive: record.isActive === true,
     visibility: record.visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC",
   };

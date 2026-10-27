@@ -1342,6 +1342,10 @@ export interface OrderContext {
   expectedParticipants?: number;
   allowOrders?: boolean;
   batchStatus?: string;
+  /** Copied from the live batch only when its keep-open toggle is on. */
+  keepOpenAfterEndDate?: boolean;
+  /** Copied from the live batch only when its keep-open toggle is on. */
+  ongoingUntil?: string;
   isPaid?: boolean;
 }
 
@@ -1379,6 +1383,18 @@ export interface Batch {
   displayOrder?: number;
   description?: string;
   isAutoScheduled?: boolean;
+  /**
+   * Admin "Keep open after end date (ongoing)": keeps ordering open after
+   * endDate. Only the date check is overridden; allowOrders, capacity and
+   * production statuses still close the batch. Default false.
+   */
+  keepOpenAfterEndDate?: boolean;
+  /**
+   * Optional "Open until" date (YYYY-MM-DD) for keepOpenAfterEndDate. Blank
+   * means open until an administrator closes it; otherwise ordering closes
+   * at the end of this day (+01:00), like endDate.
+   */
+  ongoingUntil?: string;
   registrationOpens?: string;
   registrationCloses?: string;
   productionStart?: string;

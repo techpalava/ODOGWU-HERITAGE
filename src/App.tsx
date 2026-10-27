@@ -53,7 +53,11 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
-import { getCurrentRegistrationBatch } from "./utils/batchUtils";
+import {
+  getCurrentRegistrationBatch,
+  getHomepageClosedCurrentBatch,
+  getNextOpenCommunityBatch,
+} from "./utils/batchUtils";
 import { resolveHomepageCommunityBatchEntry } from "./utils/homepageOrderGateway";
 import {
   BATCH_MINIMUM_GARMENTS,
@@ -333,6 +337,17 @@ export default function App() {
         defaultCommunityPickupLocation,
       )?.orderContext || null
     : null;
+  const homepageJoinBatch = activeCommunityBatch
+    ? registrationBatch ?? null
+    : null;
+  // The homepage keeps a closed Join card for a current batch its end date
+  // closed. Its "Join next open batch" button only offers a batch the join
+  // flow accepts; nobody is moved automatically.
+  const homepageClosedBatch = getHomepageClosedCurrentBatch(batches) ?? null;
+  const homepageNextOpenBatch =
+    homepageClosedBatch && homepageJoinBatch
+      ? getNextOpenCommunityBatch(batches, homepageClosedBatch.id) ?? null
+      : null;
 
   const [adminPortalInitialTab, setAdminPortalInitialTab] = useState<
     "batches" | null
@@ -1966,9 +1981,9 @@ export default function App() {
                 unfinishedOrderLabel={unfinishedOrderLabel}
                 onResumeUnfinishedOrder={handleResumeUnfinishedOrder}
                 onJoinCommunityBatch={handleJoinCommunityBatch}
-                joinBatch={
-                  activeCommunityBatch ? registrationBatch ?? null : null
-                }
+                joinBatch={homepageJoinBatch}
+                closedJoinBatch={homepageClosedBatch}
+                nextOpenBatch={homepageNextOpenBatch}
                 onCreatePrivateBatch={() => {
                   setPrivateBatchSetupError(null);
                   setActiveTab("private-batch-setup");
@@ -2030,6 +2045,7 @@ export default function App() {
                 onAddToCart={handleAddToCart}
                 openCartDrawer={() => setIsCartOpen(true)}
                 onStartFreshIndividualOrder={handleRequestFreshIndividualOrder}
+                onJoinCommunityBatch={handleJoinCommunityBatch}
                 currentUser={currentUser}
                 orderContext={orderContext}
                 styles={styles}
@@ -2214,7 +2230,7 @@ export default function App() {
 
       {/* PREMIUM FOOTER */}
       <Footer
-        joinBatch={activeCommunityBatch ? registrationBatch ?? null : null}
+        joinBatch={homepageClosedBatch ? null : homepageJoinBatch}
         onJoinCommunityBatch={handleJoinCommunityBatch}
       />
 
