@@ -1,3 +1,4 @@
+import { legalPageTabFromPath } from "../utils/legalPages";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { create } from "zustand";
 import { CustomDetailOption, Customer, 
@@ -70,7 +71,8 @@ export interface AppState {
     | "about"
     | "gallery"
     | "database"
-    | "custom-order" | "private-batch-setup" | "login" | "reviews";
+    | "custom-order" | "private-batch-setup" | "login" | "reviews"
+    | "privacy" | "terms";
   pendingRedirect: string | null;
   setPendingRedirect: (redirect: string | null) => void;
   setActiveTab: (
@@ -81,7 +83,8 @@ export interface AppState {
       | "about"
       | "gallery"
       | "database"
-      | "custom-order" | "private-batch-setup" | "login" | "reviews",
+      | "custom-order" | "private-batch-setup" | "login" | "reviews"
+      | "privacy" | "terms",
   ) => void;
   /** Incremented by the site nav. App decides whether Design Studio may open. */
   designStudioNavRequest: number;
@@ -380,7 +383,8 @@ export const useAppStore = create<AppState>((set, get) => {
   },
   activeTab:
     (typeof window !== "undefined" &&
-      (sessionStorage.getItem("asml_active_tab") as any)) ||
+      (legalPageTabFromPath(window.location.pathname) ||
+        (sessionStorage.getItem("asml_active_tab") as any))) ||
     "home",
   setActiveTab: (tab) => {
     const state = get();
