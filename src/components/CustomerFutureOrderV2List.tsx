@@ -103,7 +103,7 @@ export const CustomerFutureOrderV2List = ({
           const personalizedPrice = personalizedPricesByOrderId.get(order.orderId) ?? null;
           const candidate = persisted.masterOrder.cartItem.candidate;
           const pictureByGarmentKey = new Map(
-            getOrderGarmentPictures(candidate, fabrics).map((picture) => [
+            getOrderGarmentPictures(candidate, fabrics, { ownerUid: persisted.ownerUid }).map((picture) => [
               picture.garmentKey,
               picture,
             ]),
