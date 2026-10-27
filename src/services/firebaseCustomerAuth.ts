@@ -9,7 +9,17 @@ type AuthResponse = {
   customer: Customer;
   customToken?: string;
   admin?: boolean;
+  created?: boolean;
+  ok?: boolean;
+  expiresInSeconds?: number;
+  resendAfterSeconds?: number;
   error?: string;
+  code?: string;
+};
+
+export type EmailCodeRequestResult = {
+  expiresInSeconds: number;
+  resendAfterSeconds: number;
 };
 
 const AUTH_SERVER_UNAVAILABLE_MESSAGE =
@@ -76,7 +86,7 @@ async function requestAuth(
   if (!response.ok) {
     throw createAuthError(
       payload.error || "Authentication failed.",
-      payload.error,
+      payload.code || payload.error,
     );
   }
   return payload;
@@ -96,10 +106,12 @@ export const FirebaseCustomerAuth = {
   async signInWithPin(
     identifier: string,
     pin: string,
+    emailCode?: string,
   ): Promise<Customer> {
     const result = await requestAuth("/api/auth/pin-login", {
       identifier,
       pin,
+      ...(emailCode ? { emailCode } : {}),
     });
     if (!result.customToken) {
       throw new Error("The authentication server returned no token.");
@@ -119,5 +131,36 @@ export const FirebaseCustomerAuth = {
     }
     await signInWithCustomToken(auth, result.customToken);
     return result.customer;
+  },
+
+  /** Emails a one-time 6-digit code. Same answer whether or not an account exists. */
+  async requestEmailCode(
+    email: string,
+    name?: string,
+  ): Promise<EmailCodeRequestResult> {
+    const result = await requestAuth("/api/auth/email-code/request", {
+      email,
+      ...(name ? { name } : {}),
+    });
+    return {
+      expiresInSeconds: result.expiresInSeconds ?? 600,
+      resendAfterSeconds: result.resendAfterSeconds ?? 60,
+    };
+  },
+
+  /** Signs in (or creates the account) with a one-time email code. */
+  async signInWithEmailCode(
+    email: string,
+    code: string,
+  ): Promise<{ customer: Customer; created: boolean }> {
+    const result = await requestAuth("/api/auth/email-code/verify", {
+      email,
+      code,
+    });
+    if (!result.customToken) {
+      throw new Error("The authentication server returned no token.");
+    }
+    await signInWithCustomToken(auth, result.customToken);
+    return { customer: result.customer, created: result.created === true };
   },
 };

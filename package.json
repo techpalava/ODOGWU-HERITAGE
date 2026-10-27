@@ -51,6 +51,8 @@
     "test:uploaded-design-auth-continuity": "node scripts/tsxWithViteProductionFirebase.mjs test_uploaded_design_auth_continuity.ts",
     "test:foreign-uploaded-design-sources": "node scripts/tsxWithViteProductionFirebase.mjs test_foreign_uploaded_design_sources.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
+    "test:auth-hardening": "tsx test_pin_register_email_verified.ts && tsx test_auth_login_hardening.ts && tsx test_auth_email_code.ts && tsx test_normalize_order_email_case.ts",
+    "test:login-view": "node scripts/tsxWithViteProductionFirebase.mjs test_login_view_accessibility.tsx",
     "test:customer-reviews": "tsx test_customer_reviews.ts",
     "test:site-feedback": "node scripts/tsxWithViteProductionFirebase.mjs test_site_feedback.tsx",
     "test:design-style-authority": "tsx test_design_style_authority.ts && tsx test_design_style_publication.ts && tsx test_design_style_customer_projection.ts",
@@ -138,7 +140,8 @@
     "test:staff-preview-entitlement-cli": "tsx test_staff_preview_entitlement_cli.ts",
     "test:staff-preview-client-gate": "tsx test_staff_preview_client_gate.ts",
     "test:staff-preview-client-gate-react": "tsx test_staff_preview_client_gate_react.tsx",
-    "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts"
+    "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts",
+    "orders:normalize-email-case": "tsx src/scripts/normalizeOrderEmailCase.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
@@ -153,6 +156,7 @@
     "firebase-admin": "13.10.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "nodemailer": "^10.2.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "stripe": "^22.3.0",
@@ -165,6 +169,7 @@
     "@types/color-namer": "^1.3.3",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "19.1.0",
