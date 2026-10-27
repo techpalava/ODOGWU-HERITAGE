@@ -429,6 +429,16 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
+- [#1121](https://github.com/techpalava/ODOGWU-HERITAGE/pull/1121) open PR to main, not released: **Admin Edit Timeline full-width panel**
+  (Xavier, 2026-10-27: Edit Timeline showed a horizontal scrollbar and Save sat off to the right). The batch table
+  has 812px at 1280/1440; the old edit row was 1069px. The edited batch keeps its normal row ("Editing…" in Actions)
+  and every field opens once in a full-width row beneath it (`data-testid="batch-edit-panel"`), grouped Batch /
+  Ordering / Dates / Capacity & production stats, with Cancel + Save at both the top and the
+  bottom (same `handleSave`; the keep-open admin test uses the first "Save"). Fields, handlers,
+  validation, save messages and normal rows unchanged. Tests: `npm run test:batch-edit-panel` (includes a headless
+  Chrome layout check at 1280 and 1440; skips without Chrome). 1024px is a later follow-up (normal rows already
+  overflow there).
+
 - [#1108](https://github.com/techpalava/ODOGWU-HERITAGE/pull/1108) released by another session (production `b6d4e1c` via [#1110](https://github.com/techpalava/ODOGWU-HERITAGE/pull/1110), synced via [#1111](https://github.com/techpalava/ODOGWU-HERITAGE/pull/1111)); text below is from before release: **Batch "Keep open after end date (ongoing)" toggle** (Xavier, 2026-10-26, after
   Avatars showed "This batch is closed" in the Studio while admin showed MANUAL / OPEN past its 2026-09-30 end date).
   Root cause: `BatchBusinessRules.canAcceptOrders` let MANUAL + OPEN ignore the end date, but
