@@ -1722,7 +1722,10 @@ export default function App() {
     );
   };
 
-  const handleLogin = (customer: Customer) => {
+  const handleLogin = (
+    customer: Customer,
+    options?: { isNewAccount?: boolean },
+  ) => {
     const user = {
       ...customer,
       email: AuthorizationEngine.getCanonicalEmail(customer.email),
@@ -1732,7 +1735,9 @@ export default function App() {
 
     setCurrentUser(user);
     triggerNotification(
-      `Welcome back, ${user.name}! Secure session activated.`,
+      options?.isNewAccount
+        ? `Welcome, ${user.name}! Your account is ready.`
+        : `Welcome back, ${user.name}! Secure session activated.`,
       "success",
     );
 
