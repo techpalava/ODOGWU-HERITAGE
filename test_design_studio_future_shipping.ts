@@ -1090,22 +1090,22 @@ const individualPickupMarkup = renderPricedShippingStep(
   individualPickupQuote,
   "Individual",
 );
-assert.equal(individualPickupMarkup.includes("data-shipping-lagos-inbound"), false);
-assert.equal(individualPickupMarkup.includes("data-amount-cents=\"1400\""), false);
-assert.equal(individualPickupMarkup.includes("Lagos → Eindhoven shipping"), false);
+// Individual pickup keeps the Lagos → Eindhoven charge; pickup adds nothing extra.
+assert.match(individualPickupMarkup, /data-shipping-lagos-inbound/);
+assert.match(individualPickupMarkup, /data-amount-cents="13125"/);
+assert.match(individualPickupMarkup, /Lagos → Eindhoven shipping/);
+assert.match(individualPickupMarkup, /€131\.25/);
 assert.equal(individualPickupMarkup.includes("€14.00"), false);
-assert.equal(individualPickupMarkup.includes("€131.25"), false);
-assert.equal(individualPickupMarkup.includes("13125"), false);
-assert.equal(individualPickupMarkup.includes("data-shipping-lagos-note"), false);
+assert.match(individualPickupMarkup, /data-shipping-lagos-note="true"/);
 assert.match(individualPickupMarkup, /€65\.00/);
-assert.match(individualPickupMarkup, /data-shipping-displayed-total-cents="6500"/);
-assert.match(individualPickupMarkup, /€65\.00/);
+assert.match(individualPickupMarkup, /data-shipping-displayed-total-cents="19625"/);
+assert.match(individualPickupMarkup, /€196\.25/);
 assert.match(individualPickupMarkup, /Includes fabric, tax, and sewing\./);
-assert.match(individualPickupMarkup, /Pick up in Eindhoven has no shipping charge\./);
-assert.equal(
-  individualPickupMarkup.includes("Lagos → Eindhoven shipping is added to the total."),
-  false,
+assert.match(
+  individualPickupMarkup,
+  /Lagos → Eindhoven shipping is added to the total at €131\.25 per 10 garments \(under 5 kg\)\. Pick up in Eindhoven adds no extra charge\./,
 );
+assert.equal(individualPickupMarkup.includes("has no shipping charge"), false);
 assert.equal(individualPickupMarkup.includes(">Included<"), false);
 assert.equal(
   individualPickupMarkup.includes("already included"),

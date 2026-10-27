@@ -98,7 +98,7 @@ assert.equal(readFutureOrderV2ReviewedTotalCents({
   cartItemId: prepared.cartItemId,
   paymentReference,
   masterOrder: prepared.masterOrder,
-}), 30000);
+}), 43125);
 
 const persisted = createPersistedFutureOrderV2({
   masterOrder: prepared.masterOrder,
@@ -340,7 +340,7 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
   );
   assert.equal(state.statusCode, 200);
   assert.deepEqual(created, {
-    amountCents: 30000,
+    amountCents: 43125,
     orderId: prepared.orderId,
     paymentReference,
     shipping: PICKUP_STRIPE_SHIPPING,
@@ -1224,8 +1224,8 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
   );
   assert.equal(
     knownBaseCents,
-    pendingCandidate.pricing.garmentConstructionSubtotalCents,
-    "pickup charges the garment total with no shipping",
+    (pendingCandidate.pricing.garmentConstructionSubtotalCents ?? 0) + 13125,
+    "pickup keeps the Lagos → Eindhoven charge",
   );
   const pendingStored = createPersistedFutureOrderV2({
     masterOrder: pendingOrder,

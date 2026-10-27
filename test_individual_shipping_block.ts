@@ -184,15 +184,16 @@ withPickup(oneGarment);
   const pickupQuote = quoteFutureOrderPayableTotal(oneGarment);
   assert.ok(pickupQuote);
   assert.equal(pickupQuote.garmentConstructionSubtotalCents, 6500);
-  assert.equal(pickupQuote.lagosToEindhovenShippingCents, null);
-  assert.equal(pickupQuote.exactTotalCents, 6500);
+  assert.equal(pickupQuote.lagosToEindhovenShippingCents, 13125);
+  assert.equal(pickupQuote.postEindhovenAdjustmentCents, 0);
+  assert.equal(pickupQuote.exactTotalCents, 19625);
   assert.equal(
     resolveIndividualInboundShippingDisplay({
       orderType: "Individual",
       physicalGarmentCount: 1,
       fulfilmentMethod: "eindhoven_pickup",
-    }),
-    null,
+    })?.amountCents,
+    13125,
   );
 
   const paris = withParisDelivery(cloneCandidate(oneGarment));
@@ -208,16 +209,16 @@ withPickup(oneGarment);
   const elevenPickup = withPickup(replicateGarments(cloneCandidate(individual), 11));
   const pickupQuote = quoteFutureOrderPayableTotal(elevenPickup);
   assert.ok(pickupQuote);
-  assert.equal(pickupQuote.lagosToEindhovenShippingCents, null);
+  assert.equal(pickupQuote.lagosToEindhovenShippingCents, 26250);
   assert.equal(
     pickupQuote.exactTotalCents,
-    pickupQuote.garmentConstructionSubtotalCents,
+    pickupQuote.garmentConstructionSubtotalCents + 26250,
   );
 
   const twentyOnePickup = withPickup(replicateGarments(cloneCandidate(individual), 21));
   const twentyOnePickupQuote = quoteFutureOrderPayableTotal(twentyOnePickup);
   assert.ok(twentyOnePickupQuote);
-  assert.equal(twentyOnePickupQuote.lagosToEindhovenShippingCents, null);
+  assert.equal(twentyOnePickupQuote.lagosToEindhovenShippingCents, 39375);
 
   const elevenParis = withParisDelivery(replicateGarments(cloneCandidate(individual), 11));
   const elevenQuote = quoteFutureOrderPayableTotal(elevenParis);
@@ -279,8 +280,34 @@ withPickup(oneGarment);
     },
   );
   assert.equal(
-    pickupRows.some((row) => row.id === "lagos_eindhoven_included" || row.note),
+    pickupRows.find((row) => row.id === "lagos_eindhoven_included")?.amountCents,
+    13125,
+    "pickup review shows the Lagos → Eindhoven charge",
+  );
+  const storedFreePickupRows = getFuturePaymentReviewPricingRows(
+    {
+      ...oneGarment.pricing,
+      exactTotalCents: 6500,
+      postEindhovenAdjustmentCents: 0,
+      components: {
+        ...oneGarment.pricing.components,
+        lagosToEindhovenShipping: {
+          status: "included_in_garment_construction",
+          amountCents: null,
+        },
+      },
+    },
+    {
+      orderType: "Individual",
+      physicalGarmentCount: 1,
+      fulfilmentMethod: "eindhoven_pickup",
+      useStoredLagosAmount: true,
+    },
+  );
+  assert.equal(
+    storedFreePickupRows.some((row) => row.id === "lagos_eindhoven_included"),
     false,
+    "a stored order saved without the Lagos charge shows only what it charged",
   );
   const communityRows = getFuturePaymentReviewPricingRows(oneGarment.pricing, {
     orderType: "Community",

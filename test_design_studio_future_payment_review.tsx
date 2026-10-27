@@ -405,9 +405,9 @@ const pickupIndividualRows = getFuturePaymentReviewPricingRows(
   },
 );
 assert.equal(
-  pickupIndividualRows.some((row) => row.id === "lagos_eindhoven_included"),
-  false,
-  "pickup review does not add Lagos → Eindhoven shipping",
+  pickupIndividualRows.find((row) => row.id === "lagos_eindhoven_included")?.amountCents,
+  13125,
+  "pickup review keeps Lagos → Eindhoven shipping",
 );
 assert.equal(
   pickupIndividualRows.some((row) => row.id === "post_eindhoven"),

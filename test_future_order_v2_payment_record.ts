@@ -25,14 +25,14 @@ const persisted = createPersistedFutureOrderV2({
 });
 if (persisted.status !== "valid") throw new Error("Expected a valid persisted V2 order.");
 const exactTotalCents = persisted.value.masterOrder.cartItem.candidate.pricing.exactTotalCents;
-assert.equal(exactTotalCents, 30000);
+assert.equal(exactTotalCents, 43125);
 
 const succeededIntent = (
   overrides: Partial<StripePaymentIntentSummary> = {},
 ): StripePaymentIntentSummary => ({
   id: PAYMENT_INTENT_ID,
   status: "succeeded",
-  amount: 30000,
+  amount: 43125,
   currency: "eur",
   metadata: {
     orderId: ORDER_ID,
@@ -247,7 +247,7 @@ for (const intent of [
     orderId: ORDER_ID,
     ownerUid: OWNER_UID,
     paymentIntentId: PAYMENT_INTENT_ID,
-    amountCents: 30000,
+    amountCents: 43125,
     currency: "eur",
     status: "succeeded",
     testMode: true,
