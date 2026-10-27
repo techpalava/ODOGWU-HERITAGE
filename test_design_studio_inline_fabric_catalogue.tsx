@@ -2023,7 +2023,7 @@ try {
   assert.equal(activeFocusMock?.label, "catalogue-heading");
   assert.match(
     textContent(focusRenderer.root),
-    /Choose a new fabric for Selection 1/,
+    /Choose a new fabric for Standard Shirt/,
   );
   assert.match(
     textContent(focusRenderer.root),

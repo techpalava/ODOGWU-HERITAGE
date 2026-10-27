@@ -70,6 +70,8 @@ import {
   adaptUntargetedStep1CatalogueCardPresentation,
   assignFutureFabricToGarment,
   detachFutureGarmentFromSharedPiece,
+  pairLoneFutureGarmentWithExistingPiece,
+  removeFutureFabricAssignment,
   changeFutureFabricAllocationProduct,
   formatFabricQuantityLimitChangeCopy,
   formatFabricQuantityLimitReachedCopy,
@@ -746,6 +748,17 @@ export const DormantFutureFabricStep = ({
     changeFabricPresentation && !isChangeFromSummary && changeFabricAssignmentTarget
       ? changeFabricAssignmentTarget.assignment.garmentKey
       : null;
+  // Garment-card Change names the garment in the catalogue heading.
+  const changingGarmentLabel =
+    changingGarmentKey && changeFabricPresentation
+      ? changeFabricPresentation.garmentLabels[
+          changeFabricPresentation.garmentKeys.indexOf(changingGarmentKey)
+        ] ?? null
+      : null;
+  const changeHeadingTarget = changeFabricPresentation
+    ? changingGarmentLabel ??
+      `Selection ${changeFabricPresentation.fabricSelectionNumber}`
+    : "";
   const changingGarmentOnlyCopy =
     changingGarmentKey && changeFabricPresentation?.isSharedGroup
       ? formatChangeOneGarmentCopy({
@@ -1745,6 +1758,15 @@ export const DormantFutureFabricStep = ({
       run("auto");
       return;
     }
+    // Selection numbers follow the live order (placementState may have a
+    // garment's own piece taken out).
+    const livePairIndex = fabricAllocationState.fabricAllocations.findIndex(
+      (allocation) => allocation.allocationId === choice.pairAllocationId,
+    );
+    const displayChoice =
+      livePairIndex >= 0
+        ? { ...choice, pairSelectionNumber: livePairIndex + 1 }
+        : choice;
     const labels = garmentKeys.map((garmentKey) => {
       const target = targets.find(
         ({ assignment }) => assignment.garmentKey === garmentKey,
@@ -1762,7 +1784,7 @@ export const DormantFutureFabricStep = ({
     });
     piecePlacementRunRef.current = run;
     setPendingPiecePlacement({
-      choice,
+      choice: displayChoice,
       fabricName: fabric.name,
       garmentLabel: formatGarmentList(labels),
     });
@@ -2358,6 +2380,39 @@ export const DormantFutureFabricStep = ({
           expectedAssignmentSignature:
             getFutureFabricAllocationAssignmentSignature(allocation),
         });
+        return;
+      }
+      if (
+        changingGarmentKey === garmentKey &&
+        pairLoneFutureGarmentWithExistingPiece({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+          fabrics,
+          requiredPhysicalOccurrences,
+        })
+      ) {
+        // Alone on its piece and the new print has a piece with room: ask.
+        // Pair moves it onto that piece (its old piece is freed); Use a new
+        // piece re-colours its own piece as before.
+        requestFabricPiecePlacement(
+          fabric,
+          [garmentKey],
+          (placement) => {
+            if (placement === "new_piece") {
+              commitChangeFabricAllocation(allocationId, fabric, garmentKey);
+              return;
+            }
+            finishSelectedFabricAssignment(fabric, garmentKey, "auto", {
+              pairLoneGarment: true,
+            });
+          },
+          removeFutureFabricAssignment({
+            state: fabricAllocationState,
+            garmentKey,
+          }),
+        );
         return;
       }
       commitChangeFabricAllocation(allocationId, fabric, garmentKey);
@@ -3916,7 +3971,7 @@ export const DormantFutureFabricStep = ({
                 <button
                   type="button"
                   data-testid="fabric-selection-change-heading"
-                  aria-label={`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}. Jump to highlighted garment cards.`}
+                  aria-label={`Choose a new fabric for ${changeHeadingTarget}. Jump to highlighted garment cards.`}
                   onClick={() =>
                     scrollToChangingFabricSelection(firstChangingGarmentKey)
                   }
@@ -3938,7 +3993,7 @@ export const DormantFutureFabricStep = ({
                     />
                   </span>
                   <span>
-                    {`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                    {`Choose a new fabric for ${changeHeadingTarget}`}
                   </span>
                 </button>
               ) : activeCatalogueTarget ? (

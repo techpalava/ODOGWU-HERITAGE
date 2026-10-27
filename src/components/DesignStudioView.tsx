@@ -3310,6 +3310,7 @@ export default function DesignStudioView({
       requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
       placement,
       detachFromSharedPiece: options?.detachFromSharedPiece === true,
+      pairLoneGarment: options?.pairLoneGarment === true,
     });
     if (nextState === fabricAllocationState) {
       return nextState;

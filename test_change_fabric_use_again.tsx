@@ -253,7 +253,7 @@ const renderStep = () => {
       picked: Fabric,
       garmentKey: string,
       placement?: "auto" | "new_piece",
-      options?: { detachFromSharedPiece?: boolean },
+      options?: { detachFromSharedPiece?: boolean; pairLoneGarment?: boolean },
     ) => {
       liveState = applyFutureFabricCardSelection({
         state: liveState,
@@ -263,6 +263,7 @@ const renderStep = () => {
         fabrics,
         placement,
         detachFromSharedPiece: options?.detachFromSharedPiece === true,
+        pairLoneGarment: options?.pairLoneGarment === true,
       });
       return liveState;
     },
@@ -404,7 +405,7 @@ assert.deepEqual(
 await act(async () => {
   renderer.update(renderStep());
 });
-assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for Selection/);
+assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for/);
 act(() => renderer.unmount());
 
 // Garment card: Change Fabric for the Standard Shirt (shared with the

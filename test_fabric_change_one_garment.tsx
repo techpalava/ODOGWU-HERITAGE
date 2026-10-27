@@ -6,7 +6,10 @@
  *
  * - New print already has a piece with room: the existing pair-or-new-piece
  *   popup asks where the garment goes.
- * - A garment alone on its piece keeps the re-colour behaviour.
+ * - A garment alone on its piece: when the new print has a piece with room,
+ *   the same popup asks; Pair moves it there (its old piece is freed), Use a
+ *   new piece re-colours its own piece. Otherwise it re-colours as before.
+ * - Garment-card Change names the garment in the catalogue heading.
  * - Change from the Fabric Selection summary chip still changes the whole
  *   selection through the "Change Fabric for this group?" confirm.
  * - No confirm popup for the one-garment change; the hint says only that
@@ -36,6 +39,7 @@ import {
   changeFutureFabricAllocationProduct,
   detachFutureGarmentFromSharedPiece,
   getFutureFabricStageCompletion,
+  pairLoneFutureGarmentWithExistingPiece,
   getFutureGarmentFabricPlanning,
   getMaxPhysicalFabricAllocationCount,
   type FutureFabricGarmentAssignmentOptions,
@@ -285,6 +289,7 @@ const renderStep = () => {
         fabrics,
         placement,
         detachFromSharedPiece: options?.detachFromSharedPiece === true,
+        pairLoneGarment: options?.pairLoneGarment === true,
       });
       return liveState;
     },
@@ -405,7 +410,7 @@ const placementButton = (flag: string) =>
     ["CO-I", ["base:trouser"]],
     ["CO-R", ["base:shirt"]],
   ]);
-  assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for Selection/, "change mode ends");
+  assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for/, "change mode ends");
   assert.equal(garmentCard("base:trouser").props["data-fabric-selection-highlight"], "idle");
   // The Trouser's piece shows its spare room.
   assert.match(textContent(garmentCard("base:trouser")), /Classic Ivory Shield/);
@@ -504,6 +509,172 @@ const placementButton = (flag: string) =>
 }
 
 // ---------------------------------------------------------------------------
+// 5. Garment alone on its piece (Xavier, 27 Oct follow-up).
+// ---------------------------------------------------------------------------
+// Shirt alone on Classic Ivory Shield (Selection 1), Trouser alone on Royal
+// Forest Mosaic (Selection 2, 1/2 left), Long Shirt open.
+const loneShirt = place(place(FabricAllocationStateEngine.initialize(), "base:shirt", "CO-I"), "base:trouser", "CO-R");
+assert.deepEqual(layout(loneShirt), [
+  ["CO-I", ["base:shirt"]],
+  ["CO-R", ["base:trouser"]],
+]);
+{
+  // Engine.
+  const paired = pairLoneFutureGarmentWithExistingPiece({
+    state: loneShirt,
+    garmentTypeSelection: selection,
+    garmentKey: "base:shirt",
+    fabricCode: "CO-R",
+    fabrics,
+  });
+  assert.ok(paired);
+  assert.deepEqual(layout(paired!), [["CO-R", ["base:trouser", "base:shirt"]]], "old piece freed");
+  assert.equal(
+    pairLoneFutureGarmentWithExistingPiece({
+      state: loneShirt,
+      garmentTypeSelection: selection,
+      garmentKey: "base:shirt",
+      fabricCode: "CO-L",
+      fabrics,
+    }),
+    null,
+    "no piece of that print",
+  );
+  assert.equal(
+    pairLoneFutureGarmentWithExistingPiece({
+      state: shared,
+      garmentTypeSelection: selection,
+      garmentKey: "base:shirt",
+      fabricCode: "CO-R",
+      fabrics,
+    }),
+    null,
+    "not alone on its piece",
+  );
+  const fullRoyal = place(loneShirt, "base:kaftan", "CO-R");
+  assert.deepEqual(layout(fullRoyal), [
+    ["CO-I", ["base:shirt"]],
+    ["CO-R", ["base:trouser", "base:kaftan"]],
+  ]);
+  assert.equal(
+    pairLoneFutureGarmentWithExistingPiece({
+      state: fullRoyal,
+      garmentTypeSelection: selection,
+      garmentKey: "base:shirt",
+      fabricCode: "CO-R",
+      fabrics,
+    }),
+    null,
+    "no room on that print's piece",
+  );
+}
+
+// 5a. Popup; Pair moves the Shirt and frees its piece. The popup names the
+//     live Selection number (2), not the number after the Shirt's piece goes.
+{
+  await mount(loneShirt);
+  await changeFromCard("Standard Shirt");
+  assert.equal(
+    textContent(renderer.root.findByProps({ "data-testid": "fabric-selection-change-heading" })),
+    "Choose a new fabric for Standard Shirt",
+  );
+  assert.match(textContent(helpLine()), /Select a replacement Fabric for Fabric Selection 1\./, "lone hint unchanged");
+  await pick("CO-R");
+  assert.equal(groupConfirms().length, 0);
+  assert.equal(placementDialogs().length, 1, "pair-or-new-piece popup");
+  assert.match(textContent(placementDialogs()[0]!), /Pair with Selection 2/);
+  assert.equal(groupChangeCalls.length, 0, "nothing changes until a choice");
+  await act(async () => placementButton("data-fabric-piece-placement-cancel").props.onClick());
+  await rerender();
+  assert.deepEqual(layout(liveState), layout(loneShirt), "Cancel changes nothing");
+  await pick("CO-R");
+  await act(async () => placementButton("data-fabric-piece-placement-pair").props.onClick());
+  await rerender();
+  assert.deepEqual(layout(liveState), [["CO-R", ["base:trouser", "base:shirt"]]]);
+  assert.equal(groupChangeCalls.length, 0);
+  assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for/, "change mode ends");
+  act(() => renderer.unmount());
+}
+
+// 5b. Use a new piece: today's re-colour of the Shirt's own piece.
+{
+  await mount(loneShirt);
+  await changeFromCard("Standard Shirt");
+  await pick("CO-R");
+  await act(async () => placementButton("data-fabric-piece-placement-new-piece").props.onClick());
+  await rerender();
+  assert.equal(groupChangeCalls.length, 1, "re-colours its own piece");
+  assert.deepEqual(layout(liveState), [
+    ["CO-R", ["base:shirt"]],
+    ["CO-R", ["base:trouser"]],
+  ]);
+  assert.equal(liveState.fabricAllocations[0]!.allocationId, loneShirt.fabricAllocations[0]!.allocationId);
+  act(() => renderer.unmount());
+}
+
+// 5c. No piece with room: re-colour directly, no popup.
+{
+  const fullRoyal = place(loneShirt, "base:kaftan", "CO-R");
+  await mount(fullRoyal);
+  await changeFromCard("Standard Shirt");
+  await pick("CO-R");
+  assert.equal(placementDialogs().length, 0);
+  assert.equal(groupChangeCalls.length, 1);
+  assert.deepEqual(layout(liveState), [
+    ["CO-R", ["base:shirt"]],
+    ["CO-R", ["base:trouser", "base:kaftan"]],
+  ]);
+  act(() => renderer.unmount());
+}
+
+// 5d. Availability: Single Stock Print's only piece (Trouser) has room. A
+//     re-colour would need a second piece (no stock), but pairing needs none,
+//     so the card is pickable and doesn't say "No additional stock".
+{
+  const loneOnSingle = place(place(FabricAllocationStateEngine.initialize(), "base:shirt", "CO-I"), "base:trouser", "CO-S");
+  await mount(loneOnSingle);
+  await changeFromCard("Standard Shirt");
+  const card = catalogueCard("CO-S");
+  assert.notEqual(card.props["data-fabric-change-card"], "change-blocked");
+  assert.doesNotMatch(textContent(card), /No additional stock/);
+  await pick("CO-S");
+  assert.equal(placementDialogs().length, 1);
+  assert.equal(
+    placementButton("data-fabric-piece-placement-new-piece").props.disabled,
+    true,
+    "no stock for a re-coloured piece",
+  );
+  await act(async () => placementButton("data-fabric-piece-placement-pair").props.onClick());
+  await rerender();
+  assert.deepEqual(layout(liveState), [["CO-S", ["base:trouser", "base:shirt"]]]);
+  act(() => renderer.unmount());
+}
+
+// 5e. Heading: garment card names the garment; the chip keeps Selection N.
+{
+  await mount(shared);
+  await changeFromCard("Trouser");
+  const heading = renderer.root.findByProps({ "data-testid": "fabric-selection-change-heading" });
+  assert.equal(textContent(heading), "Choose a new fabric for Trouser");
+  assert.equal(
+    heading.props["aria-label"],
+    "Choose a new fabric for Trouser. Jump to highlighted garment cards.",
+  );
+  act(() => renderer.unmount());
+  await mount(shared);
+  await act(async () =>
+    renderer.root
+      .findByProps({ "data-fabric-selection-summary-button": "1" })
+      .props.onClick({ currentTarget: {} }),
+  );
+  assert.equal(
+    textContent(renderer.root.findByProps({ "data-testid": "fabric-selection-change-heading" })),
+    "Choose a new fabric for Selection 1",
+  );
+  act(() => renderer.unmount());
+}
+
+// ---------------------------------------------------------------------------
 // 4. Price is unchanged (fabric included in the garment price; same call
 //    shape as DesignStudioView).
 // ---------------------------------------------------------------------------
@@ -561,6 +732,16 @@ const placementButton = (flag: string) =>
   assert.ok(after.garmentSubtotal > 0);
   assert.equal(after.garmentSubtotal, before.garmentSubtotal, "splitting off a garment adds no charge");
   assert.equal(after.clothingPrice, before.clothingPrice);
+}
+
+// ---------------------------------------------------------------------------
+// 6. DesignStudioView passes both options through to the engine.
+// ---------------------------------------------------------------------------
+{
+  const { readFileSync } = await import("node:fs");
+  const viewSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+  assert.match(viewSource, /detachFromSharedPiece: options\?\.detachFromSharedPiece === true/);
+  assert.match(viewSource, /pairLoneGarment: options\?\.pairLoneGarment === true/);
 }
 
 console.log("test_fabric_change_one_garment: PASS");

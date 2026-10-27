@@ -290,7 +290,7 @@ const assertNotChanging = (root: ReactTestInstance) => {
     root.findAllByProps({ "data-testid": "fabric-selection-change-heading" }).length,
     0,
   );
-  assert.doesNotMatch(textContent(root), /Choose a new fabric for Selection/);
+  assert.doesNotMatch(textContent(root), /Choose a new fabric for/);
 };
 
 const scrolledKeys: string[] = [];
@@ -419,7 +419,7 @@ assert.equal(
 );
 assert.match(
   textContent(renderer.root),
-  /Choose a new fabric for Selection 1/,
+  /Choose a new fabric for Standard Shirt/,
 );
 assert.match(
   textContent(renderer.root),
@@ -488,7 +488,7 @@ const liveHandlers = (getState: () => FabricAllocationState, setState: (next: Fa
     fabric: Fabric,
     garmentKey: string,
     placement?: "auto" | "new_piece",
-    options?: { detachFromSharedPiece?: boolean },
+    options?: { detachFromSharedPiece?: boolean; pairLoneGarment?: boolean },
   ) => {
     const next = applyFutureFabricCardSelection({
       state: getState(),
@@ -498,6 +498,7 @@ const liveHandlers = (getState: () => FabricAllocationState, setState: (next: Fa
       fabrics,
       placement,
       detachFromSharedPiece: options?.detachFromSharedPiece === true,
+      pairLoneGarment: options?.pairLoneGarment === true,
     });
     setState(next);
     return next;
@@ -602,7 +603,7 @@ const liveHandlers = (getState: () => FabricAllocationState, setState: (next: Fa
   });
   assert.match(
     textContent(liveRenderer.root),
-    /Choose a new fabric for Selection 1/,
+    /Choose a new fabric for Standard Shirt/,
   );
   await act(async () => clickFabricCard(liveRenderer.root, "HL-B"));
   // Only the Shirt changes: no group confirm; HL-B's piece (Skirt) has room,
