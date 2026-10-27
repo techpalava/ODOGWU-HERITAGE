@@ -1,4 +1,6 @@
-import type { FuturePaymentReviewGarmentPicture } from "../../utils/futurePaymentReviewPictures";
+import { useState } from "react";
+import type { OrderGarmentPicture } from "../../utils/orderGarmentPictures";
+import { useUploadedDesignPreview } from "./useUploadedDesignPreview";
 import {
   PaymentReviewDesignImage,
   PaymentReviewFabricImage,
@@ -9,33 +11,85 @@ import {
  * Picture tiles for saved orders: cart order lines, the dashboard "My orders"
  * list and the order details dialog. They reuse the Stage 10 tiles, so images
  * are lazy, have alt text and keep a fixed 4:5 frame (no layout shift).
- * Uploaded designs show a labelled placeholder; the private image is not read.
+ * Uploaded designs show the owner's private image (read with getBlob, shown
+ * through a blob: URL). While it loads, or when it fails or is missing, the
+ * labelled placeholder stays. Cart and My orders read it when the tile is near
+ * the viewport; the order details dialog reads it right away (eager).
  */
 
 const PLACEHOLDER_FRAME =
   "flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-lg border border-heritage-green/20 bg-heritage-cream text-center font-bold leading-tight text-heritage-ink/75 break-words";
 const PLACEHOLDER_PADDING = "p-1 uppercase tracking-wide";
 
+const UPLOADED_IMAGE_FRAME =
+  "relative aspect-[4/5] w-full overflow-hidden rounded-lg border border-heritage-green/10 bg-heritage-cream/35";
+
+const UploadedDesignTile = ({
+  picture,
+  textClassName,
+  paddingClassName,
+  eager,
+}: {
+  picture: OrderGarmentPicture;
+  textClassName: string;
+  paddingClassName: string;
+  eager: boolean;
+}) => {
+  const { ref, state } = useUploadedDesignPreview<HTMLDivElement>(
+    picture.uploadedDesign ?? null,
+    eager,
+  );
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
+  if (state.status === "loaded" && state.url !== brokenUrl) {
+    return (
+      <div
+        ref={ref}
+        data-order-picture-uploaded-image={picture.garmentKey}
+        className={UPLOADED_IMAGE_FRAME}
+      >
+        <img
+          src={state.url}
+          alt={`Uploaded design preview for ${picture.label}`}
+          decoding="async"
+          className="h-full w-full object-contain"
+          onError={() => setBrokenUrl(state.url)}
+        />
+      </div>
+    );
+  }
+  return (
+    <div
+      ref={ref}
+      role="img"
+      aria-label={`Your uploaded design for ${picture.label}`}
+      data-order-picture-uploaded-placeholder={picture.garmentKey}
+      className={`${PLACEHOLDER_FRAME} ${paddingClassName} ${textClassName}`}
+    >
+      Your uploaded design
+    </div>
+  );
+};
+
 const DesignTile = ({
   picture,
   textClassName,
   paddingClassName = PLACEHOLDER_PADDING,
+  eager = false,
 }: {
-  picture: FuturePaymentReviewGarmentPicture;
+  picture: OrderGarmentPicture;
   textClassName: string;
   paddingClassName?: string;
+  eager?: boolean;
 }) => {
   const { design } = picture;
   if (design.sourceKind === "uploaded" && !design.imageUrl) {
     return (
-      <div
-        role="img"
-        aria-label={`Your uploaded design for ${picture.label}`}
-        data-order-picture-uploaded-placeholder={picture.garmentKey}
-        className={`${PLACEHOLDER_FRAME} ${paddingClassName} ${textClassName}`}
-      >
-        Your uploaded design
-      </div>
+      <UploadedDesignTile
+        picture={picture}
+        textClassName={textClassName}
+        paddingClassName={paddingClassName}
+        eager={eager}
+      />
     );
   }
   if (!design.imageUrl) {
@@ -61,18 +115,21 @@ export const OrderGarmentPictureTiles = ({
   picture,
   tileClassName,
   textClassName = "text-[8px]",
+  eager = false,
 }: {
-  picture: FuturePaymentReviewGarmentPicture;
+  picture: OrderGarmentPicture;
   /** Width classes for each tile, e.g. "w-12 sm:w-14". */
   tileClassName: string;
   textClassName?: string;
+  /** Read the uploaded design right away instead of near the viewport. */
+  eager?: boolean;
 }) => (
   <div
     data-order-picture-tiles={picture.garmentKey}
     className="flex min-w-0 gap-1.5 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
   >
     <div className={`shrink-0 ${tileClassName}`} data-order-picture-tile="design">
-      <DesignTile picture={picture} textClassName={textClassName} />
+      <DesignTile picture={picture} textClassName={textClassName} eager={eager} />
     </div>
     {picture.fabrics.map((fabric) => (
       <div
@@ -107,7 +164,7 @@ export const OrderGarmentPictureTiles = ({
 export const OrderGarmentPictureStrip = ({
   pictures,
 }: {
-  pictures: readonly FuturePaymentReviewGarmentPicture[];
+  pictures: readonly OrderGarmentPicture[];
 }) => {
   if (pictures.length === 0) return null;
   return (
@@ -142,7 +199,7 @@ export const OrderGarmentPictureStrip = ({
 export const OrderDesignThumbnail = ({
   picture,
 }: {
-  picture: FuturePaymentReviewGarmentPicture;
+  picture: OrderGarmentPicture;
 }) => (
   <div
     data-customer-v2-order-thumbnail={picture.garmentKey}
