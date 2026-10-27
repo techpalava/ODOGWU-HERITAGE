@@ -731,10 +731,12 @@ const recordRequest = (body: unknown = { orderId: pixOrderId, checkoutSessionId:
   assert.match(brazil, /data-future-order-v2-method-pix/);
   assert.match(brazil, /data-future-order-v2-method-icon="pix"/);
   assert.match(brazil, /data-future-order-v2-pix-iof/);
-  assert.match(brazil, /grid-cols-3/, "card + iDEAL + Pix");
+  assert.equal((brazil.match(/role="radio"/g) ?? []).length, 3, "card + iDEAL + Pix");
+  assert.match(brazil, /relative z-10 flex flex-wrap gap-2/, "pill row wraps instead of squeezing");
   const nl = card(null);
   assert.equal(nl.includes("data-future-order-v2-method-pix"), false);
-  assert.match(nl, /grid-cols-2/, "card + iDEAL unchanged");
+  assert.equal((nl.match(/role="radio"/g) ?? []).length, 2, "card + iDEAL unchanged");
+  assert.match(nl, /relative z-10 flex flex-wrap gap-2/);
 }
 
 console.log("future order v2 Pix checkout tests passed");
