@@ -69,6 +69,9 @@ import {
   getFutureUnassignedFabricTargets,
   adaptUntargetedStep1CatalogueCardPresentation,
   assignFutureFabricToGarment,
+  detachFutureGarmentFromSharedPiece,
+  pairLoneFutureGarmentWithExistingPiece,
+  removeFutureFabricAssignment,
   changeFutureFabricAllocationProduct,
   formatFabricQuantityLimitChangeCopy,
   formatFabricQuantityLimitReachedCopy,
@@ -91,6 +94,7 @@ import {
   type FutureFabricAssignmentResult,
   type FutureFabricAssignmentBlockReason,
   type ChangeFutureFabricAllocationExpectation,
+  type FutureFabricGarmentAssignmentOptions,
   type FutureFabricPiecePlacement,
   type FutureFabricPiecePlacementChoice,
   getFutureFabricPiecePlacementChoice,
@@ -175,6 +179,7 @@ interface DormantFutureFabricStepProps {
     fabric: Fabric,
     garmentKey: string,
     placement?: FutureFabricPiecePlacement,
+    options?: FutureFabricGarmentAssignmentOptions,
   ) => FabricAllocationState | void;
   onChangeFabricAllocationProduct: (
     allocationId: string,
@@ -233,6 +238,31 @@ const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
   garmentType === "other"
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
+
+/**
+ * Change Fabric hint when a garment card's piece is shared: only that
+ * garment changes ("Only Long Shirt will change. Trouser keeps Classic Ivory
+ * Shield.").
+ */
+export const formatChangeOneGarmentCopy = ({
+  garmentKey,
+  garmentKeys,
+  garmentLabels,
+  fabricName,
+}: {
+  garmentKey: string;
+  garmentKeys: readonly string[];
+  garmentLabels: readonly string[];
+  fabricName: string;
+}): string => {
+  const index = garmentKeys.indexOf(garmentKey);
+  const changing = garmentLabels[index] ?? "this garment";
+  const others = garmentLabels.filter((_, otherIndex) => otherIndex !== index);
+  if (others.length === 0) return `Only ${changing} will change.`;
+  return `Only ${changing} will change. ${formatGarmentList([...others])} ${
+    others.length === 1 ? "keeps" : "keep"
+  } ${fabricName}.`;
+};
 
 export const FABRIC_CHANGE_SWAP_FREE_COPY =
   "Swapping keeps the same number of fabrics, so you can pick any available print.";
@@ -473,6 +503,8 @@ export const DormantFutureFabricStep = ({
   >(null);
   const [isChangingFabricSelection, setIsChangingFabricSelection] =
     useState(false);
+  /** True when Change Fabric was opened from a Fabric Selection summary chip. */
+  const [isChangeFromSummary, setIsChangeFromSummary] = useState(false);
   const [assignmentAnnouncement, setAssignmentAnnouncement] = useState("");
   const [visibleActionError, setVisibleActionError] = useState<string | null>(
     null,
@@ -711,6 +743,31 @@ export const DormantFutureFabricStep = ({
   ]);
   const changingSelectionNumber =
     changeFabricPresentation?.fabricSelectionNumber ?? null;
+  // Change Fabric opened from a garment card changes only that garment.
+  const changingGarmentKey =
+    changeFabricPresentation && !isChangeFromSummary && changeFabricAssignmentTarget
+      ? changeFabricAssignmentTarget.assignment.garmentKey
+      : null;
+  // Garment-card Change names the garment in the catalogue heading.
+  const changingGarmentLabel =
+    changingGarmentKey && changeFabricPresentation
+      ? changeFabricPresentation.garmentLabels[
+          changeFabricPresentation.garmentKeys.indexOf(changingGarmentKey)
+        ] ?? null
+      : null;
+  const changeHeadingTarget = changeFabricPresentation
+    ? changingGarmentLabel ??
+      `Selection ${changeFabricPresentation.fabricSelectionNumber}`
+    : "";
+  const changingGarmentOnlyCopy =
+    changingGarmentKey && changeFabricPresentation?.isSharedGroup
+      ? formatChangeOneGarmentCopy({
+          garmentKey: changingGarmentKey,
+          garmentKeys: changeFabricPresentation.garmentKeys,
+          garmentLabels: changeFabricPresentation.garmentLabels,
+          fabricName: changeFabricPresentation.fabricName,
+        })
+      : null;
   const changingFabric = changeFabricPresentation
     ? fabrics.find(
         (candidate) => candidate.code === changeFabricPresentation.fabricCode,
@@ -1687,9 +1744,10 @@ export const DormantFutureFabricStep = ({
     fabric: Fabric,
     garmentKeys: readonly string[],
     run: (placement: FutureFabricPiecePlacement) => void,
+    placementState: FabricAllocationState = fabricAllocationState,
   ) => {
     const choice = getFutureFabricPiecePlacementChoice({
-      state: fabricAllocationState,
+      state: placementState,
       garmentTypeSelection,
       fabricCode: fabric.code,
       garmentKeys,
@@ -1700,6 +1758,15 @@ export const DormantFutureFabricStep = ({
       run("auto");
       return;
     }
+    // Selection numbers follow the live order (placementState may have a
+    // garment's own piece taken out).
+    const livePairIndex = fabricAllocationState.fabricAllocations.findIndex(
+      (allocation) => allocation.allocationId === choice.pairAllocationId,
+    );
+    const displayChoice =
+      livePairIndex >= 0
+        ? { ...choice, pairSelectionNumber: livePairIndex + 1 }
+        : choice;
     const labels = garmentKeys.map((garmentKey) => {
       const target = targets.find(
         ({ assignment }) => assignment.garmentKey === garmentKey,
@@ -1717,7 +1784,7 @@ export const DormantFutureFabricStep = ({
     });
     piecePlacementRunRef.current = run;
     setPendingPiecePlacement({
-      choice,
+      choice: displayChoice,
       fabricName: fabric.name,
       garmentLabel: formatGarmentList(labels),
     });
@@ -2062,6 +2129,7 @@ export const DormantFutureFabricStep = ({
     setVisibleActionError(null);
     setCatalogueTargetGarmentKey(garmentKey);
     setIsChangingFabricSelection(changingFabric);
+    setIsChangeFromSummary(changingFabric && scrollTarget === "selection_cards");
     setIsCatalogueOpen(openDialog);
     if (openDialog || typeof window === "undefined") {
       return;
@@ -2279,6 +2347,19 @@ export const DormantFutureFabricStep = ({
         completeCatalogueAssignment(garmentKey);
         return;
       }
+      if (changingGarmentKey === garmentKey) {
+        const detachedState = detachFutureGarmentFromSharedPiece({
+          state: fabricAllocationState,
+          garmentKey,
+          fabricCode: fabric.code,
+        });
+        if (detachedState) {
+          assignGarmentToFabricCard(fabric, garmentKey, detachedState, {
+            detachFromSharedPiece: true,
+          });
+          return;
+        }
+      }
       const presentation =
         changeFabricPresentation ||
         getFutureFabricAllocationGroupChangePresentation({
@@ -2301,10 +2382,58 @@ export const DormantFutureFabricStep = ({
         });
         return;
       }
+      if (
+        changingGarmentKey === garmentKey &&
+        pairLoneFutureGarmentWithExistingPiece({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+          fabrics,
+          requiredPhysicalOccurrences,
+        })
+      ) {
+        // Alone on its piece and the new print has a piece with room: ask.
+        // Pair moves it onto that piece (its old piece is freed); Use a new
+        // piece re-colours its own piece as before.
+        requestFabricPiecePlacement(
+          fabric,
+          [garmentKey],
+          (placement) => {
+            if (placement === "new_piece") {
+              commitChangeFabricAllocation(allocationId, fabric, garmentKey);
+              return;
+            }
+            finishSelectedFabricAssignment(fabric, garmentKey, "auto", {
+              pairLoneGarment: true,
+            });
+          },
+          removeFutureFabricAssignment({
+            state: fabricAllocationState,
+            garmentKey,
+          }),
+        );
+        return;
+      }
       commitChangeFabricAllocation(allocationId, fabric, garmentKey);
       return;
     }
 
+    assignGarmentToFabricCard(fabric, garmentKey, fabricAllocationState);
+  };
+
+  /**
+   * Assign one garment to a catalogue print. `baseState` is the state the
+   * garment is placed from: the live state, or (Change Fabric on a garment
+   * card whose piece is shared) the state with the garment taken off its
+   * shared piece.
+   */
+  const assignGarmentToFabricCard = (
+    fabric: Fabric,
+    garmentKey: string,
+    baseState: FabricAllocationState,
+    options?: FutureFabricGarmentAssignmentOptions,
+  ) => {
     const assignmentGeneration = ++assignmentGenerationRef.current;
     pendingAssignmentAnnouncementRef.current = {
       fabricCode: fabric.code,
@@ -2315,7 +2444,7 @@ export const DormantFutureFabricStep = ({
     setVisibleActionError(null);
     setAssignmentAnnouncement("");
     const preview = assignFutureFabricToGarment({
-      state: fabricAllocationState,
+      state: baseState,
       garmentTypeSelection,
       garmentKey,
       fabricCode: fabric.code,
@@ -2326,7 +2455,7 @@ export const DormantFutureFabricStep = ({
       const blockedMessage =
         preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
           ? getFabricQuantityFitBlockedCopyForGarment({
-              state: fabricAllocationState,
+              state: baseState,
               garmentTypeSelection,
               garmentKey,
               fabricCode: fabric.code,
@@ -2341,8 +2470,12 @@ export const DormantFutureFabricStep = ({
       pendingAssignmentAnnouncementRef.current = null;
       return;
     }
-    requestFabricPiecePlacement(fabric, [garmentKey], (placement) =>
-      finishSelectedFabricAssignment(fabric, garmentKey, placement),
+    requestFabricPiecePlacement(
+      fabric,
+      [garmentKey],
+      (placement) =>
+        finishSelectedFabricAssignment(fabric, garmentKey, placement, options),
+      baseState,
     );
   };
 
@@ -2350,8 +2483,14 @@ export const DormantFutureFabricStep = ({
     fabric: Fabric,
     garmentKey: string,
     placement: FutureFabricPiecePlacement,
+    options?: FutureFabricGarmentAssignmentOptions,
   ) => {
-    const nextState = onAssignFabricToGarment(fabric, garmentKey, placement);
+    const nextState = onAssignFabricToGarment(
+      fabric,
+      garmentKey,
+      placement,
+      options,
+    );
     if (nextState && Array.isArray(nextState.fabricAllocations)) {
       const assigned = nextState.fabricAllocations.some((allocation) =>
         allocation.garmentAssignments.some(
@@ -2538,6 +2677,13 @@ export const DormantFutureFabricStep = ({
             allocationId: changeFabricAssignmentTarget.allocation.allocationId,
             fabrics,
             targetGarmentKey: changeFabricAssignmentTarget.assignment.garmentKey,
+            garmentOnly: changingGarmentKey
+              ? {
+                  garmentKey: changingGarmentKey,
+                  garmentTypeSelection,
+                  requiredPhysicalOccurrences,
+                }
+              : null,
           })
         : null;
     const cardPresentation: FutureFabricCatalogueCardPresentation =
@@ -2598,7 +2744,15 @@ export const DormantFutureFabricStep = ({
       isChangeFabricTarget && changeFabricAssignmentTarget
         ? changeFabricAssignmentTarget.allocation.allocationId
         : null;
-    const stockConstraintMessage = changeAllocationId
+    const stockConstraintMessage =
+      changingGarmentKey && changeCardPresentation
+        ? // One-garment change: the card's own preview (pair or new piece).
+          changeCardPresentation.blockedReason === "FABRIC_STOCK_EXHAUSTED"
+          ? formatFabricStockExhaustedCopy()
+          : changeCardPresentation.blockedReason === "FABRIC_UNAVAILABLE"
+            ? getFabricAvailabilityMessage(fabric)
+            : null
+        : changeAllocationId
       ? (() => {
           const preview = changeFutureFabricAllocationProduct({
             state: fabricAllocationState,
@@ -3474,11 +3628,15 @@ export const DormantFutureFabricStep = ({
             const unassignedFabricAction = assigned
               ? null
               : resolveUnassignedGarmentFabricAction(assignment.garmentKey);
-            const selectionHighlight = resolveFabricSelectionCardHighlight({
-              isChangingFabric: isChangingFabricSelection,
-              changingSelectionNumber,
-              cardSelectionNumber: selectionNumber,
-            });
+            const selectionHighlight = changingGarmentKey
+              ? assignment.garmentKey === changingGarmentKey
+                ? "changing"
+                : "dimmed"
+              : resolveFabricSelectionCardHighlight({
+                  isChangingFabric: isChangingFabricSelection,
+                  changingSelectionNumber,
+                  cardSelectionNumber: selectionNumber,
+                });
             const selectionHighlightClass =
               getFabricSelectionCardClass(selectionHighlight);
             return (
@@ -3813,7 +3971,7 @@ export const DormantFutureFabricStep = ({
                 <button
                   type="button"
                   data-testid="fabric-selection-change-heading"
-                  aria-label={`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}. Jump to highlighted garment cards.`}
+                  aria-label={`Choose a new fabric for ${changeHeadingTarget}. Jump to highlighted garment cards.`}
                   onClick={() =>
                     scrollToChangingFabricSelection(firstChangingGarmentKey)
                   }
@@ -3835,7 +3993,7 @@ export const DormantFutureFabricStep = ({
                     />
                   </span>
                   <span>
-                    {`Choose a new fabric for Selection ${changeFabricPresentation.fabricSelectionNumber}`}
+                    {`Choose a new fabric for ${changeHeadingTarget}`}
                   </span>
                 </button>
               ) : activeCatalogueTarget ? (
@@ -3875,7 +4033,16 @@ export const DormantFutureFabricStep = ({
                 isOverAllocated ? "true" : undefined
               }
               data-fabric-change-swap-free={
-                changeFabricPresentation && !isOverAllocated ? "true" : undefined
+                changeFabricPresentation &&
+                !isOverAllocated &&
+                !changingGarmentOnlyCopy
+                  ? "true"
+                  : undefined
+              }
+              data-fabric-change-garment-only={
+                changingGarmentOnlyCopy && !isOverAllocated && !showAllocationLimitCopy
+                  ? "true"
+                  : undefined
               }
             >
               {isOverAllocated
@@ -3885,6 +4052,8 @@ export const DormantFutureFabricStep = ({
                   )
                 : showAllocationLimitCopy
                   ? formatFabricQuantityLimitReachedCopy(requiredFabricQuantity)
+                  : changingGarmentOnlyCopy
+                    ? changingGarmentOnlyCopy
                   : changeFabricPresentation?.isSharedGroup
                     ? `This Fabric is shared by ${formatGarmentList([
                         ...changeFabricPresentation.garmentLabels,
