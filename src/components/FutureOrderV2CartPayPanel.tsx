@@ -40,6 +40,8 @@ import {
 } from "../utils/individualInboundShippingDisplay";
 import { FUTURE_ORDER_PRICE_OUTDATED_CODE } from "../utils/futureOrderPayableTotal";
 import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
+import { getOrderGarmentPictures } from "../utils/orderGarmentPictures";
+import { OrderGarmentPictureStrip } from "./orderPictures/OrderGarmentPictures";
 
 const moneyFromCents = (amountCents: number): string =>
   `${PRICING_CURRENCY_SYMBOL}${(amountCents / 100).toFixed(2)}`;
@@ -51,6 +53,7 @@ export const FutureOrderV2CartPayPanel = ({
 }) => {
   const currentUser = useAppStore((state) => state.currentUser);
   const batches = useAppStore((state) => state.batches);
+  const fabrics = useAppStore((state) => state.fabrics);
   const hasLoadedBatches = useAppStore((state) => state.hasLoadedBatches);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setCheckoutIntent = useAppStore((state) => state.setCheckoutIntent);
@@ -66,6 +69,7 @@ export const FutureOrderV2CartPayPanel = ({
 
   const totalCents = getFutureOrderV2CartLineTotalCents(item);
   const label = getFutureOrderV2CartLineLabel(item);
+  const garmentPictures = getOrderGarmentPictures(item.candidate, fabrics);
   const communityBatchClosureStatus = resolveCommunityBatchClosureStatus(
     item.candidate.orderIdentity,
     batches,
@@ -261,7 +265,7 @@ export const FutureOrderV2CartPayPanel = ({
           <h3 className="font-serif text-sm font-bold text-heritage-green">
             {label}
           </h3>
-          <p className="mt-1 font-mono text-sm font-semibold text-heritage-gold">
+          <p className="mt-1 font-mono text-sm font-semibold text-heritage-bronze">
             {totalCents === null ? "Unavailable" : moneyFromCents(totalCents)}
           </p>
           {includedInbound ? (
@@ -295,11 +299,19 @@ export const FutureOrderV2CartPayPanel = ({
           <Trash2 size={16} />
         </button>
       </div>
+      <OrderGarmentPictureStrip pictures={garmentPictures} />
       {communityBatchClosed ? (
         <p role="status" data-testid="cart-community-batch-closed" className="mt-3 text-sm font-semibold text-red-800">
           {COMMUNITY_BATCH_CLOSED_MESSAGE}
         </p>
-      ) : (
+      ) : null}
+      {/* Same dark payment box as Stage 10, so the shared Stripe card pills
+          (white text, gold selection) are readable in the white cart. */}
+      <div
+        data-cart-payment-box
+        className="mt-3 rounded-2xl border border-heritage-gold/30 bg-heritage-green p-4 text-white"
+      >
+      {communityBatchClosed ? null : (
       <FutureOrderV2StripeCard
         disabled={paying}
         orderId={orderId}
@@ -311,7 +323,7 @@ export const FutureOrderV2CartPayPanel = ({
       />
       )}
       {communityBatchChecking ? (
-        <p role="status" data-testid="cart-community-batch-checking" className="mt-3 text-xs text-heritage-ink/60">
+        <p role="status" data-testid="cart-community-batch-checking" className="mt-3 text-xs text-white/75">
           {COMMUNITY_BATCH_CHECKING_MESSAGE}
         </p>
       ) : null}
@@ -321,11 +333,12 @@ export const FutureOrderV2CartPayPanel = ({
         data-testid="future-order-v2-cart-pay"
         disabled={communityBatchClosed || communityBatchChecking || paying || !stripeReady}
         onClick={communityBatchClosed || communityBatchChecking ? undefined : () => void handlePay()}
-        className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-heritage-forest transition hover:bg-heritage-green hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-heritage-forest transition hover:bg-white hover:text-heritage-forest disabled:cursor-not-allowed disabled:opacity-50"
       >
         <LockKeyhole size={14} />
         {paying ? "Processing payment..." : "Pay this order"}
       </button>
+      </div>
     </article>
   );
 };
