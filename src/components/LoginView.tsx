@@ -42,7 +42,7 @@ import {
 import { designStylePrecanonicalUploadCleanupCoordinator } from "../utils/designStylePrecanonicalUploadCleanup";
 
 interface LoginViewProps {
-  onLogin: (customer: Customer) => void;
+  onLogin: (customer: Customer, options?: { isNewAccount?: boolean }) => void;
   customers: Customer[];
   setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
   checkoutMode?: boolean;
@@ -68,6 +68,7 @@ export default function LoginView({
   const [successMsg, setSuccessMsg] = useState("");
   const [pendingAuthenticatedCustomer, setPendingAuthenticatedCustomer] =
     useState<Customer | null>(null);
+  const pendingIsNewAccountRef = useRef(false);
   const [isTransferringGuestDesign, setIsTransferringGuestDesign] =
     useState(false);
 
@@ -91,6 +92,7 @@ export default function LoginView({
 
   const finishAuthenticatedLogin = async (
     customer: Customer,
+    isNewAccount = false,
   ): Promise<boolean> => {
     const identity = auth.currentUser;
     if (!identity || identity.isAnonymous) {
@@ -103,11 +105,13 @@ export default function LoginView({
         await guestUploadedDesignOwnershipContinuity.ensure(identity);
       if (continuity.status === "transfer_required") {
         setPendingAuthenticatedCustomer(customer);
+        pendingIsNewAccountRef.current = isNewAccount;
         setError(GUEST_UPLOAD_TRANSFER_REQUIRED_MESSAGE);
         return false;
       }
       setPendingAuthenticatedCustomer(null);
-      onLogin(customer);
+      pendingIsNewAccountRef.current = false;
+      onLogin(customer, { isNewAccount });
       return true;
     } finally {
       setIsTransferringGuestDesign(false);
@@ -117,12 +121,16 @@ export default function LoginView({
   const handleRetryGuestDesignTransfer = async () => {
     if (!pendingAuthenticatedCustomer) return;
     setError("");
+    const wasNewAccount = pendingIsNewAccountRef.current;
     const completed = await finishAuthenticatedLogin(
       pendingAuthenticatedCustomer,
+      wasNewAccount,
     );
     if (completed) {
       setSuccessMsg(
-        `Welcome back, ${pendingAuthenticatedCustomer.name}!`,
+        wasNewAccount
+          ? "Account created successfully!"
+          : `Welcome back, ${pendingAuthenticatedCustomer.name}!`,
       );
     }
   };
@@ -281,7 +289,7 @@ export default function LoginView({
           codeStep.email,
           emailCode,
         );
-      if (await finishAuthenticatedLogin(customer)) {
+      if (await finishAuthenticatedLogin(customer, created)) {
         setSuccessMsg(
           created
             ? "Account created successfully!"
