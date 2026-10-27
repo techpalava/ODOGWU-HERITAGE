@@ -60,21 +60,26 @@ try {
   const { port } = server.httpServer.address();
   const url = `http://127.0.0.1:${port}/scripts/batchEditLayout/harness.html`;
   for (const width of [1280, 1440]) {
-    const { stdout } = await run(
-      chrome,
-      [
-        "--headless=new",
-        "--no-sandbox",
-        "--disable-gpu",
-        "--hide-scrollbars",
-        `--window-size=${width},1000`,
-        "--virtual-time-budget=20000",
-        "--dump-dom",
-        url,
-      ],
-      { maxBuffer: 32 * 1024 * 1024, timeout: 120000 },
-    );
-    const match = stdout.match(/<pre id="layout-result">([\s\S]*?)<\/pre>/);
+    // The first visit after a dependency change can hit Vite's one-time
+    // dependency optimisation reload; load the page again once if so.
+    const readResult = async () => {
+      const { stdout } = await run(
+        chrome,
+        [
+          "--headless=new",
+          "--no-sandbox",
+          "--disable-gpu",
+          "--hide-scrollbars",
+          `--window-size=${width},1000`,
+          "--virtual-time-budget=20000",
+          "--dump-dom",
+          url,
+        ],
+        { maxBuffer: 32 * 1024 * 1024, timeout: 120000 },
+      );
+      return stdout.match(/<pre id="layout-result">([\s\S]*?)<\/pre>/);
+    };
+    const match = (await readResult()) || (await readResult());
     assert.ok(match, `${width}px: the layout page reported a result`);
     const payload = JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
     assert.equal(payload.ok, true, `${width}px: ${payload.error}`);
