@@ -54,10 +54,15 @@ const mount = async (batches: Batch[]) => {
 const byTestId = (renderer: ReturnType<typeof create>, id: string) =>
   renderer.root.findAll((node) => node.props?.["data-testid"] === id && typeof node.type === "string");
 
-const button = (renderer: ReturnType<typeof create>, label: string): ReactTestInstance =>
-  renderer.root.find(
+// The Edit Timeline panel has a Save at the top and the bottom (same handler):
+// use the first button with the label.
+const button = (renderer: ReturnType<typeof create>, label: string): ReactTestInstance => {
+  const [found] = renderer.root.findAll(
     (node) => node.type === "button" && textOf(node as unknown as TextNode).trim() === label,
   );
+  assert.ok(found, `button "${label}"`);
+  return found;
+};
 
 try {
   // Stored OPEN past its end date: the admin sees what customers see.

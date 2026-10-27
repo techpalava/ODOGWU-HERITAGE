@@ -431,8 +431,8 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
   (Xavier, 2026-10-27: Edit Timeline showed a horizontal scrollbar and Save sat off to the right). The batch table
   has 812px at 1280/1440; the old edit row was 1069px. The edited batch keeps its normal row ("Editing…" in Actions)
   and every field opens once in a full-width row beneath it (`data-testid="batch-edit-panel"`), grouped Batch /
-  Ordering / Dates / Capacity & production stats, with Cancel + "Save changes" at the top and Cancel + "Save" at the
-  bottom (same `handleSave`; the existing test finds the bottom button by its "Save" label). Fields, handlers,
+  Ordering / Dates / Capacity & production stats, with Cancel + Save at both the top and the
+  bottom (same `handleSave`; the keep-open admin test uses the first "Save"). Fields, handlers,
   validation, save messages and normal rows unchanged. Tests: `npm run test:batch-edit-panel` (includes a headless
   Chrome layout check at 1280 and 1440; skips without Chrome). 1024px is a later follow-up (normal rows already
   overflow there).

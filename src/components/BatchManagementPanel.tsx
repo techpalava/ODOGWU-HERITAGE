@@ -397,7 +397,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                             disabled={isSaving}
                             className="bg-heritage-green text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-heritage-forest transition"
                           >
-                            <Save size={14} /> Save changes
+                            <Save size={14} /> Save
                           </button>
                         </div>
                       </div>

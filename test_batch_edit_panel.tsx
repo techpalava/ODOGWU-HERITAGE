@@ -138,6 +138,11 @@ try {
   assert.equal(byTestId("batch-edit-save-bottom").length, 1);
   assert.equal(byTestId("batch-edit-cancel-top").length, 1);
   assert.equal(byTestId("batch-edit-cancel-bottom").length, 1);
+  // Both Save buttons read "Save"; both Cancel buttons read "Cancel".
+  assert.equal(textOf(byTestId("batch-edit-save-top")[0] as unknown as TextNode).trim(), "Save");
+  assert.equal(textOf(byTestId("batch-edit-save-bottom")[0] as unknown as TextNode).trim(), "Save");
+  assert.equal(buttons("Save").length, 2);
+  assert.equal(buttons("Cancel").length, 2);
 
   // --- Both Save buttons run the same save with the same values -----------
   const edit = async () => {
