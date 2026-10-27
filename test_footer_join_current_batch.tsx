@@ -115,15 +115,21 @@ try {
   useAppStore.setState(originalState, true);
 }
 
-// Footer reuses Home's batch and join handler instead of its own rule.
+// Footer reuses Home's batch and join handler instead of its own rule. While
+// Home shows the closed current-batch card, the footer passes no batch, so its
+// link goes to the homepage order section (that card).
 const app = readFileSync("src/App.tsx", "utf8");
 assert.match(
   app,
-  /<Footer\s+joinBatch=\{activeCommunityBatch \? registrationBatch \?\? null : null\}\s+onJoinCommunityBatch=\{handleJoinCommunityBatch\}/,
+  /const homepageJoinBatch = activeCommunityBatch\s+\? registrationBatch \?\? null\s+: null;/,
 );
 assert.match(
   app,
-  /onJoinCommunityBatch=\{handleJoinCommunityBatch\}\s+joinBatch=\{\s*activeCommunityBatch \? registrationBatch \?\? null : null\s*\}/,
+  /<Footer\s+joinBatch=\{homepageClosedBatch \? null : homepageJoinBatch\}\s+onJoinCommunityBatch=\{handleJoinCommunityBatch\}/,
+);
+assert.match(
+  app,
+  /onJoinCommunityBatch=\{handleJoinCommunityBatch\}\s+joinBatch=\{homepageJoinBatch\}\s+closedJoinBatch=\{homepageClosedBatch\}/,
 );
 const footer = readFileSync("src/components/Footer.tsx", "utf8");
 assert.equal(footer.includes("getCurrentCommunityBatch"), false);

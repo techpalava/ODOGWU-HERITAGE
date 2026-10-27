@@ -4,6 +4,9 @@ import { StorageService } from "../services/storageService";
 import { Eye, Save, Settings } from "lucide-react";
 import { InputField, SelectField } from "./ui/FormControls";
 import { normalizeBatchStatus } from "../utils/batchStatus";
+import { normalizeBatchOngoingUntil } from "../utils/batchDateRange";
+import { getAdminBatchOrderState } from "../utils/adminBatchOrderState";
+import { getBatchOrderWindow } from "../utils/batchOrderWindow";
 import {
   getHomepageJoinBatchLabel,
   getHomepageOrderGatewayState,
@@ -101,6 +104,19 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
       setSaveFeedback("The registration closing date must follow the opening date.");
       return;
     }
+    const keepOpenAfterEndDate = formData.keepOpenAfterEndDate === true;
+    const ongoingUntilInput = (formData.ongoingUntil || "").trim();
+    const ongoingUntil = keepOpenAfterEndDate
+      ? normalizeBatchOngoingUntil(ongoingUntilInput)
+      : undefined;
+    if (keepOpenAfterEndDate && ongoingUntilInput && !ongoingUntil) {
+      setSaveFeedback("Enter the \"Open until\" date as a full date, or leave it blank.");
+      return;
+    }
+    if (ongoingUntil && ongoingUntil < endDate) {
+      setSaveFeedback("The \"Open until\" date must be on or after the end date.");
+      return;
+    }
     if (
       !Number.isFinite(targetGarments) ||
       targetGarments < homepageState.minimumGarments
@@ -132,7 +148,11 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
         status: normalizeBatchStatus(formData.status) as Batch["status"],
         visibility: formData.visibility || "PUBLIC",
         updatedDate: new Date().toISOString(),
+        keepOpenAfterEndDate,
       };
+      // "Open until" only exists while the keep-open toggle is on.
+      if (ongoingUntil) updatedBatch.ongoingUntil = ongoingUntil;
+      else delete updatedBatch.ongoingUntil;
 
       let batchesToSave = [updatedBatch];
       
@@ -150,10 +170,22 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
           batch,
         ),
       );
+      const savedOrderState = getAdminBatchOrderState(updatedBatch);
+      const savedOrderStateNote =
+        savedOrderState && !savedOrderState.customersCanOrder
+          ? ` ${updatedBatch.name}: ${savedOrderState.label}.${
+              getBatchOrderWindow(updatedBatch).dateReason === "ended"
+                ? ' Turn on "Keep open after end date (ongoing)" to keep taking orders.'
+                : ""
+            }`
+          : savedOrderState
+            ? ` ${updatedBatch.name}: ${savedOrderState.label}.`
+            : "";
       setSaveFeedback(
-        nextHomepageState.joinBatch
+        (nextHomepageState.joinBatch
           ? `Saved. The homepage button is now "${getHomepageJoinBatchLabel(nextHomepageState.joinBatch.name)}".`
-          : "Saved. No Type B homepage button is currently eligible.",
+          : "Saved. No Type B homepage button is currently eligible.") +
+          savedOrderStateNote,
       );
       setEditingBatchId(null);
       setFormData({});
@@ -210,7 +242,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
         <p className="max-w-xl text-xs leading-relaxed text-heritage-ink/65">
           {homepageState.joinBatch
             ? "This public batch is inside its registration window, accepts orders, and has capacity."
-            : "Type B appears when one public batch is open by its dates or manual status, allows orders, and has remaining capacity."}
+            : "Type B appears when one public batch is open by its dates (or kept open after its end date), allows orders, and has remaining capacity."}
         </p>
       </div>
 
@@ -301,6 +333,46 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                            className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
                         />
                         <span className="text-xs font-bold text-gray-700">Allow Orders</span>
+                      </div>
+                      <div className="mt-2">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            data-testid="batch-keep-open-after-end-date"
+                            checked={formData.keepOpenAfterEndDate === true}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                keepOpenAfterEndDate: e.target.checked,
+                              })
+                            }
+                            className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
+                          />
+                          <span className="text-xs font-bold text-gray-700">
+                            Keep open after end date (ongoing)
+                          </span>
+                        </label>
+                        <span className="mt-1 block text-[10px] text-gray-400">
+                          Only the end date is ignored. Allow Orders, capacity and production statuses still close the batch.
+                        </span>
+                        {formData.keepOpenAfterEndDate === true && (
+                          <div className="mt-2">
+                            <InputField
+                              label="Open until (optional)"
+                              type="date"
+                              value={formData.ongoingUntil || ""}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  ongoingUntil: e.target.value,
+                                })
+                              }
+                            />
+                            <span className="mt-1 block text-[10px] text-gray-400">
+                              Blank keeps it open until you close it.
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 space-y-3 border-t border-heritage-gold/15 pt-3">
@@ -462,6 +534,20 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                      `}>
                        {batch.status}
                      </span>
+                     {(() => {
+                       const orderState = getAdminBatchOrderState(batch);
+                       return orderState ? (
+                         <span
+                           data-testid="batch-effective-order-state"
+                           data-customers-can-order={orderState.customersCanOrder ? "true" : "false"}
+                           className={`mt-1 block max-w-[11rem] text-[10px] font-semibold leading-snug ${
+                             orderState.customersCanOrder ? "text-heritage-green" : "text-red-700"
+                           }`}
+                         >
+                           {orderState.label}
+                         </span>
+                       ) : null;
+                     })()}
                   </td>
                   <td className="p-3">
                     <div className="text-[10px] text-gray-600 space-y-1">

@@ -17,6 +17,7 @@ import React, {
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
+  Batch,
   StyleCategory,
   Fabric,
   Measurements,
@@ -28,6 +29,7 @@ import {
   GuestDesignDraft,
   FabricAllocation,
   FabricAllocationState,
+  GarmentConstructionPricingResolution,
   CustomDetailDemographic,
   FabricGarmentType,
   GarmentTypeStepSelection,
@@ -101,7 +103,16 @@ import {
   type FabricReentryBaseline,
 } from "../utils/designStudioContextualReentryGuidance";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
-import { getCurrentCommunityBatch } from "../utils/batchUtils";
+import {
+  getCurrentCommunityBatch,
+  getNextOpenCommunityBatch,
+} from "../utils/batchUtils";
+import {
+  batchOrderWindowContextFields,
+  getBatchOrderWindow,
+} from "../utils/batchOrderWindow";
+import { formatHomepageBatchDeadline } from "../utils/homepageOrderGateway";
+import { CommunityBatchClosedNotice } from "./CommunityBatchClosedNotice";
 import {
   canonicalOrderIdentitiesMatch,
   getCanonicalOrderIdentity,
@@ -474,8 +485,19 @@ import {
   createEmptyAdditionalGarmentConstructionState,
   reconcileAdditionalGarmentConstructionState,
   removeAdditionalGarmentConstruction,
-  selectAdditionalGarmentConstructionOption,
 } from "../utils/additionalGarmentConstructionState";
+import {
+  getBaseGarmentConstruction,
+  getStep1LengthSwitchNote,
+  parseBaseGarmentTypeFromKey,
+} from "../utils/garmentLengthVariant";
+import {
+  placeLengthSwitchedGarmentOnFabric,
+  planGarmentLengthSwitch,
+  previewLengthSwitchedOccurrences,
+  type GarmentLengthSwitchPlan,
+  type LengthSwitchFabricChoice,
+} from "../utils/garmentLengthSwitch";
 import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
@@ -538,6 +560,11 @@ export interface DesignStudioViewProps {
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
   onStartFreshIndividualOrder?: () => void;
+  /**
+   * Starts the homepage Join flow for another community batch. Used only by
+   * the closed-batch notice's "Join next open batch" button.
+   */
+  onJoinCommunityBatch?: (batch: Batch) => void;
   /** Test-only dependency seam; production uses the Firebase-backed repository. */
   futureDraftRepository?: AuthenticatedFutureDraftRepository;
   /** Test-only deterministic replacement for the production autosave timer. */
@@ -744,6 +771,7 @@ export default function DesignStudioView({
   initialFabricCode,
   clearInitialPreset,
   onStartFreshIndividualOrder,
+  onJoinCommunityBatch,
   futureDraftRepository,
   futureDraftAutosaveScheduler,
   futureOrderV2TestHooks,
@@ -1293,6 +1321,7 @@ export default function DesignStudioView({
           CapacityService.getTargetCapacity(computedActiveBatch),
         allowOrders: computedActiveBatch.allowOrders,
         batchStatus: computedActiveBatch.status,
+        ...batchOrderWindowContextFields(computedActiveBatch),
       }
     : {
         orderType: "Community",
@@ -1648,6 +1677,18 @@ export default function DesignStudioView({
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
   const [fabricAllocationState, setFabricAllocationState] =
     useState<FabricAllocationState>(FabricAllocationStateEngine.initialize());
+  // Step 4 length switch waiting for the customer to pick a fabric for the bigger garment.
+  const [futureLengthSwitchFabricPicker, setFutureLengthSwitchFabricPicker] =
+    useState<{
+      parentGarmentKey: string;
+      isMainGarment: boolean;
+      stepOneGarmentType: CanonicalPhysicalGarmentType;
+      selectionGroup: CustomDetailSelectionGroup;
+      optionId: string;
+      resolution: GarmentConstructionPricingResolution;
+      plan: Extract<GarmentLengthSwitchPlan, { status: "needs_fabric" }>;
+      errorMessage: string | null;
+    } | null>(null);
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
@@ -1785,6 +1826,13 @@ export default function DesignStudioView({
           additionalGarmentConstructionState:
             authoritativeAdditionalGarmentConstructionState,
         });
+  // Step 1 keeps the card the customer picked and notes a Step 4 length switch under it.
+  const garmentTypeStepLengthSwitchNotes = Object.fromEntries(
+    garmentTypeSelection.garmentTypes.flatMap((garmentType) => {
+      const note = getStep1LengthSwitchNote(garmentTypeSelection, garmentType);
+      return note ? [[garmentType, note] as const] : [];
+    }),
+  ) as Partial<Record<CanonicalPhysicalGarmentType, string>>;
   const provisionalAdditionalGarmentKey =
     additionalGarmentFabricTransaction?.origin === "new_addition"
       ? additionalGarmentFabricTransaction.garmentKey
@@ -3927,6 +3975,34 @@ export default function DesignStudioView({
   );
   const communityBatchClosed = communityBatchClosureStatus === "closed";
   const communityBatchChecking = communityBatchClosureStatus === "loading";
+  const closedCommunityBatchId =
+    communityBatchClosed && futureOrderIdentity?.orderType === "Community"
+      ? futureOrderIdentity.batchId
+      : null;
+  const closedCommunityBatchClosedOn = (() => {
+    if (!closedCommunityBatchId) return null;
+    const batch = (storeBatches || []).find(
+      (entry) => entry.id === closedCommunityBatchId,
+    );
+    if (!batch) return null;
+    const batchWindow = getBatchOrderWindow(batch);
+    if (
+      (batchWindow.dateReason !== "ended" &&
+        batchWindow.dateReason !== "ongoing_ended") ||
+      !batchWindow.effectiveCloseDate
+    ) {
+      return null;
+    }
+    // Boundaries are end of day at +01:00; show that calendar day.
+    const day = new Date(batchWindow.effectiveCloseDate.getTime() + 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    return formatHomepageBatchDeadline(day);
+  })();
+  const closedCommunityBatchNextBatch = closedCommunityBatchId
+    ? getNextOpenCommunityBatch(storeBatches || [], closedCommunityBatchId) ??
+      null
+    : null;
   // One order-wide authority for Continue, Journey Stepper, Live Summary, and
   // stage correction. Do not use active-wearer-only completeness here.
   const summaryUnlockedByMeasurements =
@@ -8850,41 +8926,181 @@ export default function DesignStudioView({
     selectionGroup: CustomDetailSelectionGroup,
     optionId: string,
   ) => {
-    if (parentGarmentKey.startsWith("base:")) {
-      setGarmentTypeSelection((current) => {
-        const resolution = current.constructionByGarment[garmentType];
-        if (!resolution) return current;
-        const selected = selectGarmentConstructionOption({
-          resolution,
-          selectionGroup,
-          optionId,
-          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        });
-        return selected.status === "selected"
-          ? {
-              ...current,
-              constructionByGarment: {
-                ...current.constructionByGarment,
-                [garmentType]: selected.resolution,
-              },
-            }
-          : current;
+    const isMainGarment = parentGarmentKey.startsWith("base:");
+    // Main garment constructions stay stored under the Step 1 card (the key's type).
+    const stepOneGarmentType =
+      parseBaseGarmentTypeFromKey(parentGarmentKey) ?? garmentType;
+    const currentResolution = isMainGarment
+      ? garmentTypeSelection.constructionByGarment[stepOneGarmentType]
+      : designSelections.additionalGarmentConstructions?.byGarmentKey[
+          parentGarmentKey
+        ];
+    if (!currentResolution) return;
+    const selected = selectGarmentConstructionOption({
+      resolution: currentResolution,
+      selectionGroup,
+      optionId,
+      normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+    });
+    if (selected.status !== "selected") return;
+
+    // Picking the other length's option switches the garment type in the order (Standard Shirt
+    // <-> Long Shirt, etc.). The garment keeps its key, so its custom details, measurements,
+    // design style and links stay attached; its type, price and fabric size follow the option.
+    const lengthSwitch = planGarmentLengthSwitch({
+      parentGarmentKey,
+      currentGarmentType: garmentType,
+      selectionGroup,
+      optionId,
+      fabricAllocationState,
+      fabrics,
+    });
+    if (lengthSwitch.status === "needs_fabric") {
+      // Keep the previous option until the customer picks a fabric for the bigger garment.
+      setFutureLengthSwitchFabricPicker({
+        parentGarmentKey,
+        isMainGarment,
+        stepOneGarmentType,
+        selectionGroup,
+        optionId,
+        resolution: selected.resolution,
+        plan: lengthSwitch,
+        errorMessage: null,
       });
       return;
     }
-    setDesignSelections((current) => ({
-      ...current,
-      additionalGarmentConstructions:
-        selectAdditionalGarmentConstructionOption({
-          state:
-            current.additionalGarmentConstructions ||
-            createEmptyAdditionalGarmentConstructionState(),
-          garmentKey: parentGarmentKey,
-          selectionGroup,
-          optionId,
-          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        }),
-    }));
+    applyFutureConstructionSelection({
+      parentGarmentKey,
+      isMainGarment,
+      stepOneGarmentType,
+      resolution: selected.resolution,
+      toGarmentType:
+        lengthSwitch.status === "switch" ? lengthSwitch.toGarmentType : null,
+      fabricAllocationState:
+        lengthSwitch.status === "switch"
+          ? lengthSwitch.fabricAllocationState
+          : null,
+    });
+  };
+  const applyFutureConstructionSelection = ({
+    parentGarmentKey,
+    isMainGarment,
+    stepOneGarmentType,
+    resolution,
+    toGarmentType,
+    fabricAllocationState: nextFabricAllocationState,
+  }: {
+    parentGarmentKey: string;
+    isMainGarment: boolean;
+    stepOneGarmentType: CanonicalPhysicalGarmentType;
+    resolution: GarmentConstructionPricingResolution;
+    /** Set when the option switches the garment to the other length. */
+    toGarmentType: CanonicalPhysicalGarmentType | null;
+    fabricAllocationState: FabricAllocationState | null;
+  }) => {
+    if (nextFabricAllocationState) {
+      // Same update as the construction, so reconciliation never sees a fabric assignment whose
+      // size disagrees with the garment.
+      setFabricAllocationState(nextFabricAllocationState);
+    }
+    if (isMainGarment) {
+      setGarmentTypeSelection((current) => ({
+        ...current,
+        constructionByGarment: {
+          ...current.constructionByGarment,
+          [stepOneGarmentType]: resolution,
+        },
+      }));
+      return;
+    }
+    const nextResolution = toGarmentType
+      ? { ...resolution, garmentType: toGarmentType }
+      : resolution;
+    setDesignSelections((current) => {
+      const state =
+        current.additionalGarmentConstructions ||
+        createEmptyAdditionalGarmentConstructionState();
+      if (!state.byGarmentKey[parentGarmentKey]) return current;
+      return {
+        ...current,
+        additionalGarmentConstructions: {
+          ...state,
+          byGarmentKey: {
+            ...state.byGarmentKey,
+            // An added garment carries the garment type it now is.
+            [parentGarmentKey]: nextResolution,
+          },
+        },
+      };
+    });
+  };
+  // The order as it will be once the waiting length switch applies (for the fabric picker).
+  const futureLengthSwitchFabricPreview = futureLengthSwitchFabricPicker
+    ? {
+        garmentTypeSelection: futureLengthSwitchFabricPicker.isMainGarment
+          ? {
+              ...effectiveJourneyGarmentTypeSelection,
+              constructionByGarment: {
+                ...effectiveJourneyGarmentTypeSelection.constructionByGarment,
+                [futureLengthSwitchFabricPicker.stepOneGarmentType]:
+                  futureLengthSwitchFabricPicker.resolution,
+              },
+            }
+          : effectiveJourneyGarmentTypeSelection,
+        requiredPhysicalOccurrences: previewLengthSwitchedOccurrences(
+          authoritativePhysicalOccurrencesForDomain,
+          futureLengthSwitchFabricPicker.parentGarmentKey,
+          futureLengthSwitchFabricPicker.plan.toGarmentType,
+        ),
+      }
+    : null;
+  useEffect(() => {
+    // Leaving Step 4 closes a waiting fabric picker; the previous option stays.
+    if (futureStageId !== "custom_details") setFutureLengthSwitchFabricPicker(null);
+  }, [futureStageId]);
+  const handleFutureLengthSwitchFabricChoice = (
+    choice: LengthSwitchFabricChoice,
+  ) => {
+    const picker = futureLengthSwitchFabricPicker;
+    if (!picker || !futureLengthSwitchFabricPreview) return;
+    // The picker was opened on the fabric state it shows; refuse a pick on a stale order.
+    const current = planGarmentLengthSwitch({
+      parentGarmentKey: picker.parentGarmentKey,
+      currentGarmentType: picker.plan.fromGarmentType,
+      selectionGroup: picker.selectionGroup,
+      optionId: picker.optionId,
+      fabricAllocationState,
+      fabrics,
+    });
+    if (current.status !== "needs_fabric") {
+      setFutureLengthSwitchFabricPicker(null);
+      return;
+    }
+    const placement = placeLengthSwitchedGarmentOnFabric({
+      plan: current,
+      parentGarmentKey: picker.parentGarmentKey,
+      garmentTypeSelection: futureLengthSwitchFabricPreview.garmentTypeSelection,
+      requiredPhysicalOccurrences:
+        futureLengthSwitchFabricPreview.requiredPhysicalOccurrences,
+      fabrics,
+      choice,
+    });
+    if (placement.status !== "assigned") {
+      setFutureLengthSwitchFabricPicker({
+        ...picker,
+        errorMessage: placement.reason,
+      });
+      return;
+    }
+    setFutureLengthSwitchFabricPicker(null);
+    applyFutureConstructionSelection({
+      parentGarmentKey: picker.parentGarmentKey,
+      isMainGarment: picker.isMainGarment,
+      stepOneGarmentType: picker.stepOneGarmentType,
+      resolution: picker.resolution,
+      toGarmentType: current.toGarmentType,
+      fabricAllocationState: placement.fabricAllocationState,
+    });
   };
   const handleFutureMultiCustomDetailToggle = (
     garmentKey: string,
@@ -9360,7 +9576,10 @@ export default function DesignStudioView({
         : null;
     const sourceConstruction = sourceSubject
       ? sourceSubject.parentGarmentKey.startsWith("base:")
-        ? garmentTypeSelection.constructionByGarment[deferredPrompt.garmentType]
+        ? getBaseGarmentConstruction(
+            garmentTypeSelection,
+            sourceSubject.parentGarmentKey,
+          )
         : futureAdditionalConstructionReconciliation.state.byGarmentKey[
             sourceSubject.parentGarmentKey
           ]
@@ -9382,7 +9601,9 @@ export default function DesignStudioView({
     }
     const construction =
       choice.mode === "copy"
-        ? sourceConstruction!
+        ? // The source may be a main garment switched to this length in Step 4: its construction
+          // is stored under its Step 1 card, so name the added garment's own type.
+          { ...sourceConstruction!, garmentType: deferredPrompt.garmentType }
         : resolveGarmentConstructionPricing(
             deferredPrompt.garmentType,
             normalizedGarmentTypeCatalog,
@@ -10610,13 +10831,16 @@ export default function DesignStudioView({
         <StudioOrderContextIndicator context={customerOrderContextPresentation} />
       </div>
       {communityBatchClosed ? (
-        <p
-          role="status"
-          data-testid="community-batch-closed"
-          className="mb-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900"
-        >
-          {COMMUNITY_BATCH_CLOSED_MESSAGE}
-        </p>
+        <CommunityBatchClosedNotice
+          closedOn={closedCommunityBatchClosedOn}
+          nextBatch={closedCommunityBatchNextBatch}
+          onJoinNextBatch={
+            closedCommunityBatchNextBatch && onJoinCommunityBatch
+              ? () => onJoinCommunityBatch(closedCommunityBatchNextBatch)
+              : undefined
+          }
+          onStartIndividualOrder={onStartFreshIndividualOrder}
+        />
       ) : null}
       {savedStudioOrders?.changeWarnings.length ? (
         <div className="mb-3">
@@ -10628,7 +10852,10 @@ export default function DesignStudioView({
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
         highestUnlockedStageIndex={highestUnlockedStageIndex}
-        canEnterFabric={garmentTypeStageCompletion.isComplete}
+        canEnterFabric={
+          garmentTypeStageCompletion.isComplete &&
+          !(communityBatchClosed && futureStageId === "garment_type")
+        }
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
         canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
@@ -10688,8 +10915,13 @@ export default function DesignStudioView({
               embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
             }
             onContinue={handleOpenDormantFabricStage}
-            continueDisabled={!garmentTypeStageCompletion.isComplete}
+            // A closed community batch stops at Step 1 (see the closed notice
+            // above) instead of after Steps 1-8.
+            continueDisabled={
+              !garmentTypeStageCompletion.isComplete || communityBatchClosed
+            }
             stageBlockers={garmentTypeStageCompletion.blockers}
+            lengthSwitchNotes={garmentTypeStepLengthSwitchNotes}
           />
         </div>
       ) : futureStageId === "fabric" ? (
@@ -11428,6 +11660,43 @@ export default function DesignStudioView({
               allocationId,
             });
           }}
+        />
+      )}
+      {futureLengthSwitchFabricPicker &&
+        futureLengthSwitchFabricPreview &&
+        futureStageId === "custom_details" && (
+        <FutureAdditionalGarmentFabricDialog
+          transaction={{
+            transactionId: 0,
+            phase: "catalogue",
+            origin: "change_existing",
+            garmentKey: futureLengthSwitchFabricPicker.parentGarmentKey,
+            garmentType: futureLengthSwitchFabricPicker.plan.toGarmentType,
+          }}
+          eyebrow={null}
+          fabrics={fabrics}
+          garmentTypeSelection={futureLengthSwitchFabricPreview.garmentTypeSelection}
+          fabricAllocationState={
+            futureLengthSwitchFabricPicker.plan.fabricAllocationStateWithoutGarment
+          }
+          requiredPhysicalOccurrences={
+            futureLengthSwitchFabricPreview.requiredPhysicalOccurrences
+          }
+          errorMessage={futureLengthSwitchFabricPicker.errorMessage}
+          // Pre-selected when it can still hold the garment at its new length.
+          preselectedFabricCode={futureLengthSwitchFabricPicker.plan.fromFabricCode}
+          cancelLabel="Cancel, Keep Standard Length"
+          onSelectFabric={(fabricCode) =>
+            handleFutureLengthSwitchFabricChoice({ kind: "fabric", fabricCode })
+          }
+          onSelectExistingAllocation={(allocationId) =>
+            handleFutureLengthSwitchFabricChoice({
+              kind: "allocation",
+              allocationId,
+            })
+          }
+          // Closing without a pick keeps the previous option and fabric.
+          onCancel={() => setFutureLengthSwitchFabricPicker(null)}
         />
       )}
       {showAdditionalGarmentFabricDialog &&

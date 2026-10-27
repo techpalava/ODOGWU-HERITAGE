@@ -102,6 +102,10 @@ import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+import {
+  getGarmentLengthFamily,
+  getGarmentLengthFamilyForSelectionGroup,
+} from "../utils/garmentLengthVariant";
 
 const formatStepMonogramDetail = (
   selections: DesignSelections,
@@ -380,22 +384,40 @@ const getConstructionPresentationPrefix = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
   selectionGroup: CustomDetailSelectionGroup,
 ): string | null => {
+  // Standard and Long garments of one family offer every length option of that family; the chosen
+  // option decides Standard vs Long (Layout B below). Any other parent of these groups (Agbada's
+  // shirt) keeps its Standard options only.
+  if (
+    getGarmentLengthFamilyForSelectionGroup(selectionGroup)?.id ===
+    getGarmentLengthFamily(occurrence.subject.parentGarmentType)?.id &&
+    getGarmentLengthFamily(occurrence.subject.parentGarmentType)
+  ) {
+    return null;
+  }
   switch (selectionGroup) {
     case "shirt_construction":
-      return occurrence.subject.parentGarmentType === "kaftan"
-        ? "shirt_long_"
-        : "shirt_std_";
+      return "shirt_std_";
     case "dress_construction":
-      return occurrence.subject.parentGarmentType === "full_length_gown"
-        ? "dress_long_"
-        : "dress_std_";
+      return "dress_std_";
     case "skirt_length":
-      return occurrence.subject.parentGarmentType === "long_skirt"
-        ? "skirt_long"
-        : "skirt_std";
+      return "skirt_std";
     default:
       return null;
   }
+};
+
+const lengthGroups = (stdPrefix: string, longPrefix: string) =>
+  [
+    { heading: "Standard Length", prefix: stdPrefix },
+    { heading: "Long Length", prefix: longPrefix },
+  ] as const;
+
+const CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP: Partial<
+  Record<CustomDetailSelectionGroup, ReturnType<typeof lengthGroups>>
+> = {
+  shirt_construction: lengthGroups("shirt_std_", "shirt_long_"),
+  dress_construction: lengthGroups("dress_std_", "dress_long_"),
+  skirt_length: lengthGroups("skirt_std", "skirt_long"),
 };
 
 const getGarmentFirstDetailLabel = (
@@ -1246,6 +1268,26 @@ export const DormantFutureCustomDetailsStep = ({
               })}
             </div>
           </>
+        ) : constructionPresentationPrefix === null &&
+          CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP[group.selectionGroup] ? (
+          <div className="min-w-0 space-y-4">
+            {CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP[group.selectionGroup]?.map(({ heading, prefix }) => {
+              const options = presentationOptions.filter((option) =>
+                option.id.startsWith(prefix),
+              );
+              if (options.length === 0) return null;
+              return (
+                <div
+                  key={prefix}
+                  data-construction-length-group={prefix}
+                  className="min-w-0 space-y-2"
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-heritage-ink/55">{heading}</p>
+                  {renderOptionGrid(options)}
+                </div>
+              );
+            })}
+          </div>
         ) : renderOptionGrid(presentationOptions)}
         {presentationOptions.map(renderPersonalizedRequirementDetail)}
         {presentationOptions.length === 0 && <p className="text-xs text-heritage-ink/60">No current catalogue options are available.</p>}

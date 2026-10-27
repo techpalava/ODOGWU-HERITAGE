@@ -210,7 +210,7 @@ const homeSource = readFileSync("src/components/HomeView.tsx", "utf8");
 assert.doesNotMatch(homeSource, /Loading Order Options/);
 assert.doesNotMatch(homeSource, /disabled=\{isBatchGatewayLoading\}/, "Hero buttons are not disabled while batches load");
 assert.match(homeSource, /provisionalJoin=\{provisionalJoin\}/);
-assert.match(homeSource, /writeHomepageJoinBatchCache\(joinBatch \?\? null\)/);
+assert.match(homeSource, /writeHomepageJoinBatchCache\(closedJoinBatch \?\? joinBatch \?\? null\)/);
 
 // 6. Preconnect hints.
 const indexHtml = readFileSync("index.html", "utf8");

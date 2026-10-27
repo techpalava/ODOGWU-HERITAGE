@@ -69,6 +69,16 @@ import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSumma
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 import { OrderContextDetails } from "./CustomerOrderContext";
 import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
+import { getFuturePaymentReviewGarmentPictures } from "../utils/futurePaymentReviewPictures";
+import {
+  PAYMENT_REVIEW_LONG_LIST_THRESHOLD,
+  PAYMENT_REVIEW_PAY_PANEL_ID,
+  PaymentReviewDisclosure,
+  PaymentReviewGarmentPictures,
+  PaymentReviewMaybeDisclosure,
+  PaymentReviewPictureStrip,
+  PaymentReviewStickyPayBar,
+} from "./futurePaymentReview/PaymentReviewLayoutParts";
 
 interface DormantFuturePaymentReviewStepProps {
   result: FuturePaymentReviewResult;
@@ -303,8 +313,24 @@ const GarmentReview = ({
       removalHeadingMarker="payment"
       compact
     >
-      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-3">
         {garments.map(({ garment, fabricAllocations, customDetails }, index) => {
+          const constructionIsLong =
+            garment.construction.length > PAYMENT_REVIEW_LONG_LIST_THRESHOLD;
+          const customDetailsAreLong =
+            customDetails.length > PAYMENT_REVIEW_LONG_LIST_THRESHOLD;
+          const constructionTotalRow = (
+                <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/10 pt-1.5">
+                  <dt className="font-bold text-heritage-green">Construction total</dt>
+                  <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
+                    {garment.constructionTotalCents === null ? (
+                      <PendingAmount />
+                    ) : (
+                      moneyFromCents(garment.constructionTotalCents)
+                    )}
+                  </dd>
+                </div>
+          );
           const removalTarget = removalTargets.find(
             (target) => target.garmentKey === garment.garmentKey,
           );
@@ -357,7 +383,14 @@ const GarmentReview = ({
               <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                 Construction
               </p>
-              <dl className="mt-1 space-y-1.5 text-sm">
+              <PaymentReviewMaybeDisclosure
+                collapse={constructionIsLong}
+                id={`construction-${garment.garmentKey}`}
+                showLabel={`Show all ${garment.construction.length} construction lines`}
+                hideLabel="Hide construction lines"
+                className="mt-1"
+              >
+              <dl className={constructionIsLong ? "space-y-1.5 text-sm" : "mt-1 space-y-1.5 text-sm"}>
                 {garment.construction.map((component) => (
                   <div
                     key={component.componentKey}
@@ -371,17 +404,12 @@ const GarmentReview = ({
                     </dd>
                   </div>
                 ))}
-                <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/10 pt-1.5">
-                  <dt className="font-bold text-heritage-green">Construction total</dt>
-                  <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                    {garment.constructionTotalCents === null ? (
-                      <PendingAmount />
-                    ) : (
-                      moneyFromCents(garment.constructionTotalCents)
-                    )}
-                  </dd>
-                </div>
+                {constructionIsLong ? null : constructionTotalRow}
               </dl>
+              </PaymentReviewMaybeDisclosure>
+              {constructionIsLong ? (
+                <dl className="mt-1.5 text-sm">{constructionTotalRow}</dl>
+              ) : null}
             </div>
 
             <div className="mt-3 rounded-lg border border-heritage-gold/15 bg-white p-2.5">
@@ -427,7 +455,14 @@ const GarmentReview = ({
               {customDetails.length === 0 ? (
                 <p className="mt-1 text-sm text-heritage-ink/60">No optional details selected.</p>
               ) : (
-                <ul className="mt-2 space-y-2">
+                <PaymentReviewMaybeDisclosure
+                  collapse={customDetailsAreLong}
+                  id={`custom-details-${garment.garmentKey}`}
+                  showLabel={`Show all ${customDetails.length} Custom Details`}
+                  hideLabel="Hide Custom Details"
+                  className="mt-2"
+                >
+                <ul className={customDetailsAreLong ? "space-y-2" : "mt-2 space-y-2"}>
                   {customDetails.map((detail) => (
                     <li
                       key={detail.occurrenceKey}
@@ -467,6 +502,7 @@ const GarmentReview = ({
                     </li>
                   ))}
                 </ul>
+                </PaymentReviewMaybeDisclosure>
               )}
             </div>
             </article>
@@ -657,6 +693,10 @@ export const DormantFuturePaymentReviewStep = ({
         plainPersonGarmentLabels: true,
       })
     : [];
+  const measurementCount = measurementGroups.reduce(
+    (count, group) => count + group.items.length,
+    0,
+  );
   const pricingRows = candidate
     ? getFuturePaymentReviewPricingRows(candidate.pricing, {
         orderType:
@@ -718,11 +758,34 @@ export const DormantFuturePaymentReviewStep = ({
       : payableNowCents === null
         ? "Pay"
         : `Pay ${moneyFromCents(payableNowCents)}`;
+  const garmentPictures = getFuturePaymentReviewGarmentPictures(
+    candidate,
+    survivorSummary,
+  );
+  const totalLabel =
+    awaitingPersonalizedEvaluation && payableNowCents !== null
+      ? "Total today"
+      : "Total";
+  const totalText =
+    candidate?.pricing.status === "exact" &&
+    candidate.pricing.exactTotalCents !== null
+      ? moneyFromCents(candidate.pricing.exactTotalCents)
+      : awaitingPersonalizedEvaluation && payableNowCents !== null
+        ? moneyFromCents(payableNowCents)
+        : null;
   const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
   const paymentIsConfirmed = payment?.status === "confirmed";
   useEffect(() => {
     if (paymentIsConfirmed) confirmedHeadingRef.current?.focus();
   }, [paymentIsConfirmed]);
+  const showStickyPayBar =
+    v2Payable &&
+    payableNowCents !== null &&
+    totalText !== null &&
+    !communityBatchClosed &&
+    !paymentIsConfirmed &&
+    !paymentIsAuthorized &&
+    payment?.status !== "redirecting";
   const preparationMessage =
     payment?.status === "authorized"
       ? payment.recordError
@@ -833,6 +896,13 @@ export const DormantFuturePaymentReviewStep = ({
       </div>
 
       <CandidateAttention result={result} onEditStage={onEditStage} />
+
+      <div
+        data-payment-review-layout
+        className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] lg:items-start"
+      >
+      <div data-payment-review-details className="min-w-0 space-y-5">
+      <PaymentReviewGarmentPictures pictures={garmentPictures} />
 
       {!candidate && survivorSummary && (
         <RetainedGarmentReview
@@ -1053,7 +1123,13 @@ export const DormantFuturePaymentReviewStep = ({
                 Measurement values are pending.
               </p>
             ) : (
-              <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
+              <PaymentReviewDisclosure
+                id="measurements"
+                showLabel={`Show all ${measurementCount} measurements`}
+                hideLabel="Hide measurements"
+                className="mt-4"
+              >
+              <div className="grid min-w-0 gap-4 md:grid-cols-2">
                 {measurementGroups.map((group) => (
                   <article
                     key={group.garmentKey || "shared"}
@@ -1086,6 +1162,7 @@ export const DormantFuturePaymentReviewStep = ({
                   </article>
                 ))}
               </div>
+              </PaymentReviewDisclosure>
             )}
           </ReviewSection>
 
@@ -1111,13 +1188,7 @@ export const DormantFuturePaymentReviewStep = ({
               </div>
             </div>
             {shippingCustomer && (
-              <dl className="mt-4 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
-                <div className="min-w-0 rounded-xl border border-heritage-green/10 p-3">
-                  <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">Contact</dt>
-                  <dd className="mt-1 break-words font-semibold text-heritage-green">{shippingCustomer.fullName || "Pending"}</dd>
-                  <dd className="break-words text-heritage-ink/65">{shippingCustomer.email || "Email pending"}</dd>
-                  <dd className="break-words text-heritage-ink/65">{shippingCustomer.phone || "Phone pending"}</dd>
-                </div>
+              <dl className="mt-4 grid min-w-0 gap-3 text-sm">
                 <div className="min-w-0 rounded-xl border border-heritage-green/10 p-3">
                   <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
                     {isDelivery ? "Destination" : "Pickup location"}
@@ -1150,13 +1221,33 @@ export const DormantFuturePaymentReviewStep = ({
                 </div>
               </dl>
             )}
-            {shippingCustomer?.comment && (
+            {shippingCustomer && (
+              <PaymentReviewDisclosure
+                id="delivery-contact"
+                showLabel={
+                  shippingCustomer.comment
+                    ? "Show contact details and comment"
+                    : "Show contact details"
+                }
+                hideLabel="Hide contact details"
+              >
+                <dl className="grid min-w-0 gap-3 text-sm">
+                <div className="min-w-0 rounded-xl border border-heritage-green/10 p-3">
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">Contact</dt>
+                  <dd className="mt-1 break-words font-semibold text-heritage-green">{shippingCustomer.fullName || "Pending"}</dd>
+                  <dd className="break-words text-heritage-ink/65">{shippingCustomer.email || "Email pending"}</dd>
+                  <dd className="break-words text-heritage-ink/65">{shippingCustomer.phone || "Phone pending"}</dd>
+                </div>
+                </dl>
+                {shippingCustomer.comment && (
               <div className="mt-3 min-w-0 rounded-xl border border-heritage-gold/15 bg-heritage-cream/20 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">Comment</p>
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-heritage-ink/70">
                   {shippingCustomer.comment}
                 </p>
               </div>
+                )}
+              </PaymentReviewDisclosure>
             )}
             <p className="mt-4 break-words text-sm font-semibold text-heritage-green">
               {pricingRows.some((row) => row.id === "lagos_eindhoven_included")
@@ -1257,6 +1348,38 @@ export const DormantFuturePaymentReviewStep = ({
           </ReviewSection>
         </>
       )}
+      </div>
+
+      <aside
+        id={PAYMENT_REVIEW_PAY_PANEL_ID}
+        aria-label="Order total and payment"
+        data-payment-review-pay-column
+        className="min-w-0 scroll-mt-24 space-y-4 lg:top-24 lg:[@media(min-height:760px)]:sticky"
+      >
+      {garmentPictures.length > 0 || totalText !== null ? (
+        <div
+          data-payment-review-order-card
+          className="hidden min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm lg:block"
+        >
+          <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+            Your order
+          </p>
+          <div className="mt-2">
+            <PaymentReviewPictureStrip pictures={garmentPictures} />
+          </div>
+          <div
+            data-payment-review-order-card-total
+            className="mt-3 flex min-w-0 flex-wrap items-baseline justify-between gap-2 border-t border-heritage-green/15 pt-3"
+          >
+            <span className="text-xs font-bold uppercase tracking-wide text-heritage-green">
+              {totalLabel}
+            </span>
+            <span className="min-w-0 break-words text-right font-mono text-xl font-bold text-heritage-green">
+              {totalText ?? "Available after all prices are confirmed"}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {payment?.status === "confirmed" && preparation?.status === "prepared" ? (
       <section
@@ -1521,6 +1644,16 @@ export const DormantFuturePaymentReviewStep = ({
         </div>
       </section>
       )}
+      </aside>
+      </div>
+
+      {showStickyPayBar ? (
+        <PaymentReviewStickyPayBar
+          totalLabel={totalLabel}
+          totalText={totalText ?? ""}
+          payText={`Pay ${moneyFromCents(payableNowCents as number)}`}
+        />
+      ) : null}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions

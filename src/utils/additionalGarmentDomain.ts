@@ -22,6 +22,11 @@ import {
 } from "../config/AdditionalGarmentPolicy.js";
 import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import {
+  getLengthVariantGarmentTypes,
+  isAdditionalKeyOfGarmentLengthVariant,
+  parseAdditionalGarmentKeyType,
+} from "./garmentLengthVariant.js";
+import {
   isCanonicalPhysicalGarmentType,
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
 } from "./garmentConstructionPricing.js";
@@ -491,14 +496,31 @@ export const reconcileAdditionalGarmentDependencies = (
       (garment) => garment.garmentType,
     ),
   );
-  const getDependencyStatus = (assignment: FabricGarmentAssignment) =>
-    assignment.eligibilityRule === "catalog_all" &&
-    isCanonicalPhysicalGarmentType(assignment.garmentType) &&
-    isAdditionalGarmentType(assignment.garmentType)
+  // An added garment that Step 4 switched to its other length keeps its key, its eligibility and
+  // its link to the main garment: judge it as the garment type it was added as.
+  const getDependencyStatus = (assignment: FabricGarmentAssignment) => {
+    const addedAsType = isAdditionalKeyOfGarmentLengthVariant(
+      assignment.garmentKey,
+      assignment.garmentType,
+    )
+      ? parseAdditionalGarmentKeyType(assignment.garmentKey)
+      : null;
+    const judgedTypes = addedAsType
+      ? [assignment.garmentType, addedAsType]
+      : [assignment.garmentType];
+    return assignment.eligibilityRule === "catalog_all" &&
+      isCanonicalPhysicalGarmentType(assignment.garmentType) &&
+      judgedTypes.some(isAdditionalGarmentType)
       ? "valid"
-      : allowedTypes.has(assignment.garmentType)
+      : judgedTypes.some((garmentType) =>
+            // The main garment it depends on may itself have switched length.
+            getLengthVariantGarmentTypes(garmentType).some((variant) =>
+              allowedTypes.has(variant),
+            ),
+          )
         ? "valid"
         : "orphaned";
+  };
 
   return {
     ...state,
