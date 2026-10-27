@@ -1967,6 +1967,17 @@ const restoreParkedPendingGarment = (
  */
 export type FutureFabricPiecePlacement = "auto" | "new_piece";
 
+export interface FutureFabricGarmentAssignmentOptions {
+  /** See applyFutureFabricCardSelection: change only this garment. */
+  detachFromSharedPiece?: boolean;
+  /**
+   * See applyFutureFabricCardSelection: a garment alone on its piece joins
+   * an existing piece of the new print ("Pair with Selection N"); its old
+   * piece is freed.
+   */
+  pairLoneGarment?: boolean;
+}
+
 /** Ids of the existing pieces (allocations with garments) of one print. */
 export const getFutureFabricPieceAllocationIds = (
   state: FabricAllocationState,
@@ -2788,6 +2799,89 @@ export const assignFutureGarmentToExistingFabricAllocation = ({
  * Orchestrates the customer-facing Fabric-card action while keeping the
  * allocation engine as the only authority for assignment and capacity.
  */
+/**
+ * The state with `garmentKey` taken off its piece, when that piece is shared
+ * with other garments and is not already `fabricCode`. Null otherwise (the
+ * garment is unassigned, alone on its piece, or already on that print).
+ */
+export const detachFutureGarmentFromSharedPiece = ({
+  state,
+  garmentKey,
+  fabricCode,
+}: {
+  state: FabricAllocationState;
+  garmentKey: string;
+  fabricCode: string;
+}): FabricAllocationState | null => {
+  const source = state.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === garmentKey,
+    ),
+  );
+  if (
+    !source ||
+    source.garmentAssignments.length < 2 ||
+    source.fabricCode === fabricCode
+  ) {
+    return null;
+  }
+  return removeFutureFabricAssignment({ state, garmentKey });
+};
+
+/**
+ * A garment alone on its piece, moved onto an existing piece of `fabricCode`
+ * that has room for it; its old piece is freed. Null when the garment is not
+ * alone on a piece of another print, or no existing piece can take it.
+ */
+export const pairLoneFutureGarmentWithExistingPiece = ({
+  state,
+  garmentTypeSelection,
+  garmentKey,
+  fabricCode,
+  fabrics,
+  requiredPhysicalOccurrences,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  garmentKey: string;
+  fabricCode: string;
+  fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): FabricAllocationState | null => {
+  const source = state.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === garmentKey,
+    ),
+  );
+  if (
+    !source ||
+    source.garmentAssignments.length !== 1 ||
+    source.fabricCode === fabricCode
+  ) {
+    return null;
+  }
+  const existingPieceIds = new Set(
+    getFutureFabricPieceAllocationIds(state, fabricCode),
+  );
+  if (existingPieceIds.size === 0) return null;
+  const detached = removeFutureFabricAssignment({ state, garmentKey });
+  const moved = applyFutureFabricCardSelection({
+    state: detached,
+    garmentTypeSelection,
+    garmentKey,
+    fabricCode,
+    fabrics,
+    requiredPhysicalOccurrences,
+    placement: "auto",
+  });
+  const landed = moved.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === garmentKey,
+    ),
+  );
+  return landed && existingPieceIds.has(landed.allocationId) ? moved : null;
+};
+
 export const applyFutureFabricCardSelection = ({
   state,
   garmentTypeSelection,
@@ -2796,6 +2890,8 @@ export const applyFutureFabricCardSelection = ({
   fabrics,
   requiredPhysicalOccurrences,
   placement = "auto",
+  detachFromSharedPiece = false,
+  pairLoneGarment = false,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -2804,7 +2900,49 @@ export const applyFutureFabricCardSelection = ({
   fabrics?: readonly Fabric[];
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   placement?: FutureFabricPiecePlacement;
+  /**
+   * Change Fabric from a garment card: when the garment shares its piece
+   * with other garments, move only this garment onto the new print and
+   * leave the others on the old piece. A garment alone on its piece keeps
+   * the re-colour behaviour.
+   */
+  detachFromSharedPiece?: boolean;
+  /**
+   * Change Fabric from a garment card, garment alone on its piece, "Pair
+   * with Selection N": move it onto an existing piece of the new print and
+   * free its old piece. Unchanged state when it can't pair.
+   */
+  pairLoneGarment?: boolean;
 }): FabricAllocationState => {
+  if (pairLoneGarment) {
+    return pairLoneFutureGarmentWithExistingPiece({
+      state,
+      garmentTypeSelection,
+      garmentKey,
+      fabricCode,
+      fabrics,
+      requiredPhysicalOccurrences,
+    }) ?? state;
+  }
+  if (detachFromSharedPiece) {
+    const detached = detachFutureGarmentFromSharedPiece({
+      state,
+      garmentKey,
+      fabricCode,
+    });
+    if (detached) {
+      const moved = applyFutureFabricCardSelection({
+        state: detached,
+        garmentTypeSelection,
+        garmentKey,
+        fabricCode,
+        fabrics,
+        requiredPhysicalOccurrences,
+        placement,
+      });
+      return hasGarmentAssignment(moved, garmentKey) ? moved : state;
+    }
+  }
   if (state.pendingFabricGarment?.garmentKey === garmentKey) {
     const result = assignFutureFabricToGarment({
       state,
@@ -3213,7 +3351,10 @@ export type FutureFabricChangeCatalogueCardMode =
 export interface FutureFabricChangeCatalogueCardPresentation
   extends FutureFabricCatalogueCardPresentation {
   changeMode: FutureFabricChangeCatalogueCardMode;
-  blockedReason: ChangeFutureFabricAllocationProductBlockReason | null;
+  blockedReason:
+    | ChangeFutureFabricAllocationProductBlockReason
+    | FutureFabricAssignmentBlockReason
+    | null;
 }
 
 /**
@@ -3233,11 +3374,22 @@ export const resolveFutureFabricChangeCatalogueCardPresentation = ({
   allocationId,
   fabrics,
   targetGarmentKey = null,
+  garmentOnly = null,
 }: {
   fabricCode: string;
   fabricAllocationState: FabricAllocationState;
   allocationId: string;
   fabrics: readonly Fabric[];
+  /**
+   * Change Fabric from a garment card: only this garment changes, so
+   * availability follows the one-garment move (pair or new piece) instead of
+   * re-colouring the whole shared piece.
+   */
+  garmentOnly?: {
+    garmentKey: string;
+    garmentTypeSelection: GarmentTypeStepSelection;
+    requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  } | null;
   /**
    * The garment whose Change Fabric was tapped. Its current fabric keeps the
    * existing single-occurrence cancel (it never targets other garments).
@@ -3272,13 +3424,44 @@ export const resolveFutureFabricChangeCatalogueCardPresentation = ({
   const status: FutureFabricCatalogueCardStatus = usedByOtherSelection
     ? "USE AGAIN"
     : "SELECT";
-  const preview = changeFutureFabricAllocationProduct({
-    state: fabricAllocationState,
-    allocationId,
-    nextFabricCode: fabricCode,
-    fabrics,
-  });
-  if (preview.status === "blocked") {
+  const detached = garmentOnly
+    ? detachFutureGarmentFromSharedPiece({
+        state: fabricAllocationState,
+        garmentKey: garmentOnly.garmentKey,
+        fabricCode,
+      })
+    : null;
+  const preview =
+    detached && garmentOnly
+      ? assignFutureFabricToGarment({
+          state: detached,
+          garmentTypeSelection: garmentOnly.garmentTypeSelection,
+          garmentKey: garmentOnly.garmentKey,
+          fabricCode,
+          fabrics,
+          requiredPhysicalOccurrences: garmentOnly.requiredPhysicalOccurrences,
+        })
+      : changeFutureFabricAllocationProduct({
+          state: fabricAllocationState,
+          allocationId,
+          nextFabricCode: fabricCode,
+          fabrics,
+        });
+  // Garment-card change of a garment alone on its piece: pairing it with an
+  // existing piece of this print needs no new stock.
+  const canPairLoneGarment =
+    preview.status === "blocked" &&
+    !detached &&
+    garmentOnly !== null &&
+    pairLoneFutureGarmentWithExistingPiece({
+      state: fabricAllocationState,
+      garmentTypeSelection: garmentOnly.garmentTypeSelection,
+      garmentKey: garmentOnly.garmentKey,
+      fabricCode,
+      fabrics,
+      requiredPhysicalOccurrences: garmentOnly.requiredPhysicalOccurrences,
+    }) !== null;
+  if (preview.status === "blocked" && !canPairLoneGarment) {
     return {
       status,
       action: "none",

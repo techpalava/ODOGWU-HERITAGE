@@ -4,6 +4,10 @@
  * X (which removed it from those other garments) and could not be picked.
  * Change Fabric targets the whole selection, so a print already used by
  * another selection must be pickable as USE AGAIN and become a separate piece.
+ *
+ * The whole-selection change is opened from the Fabric Selection summary
+ * chip. Change Fabric on a garment card whose piece is shared changes only
+ * that garment (last block).
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -14,6 +18,7 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import type { Fabric, FabricAllocationState, GarmentTypeStepSelection } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
+  applyFutureFabricCardSelection,
   assignFutureFabricToGarment,
   assignSameFabricProductToGarments,
   changeFutureFabricAllocationProduct,
@@ -243,16 +248,24 @@ const renderStep = () => {
     requiredFabricQuantity: planning.requiredFabricQuantity,
     selectedFabricQuantity: planning.selectedFabricQuantity,
     constructionPrice: 0,
-    onAssignFabricToGarment: (picked: Fabric, garmentKey: string) => {
-      const result = assignFutureFabricToGarment({
+    // Mirrors DesignStudioView.handleAssignFutureFabricToGarment.
+    onAssignFabricToGarment: (
+      picked: Fabric,
+      garmentKey: string,
+      placement?: "auto" | "new_piece",
+      options?: { detachFromSharedPiece?: boolean; pairLoneGarment?: boolean },
+    ) => {
+      liveState = applyFutureFabricCardSelection({
         state: liveState,
         garmentTypeSelection: selection,
         garmentKey,
         fabricCode: picked.code,
         fabrics,
+        placement,
+        detachFromSharedPiece: options?.detachFromSharedPiece === true,
+        pairLoneGarment: options?.pairLoneGarment === true,
       });
-      if (result.status === "assigned") liveState = result.state;
-      return result.status === "assigned" ? result.state : undefined;
+      return liveState;
     },
     onChangeFabricAllocationProduct: ((
       allocationId: string,
@@ -320,7 +333,7 @@ assert.equal(catalogueCard(renderer.root, "CF-B").props["data-fabric-change-card
 
 await act(async () => {
   renderer.root
-    .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
+    .findByProps({ "data-fabric-selection-summary-button": "1" })
     .props.onClick({ currentTarget: {} });
 });
 assert.match(textContent(renderer.root), /Choose a new fabric for Selection 1/);
@@ -392,7 +405,52 @@ assert.deepEqual(
 await act(async () => {
   renderer.update(renderStep());
 });
-assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for Selection/);
+assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for/);
+act(() => renderer.unmount());
+
+// Garment card: Change Fabric for the Standard Shirt (shared with the
+// Trouser) moves only the Shirt. CF-B's piece is full, so no pair popup:
+// the Shirt gets a new CF-B piece and the Trouser keeps CF-A.
+liveState = base;
+await act(async () => {
+  renderer = create(renderStep(), { createNodeMock });
+});
+await act(async () => {
+  renderer.root
+    .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
+    .props.onClick({ currentTarget: {} });
+});
+assert.match(
+  textContent(renderer.root),
+  /Only Standard Shirt will change\. Trouser keeps Classic Ivory Shield\./,
+);
+await act(async () =>
+  actionButton(catalogueCard(renderer.root, "CF-B")).props.onClick({ currentTarget: {} }),
+);
+assert.equal(
+  renderer.root.findAllByProps({ "data-change-fabric-confirm": "true" }).length,
+  0,
+  "no group confirm for a one-garment change",
+);
+assert.equal(
+  renderer.root.findAllByProps({ "data-fabric-piece-placement-dialog": "true" }).length,
+  0,
+  "CF-B's piece is full, so no pair popup",
+);
+assert.deepEqual(removed, []);
+assert.deepEqual(
+  liveState.fabricAllocations.map((allocation) => [
+    allocation.fabricCode,
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ]),
+  [
+    ["CF-A", ["base:trouser"]],
+    ["CF-B", ["base:skirt", "base:long_skirt"]],
+    ["CF-E", ["base:standard_shorts", "base:bum_shorts"]],
+    ["CF-B", ["base:shirt"]],
+  ],
+  "only the Shirt moved; the Trouser keeps CF-A",
+);
 act(() => renderer.unmount());
 
 console.log("test_change_fabric_use_again: PASS");

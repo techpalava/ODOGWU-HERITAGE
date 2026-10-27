@@ -11,6 +11,7 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import type { Fabric, FabricAllocationState, GarmentTypeStepSelection } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
+  applyFutureFabricCardSelection,
   assignFutureFabricToGarment,
   assignSameFabricProductToGarments,
   changeFutureFabricAllocationProduct,
@@ -289,7 +290,7 @@ const assertNotChanging = (root: ReactTestInstance) => {
     root.findAllByProps({ "data-testid": "fabric-selection-change-heading" }).length,
     0,
   );
-  assert.doesNotMatch(textContent(root), /Choose a new fabric for Selection/);
+  assert.doesNotMatch(textContent(root), /Choose a new fabric for/);
 };
 
 const scrolledKeys: string[] = [];
@@ -378,7 +379,9 @@ const changingShirt = renderer.root.findByProps({
   "data-garment-key": "base:shirt",
   "data-assignment-status": "assigned",
 });
-const changingTrouser = renderer.root.findByProps({
+// Change Fabric on a garment card changes only that garment, so only the
+// Shirt card is highlighted; the Trouser (same selection) is dimmed.
+const keptTrouser = renderer.root.findByProps({
   "data-garment-key": "base:trouser",
   "data-assignment-status": "assigned",
 });
@@ -387,12 +390,13 @@ const dimmedSkirt = renderer.root.findByProps({
   "data-assignment-status": "assigned",
 });
 assert.equal(changingShirt.props["data-fabric-selection-highlight"], "changing");
-assert.equal(changingTrouser.props["data-fabric-selection-highlight"], "changing");
+assert.equal(keptTrouser.props["data-fabric-selection-highlight"], "dimmed");
 assert.equal(dimmedSkirt.props["data-fabric-selection-highlight"], "dimmed");
 assert.equal(changingShirt.props["data-fabric-selection-highlight-anchor"], "true");
-assert.equal(changingTrouser.props["data-fabric-selection-highlight-anchor"], undefined);
+assert.equal(keptTrouser.props["data-fabric-selection-highlight-anchor"], undefined);
 assert.match(String(changingShirt.props.className), /ring-heritage-gold/);
-assert.match(String(changingTrouser.props.className), /ring-heritage-gold/);
+assert.doesNotMatch(String(keptTrouser.props.className), /ring-heritage-gold/);
+assert.match(String(keptTrouser.props.className), /opacity-60/);
 assert.ok(
   String(changingShirt.props.className).includes(
     FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS,
@@ -406,8 +410,8 @@ assert.equal(
   "Changing",
 );
 assert.equal(
-  textContent(changingTrouser.findByProps({ "data-fabric-selection-changing-tag": "true" })),
-  "Changing",
+  keptTrouser.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length,
+  0,
 );
 assert.equal(
   dimmedSkirt.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length,
@@ -415,12 +419,13 @@ assert.equal(
 );
 assert.match(
   textContent(renderer.root),
-  /Choose a new fabric for Selection 1/,
+  /Choose a new fabric for Standard Shirt/,
 );
 assert.match(
   textContent(renderer.root),
-  /This Fabric is shared by/,
+  /Only Standard Shirt will change\. Trouser keeps /,
 );
+assert.doesNotMatch(textContent(renderer.root), /This Fabric is shared by|update both garments/);
 
 const headingButton = renderer.root.findByProps({
   "data-testid": "fabric-selection-change-heading",
@@ -478,16 +483,25 @@ act(() => renderer.unmount());
 // 3. Changing mode is only for Change Fabric, and it clears after assign.
 // ---------------------------------------------------------------------------
 const liveHandlers = (getState: () => FabricAllocationState, setState: (next: FabricAllocationState) => void) => ({
-  onAssignFabricToGarment: (fabric: Fabric, garmentKey: string) => {
-    const result = assignFutureFabricToGarment({
+  // Mirrors DesignStudioView.handleAssignFutureFabricToGarment.
+  onAssignFabricToGarment: (
+    fabric: Fabric,
+    garmentKey: string,
+    placement?: "auto" | "new_piece",
+    options?: { detachFromSharedPiece?: boolean; pairLoneGarment?: boolean },
+  ) => {
+    const next = applyFutureFabricCardSelection({
       state: getState(),
       garmentTypeSelection: threeGarments,
       garmentKey,
       fabricCode: fabric.code,
       fabrics,
+      placement,
+      detachFromSharedPiece: options?.detachFromSharedPiece === true,
+      pairLoneGarment: options?.pairLoneGarment === true,
     });
-    if (result.status === "assigned") setState(result.state);
-    return result.status === "assigned" ? result.state : undefined;
+    setState(next);
+    return next;
   },
   onAssignSameFabricProduct: (fabricCode: string, garmentKeys: string[]) => {
     const result = assignSameFabricProductToGarments({
@@ -589,14 +603,33 @@ const liveHandlers = (getState: () => FabricAllocationState, setState: (next: Fa
   });
   assert.match(
     textContent(liveRenderer.root),
-    /Choose a new fabric for Selection 1/,
+    /Choose a new fabric for Standard Shirt/,
   );
   await act(async () => clickFabricCard(liveRenderer.root, "HL-B"));
+  // Only the Shirt changes: no group confirm; HL-B's piece (Skirt) has room,
+  // so the pair-or-new-piece popup asks where the Shirt goes.
+  assert.equal(
+    liveRenderer.root.findAllByProps({ "data-change-fabric-confirm": "true" }).length,
+    0,
+  );
   await act(async () => {
     liveRenderer.root
-      .findByProps({ "data-change-fabric-confirm": "true" })
+      .find(
+        (node) =>
+          node.type === "button" && node.props["data-fabric-piece-placement-pair"] === "true",
+      )
       .props.onClick();
   });
+  assert.deepEqual(
+    liveState.fabricAllocations.map((allocation) => [
+      allocation.fabricCode,
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ]),
+    [
+      ["HL-A", ["base:trouser"]],
+      ["HL-B", ["base:skirt", "base:shirt"]],
+    ],
+  );
   await act(async () => {
     liveRenderer.update(
       renderStep(liveState, liveHandlers(() => liveState, setLiveState)),
