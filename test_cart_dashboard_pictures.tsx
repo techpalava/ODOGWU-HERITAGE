@@ -15,6 +15,15 @@ import {
   getOrderGarmentPictures,
 } from "./src/utils/orderGarmentPictures";
 import type { Fabric } from "./src/types";
+import {
+  createUploadedDesignPreviewLoader,
+  getUploadedDesignPreviewPaths,
+  type UploadedDesignPreviewGateway,
+} from "./src/services/uploadedDesignPreviewLoader";
+import {
+  UploadedDesignPreviewContext,
+  watchUploadedDesignPreviewTile,
+} from "./src/components/orderPictures/useUploadedDesignPreview";
 
 const fabric = (over: Partial<Fabric>): Fabric => ({
   code: "F-1", name: "Indigo Ankara", description: "", color: "Blue", colorHex: "#123456",
@@ -186,5 +195,156 @@ const masterWithFabrics = (orderId: string) => {
   const stripe = readFileSync("src/components/FutureOrderV2StripeCard.tsx", "utf8");
   assert.match(stripe, /border-heritage-gold bg-heritage-gold\/15 text-white/, "Stripe card file untouched (#999)");
 }
+
+// 5. Real uploaded design images: private getBlob read, blob: URL, fallbacks, cache, lazy vs eager.
+const notFound = () => Object.assign(new Error("missing"), { code: "storage/object-not-found" });
+const mockStorage = (files: Record<string, Blob>, extra: Partial<UploadedDesignPreviewGateway> = {}) => {
+  const reads: string[] = [];
+  const revoked: string[] = [];
+  let urls = 0;
+  const gateway: UploadedDesignPreviewGateway = {
+    readBlob: async (path) => {
+      reads.push(path);
+      const file = files[path];
+      if (!file) throw notFound();
+      return file;
+    },
+    createObjectUrl: () => `blob:mock/${++urls}`,
+    revokeObjectUrl: (url) => { revoked.push(url); },
+    ...extra,
+  };
+  return { gateway, reads, revoked };
+};
+const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+const dir = "customer-design-drafts/owner/up-1/original";
+const request = { viewerUid: "owner", ownerUid: "owner", designReferenceId: "up-1" };
+await (async () => {
+  // Success, and the extension fallback order .jpg -> .png -> .webp.
+  {
+    const { gateway, reads } = mockStorage({ [`${dir}.png`]: png });
+    const loader = createUploadedDesignPreviewLoader(gateway);
+    const state = await loader.load(request);
+    assert.deepEqual(state, { status: "loaded", url: "blob:mock/1" });
+    assert.deepEqual(reads, [`${dir}.jpg`, `${dir}.png`], "jpg first, then png; stops at the first file found");
+    assert.deepEqual(loader.peek(request), state);
+  }
+  {
+    assert.deepEqual(getUploadedDesignPreviewPaths("owner", "up-1", null),
+      [`${dir}.jpg`, `${dir}.png`, `${dir}.webp`], "order without a registry: jpg, png, webp");
+    const registered = { designReferenceId: "up-1", ownerUid: "owner", storagePath: `${dir}.webp`, mimeType: "image/webp" as const, createdAt: "2026-10-27T00:00:00.000Z" };
+    assert.deepEqual(getUploadedDesignPreviewPaths("owner", "up-1", registered),
+      [`${dir}.webp`, `${dir}.jpg`, `${dir}.png`], "the draft registry's storagePath goes first");
+    const moved = { ...registered, ownerUid: "guest-anon", storagePath: "customer-design-drafts/guest-anon/up-1/original.webp" };
+    assert.equal(getUploadedDesignPreviewPaths("owner", "up-1", moved)[0], `${dir}.webp`,
+      "moved from the guest uid: the registry's type with the new owner's path");
+    const { gateway, reads } = mockStorage({ [`${dir}.webp`]: png }, { lookupRegisteredReference: async () => registered });
+    assert.equal((await createUploadedDesignPreviewLoader(gateway).load(request)).status, "loaded");
+    assert.deepEqual(reads, [`${dir}.webp`], "one read when the registry knows the file");
+  }
+  // Missing file: every extension tried once, failure cached, no second read.
+  {
+    const { gateway, reads } = mockStorage({});
+    const loader = createUploadedDesignPreviewLoader(gateway);
+    assert.deepEqual(await loader.load(request), { status: "failed" });
+    assert.equal(reads.length, 3);
+    assert.deepEqual(await loader.load(request), { status: "failed" });
+    assert.equal(reads.length, 3, "a failure is cached too");
+    // Retry once after sign-in / uid change.
+    loader.resetForViewer("account");
+    await loader.load({ ...request, viewerUid: "account", ownerUid: "account" });
+    assert.equal(reads.length, 6, "a new uid gets one fresh read");
+    assert.equal(reads[3], "customer-design-drafts/account/up-1/original.jpg");
+  }
+  // Permission errors stop at once; unsafe ids are never read.
+  {
+    const { gateway, reads } = mockStorage({}, { readBlob: async (path) => { reads.push(path); throw Object.assign(new Error("no"), { code: "storage/unauthorized" }); } });
+    const loader = createUploadedDesignPreviewLoader(gateway);
+    assert.deepEqual(await loader.load(request), { status: "failed" });
+    assert.equal(reads.length, 1, "no point trying other extensions without permission");
+    assert.deepEqual(await loader.load({ ...request, designReferenceId: "../other" }), { status: "failed" });
+    assert.equal(reads.length, 1, "an id with a slash is never turned into a path");
+  }
+  // Cache dedupe for a shared upload, and revoke on uid change.
+  {
+    const { gateway, reads, revoked } = mockStorage({ [`${dir}.jpg`]: png });
+    const loader = createUploadedDesignPreviewLoader(gateway);
+    const [a, b] = await Promise.all([loader.load(request), loader.load(request)]);
+    assert.equal(reads.length, 1, "two garments sharing one upload read it once");
+    assert.equal(a, b);
+    await loader.settle();
+    loader.resetForViewer(null);
+    assert.deepEqual(revoked, ["blob:mock/1"], "sign-out revokes the blob: URL");
+    assert.deepEqual(loader.peek(request), { status: "idle" });
+  }
+  // Lazy (near the viewport) vs eager.
+  {
+    let observed: Element | null = null;
+    let fire: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
+    let options: { rootMargin?: string } | undefined;
+    let disconnected = 0;
+    class FakeObserver {
+      constructor(cb: (entries: { isIntersecting: boolean }[]) => void, opts?: { rootMargin?: string }) { fire = cb; options = opts; }
+      observe(element: Element) { observed = element; }
+      disconnect() { disconnected += 1; }
+    }
+    const element = {} as Element;
+    let visible = 0;
+    watchUploadedDesignPreviewTile({ element, eager: false, onVisible: () => { visible += 1; }, IntersectionObserverCtor: FakeObserver as any });
+    assert.equal(visible, 0, "lazy: nothing is read before the tile is near the viewport");
+    assert.equal(observed, element);
+    assert.equal(options?.rootMargin, "200px");
+    fire!([{ isIntersecting: false }]);
+    assert.equal(visible, 0);
+    fire!([{ isIntersecting: true }]);
+    fire!([{ isIntersecting: true }]);
+    assert.equal(visible, 1, "lazy: read once when it comes near");
+    assert.equal(disconnected, 1);
+    let eagerVisible = 0;
+    watchUploadedDesignPreviewTile({ element, eager: true, onVisible: () => { eagerVisible += 1; }, IntersectionObserverCtor: FakeObserver as any });
+    assert.equal(eagerVisible, 1, "eager (details dialog): read right away");
+    const panel = readFileSync("src/components/FutureOrderV2CartPayPanel.tsx", "utf8");
+    assert.equal(/OrderGarmentPictureStrip[^>]*eager/.test(panel), false, "cart lines stay lazy");
+    const list = readFileSync("src/components/CustomerFutureOrderV2List.tsx", "utf8");
+    assert.equal(/OrderDesignThumbnail[^>]*eager/.test(list), false, "My orders stays lazy");
+    const details = readFileSync("src/components/CustomerFutureOrderV2Details.tsx", "utf8");
+    assert.match(details, /<OrderGarmentPictureTiles[\s\S]{0,200}?\beager\b/, "the details dialog is eager");
+    assert.match(details, /waitForOrderPicturesBeforePrint\(/, "Print waits for the pictures");
+    assert.equal(/onClick=\{\(\) => window\.print\(\)\}/.test(details), false);
+  }
+  // Rendering: placeholder until loaded (same text and marker), then the real image.
+  {
+    const files = { [`${dir}.jpg`]: png };
+    const { gateway } = mockStorage(files);
+    const loader = createUploadedDesignPreviewLoader(gateway);
+    const viewer = { subscribe: () => () => {}, getSnapshot: () => "owner", getServerSnapshot: () => "owner" };
+    const master = masterWithFabrics("pictures-uploaded");
+    const candidate = master.cartItem.candidate;
+    const uploadedRef = candidate.occurrenceStyleSnapshots[1].uploaded.uploadedSourceRef;
+    const pictures = getOrderGarmentPictures(candidate, fabrics, { ownerUid: "owner" });
+    assert.deepEqual(pictures[1]!.uploadedDesign, { designReferenceId: uploadedRef, ownerUid: "owner" });
+    assert.equal(pictures[0]!.uploadedDesign, undefined, "catalogue designs carry no upload");
+    assert.equal(getOrderGarmentPictures(candidate, fabrics)[1]!.uploadedDesign!.ownerUid, null, "cart lines: the signed-in uid owns it");
+    const render = () => renderToStaticMarkup(
+      <UploadedDesignPreviewContext.Provider value={{ loader, viewer }}>
+        <OrderGarmentPictureTiles picture={pictures[1]!} tileClassName="w-16" />
+      </UploadedDesignPreviewContext.Provider>,
+    );
+    const before = render();
+    assert.match(before, /data-order-picture-uploaded-placeholder="additional:shirt:1"/, "loading: today's placeholder");
+    assert.match(before, />Your uploaded design</);
+    assert.equal(/data-order-picture-uploaded-image/.test(before), false);
+    const sharedPath = `customer-design-drafts/owner/${uploadedRef}/original.jpg`;
+    files[sharedPath] = png;
+    await loader.load({ viewerUid: "owner", ownerUid: "owner", designReferenceId: uploadedRef });
+    const after = render();
+    assert.match(after, /data-order-picture-uploaded-image="additional:shirt:1"/);
+    assert.match(after, /<img src="blob:mock\/1" alt="Uploaded design preview for Shirt 2"/);
+    assert.equal(/data-order-picture-uploaded-placeholder/.test(after), false);
+    assert.equal(/getDownloadURL/.test(readFileSync("src/services/uploadedDesignPreviewRuntime.ts", "utf8")), false, "never a download URL");
+    // Without a signed-in uid nothing is read and the placeholder stays.
+    const signedOut = renderToStaticMarkup(<OrderGarmentPictureTiles picture={pictures[1]!} tileClassName="w-16" />);
+    assert.match(signedOut, /data-order-picture-uploaded-placeholder/);
+  }
+})();
 
 console.log("PASS: cart and dashboard order pictures");

@@ -30,10 +30,39 @@ export const createFabricCatalogueLookup = (
   };
 };
 
+/** Which private upload a garment's design tile shows, and whose file it is. */
+export interface OrderGarmentUploadedDesign {
+  readonly designReferenceId: string;
+  /** The order's owner; null for cart lines, where the signed-in uid owns it. */
+  readonly ownerUid: string | null;
+}
+
+export type OrderGarmentPicture = FuturePaymentReviewGarmentPicture & {
+  readonly uploadedDesign?: OrderGarmentUploadedDesign | null;
+};
+
 export const getOrderGarmentPictures = (
   candidate: FutureOrderCandidateV2,
   fabrics: readonly Fabric[],
-): FuturePaymentReviewGarmentPicture[] =>
-  getFuturePaymentReviewGarmentPictures(candidate, null, {
+  options: { readonly ownerUid?: string | null } = {},
+): OrderGarmentPicture[] => {
+  const uploadedRefByGarmentKey = new Map<string, string>();
+  for (const snapshot of candidate.occurrenceStyleSnapshots ?? []) {
+    const ref = snapshot.sourceKind === "uploaded" ? snapshot.uploaded?.uploadedSourceRef : null;
+    if (ref) uploadedRefByGarmentKey.set(snapshot.occurrence.garmentKey, ref);
+  }
+  return getFuturePaymentReviewGarmentPictures(candidate, null, {
     fabricLookup: createFabricCatalogueLookup(fabrics),
+  }).map((picture) => {
+    const designReferenceId =
+      picture.design.sourceKind === "uploaded"
+        ? uploadedRefByGarmentKey.get(picture.garmentKey)
+        : undefined;
+    return designReferenceId
+      ? {
+          ...picture,
+          uploadedDesign: { designReferenceId, ownerUid: options.ownerUid ?? null },
+        }
+      : picture;
   });
+};
