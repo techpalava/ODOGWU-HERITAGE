@@ -125,7 +125,7 @@ const createMemoryStore = () => {
     capture: {
       id: "5O190127TN364715T",
       status: "COMPLETED",
-      amountCents: 30000,
+      amountCents: 43125,
       currency: "eur",
       customId: prepared.orderId,
       invoiceId: paymentReference,
@@ -172,7 +172,7 @@ const createMemoryStore = () => {
         return {
           id: "5O190127TN364715T",
           status: "APPROVED",
-          amountCents: 30000,
+          amountCents: 43125,
           currency: "eur",
           customId: prepared.orderId,
           invoiceId: paymentReference,
@@ -182,7 +182,7 @@ const createMemoryStore = () => {
         return {
           id: "5O190127TN364715T",
           status: "COMPLETED",
-          amountCents: 30000,
+          amountCents: 43125,
           currency: "eur",
           customId: prepared.orderId,
           invoiceId: paymentReference,
@@ -254,7 +254,7 @@ const runCreate = async (
   const { state, created } = await runCreate({ authorization: "Bearer valid-token" });
   assert.equal(state.statusCode, 200);
   assert.deepEqual(created, [
-    { amountCents: 30000, orderId: prepared.orderId, paymentReference },
+    { amountCents: 43125, orderId: prepared.orderId, paymentReference },
   ]);
   assert.deepEqual(state.body, { paypalOrderId: "5O190127TN364715T" });
 }

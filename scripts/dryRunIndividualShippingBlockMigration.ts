@@ -25,7 +25,7 @@ console.log(
   `formula: ceil(garment rows / ${INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK}) × €${(INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS / 100).toFixed(2)}`,
 );
 console.log("garment count = candidate.garments.length (a set counts as 1)");
-console.log("Eindhoven pickup is unchanged and is not rewritten.");
+console.log("Unpaid Eindhoven pickup now carries the same Lagos charge.");
 console.log("");
 
 let unpaidWouldChange = 0;

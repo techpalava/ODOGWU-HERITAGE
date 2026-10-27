@@ -1260,7 +1260,7 @@ export const DormantFuturePaymentReviewStep = ({
                 : candidate.pricing.postEindhovenAdjustmentCents === null
                   ? "Shipping is still pending."
                   : candidate.shipping.state.fulfilmentMethod === "eindhoven_pickup"
-                    ? "Pick up in Eindhoven has no shipping charge."
+                    ? "Pick up in Eindhoven adds no extra shipping charge."
                     : "Shipping is itemized once in the price breakdown below."}
             </p>
           </ReviewSection>

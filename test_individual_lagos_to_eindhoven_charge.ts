@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { quoteFutureOrderPayableTotal, recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import {
+  quoteFutureOrderPayableTotal,
+  recomputeFutureOrderPayableTotal,
+  repriceUnpaidIndividualDeliveryCandidate,
+} from "./src/utils/futureOrderPayableTotal";
 import { readFutureOrderV2ChargeableCents } from "./src/utils/futureOrderV2PersonalizedPrice";
 import { getFutureOrderV2CartLineTotalCents } from "./src/utils/futureOrderV2CartBag";
 import {
@@ -29,19 +33,24 @@ const individualCandidate = individualOrder.cartItem.candidate;
 const individualQuote = quoteFutureOrderPayableTotal(individualCandidate);
 assert.ok(individualQuote);
 assert.equal(individualCandidate.shipping.state.fulfilmentMethod, "eindhoven_pickup");
-assert.equal(individualQuote.lagosToEindhovenShippingCents, null);
+assert.equal(
+  individualQuote.lagosToEindhovenShippingCents,
+  13125,
+  "Individual pickup keeps the Lagos → Eindhoven charge",
+);
 assert.equal(
   individualQuote.exactTotalCents,
   individualQuote.selectedDesignTotalCents +
-    individualQuote.postEindhovenAdjustmentCents,
+    individualQuote.postEindhovenAdjustmentCents +
+    13125,
 );
 assert.equal(
   individualCandidate.pricing.components.lagosToEindhovenShipping.status,
-  "included_in_garment_construction",
+  "separately_charged",
 );
 assert.equal(
   individualCandidate.pricing.components.lagosToEindhovenShipping.amountCents,
-  null,
+  13125,
 );
 const individualPayable = recomputeFutureOrderPayableTotal(individualCandidate);
 assert.equal(individualPayable.status, "exact");
@@ -62,9 +71,9 @@ oneGarment.garments = [oneGarment.garments[0]!];
 const pickupQuote = quoteFutureOrderPayableTotal(oneGarment);
 assert.ok(pickupQuote);
 assert.equal(pickupQuote.garmentConstructionSubtotalCents, 6500);
-assert.equal(pickupQuote.postEindhovenAdjustmentCents, 0);
-assert.equal(pickupQuote.lagosToEindhovenShippingCents, null);
-assert.equal(pickupQuote.exactTotalCents, 6500);
+assert.equal(pickupQuote.postEindhovenAdjustmentCents, 0, "pickup adds no final-mile fee");
+assert.equal(pickupQuote.lagosToEindhovenShippingCents, 13125);
+assert.equal(pickupQuote.exactTotalCents, 19625);
 
 const deliveryCandidate = cloneCandidate(oneGarment);
 deliveryCandidate.shipping = {
@@ -117,20 +126,20 @@ assert.equal(
 );
 assert.equal(communityCandidate.pricing.exactTotalCents, communityQuote.exactTotalCents);
 assert.equal(
-  communityCandidate.pricing.exactTotalCents,
   individualCandidate.pricing.exactTotalCents,
-  "pickup Individual and Community both omit the Lagos band",
+  (communityCandidate.pricing.exactTotalCents ?? 0) + 13125,
+  "on pickup only Individual adds the Lagos band; Community is unchanged",
 );
 const communityPayable = recomputeFutureOrderPayableTotal(communityCandidate);
 assert.equal(communityPayable.status, "exact");
 
 const simpleIndividual = createFutureOrderV2Fixture("simple-individual");
 assert.equal(simpleIndividual.cartItem.candidate.garments.length, 3);
-assert.equal(simpleIndividual.cartItem.candidate.pricing.exactTotalCents, 30000);
+assert.equal(simpleIndividual.cartItem.candidate.pricing.exactTotalCents, 43125);
 assert.equal(
   simpleIndividual.cartItem.candidate.pricing.components.lagosToEindhovenShipping
     .amountCents,
-  null,
+  13125,
 );
 const simpleCommunity = createFutureOrderV2Fixture("simple-community", undefined, {
   orderType: "Community",
@@ -225,7 +234,7 @@ alignToQuote(pickupAligned);
 const pickupPending = pendingPersonalized(pickupAligned);
 const pickupPendingResult = recomputeFutureOrderPayableTotal(pickupPending);
 assert.equal(pickupPendingResult.status, "not_exact");
-assert.equal(readFutureOrderV2ChargeableCents(pickupPending, null), 6500);
+assert.equal(readFutureOrderV2ChargeableCents(pickupPending, null), 19625);
 
 const parisAligned = cloneCandidate(deliveryCandidate);
 alignToQuote(parisAligned);
@@ -246,11 +255,28 @@ omittedDeliveryLagos.pricing = {
 };
 assert.equal(recomputeFutureOrderPayableTotal(omittedDeliveryLagos).status, "rejected");
 
+const omittedPickupLagos = cloneCandidate(pickupPending);
+omittedPickupLagos.pricing = {
+  ...omittedPickupLagos.pricing,
+  components: {
+    ...omittedPickupLagos.pricing.components,
+    lagosToEindhovenShipping: {
+      status: "included_in_garment_construction",
+      amountCents: null,
+    },
+  },
+};
+assert.equal(
+  recomputeFutureOrderPayableTotal(omittedPickupLagos).status,
+  "rejected",
+  "a pickup ledger without the Lagos charge is refused",
+);
+
 const stalePickupCharge = cloneCandidate(oneGarment);
 alignToQuote(stalePickupCharge);
-assert.equal(stalePickupCharge.pricing.exactTotalCents, 6500);
+assert.equal(stalePickupCharge.pricing.exactTotalCents, 19625);
 assert.equal(recomputeFutureOrderPayableTotal(stalePickupCharge).status, "exact");
-assert.equal(readFutureOrderV2ChargeableCents(stalePickupCharge, null), 6500);
+assert.equal(readFutureOrderV2ChargeableCents(stalePickupCharge, null), 19625);
 stalePickupCharge.pricing = {
   ...stalePickupCharge.pricing,
   exactTotalCents: 7900,
@@ -265,8 +291,37 @@ stalePickupCharge.pricing = {
 assert.equal(
   recomputeFutureOrderPayableTotal(stalePickupCharge).status,
   "rejected",
-  "a restored pickup ledger must not keep a previous Lagos shipping charge",
+  "a restored pickup ledger must not keep the retired €14 Lagos band",
 );
+
+// Unpaid saved pickup carts from before this change carry no Lagos charge.
+const freePickupLedger = cloneCandidate(oneGarment);
+alignToQuote(freePickupLedger);
+freePickupLedger.pricing = {
+  ...freePickupLedger.pricing,
+  exactTotalCents: 6500,
+  components: {
+    ...freePickupLedger.pricing.components,
+    lagosToEindhovenShipping: {
+      status: "included_in_garment_construction",
+      amountCents: null,
+    },
+  },
+};
+const repricedPickup = repriceUnpaidIndividualDeliveryCandidate(freePickupLedger);
+assert.equal(repricedPickup.pricing.exactTotalCents, 19625);
+assert.deepEqual(repricedPickup.pricing.components.lagosToEindhovenShipping, {
+  status: "separately_charged",
+  amountCents: 13125,
+});
+assert.equal(recomputeFutureOrderPayableTotal(repricedPickup).status, "exact");
+assert.equal(
+  repriceUnpaidIndividualDeliveryCandidate(freePickupLedger, { hasPaymentRecord: true }),
+  freePickupLedger,
+  "paid pickup orders keep what they paid",
+);
+const repricedCommunity = repriceUnpaidIndividualDeliveryCandidate(communityCandidate);
+assert.equal(repricedCommunity, communityCandidate, "Community pickup is not repriced");
 
 const communityPending = pendingPersonalized(structuredClone(communityCandidate));
 assert.equal(recomputeFutureOrderPayableTotal(communityPending).status, "not_exact");
@@ -335,8 +390,8 @@ assert.equal(
     physicalGarmentCount: 1,
     fulfilmentMethod: switchedToPickup.state.fulfilmentMethod,
   }),
-  null,
-  "switching a restored delivery draft to pickup drops the Lagos band",
+  13125,
+  "switching a restored delivery draft to pickup keeps the Lagos band",
 );
 assert.equal(
   individualLagosToEindhovenChargeCents({
