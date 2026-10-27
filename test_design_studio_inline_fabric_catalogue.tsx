@@ -1085,9 +1085,12 @@ await act(async () => {
     ),
   );
 });
+// Whole-selection change: opened from the Fabric Selection summary chip
+// (Change Fabric on a garment card changes only that garment; see
+// test_fabric_change_one_garment.tsx).
 await act(async () =>
   targetedTwoGarmentRenderer.root
-    .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
+    .findByProps({ "data-fabric-selection-summary-button": "1" })
     .props.onClick({ currentTarget: {} }),
 );
 assert.match(
@@ -1207,13 +1210,13 @@ await act(async () => {
 });
 await act(async () =>
   trouserSharedRenderer.root
-    .findByProps({ "aria-label": "Change fabric for Trouser" })
+    .findByProps({ "data-fabric-selection-summary-button": "1" })
     .props.onClick({ currentTarget: {} }),
 );
 assert.match(
   textContent(trouserSharedRenderer.root),
   /shared by Standard Shirt and Trouser/i,
-  "Trouser-initiated Change Fabric must resolve the same shared allocation group.",
+  "Summary-chip Change Fabric must resolve the same shared allocation group.",
 );
 await act(async () =>
   trouserSharedRenderer.root
@@ -2072,8 +2075,9 @@ try {
       { createNodeMock: createFocusMock },
     );
   });
+  // Whole-selection change (group confirm) is opened from the summary chip.
   const sharedChangeShirt = sharedFocusRenderer.root.findByProps({
-    "aria-label": "Change fabric for Standard Shirt",
+    "data-fabric-selection-summary-button": "1",
   });
   const sharedChangeShirtFocusTarget = focusMocks.get(
     "Change fabric for Standard Shirt",
