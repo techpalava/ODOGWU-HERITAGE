@@ -330,10 +330,18 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
             Authentically Crafted in Nigeria • Delivered Across the Netherlands
           </div>
           <div className="order-2 md:order-3 flex gap-4 justify-center md:justify-end w-full md:w-auto text-center md:text-right">
-            <a href="#" className="hover:text-heritage-gold transition-colors">
+            <a
+              href="/privacy"
+              onClick={(e) => handleNavigation(e, "privacy")}
+              className="hover:text-heritage-gold transition-colors"
+            >
               Privacy Policy
             </a>
-            <a href="#" className="hover:text-heritage-gold transition-colors">
+            <a
+              href="/terms"
+              onClick={(e) => handleNavigation(e, "terms")}
+              className="hover:text-heritage-gold transition-colors"
+            >
               Terms & Conditions
             </a>
             <a href="#" className="hover:text-heritage-gold transition-colors">

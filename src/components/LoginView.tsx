@@ -491,6 +491,8 @@ export default function LoginView({
     "w-full mt-2 min-h-11 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition duration-300 py-3 rounded-xl text-[15px] font-semibold flex items-center justify-center gap-2 shadow-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
   const linkButtonClass =
     "inline-flex min-h-11 items-center px-1 text-sm font-semibold text-heritage-green underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold rounded disabled:cursor-not-allowed disabled:opacity-60";
+  const legalLinkClass =
+    "font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold rounded";
   const tabClass = (selected: boolean) =>
     `flex-1 min-h-11 py-3 text-sm font-semibold transition-colors flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold ${
       selected
@@ -1032,6 +1034,32 @@ export default function LoginView({
               </button>
             </form>
           )}
+
+          <p
+            data-testid="login-legal-notice"
+            className="mt-5 text-center text-xs leading-relaxed text-heritage-ink/70"
+          >
+            By continuing, you agree to our{" "}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={legalLinkClass}
+            >
+              Terms<span className="sr-only"> (opens in a new tab)</span>
+            </a>{" "}
+            and{" "}
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={legalLinkClass}
+            >
+              Privacy Policy
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            .
+          </p>
 
           {checkoutMode && onCancel && (
             <button
