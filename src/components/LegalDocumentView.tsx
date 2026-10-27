@@ -20,23 +20,49 @@ export interface LegalDocument {
   sections: LegalSection[];
 }
 
-/** Square-bracket placeholders ([CONTACT EMAIL]) stand out until filled in. */
-const PLACEHOLDER_PATTERN = /(\[[A-Z0-9][A-Z0-9 ,./&'()-]*\])/g;
+/** Filled in at render time with the site's contact email. */
+export const CONTACT_EMAIL_TOKEN = "{{CONTACT_EMAIL}}";
 
-const withPlaceholders = (text: string): React.ReactNode =>
-  text.split(PLACEHOLDER_PATTERN).map((part, index) =>
-    index % 2 === 1 ? (
-      <mark
-        key={index}
-        data-legal-placeholder={part}
-        className="rounded bg-heritage-gold/25 px-1 font-semibold text-heritage-green"
-      >
-        {part}
-      </mark>
-    ) : (
-      <React.Fragment key={index}>{part}</React.Fragment>
-    ),
-  );
+/**
+ * Square-bracket placeholders ([KVK NUMBER]) stand out until filled in.
+ * The contact-email token is split out the same way.
+ */
+const SEGMENT_PATTERN = /(\[[A-Z0-9][A-Z0-9 ,./&'()-]*\]|\{\{CONTACT_EMAIL\}\})/g;
+
+const Placeholder = ({ text }: { text: string }) => (
+  <mark
+    data-legal-placeholder={text}
+    className="rounded bg-heritage-gold/25 px-1 font-semibold text-heritage-green"
+  >
+    {text}
+  </mark>
+);
+
+const renderLegalText = (
+  text: string,
+  contactEmail: string,
+): React.ReactNode =>
+  text.split(SEGMENT_PATTERN).map((part, index) => {
+    if (index % 2 === 0) {
+      return <React.Fragment key={index}>{part}</React.Fragment>;
+    }
+    if (part === CONTACT_EMAIL_TOKEN) {
+      // No email in the site settings yet: keep the gap visible.
+      return contactEmail ? (
+        <a
+          key={index}
+          href={`mailto:${contactEmail}`}
+          data-legal-contact-email="true"
+          className="font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold break-all"
+        >
+          {contactEmail}
+        </a>
+      ) : (
+        <Placeholder key={index} text="[CONTACT EMAIL]" />
+      );
+    }
+    return <Placeholder key={index} text={part} />;
+  });
 
 export default function LegalDocumentView({
   document: legalDocument,
@@ -44,6 +70,15 @@ export default function LegalDocumentView({
   document: LegalDocument;
 }) {
   const setActiveTab = useAppStore((state) => state.setActiveTab);
+  // Same source as the footer's contact email.
+  const contactEmail = useAppStore(
+    (state) =>
+      state.businessSettings?.applicationSettings?.primaryEmail?.trim() ||
+      state.businessSettings?.applicationSettings?.secondaryEmail?.trim() ||
+      "",
+  );
+  const withPlaceholders = (text: string) =>
+    renderLegalText(text, contactEmail);
   const other: LegalPageTab =
     legalDocument.kind === "privacy" ? "terms" : "privacy";
   const otherLabel =

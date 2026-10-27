@@ -2,8 +2,9 @@ import type { LegalDocument } from "../components/LegalDocumentView";
 
 /**
  * Draft legal text. Everything in [SQUARE BRACKETS] is a placeholder the
- * owner must fill in before launch. Facts here must match what the code
- * actually does; update both together.
+ * owner must fill in before launch. {{CONTACT_EMAIL}} is filled in when the
+ * page renders with the footer's primary email from the site settings.
+ * Facts here must match what the code actually does; update both together.
  */
 
 export const PRIVACY_POLICY: LegalDocument = {
@@ -11,15 +12,15 @@ export const PRIVACY_POLICY: LegalDocument = {
   title: "Privacy Policy",
   lastUpdated: "[LAST UPDATED DATE]",
   intro:
-    "This policy explains what personal data The Odogwu Heritage collects when you use this website or order from us, why we need it, who we share it with, and the rights you have under EU privacy law (GDPR).",
+    "This policy explains what personal data NTCC (Nigerian Traditional Clothing Community), which runs The Odogwu Heritage online shop, collects when you use this website or order from us, why we need it, who we share it with, and the rights you have under EU privacy law (GDPR).",
   sections: [
     {
       id: "privacy-who-we-are",
       title: "Who we are",
       paragraphs: [
-        "The Odogwu Heritage makes traditional Nigerian clothing to order. Garments are made in Nigeria and delivered across the Netherlands.",
-        "The business responsible for your data (the \"controller\") is [LEGAL ENTITY NAME], [REGISTERED ADDRESS], KvK number [KVK NUMBER].",
-        "For any privacy question or request, email [CONTACT EMAIL].",
+        "NTCC (Nigerian Traditional Clothing Community) runs The Odogwu Heritage online shop. We sell traditional Nigerian clothing made to order by our independent partner workshop in Nigeria. We deliver across the Netherlands, and outside the Netherlands (the rest of Europe, North America, South America, Africa and Asia) by quote.",
+        "The business responsible for your data (the \"controller\") is NTCC (Nigerian Traditional Clothing Community), registered as [LEGAL ENTITY NAME], [REGISTERED ADDRESS], KvK number [KVK NUMBER].",
+        "For any privacy question or request, email {{CONTACT_EMAIL}}.",
       ],
     },
     {
@@ -57,7 +58,7 @@ export const PRIVACY_POLICY: LegalDocument = {
         "We share only what each party needs to do its job:",
       ],
       bullets: [
-        "Our production team in Nigeria, who make your garments. They receive the order details needed for this, such as wearer names, measurements and design choices.",
+        "Our partner workshop in Nigeria: an independent production partner that makes your garments. It receives only the order details needed to make them: your name or the wearer's name, measurements, design choices, uploaded design pictures and any monogram text.",
         "Google (Firebase): sign-in (including Google sign-in), our database, and storage for uploaded pictures.",
         "Vercel: hosts this website and the servers behind it, including technical logs.",
         "Brevo: sends our sign-in code emails. If Brevo is unavailable, Google's Gmail service sends them instead.",
@@ -74,7 +75,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       id: "privacy-transfers",
       title: "Data sent outside the EU",
       paragraphs: [
-        "Your garments are made in Nigeria, so the order details needed to make them are sent there. Some of our service providers may also process data outside the European Economic Area, for example in the United States.",
+        "Your garments are made by our independent partner workshop in Nigeria, which is outside the European Economic Area (EEA). The order details needed to make them (name or wearer name, measurements, design choices, uploaded design pictures and monogram text) are sent to that workshop. If you order delivery outside the Netherlands, the delivery details needed for that delivery go to the delivery partners for your destination. Some of our service providers may also process data outside the European Economic Area, for example in the United States.",
         "When data leaves the EEA, we rely on [TRANSFER SAFEGUARDS] to protect it. You can ask us for a copy of these safeguards.",
       ],
     },
@@ -116,7 +117,7 @@ export const PRIVACY_POLICY: LegalDocument = {
         "stop using it based on your consent, by withdrawing that consent.",
       ],
       after: [
-        "Email [CONTACT EMAIL] to use any of these rights. We will reply within one month.",
+        "Email {{CONTACT_EMAIL}} to use any of these rights. We will reply within one month.",
         "If you are unhappy with how we handle your data, you can complain to the Dutch data protection authority, the Autoriteit Persoonsgegevens (autoriteitpersoonsgegevens.nl), or to the authority in your own EU country.",
       ],
     },
@@ -135,14 +136,14 @@ export const TERMS_AND_CONDITIONS: LegalDocument = {
   title: "Terms & Conditions",
   lastUpdated: "[LAST UPDATED DATE]",
   intro:
-    "These terms apply when you use this website or order from The Odogwu Heritage. Please read them before you order. By creating an account or placing an order, you agree to them.",
+    "These terms apply when you use this website or order from The Odogwu Heritage online shop, run by NTCC (Nigerian Traditional Clothing Community). Please read them before you order. By creating an account or placing an order, you agree to them.",
   sections: [
     {
       id: "terms-who-we-are",
       title: "Who we are",
       paragraphs: [
-        "The Odogwu Heritage is run by [LEGAL ENTITY NAME], [REGISTERED ADDRESS], KvK number [KVK NUMBER], VAT number [VAT NUMBER]. You can reach us at [CONTACT EMAIL].",
-        "We make traditional Nigerian clothing to order. Garments are made in Nigeria and delivered across the Netherlands.",
+        "The Odogwu Heritage online shop is run by NTCC (Nigerian Traditional Clothing Community), registered as [LEGAL ENTITY NAME], [REGISTERED ADDRESS], KvK number [KVK NUMBER], VAT number [VAT NUMBER]. You can reach us at {{CONTACT_EMAIL}}.",
+        "We sell traditional Nigerian clothing made to order by our independent partner workshop in Nigeria. We deliver across the Netherlands, and outside the Netherlands (the rest of Europe, North America, South America, Africa and Asia) by quote.",
       ],
     },
     {
@@ -180,8 +181,9 @@ export const TERMS_AND_CONDITIONS: LegalDocument = {
       id: "terms-delivery",
       title: "Production and delivery",
       bullets: [
-        "Your garments are made in Nigeria and shipped to Eindhoven, the Netherlands.",
-        "From there you can collect your order in Eindhoven, or we deliver it to your address for the delivery charge shown at checkout. Some destinations need a quote first.",
+        "Your garments are made by our partner workshop in Nigeria and shipped to Eindhoven, the Netherlands.",
+        "From there you can collect your order in Eindhoven, or we deliver it to your address anywhere in the Netherlands for the delivery charge shown at checkout.",
+        "We also deliver outside the Netherlands, to the rest of Europe, North America, South America, Africa and Asia. These deliveries need a quote first, and we tell you the price before you pay for delivery.",
         "Timelines shown on the site are estimates. Production and shipping can be delayed by things outside our control, such as customs or carrier delays. We will keep you updated.",
         "Check your order when it arrives and tell us about any problem as soon as you can.",
       ],
@@ -230,7 +232,7 @@ export const TERMS_AND_CONDITIONS: LegalDocument = {
       title: "Law and disputes",
       paragraphs: [
         "These terms are governed by [GOVERNING LAW]. Disputes go to [COMPETENT COURT]. If you are a consumer living in the EU, you keep the protection of the mandatory consumer laws of your country.",
-        "If you have a complaint, please contact us first at [CONTACT EMAIL]. We will try to solve it quickly.",
+        "If you have a complaint, please contact us first at {{CONTACT_EMAIL}}. We will try to solve it quickly.",
       ],
     },
   ],
