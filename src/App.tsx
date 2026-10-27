@@ -98,6 +98,8 @@ const galleryView = lazyView(() => import("./components/GalleryView"));
 const reviewsView = lazyView(() => import("./components/ReviewsView"));
 const loginView = lazyView(() => import("./components/LoginView"));
 const databaseView = lazyView(() => import("./components/DatabaseView"));
+const privacyPolicyView = lazyView(() => import("./components/PrivacyPolicyView"));
+const termsView = lazyView(() => import("./components/TermsView"));
 const HomeView = homeView.Component;
 const DesignStudioView = designStudioView.Component;
 const DashboardView = dashboardView.Component;
@@ -107,6 +109,8 @@ const GalleryView = galleryView.Component;
 const ReviewsView = reviewsView.Component;
 const LoginView = loginView.Component;
 const DatabaseView = databaseView.Component;
+const PrivacyPolicyView = privacyPolicyView.Component;
+const TermsView = termsView.Component;
 const IDLE_PREFETCH_VIEWS = [
   homeView.prefetch,
   galleryView.prefetch,
@@ -126,6 +130,7 @@ import {
 } from "./utils/appVersionCheck";
 import Footer from "./components/Footer";
 import { lazyView, prefetchWhenIdle } from "./utils/lazyView";
+import { legalPagePathFor } from "./utils/legalPages";
 import { ViewLoadingFallback } from "./components/ViewLoadingFallback";
 
 
@@ -231,6 +236,14 @@ export default function App() {
   // closure which happened to render the dialog.
   const homepageCurrentBatchesRef = React.useRef(batches);
   homepageCurrentBatchesRef.current = batches;
+
+  // Terms and Privacy have their own paths (/terms, /privacy) so they can be
+  // opened in a new tab. Keep the address bar in step with the active tab.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextPath = legalPagePathFor(activeTab, window.location);
+    if (nextPath) window.history.replaceState(window.history.state, "", nextPath);
+  }, [activeTab]);
 
   // Initialize async data
   React.useEffect(() => {
@@ -2182,6 +2195,10 @@ export default function App() {
             {activeTab === "about" && <AboutView />}
 
             {activeTab === "reviews" && <ReviewsView />}
+
+            {activeTab === "privacy" && <PrivacyPolicyView />}
+
+            {activeTab === "terms" && <TermsView />}
 
             {activeTab === "gallery" && (
               <GalleryView
