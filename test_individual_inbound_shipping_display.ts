@@ -99,9 +99,9 @@ assert.equal(
     orderType: "Individual",
     physicalGarmentCount: 1,
     fulfilmentMethod: "eindhoven_pickup",
-  }),
-  null,
-  "Eindhoven pickup carries no Lagos shipping charge",
+  })?.amountCents,
+  13125,
+  "Eindhoven pickup keeps the Lagos shipping charge",
 );
 assert.equal(
   individualLagosToEindhovenChargeCents({
@@ -109,7 +109,7 @@ assert.equal(
     physicalGarmentCount: 1,
     fulfilmentMethod: "eindhoven_pickup",
   }),
-  null,
+  13125,
 );
 assert.equal(
   individualLagosToEindhovenChargeCents({
@@ -150,8 +150,9 @@ assert.equal(
     orderType: "Individual",
     physicalGarmentCount: 14,
     fulfilmentMethod: "eindhoven_pickup",
-  }),
-  null,
+  })?.amountCents,
+  26250,
+  "14-garment pickup uses the same 2-block Lagos charge as delivery",
 );
 assert.equal(
   resolveIndividualInboundShippingDisplay({

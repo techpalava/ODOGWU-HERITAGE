@@ -400,7 +400,7 @@ const isIndividualFutureOrderCandidate = (
 /**
  * Individual orders whose stored Lagos → Eindhoven amount no longer matches
  * the current block quote must not be charged. Community/batch are skipped.
- * Pickup stays ok when there is no Lagos charge. Construction-only ledger
+ * Pickup and delivery use the same Lagos charge. Construction-only ledger
  * mismatches keep the existing persist-time NON_AUTHORITATIVE_TOTAL path.
  */
 export const refuseOutdatedStoredIndividualPayableTotal = (
@@ -436,7 +436,7 @@ export const refuseOutdatedStoredIndividualPayableTotal = (
 
 /**
  * Re-apply the current Individual Lagos → Eindhoven quote to an unpaid
- * destination-delivery candidate. Pickup, Community/batch, matching quotes,
+ * pickup or destination-delivery candidate. Community/batch, matching quotes,
  * and paid orders are left unchanged.
  */
 export const repriceUnpaidIndividualDeliveryCandidate = (
@@ -445,7 +445,8 @@ export const repriceUnpaidIndividualDeliveryCandidate = (
 ): FutureOrderCandidateV2 => {
   if (options.hasPaymentRecord) return candidate;
   if (!isIndividualFutureOrderCandidate(candidate)) return candidate;
-  if (candidate.shipping.state.fulfilmentMethod !== "destination_delivery") {
+  const fulfilment = candidate.shipping.state.fulfilmentMethod;
+  if (fulfilment !== "destination_delivery" && fulfilment !== "eindhoven_pickup") {
     return candidate;
   }
   const expectedLagos = individualLagosToEindhovenChargeCents({

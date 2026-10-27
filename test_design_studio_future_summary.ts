@@ -2324,21 +2324,22 @@ assert.doesNotMatch(
   /<dt[^>]*>Shipping<\/dt>/,
   "pickup must omit a misleading monetary Shipping row",
 );
-assert.equal(pickupSummaryMarkup.includes("data-summary-lagos-note"), false);
-assert.equal(
-  pickupSummaryMarkup.includes("Lagos → Eindhoven shipping"),
-  false,
-  "pickup summary does not add the Lagos band",
+assert.match(pickupSummaryMarkup, /data-summary-lagos-note="true"/);
+assert.match(
+  pickupSummaryMarkup,
+  /Lagos → Eindhoven shipping/,
+  "pickup summary keeps the Lagos band",
 );
-assert.equal(pickupSummaryMarkup.includes("data-summary-included-inbound"), false);
+assert.match(pickupSummaryMarkup, /data-summary-included-inbound="true"/);
+assert.match(pickupSummaryMarkup, /data-amount-cents="13125"/);
 if (pickupResolution.projectedTotalCents === null) {
   throw new Error("pickup must supply an authoritative payable projection");
 }
-const pickupTotalText = `€${(pickupResolution.projectedTotalCents / 100).toFixed(2)}`;
+const pickupTotalText = `€${((pickupResolution.projectedTotalCents + 13125) / 100).toFixed(2)}`;
 assert.match(
   pickupSummaryMarkup,
   new RegExp(`>Total</dt>[\\s\\S]*?>${pickupTotalText}</dd>`),
-  "pickup total is the design total with no shipping",
+  "pickup total is the design total plus the Lagos band, with no extra pickup fee",
 );
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);

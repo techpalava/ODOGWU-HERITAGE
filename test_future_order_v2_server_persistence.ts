@@ -1216,6 +1216,22 @@ assert.equal(stalePickupPersisted.status, "invalid");
 if (stalePickupPersisted.status === "invalid") {
   assert.equal(stalePickupPersisted.code, "NON_AUTHORITATIVE_TOTAL");
 }
+// A pickup ledger that leaves out the Lagos → Eindhoven charge is refused too.
+const omittedPickupLagosOrder = mutableClone(pendingOrder);
+omittedPickupLagosOrder.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+  status: "included_in_garment_construction",
+  amountCents: null,
+};
+const omittedPickupPersisted = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: { masterOrder: omittedPickupLagosOrder, customerOwnerUid: OWNER_UID },
+  adapter: new MemoryAdapter(),
+  now: () => NOW,
+});
+assert.equal(omittedPickupPersisted.status, "invalid");
+if (omittedPickupPersisted.status === "invalid") {
+  assert.equal(omittedPickupPersisted.code, "NON_AUTHORITATIVE_TOTAL");
+}
 
 console.log(
   "PASS: future order V2 server authority, HTTP boundary, and client transport",

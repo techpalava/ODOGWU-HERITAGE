@@ -67,8 +67,8 @@ const formatBlockPriceEur = (): string =>
   `€${(INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS / 100).toFixed(2)}`;
 
 /**
- * Shown only when there is a Lagos charge (Individual home delivery).
- * Never used for Eindhoven pickup or Community/batch orders.
+ * Shown only when there is a Lagos charge (Individual pickup or delivery).
+ * Never used for Community/batch orders.
  */
 export const formatIndividualShippingNote = (
   display: IndividualInboundShippingDisplay,
@@ -80,9 +80,9 @@ export const formatIndividualShippingNote = (
 
 /**
  * Individual Lagos→Eindhoven block charge.
- * Community, other batch routes, and Eindhoven pickup return null.
- * Callers add `amountCents` to the payable total once. Pickup never
- * carries this charge, even when an older draft still has a delivery quote.
+ * Community and other batch routes return null. Eindhoven pickup keeps the
+ * same charge as delivery; delivery adds its final-mile fee separately.
+ * Callers add `amountCents` to the payable total once.
  */
 export const resolveIndividualInboundShippingDisplay = (input: {
   orderType?: string | null;
@@ -90,7 +90,6 @@ export const resolveIndividualInboundShippingDisplay = (input: {
   physicalGarmentCount: number;
   fulfilmentMethod?: string | null;
 }): IndividualInboundShippingDisplay | null => {
-  if (input.fulfilmentMethod === "eindhoven_pickup") return null;
   if (!isIndividualOrder(input)) return null;
   if (
     !Number.isInteger(input.physicalGarmentCount) ||

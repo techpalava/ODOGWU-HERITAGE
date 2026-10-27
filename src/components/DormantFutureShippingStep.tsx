@@ -253,7 +253,7 @@ export const DormantFutureShippingStep = ({
   const shippingIntro =
     orderType === "Individual"
       ? isPickup
-        ? "Pick up in Eindhoven has no shipping charge."
+        ? "Lagos → Eindhoven shipping is added to the total at €131.25 per 10 garments (under 5 kg). Pick up in Eindhoven adds no extra charge."
         : "Lagos → Eindhoven shipping is added to the total at €131.25 per 10 garments (under 5 kg). This step adds pickup or additional delivery from Eindhoven."
       : "Standard Shipping to Eindhoven is already included. This step only adds pickup or additional delivery from Eindhoven.";
   const isOtherDestination =

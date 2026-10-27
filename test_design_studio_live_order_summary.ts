@@ -1635,33 +1635,23 @@ const individualPickup = buildAuthority({
 });
 assert.equal(individualPickup.summary.garmentSummary.length, 1);
 assert.equal(
-  individualPickup.view.costBreakdown?.includedInboundShipping ?? null,
-  null,
-  "pickup does not add the Individual Lagos band",
+  individualPickup.view.costBreakdown?.includedInboundShipping?.amountCents,
+  13125,
+  "pickup keeps the Individual Lagos band",
 );
 assert.equal(individualPickup.view.costBreakdown?.shipping ?? null, null);
 assert.equal(
   individualPickup.view.totalAmountCents,
-  pickup.view.totalAmountCents,
-  "pickup adds no Lagos band and no final-mile fee",
+  (pickup.view.totalAmountCents ?? 0) + 13125,
+  "pickup adds the Lagos band once and no final-mile fee",
 );
 assert.equal(
   individualPickup.view.costBreakdown?.subtotal.amountCents,
   pickup.view.totalAmountCents,
 );
 assert.equal(
-  individualPickup.view.costBreakdown?.subtotal.amountCents,
   individualPickup.view.totalAmountCents,
-);
-assert.equal(
-  individualPickup.candidateResult.candidate?.pricing.components
-    .lagosToEindhovenShipping.status,
-  "included_in_garment_construction",
-);
-assert.equal(
-  individualPickup.candidateResult.candidate?.pricing.components
-    .lagosToEindhovenShipping.amountCents,
-  null,
+  (individualPickup.view.costBreakdown?.subtotal.amountCents ?? 0) + 13125,
 );
 const communityPickup = buildAuthority({
   fabricByGarment: { shirt: fabricA },

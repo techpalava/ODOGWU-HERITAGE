@@ -595,10 +595,10 @@ export default function AboutView() {
                 <strong>+€10.00</strong> to the order.
               </li>
               <li>
-                Individual home delivery uses{" "}
+                Individual orders use{" "}
                 <strong>€131.25 per 10 garments (under 5 kg)</strong> for
-                Lagos → Eindhoven shipping. Pickup in Eindhoven has no Lagos
-                shipping charge. The cart combines garment rows into one
+                Lagos → Eindhoven shipping, for both Eindhoven pickup and home
+                delivery. The cart combines garment rows into one
                 shipment quote; a set counts as one garment.
               </li>
               <li>

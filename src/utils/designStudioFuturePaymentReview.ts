@@ -772,8 +772,13 @@ export const getFuturePaymentReviewPricingRows = (
       presentation: "supporting_note",
     },
   ];
-  if (includedInbound) {
-    const storedLagos = pricing.components.lagosToEindhovenShipping;
+  const storedLagos = pricing.components.lagosToEindhovenShipping;
+  // A stored order saved without a Lagos charge (e.g. a pickup order from
+  // before pickup kept it) shows only what it actually charged.
+  const storedWithoutLagos =
+    display?.useStoredLagosAmount === true &&
+    storedLagos.status !== "separately_charged";
+  if (includedInbound && !storedWithoutLagos) {
     const storedAmount =
       display?.useStoredLagosAmount &&
       storedLagos.status === "separately_charged" &&
