@@ -17,6 +17,7 @@ import React, {
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
+  Batch,
   StyleCategory,
   Fabric,
   Measurements,
@@ -102,7 +103,16 @@ import {
   type FabricReentryBaseline,
 } from "../utils/designStudioContextualReentryGuidance";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
-import { getCurrentCommunityBatch } from "../utils/batchUtils";
+import {
+  getCurrentCommunityBatch,
+  getNextOpenCommunityBatch,
+} from "../utils/batchUtils";
+import {
+  batchOrderWindowContextFields,
+  getBatchOrderWindow,
+} from "../utils/batchOrderWindow";
+import { formatHomepageBatchDeadline } from "../utils/homepageOrderGateway";
+import { CommunityBatchClosedNotice } from "./CommunityBatchClosedNotice";
 import {
   canonicalOrderIdentitiesMatch,
   getCanonicalOrderIdentity,
@@ -550,6 +560,11 @@ export interface DesignStudioViewProps {
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
   onStartFreshIndividualOrder?: () => void;
+  /**
+   * Starts the homepage Join flow for another community batch. Used only by
+   * the closed-batch notice's "Join next open batch" button.
+   */
+  onJoinCommunityBatch?: (batch: Batch) => void;
   /** Test-only dependency seam; production uses the Firebase-backed repository. */
   futureDraftRepository?: AuthenticatedFutureDraftRepository;
   /** Test-only deterministic replacement for the production autosave timer. */
@@ -756,6 +771,7 @@ export default function DesignStudioView({
   initialFabricCode,
   clearInitialPreset,
   onStartFreshIndividualOrder,
+  onJoinCommunityBatch,
   futureDraftRepository,
   futureDraftAutosaveScheduler,
   futureOrderV2TestHooks,
@@ -1305,6 +1321,7 @@ export default function DesignStudioView({
           CapacityService.getTargetCapacity(computedActiveBatch),
         allowOrders: computedActiveBatch.allowOrders,
         batchStatus: computedActiveBatch.status,
+        ...batchOrderWindowContextFields(computedActiveBatch),
       }
     : {
         orderType: "Community",
@@ -3958,6 +3975,34 @@ export default function DesignStudioView({
   );
   const communityBatchClosed = communityBatchClosureStatus === "closed";
   const communityBatchChecking = communityBatchClosureStatus === "loading";
+  const closedCommunityBatchId =
+    communityBatchClosed && futureOrderIdentity?.orderType === "Community"
+      ? futureOrderIdentity.batchId
+      : null;
+  const closedCommunityBatchClosedOn = (() => {
+    if (!closedCommunityBatchId) return null;
+    const batch = (storeBatches || []).find(
+      (entry) => entry.id === closedCommunityBatchId,
+    );
+    if (!batch) return null;
+    const batchWindow = getBatchOrderWindow(batch);
+    if (
+      (batchWindow.dateReason !== "ended" &&
+        batchWindow.dateReason !== "ongoing_ended") ||
+      !batchWindow.effectiveCloseDate
+    ) {
+      return null;
+    }
+    // Boundaries are end of day at +01:00; show that calendar day.
+    const day = new Date(batchWindow.effectiveCloseDate.getTime() + 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    return formatHomepageBatchDeadline(day);
+  })();
+  const closedCommunityBatchNextBatch = closedCommunityBatchId
+    ? getNextOpenCommunityBatch(storeBatches || [], closedCommunityBatchId) ??
+      null
+    : null;
   // One order-wide authority for Continue, Journey Stepper, Live Summary, and
   // stage correction. Do not use active-wearer-only completeness here.
   const summaryUnlockedByMeasurements =
@@ -10786,13 +10831,16 @@ export default function DesignStudioView({
         <StudioOrderContextIndicator context={customerOrderContextPresentation} />
       </div>
       {communityBatchClosed ? (
-        <p
-          role="status"
-          data-testid="community-batch-closed"
-          className="mb-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900"
-        >
-          {COMMUNITY_BATCH_CLOSED_MESSAGE}
-        </p>
+        <CommunityBatchClosedNotice
+          closedOn={closedCommunityBatchClosedOn}
+          nextBatch={closedCommunityBatchNextBatch}
+          onJoinNextBatch={
+            closedCommunityBatchNextBatch && onJoinCommunityBatch
+              ? () => onJoinCommunityBatch(closedCommunityBatchNextBatch)
+              : undefined
+          }
+          onStartIndividualOrder={onStartFreshIndividualOrder}
+        />
       ) : null}
       {savedStudioOrders?.changeWarnings.length ? (
         <div className="mb-3">
@@ -10804,7 +10852,10 @@ export default function DesignStudioView({
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
         highestUnlockedStageIndex={highestUnlockedStageIndex}
-        canEnterFabric={garmentTypeStageCompletion.isComplete}
+        canEnterFabric={
+          garmentTypeStageCompletion.isComplete &&
+          !(communityBatchClosed && futureStageId === "garment_type")
+        }
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
         canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
@@ -10864,7 +10915,11 @@ export default function DesignStudioView({
               embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
             }
             onContinue={handleOpenDormantFabricStage}
-            continueDisabled={!garmentTypeStageCompletion.isComplete}
+            // A closed community batch stops at Step 1 (see the closed notice
+            // above) instead of after Steps 1-8.
+            continueDisabled={
+              !garmentTypeStageCompletion.isComplete || communityBatchClosed
+            }
             stageBlockers={garmentTypeStageCompletion.blockers}
             lengthSwitchNotes={garmentTypeStepLengthSwitchNotes}
           />

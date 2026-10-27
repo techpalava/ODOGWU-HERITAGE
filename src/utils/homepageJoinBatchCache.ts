@@ -2,7 +2,10 @@ import type { Batch } from "../types";
 import { isCommunityBatchClosedForOrders } from "./communityBatchOrderClosure";
 import {
   formatHomepageBatchDeadline,
-  getHomepageOpenJoinBatchText,
+  getHomepageJoinBatchDeadline,
+  getHomepageJoinBatchDeadlineLabelFor,
+  getHomepageJoinBatchDeadlineText,
+  type HomepageJoinBatchDeadline,
 } from "./homepageOrderGateway";
 
 /**
@@ -12,8 +15,11 @@ import {
  * stays blocked until the live snapshot confirms the batch (hasLoadedBatches),
  * and the live handler re-validates it as before.
  *
- * Only public fields are stored: id, name and endDate of an open community
- * batch, or a "none" marker when the last live snapshot had no open batch.
+ * Only public fields are stored: id, name and the ordering deadline of an
+ * open community batch, or a "none" marker when the last live snapshot had no
+ * open batch. `endDate` is the customer-facing deadline (the "Open until"
+ * date for a batch kept open past its end date, "" when ongoing) and
+ * `deadlineKind` marks those two keep-open cases; older entries omit it.
  */
 export const HOMEPAGE_JOIN_BATCH_CACHE_KEY = "odg.homepageJoinBatch.v1";
 
@@ -21,6 +27,7 @@ export interface HomepageCachedJoinBatch {
   id: string;
   name: string;
   endDate: string;
+  deadlineKind?: "open_until" | "ongoing";
 }
 
 export type HomepageJoinBatchCacheEntry =
@@ -32,6 +39,7 @@ export interface HomepageProvisionalJoinBatchView {
   name: string;
   text: string;
   deadlinePill: string | null;
+  deadlineLabel: string | null;
 }
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -65,17 +73,30 @@ const parseEntry = (raw: string): HomepageJoinBatchCacheEntry | null => {
   if (value.v !== 1) return null;
   if (value.kind === "none") return { kind: "none" };
   if (value.kind !== "batch") return null;
-  const { id, name, endDate } = value;
+  const { id, name, endDate, deadlineKind } = value;
   if (
     !isBoundedString(id, MAX_ID) ||
     !id.trim() ||
     !isBoundedString(name, MAX_NAME) ||
     !name.trim() ||
-    !isBoundedString(endDate, MAX_END_DATE)
+    !isBoundedString(endDate, MAX_END_DATE) ||
+    (deadlineKind !== undefined &&
+      deadlineKind !== "open_until" &&
+      deadlineKind !== "ongoing")
   ) {
     return null;
   }
-  return { kind: "batch", batch: { id, name: name.trim(), endDate } };
+  return {
+    kind: "batch",
+    batch: {
+      id,
+      name: name.trim(),
+      endDate,
+      ...(deadlineKind === "open_until" || deadlineKind === "ongoing"
+        ? { deadlineKind }
+        : {}),
+    },
+  };
 };
 
 /** Reads the cache; a corrupt or unreadable entry is removed and ignored. */
@@ -117,16 +138,23 @@ export function writeHomepageJoinBatchCache(
     typeof liveJoinBatch.name === "string" &&
     liveJoinBatch.name.trim() &&
     !isCommunityBatchClosedForOrders(liveJoinBatch, now);
-  const entry: HomepageJoinBatchCacheEntry = open
+  const deadline = open ? getHomepageJoinBatchDeadline(liveJoinBatch, now) : null;
+  const entry: HomepageJoinBatchCacheEntry = open && deadline
     ? {
         kind: "batch",
         batch: {
           id: liveJoinBatch.id.slice(0, MAX_ID),
           name: liveJoinBatch.name.trim().slice(0, MAX_NAME),
           endDate:
-            typeof liveJoinBatch.endDate === "string"
-              ? liveJoinBatch.endDate.slice(0, MAX_END_DATE)
-              : "",
+            deadline.kind === "closes" || deadline.kind === "open_until"
+              ? deadline.date.slice(0, MAX_END_DATE)
+              : deadline.kind === "none" &&
+                  typeof liveJoinBatch.endDate === "string"
+                ? liveJoinBatch.endDate.slice(0, MAX_END_DATE)
+                : "",
+          ...(deadline.kind === "open_until" || deadline.kind === "ongoing"
+            ? { deadlineKind: deadline.kind }
+            : {}),
         },
       }
     : { kind: "none" };
@@ -175,13 +203,24 @@ export function getHomepageProvisionalJoinBatchView(
   now: Date = new Date(),
 ): HomepageProvisionalJoinBatchView | null {
   if (!cached) return null;
-  const end = cachedDeadlineEnd(cached.endDate);
+  const ongoing = cached.deadlineKind === "ongoing";
+  const end = ongoing ? null : cachedDeadlineEnd(cached.endDate);
   if (end !== null && end < now.getTime()) return null;
+  const deadline: HomepageJoinBatchDeadline = ongoing
+    ? { kind: "ongoing" }
+    : end === null
+      ? { kind: "none" }
+      : cached.deadlineKind === "open_until"
+        ? { kind: "open_until", date: cached.endDate }
+        : { kind: "closes", date: cached.endDate };
   return {
     id: cached.id,
     name: cached.name,
-    text: getHomepageOpenJoinBatchText(cached.endDate),
+    text: getHomepageJoinBatchDeadlineText(
+      deadline.kind === "none" ? { kind: "closes", date: cached.endDate } : deadline,
+    ),
     deadlinePill:
       end === null ? null : formatHomepageBatchDeadline(cached.endDate, "short"),
+    deadlineLabel: getHomepageJoinBatchDeadlineLabelFor(deadline),
   };
 }
