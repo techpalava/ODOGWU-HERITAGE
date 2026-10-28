@@ -3739,6 +3739,12 @@ export default function DatabaseView({
                                   {wearer.methodNote}
                                 </p>
                               )}
+                              {/* Step 7 order: shared values (Total Height first), then each garment. */}
+                              {wearer.shared.map((value) => (
+                                <p key={value.measurementId}>
+                                  Shared {value.label}: {value.display}
+                                </p>
+                              ))}
                               {wearer.garments.map((garment) => (
                                 <div key={garment.garmentKey}>
                                   <p className="font-semibold">
@@ -3753,11 +3759,6 @@ export default function DatabaseView({
                                     </p>
                                   ))}
                                 </div>
-                              ))}
-                              {wearer.shared.map((value) => (
-                                <p key={value.measurementId}>
-                                  Shared {value.label}: {value.display}
-                                </p>
                               ))}
                             </section>
                           ))}

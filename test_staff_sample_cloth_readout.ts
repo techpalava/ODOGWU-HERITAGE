@@ -152,8 +152,11 @@ const rowFor = (readout: readonly TailoringWearerReadout[] | null, measurementId
   const dressLength = rowFor(readout, "dress_length_standard");
   assert.equal(dressLength.label, "Standard Dress Length");
   assert.equal(dressLength.display, "101.3 cm", "lengths are never doubled");
-  // Every value: 'around' only for laid-flat across widths, never a raw id as the label.
+  // Every value: 'around' only for laid-flat across widths, never a raw id as the label,
+  // and every Sample Cloth value is typed, never a height estimate.
   rows(readout).forEach((row) => {
+    assert.equal(row.estimated, false, `${row.measurementId} is a typed sample value`);
+    assert.doesNotMatch(row.display, /estimated from height/);
     assert.notEqual(row.label, row.measurementId, `${row.measurementId} has a customer label`);
     assert.equal(
       row.display.includes("around"),
@@ -183,7 +186,7 @@ const rowFor = (readout: readonly TailoringWearerReadout[] | null, measurementId
   assert.equal(rowFor(male, "neck_circumference").display, "25.4 cm", "neck is measured as an opening: not doubled");
 }
 
-// 3. Body-measurement routes keep the existing staff readout text.
+// 3. Body-measurement routes use Step 7's body labels, with no Sample Cloth note.
 {
   const order = savedOrderMeasurements({
     types: ["shirt"],
@@ -196,8 +199,9 @@ const rowFor = (readout: readonly TailoringWearerReadout[] | null, measurementId
   assert.ok(readout);
   assert.equal(readout[0].methodNote, null);
   const chest = rowFor(readout, "chest_bust_circumference");
-  assert.equal(chest.label, "chest_bust_circumference");
-  assert.equal(chest.display, `${chest.valueCm} cm`);
+  assert.equal(chest.label, "Chest Circumference");
+  assert.equal(chest.display, `${Math.round(chest.valueCm * 10) / 10} cm`);
+  assert.doesNotMatch(chest.display, /laid flat|around/);
 }
 
 // 4. The staff order editor and the V2 history use the worded readout.
