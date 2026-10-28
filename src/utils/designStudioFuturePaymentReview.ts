@@ -8,6 +8,7 @@ import type {
   WearerOrderStateV2,
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
+import type { CanonicalMeasurementId } from "../config/MeasurementBlueprintConfig";
 import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
 import { projectPersonGarmentLabels } from "./occurrenceDisplayLabel";
 import {
@@ -37,8 +38,9 @@ import {
   isSelectedMeasurementMethod,
   MEASUREMENT_METHOD_LABELS,
   roundMeasurementDisplayValue,
-  getDemographicMeasurementCustomerLabel,
+  getMeasurementCustomerLabel,
   getMeasurementDefinition,
+  getSampleClothCustomerLabel,
   resolveMeasurementLabelDemographic,
   resolveMeasurementLabelDemographicForGarments,
   resolveMeasurementPlanningDemographic,
@@ -295,11 +297,41 @@ export const getFuturePaymentReviewGarments = (
     ),
   }));
 
+/** Step 7's wording for the production equivalent of a laid-flat sample width. */
+const SAMPLE_CLOTH_PRODUCTION_EQUIVALENT_SUFFIX = ", production equivalent";
+
+/**
+ * The label Step 7 shows for this field: the body label (Chest / Borst by audience),
+ * or on Sample Cloth the sample label ("Waist across sample (laid flat)"). A laid-flat
+ * width shown as its doubled production value says so, as Step 7 does under the field.
+ */
+const measurementFieldLabel = ({
+  measurementId,
+  sampleRoute,
+  convertedFromSample,
+  labelDemographic,
+}: {
+  measurementId: string;
+  sampleRoute: boolean;
+  convertedFromSample: boolean;
+  labelDemographic: string;
+}): string => {
+  const id = measurementId as CanonicalMeasurementId;
+  if (!getMeasurementDefinition(id)) return humanizeIdentifier(measurementId);
+  const bodyLabel = getMeasurementCustomerLabel(id, labelDemographic);
+  if (!sampleRoute) return bodyLabel;
+  const sampleLabel = getSampleClothCustomerLabel(id, bodyLabel, labelDemographic);
+  return convertedFromSample
+    ? `${sampleLabel}${SAMPLE_CLOTH_PRODUCTION_EQUIVALENT_SUFFIX}`
+    : sampleLabel;
+};
+
 const toMeasurementItem = ({
   measurementId,
   valueCm,
   provenance,
   unit,
+  sampleRoute,
   convertedFromSample,
   labelDemographic,
   outsideUsualRange,
@@ -308,14 +340,18 @@ const toMeasurementItem = ({
   valueCm: number;
   provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
+  sampleRoute: boolean;
   convertedFromSample: boolean;
   labelDemographic: string;
   outsideUsualRange: boolean;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
-  label:
-    getDemographicMeasurementCustomerLabel(measurementId, labelDemographic) ??
-    humanizeIdentifier(measurementId),
+  label: measurementFieldLabel({
+    measurementId,
+    sampleRoute,
+    convertedFromSample,
+    labelDemographic,
+  }),
   displayValue: roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, unit),
   ),
@@ -438,6 +474,7 @@ const mergeMeasurements = ({
       measurementId,
       ...value,
       unit,
+      sampleRoute,
       convertedFromSample: preferDerived,
       labelDemographic,
       outsideUsualRange: isMeasurementOutsideUsualRange(
