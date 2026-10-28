@@ -1343,7 +1343,7 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
   const databaseViewSource = readFileSync("./src/components/DatabaseView.tsx", "utf8");
   assert.match(
     databaseViewSource,
-    /projectTailoringMeasurementReadout\(\s*editingItem\.measurements,\s*garmentTypeByKeyFromFabricAllocations\(editingItem\.fabricAllocations\),?\s*\)/,
+    /projectTailoringMeasurementReadout\(\s*editingItem\.measurements,\s*garmentTypeByKeyFromFabricAllocations\(editingItem\.fabricAllocations\),(\s*garmentDemographicByKeyFromGarments\(editingItem\.garments\),?)?\s*\)/,
   );
 }
 
