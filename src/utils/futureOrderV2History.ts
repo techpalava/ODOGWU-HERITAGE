@@ -116,6 +116,9 @@ export const presentFutureOrderV2History = (
         Object.fromEntries(
           candidate.garments.map((garment) => [garment.garmentKey, garment.garmentType]),
         ),
+        Object.fromEntries(
+          candidate.garments.map((garment) => [garment.garmentKey, garment.demographic]),
+        ),
       ),
       occurrences: candidate.occurrenceStyleSnapshots.map((snapshot) => ({
         orderId: parsed.value.orderId,
