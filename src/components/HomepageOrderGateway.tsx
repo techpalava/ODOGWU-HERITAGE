@@ -423,7 +423,7 @@ export default function HomepageOrderGateway({
           </p>
           <ul className={chipListClassName}>
             <li className={`${chipClassName} text-heritage-green/70`}>
-              Shipping from Lagos to Location applies.
+              Shipping from Eindhoven to Location applies.
             </li>
           </ul>
 

@@ -466,12 +466,17 @@ assert.match(joinMarkup, /Ready to Wear/);
 assert.match(joinMarkup, /aria-label="Ready to Wear - Coming Soon"[^>]*>Coming Soon<\/button>/);
 assert.match(
   joinMarkup,
-  /Shipping from Lagos to Location applies\./,
+  /Shipping from Eindhoven to Location applies\./,
 );
 assert.equal(
-  (joinMarkup.match(/Shipping from Lagos to Location applies\./g) || []).length,
+  (joinMarkup.match(/Shipping from Eindhoven to Location applies\./g) || []).length,
   1,
-  "Only Ready to Wear should show the Lagos-to-location shipping copy",
+  "Only Ready to Wear should show the Eindhoven-to-location shipping copy",
+);
+assert.doesNotMatch(
+  joinMarkup,
+  /Shipping from Lagos to Location applies/,
+  "Ready to Wear shipping chip must no longer say Lagos",
 );
 assert.doesNotMatch(joinMarkup, /Order Type [ABCD]/);
 assert.match(joinMarkup, /Manage Sourcing Batches/);
