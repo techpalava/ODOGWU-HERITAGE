@@ -89,6 +89,9 @@ export interface AppState {
   /** Incremented by the site nav. App decides whether Design Studio may open. */
   designStudioNavRequest: number;
   requestDesignStudioFromNav: () => void;
+  /** Incremented by the desktop header Feedback button. SiteFeedbackButton opens its panel. */
+  siteFeedbackOpenRequest: number;
+  requestSiteFeedbackOpen: () => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
   notification: { message: string; type: "success" | "info" } | null;
@@ -405,6 +408,10 @@ export const useAppStore = create<AppState>((set, get) => {
   designStudioNavRequest: 0,
   requestDesignStudioFromNav: () => {
     set({ designStudioNavRequest: get().designStudioNavRequest + 1 });
+  },
+  siteFeedbackOpenRequest: 0,
+  requestSiteFeedbackOpen: () => {
+    set({ siteFeedbackOpenRequest: get().siteFeedbackOpenRequest + 1 });
   },
   pendingRedirect: null,
   setPendingRedirect: (redirect) => set({ pendingRedirect: redirect }),
