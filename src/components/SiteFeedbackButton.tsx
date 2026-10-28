@@ -89,6 +89,9 @@ export function SiteFeedbackButton({
   const currentUser = useAppStore((state) => state.currentUser);
   const isCartOpen = useAppStore((state) => state.isCartOpen);
   const isMobileMenuOpen = useAppStore((state) => state.isMobileMenuOpen);
+  const siteFeedbackOpenRequest = useAppStore(
+    (state) => state.siteFeedbackOpenRequest,
+  );
 
   const [open, setOpen] = useState(false);
   const [covering, setCovering] = useState(false);
@@ -106,6 +109,8 @@ export function SiteFeedbackButton({
   const capturedStudioStep = useRef<string | null>(null);
 
   const tabRef = useRef<HTMLButtonElement>(null);
+  // The control that opened the panel (left tab or desktop header button) gets focus back on close.
+  const openerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const ids = useId();
@@ -136,6 +141,10 @@ export function SiteFeedbackButton({
   }, []);
 
   const openDialog = useCallback(() => {
+    openerRef.current =
+      typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     capturedStudioStep.current = activeTab === "design" ? readStudioStep() : null;
     setEmail((current) => current || currentUser?.email || "");
     setSent(false);
@@ -152,9 +161,21 @@ export function SiteFeedbackButton({
       setSent(false);
     }
     if (typeof window !== "undefined") {
-      window.setTimeout(() => tabRef.current?.focus(), 0);
+      window.setTimeout(() => {
+        const opener = openerRef.current;
+        if (opener && opener.isConnected && opener !== document.body) opener.focus();
+        else tabRef.current?.focus();
+      }, 0);
     }
   }, [sent]);
+
+  // The desktop header Feedback button asks the store to open this same panel.
+  const lastOpenRequest = useRef(siteFeedbackOpenRequest);
+  useEffect(() => {
+    if (siteFeedbackOpenRequest === lastOpenRequest.current) return;
+    lastOpenRequest.current = siteFeedbackOpenRequest;
+    openDialog();
+  }, [siteFeedbackOpenRequest, openDialog]);
 
   // Esc closes; Tab stays inside the dialog.
   useEffect(() => {
@@ -263,7 +284,7 @@ export function SiteFeedbackButton({
         onClick={openDialog}
         tabIndex={hidden ? -1 : 0}
         aria-hidden={hidden ? true : undefined}
-        className={`fixed left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1.5 rounded-r-xl border border-l-0 border-heritage-gold/60 bg-heritage-green py-3 pl-[calc(0.25rem+env(safe-area-inset-left,0px))] pr-1 text-heritage-gold shadow-lg transition-opacity duration-200 hover:bg-heritage-forest focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:pointer-events-auto sm:gap-2 sm:py-4 sm:pr-1.5 ${
+        className={`fixed left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1.5 rounded-r-xl border border-l-0 border-heritage-gold/60 bg-heritage-green py-3 pl-[calc(0.25rem+env(safe-area-inset-left,0px))] pr-1 text-heritage-gold shadow-lg transition-opacity duration-200 hover:bg-heritage-forest focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:pointer-events-auto sm:gap-2 sm:py-4 sm:pr-1.5 xl:hidden ${
           hidden
             ? "pointer-events-none opacity-0"
             : covering

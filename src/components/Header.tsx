@@ -10,6 +10,7 @@ import {
   LogIn,
   LogOut,
   Star,
+  MessageSquare,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
@@ -25,6 +26,9 @@ export function Header() {
   );
   const setIsMobileMenuOpen = useAppStore((state) => state.setIsMobileMenuOpen);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
+  const requestSiteFeedbackOpen = useAppStore(
+    (state) => state.requestSiteFeedbackOpen,
+  );
   const cartItemsCount = useAppStore(
     (state) => state.cartItems.length + state.futureOrderV2CartItems.length,
   );
@@ -158,6 +162,20 @@ export function Header() {
               )}
               <span className="text-[10px] font-bold uppercase tracking-wider">
                 {currentUser ? "Logout" : "Login"}
+              </span>
+            </button>
+            <button
+              type="button"
+              data-site-feedback-header-button="true"
+              onClick={requestSiteFeedbackOpen}
+              aria-label="Send feedback"
+              aria-haspopup="dialog"
+              title="Send feedback"
+              className="flex items-center justify-center min-h-[38px] px-3.5 rounded-xl bg-heritage-gold text-heritage-forest hover:brightness-110 transition border border-heritage-gold shadow-md cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-beige focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green"
+            >
+              <MessageSquare size={14} aria-hidden="true" className="mr-1.5 shrink-0" />
+              <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                Feedback
               </span>
             </button>
           </div>
