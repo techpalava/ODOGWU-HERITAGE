@@ -6,6 +6,7 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 
 import React, { useState, useEffect, useRef } from "react";
 import {
+  garmentDemographicByKeyFromGarments,
   garmentTypeByKeyFromFabricAllocations,
   projectTailoringMeasurementReadout,
 } from "../utils/tailoringMeasurementProjection";
@@ -3719,6 +3720,7 @@ export default function DatabaseView({
                       const tailoringReadout = projectTailoringMeasurementReadout(
                         editingItem.measurements,
                         garmentTypeByKeyFromFabricAllocations(editingItem.fabricAllocations),
+                        garmentDemographicByKeyFromGarments(editingItem.garments),
                       );
                       if (!tailoringReadout) return null;
                       return (
@@ -3732,6 +3734,17 @@ export default function DatabaseView({
                                 {wearer.displayName}
                               </h4>
                               <p>Method: {wearer.methodLabel}</p>
+                              {wearer.methodNote && (
+                                <p data-tailoring-method-note className="text-heritage-bronze">
+                                  {wearer.methodNote}
+                                </p>
+                              )}
+                              {/* Step 7 order: shared values (Total Height first), then each garment. */}
+                              {wearer.shared.map((value) => (
+                                <p key={value.measurementId}>
+                                  Shared {value.label}: {value.display}
+                                </p>
+                              ))}
                               {wearer.garments.map((garment) => (
                                 <div key={garment.garmentKey}>
                                   <p className="font-semibold">
@@ -3742,15 +3755,10 @@ export default function DatabaseView({
                                   </p>
                                   {garment.values.map((value) => (
                                     <p key={value.measurementId} className="pl-3">
-                                      {value.measurementId}: {value.valueCm} cm
+                                      {value.label}: {value.display}
                                     </p>
                                   ))}
                                 </div>
-                              ))}
-                              {wearer.shared.map((value) => (
-                                <p key={value.measurementId}>
-                                  Shared {value.measurementId}: {value.valueCm} cm
-                                </p>
                               ))}
                             </section>
                           ))}
@@ -5885,6 +5893,9 @@ export default function DatabaseView({
                                             {wearer.displayName}
                                           </p>
                                           <p>Method: {wearer.methodLabel}</p>
+                                          {wearer.methodNote && (
+                                            <p data-tailoring-method-note>{wearer.methodNote}</p>
+                                          )}
                                           {wearer.garments.map((garment) => (
                                             <p key={garment.garmentKey}>
                                               {garment.label}
