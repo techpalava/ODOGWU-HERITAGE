@@ -194,5 +194,71 @@ try {
   useAppStore.setState(originalState, true);
 }
 
+// --- desktop header button (Option B) ---------------------------------------
+// From xl (where Header shows its full nav) the gold header button opens the
+// same panel and the left tab is hidden. Below xl the left tab is unchanged.
+const { Header } = await import("./src/components/Header");
+let headerTree: ReturnType<typeof create> | undefined;
+try {
+  useAppStore.setState({
+    activeTab: "home",
+    currentUser: null,
+    cartItems: [],
+    isCartOpen: false,
+    isMobileMenuOpen: false,
+  });
+  await act(async () => {
+    headerTree = create(
+      <>
+        <Header />
+        <SiteFeedbackButton submit={async () => "doc-2"} />
+      </>,
+    );
+  });
+  const root = headerTree!.root;
+  const headerButton = root.findByProps({ "data-site-feedback-header-button": "true" });
+  assert.equal(headerButton.type, "button");
+  assert.equal(headerButton.props.type, "button");
+  assert.equal(headerButton.props["aria-label"], "Send feedback");
+  assert.equal(headerButton.props["aria-haspopup"], "dialog");
+  assert.match(text(headerButton), /^Feedback$/);
+  assert.match(headerButton.props.className, /\bbg-heritage-gold\b/);
+
+  // It sits in the desktop (xl) nav group, right after Login.
+  const desktopGroup = headerButton.parent!;
+  assert.match(desktopGroup.props.className, /\bhidden\b/);
+  assert.match(desktopGroup.props.className, /\bxl:flex\b/);
+  const siblings = desktopGroup.children.filter(
+    (child): child is ReactTestInstance => typeof child !== "string",
+  );
+  const loginIndex = siblings.findIndex((child) => child.props.title === "Login");
+  assert.ok(loginIndex >= 0, "Login is in the desktop group");
+  assert.equal(siblings[loginIndex + 1], headerButton, "Feedback is right of Login");
+
+  // The left tab is still rendered with its mobile placement, hidden only from xl.
+  const leftTab = root.findByProps({ "data-site-feedback-tab": "true" });
+  const tabClasses = String(leftTab.props.className).split(/\s+/);
+  assert.ok(tabClasses.includes("fixed") && tabClasses.includes("left-0"), "left tab keeps its spot");
+  assert.ok(tabClasses.includes("xl:hidden"), "left tab hidden on desktop");
+  assert.ok(!tabClasses.includes("hidden"), "left tab still shows below xl");
+  assert.equal(leftTab.props.tabIndex, 0);
+
+  // Clicking the header button opens the one shared panel.
+  assert.equal(root.findAll((n) => n.props?.role === "dialog").length, 0);
+  await act(async () => headerButton.props.onClick());
+  const dialogs = root.findAll((n) => n.props?.role === "dialog" && n.type === "div");
+  assert.equal(dialogs.length, 1, "a single feedback panel");
+  assert.match(text(dialogs[0]), /Send feedback/);
+  assert.ok(dialogs[0].findByType("form"));
+  assert.equal(root.findByProps({ "data-site-feedback-tab": "true" }).props["aria-expanded"], true);
+
+  // Closing works as before.
+  await act(async () => root.findByProps({ "aria-label": "Close feedback" }).props.onClick());
+  assert.equal(root.findAll((n) => n.props?.role === "dialog").length, 0);
+} finally {
+  act(() => headerTree?.unmount());
+  useAppStore.setState(originalState, true);
+}
+
 console.log("PASS: site feedback");
 process.exit(0);
