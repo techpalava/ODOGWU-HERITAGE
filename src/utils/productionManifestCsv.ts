@@ -6,6 +6,10 @@ import {
   type FutureOrderV2PersonalizedPriceRecord,
 } from "./futureOrderV2PersonalizedPrice.js";
 import { formatFutureOrderV2PaidAmount } from "./futureOrderV2PaymentRecord.js";
+import type {
+  TailoringMeasurementValue,
+  TailoringWearerReadout,
+} from "./tailoringMeasurementProjection.js";
 
 export const PRODUCTION_MANIFEST_HEADERS = [
   "Order / Tracking ID",
@@ -55,6 +59,92 @@ const text = (value: unknown, fallback: string): string =>
 
 const workshopNotAvailable = (): string[] =>
   PRODUCTION_MANIFEST_HEADERS.slice(4, -1).map(() => "N/A");
+
+/** Header indexes of the workshop columns a V2 order fills from its saved measurements. */
+const MANIFEST_COLUMN = (header: (typeof PRODUCTION_MANIFEST_HEADERS)[number]): number =>
+  PRODUCTION_MANIFEST_HEADERS.indexOf(header);
+
+/**
+ * Legacy single-value columns that map one-to-one to a V2 measurement. Sleeve and
+ * Trouser Length have several V2 fields (short/long sleeve; ankle, side and back
+ * lengths), so they stay blank and the full readout carries them.
+ */
+const V2_ONE_TO_ONE_COLUMNS: ReadonlyArray<readonly [(typeof PRODUCTION_MANIFEST_HEADERS)[number], string]> = [
+  ["Height (cm)", "total_height"],
+  ["Neck Dimension", "neck_circumference"],
+  ["Shoulder Dimension", "shoulder_length"],
+  ["Chest Dimension", "chest_bust_circumference"],
+  ["Waist Dimension", "waist_circumference"],
+  ["Hip Dimension", "hip_circumference"],
+  ["Head Size (Cap)", "head_circumference"],
+  ["Trouser Crotch Depth", "waist_to_crotch_depth_length"],
+];
+
+/** V2 does not ask for these, so they stay "N/A". */
+const V2_NOT_COLLECTED_COLUMNS = ["Weight (kg)", "Age", "Body Build", "Fit Preference"] as const;
+
+const roundCm = (valueCm: number): number => Math.round(valueCm * 10) / 10;
+
+/**
+ * Column cell for one measurement: centimetres to 1 decimal, and a height estimate says so.
+ * Blank when the order has more than one person, is Sample Cloth (laid-flat widths are not
+ * body dimensions) or holds different values for the field (per-garment estimates).
+ */
+const v2ColumnValue = (
+  readout: readonly TailoringWearerReadout[],
+  measurementId: string,
+): string => {
+  if (readout.length !== 1 || readout[0].methodNote) return "";
+  const wearer = readout[0];
+  const values: TailoringMeasurementValue[] = [
+    ...wearer.shared,
+    ...wearer.garments.flatMap((garment) => garment.values),
+  ].filter((value) => value.measurementId === measurementId);
+  const distinct = new Set(values.map((value) => `${roundCm(value.valueCm)}|${value.estimated}`));
+  if (values.length === 0 || distinct.size !== 1) return "";
+  const value = values[0];
+  return `${roundCm(value.valueCm)}${value.estimated ? " (estimated from height)" : ""}`;
+};
+
+/**
+ * The staff readout as one line: "Ada — Method: …: Shared Total Height: 172 cm; … |
+ * Standard Shirt: Head Circumference: 59.1 cm (estimated from height); …", people " || ".
+ */
+const v2MeasurementsText = (readout: readonly TailoringWearerReadout[]): string =>
+  readout
+    .map((wearer) =>
+      [
+        `${wearer.displayName} — Method: ${wearer.methodLabel}${wearer.methodNote ? ` (${wearer.methodNote})` : ""}`,
+        ...(wearer.shared.length
+          ? [wearer.shared.map((value) => `Shared ${value.label}: ${value.display}`).join("; ")]
+          : []),
+        ...wearer.garments
+          .filter((garment) => garment.values.length > 0)
+          .map(
+            (garment) =>
+              `${garment.label}: ${garment.values.map((value) => `${value.label}: ${value.display}`).join("; ")}`,
+          ),
+      ].join(" | "),
+    )
+    .join(" || ");
+
+/** Workshop columns of a V2 row: saved measurements where they map, "N/A" elsewhere. */
+const v2WorkshopValues = (readout: readonly TailoringWearerReadout[] | null): string[] => {
+  const values = workshopNotAvailable();
+  if (!readout || readout.length === 0) return values;
+  // workshopNotAvailable starts at header index 4.
+  const set = (header: (typeof PRODUCTION_MANIFEST_HEADERS)[number], value: string) => {
+    values[MANIFEST_COLUMN(header) - 4] = value;
+  };
+  set("Measurement Unit", "cm");
+  V2_ONE_TO_ONE_COLUMNS.forEach(([header, measurementId]) =>
+    set(header, v2ColumnValue(readout, measurementId)),
+  );
+  set("Sleeve Dimension", "");
+  set("Trouser Length", "");
+  V2_NOT_COLLECTED_COLUMNS.forEach((header) => set(header, "N/A"));
+  return values;
+};
 
 const v2TotalLabel = (exactTotalCents: number | null): string =>
   exactTotalCents === null ? "N/A" : `V2 total €${(exactTotalCents / 100).toFixed(2)}`;
@@ -140,8 +230,13 @@ const manifestValues = (order: unknown, context?: ProductionManifestContext): st
         text(history.value.customer.fullName, "N/A"),
         text(history.value.customer.email, "N/A"),
         text(history.value.customer.phone, "N/A"),
-        ...workshopNotAvailable(),
-        settledTotalLabel(order, context) ?? v2TotalLabel(history.value.exactTotalCents),
+        ...v2WorkshopValues(history.value.tailoringMeasurements),
+        [
+          settledTotalLabel(order, context) ?? v2TotalLabel(history.value.exactTotalCents),
+          ...(history.value.tailoringMeasurements?.length
+            ? [`Measurements: ${v2MeasurementsText(history.value.tailoringMeasurements)}`]
+            : []),
+        ].join(" || "),
       ];
     }
     if (history.status === "invalid_history") {
