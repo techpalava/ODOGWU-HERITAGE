@@ -207,6 +207,21 @@ const showcaseUsage = homeView.match(/<HomepageCommunityShowcase[\s\S]*?\/>/);
 assert.ok(showcaseUsage, "HomeView renders HomepageCommunityShowcase");
 assert.match(showcaseUsage![0], /onPrimaryAction=\{handleHeroPrimaryAction\}/);
 assert.doesNotMatch(showcaseUsage![0], /\bonClick=/);
+// Homepage order: the showcase sits right after Featured Outfits and just
+// before How It Works.
+const featuredOutfitsAt = homeView.indexOf("{/* Featured Outfits Window Display */}");
+const showcaseAt = homeView.indexOf("<HomepageCommunityShowcase");
+const howItWorksAt = homeView.indexOf("{/* How It Works (Tailoring Journey) */}");
+assert.ok(featuredOutfitsAt >= 0 && showcaseAt >= 0 && howItWorksAt >= 0);
+assert.ok(
+  featuredOutfitsAt < showcaseAt && showcaseAt < howItWorksAt,
+  "HomepageCommunityShowcase renders between Featured Outfits and How It Works",
+);
+assert.doesNotMatch(
+  homeView.slice(featuredOutfitsAt, showcaseAt),
+  /<section className="space-y-8 py-8">/,
+  "No other section sits between Featured Outfits and the showcase",
+);
 
 const statsSource = readFileSync("src/data/communityStats.ts", "utf8");
 assert.doesNotMatch(statsSource, /ASML/i);
