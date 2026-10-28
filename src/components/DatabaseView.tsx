@@ -3734,6 +3734,11 @@ export default function DatabaseView({
                                 {wearer.displayName}
                               </h4>
                               <p>Method: {wearer.methodLabel}</p>
+                              {wearer.methodNote && (
+                                <p data-tailoring-method-note className="text-heritage-bronze">
+                                  {wearer.methodNote}
+                                </p>
+                              )}
                               {/* Step 7 order: shared values (Total Height first), then each garment. */}
                               {wearer.shared.map((value) => (
                                 <p key={value.measurementId}>
@@ -5888,6 +5893,9 @@ export default function DatabaseView({
                                             {wearer.displayName}
                                           </p>
                                           <p>Method: {wearer.methodLabel}</p>
+                                          {wearer.methodNote && (
+                                            <p data-tailoring-method-note>{wearer.methodNote}</p>
+                                          )}
                                           {wearer.garments.map((garment) => (
                                             <p key={garment.garmentKey}>
                                               {garment.label}

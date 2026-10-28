@@ -11,7 +11,10 @@ import {
   getMeasurementCustomerLabel,
   getMeasurementDefinition,
   getMeasurementProfile,
+  getSampleClothCustomerLabel,
+  getSampleClothProductionEquivalentCm,
   isFutureMeasurementStateV1,
+  isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
   MEASUREMENT_METHOD_STAFF_LABELS,
   resolveMeasurementLabelDemographic,
@@ -29,9 +32,16 @@ import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder.js";
 export interface TailoringMeasurementValue {
   readonly measurementId: string;
   readonly valueCm: number;
-  /** Staff label: the label the customer saw on Step 7 ("Waist Circumference"). */
+  /**
+   * Staff label: the label the customer saw on Step 7 ("Waist Circumference"; Sample
+   * Cloth: "Waist across sample (laid flat)").
+   */
   readonly label: string;
-  /** Staff value text, 1 decimal; height estimates say so ("81.3 cm (estimated from height)"). */
+  /**
+   * Staff value text, 1 decimal. Height estimates say so ("81.3 cm (estimated from
+   * height)"). Sample Cloth laid-flat across widths add the full-round equivalent
+   * ("46 cm laid flat (≈ 92 cm around)").
+   */
   readonly display: string;
   /** True when the value was calculated from Total Height rather than entered. */
   readonly estimated: boolean;
@@ -47,6 +57,8 @@ export interface TailoringWearerReadout {
   readonly wearerId: string;
   readonly displayName: string;
   readonly methodLabel: string;
+  /** Sample Cloth only: says the values come from a sample garment, not the body. */
+  readonly methodNote: string | null;
   readonly shared: readonly TailoringMeasurementValue[];
   readonly garments: readonly TailoringGarmentReadout[];
 }
@@ -93,18 +105,35 @@ const conciseLabelsForGarmentKeys = (
 
 const roundCm = (valueCm: number): number => Math.round(valueCm * 10) / 10;
 
-/** Sample Cloth values keep their stored ids and centimetres. */
+export const SAMPLE_CLOTH_STAFF_METHOD_NOTE =
+  "Measured on the customer's sample garment, not the body. Across values were measured laid flat; ≈ around is twice that width.";
+
+/** How one Sample Cloth value reads to staff: the customer's wording, all typed. */
+const sampleClothValue = (
+  measurementId: string,
+  valueCm: number,
+  labelDemographic: CustomDetailDemographic,
+): TailoringMeasurementValue => {
+  const id = measurementId as CanonicalMeasurementId;
+  const label = getSampleClothCustomerLabel(
+    id,
+    getMeasurementCustomerLabel(id, labelDemographic),
+    labelDemographic,
+  );
+  const display = isSampleClothHalfWidthMeasurement(measurementId)
+    ? `${roundCm(valueCm)} cm laid flat (≈ ${roundCm(
+        getSampleClothProductionEquivalentCm(valueCm),
+      )} cm around)`
+    : `${roundCm(valueCm)} cm`;
+  return { measurementId, valueCm, label, display, estimated: false };
+};
+
 const sampleClothValuesFromBag = (
   bag: Record<string, { valueCm: number }>,
+  labelDemographic: CustomDetailDemographic,
 ): TailoringMeasurementValue[] =>
   Object.entries(bag)
-    .map(([measurementId, value]) => ({
-      measurementId,
-      valueCm: value.valueCm,
-      label: measurementId,
-      display: `${value.valueCm} cm`,
-      estimated: false,
-    }))
+    .map(([measurementId, value]) => sampleClothValue(measurementId, value.valueCm, labelDemographic))
     .sort((left, right) => left.measurementId.localeCompare(right.measurementId));
 
 const isPositiveCm = (value: { valueCm: number } | undefined): value is { valueCm: number } =>
@@ -359,17 +388,22 @@ const readoutFromBag = ({
   if (isSampleClothMeasurementMethod(measurement.route)) {
     return {
       ...header,
-      shared: sampleClothValuesFromBag(measurement.entered.shared),
+      methodNote: SAMPLE_CLOTH_STAFF_METHOD_NOTE,
+      shared: sampleClothValuesFromBag(measurement.entered.shared, labelDemographic),
       garments: garmentKeys.map((garmentKey) => ({
         garmentKey,
         label: garmentLabel(garmentKey),
-        values: sampleClothValuesFromBag(measurement.entered.byGarmentKey[garmentKey] || {}),
+        values: sampleClothValuesFromBag(
+          measurement.entered.byGarmentKey[garmentKey] || {},
+          labelDemographic,
+        ),
       })),
     };
   }
   const rows = bodyMeasurementRows({ measurement, garmentKeys, garmentTypeByKey, labelDemographic });
   return {
     ...header,
+    methodNote: null,
     shared: rows.shared,
     garments: garmentKeys.map((garmentKey) => ({
       garmentKey,
