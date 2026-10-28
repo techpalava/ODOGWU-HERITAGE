@@ -88,8 +88,8 @@ export function Header() {
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden xl:flex items-center gap-2 shrink-0">
-            <nav className="flex space-x-1 bg-heritage-forest p-1 rounded-2xl border border-heritage-gold/15">
+          <div className="hidden xl:flex items-center gap-1.5 shrink-0">
+            <nav className="flex space-x-0.5 bg-heritage-forest p-1 rounded-2xl border border-heritage-gold/15">
               {[
                 { id: "home", label: "Home", icon: Compass },
                 { id: "design", label: "Design Studio", icon: Shirt },
@@ -120,7 +120,7 @@ export function Header() {
                       }
                       setActiveTab(tab.id as any);
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 min-h-[38px] text-[10px] font-bold uppercase tracking-wider whitespace-nowrap rounded-xl transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-2 py-1.5 min-h-[38px] text-[10px] font-bold uppercase tracking-wider whitespace-nowrap rounded-xl transition-all duration-200 ${
                       isActive
                         ? "bg-heritage-green text-heritage-gold border border-heritage-gold/25 shadow-md font-extrabold"
                         : "text-heritage-beige hover:text-heritage-gold"
