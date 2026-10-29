@@ -28,8 +28,8 @@ const ORDER: DesignStudioStageId[] = [
   "design_style",
   "custom_details",
   "personalized_additions",
-  "try_on",
   "measurement",
+  "try_on",
   "summary",
   "shipping",
   "payment",
@@ -125,9 +125,9 @@ const createStudio = (startStage: DesignStudioStageId) => {
   assert.equal(studio.trip.lease, null, "the stage-change check clears it");
   studio.navigate("try_on");
   studio.back();
-  assert.equal(studio.stage, "personalized_additions", "Back from Try On is Step 5, not Measurement");
+  assert.equal(studio.stage, "measurement", "Back from AI Try-on is Measurement");
   studio.continue();
-  assert.equal(studio.stage, "try_on", "Step 5 Continue no longer returns to Measurement");
+  assert.equal(studio.stage, "try_on", "Measurement Continue advances to AI Try-on");
   pass("leaving the focus stage by any other navigation clears the lease");
 }
 {
@@ -186,7 +186,7 @@ for (const finish of ["continue", "back"] as const) {
   assert.equal(studio.stage, "measurement");
   assert.equal(studio.trip.lease, null);
   studio.continue();
-  assert.equal(studio.stage, "summary", "after a jump, Continue is normal");
+  assert.equal(studio.stage, "try_on", "after a jump, Continue is the next stage");
   pass("Payment edit returns via Back; a stepper jump drops it");
 }
 

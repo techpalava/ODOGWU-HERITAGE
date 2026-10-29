@@ -345,7 +345,7 @@ export const createAiTryOnVisualInputFingerprint = (
 };
 
 /**
- * Fingerprint for Step 6 from each garment's occurrence assignment.
+ * Fingerprint for Step 7 from each garment's occurrence assignment.
  * A null result means a garment design is missing or an earlier stage is not ready.
  * The legacy scalar design source is intentionally not an input.
  */

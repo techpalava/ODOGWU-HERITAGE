@@ -303,7 +303,7 @@ console.log("PASS: Critical Risk and Sample Cloth unchanged");
   assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
 
   const continueButton = () =>
-    renderer.root.findAllByType("button").find((node) => node.props["aria-label"] === "Continue to Summary");
+    renderer.root.findAllByType("button").find((node) => node.props["aria-label"] === "Continue to AI Try-on");
   const inputFor = (fieldId: string) =>
     renderer.root.findByProps({ "data-measurement-field": fieldId })
       .find((node) => node.type === "input");

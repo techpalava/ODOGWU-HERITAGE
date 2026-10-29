@@ -827,9 +827,9 @@ act(() => {
   }));
 });
 const continueButton = continueRenderer.root.findAllByType("button").find(
-  (node) => node.props["aria-label"] === "Continue to Summary",
+  (node) => node.props["aria-label"] === "Continue to AI Try-on",
 );
-assert.ok(continueButton, "expected Continue to Summary control");
+assert.ok(continueButton, "expected Continue to AI Try-on control");
 // Since #729 a locked Continue stays clickable (jump to guide) and is marked aria-disabled.
 assert.equal(continueButton.props["aria-disabled"] === "true", !selectChief.completion.complete);
 assert.equal(selectChief.completion.complete, false);

@@ -706,8 +706,9 @@ assert.equal(
     normalizedCustomDetailCatalog: catalog.activeOptions,
     isFabricStageComplete: true,
     isCustomDetailsStageReady: true,
-  }).currentStageId === "measurement",
-  false,
+  }).currentStageId,
+  "measurement",
+  "Measurement stays open when AI Try-on has not been completed or skipped.",
 );
 assert.equal(
   isFutureMeasurementStageUnlocked({ schemaVersion: 1, status: "completed", inputFingerprint: "x", resultReference: { kind: "verified_private_try_on_result", assetId: "a", ownerBindingId: "u" } }),

@@ -387,7 +387,7 @@ const tryOnSource = readFileSync(
 );
 
 assert.match(customDetailsSource, /const previousStageLabel = isPersonalizedAdditionsStage\s*\?\s*"Custom Details"\s*:\s*"Design Style"/);
-assert.match(customDetailsSource, /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"AI Try-on"\s*:\s*"Personalized Additions"/);
+assert.match(customDetailsSource, /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"Measurement"\s*:\s*"Personalized Additions"/);
 assert.equal(count(customDetailsSource, /backDestination=\{previousStageLabel\}/g), 2);
 assert.equal(count(customDetailsSource, /destination: nextStageLabel/g), 2);
 assert.match(
@@ -396,24 +396,24 @@ assert.match(
 );
 assert.match(
   studioSource,
-  /futureStageId === "custom_details"\s*\?\s*handleOpenDormantPersonalizedAdditionsStage\s*:\s*handleOpenDormantAiTryOnStage/,
+  /futureStageId === "custom_details"\s*\?\s*handleOpenDormantPersonalizedAdditionsStage\s*:\s*handleOpenDormantMeasurementStage/,
 );
 
-assert.match(tryOnSource, /const previousStageLabel = "Personalized Additions"/);
-assert.match(tryOnSource, /const nextStageLabel = "Measurement"/);
+assert.match(tryOnSource, /const previousStageLabel = "Measurement"/);
+assert.match(tryOnSource, /const nextStageLabel = "Summary"/);
 assert.equal(count(tryOnSource, /backDestination=\{previousStageLabel\}/g), 2);
 assert.equal(count(tryOnSource, /destination: nextStageLabel/g), 2);
 assert.equal(tryOnSource.includes('backDestination="Custom Details"'), false);
 assert.match(
   studioSource,
-  /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("measurement"\)\}/,
 );
 
 const labeledSteps: Array<[string, string, string | null]> = [
   ["src/components/DormantFutureFabricStep.tsx", "Garment Type", "Design Style"],
   ["src/components/DormantFutureDesignStyleStep.tsx", "Fabric", "Custom Details"],
-  ["src/components/DormantFutureMeasurementStep.tsx", "AI Try-on", "Summary"],
-  ["src/components/DormantFutureSummaryStep.tsx", "Measurement", "Delivery"],
+  ["src/components/DormantFutureMeasurementStep.tsx", "Personalized Additions", "AI Try-on"],
+  ["src/components/DormantFutureSummaryStep.tsx", "AI Try-on", "Delivery"],
   ["src/components/DormantFutureShippingStep.tsx", "Summary", null],
   ["src/components/DormantFuturePaymentReviewStep.tsx", "Delivery & Pickup", null],
 ];
@@ -441,10 +441,14 @@ assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("garme
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
 assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("fabric"\)\}/);
 assert.match(studioSource, /onContinue=\{handleOpenDormantCustomDetailsStage\}/);
-assert.match(studioSource, /onContinue=\{handleOpenDormantMeasurementStage\}/);
-assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("try_on"\)\}/);
+assert.match(
+  studioSource,
+  /futureStageId === "custom_details"\s*\?\s*handleOpenDormantPersonalizedAdditionsStage\s*:\s*handleOpenDormantMeasurementStage/,
+);
+assert.match(studioSource, /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/);
+assert.match(studioSource, /onContinue=\{handleOpenDormantAiTryOnStage\}/);
 assert.match(studioSource, /onContinue=\{handleOpenDormantSummaryStage\}/);
-assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("measurement"\)\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("try_on"\)\}/);
 assert.match(studioSource, /onContinueToShipping=\{handleOpenDormantShippingStage\}/);
 assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("summary"\)\}/);
 assert.match(studioSource, /onContinueToReview=\{handleOpenDormantPaymentReviewStage\}/);

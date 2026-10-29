@@ -10,8 +10,6 @@ import type {
 } from "../types.js";
 import { DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION } from "./designSourceJourney.js";
 import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState.js";
-import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow.js";
-import { isFutureMeasurementStageUnlocked } from "./measurementBlueprint.js";
 
 export type GarmentTypeStageBlockerCode =
   "GARMENT_REQUIRED" | "DEMOGRAPHIC_REQUIRED" | "CONSTRUCTION_UNRESOLVED";
@@ -124,19 +122,13 @@ export const createDormantDesignStudioJourneyState = ({
 
   const completion = getGarmentTypeStageCompletion(garmentTypeSelection);
   const requestedStageId = persistedDraft?.currentStageId;
-  const aiTryOnWorkflow = normalizeAiTryOnWorkflowState(
-    persistedDraft?.aiTryOnWorkflow,
-  );
-  const canEnterMeasurement = Boolean(
-    aiTryOnWorkflow && isFutureMeasurementStageUnlocked(aiTryOnWorkflow),
-  );
+  // Measurement is not locked behind AI Try-on being completed or skipped.
   const currentStageId =
     requestedStageId === "measurement" &&
     completion.isComplete &&
     isFabricStageComplete &&
     isCustomDetailsStageReady &&
-    isPersonalizedAdditionsStageReady &&
-    canEnterMeasurement
+    isPersonalizedAdditionsStageReady
       ? "measurement"
       : requestedStageId === "try_on" &&
           completion.isComplete &&
