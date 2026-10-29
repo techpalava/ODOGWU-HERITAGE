@@ -474,6 +474,16 @@ export default function HomeView({
         </section>
       )}
 
+      <HomepageCommunityShowcase
+        primaryActionLabel={heroPrimaryAction}
+        onPrimaryAction={handleHeroPrimaryAction}
+        onViewGallery={() => {
+          const el = document.getElementById("community-gallery");
+          if (el) el.scrollIntoView({ behavior: "smooth" });
+          else onNavigateToTab("gallery");
+        }}
+      />
+
       {/* How It Works (Tailoring Journey) */}
       <section className="space-y-8 py-8">
         <div className="text-center space-y-3 max-w-3xl mx-auto">
@@ -1030,16 +1040,6 @@ export default function HomeView({
           </div>
         )}
       </section>
-
-      <HomepageCommunityShowcase
-        primaryActionLabel={heroPrimaryAction}
-        onPrimaryAction={handleHeroPrimaryAction}
-        onViewGallery={() => {
-          const el = document.getElementById("community-gallery");
-          if (el) el.scrollIntoView({ behavior: "smooth" });
-          else onNavigateToTab("gallery");
-        }}
-      />
 
       {/* Cohort Concept Showcase & Mission */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-8">
