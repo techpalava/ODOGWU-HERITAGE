@@ -327,7 +327,7 @@ import {
   setGarmentScopedCustomDetailText,
 } from "../utils/garmentScopedCustomDetailInputsState";
 import {
-  createAiTryOnVisualInputFingerprint,
+  createAiTryOnFingerprintFromOccurrenceAssignments,
   createEmptyAiTryOnWorkflowState,
   isFutureCustomDetailsContentReady,
   normalizeAiTryOnWorkflowState,
@@ -3604,20 +3604,25 @@ export default function DesignStudioView({
   );
   const isFuturePersonalizedAdditionsNavigationReady =
     isFutureCustomDetailsStageReady && monogramNamesReady;
-  const futureAiTryOnInputFingerprint =
-    isFutureCustomDetailsStageReady &&
-    isFutureDesignSourceReadyForCustomDetails &&
-    activeFutureDesignSource &&
-    futureScopedCustomDetailsReconciliation
-      ? createAiTryOnVisualInputFingerprint({
+  const futureAiTryOnInputFingerprint = futureScopedCustomDetailsReconciliation
+    ? createAiTryOnFingerprintFromOccurrenceAssignments({
+        customDetailsReady: isFutureCustomDetailsStageReady,
+        designSourceReady: isFutureDesignSourceReadyForCustomDetails,
+        occurrences: futureDesignStyleStepProjection.occurrences.map(
+          (occurrence) => ({
+            garmentKey: occurrence.target.garmentKey,
+            assignment: occurrence.assignment,
+          }),
+        ),
+        visualInput: {
           garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
           fabricAllocations: fabricAllocationState.fabricAllocations,
-          selectedStyleId: activeFutureDesignSource.sourceKey,
           garmentScopedCustomDetails:
             futureScopedCustomDetailsReconciliation.state,
           physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
-        })
-      : null;
+        },
+      })
+    : null;
   const futureMeasurementPhysicalGarments = useMemo(
     () =>
       getMeasurementPhysicalGarments({
