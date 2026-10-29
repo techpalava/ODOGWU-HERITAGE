@@ -134,6 +134,7 @@ export const PrivateBatchSetupView = ({
     <section
       aria-labelledby="private-batch-setup-title"
       data-private-batch-setup="true"
+      data-private-batch-create-empty-description-ok="v1"
       className="mx-auto max-w-2xl"
     >
       <button

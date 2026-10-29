@@ -894,7 +894,6 @@ try {
       "batchName",
       "organizer",
       "occasion",
-      "description",
       "country",
       "city",
       "preferredDeliveryMonth",
@@ -910,6 +909,25 @@ try {
           ),
         );
       }
+    }
+  });
+
+  await runCase("Private Batch creation allows empty description and rejects whitespace-only description", async () => {
+    await seedPrivateBatchSettings();
+    await assertSucceeds(
+      setDoc(
+        customGroupReference(signedIn(OWNER_UID), "private_empty_description_ok_01"),
+        privateGroupCreate("private_empty_description_ok_01", { description: "" }),
+      ),
+    );
+    for (const blank of [" ", "    ", "\t", "\n", " \t \n "]) {
+      const groupId = `private_desc_ws_${Buffer.from(blank).toString("hex")}_123456`;
+      await assertFails(
+        setDoc(
+          customGroupReference(signedIn(OWNER_UID), groupId),
+          privateGroupCreate(groupId, { description: blank }),
+        ),
+      );
     }
   });
 
@@ -1438,8 +1456,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 58);
-  console.log(`Firestore emulator security matrix passed (${passed}/58).`);
+  assert.equal(passed, 59);
+  console.log(`Firestore emulator security matrix passed (${passed}/59).`);
 } finally {
   await testEnvironment.cleanup();
 }
