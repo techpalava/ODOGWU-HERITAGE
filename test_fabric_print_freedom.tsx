@@ -328,7 +328,8 @@ await mount(shirtOnIvory);
 }
 
 // ---------------------------------------------------------------------------
-// 3. Use a new piece is enabled at the needed count (same print).
+// 3. Engine: a new piece is still possible at the needed count (same print);
+//    the UI now pairs automatically.
 // ---------------------------------------------------------------------------
 {
   const choice = getFutureFabricPiecePlacementChoice({
@@ -348,20 +349,10 @@ await mount(shirtOnIvory);
     actionButton(catalogueCard(renderer.root, "PF-I")).props.onClick({ currentTarget: {} }),
   );
   await rerender();
-  const dialog = placementDialogs(renderer.root)[0];
-  assert.ok(dialog, "Pair or use a new piece? opens");
-  const newPiece = dialog!.findByProps({ "data-fabric-piece-placement-new-piece": "true" });
-  assert.equal(newPiece.props.disabled, false, "Use a new piece is enabled at the needed count");
-  assert.equal(
-    dialog!.findAllByProps({ "data-fabric-piece-placement-new-piece-blocked": "true" }).length,
-    0,
-  );
-  await act(async () => newPiece.props.onClick());
-  await rerender();
-  assert.deepEqual(layout(liveState), [
-    ["PF-I", ["base:shirt"]],
-    ["PF-I", ["base:kaftan"]],
-  ]);
+  // fabric-auto-pair: no Pair or use a new piece? popup; the Long Shirt
+  // pairs onto the Shirt's piece automatically.
+  assert.equal(placementDialogs(renderer.root).length, 0, "no pair-or-new-piece popup");
+  assert.deepEqual(layout(liveState), [["PF-I", ["base:shirt", "base:kaftan"]]]);
   assert.equal(
     getFutureFabricStageCompletion({ garmentTypeSelection: shirtLongShirt, fabricAllocationState: liveState, fabrics })
       .isComplete,

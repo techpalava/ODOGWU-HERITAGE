@@ -607,19 +607,15 @@ const liveHandlers = (getState: () => FabricAllocationState, setState: (next: Fa
   );
   await act(async () => clickFabricCard(liveRenderer.root, "HL-B"));
   // Only the Shirt changes: no group confirm; HL-B's piece (Skirt) has room,
-  // so the pair-or-new-piece popup asks where the Shirt goes.
+  // so the Shirt pairs onto it automatically (no pair-or-new-piece popup).
   assert.equal(
     liveRenderer.root.findAllByProps({ "data-change-fabric-confirm": "true" }).length,
     0,
   );
-  await act(async () => {
-    liveRenderer.root
-      .find(
-        (node) =>
-          node.type === "button" && node.props["data-fabric-piece-placement-pair"] === "true",
-      )
-      .props.onClick();
-  });
+  assert.equal(
+    liveRenderer.root.findAllByProps({ "data-fabric-piece-placement-dialog": "true" }).length,
+    0,
+  );
   assert.deepEqual(
     liveState.fabricAllocations.map((allocation) => [
       allocation.fabricCode,
