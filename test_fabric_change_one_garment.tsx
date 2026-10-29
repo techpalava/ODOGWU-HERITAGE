@@ -4,11 +4,12 @@
  * the shared piece and goes onto the new print; the other garments keep the
  * old print (that piece shows its spare room).
  *
- * - New print already has a piece with room: the existing pair-or-new-piece
- *   popup asks where the garment goes.
+ * - New print already has a piece with room: the garment pairs onto it
+ *   automatically (fabric-auto-pair, 29 Oct: no pair-or-new-piece popup)
+ *   and a toast names the Selection.
  * - A garment alone on its piece: when the new print has a piece with room,
- *   the same popup asks; Pair moves it there (its old piece is freed), Use a
- *   new piece re-colours its own piece. Otherwise it re-colours as before.
+ *   it pairs there automatically (its old piece is freed). Otherwise it
+ *   re-colours as before.
  * - Garment-card Change names the garment in the catalogue heading.
  * - Change from the Fabric Selection summary chip still changes the whole
  *   selection through the "Change Fabric for this group?" confirm.
@@ -257,6 +258,7 @@ const createNodeMock = (element: ReactElement) => {
 
 let liveState = shared;
 const groupChangeCalls: string[] = [];
+const notices: string[] = [];
 const renderStep = () => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
@@ -337,6 +339,9 @@ const renderStep = () => {
       if (result.status === "assigned") liveState = result.state;
       return result;
     },
+    onAutoPairNotice: (message: string) => {
+      notices.push(message);
+    },
     onBack: () => undefined,
     onContinue: () => undefined,
     onUseSameFabric: () => undefined,
@@ -349,6 +354,7 @@ let renderer!: ReturnType<typeof create>;
 const mount = async (state: FabricAllocationState) => {
   liveState = state;
   groupChangeCalls.length = 0;
+  notices.length = 0;
   await act(async () => {
     renderer = create(renderStep(), { createNodeMock });
   });
@@ -380,8 +386,6 @@ const helpLine = () => renderer.root.findByProps({ id: "future-fabric-catalogue-
 const groupConfirms = () => renderer.root.findAllByProps({ "data-change-fabric-confirm": "true" });
 const placementDialogs = () =>
   renderer.root.findAll((node) => node.props?.["data-fabric-piece-placement-dialog"] === "true");
-const placementButton = (flag: string) =>
-  renderer.root.find((node) => node.type === "button" && node.props[flag] === "true");
 
 // 3a. Garment card, shared piece, new print with no piece yet.
 {
@@ -418,7 +422,7 @@ const placementButton = (flag: string) =>
   act(() => renderer.unmount());
 }
 
-// 3b. New print already has a piece with room: pair-or-new-piece popup.
+// 3b. New print already has a piece with room: pairs automatically.
 {
   await mount(sharedPlusRoyal);
   await changeFromCard("Trouser");
@@ -428,47 +432,27 @@ const placementButton = (flag: string) =>
   );
   await pick("CO-R");
   assert.equal(groupConfirms().length, 0);
-  assert.equal(placementDialogs().length, 1, "pair-or-new-piece popup");
-  assert.match(textContent(placementDialogs()[0]!), /Pair with Selection 2/);
-  // Cancel: nothing changes, still changing the Trouser.
-  await act(async () => placementButton("data-fabric-piece-placement-cancel").props.onClick());
-  await rerender();
-  assert.deepEqual(layout(liveState), layout(sharedPlusRoyal));
-  // Pair.
-  await pick("CO-R");
-  await act(async () => placementButton("data-fabric-piece-placement-pair").props.onClick());
-  await rerender();
+  assert.equal(placementDialogs().length, 0, "no pair-or-new-piece popup");
   assert.deepEqual(layout(liveState), [
     ["CO-I", ["base:shirt"]],
     ["CO-R", ["base:kaftan", "base:trouser"]],
   ]);
-  act(() => renderer.unmount());
-
-  await mount(sharedPlusRoyal);
-  await changeFromCard("Trouser");
-  await pick("CO-R");
-  await act(async () => placementButton("data-fabric-piece-placement-new-piece").props.onClick());
-  await rerender();
-  assert.deepEqual(layout(liveState), [
-    ["CO-I", ["base:shirt"]],
-    ["CO-R", ["base:kaftan"]],
-    ["CO-R", ["base:trouser"]],
-  ]);
+  assert.deepEqual(notices, ["Paired Trouser with Selection 2 — no extra fabric used"]);
   act(() => renderer.unmount());
 }
 
-// 3c. Stock: Single Stock Print's only piece holds the Long Shirt, so the
-//     popup offers Pair and shows the new piece as blocked.
+// 3c. Stock: Single Stock Print's only piece holds the Long Shirt with room,
+//     so the Shirt pairs onto it (pairing needs no extra stock).
 {
   await mount(place(shared, "base:kaftan", "CO-S"));
   await changeFromCard("Standard Shirt");
   await pick("CO-S");
-  assert.equal(placementDialogs().length, 1);
-  assert.equal(
-    placementButton("data-fabric-piece-placement-new-piece").props.disabled,
-    true,
-    "no stock for another piece",
-  );
+  assert.equal(placementDialogs().length, 0);
+  assert.deepEqual(layout(liveState), [
+    ["CO-I", ["base:trouser"]],
+    ["CO-S", ["base:kaftan", "base:shirt"]],
+  ]);
+  assert.equal(notices.length, 1);
   act(() => renderer.unmount());
 }
 
@@ -569,8 +553,9 @@ assert.deepEqual(layout(loneShirt), [
   );
 }
 
-// 5a. Popup; Pair moves the Shirt and frees its piece. The popup names the
-//     live Selection number (2), not the number after the Shirt's piece goes.
+// 5a. Auto-pair moves the Shirt and frees its piece. The toast names the
+//     Selection number after renumbering (the Shirt's old Selection 1 goes,
+//     so Royal becomes Selection 1).
 {
   await mount(loneShirt);
   await changeFromCard("Standard Shirt");
@@ -581,44 +566,22 @@ assert.deepEqual(layout(loneShirt), [
   assert.match(textContent(helpLine()), /Select a replacement Fabric for Fabric Selection 1\./, "lone hint unchanged");
   await pick("CO-R");
   assert.equal(groupConfirms().length, 0);
-  assert.equal(placementDialogs().length, 1, "pair-or-new-piece popup");
-  assert.match(textContent(placementDialogs()[0]!), /Pair with Selection 2/);
-  assert.equal(groupChangeCalls.length, 0, "nothing changes until a choice");
-  await act(async () => placementButton("data-fabric-piece-placement-cancel").props.onClick());
-  await rerender();
-  assert.deepEqual(layout(liveState), layout(loneShirt), "Cancel changes nothing");
-  await pick("CO-R");
-  await act(async () => placementButton("data-fabric-piece-placement-pair").props.onClick());
-  await rerender();
+  assert.equal(placementDialogs().length, 0, "no pair-or-new-piece popup");
   assert.deepEqual(layout(liveState), [["CO-R", ["base:trouser", "base:shirt"]]]);
-  assert.equal(groupChangeCalls.length, 0);
+  assert.equal(groupChangeCalls.length, 0, "pairs instead of re-colouring");
+  assert.deepEqual(notices, ["Paired Standard Shirt with Selection 1 — no extra fabric used"]);
   assert.doesNotMatch(textContent(renderer.root), /Choose a new fabric for/, "change mode ends");
   act(() => renderer.unmount());
 }
 
-// 5b. Use a new piece: today's re-colour of the Shirt's own piece.
-{
-  await mount(loneShirt);
-  await changeFromCard("Standard Shirt");
-  await pick("CO-R");
-  await act(async () => placementButton("data-fabric-piece-placement-new-piece").props.onClick());
-  await rerender();
-  assert.equal(groupChangeCalls.length, 1, "re-colours its own piece");
-  assert.deepEqual(layout(liveState), [
-    ["CO-R", ["base:shirt"]],
-    ["CO-R", ["base:trouser"]],
-  ]);
-  assert.equal(liveState.fabricAllocations[0]!.allocationId, loneShirt.fabricAllocations[0]!.allocationId);
-  act(() => renderer.unmount());
-}
-
-// 5c. No piece with room: re-colour directly, no popup.
+// 5c. No piece with room: re-colour directly, no popup, no toast.
 {
   const fullRoyal = place(loneShirt, "base:kaftan", "CO-R");
   await mount(fullRoyal);
   await changeFromCard("Standard Shirt");
   await pick("CO-R");
   assert.equal(placementDialogs().length, 0);
+  assert.equal(notices.length, 0);
   assert.equal(groupChangeCalls.length, 1);
   assert.deepEqual(layout(liveState), [
     ["CO-R", ["base:shirt"]],
@@ -638,14 +601,7 @@ assert.deepEqual(layout(loneShirt), [
   assert.notEqual(card.props["data-fabric-change-card"], "change-blocked");
   assert.doesNotMatch(textContent(card), /No additional stock/);
   await pick("CO-S");
-  assert.equal(placementDialogs().length, 1);
-  assert.equal(
-    placementButton("data-fabric-piece-placement-new-piece").props.disabled,
-    true,
-    "no stock for a re-coloured piece",
-  );
-  await act(async () => placementButton("data-fabric-piece-placement-pair").props.onClick());
-  await rerender();
+  assert.equal(placementDialogs().length, 0, "pairs automatically");
   assert.deepEqual(layout(liveState), [["CO-S", ["base:trouser", "base:shirt"]]]);
   act(() => renderer.unmount());
 }

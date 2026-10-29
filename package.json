@@ -125,6 +125,7 @@
     "test:fabric-assign-freedom": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_assign_freedom.tsx",
     "test:fabric-print-freedom": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_print_freedom.tsx",
     "test:fabric-change-one-garment": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_change_one_garment.tsx",
+    "test:fabric-auto-pair": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_auto_pair.tsx",
     "test:fabric-selection-summary-row": "node scripts/tsxWithViteProductionFirebase.mjs test_fabric_selection_summary_row.tsx",
     "test:step1-fabric-assignment-popup": "node scripts/tsxWithViteProductionFirebase.mjs test_step1_fabric_assignment_popup.ts && node scripts/tsxWithViteProductionFirebase.mjs test_step1_fabric_assignment_popup_ui.tsx",
     "test:step2-fabric-allocation-limit": "node scripts/tsxWithViteProductionFirebase.mjs test_step2_fabric_allocation_limit.ts",
