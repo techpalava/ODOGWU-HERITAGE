@@ -1078,10 +1078,10 @@ service cloud.firestore {
     // record each time. Only admins (or the Admin SDK) can read or remove it.
     // Mirrors SITE_FEEDBACK_CREATE_KEYS and SITE_FEEDBACK_LIMITS in
     // src/utils/siteFeedback.ts.
-    function hasValidSiteFeedbackCreate(data) {
+    function hasValidSiteFeedbackCreate(data, feedbackId) {
       return data.keys().hasAll(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
-        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
-        && data.schemaVersion == 1
+        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt", "nationality", "photoPath", "photoContentType", "photoSizeBytes"])
+        && data.schemaVersion in [1, 2]
         && data.status == "new"
         && data.type in ["bug", "idea", "other"]
         && data.message is string
@@ -1099,11 +1099,38 @@ service cloud.firestore {
         && data.viewport.size() <= 32
         && data.createdAt == request.time
         && (data.uid == null
-          || (request.auth != null && data.uid == request.auth.uid));
+          || (request.auth != null && data.uid == request.auth.uid))
+        && (!("nationality" in data) || data.nationality == null
+          || (data.nationality is string && data.nationality.matches("^[A-Z]{2}$")))
+        && hasValidSiteFeedbackPhoto(data, feedbackId);
+    }
+
+    // Optional photo (v2): all four photo fields null/absent, or a photo the
+    // caller uploaded to site-feedback/{their auth uid}/{this doc id}/photo.{ext}
+    // (storage.rules). Anonymous guest sessions count as the caller.
+    function hasValidSiteFeedbackPhoto(data, feedbackId) {
+      return (
+          (!("photoPath" in data) || data.photoPath == null)
+          && (!("photoContentType" in data) || data.photoContentType == null)
+          && (!("photoSizeBytes" in data) || data.photoSizeBytes == null)
+        ) || (
+          request.auth != null
+          && (
+            (data.photoContentType == "image/jpeg"
+              && data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.jpg")
+            || (data.photoContentType == "image/png"
+              && data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.png")
+            || (data.photoContentType == "image/webp"
+              && data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.webp")
+          )
+          && data.photoSizeBytes is int
+          && data.photoSizeBytes > 0
+          && data.photoSizeBytes <= 5 * 1024 * 1024
+        );
     }
 
     match /site_feedback/{feedbackId} {
-      allow create: if hasValidSiteFeedbackCreate(request.resource.data);
+      allow create: if hasValidSiteFeedbackCreate(request.resource.data, feedbackId);
       allow read, update, delete: if isAdmin();
     }
 

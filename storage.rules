@@ -92,6 +92,18 @@ service firebase.storage {
       allow delete: if isOwner(uid);
     }
 
+    // Site feedback photo (optional, one per feedback document). Guests upload
+    // with an anonymous Firebase identity. Create-only; admins read and delete.
+    match /site-feedback/{uid}/{feedbackId}/{fileName} {
+      allow read, delete: if isAdmin();
+      allow create: if isOwner(uid)
+        && resource == null
+        && fileName.matches('photo[.](jpg|png|webp)')
+        && isAllowedCustomerDesignImage()
+        && request.resource.size > 0
+        && isWithinCustomerDesignSizeLimit();
+    }
+
     // Historical order references are readable by their owner but are never
     // writable or removable by customer clients.
     match /customer-order-designs/{ownerUid}/{orderId}/{designReferenceId}/{fileName} {

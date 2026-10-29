@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { CheckCircle2, Loader2, MessageSquare, X } from "lucide-react";
+import { CheckCircle2, ImagePlus, Loader2, MessageSquare, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import {
   SITE_FEEDBACK_LIMITS,
+  SITE_FEEDBACK_NATIONALITY_OPTIONS,
+  SITE_FEEDBACK_PHOTO_TYPES,
   SITE_FEEDBACK_TYPES,
   SITE_FEEDBACK_TYPE_LABELS,
   readSiteFeedbackSends,
   recordSiteFeedbackSend,
   siteFeedbackRateLimitWaitMs,
   validateSiteFeedback,
+  validateSiteFeedbackPhoto,
   type SiteFeedbackContext,
   type SiteFeedbackType,
   type SiteFeedbackValidation,
@@ -17,11 +20,12 @@ import {
 type SubmitFeedback = (
   value: Extract<SiteFeedbackValidation, { ok: true }>["value"],
   context: SiteFeedbackContext,
+  photo: File | null,
 ) => Promise<string>;
 
-const defaultSubmit: SubmitFeedback = async (value, context) => {
+const defaultSubmit: SubmitFeedback = async (value, context, photo) => {
   const { submitSiteFeedback } = await import("../services/siteFeedbackService.js");
-  return submitSiteFeedback(value, context);
+  return submitSiteFeedback(value, context, photo);
 };
 
 /**
@@ -99,6 +103,9 @@ export function SiteFeedbackButton({
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
   const [honeypot, setHoneypot] = useState("");
+  const [nationality, setNationality] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<{
     field: string;
     error: string;
@@ -113,6 +120,44 @@ export function SiteFeedbackButton({
   const openerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Preview URL for the picked photo; revoked when it changes or unmounts.
+  useEffect(() => {
+    if (!photo || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+      setPhotoPreview(null);
+      return;
+    }
+    let url: string;
+    try {
+      url = URL.createObjectURL(photo);
+    } catch {
+      setPhotoPreview(null);
+      return;
+    }
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
+
+  const clearPhoto = () => {
+    setPhoto(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  };
+
+  const onPickPhoto = (file: File | null) => {
+    if (!file) {
+      clearPhoto();
+      return;
+    }
+    const check = validateSiteFeedbackPhoto(file);
+    if (check.ok === false) {
+      clearPhoto();
+      setFieldError({ field: "photo", error: (check as { error: string }).error });
+      return;
+    }
+    if (fieldError?.field === "photo") setFieldError(null);
+    setPhoto(file);
+  };
   const ids = useId();
 
   // Hide the tab whenever it would sit on a control.
@@ -158,6 +203,7 @@ export function SiteFeedbackButton({
     if (sent) {
       setMessage("");
       setType("idea");
+      setPhoto(null);
       setSent(false);
     }
     if (typeof window !== "undefined") {
@@ -189,7 +235,7 @@ export function SiteFeedbackButton({
       if (event.key !== "Tab" || !dialogRef.current) return;
       const focusable = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), input:not([tabindex='-1']):not([disabled]), textarea:not([disabled]), [href]",
+          "button:not([disabled]), input:not([tabindex='-1']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]",
         ),
       );
       if (focusable.length === 0) return;
@@ -215,7 +261,7 @@ export function SiteFeedbackButton({
     event.preventDefault();
     if (sending) return;
     setSubmitError(null);
-    const validation = validateSiteFeedback({ type, message, email });
+    const validation = validateSiteFeedback({ type, message, email, nationality });
     if (validation.ok === false) {
       // tsconfig is not strict, so narrow explicitly.
       const failure = validation as Extract<SiteFeedbackValidation, { ok: false }>;
@@ -252,13 +298,15 @@ export function SiteFeedbackButton({
     };
     setSending(true);
     try {
-      await submit(validation.value, context);
+      await submit(validation.value, context, photo);
       recordSiteFeedbackSend(storage, now);
       setSent(true);
     } catch (error) {
       console.error("Feedback could not be sent:", error);
       setSubmitError(
-        "Sorry, your feedback could not be sent. Check your connection and try again.",
+        photo
+          ? "Sorry, your feedback could not be sent. Check your connection and try again. If it keeps failing, remove the photo and send again."
+          : "Sorry, your feedback could not be sent. Check your connection and try again.",
       );
     } finally {
       setSending(false);
@@ -424,6 +472,79 @@ export function SiteFeedbackButton({
                   {errorFor("email") && (
                     <p className="mt-1 text-xs text-red-700" role="alert">
                       {errorFor("email")}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor={`${ids}-nationality`} className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-heritage-green">
+                    Nationality <span className="font-normal normal-case tracking-normal text-heritage-ink/55">(optional)</span>
+                  </label>
+                  <select
+                    id={`${ids}-nationality`}
+                    data-site-feedback-nationality="true"
+                    value={nationality}
+                    onChange={(event) => setNationality(event.target.value)}
+                    aria-invalid={errorFor("nationality") ? true : undefined}
+                    className="w-full rounded-full border border-heritage-gold/50 bg-white px-4 py-2.5 text-sm text-heritage-ink outline-none transition focus:border-heritage-green focus:ring-2 focus:ring-heritage-gold/50"
+                  >
+                    <option value="">Prefer not to say</option>
+                    {SITE_FEEDBACK_NATIONALITY_OPTIONS.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errorFor("nationality") && (
+                    <p className="mt-1 text-xs text-red-700" role="alert">
+                      {errorFor("nationality")}
+                    </p>
+                  )}
+                </div>
+
+                <div data-site-feedback-photo-field="true">
+                  <span id={`${ids}-photo-label`} className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-heritage-green">
+                    Add a photo or screenshot <span className="font-normal normal-case tracking-normal text-heritage-ink/55">(optional, JPEG, PNG or WebP, up to 5 MB)</span>
+                  </span>
+                  {photo && photoPreview ? (
+                    <div className="flex items-center gap-3 rounded-2xl border border-heritage-gold/50 bg-white p-2.5">
+                      <img
+                        src={photoPreview}
+                        alt="Selected photo preview"
+                        className="h-14 w-14 shrink-0 rounded-xl object-cover"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm text-heritage-ink/75">{photo.name}</span>
+                      <button
+                        type="button"
+                        onClick={clearPhoto}
+                        aria-label="Remove photo"
+                        className="rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor={`${ids}-photo`}
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-dashed border-heritage-gold/70 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10 focus-within:ring-2 focus-within:ring-heritage-gold"
+                    >
+                      <ImagePlus aria-hidden="true" size={16} />
+                      Choose photo
+                      <input
+                        id={`${ids}-photo`}
+                        ref={photoInputRef}
+                        type="file"
+                        accept={SITE_FEEDBACK_PHOTO_TYPES.join(",")}
+                        aria-labelledby={`${ids}-photo-label`}
+                        aria-invalid={errorFor("photo") ? true : undefined}
+                        onChange={(event) => onPickPhoto(event.target.files?.[0] ?? null)}
+                        className="sr-only"
+                      />
+                    </label>
+                  )}
+                  {errorFor("photo") && (
+                    <p className="mt-1 text-xs text-red-700" role="alert" data-site-feedback-photo-error="true">
+                      {errorFor("photo")}
                     </p>
                   )}
                 </div>
