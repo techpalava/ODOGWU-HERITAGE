@@ -187,7 +187,7 @@ assert.equal(unresolved.assignedGarmentCount, 1);
 assert.equal(unresolved.unresolvedGarmentCount, 1);
 assert.deepEqual(unresolved.garmentRows.at(-1), {
   garmentKey: "skirt",
-  garmentLabel: "Skirt",
+  garmentLabel: "Standard Skirt",
   fabricCode: null,
   fabricLabel: null,
   isAssigned: false,

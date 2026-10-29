@@ -45,7 +45,7 @@ const pricingSettings = {
 } as BusinessSettings;
 const style: StyleCategory = {
   id: "additional-domain-test",
-  name: "Shirt and Trouser",
+  name: "Standard Shirt and Trouser",
   description: "Structured test composition",
   gender: "male",
   options: [],
@@ -85,7 +85,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   getAllowedAdditionalGarmentLabels(mainComposition),
-  ["Shirt", "Trouser"],
+  ["Standard Shirt", "Trouser"],
   "C2 receives customer-facing labels from the canonical resolver",
 );
 assert.deepEqual(

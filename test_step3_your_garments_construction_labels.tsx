@@ -84,7 +84,7 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Shirt" },
+      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Standard Shirt" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt", garmentType: "shirt", sourceRole: "main" },
@@ -128,9 +128,9 @@ assert.equal(LONG_SHIRT, "Long Shirt");
     },
   };
   const presentation = [
-    { garmentKey: "base:shirt", garmentType: "shirt" as const, broadLabel: "Shirt" },
-    { garmentKey: "additional:shirt:1", garmentType: "shirt" as const, broadLabel: "Shirt 2" },
-    { garmentKey: "additional:shirt:2", garmentType: "shirt" as const, broadLabel: "Shirt 3" },
+    { garmentKey: "base:shirt", garmentType: "shirt" as const, broadLabel: "Standard Shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" as const, broadLabel: "Standard Shirt 2" },
+    { garmentKey: "additional:shirt:2", garmentType: "shirt" as const, broadLabel: "Standard Shirt 3" },
   ];
   const physical = [
     { garmentKey: "base:shirt", garmentType: "shirt" as const, sourceRole: "main" as const },
@@ -156,8 +156,8 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Shirt" },
-      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Shirt 2" },
+      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Standard Shirt" },
+      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Standard Shirt 2" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt", garmentType: "shirt", sourceRole: "main" },
@@ -181,8 +181,8 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Shirt" },
-      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Shirt 2" },
+      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Standard Shirt" },
+      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Standard Shirt 2" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt", garmentType: "shirt", sourceRole: "main" },
@@ -204,8 +204,8 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:shirt:1", garmentType: "shirt", broadLabel: "Shirt" },
-      { garmentKey: "base:shirt:2", garmentType: "shirt", broadLabel: "Shirt 2" },
+      { garmentKey: "base:shirt:1", garmentType: "shirt", broadLabel: "Standard Shirt" },
+      { garmentKey: "base:shirt:2", garmentType: "shirt", broadLabel: "Standard Shirt 2" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt:1", garmentType: "shirt", sourceRole: "main" },
@@ -230,9 +230,9 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Shirt" },
+      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Standard Shirt" },
       { garmentKey: "base:kaftan", garmentType: "kaftan", broadLabel: "Long Shirt" },
-      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Shirt 2" },
+      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Standard Shirt 2" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt", garmentType: "shirt", sourceRole: "main" },
@@ -268,8 +268,8 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Shirt" },
-      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Shirt 3" },
+      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Standard Shirt" },
+      { garmentKey: "additional:shirt:1", garmentType: "shirt", broadLabel: "Standard Shirt 3" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt", garmentType: "shirt", sourceRole: "main" },
@@ -293,7 +293,7 @@ assert.equal(LONG_SHIRT, "Long Shirt");
 {
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:skirt", garmentType: "skirt", broadLabel: "Skirt" },
+      { garmentKey: "base:skirt", garmentType: "skirt", broadLabel: "Standard Skirt" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:skirt", garmentType: "skirt", sourceRole: "main" },
@@ -322,7 +322,7 @@ assert.equal(LONG_SHIRT, "Long Shirt");
   });
   const labels = projectYourGarmentsConstructionDisplayLabels({
     presentationOccurrences: [
-      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Shirt" },
+      { garmentKey: "base:shirt", garmentType: "shirt", broadLabel: "Standard Shirt" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt", garmentType: "shirt", sourceRole: "main" },
@@ -350,9 +350,9 @@ const repeatTarget = {
 };
 const displayLabels = projectYourGarmentsConstructionDisplayLabels({
   presentationOccurrences: [
-    { garmentKey: baseTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt" },
-    { garmentKey: midTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt 2" },
-    { garmentKey: repeatTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt 3" },
+    { garmentKey: baseTarget.garmentKey, garmentType: "shirt", broadLabel: "Standard Shirt" },
+    { garmentKey: midTarget.garmentKey, garmentType: "shirt", broadLabel: "Standard Shirt 2" },
+    { garmentKey: repeatTarget.garmentKey, garmentType: "shirt", broadLabel: "Standard Shirt 3" },
   ],
   physicalOccurrences: [
     { garmentKey: baseTarget.garmentKey, garmentType: "shirt", sourceRole: "main" },
@@ -397,7 +397,7 @@ const occurrences: DesignStyleStepOccurrencePresentation[] = [
   {
     target: baseTarget,
     garmentType: "shirt",
-    label: "Shirt",
+    label: "Standard Shirt",
     status: "incomplete",
     assignment: null,
     assignmentLabel: null,
@@ -405,7 +405,7 @@ const occurrences: DesignStyleStepOccurrencePresentation[] = [
   {
     target: midTarget,
     garmentType: "shirt",
-    label: "Shirt 2",
+    label: "Standard Shirt 2",
     status: "complete",
     assignment: catalogAssignment(midTarget),
     assignmentLabel: "Emerald Weave",
@@ -413,7 +413,7 @@ const occurrences: DesignStyleStepOccurrencePresentation[] = [
   {
     target: repeatTarget,
     garmentType: "shirt",
-    label: "Shirt 3",
+    label: "Standard Shirt 3",
     status: "complete",
     assignment: uploadedAssignment(repeatTarget),
     assignmentLabel: "Uploaded design",
@@ -458,7 +458,7 @@ const catalogueEntry: DesignStyleStepCatalogueEntry = {
       eligibilityFingerprint: "fingerprint",
     },
   },
-  selectedOccurrenceLabels: ["Shirt", "Shirt 2"],
+  selectedOccurrenceLabels: ["Standard Shirt", "Standard Shirt 2"],
   referenceGarmentTypes: ["trouser"],
   adaptationCopy: null,
 };
@@ -511,7 +511,7 @@ assert.deepEqual(
   root
     .findAll((node) => node.props?.["data-occurrence-label"])
     .map((row) => row.props["data-occurrence-label"]),
-  ["Shirt", "Shirt 2", "Shirt 3"],
+  ["Standard Shirt", "Standard Shirt 2", "Standard Shirt 3"],
 );
 
 const rowByLabel = (label: string) =>
@@ -523,13 +523,13 @@ const visibleName = (label: string) =>
     }),
   );
 
-assert.equal(visibleName("Shirt"), "Standard Shirt");
-assert.equal(visibleName("Shirt 2"), "Standard Shirt 2");
-assert.equal(visibleName("Shirt 3"), "Standard Shirt 3");
-assert.equal(textContent(root).includes("Choose a design reference for Shirt to continue."), true);
+assert.equal(visibleName("Standard Shirt"), "Standard Shirt");
+assert.equal(visibleName("Standard Shirt 2"), "Standard Shirt 2");
+assert.equal(visibleName("Standard Shirt 3"), "Standard Shirt 3");
+assert.equal(textContent(root).includes("Choose a design reference for Standard Shirt to continue."), true);
 assert.equal(
   textContent(root.findByProps({ "data-testid": "step3-all-designs" })).includes(
-    "Applied to Shirt, Shirt 2",
+    "Applied to Standard Shirt, Standard Shirt 2",
   ),
   true,
 );
@@ -547,17 +547,17 @@ const click = async (node: ReactTestInstance) => {
 };
 
 await click(
-  rowByLabel("Shirt")
+  rowByLabel("Standard Shirt")
     .findAllByType("button")
     .find((button) => textContent(button) === "Choose Design")!,
 );
 await click(
-  rowByLabel("Shirt 2")
+  rowByLabel("Standard Shirt 2")
     .findAllByType("button")
     .find((button) => textContent(button) === "Change Design")!,
 );
 assert.equal(
-  rowByLabel("Shirt 3")
+  rowByLabel("Standard Shirt 3")
     .findAllByType("button")
     .find((button) => textContent(button) === "Replace Upload")?.props["aria-label"],
   "Replace uploaded design for Standard Shirt 3",
@@ -574,17 +574,17 @@ const uploadFor = async (label: string) => {
     });
   });
 };
-await uploadFor("Shirt");
-await uploadFor("Shirt 2");
-await uploadFor("Shirt 3");
+await uploadFor("Standard Shirt");
+await uploadFor("Standard Shirt 2");
+await uploadFor("Standard Shirt 3");
 
 await click(
-  rowByLabel("Shirt 2")
+  rowByLabel("Standard Shirt 2")
     .findAllByType("button")
     .find((button) => textContent(button) === "Clear")!,
 );
 await click(
-  rowByLabel("Shirt 3")
+  rowByLabel("Standard Shirt 3")
     .findAllByType("button")
     .find((button) => textContent(button).startsWith("Remove uploaded design from"))!,
 );
@@ -609,25 +609,25 @@ assert.deepEqual(
   midTarget,
 );
 assert.equal(
-  rowByLabel("Shirt").findByType("input").props["aria-label"],
+  rowByLabel("Standard Shirt").findByType("input").props["aria-label"],
   "Upload a design for Standard Shirt",
 );
 assert.equal(
-  rowByLabel("Shirt 2").findByType("input").props["aria-label"],
+  rowByLabel("Standard Shirt 2").findByType("input").props["aria-label"],
   "Upload a design for Standard Shirt 2",
 );
 assert.equal(
-  rowByLabel("Shirt 2")
+  rowByLabel("Standard Shirt 2")
     .findAllByType("button")
     .find((button) => textContent(button) === "Clear")?.props["aria-label"],
   "Clear design for Standard Shirt 2",
 );
 assert.equal(
-  rowByLabel("Shirt 3").findByType("input").props["aria-label"],
+  rowByLabel("Standard Shirt 3").findByType("input").props["aria-label"],
   "Replace uploaded design for Standard Shirt 3",
 );
 assert.equal(
-  rowByLabel("Shirt 3")
+  rowByLabel("Standard Shirt 3")
     .findAllByType("button")
     .find((button) => textContent(button).startsWith("Remove uploaded design from"))
     ?.props["aria-label"],
@@ -640,12 +640,14 @@ const selectStyle = root
 await click(selectStyle!);
 const dialog = root.findByProps({ "data-testid": "design-garment-mapping-dialog" });
 assert.equal(textContent(dialog).includes(SHORT_LABEL), false);
-assert.equal(textContent(dialog).includes("Standard Shirt"), false);
-assert.equal(textContent(dialog).includes("Shirt 2"), true);
+// Design Style popup shows the garment NAME (with the Standard prefix), not the construction label.
+assert.equal(textContent(dialog).includes("Standard Shirt 2"), true);
+assert.equal(textContent(dialog).includes("Standard Standard"), false);
+assert.match(textContent(dialog), /Choose garmentsStandard ShirtStandard Shirt 2/);
 const warning = dialog.findByProps({ "data-testid": "reference-composition-warning" });
-assert.equal(textContent(warning).includes("Shirt 2"), true);
+assert.equal(textContent(warning).includes("Standard Shirt 2"), true);
 assert.equal(textContent(warning).includes(MIDLONG_LABEL), false);
-assert.equal(textContent(warning).includes("Standard Shirt"), false);
+assert.equal(textContent(warning).includes("Standard Standard"), false);
 
 const firstBaseTarget = {
   garmentKey: "base:shirt:1",
@@ -657,8 +659,8 @@ const secondBaseTarget = {
 };
 const twoBaseLabels = projectYourGarmentsConstructionDisplayLabels({
   presentationOccurrences: [
-    { garmentKey: firstBaseTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt" },
-    { garmentKey: secondBaseTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt 2" },
+    { garmentKey: firstBaseTarget.garmentKey, garmentType: "shirt", broadLabel: "Standard Shirt" },
+    { garmentKey: secondBaseTarget.garmentKey, garmentType: "shirt", broadLabel: "Standard Shirt 2" },
   ],
   physicalOccurrences: [
     { garmentKey: firstBaseTarget.garmentKey, garmentType: "shirt", sourceRole: "main" },
@@ -678,7 +680,7 @@ const twoBaseOccurrences: DesignStyleStepOccurrencePresentation[] = [
   {
     target: firstBaseTarget,
     garmentType: "shirt",
-    label: "Shirt",
+    label: "Standard Shirt",
     status: "incomplete",
     assignment: null,
     assignmentLabel: null,
@@ -686,7 +688,7 @@ const twoBaseOccurrences: DesignStyleStepOccurrencePresentation[] = [
   {
     target: secondBaseTarget,
     garmentType: "shirt",
-    label: "Shirt 2",
+    label: "Standard Shirt 2",
     status: "incomplete",
     assignment: null,
     assignmentLabel: null,
@@ -730,7 +732,7 @@ assert.deepEqual(
   twoBaseRoot
     .findAll((node) => node.props?.["data-occurrence-label"])
     .map((row) => row.props["data-occurrence-label"]),
-  ["Shirt", "Shirt 2"],
+  ["Standard Shirt", "Standard Shirt 2"],
 );
 assert.deepEqual(
   twoBaseRoot
@@ -744,10 +746,10 @@ const twoBaseName = (label: string) =>
       className: "font-serif text-sm font-bold text-heritage-green",
     }),
   );
-assert.equal(twoBaseName("Shirt"), "Standard Shirt");
-assert.equal(twoBaseName("Shirt 2"), "Standard Shirt 2");
-assert.notEqual(twoBaseName("Shirt 2"), "Shirt 2");
-const secondBaseRow = twoBaseRoot.findByProps({ "data-occurrence-label": "Shirt 2" });
+assert.equal(twoBaseName("Standard Shirt"), "Standard Shirt");
+assert.equal(twoBaseName("Standard Shirt 2"), "Standard Shirt 2");
+assert.equal(twoBaseName("Standard Shirt 2").includes("Standard Standard"), false);
+const secondBaseRow = twoBaseRoot.findByProps({ "data-occurrence-label": "Standard Shirt 2" });
 await click(
   secondBaseRow
     .findAllByType("button")
@@ -776,7 +778,7 @@ assert.equal(
   const unresolvedOccurrence: DesignStyleStepOccurrencePresentation = {
     target: baseTarget,
     garmentType: "shirt",
-    label: "Shirt",
+    label: "Standard Shirt",
     status: "incomplete",
     assignment: null,
     assignmentLabel: null,
@@ -812,20 +814,20 @@ assert.equal(
     );
   });
   const fallbackRoot = fallbackRenderer.root;
-  const fallbackRow = fallbackRoot.findByProps({ "data-occurrence-label": "Shirt" });
+  const fallbackRow = fallbackRoot.findByProps({ "data-occurrence-label": "Standard Shirt" });
   assert.equal(
     textContent(
       fallbackRow.findByProps({
         className: "font-serif text-sm font-bold text-heritage-green",
       }),
     ),
-    "Shirt",
+    "Standard Shirt",
   );
   assert.equal(
-    textContent(fallbackRow).includes("Preparing your uploaded design for Shirt..."),
+    textContent(fallbackRow).includes("Preparing your uploaded design for Standard Shirt..."),
     true,
   );
-  assert.equal(textContent(fallbackRow).includes("Standard Shirt"), false);
+  assert.equal(textContent(fallbackRow).includes("Standard Standard"), false);
 }
 
 {
@@ -860,7 +862,7 @@ assert.equal(
     );
   });
   const preparingRow = preparingRenderer.root.findByProps({
-    "data-occurrence-label": "Shirt 2",
+    "data-occurrence-label": "Standard Shirt 2",
   });
   assert.equal(
     preparingRow.props["data-occurrence-token"],

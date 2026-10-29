@@ -522,7 +522,7 @@ await mount(shirtOnIvory);
   const popupText = textContent(popup);
   assert.equal(textContent(popup.findByType("h2")), "Add to this fabric?");
   assert.match(popupText, /Long Shirt fits on your Classic Ivory Shield piece\./);
-  assert.match(popupText, /On it: Shirt(?!s)/);
+  assert.match(popupText, /On it: Standard Shirt(?!s)/);
   assert.match(popupText, /Adding: Long Shirt/);
   assert.equal(
     textContent(popup.findByProps({ "data-partial-capacity-progress": "true" })),
@@ -644,7 +644,7 @@ await mount(shirtOnIvory);
   assert.doesNotMatch(popupText, /Assign Long Shirt to a Selected Fabric|Choose which selected Fabric/);
   assert.equal(popup.findAllByProps({ "data-partial-allocation-id": ivoryId }).length, 1);
   assert.equal(popup.findAllByProps({ "data-partial-allocation-id": royalId }).length, 1);
-  assert.match(popupText, /Currently: Shirt/);
+  assert.match(popupText, /Currently: Standard Shirt/);
   assert.match(popupText, /Currently: Trouser/);
   assert.deepEqual(
     popup.findAllByProps({ "data-partial-capacity-progress": "true" }).map(textContent),
