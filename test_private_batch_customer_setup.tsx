@@ -30,6 +30,10 @@ assert.match(setupMarkup, /Create a Private Batch/);
 assert.match(setupMarkup, /Private Batch Name/);
 assert.match(setupMarkup, /Occasion \/ Purpose/);
 assert.match(setupMarkup, /Description/);
+assert.match(setupMarkup, /Delivery Target \(Need Date\) <span aria-hidden="true">\*<\/span>/);
+assert.match(setupMarkup, /Delivery period: 3 to 4 weeks/);
+assert.match(setupMarkup, /Ordering Closes <span aria-hidden="true">\*<\/span>/);
+assert.doesNotMatch(setupMarkup, /Delivery Target(?! \(Need Date\))/);
 assert.doesNotMatch(setupMarkup, /Public \/ Private|Save as Draft|ownerUid|organizer ID/i);
 
 const createMarkup = renderToStaticMarkup(
