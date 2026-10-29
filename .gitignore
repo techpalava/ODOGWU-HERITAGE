@@ -8,3 +8,6 @@ coverage/
 .env*
 !.env.example
 .tmp-vite-production-firebase-test.mjs
+
+# Local Gemini image-model trial outputs (scripts/trial-gemini-try-on.mjs)
+scripts/trial-gemini-try-on-out/
