@@ -153,11 +153,74 @@ const hashVisualIdentity = (value: unknown): string => {
     .padStart(8, "0")}`;
 };
 
+/**
+ * Visual design identity for one garment. Taken from that garment's
+ * occurrence assignment, never from the legacy scalar design source.
+ */
+export interface AiTryOnGarmentDesignIdentity {
+  readonly garmentKey: string;
+  readonly sourceKind: "catalog" | "uploaded";
+  readonly sourceKey: string;
+  readonly catalogStyleId?: string;
+  readonly uploadedSourceRef?: string;
+}
+
+export interface AiTryOnOccurrenceDesignSource {
+  readonly garmentKey: string;
+  readonly assignment: {
+    readonly garmentKey: string;
+    readonly sourceKind: string;
+    readonly sourceKey: string;
+    readonly catalogStyleId?: string;
+    readonly uploadedSourceRef?: string;
+  } | null;
+}
+
+/**
+ * Returns one design identity per garment.
+ * Returns null when there are no garments or any garment has no assignment.
+ */
+export const resolveAiTryOnGarmentDesigns = (
+  occurrences: readonly AiTryOnOccurrenceDesignSource[],
+): readonly AiTryOnGarmentDesignIdentity[] | null => {
+  if (occurrences.length === 0) return null;
+  const designs: AiTryOnGarmentDesignIdentity[] = [];
+  for (const occurrence of occurrences) {
+    const assignment = occurrence.assignment;
+    if (
+      !assignment ||
+      assignment.garmentKey !== occurrence.garmentKey ||
+      (assignment.sourceKind !== "catalog" &&
+        assignment.sourceKind !== "uploaded") ||
+      assignment.sourceKey.trim().length === 0
+    ) {
+      return null;
+    }
+    designs.push({
+      garmentKey: assignment.garmentKey,
+      sourceKind: assignment.sourceKind,
+      sourceKey: assignment.sourceKey,
+      ...(assignment.sourceKind === "catalog" && assignment.catalogStyleId
+        ? { catalogStyleId: assignment.catalogStyleId }
+        : {}),
+      ...(assignment.sourceKind === "uploaded" && assignment.uploadedSourceRef
+        ? { uploadedSourceRef: assignment.uploadedSourceRef }
+        : {}),
+    });
+  }
+  return designs;
+};
+
 export interface AiTryOnVisualInput {
   garmentTypeSelection: GarmentTypeStepSelection;
   physicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   fabricAllocations: readonly FabricAllocation[];
   selectedStyleId: string;
+  /**
+   * Per-garment design identity. When present, this replaces selectedStyleId
+   * in the fingerprint so an empty legacy design source cannot change it.
+   */
+  garmentDesigns?: readonly AiTryOnGarmentDesignIdentity[];
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
   customerPhotoAssetIdentity?: {
     assetId: string;
@@ -225,6 +288,25 @@ export const createAiTryOnVisualInputFingerprint = (
     }))
     .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
   const privatePhoto = input.customerPhotoAssetIdentity;
+  const garmentDesigns = input.garmentDesigns?.length
+    ? [...input.garmentDesigns]
+        .map((design) => ({
+          garmentKey: design.garmentKey,
+          sourceKind: design.sourceKind,
+          sourceKey: design.sourceKey,
+          catalogStyleId:
+            design.sourceKind === "catalog" ? design.catalogStyleId || null : null,
+          uploadedSourceRef:
+            design.sourceKind === "uploaded"
+              ? design.uploadedSourceRef || null
+              : null,
+        }))
+        .sort(
+          (left, right) =>
+            left.garmentKey.localeCompare(right.garmentKey) ||
+            left.sourceKey.localeCompare(right.sourceKey),
+        )
+    : null;
   const occurrenceIdentities = input.physicalOccurrences
     ? input.physicalOccurrences
         .map((occurrence) => ({
@@ -244,7 +326,9 @@ export const createAiTryOnVisualInputFingerprint = (
     garmentTypes: [...input.garmentTypeSelection.garmentTypes].sort(),
     construction,
     allocations,
-    selectedStyleId: input.selectedStyleId,
+    ...(garmentDesigns
+      ? { garmentDesigns }
+      : { selectedStyleId: input.selectedStyleId }),
     occurrenceIdentities,
     detailSelections,
     personalizedInputRevision: input.personalizedInputRevision || null,
@@ -257,6 +341,31 @@ export const createAiTryOnVisualInputFingerprint = (
             ownerBindingId: privatePhoto.ownerBindingId,
           }
         : null,
+  });
+};
+
+/**
+ * Fingerprint for Step 6 from each garment's occurrence assignment.
+ * A null result means a garment design is missing or an earlier stage is not ready.
+ * The legacy scalar design source is intentionally not an input.
+ */
+export const createAiTryOnFingerprintFromOccurrenceAssignments = ({
+  customDetailsReady,
+  designSourceReady,
+  occurrences,
+  visualInput,
+}: {
+  customDetailsReady: boolean;
+  designSourceReady: boolean;
+  occurrences: readonly AiTryOnOccurrenceDesignSource[];
+  visualInput: Omit<AiTryOnVisualInput, "selectedStyleId" | "garmentDesigns">;
+}): string | null => {
+  const garmentDesigns = resolveAiTryOnGarmentDesigns(occurrences);
+  if (!customDetailsReady || !designSourceReady || !garmentDesigns) return null;
+  return createAiTryOnVisualInputFingerprint({
+    ...visualInput,
+    selectedStyleId: garmentDesigns.map((design) => design.sourceKey).join("|"),
+    garmentDesigns,
   });
 };
 
