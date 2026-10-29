@@ -82,9 +82,9 @@ export const DormantFutureAiTryOnStep = ({
     state: workflow,
     skipAllowed,
   });
-  // Personalized Additions is step 5 for every order path. It is not skipped.
-  const previousStageLabel = "Personalized Additions";
-  const nextStageLabel = "Measurement";
+  // Measurement is the step immediately before AI Try-on.
+  const previousStageLabel = "Measurement";
+  const nextStageLabel = "Summary";
 
   return (
     <section
@@ -105,11 +105,11 @@ export const DormantFutureAiTryOnStep = ({
             disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
             locked: !(workflow.status === "completed" || workflow.status === "skipped"),
             ariaLabel: workflow.status === "completed" || workflow.status === "skipped"
-              ? "Continue to Measurement"
-              : "Continue to Measurement is locked",
+              ? "Continue to Summary"
+              : "Continue to Summary is locked",
             label: workflow.status === "completed" || workflow.status === "skipped"
               ? undefined
-              : "Measurement is locked",
+              : "Summary is locked",
           }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
@@ -202,11 +202,11 @@ export const DormantFutureAiTryOnStep = ({
           disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
           locked: !(workflow.status === "completed" || workflow.status === "skipped"),
           ariaLabel: workflow.status === "completed" || workflow.status === "skipped"
-            ? "Continue to Measurement"
-            : "Continue to Measurement is locked",
+            ? "Continue to Summary"
+            : "Continue to Summary is locked",
           label: workflow.status === "completed" || workflow.status === "skipped"
             ? undefined
-            : "Measurement is locked",
+            : "Summary is locked",
         }}
       />
     </section>

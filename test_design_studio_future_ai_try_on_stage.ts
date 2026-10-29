@@ -98,8 +98,8 @@ assert.deepEqual(
     "design_style",
     "custom_details",
     "personalized_additions",
-    "try_on",
     "measurement",
+    "try_on",
     "summary",
     "shipping",
     "payment",
@@ -110,6 +110,10 @@ assert.deepEqual(DESIGN_STUDIO_STEPS[4], {
   label: "Personalized Additions",
 });
 assert.deepEqual(DESIGN_STUDIO_STEPS[5], {
+  id: "measurement",
+  label: "Measurement",
+});
+assert.deepEqual(DESIGN_STUDIO_STEPS[6], {
   id: "try_on",
   label: "AI Try-on",
 });
@@ -133,7 +137,7 @@ assert.equal(isFutureMeasurementStageUnlocked(skippedWorkflow), true);
 assert.deepEqual(
   normalizeAiTryOnWorkflowState(JSON.parse(JSON.stringify(skippedWorkflow))),
   skippedWorkflow,
-  "A skipped Step 6 must remain complete after draft JSON restoration.",
+  "A skipped AI Try-on must remain complete after draft JSON restoration.",
 );
 
 const readyWorkflow = reconcileAiTryOnWorkflow({
@@ -197,7 +201,21 @@ assert.equal(
   assert.equal(
     isFutureMeasurementStageUnlocked(workflow),
     false,
-    `${workflow.status} must not unlock Measurement (Step 7).`,
+    `${workflow.status} is not a completed or skipped AI Try-on.`,
+  );
+  assert.equal(
+    createDormantDesignStudioJourneyState({
+      persistedDraft: {
+        currentStageId: "measurement",
+        garmentTypeSelection,
+        aiTryOnWorkflow: workflow,
+      },
+      normalizedCustomDetailCatalog: catalog.activeOptions,
+      isFabricStageComplete: true,
+      isCustomDetailsStageReady: true,
+    }).currentStageId,
+    "measurement",
+    `${workflow.status} must not lock Measurement.`,
   );
 });
 assert.deepEqual(
@@ -210,8 +228,8 @@ assert.deepEqual(
 
 const stepperMarkup = renderToStaticMarkup(
   createElement(DesignStudioJourneyStepper, {
-    currentStageId: "measurement",
-    highestUnlockedStageIndex: 5,
+    currentStageId: "try_on",
+    highestUnlockedStageIndex: 6,
     canEnterFabric: true,
     canEnterDesignStyle: true,
     canEnterCustomDetails: true,
@@ -237,8 +255,12 @@ assert.match(
 );
 assert.match(
   stepperMarkup,
-  /aria-label="Step 6: AI Try-on, completed"/,
+  /aria-label="Step 6: Measurement, completed"/,
   "Earlier completed steps must remain represented as navigable completed stages.",
+);
+assert.match(
+  stepperMarkup,
+  /aria-label="Step 7: AI Try-on, current"/,
 );
 assert.match(stepperMarkup, /aria-label="Step 8: Summary, locked"/);
 assert.match(
@@ -273,15 +295,15 @@ assert.match(customDetailsSource, /isFutureCustomDetailsContentReady/);
 assert.match(customDetailsSource, /onContinue/);
 assert.match(
   customDetailsSource,
-  /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"AI Try-on"\s*:\s*"Personalized Additions"/,
+  /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"Measurement"\s*:\s*"Personalized Additions"/,
 );
 assert.match(customDetailsSource, /Continue to \$\{nextStageLabel\}/);
 assert.match(tryOnSource, /formatDesignStudioStepCounter\("try_on"\)/);
 assert.match(tryOnSource, /DesignStudioBackButton/);
-assert.match(tryOnSource, /const previousStageLabel = "Personalized Additions"/);
+assert.match(tryOnSource, /const previousStageLabel = "Measurement"/);
 assert.equal((tryOnSource.match(/backDestination=\{previousStageLabel\}/g) || []).length, 2);
 assert.equal(tryOnSource.includes('backDestination="Custom Details"'), false);
-assert.match(tryOnSource, /Continue to Measurement is locked/);
+assert.match(tryOnSource, /Continue to Summary is locked/);
 assert.match(tryOnSource, /aria-live="polite"/);
 assert.match(tryOnSource, /Continue without AI Try-on/);
 assert.match(tryOnSource, /AI Try-on is currently unavailable/);
@@ -301,7 +323,7 @@ assert.match(stepperSource, /data-step-state=\{state\}/);
 assert.match(studioSource, /handleOpenDormantAiTryOnStage/);
 assert.match(
   studioSource,
-  /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("measurement"\)\}/,
 );
 assert.match(studioSource, /gatewayAvailable: false/);
 assert.match(legacyCardSource, /Coming Soon/);

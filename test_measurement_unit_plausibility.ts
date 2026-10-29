@@ -159,8 +159,9 @@ const freshMarkup = renderToStaticMarkup(
 );
 assert.match(freshMarkup, /data-measurement-entry-unit="cm"/);
 assert.match(freshMarkup, /Numbers you type are centimetres/);
-assert.match(freshMarkup, /Step 7 of 10/);
-assert.equal(freshMarkup.includes("Step 7 of 9"), false);
+assert.match(freshMarkup, /Step 6 of 10/);
+assert.equal(freshMarkup.includes("Step 6 of 9"), false);
+assert.equal(freshMarkup.includes("Step 7 of 10"), false);
 
 const absurdMarkup = renderToStaticMarkup(
   createElement(DormantFutureMeasurementStep, {
@@ -178,7 +179,7 @@ assert.match(absurdMarkup, /outside the plausible range/);
 assert.match(absurdMarkup, /100 in \(254 cm\)/);
 assert.match(absurdMarkup, /175 in \(444.5 cm\)/);
 assert.equal(
-  absurdMarkup.includes('aria-label="Continue to Summary"') &&
+  absurdMarkup.includes('aria-label="Continue to AI Try-on"') &&
     absurdMarkup.includes("disabled"),
   true,
 );

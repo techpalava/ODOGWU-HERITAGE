@@ -2456,6 +2456,10 @@ export const reconcileFutureMeasurementState = ({
   };
 };
 
+/**
+ * AI Try-on is completed or skipped.
+ * Measurement is not gated on this. The following step (Summary) still is.
+ */
 export const isFutureMeasurementStageUnlocked = (
   workflow: AiTryOnWorkflowStateV1,
 ): boolean => workflow.status === "completed" || workflow.status === "skipped";

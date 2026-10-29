@@ -17,8 +17,8 @@ assert.deepEqual(
     "design_style",
     "custom_details",
     "personalized_additions",
-    "try_on",
     "measurement",
+    "try_on",
     "summary",
     "shipping",
     "payment",
@@ -134,10 +134,10 @@ const customDetailsSource = readFileSync(
 assert.match(studioSource, /handleOpenDormantPersonalizedAdditionsStage/);
 assert.match(studioSource, /onContinue=\{[\s\S]*handleOpenDormantPersonalizedAdditionsStage/);
 // AI Try-on Back returns to an open Summary edit trip when there is one
-// (240485d), otherwise falls back to Personalized Additions.
+// (240485d), otherwise falls back to Measurement.
 assert.match(
   studioSource,
-  /<DormantFutureAiTryOnStep[\s\S]{0,200}onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
+  /<DormantFutureAiTryOnStep[\s\S]{0,200}onBack=\{\(\) => handleBackDuringSummaryEdit\("measurement"\)\}/,
 );
 assert.match(customDetailsSource, /stage = "custom_details"/);
 assert.match(customDetailsSource, /isPersonalizedAdditionsStage && mainPersonalizedGroups/);

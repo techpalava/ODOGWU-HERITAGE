@@ -584,7 +584,7 @@ export const DormantFutureCustomDetailsStep = ({
     ? "Custom Details"
     : "Design Style";
   const nextStageLabel = isPersonalizedAdditionsStage
-    ? "AI Try-on"
+    ? "Measurement"
     : "Personalized Additions";
   const stepCounterLabel = formatDesignStudioStepCounter(stage);
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});

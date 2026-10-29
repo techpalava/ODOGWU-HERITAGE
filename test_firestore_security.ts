@@ -228,7 +228,7 @@ assert.match(
 );
 assert.match(
   rules,
-  /"custom_details",\s*"personalized_additions",\s*"try_on"/,
+  /"custom_details",\s*"personalized_additions",\s*"measurement",\s*"try_on"/,
 );
 assert.match(
   rules,
