@@ -54,8 +54,8 @@ function assertEqual(label: string, actual: number, expected: number) {
 assertEqual(
   "Plain style adds no automatic custom detail price",
   calculateAutomaticDesignFeaturePrice({
-    name: "Classic Kaftan",
-    description: "Clean minimal kaftan style.",
+    name: "Classic Long Shirt",
+    description: "Clean minimal long shirt style.",
   }),
   0,
 );
@@ -72,7 +72,7 @@ assertEqual(
 assertEqual(
   "Monogram style automatically adds €12",
   calculateAutomaticDesignFeaturePrice({
-    name: "Prestige Monogram Kaftan",
+    name: "Prestige Monogram Long Shirt",
   }),
   12,
 );

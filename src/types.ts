@@ -1579,6 +1579,10 @@ export interface CustomerReview {
   id: string;
   authorName: string;
   location?: string;
+  /** Optional ISO 3166-1 alpha-2 code, e.g. "NG". */
+  nationality?: string;
+  /** Optional second ISO code for dual nationals; only with `nationality`, never equal to it. */
+  secondNationality?: string;
   body: string;
   rating: 1 | 2 | 3 | 4 | 5;
   status: "published" | "hidden";
@@ -1587,6 +1591,19 @@ export interface CustomerReview {
   /** ISO string normalized from the Firestore server timestamp. */
   createdAt: string;
   createdByUid?: string | null;
+  /**
+   * Optional "wearing it" photo. The customer's upload stays private at
+   * `customer-review-photos/{uid}/{reviewId}/photo.{ext}` until an admin
+   * approves it; only then is `photoUrl` (a public copy) set and shown.
+   */
+  photoPath?: string;
+  photoContentType?: "image/jpeg" | "image/png" | "image/webp";
+  photoSizeBytes?: number;
+  /** Customer agreed the photo may be shown publicly with the review. */
+  photoConsent?: boolean;
+  photoStatus?: "pending" | "approved";
+  /** Public download URL of the approved copy; only with photoStatus "approved". */
+  photoUrl?: string;
 }
 
 // Foundation Platform Types

@@ -468,11 +468,18 @@ service cloud.firestore {
     // src/utils/customerReviews.ts.
     function hasValidCustomerReviewCreate(data) {
       return data.keys().hasAll(["authorName", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
-        && data.keys().hasOnly(["authorName", "location", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
+        && data.keys().hasOnly(["authorName", "location", "nationality", "secondNationality", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid", "photoPath", "photoContentType", "photoSizeBytes", "photoConsent", "photoStatus"])
         && data.authorName is string
         && data.authorName.size() >= 2
         && data.authorName.size() <= 60
         && (!("location" in data) || (data.location is string && data.location.size() <= 80))
+        && (!("nationality" in data)
+          || (data.nationality is string && data.nationality.matches("^[A-Z]{2}$")))
+        && (!("secondNationality" in data)
+          || ("nationality" in data
+            && data.secondNationality is string
+            && data.secondNationality.matches("^[A-Z]{2}$")
+            && data.secondNationality != data.nationality))
         && data.body is string
         && data.body.size() >= 10
         && data.body.size() <= 1000
@@ -484,7 +491,38 @@ service cloud.firestore {
         && data.displayOrder == 0
         && data.createdAt == request.time
         && (data.createdByUid == null
-          || (request.auth != null && data.createdByUid == request.auth.uid));
+          || (request.auth != null && data.createdByUid == request.auth.uid))
+        && hasValidCustomerReviewPhoto(data, request.resource.id);
+    }
+
+    // Optional "wearing it" photo: no photo keys at all, or a photo the creator
+    // uploaded to customer-review-photos/{their auth uid}/{this review id}/
+    // photo.{ext} (storage.rules), with consent, starting "pending". photoUrl
+    // is never client-writable; only an admin approval sets it.
+    function hasValidCustomerReviewPhoto(data, reviewId) {
+      return (
+          !("photoPath" in data)
+          && !("photoContentType" in data)
+          && !("photoSizeBytes" in data)
+          && !("photoConsent" in data)
+          && !("photoStatus" in data)
+        ) || (
+          request.auth != null
+          && data.createdByUid == request.auth.uid
+          && (
+            (data.photoContentType == "image/jpeg"
+              && data.photoPath == "customer-review-photos/" + request.auth.uid + "/" + reviewId + "/photo.jpg")
+            || (data.photoContentType == "image/png"
+              && data.photoPath == "customer-review-photos/" + request.auth.uid + "/" + reviewId + "/photo.png")
+            || (data.photoContentType == "image/webp"
+              && data.photoPath == "customer-review-photos/" + request.auth.uid + "/" + reviewId + "/photo.webp")
+          )
+          && data.photoSizeBytes is int
+          && data.photoSizeBytes > 0
+          && data.photoSizeBytes <= 5 * 1024 * 1024
+          && data.photoConsent == true
+          && data.photoStatus == "pending"
+        );
     }
 
     match /customer_reviews/{reviewId} {
