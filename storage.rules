@@ -112,9 +112,9 @@ service firebase.storage {
     // review write); once the review exists only admins can delete it.
     match /customer-review-photos/{uid}/{reviewId}/{fileName} {
       allow read: if isAdmin();
-      allow delete: if isAdmin()
-        || (isOwner(uid)
-          && !firestore.exists(/databases/(default)/documents/customer_reviews/$(reviewId)));
+      // Delete is admin-only. Files left behind by a failed review save are
+      // removed by an admin or a later clean-up job, not by the customer.
+      allow delete: if isAdmin();
       allow create: if isOwner(uid)
         && resource == null
         && fileName.matches('photo[.](jpg|png|webp)')
