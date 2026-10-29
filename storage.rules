@@ -107,14 +107,12 @@ service firebase.storage {
     // Customer review "wearing it" photo (optional, one per review). Guests
     // upload with an anonymous Firebase identity. Create-only; the photo stays
     // private until an admin approves it and copies it to communityPhotos/.
-    // The uploader may delete their own file only while no
-    // customer_reviews/{reviewId} document exists (clean-up after a failed
-    // review write); once the review exists only admins can delete it.
+    // Only admins can read or delete the private upload.
     match /customer-review-photos/{uid}/{reviewId}/{fileName} {
       allow read: if isAdmin();
-      allow delete: if isAdmin()
-        || (isOwner(uid)
-          && !firestore.exists(/databases/(default)/documents/customer_reviews/$(reviewId)));
+      // Delete is admin-only. Files left behind by a failed review save are
+      // removed by an admin or a later clean-up job, not by the customer.
+      allow delete: if isAdmin();
       allow create: if isOwner(uid)
         && resource == null
         && fileName.matches('photo[.](jpg|png|webp)')

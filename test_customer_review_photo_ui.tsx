@@ -59,13 +59,11 @@ const value = { authorName: "Ada Obi", body: "Beautiful agbada, perfect fit.", r
 
 // --- Service: submit with injected deps --------------------------------------
 function submitDeps(
-  fail: Partial<Record<"identity" | "upload" | "write" | "cleanup", boolean>> = {},
-  uids: string[] = [],
+  fail: Partial<Record<"identity" | "upload" | "write", boolean>> = {},
 ) {
   const calls: string[] = [];
   const written: Record<string, unknown>[] = [];
   let n = 0;
-  let identityCalls = 0;
   return {
     calls,
     written,
@@ -74,15 +72,11 @@ function submitDeps(
       ensureUploadUid: async () => {
         calls.push("identity");
         if (fail.identity) throw new Error("auth");
-        return uids[identityCalls++] ?? "anon-uid";
+        return "anon-uid";
       },
       uploadPhoto: async (path: string, photo: { blob: Blob; contentType: string }) => {
         calls.push(`upload:${path}:${photo.contentType}:${photo.blob.size}`);
         if (fail.upload) throw new Error("upload");
-      },
-      deletePhoto: async (path: string) => {
-        calls.push(`delete:${path}`);
-        if (fail.cleanup) throw new Error("cleanup");
       },
       writeReview: async (id: string, data: Record<string, unknown>) => {
         calls.push(`write:${id}`);
@@ -123,29 +117,17 @@ function submitDeps(
   assert.equal(calls.some((c) => c.startsWith("write")), false, "no review written when upload fails");
 }
 {
-  // Review write fails after upload: the uploaded file is cleaned up.
+  // Review write fails after upload: the write error surfaces and the client
+  // does not attempt a delete (storage.rules: delete is admin-only, so the
+  // leftover upload is cleaned up by an admin or a later job). Nothing is logged.
   const { deps, calls } = submitDeps({ write: true });
-  await assert.rejects(submitCustomerReviewWithPhoto(value, webp(), deps), (e: any) => e.stage === "write");
-  assert.equal(calls.at(-1), "delete:customer-review-photos/anon-uid/rev1/photo.webp");
-  // Clean-up re-checks the identity so the owner-only orphan delete rule applies.
-  assert.deepEqual(calls.slice(-2), ["identity", "delete:customer-review-photos/anon-uid/rev1/photo.webp"]);
-}
-{
-  // If the signed-in identity changed, no delete is attempted (rules would deny it).
-  const { deps, calls } = submitDeps({ write: true }, ["anon-uid", "someone-else"]);
   const originalError = console.error;
-  console.error = () => {};
-  await assert.rejects(submitCustomerReviewWithPhoto(value, webp(), deps), (e: any) => e.stage === "write");
+  const logged: unknown[] = [];
+  console.error = (...args: unknown[]) => void logged.push(args);
+  await assert.rejects(submitCustomerReviewWithPhoto(value, webp(), deps), (e: any) => e instanceof CustomerReviewPhotoSubmitError && e.stage === "write");
   console.error = originalError;
-  assert.equal(calls.some((c) => c.startsWith("delete:")), false);
-}
-{
-  // A failing cleanup does not hide the write error.
-  const { deps } = submitDeps({ write: true, cleanup: true });
-  const originalError = console.error;
-  console.error = () => {};
-  await assert.rejects(submitCustomerReviewWithPhoto(value, webp(), deps), (e: any) => e.stage === "write");
-  console.error = originalError;
+  assert.deepEqual(calls, ["identity", "upload:customer-review-photos/anon-uid/rev1/photo.webp:image/webp:321", "write:rev1"]);
+  assert.equal(logged.length, 0, "no noisy clean-up errors");
 }
 {
   // Retries use a fresh review id (no overwrite of an earlier upload).

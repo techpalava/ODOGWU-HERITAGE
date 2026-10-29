@@ -32,7 +32,6 @@ export interface CustomerReviewPhotoSubmitDeps {
   /** Firebase uid for the photo folder (anonymous sign-in for guests). */
   ensureUploadUid(): Promise<string>;
   uploadPhoto(path: string, photo: PreparedCustomerReviewPhoto): Promise<void>;
-  deletePhoto(path: string): Promise<void>;
   writeReview(reviewId: string, data: Record<string, unknown>): Promise<void>;
 }
 
@@ -41,9 +40,6 @@ const firebaseSubmitDeps: CustomerReviewPhotoSubmitDeps = {
   ensureUploadUid: async () => (await ensureCustomerUploadIdentity()).uid,
   uploadPhoto: async (path, photo) => {
     await uploadBytes(ref(storage, path), photo.blob, { contentType: photo.contentType });
-  },
-  deletePhoto: async (path) => {
-    await deleteObject(ref(storage, path));
   },
   writeReview: async (reviewId, data) => {
     await setDoc(doc(db, CUSTOMER_REVIEWS_COLLECTION, reviewId), {
@@ -58,9 +54,10 @@ const firebaseSubmitDeps: CustomerReviewPhotoSubmitDeps = {
  * photo is accepted (see prepareCustomerReviewPhoto). The photo is uploaded
  * first to customer-review-photos/{uid}/{reviewId}/photo.{ext}, then the
  * review is written with photoStatus "pending". If the review write fails,
- * the uploaded file is removed by the same uploader (best effort; allowed by
- * storage.rules only while the review document does not exist). Every attempt uses a fresh
- * review id, so a retry never collides with an earlier upload.
+ * the client does not try to delete the uploaded file: storage.rules makes
+ * delete admin-only, so the leftover file is removed by an admin or a later
+ * clean-up job. Every attempt uses a fresh review id, so a retry never
+ * collides with an earlier upload.
  */
 export async function submitCustomerReviewWithPhoto(
   value: Extract<CustomerReviewValidation, { ok: true }>["value"],
@@ -93,19 +90,8 @@ export async function submitCustomerReviewWithPhoto(
   try {
     await deps.writeReview(reviewId, data);
   } catch (error) {
-    // storage.rules lets the uploader delete their own file only while no
-    // customer_reviews/{reviewId} document exists, so the clean-up must run
-    // as the same Firebase identity that uploaded it.
-    try {
-      const cleanupUid = await deps.ensureUploadUid();
-      if (cleanupUid === uid) {
-        await deps.deletePhoto(path);
-      } else {
-        console.error("Uploaded review photo not cleaned up: signed-in identity changed.");
-      }
-    } catch (cleanupError) {
-      console.error("Uploaded review photo could not be cleaned up:", cleanupError);
-    }
+    // No client delete: storage.rules allows delete for admins only, so the
+    // orphaned upload is left for admin / scheduled clean-up.
     throw new CustomerReviewPhotoSubmitError("write", error);
   }
   return reviewId;
