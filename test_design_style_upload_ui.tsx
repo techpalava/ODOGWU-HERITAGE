@@ -109,14 +109,14 @@ const uploadedInput = {
     onSelectUploadFile: (target: typeof model.activeTarget, file: File) =>
       selected.push({ target, file }),
   });
-  const input = fileInputLabeled(renderer.root, /Upload a design for Shirt/i);
+  const input = fileInputLabeled(renderer.root, /Upload a design for Standard Shirt/i);
   assert.ok(input);
   assert.equal(input.props.accept, "image/jpeg,image/png,image/webp");
   assert.match(input.props["aria-describedby"] || "", /design-style-upload-guidance/);
-  assert.match(textContent(renderer.root), /Upload a design for Shirt/i);
+  assert.match(textContent(renderer.root), /Upload a design for Standard Shirt/i);
   assert.equal(combinedUploadSubtitleMatchCount(textContent(renderer.root)), 1);
-  const idleShirt = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
-  const idleSkirt = renderer.root.findByProps({ "data-occurrence-label": "Skirt" });
+  const idleShirt = renderer.root.findByProps({ "data-occurrence-label": "Standard Shirt" });
+  const idleSkirt = renderer.root.findByProps({ "data-occurrence-label": "Standard Skirt" });
   assert.doesNotMatch(textContent(idleShirt), combinedUploadSubtitlePattern);
   assert.doesNotMatch(textContent(idleSkirt), combinedUploadSubtitlePattern);
   const file = { name: "shirt.png", type: "image/png" } as File;
@@ -191,7 +191,7 @@ const uploadedInput = {
   });
   const shirtInput = fileInputLabeled(
     renderer.root,
-    /Upload a design for Shirt/i,
+    /Upload a design for Standard Shirt/i,
   );
   assert.ok(shirtInput);
   const file = { name: "shirt-from-inactive.png", type: "image/png" } as File;
@@ -229,15 +229,15 @@ const uploadedInput = {
   });
   assert.match(textContent(renderer.root), /Catalogue Shirt/);
   assert.equal(combinedUploadSubtitleMatchCount(textContent(renderer.root)), 1);
-  assert.match(textContent(renderer.root), /Preparing your uploaded design for Shirt/i);
-  const pendingShirt = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
-  const pendingSkirt = renderer.root.findByProps({ "data-occurrence-label": "Skirt" });
-  assert.match(textContent(pendingShirt), /Preparing your uploaded design for Shirt/i);
+  assert.match(textContent(renderer.root), /Preparing your uploaded design for Standard Shirt/i);
+  const pendingShirt = renderer.root.findByProps({ "data-occurrence-label": "Standard Shirt" });
+  const pendingSkirt = renderer.root.findByProps({ "data-occurrence-label": "Standard Skirt" });
+  assert.match(textContent(pendingShirt), /Preparing your uploaded design for Standard Shirt/i);
   assert.doesNotMatch(textContent(pendingShirt), combinedUploadSubtitlePattern);
   assert.doesNotMatch(textContent(pendingSkirt), combinedUploadSubtitlePattern);
   assert.doesNotMatch(textContent(pendingSkirt), /Preparing your uploaded design/i);
-  assert.equal(fileInputLabeled(pendingShirt, /Upload a design for Shirt/i), undefined);
-  assert.ok(fileInputLabeled(pendingSkirt, /Upload a design for Skirt/i));
+  assert.equal(fileInputLabeled(pendingShirt, /Upload a design for Standard Shirt/i), undefined);
+  assert.ok(fileInputLabeled(pendingSkirt, /Upload a design for Standard Skirt/i));
 
   const started = beginDesignStyleUploadForActiveOccurrence({
     state: createDesignStyleUploadOperationState(),
@@ -430,14 +430,14 @@ const uploadedInput = {
   });
   const replaceInput = fileInputLabeled(
     renderer.root,
-    /Replace uploaded design for Shirt/i,
+    /Replace uploaded design for Standard Shirt/i,
   );
   assert.ok(replaceInput);
   assert.equal(renderer.root.findAllByType("img").some((image) =>
-    String(image.props.alt).includes("Uploaded design preview for Shirt")), true);
+    String(image.props.alt).includes("Uploaded design preview for Standard Shirt")), true);
   const text = textContent(renderer.root);
   assert.match(text, /Removing this assignment keeps the uploaded source available/i);
-  assert.match(text, /Remove uploaded design from Shirt/i);
+  assert.match(text, /Remove uploaded design from Standard Shirt/i);
   assert.doesNotMatch(text, /Delete upload|Clear uploaded|Remove source/i);
   act(() => renderer.unmount());
 }
@@ -491,22 +491,22 @@ const uploadedInput = {
     },
     onSelectUploadFile: () => undefined,
   });
-  const shirt = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
-  const skirt = renderer.root.findByProps({ "data-occurrence-label": "Skirt" });
+  const shirt = renderer.root.findByProps({ "data-occurrence-label": "Standard Shirt" });
+  const skirt = renderer.root.findByProps({ "data-occurrence-label": "Standard Skirt" });
   const shirtUpload = shirt.findAll(
     (node) =>
       node.type === "button" &&
-      /Upload a design for Shirt/i.test(String(node.props["aria-label"] || "")),
+      /Upload a design for Standard Shirt/i.test(String(node.props["aria-label"] || "")),
   )[0];
   const skirtUpload = skirt.findAll(
     (node) =>
       node.type === "button" &&
-      /Upload a design for Skirt/i.test(String(node.props["aria-label"] || "")),
+      /Upload a design for Standard Skirt/i.test(String(node.props["aria-label"] || "")),
   )[0];
   assert.equal(shirtUpload.props.disabled, true);
   assert.equal(skirtUpload.props.disabled, true);
-  assert.equal(fileInputLabeled(shirt, /Upload a design for Shirt/i), undefined);
-  assert.equal(fileInputLabeled(skirt, /Upload a design for Skirt/i), undefined);
+  assert.equal(fileInputLabeled(shirt, /Upload a design for Standard Shirt/i), undefined);
+  assert.equal(fileInputLabeled(skirt, /Upload a design for Standard Skirt/i), undefined);
   assert.match(textContent(shirt), /Choose Design/);
   assert.match(textContent(skirt), /Choose Design/);
   const chooseSkirt = skirt.findAll(

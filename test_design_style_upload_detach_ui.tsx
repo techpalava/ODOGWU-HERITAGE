@@ -131,7 +131,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     }));
   });
   const button = renderer.root.findAllByType("button").find((candidate) =>
-    String(candidate.props["aria-label"] || "").includes("Remove uploaded design from Shirt"),
+    String(candidate.props["aria-label"] || "").includes("Remove uploaded design from Standard Shirt"),
   );
   assert.ok(button);
   act(() => button!.props.onClick());
@@ -295,7 +295,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
       uploadState: { status: "pending" },
     }));
   });
-  assert.doesNotMatch(textContent(renderer.root), /Remove uploaded design from Shirt/);
+  assert.doesNotMatch(textContent(renderer.root), /Remove uploaded design from Standard Shirt/);
   assert.equal(detach(model, { uploadOperationPending: true }).status, "rejected");
   act(() => renderer.unmount());
   act(() => {
@@ -305,7 +305,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
       uploadState: { status: "success" },
     }));
   });
-  assert.doesNotMatch(textContent(renderer.root), /Remove uploaded design from Shirt/);
+  assert.doesNotMatch(textContent(renderer.root), /Remove uploaded design from Standard Shirt/);
   act(() => renderer.unmount());
 }
 

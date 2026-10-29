@@ -486,7 +486,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   // OPTIONAL PHYSICAL GARMENT
   createAdditionalPhysicalGarmentOption(
     "shirt",
-    "Shirt",
+    "Standard Shirt",
     "Add one separately tailored shirt to this design.",
   ),
   createAdditionalPhysicalGarmentOption(
@@ -496,7 +496,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   ),
   createAdditionalPhysicalGarmentOption(
     "skirt",
-    "Skirt",
+    "Standard Skirt",
     "Add one separately tailored skirt to this design.",
   ),
   createAdditionalPhysicalGarmentOption(
@@ -511,12 +511,12 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   ),
   createAdditionalPhysicalGarmentOption(
     "dress",
-    "Dress",
+    "Standard Dress",
     "Add one separately tailored dress.",
   ),
   createAdditionalPhysicalGarmentOption(
     "kaftan",
-    "Long shirt",
+    "Long Shirt",
     "Add one Long shirt using two fabric units.",
   ),
   createAdditionalPhysicalGarmentOption(

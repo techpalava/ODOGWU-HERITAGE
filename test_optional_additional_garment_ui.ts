@@ -34,8 +34,8 @@ assert.equal(getCustomDetailsGarmentLabel("kaftan"), "Long Shirt");
 assert.equal(getCustomDetailsGarmentLabel("full_length_gown"), "Long Dress");
 assert.equal(
   SEED_CUSTOM_DETAIL_CATALOG.find((option) => option.id === "additional_garment_kaftan")?.label,
-  "Long shirt",
-  "Additional Garment must use the authoritative Long shirt customer label",
+  "Long Shirt",
+  "Additional Garment must use the authoritative Long Shirt customer label",
 );
 assert.equal(
   SEED_CUSTOM_DETAIL_CATALOG.find((option) => option.id === "additional_garment_full_length_gown")?.label,
@@ -79,7 +79,7 @@ assert.deepEqual(inherited.rows, [
   {
     assignmentId: additional.garmentKey,
     garmentType: "shirt",
-    label: "Shirt",
+    label: "Standard Shirt",
     price: 65,
   },
 ]);
@@ -171,7 +171,7 @@ assert.deepEqual(
     ["dress", "neck", "skirts"],
   ),
   ["section:dress", "section:neck", "section:skirts", "optional:bum_shorts"],
-  "Bum Shorts must render immediately after a female base Skirt",
+  "Bum Shorts must render immediately after a female base Standard Skirt",
 );
 assert.deepEqual(
   describeComposition(
@@ -180,7 +180,7 @@ assert.deepEqual(
     ["dress", "neck"],
   ),
   ["section:dress", "optional:bum_shorts", "section:neck"],
-  "Bum Shorts without Skirt must follow the applicable female base garment",
+  "Bum Shorts without Standard Skirt must follow the applicable female base garment",
 );
 assert.deepEqual(
   describeComposition(
@@ -211,7 +211,7 @@ assert.deepEqual(
     "section:trousers",
     "optional:standard_shorts",
   ],
-  "Unisex compositions must render Skirt, Bum Shorts, Trouser, then Nikka",
+  "Unisex compositions must render Standard Skirt, Bum Shorts, Trouser, then Nikka",
 );
 
 const pristineState = FabricAllocationStateEngine.initialize();
@@ -282,7 +282,7 @@ for (const [garmentType, label, legacyLabel] of [
     label,
   );
 }
-assert.equal(getCustomDetailsGarmentLabel("shirt"), "Shirt");
+assert.equal(getCustomDetailsGarmentLabel("shirt"), "Standard Shirt");
 
 const source = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const futureNavigationSource = source.slice(

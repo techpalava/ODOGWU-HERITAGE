@@ -595,7 +595,7 @@ export function CartDrawer() {
                             <strong className="uppercase">
                               {item.design.lowerGarmentType === "trousers"
                                 ? "Trouser"
-                                : "Skirt"}
+                                : "Standard Skirt"}
                             </strong>
                           </p>
                         )}

@@ -268,7 +268,7 @@ const withReferenceGarmentTypes = (
     threeRenderer.root
       .findAll((node) => node.props?.["data-occurrence-label"])
       .map((row) => row.props["data-occurrence-label"]),
-    ["Shirt", "Skirt", "Bum Shorts"],
+    ["Standard Shirt", "Standard Skirt", "Bum Shorts"],
   );
 }
 
@@ -296,7 +296,7 @@ const withReferenceGarmentTypes = (
   assert.equal(visibleText.includes("Option 1"), false);
   assert.equal(visibleText.includes("Option 2"), false);
   assert.equal(visibleText.includes("Upload your own design"), false);
-  const shirtRow = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
+  const shirtRow = renderer.root.findByProps({ "data-occurrence-label": "Standard Shirt" });
   const shirtButtons = shirtRow.findAllByType("button").map((button) => textContent(button));
   assert.equal(shirtButtons.includes("Choose Design"), true);
   assert.equal(shirtButtons.includes("Upload Design"), true);
@@ -475,7 +475,7 @@ const withReferenceGarmentTypes = (
   );
   assert.deepEqual(
     occurrenceRows.map((row) => row.props["data-occurrence-label"]),
-    ["Shirt", "Shirt 2", "Shirt 3"],
+    ["Standard Shirt", "Standard Shirt 2", "Standard Shirt 3"],
   );
   assert.match(
     textContent(
