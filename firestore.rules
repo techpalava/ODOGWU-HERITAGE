@@ -579,6 +579,14 @@ service cloud.firestore {
         && value.size() <= maximumLength;
     }
 
+    // Description is optional in Create Private Batch. Empty string is allowed;
+    // whitespace-only is still rejected so writers cannot bypass trim.
+    function hasOptionalPrivateBatchText(value, maximumLength) {
+      return value is string
+        && value.size() <= maximumLength
+        && (value.size() == 0 || hasMeaningfulPrivateBatchText(value, maximumLength));
+    }
+
     // Owner lifecycle edits are intentionally one-way once registration has
     // closed. Server/admin work retains its existing privileged authority.
     function hasAllowedPrivateBatchOwnerStatusTransition(previous, next) {
@@ -657,7 +665,7 @@ service cloud.firestore {
         && hasMeaningfulPrivateBatchText(data.organizer, 160)
         && hasMeaningfulPrivateBatchText(data.batchName, 160)
         && hasMeaningfulPrivateBatchText(data.occasion, 160)
-        && hasMeaningfulPrivateBatchText(data.description, 2000)
+        && hasOptionalPrivateBatchText(data.description, 2000)
         && hasMeaningfulPrivateBatchText(data.country, 160)
         && hasMeaningfulPrivateBatchText(data.city, 160)
         && hasMeaningfulPrivateBatchText(data.preferredDeliveryMonth, 160)
