@@ -5,9 +5,9 @@
  *    "Use one of your selected fabrics" ceiling copy while changing.
  * 2. The UNUSED FABRIC CAPACITY AVAILABLE popup makes Continue the primary
  *    action; Add Garment is secondary.
- * 3. Assigning a print that already has a piece with room no longer pairs
- *    silently: the customer picks Pair with Selection N or Use a new piece.
- *    Use a new piece respects the ceiling (disabled with a reason).
+ * 3. Assigning a print that already has a piece with room pairs onto that
+ *    piece automatically (fabric-auto-pair: no Pair / Use a new piece popup)
+ *    and a short toast names the Selection.
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -243,6 +243,7 @@ const createNodeMock = (element: ReactElement) => {
 
 let liveState = atCeiling;
 const removed: string[] = [];
+const notices: string[] = [];
 const renderStep = () => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
@@ -308,6 +309,9 @@ const renderStep = () => {
       return result;
     },
     onAssignGarmentToExistingAllocation: () => undefined,
+    onAutoPairNotice: (message: string) => {
+      notices.push(message);
+    },
     onBack: () => undefined,
     onContinue: () => undefined,
     onUseSameFabric: () => undefined,
@@ -335,9 +339,6 @@ const mount = async (state: FabricAllocationState) => {
   await act(async () => {
     renderer = create(renderStep(), { createNodeMock });
   });
-};
-const rerender = async () => {
-  await act(async () => renderer.update(renderStep()));
 };
 
 // ---------------------------------------------------------------------------
@@ -371,7 +372,7 @@ assert.deepEqual(removed, []);
 act(() => renderer.unmount());
 
 // ---------------------------------------------------------------------------
-// 3b. UI: picking A for the Trouser in the grouping popup asks first.
+// 3b. UI: picking A for the Trouser in the grouping popup pairs automatically.
 // ---------------------------------------------------------------------------
 const pickAForTrouser = async () => {
   await mount(oneShirtOnA);
@@ -387,62 +388,25 @@ const pickAForTrouser = async () => {
     renderer.root.findByProps({ "data-testid": "step1-fabric-assignment-confirm" }).props.onClick(),
   );
 };
+notices.length = 0;
 await pickAForTrouser();
-assert.equal(placementDialogs(renderer.root).length, 1, "choice dialog opens");
-assert.deepEqual(layout(liveState), [["AF-A", ["base:shirt"]]], "auto-pair is gone: nothing assigned yet");
-const dialog = placementDialogs(renderer.root)[0]!;
-const pairButton = dialog.findByProps({ "data-fabric-piece-placement-pair": "true" });
-const newPieceButton = dialog.findByProps({ "data-fabric-piece-placement-new-piece": "true" });
-assert.equal(textContent(pairButton), "Pair with Selection 1");
-assert.equal(textContent(newPieceButton), "Use a new piece");
-assert.equal(newPieceButton.props.disabled, false);
-await act(async () => newPieceButton.props.onClick());
-assert.deepEqual(layout(liveState), [["AF-A", ["base:shirt"]], ["AF-A", ["base:trouser"]]]);
-await rerender();
-assert.equal(placementDialogs(renderer.root).length, 0);
-act(() => renderer.unmount());
-
-await pickAForTrouser();
-await act(async () =>
-  placementDialogs(renderer.root)[0]!
-    .findByProps({ "data-fabric-piece-placement-pair": "true" })
-    .props.onClick(),
-);
-assert.deepEqual(layout(liveState), [["AF-A", ["base:shirt", "base:trouser"]]], "Pair joins Selection 1");
-act(() => renderer.unmount());
-
-// Cancel leaves everything unassigned.
-await pickAForTrouser();
-await act(async () =>
-  placementDialogs(renderer.root)[0]!
-    .findByProps({ "data-fabric-piece-placement-cancel": "true" })
-    .props.onClick(),
-);
-assert.deepEqual(layout(liveState), [["AF-A", ["base:shirt"]]]);
-assert.equal(placementDialogs(renderer.root).length, 0);
+assert.equal(placementDialogs(renderer.root).length, 0, "no pair-or-new-piece popup");
+assert.deepEqual(layout(liveState), [["AF-A", ["base:shirt", "base:trouser"]]], "auto-pairs onto Selection 1");
+assert.deepEqual(notices, ["Paired Trouser with Selection 1 — no extra fabric used"]);
 act(() => renderer.unmount());
 
 // ---------------------------------------------------------------------------
-// 3c. UI: one garment left at Fabrics Needed (single-tap path) still asks, and
-// Use a new piece stays enabled (fabric-print-freedom).
+// 3c. UI: one garment left at Fabrics Needed (single-tap path) pairs too.
 // ---------------------------------------------------------------------------
+notices.length = 0;
 await mount(atCeiling);
 await act(async () =>
   actionButton(catalogueCard(renderer.root, "AF-A")).props.onClick({ currentTarget: {} }),
 );
-const ceilingDialog = placementDialogs(renderer.root)[0]!;
-assert.ok(ceilingDialog, "at the ceiling the choice still shows (no silent pairing)");
-assert.deepEqual(layout(liveState), layout(atCeiling));
-const enabledNew = ceilingDialog.findByProps({ "data-fabric-piece-placement-new-piece": "true" });
-assert.equal(enabledNew.props.disabled, false);
-assert.equal(
-  ceilingDialog.findAllByProps({ "data-fabric-piece-placement-new-piece-blocked": "true" }).length,
-  0,
-);
-await act(async () =>
-  ceilingDialog.findByProps({ "data-fabric-piece-placement-pair": "true" }).props.onClick(),
-);
+assert.equal(placementDialogs(renderer.root).length, 0);
 assert.deepEqual(layout(liveState), [["AF-A", ["base:shirt", "base:skirt"]], ["AF-B", ["base:trouser"]]]);
+assert.equal(notices.length, 1);
+assert.match(notices[0]!, /^Paired .+ with Selection 1 — no extra fabric used$/);
 act(() => renderer.unmount());
 
 // ---------------------------------------------------------------------------

@@ -412,16 +412,12 @@ await act(async () =>
     .props.onClick(),
 );
 await act(async () => renderer.update(renderStep(state, applyBulk)));
-// Freer Fabric step (#fabric-assign-freedom): the Trouser would join the
-// Shirt's piece, so the customer now chooses Pair or Use a new piece first
-// instead of being paired silently. Pairing keeps the old outcome.
-assert.equal(state.fabricAllocations.length, 1, "nothing assigned before the choice");
-await act(async () =>
-  renderer.root
-    .findByProps({ "data-fabric-piece-placement-pair": "true" })
-    .props.onClick(),
+// fabric-auto-pair: the Trouser joins the Shirt's piece automatically (no
+// Pair or use a new piece? popup); the Dress takes a new piece.
+assert.equal(
+  renderer.root.findAllByProps({ "data-fabric-piece-placement-dialog": "true" }).length,
+  0,
 );
-await act(async () => renderer.update(renderStep(state, applyBulk)));
 assert.deepEqual(
   state.fabricAllocations
     .flatMap((allocation) =>
@@ -629,19 +625,11 @@ assert.equal(
   0,
   "USE AGAIN with one remaining candidate must assign directly without the popup.",
 );
-// Freer Fabric step (#fabric-assign-freedom): joining the Shirt's piece is no
-// longer silent. The Pair vs new piece choice opens; at the 1 fabric needed
-// Use a new piece stays enabled (fabric-print-freedom); here the customer pairs.
-const onePlacementNewPiece = oneRenderer.root.findByProps({
-  "data-fabric-piece-placement-new-piece": "true",
-});
-assert.equal(onePlacementNewPiece.props.disabled, false);
-await act(async () =>
-  oneRenderer.root
-    .findByProps({ "data-fabric-piece-placement-pair": "true" })
-    .props.onClick(),
+// fabric-auto-pair: USE AGAIN pairs onto the Shirt's piece automatically.
+assert.equal(
+  oneRenderer.root.findAllByProps({ "data-fabric-piece-placement-dialog": "true" }).length,
+  0,
 );
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
 assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
