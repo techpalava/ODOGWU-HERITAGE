@@ -185,8 +185,9 @@ export const PrivateBatchSetupView = ({
               <input data-testid="private-batch-city" value={city} onChange={(event) => setCity(event.target.value)} disabled={isSubmitting} className={fieldClassName} autoComplete="address-level2" />
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
-              Delivery Target <span aria-hidden="true">*</span>
+              Delivery Target (Need Date) <span aria-hidden="true">*</span>
               <input data-testid="private-batch-delivery-target" type="month" value={preferredDeliveryMonth} onChange={(event) => setPreferredDeliveryMonth(event.target.value)} disabled={isSubmitting} className={fieldClassName} />
+              <span className="mt-1 block text-xs font-normal text-heritage-ink/60">Delivery period: 3 to 4 weeks</span>
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
               Expected Participants <span aria-hidden="true">*</span>
