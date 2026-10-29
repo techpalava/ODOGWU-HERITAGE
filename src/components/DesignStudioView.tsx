@@ -10972,6 +10972,9 @@ export default function DesignStudioView({
           onAssignGarmentToExistingAllocation={
             handleAssignGarmentToExistingAllocation
           }
+          onAutoPairNotice={(message) =>
+            setNotification({ message, type: "success" })
+          }
           onMoveGarmentToFabricAllocation={
             handleMoveFutureGarmentToFabricAllocation
           }

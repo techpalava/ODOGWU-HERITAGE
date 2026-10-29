@@ -2415,11 +2415,12 @@ export interface FutureFabricPiecePlacementChoice {
 }
 
 /**
- * Assigning a print that already has a piece with room used to pair the
- * garment onto that piece silently. When that would happen, the customer
- * chooses: Pair with that Selection, or Use a new piece (which still has to
- * fit Fabrics Needed and stock). Returns null when no existing piece would be
- * joined, or when the auto assignment itself is blocked (normal errors apply).
+ * Whether assigning `garmentKeys` to `fabricCode` would join an existing piece
+ * of that print, and whether a separate new piece would also fit Fabrics
+ * Needed and stock. Returns null when no existing piece would be joined, or
+ * when the auto assignment itself is blocked (normal errors apply).
+ * fabric-auto-pair: the UI no longer asks; it always pairs and reports the
+ * pairing with getFutureFabricAutoPairings.
  */
 export const getFutureFabricPiecePlacementChoice = ({
   state,
@@ -2499,6 +2500,83 @@ export const getFutureFabricPiecePlacementChoice = ({
     newPieceBlockedReason:
       newPiece.status === "blocked" ? newPiece.reason : null,
   };
+};
+
+export interface FutureFabricAutoPairing {
+  /** The piece that already existed (had garments) before the assignment. */
+  allocationId: string;
+  /** 1-based Fabric Selection number of that piece after the assignment. */
+  selectionNumber: number;
+  /** Only the garments that joined this piece, in assignment order. */
+  garmentKeys: string[];
+}
+
+/**
+ * Assigning a print that already has a piece with room pairs onto that piece
+ * automatically (no Pair / Use a new piece question). Returns, per existing
+ * piece of `fabricCode`, the garments from `garmentKeys` that joined it
+ * between `before` and `after`. Garments that went onto a new piece are not
+ * listed. Selection numbers follow `after`, so any renumbering (e.g. a lone
+ * garment's old piece being freed) is already applied.
+ */
+export const getFutureFabricAutoPairings = ({
+  before,
+  after,
+  fabricCode,
+  garmentKeys,
+}: {
+  before: FabricAllocationState;
+  after: FabricAllocationState;
+  fabricCode: string;
+  garmentKeys: readonly string[];
+}): FutureFabricAutoPairing[] => {
+  const pairings: FutureFabricAutoPairing[] = [];
+  for (const piece of before.fabricAllocations) {
+    if (piece.fabricCode !== fabricCode || piece.garmentAssignments.length === 0) {
+      continue;
+    }
+    const afterIndex = after.fabricAllocations.findIndex(
+      (candidate) => candidate.allocationId === piece.allocationId,
+    );
+    const afterPiece = after.fabricAllocations[afterIndex];
+    if (!afterPiece || afterPiece.fabricCode !== fabricCode) continue;
+    const joined = garmentKeys.filter(
+      (garmentKey) =>
+        afterPiece.garmentAssignments.some(
+          (assignment) => assignment.garmentKey === garmentKey,
+        ) &&
+        !piece.garmentAssignments.some(
+          (assignment) => assignment.garmentKey === garmentKey,
+        ),
+    );
+    if (joined.length > 0) {
+      pairings.push({
+        allocationId: piece.allocationId,
+        selectionNumber: afterIndex + 1,
+        garmentKeys: joined,
+      });
+    }
+  }
+  return pairings.sort((a, b) => a.selectionNumber - b.selectionNumber);
+};
+
+/** Toast copy after an auto-pair, e.g. "Paired Long Dress with Selection 3 — no extra fabric used". */
+export const formatFabricAutoPairToastCopy = (
+  pairings: readonly { garmentLabels: readonly string[]; selectionNumber: number }[],
+  formatList: (labels: string[]) => string,
+): string | null => {
+  const parts = pairings
+    .filter((pairing) => pairing.garmentLabels.length > 0)
+    .map(
+      (pairing) =>
+        `${formatList([...pairing.garmentLabels])} with Selection ${pairing.selectionNumber}`,
+    );
+  if (parts.length === 0) return null;
+  const joined =
+    parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return `Paired ${joined} — no extra fabric used`;
 };
 
 export const formatFabricNewPieceUnavailableCopy = ({
