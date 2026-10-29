@@ -350,8 +350,18 @@ for (const clause of [
   /data\.displayOrder == 0/,
   /data\.createdAt == request\.time/,
   /data\.createdByUid == request\.auth\.uid/,
+  /data\.keys\(\)\.hasOnly\(\[[^\]]*"nationality", "secondNationality"[^\]]*\]\)/,
+  /data\.nationality is string && data\.nationality\.matches\("\^\[A-Z\]\{2\}\$"\)/,
+  /\(!\("secondNationality" in data\)\s*\|\| \("nationality" in data/,
+  /data\.secondNationality\.matches\("\^\[A-Z\]\{2\}\$"\)/,
+  /data\.secondNationality != data\.nationality/,
 ]) {
   assert.match(customerReviewCreate, clause);
 }
+// Nationality stays optional: never required on create.
+assert.doesNotMatch(
+  customerReviewCreate.match(/data\.keys\(\)\.hasAll\(\[[^\]]*\]\)/)?.[0] ?? "",
+  /nationality/i,
+);
 
 console.log("PASS: Firebase identity and Firestore rule security checks");
