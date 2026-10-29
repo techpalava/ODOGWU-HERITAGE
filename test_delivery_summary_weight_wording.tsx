@@ -63,7 +63,11 @@ const deliveryState = (
 const NL = deliveryState("NL", "Amsterdam", "Noord-Holland", "1011 AB");
 const US = deliveryState("US", "Houston", "Texas", "77002");
 
-const render = (state: FutureShippingStateV1, garmentCount: number) => {
+const render = (
+  state: FutureShippingStateV1,
+  garmentCount: number,
+  orderType: string | null = null,
+) => {
   const resolution = reconcileFutureShippingState({ state, garmentCount, selectedDesignPrice: 500 });
   const markup = renderToStaticMarkup(
     createElement(DormantFutureShippingStep, {
@@ -76,6 +80,7 @@ const render = (state: FutureShippingStateV1, garmentCount: number) => {
       onBack: () => undefined,
       canContinueToReview: true,
       onContinueToReview: () => undefined,
+      orderType,
     }),
   );
   const summary = markup.slice(markup.indexOf('data-delivery-summary="true"'));
@@ -94,7 +99,10 @@ const render = (state: FutureShippingStateV1, garmentCount: number) => {
     weight: card.includes("data-delivery-shipment-weight")
       ? text(card.slice(card.indexOf("data-delivery-shipment-weight")).split("</dd>")[0]).replace(/^[^>]*>/, "")
       : "",
-    shipping: between('data-delivery-shipping-line="true"'),
+    shipping: card.includes('data-delivery-shipping-line="true"')
+      ? between('data-delivery-shipping-line="true"')
+      : "",
+    markup,
   };
 };
 
@@ -169,6 +177,67 @@ const commonChecks = (card: string) => {
   assert.equal(r.shipping, "Custom shipping quote required");
   assert.doesNotMatch(r.card, /Over 20 kg/);
   assert.equal(r.weight, "Shipment Weight1.0 kg (2 garments × 0.5 kg)");
+}
+
+// Individual home delivery (Lagos → Eindhoven, then Eindhoven → address).
+// The Lagos leg is priced per 10 garments (ceil(garments/10) × €131.25), not by
+// weight band, so it must stay in Cost Breakdown and never be described by the
+// "<Region> rate for parcels <band>" line. That line explains only the
+// Eindhoven → address final-mile fee, which is still a weight-band rate.
+const lagosInbound = (markup: string) => {
+  const at = markup.indexOf('data-shipping-lagos-inbound="true"');
+  if (at < 0) return null;
+  const amount = /data-amount-cents="(\d+)"/.exec(markup.slice(at));
+  return amount ? Number(amount[1]) : null;
+};
+{
+  const r = render(NL, 2, "Individual");
+  commonChecks(r.card);
+  assert.equal(r.weight, "Shipment Weight1.0 kg (2 garments × 0.5 kg)");
+  assert.equal(r.shipping, "€7.50 — Netherlands rate for parcels up to 2 kg");
+  assert.equal(r.resolution.postEindhovenAdjustmentCents, 750);
+  assert.doesNotMatch(r.card, /Lagos|131\.25|per 10 garments/, "Lagos leg is not in the Delivery Summary");
+  assert.equal(lagosInbound(r.markup), 13125, "Lagos leg is one €131.25 block in Cost Breakdown");
+}
+{
+  // 12 garments: two Lagos blocks (€262.50); final mile is the NL 5–10 kg band.
+  const r = render(NL, 12, "Individual");
+  assert.equal(r.resolution.weightTier, "5_10");
+  commonChecks(r.card);
+  assert.equal(r.weight, "Shipment Weight6.0 kg (12 garments × 0.5 kg)");
+  assert.match(r.shipping, /^€\d+\.\d{2} — Netherlands rate for parcels 5–10 kg$/);
+  assert.doesNotMatch(r.card, /Lagos|131\.25|262\.50/);
+  assert.equal(lagosInbound(r.markup), 26250);
+}
+{
+  // Over 20 kg on Individual delivery: final mile needs a quote; Lagos stays per block.
+  const r = render(NL, 42, "Individual");
+  assert.equal(r.shipping, STEP8_OVER_20_KG_QUOTE_MESSAGE);
+  assert.doesNotMatch(r.card, /rate for parcels|Lagos/);
+  assert.equal(lagosInbound(r.markup), 5 * 13125);
+}
+
+// Individual Eindhoven pickup keeps the Lagos charge, but the Delivery Summary
+// shows no shipment weight or shipping rate line at all.
+{
+  const empty = createEmptyFutureShippingState();
+  const pickup: FutureShippingStateV1 = {
+    ...empty,
+    fulfilmentMethod: "eindhoven_pickup",
+    customerInformation: {
+      ...empty.customerInformation,
+      fullName: "Ada Okafor",
+      phone: "+31 6 1234 5678",
+      email: "ada@example.com",
+    },
+  };
+  const r = render(pickup, 2, "Individual");
+  commonChecks(r.card);
+  assert.match(r.card, /Pick Up in Eindhoven/);
+  assert.equal(r.weight, "");
+  assert.equal(r.shipping, "");
+  assert.doesNotMatch(r.card, /Shipment Weight|rate for parcels|Over 20 kg|Lagos/);
+  assert.equal(lagosInbound(r.markup), 13125, "pickup keeps the Lagos → Eindhoven charge");
 }
 
 // The component no longer hard-codes tier labels.
