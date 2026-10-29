@@ -389,5 +389,44 @@ try {
   useAppStore.setState(originalState, true);
 }
 
+
+// --- order-flow prompt: Maybe later, never blocks ---
+{
+  let orderTree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  try {
+    useAppStore.setState({
+      activeTab: "design",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      orderTree = create(<SiteFeedbackButton submit={async () => "doc-order"} />);
+    });
+    assert.equal(orderTree!.root.findAll((n) => n.props?.["data-site-feedback-maybe-later"] === "true").length, 0);
+    await act(async () => {
+      useAppStore.getState().requestSiteFeedbackOpen({
+        source: "order_flow",
+        trigger: "after_step_5",
+        draftKey: "guest:test",
+      });
+    });
+    const dialog = orderTree!.root.find((n) => n.props?.role === "dialog" && n.type === "div");
+    const maybeLater = dialog.findByProps({ "data-site-feedback-maybe-later": "true" });
+    assert.equal(text(maybeLater).trim(), "Maybe later");
+    await act(async () => maybeLater.props.onClick());
+    assert.equal(orderTree!.root.findAll((n) => n.props?.role === "dialog").length, 0);
+  } finally {
+    act(() => orderTree?.unmount());
+    useAppStore.setState(original, true);
+  }
+}
+
 console.log("PASS: site feedback");
+
 process.exit(0);

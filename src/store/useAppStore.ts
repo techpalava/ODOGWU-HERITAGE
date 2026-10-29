@@ -91,7 +91,18 @@ export interface AppState {
   requestDesignStudioFromNav: () => void;
   /** Incremented by the desktop header Feedback button. SiteFeedbackButton opens its panel. */
   siteFeedbackOpenRequest: number;
-  requestSiteFeedbackOpen: () => void;
+  /**
+   * How the latest open was requested. `order_flow` shows Maybe later and ties
+   * submits to the Design Studio step prompt (once per draft).
+   */
+  siteFeedbackOpenSource: "manual" | "order_flow";
+  siteFeedbackOpenTrigger: "after_step_5" | "after_step_10" | null;
+  siteFeedbackOpenDraftKey: string | null;
+  requestSiteFeedbackOpen: (options?: {
+    source?: "manual" | "order_flow";
+    trigger?: "after_step_5" | "after_step_10" | null;
+    draftKey?: string | null;
+  }) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
   notification: { message: string; type: "success" | "info" } | null;
@@ -410,8 +421,16 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ designStudioNavRequest: get().designStudioNavRequest + 1 });
   },
   siteFeedbackOpenRequest: 0,
-  requestSiteFeedbackOpen: () => {
-    set({ siteFeedbackOpenRequest: get().siteFeedbackOpenRequest + 1 });
+  siteFeedbackOpenSource: "manual",
+  siteFeedbackOpenTrigger: null,
+  siteFeedbackOpenDraftKey: null,
+  requestSiteFeedbackOpen: (options) => {
+    set({
+      siteFeedbackOpenRequest: get().siteFeedbackOpenRequest + 1,
+      siteFeedbackOpenSource: options?.source ?? "manual",
+      siteFeedbackOpenTrigger: options?.trigger ?? null,
+      siteFeedbackOpenDraftKey: options?.draftKey ?? null,
+    });
   },
   pendingRedirect: null,
   setPendingRedirect: (redirect) => set({ pendingRedirect: redirect }),
