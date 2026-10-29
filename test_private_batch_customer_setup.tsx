@@ -30,6 +30,8 @@ assert.match(setupMarkup, /Create a Private Batch/);
 assert.match(setupMarkup, /Private Batch Name/);
 assert.match(setupMarkup, /Occasion \/ Purpose/);
 assert.match(setupMarkup, /Description/);
+assert.match(setupMarkup, /\(Optional\)/);
+assert.match(setupMarkup, /data-private-batch-create-empty-description-ok="v1"/);
 assert.match(setupMarkup, /Delivery Target \(Need Date\) <span aria-hidden="true">\*<\/span>/);
 assert.match(setupMarkup, /Delivery period: 3 to 4 weeks/);
 assert.match(setupMarkup, /Ordering Closes <span aria-hidden="true">\*<\/span>/);
@@ -69,6 +71,7 @@ await act(async () => {
         submissions += 1;
         assert.equal(values.batchName, "Family Wedding 2026");
         assert.equal(values.occasion, "Wedding");
+        assert.equal(values.description, "", "Optional description must submit empty when left blank");
         await pendingSubmission;
         return { status: "created" as const };
       },
