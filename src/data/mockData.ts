@@ -113,7 +113,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     "Skirt Only",
     "Wrapper Only",
     "Dress Only",
-    "Kaftan Only",
+    "Long Shirt Only",
     "Agbada Only",
     "2-Piece Set",
     "3-Piece Set",
@@ -146,14 +146,14 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     },
     {
       id: "kaftan",
-      name: "Kaftan",
+      name: "Long Shirt",
       gender: "male",
       enabled: true,
       displayOrder: 4,
     },
     {
       id: "kaftan-set",
-      name: "Kaftan Set",
+      name: "Long Shirt Set",
       gender: "male",
       enabled: true,
       displayOrder: 5,
@@ -237,7 +237,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     },
     {
       id: "kaftan-dress",
-      name: "Kaftan Dress",
+      name: "Long Dress",
       gender: "female",
       enabled: true,
       displayOrder: 17,
@@ -542,14 +542,14 @@ const BASE_DESIGNS: StyleCategory[] = [
   },
   {
     id: "executive-kaftan",
-    name: "Executive Kaftan",
+    name: "Executive Long Shirt",
     description:
       "An elegant long-hem traditional tunic perfect for formal occasions or casual executive prestige. Offers maximum comfort and supreme flow.",
     gender: "male",
     options: ["Flared Hemline", "Turn-up Cuffs", "Traditional Side Openings"],
     image: executiveKaftanImg,
-    outfitType: "Kaftan Set",
-    garmentComposition: "Kaftan Only",
+    outfitType: "Long Shirt Set",
+    garmentComposition: "Long Shirt Only",
   },
   {
     id: "grand-agbada",
@@ -641,7 +641,9 @@ const designTypes = [
     garmentComposition: "2-Piece Set",
   },
   {
-    type: "Kaftan",
+    type: "Long Shirt",
+    // Keeps generated style ids stable (kaftan-var-N) so saved drafts still resolve.
+    idKey: "kaftan",
     gender: "male",
     image: executiveKaftanImg,
     options: [
@@ -650,8 +652,8 @@ const designTypes = [
       "Traditional Side Openings",
       "Contrast Cuff Trim",
     ],
-    outfitType: "Kaftan Set",
-    garmentComposition: "Kaftan Only",
+    outfitType: "Long Shirt Set",
+    garmentComposition: "Long Shirt Only",
   },
   {
     type: "Agbada",
@@ -706,7 +708,7 @@ for (let i = 0; i < 45; i++) {
   const description = `A bespoke and premium variant of our traditional ${designType.type.toLowerCase()} template, showcasing premium ${designVariant % 2 === 0 ? "gilded embroidery lines" : "double-stitched structural hems"}, optimized collar cuts, and standard executive proportions.`;
 
   generatedStyles.push({
-    id: `${designType.type.toLowerCase().replace(" ", "-")}-var-${idCounter++}`,
+    id: `${("idKey" in designType && designType.idKey ? designType.idKey : designType.type).toLowerCase().replace(" ", "-")}-var-${idCounter++}`,
     name,
     description,
     gender: designType.gender as "male" | "female",
@@ -731,11 +733,11 @@ export const DESIGN_COLLECTION: Design[] = [
   },
   {
     designCode: "DSG-KAF-002",
-    styleCategory: "Kaftan",
+    styleCategory: "Long Shirt",
     garmentType: "Tunic + Pants",
     image: executiveKaftanImg,
     description:
-      "Long-hem cultural Kaftan featuring subtle side slits and hand-turned sleeve cuffs for everyday comfort.",
+      "Long-hem cultural Long Shirt featuring subtle side slits and hand-turned sleeve cuffs for everyday comfort.",
   },
   {
     designCode: "DSG-AGB-003",
@@ -1109,7 +1111,7 @@ export const MOCK_HISTORICAL_ORDERS: HistoricalOrder[] = [
   {
     id: "ODH-2025-0891",
     date: "2025-10-08",
-    styleName: "Executive Kaftan",
+    styleName: "Executive Long Shirt",
     garmentType: "Shirt + Trouser Set",
     fabricName: "Classic Teal Monogram",
     fabricCode: "ODG-002",
@@ -1135,7 +1137,7 @@ export const MOCK_COMMUNITY_PHOTOS: CommunityPhoto[] = [
   {
     id: "photo-g1-2",
     url: "https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&q=80&w=600",
-    caption: "Executive Kaftan in polished midnight blue cotton.",
+    caption: "Executive Long Shirt in polished midnight blue cotton.",
     cohortName: "Group 1 - Pioneers",
     deliveryYear: 2025,
     featured: true,
