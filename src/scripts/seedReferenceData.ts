@@ -108,7 +108,7 @@ const referenceData = [
     options: [
       { id: "outfit_type_senator", code: "SENATOR_SET", label: "Senator Set", value: "Senator Set", enabled: true, displayOrder: 1, metadata: { gender: "MALE" } },
       { id: "outfit_type_agbada", code: "AGBADA", label: "Agbada", value: "Agbada", enabled: true, displayOrder: 2, metadata: { gender: "MALE" } },
-      { id: "outfit_type_kaftan", code: "KAFTAN", label: "Kaftan", value: "Kaftan", enabled: true, displayOrder: 3, metadata: { gender: "MALE" } },
+      { id: "outfit_type_kaftan", code: "KAFTAN", label: "Long Shirt", value: "Long Shirt", enabled: true, displayOrder: 3, metadata: { gender: "MALE" } },
       { id: "outfit_type_danshiki", code: "DANSHIKI", label: "Danshiki", value: "Danshiki", enabled: true, displayOrder: 4, metadata: { gender: "MALE" } },
       { id: "outfit_type_iro_buba", code: "IRO_AND_BUBA", label: "Iro and Buba", value: "Iro and Buba", enabled: true, displayOrder: 5, metadata: { gender: "FEMALE" } },
       { id: "outfit_type_gown", code: "GOWN", label: "Gown", value: "Gown", enabled: true, displayOrder: 6, metadata: { gender: "FEMALE" } },
