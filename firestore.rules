@@ -468,11 +468,18 @@ service cloud.firestore {
     // src/utils/customerReviews.ts.
     function hasValidCustomerReviewCreate(data) {
       return data.keys().hasAll(["authorName", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
-        && data.keys().hasOnly(["authorName", "location", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
+        && data.keys().hasOnly(["authorName", "location", "nationality", "secondNationality", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
         && data.authorName is string
         && data.authorName.size() >= 2
         && data.authorName.size() <= 60
         && (!("location" in data) || (data.location is string && data.location.size() <= 80))
+        && (!("nationality" in data)
+          || (data.nationality is string && data.nationality.matches("^[A-Z]{2}$")))
+        && (!("secondNationality" in data)
+          || ("nationality" in data
+            && data.secondNationality is string
+            && data.secondNationality.matches("^[A-Z]{2}$")
+            && data.secondNationality != data.nationality))
         && data.body is string
         && data.body.size() >= 10
         && data.body.size() <= 1000

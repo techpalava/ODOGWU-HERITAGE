@@ -1,5 +1,6 @@
 import { Star } from "lucide-react";
 import type { CustomerReview } from "../types";
+import { formatReviewOrigin } from "../utils/customerReviews";
 
 export function ReviewStars({
   rating,
@@ -45,6 +46,7 @@ export function CustomerReviewCard({
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+  const origin = formatReviewOrigin(review);
 
   return (
     <article
@@ -68,9 +70,13 @@ export function CustomerReviewCard({
           <strong className="block truncate text-xs text-heritage-green">
             {review.authorName}
           </strong>
-          {review.location && (
-            <span className="block truncate text-[10px] text-heritage-ink/55">
-              {review.location}
+          {origin && (
+            <span
+              className="block truncate text-[10px] text-heritage-ink/55"
+              data-customer-review-origin="true"
+              title={origin}
+            >
+              {origin}
             </span>
           )}
         </div>

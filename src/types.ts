@@ -1579,6 +1579,10 @@ export interface CustomerReview {
   id: string;
   authorName: string;
   location?: string;
+  /** Optional ISO 3166-1 alpha-2 code, e.g. "NG". */
+  nationality?: string;
+  /** Optional second ISO code for dual nationals; only with `nationality`, never equal to it. */
+  secondNationality?: string;
   body: string;
   rating: 1 | 2 | 3 | 4 | 5;
   status: "published" | "hidden";

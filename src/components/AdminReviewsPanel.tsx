@@ -8,6 +8,7 @@ import {
   SEED_CUSTOMER_REVIEWS,
   canFeatureReview,
   countFeaturedReviews,
+  formatReviewNationalities,
   sortReviewsNewestFirst,
 } from "../utils/customerReviews";
 import { ReviewStars } from "./CustomerReviewCard";
@@ -157,10 +158,11 @@ export default function AdminReviewsPanel() {
           <p className="text-sm text-heritage-ink/60">No reviews yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-xs">
+            <table className="w-full min-w-[820px] text-left text-xs">
               <thead className="border-b border-heritage-gold/20 text-[10px] uppercase tracking-wider text-heritage-ink/60">
                 <tr>
                   <th className="py-2 pr-3">Name</th>
+                  <th className="py-2 pr-3">Nationality</th>
                   <th className="py-2 pr-3">Rating</th>
                   <th className="py-2 pr-3">Status</th>
                   <th className="py-2 pr-3">Featured</th>
@@ -190,6 +192,17 @@ export default function AdminReviewsPanel() {
                       >
                         {review.body}
                       </span>
+                    </td>
+                    <td
+                      className="max-w-[160px] py-3 pr-3 text-heritage-ink/70"
+                      data-admin-review-nationality={[
+                        review.nationality,
+                        review.secondNationality,
+                      ]
+                        .filter(Boolean)
+                        .join("/")}
+                    >
+                      {formatReviewNationalities(review) || "—"}
                     </td>
                     <td className="py-3 pr-3">
                       <ReviewStars rating={review.rating} size={12} />

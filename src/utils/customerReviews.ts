@@ -1,4 +1,9 @@
 import type { CustomerReview } from "../types";
+import {
+  NATIONALITY_CODE_PATTERN,
+  isNationalityCode,
+  nationalityLabel,
+} from "./nationalityOptions";
 
 export const CUSTOMER_REVIEWS_COLLECTION = "customer_reviews";
 export const CUSTOMER_REVIEW_FEATURED_CAP = 3;
@@ -16,6 +21,8 @@ export const CUSTOMER_REVIEW_LIMITS = {
 export const CUSTOMER_REVIEW_CREATE_KEYS = [
   "authorName",
   "location",
+  "nationality",
+  "secondNationality",
   "body",
   "rating",
   "status",
@@ -30,6 +37,9 @@ export type CustomerReviewRating = CustomerReview["rating"];
 export interface CustomerReviewInput {
   authorName: string;
   location?: string;
+  /** ISO code from NATIONALITY_OPTIONS; "" means "Prefer not to say". */
+  nationality?: string;
+  secondNationality?: string;
   body: string;
   rating: number;
 }
@@ -40,6 +50,8 @@ export type CustomerReviewValidation =
       value: {
         authorName: string;
         location?: string;
+        nationality?: string;
+        secondNationality?: string;
         body: string;
         rating: CustomerReviewRating;
       };
@@ -118,6 +130,48 @@ export function reviewTimestampMillis(createdAt: unknown): number {
   return 0;
 }
 
+/** Trims and upper-cases a nationality value; anything else becomes "". */
+export function normalizeNationalityCode(value: unknown): string {
+  return typeof value === "string" ? value.trim().toUpperCase() : "";
+}
+
+/**
+ * Reads the optional nationality pair from a stored document. Older reviews
+ * carry neither field. A second nationality is kept only beside a valid,
+ * different first one.
+ */
+export function normalizeReviewNationalities(raw: Record<string, unknown>): {
+  nationality?: string;
+  secondNationality?: string;
+} {
+  const first = normalizeNationalityCode(raw.nationality);
+  if (!NATIONALITY_CODE_PATTERN.test(first)) return {};
+  const second = normalizeNationalityCode(raw.secondNationality);
+  return NATIONALITY_CODE_PATTERN.test(second) && second !== first
+    ? { nationality: first, secondNationality: second }
+    : { nationality: first };
+}
+
+/** Country names for display, e.g. "Nigeria / United Kingdom"; "" when unset. */
+export function formatReviewNationalities(
+  review: Pick<CustomerReview, "nationality" | "secondNationality">,
+): string {
+  if (!review.nationality) return "";
+  return [review.nationality, review.secondNationality]
+    .filter((code): code is string => Boolean(code))
+    .map((code) => nationalityLabel(code))
+    .join(" / ");
+}
+
+/** Location then nationalities, e.g. "Lagos · Nigeria / United Kingdom". */
+export function formatReviewOrigin(
+  review: Pick<CustomerReview, "location" | "nationality" | "secondNationality">,
+): string {
+  return [review.location?.trim(), formatReviewNationalities(review)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** Turns a raw Firestore document into a display-safe CustomerReview. */
 export function normalizeCustomerReview(
   id: string,
@@ -132,6 +186,7 @@ export function normalizeCustomerReview(
     id,
     authorName: typeof raw.authorName === "string" ? raw.authorName : "",
     ...(location ? { location } : {}),
+    ...normalizeReviewNationalities(raw),
     body: typeof raw.body === "string" ? raw.body : "",
     rating: clampRating(raw.rating),
     status: raw.status === "published" ? "published" : "hidden",
@@ -224,6 +279,8 @@ export function validateCustomerReviewInput(
   const authorName = (input.authorName ?? "").trim();
   const location = (input.location ?? "").trim();
   const body = (input.body ?? "").trim();
+  const nationality = normalizeNationalityCode(input.nationality);
+  const secondNationality = normalizeNationalityCode(input.secondNationality);
   const limits = CUSTOMER_REVIEW_LIMITS;
 
   if (authorName.length < limits.authorNameMin) {
@@ -240,6 +297,29 @@ export function validateCustomerReviewInput(
       ok: false,
       error: `Please keep your location under ${limits.locationMax} characters.`,
     };
+  }
+  if (nationality && !isNationalityCode(nationality)) {
+    return { ok: false, error: "Please choose a nationality from the list." };
+  }
+  if (secondNationality) {
+    if (!nationality) {
+      return {
+        ok: false,
+        error: "Please choose your first nationality before adding a second.",
+      };
+    }
+    if (!isNationalityCode(secondNationality)) {
+      return {
+        ok: false,
+        error: "Please choose a second nationality from the list.",
+      };
+    }
+    if (secondNationality === nationality) {
+      return {
+        ok: false,
+        error: "Your second nationality must be different from the first.",
+      };
+    }
   }
   if (!isValidRating(input.rating)) {
     return { ok: false, error: "Please choose a star rating." };
@@ -261,6 +341,8 @@ export function validateCustomerReviewInput(
     value: {
       authorName,
       ...(location ? { location } : {}),
+      ...(nationality ? { nationality } : {}),
+      ...(secondNationality ? { secondNationality } : {}),
       body,
       rating: input.rating,
     },
@@ -276,6 +358,10 @@ export function buildCustomerReviewCreatePayload<TTimestamp>(
   return {
     authorName: value.authorName,
     ...(value.location ? { location: value.location } : {}),
+    ...(value.nationality ? { nationality: value.nationality } : {}),
+    ...(value.nationality && value.secondNationality
+      ? { secondNationality: value.secondNationality }
+      : {}),
     body: value.body,
     rating: value.rating,
     status: "published" as const,

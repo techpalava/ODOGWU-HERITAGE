@@ -7,6 +7,7 @@ import {
   CUSTOMER_REVIEW_LIMITS,
   validateCustomerReviewInput,
 } from "../utils/customerReviews";
+import { NATIONALITY_OPTIONS } from "../utils/nationalityOptions";
 
 interface CustomerReviewFormProps {
   open: boolean;
@@ -20,6 +21,9 @@ export default function CustomerReviewForm({
   const setNotification = useAppStore((state) => state.setNotification);
   const [authorName, setAuthorName] = useState("");
   const [location, setLocation] = useState("");
+  const [nationality, setNationality] = useState("");
+  const [secondNationality, setSecondNationality] = useState("");
+  const [showSecondNationality, setShowSecondNationality] = useState(false);
   const [rating, setRating] = useState(0);
   const [body, setBody] = useState("");
   const [website, setWebsite] = useState("");
@@ -42,6 +46,9 @@ export default function CustomerReviewForm({
   const reset = () => {
     setAuthorName("");
     setLocation("");
+    setNationality("");
+    setSecondNationality("");
+    setShowSecondNationality(false);
     setRating(0);
     setBody("");
     setWebsite("");
@@ -70,6 +77,8 @@ export default function CustomerReviewForm({
     const validation = validateCustomerReviewInput({
       authorName,
       location,
+      nationality,
+      secondNationality: showSecondNationality ? secondNationality : "",
       body,
       rating,
     });
@@ -109,7 +118,7 @@ export default function CustomerReviewForm({
         role="dialog"
         aria-modal="true"
         aria-labelledby="customer-review-form-title"
-        className="w-full max-w-lg rounded-3xl border border-heritage-gold/25 bg-heritage-cream p-6 shadow-2xl sm:p-8"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-3xl border border-heritage-gold/25 bg-heritage-cream p-6 shadow-2xl sm:p-8"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between gap-4">
@@ -165,6 +174,74 @@ export default function CustomerReviewForm({
               className={inputClass}
               placeholder="e.g. Eindhoven"
             />
+          </div>
+
+          <div data-customer-review-nationality-group="true">
+            <label htmlFor="review-nationality" className={labelClass}>
+              Nationality <span className="font-normal normal-case">(optional)</span>
+            </label>
+            <select
+              id="review-nationality"
+              data-customer-review-nationality="true"
+              value={nationality}
+              onChange={(event) => setNationality(event.target.value)}
+              className={`${inputClass} min-w-0`}
+            >
+              <option value="">Prefer not to say</option>
+              {NATIONALITY_OPTIONS.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            {showSecondNationality ? (
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="review-second-nationality" className={labelClass}>
+                    Second nationality
+                  </label>
+                  <button
+                    type="button"
+                    data-customer-review-remove-second-nationality="true"
+                    onClick={() => {
+                      setShowSecondNationality(false);
+                      setSecondNationality("");
+                    }}
+                    className="text-[11px] font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-forest"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <select
+                  id="review-second-nationality"
+                  data-customer-review-second-nationality="true"
+                  value={secondNationality}
+                  onChange={(event) => setSecondNationality(event.target.value)}
+                  className={`${inputClass} min-w-0`}
+                >
+                  <option value="">Choose a country</option>
+                  {NATIONALITY_OPTIONS.filter(
+                    (option) => option.code !== nationality,
+                  ).map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              nationality && (
+                <button
+                  type="button"
+                  data-customer-review-add-second-nationality="true"
+                  onClick={() => setShowSecondNationality(true)}
+                  className="mt-2 text-[11px] font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-forest"
+                >
+                  + Add second nationality
+                </button>
+              )
+            )}
           </div>
 
           <fieldset>
