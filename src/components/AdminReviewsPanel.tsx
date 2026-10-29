@@ -1,5 +1,11 @@
-import { useMemo, useState } from "react";
-import { Eye, EyeOff, Star, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Eye, EyeOff, ImageOff, Star, Trash2 } from "lucide-react";
+import {
+  approveReviewPhoto,
+  deleteReviewPhotoFiles,
+  rejectReviewPhoto,
+  resolveReviewPhotoUrl,
+} from "../services/customerReviewPhotoService";
 import { StorageService } from "../services/storageService";
 import { useAppStore } from "../store/useAppStore";
 import type { CustomerReview } from "../types";
@@ -8,10 +14,104 @@ import {
   SEED_CUSTOMER_REVIEWS,
   canFeatureReview,
   countFeaturedReviews,
+  filterReviewsWithPendingPhotos,
   formatReviewNationalities,
+  hasPendingReviewPhoto,
   sortReviewsNewestFirst,
 } from "../utils/customerReviews";
-import { ReviewStars } from "./CustomerReviewCard";
+import { ReviewPhotoLightbox, ReviewStars } from "./CustomerReviewCard";
+
+/** Photo moderation hooks, injectable for tests. */
+export interface AdminReviewPhotoActions {
+  resolvePhotoUrl(path: string): Promise<string>;
+  approve(review: CustomerReview): Promise<unknown>;
+  reject(review: CustomerReview): Promise<void>;
+  deleteFiles(review: CustomerReview): Promise<void>;
+}
+
+const defaultPhotoActions: AdminReviewPhotoActions = {
+  resolvePhotoUrl: (path) => resolveReviewPhotoUrl(path),
+  approve: (review) => approveReviewPhoto(review),
+  reject: (review) => rejectReviewPhoto(review),
+  deleteFiles: (review) => deleteReviewPhotoFiles(review),
+};
+
+function AdminReviewPhotoThumb({
+  review,
+  resolvePhotoUrl,
+}: {
+  review: CustomerReview;
+  resolvePhotoUrl: AdminReviewPhotoActions["resolvePhotoUrl"];
+}) {
+  const approvedUrl =
+    review.photoStatus === "approved" && review.photoUrl ? review.photoUrl : null;
+  const [url, setUrl] = useState<string | null>(approvedUrl);
+  const [failed, setFailed] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const path = review.photoPath;
+
+  useEffect(() => {
+    if (approvedUrl) {
+      setUrl(approvedUrl);
+      return;
+    }
+    if (!path) return;
+    let cancelled = false;
+    setFailed(false);
+    resolvePhotoUrl(path)
+      .then((resolved) => {
+        if (!cancelled) setUrl(resolved);
+      })
+      .catch((error) => {
+        console.error("Review photo could not be loaded:", error);
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [approvedUrl, path, resolvePhotoUrl]);
+
+  const pending = review.photoStatus !== "approved";
+  return (
+    <div className="mt-2 flex items-center gap-2" data-admin-review-photo={review.photoStatus ?? "pending"}>
+      {url ? (
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          aria-label={`View photo from ${review.authorName}`}
+          className="shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25"
+        >
+          <img
+            src={url}
+            alt={`Photo from ${review.authorName}`}
+            data-admin-review-photo-thumb="true"
+            className="h-14 w-14 object-cover"
+          />
+        </button>
+      ) : (
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-heritage-gold/25 bg-heritage-cream text-[9px] text-heritage-ink/50">
+          {failed ? "Unavailable" : "Loading…"}
+        </div>
+      )}
+      <span
+        className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+          pending
+            ? "bg-amber-100 text-amber-800"
+            : "bg-heritage-green/10 text-heritage-green"
+        }`}
+      >
+        {pending ? "Photo under review" : "Photo approved"}
+      </span>
+      {url && isOpen && (
+        <ReviewPhotoLightbox
+          src={url}
+          alt={`Photo from ${review.authorName}`}
+          onClose={() => setIsOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
 
 function formatCreatedAt(createdAt: string): string {
   if (!createdAt) return "—";
@@ -19,15 +119,27 @@ function formatCreatedAt(createdAt: string): string {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
-export default function AdminReviewsPanel() {
+export default function AdminReviewsPanel({
+  photoActions = defaultPhotoActions,
+}: {
+  photoActions?: AdminReviewPhotoActions;
+} = {}) {
   const reviews = useAppStore((state) => state.adminCustomerReviews);
+  const [filter, setFilter] = useState<"all" | "photos-pending">("all");
   const [message, setMessage] = useState<{
     text: string;
     tone: "success" | "error";
   } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const sorted = useMemo(() => sortReviewsNewestFirst(reviews), [reviews]);
+  const pendingPhotoCount = filterReviewsWithPendingPhotos(reviews).length;
+  const sorted = useMemo(
+    () =>
+      sortReviewsNewestFirst(
+        filter === "photos-pending" ? filterReviewsWithPendingPhotos(reviews) : reviews,
+      ),
+    [reviews, filter],
+  );
   const featuredCount = countFeaturedReviews(reviews);
   const missingSeeds = SEED_CUSTOMER_REVIEWS.filter(
     (seed) => !reviews.some((review) => review.id === seed.id),
@@ -95,8 +207,40 @@ export default function AdminReviewsPanel() {
     }
     void run(
       review.id,
-      () => StorageService.deleteCustomerReview(review.id),
+      async () => {
+        await StorageService.deleteCustomerReview(review.id);
+        if (review.photoPath) {
+          // Best effort: the review is gone either way.
+          await photoActions.deleteFiles(review).catch((error) => {
+            console.error("Review photo files could not be deleted:", error);
+          });
+        }
+      },
       "Review deleted.",
+    );
+  };
+
+  const approvePhoto = (review: CustomerReview) =>
+    void run(
+      review.id,
+      async () => {
+        await photoActions.approve(review);
+      },
+      "Photo approved. It now shows with the review.",
+    );
+
+  const rejectPhoto = (review: CustomerReview) => {
+    if (
+      !window.confirm(
+        `Reject and delete the photo from ${review.authorName}? The review text stays.`,
+      )
+    ) {
+      return;
+    }
+    void run(
+      review.id,
+      () => photoActions.reject(review),
+      "Photo rejected and deleted.",
     );
   };
 
@@ -154,8 +298,38 @@ export default function AdminReviewsPanel() {
           </p>
         )}
 
+        <div
+          className="mb-4 flex flex-wrap gap-2"
+          role="group"
+          aria-label="Filter reviews"
+        >
+          {(
+            [
+              ["all", "All reviews"],
+              ["photos-pending", `Photos under review (${pendingPhotoCount})`],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              data-admin-review-filter={value}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+              className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                filter === value
+                  ? "border-heritage-green bg-heritage-green text-heritage-gold"
+                  : "border-heritage-gold/30 text-heritage-green hover:bg-heritage-gold/10"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {sorted.length === 0 ? (
-          <p className="text-sm text-heritage-ink/60">No reviews yet.</p>
+          <p className="text-sm text-heritage-ink/60">
+            {filter === "photos-pending" ? "No photos waiting for review." : "No reviews yet."}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-left text-xs">
@@ -192,6 +366,12 @@ export default function AdminReviewsPanel() {
                       >
                         {review.body}
                       </span>
+                      {review.photoPath && (
+                        <AdminReviewPhotoThumb
+                          review={review}
+                          resolvePhotoUrl={photoActions.resolvePhotoUrl}
+                        />
+                      )}
                     </td>
                     <td
                       className="max-w-[160px] py-3 pr-3 text-heritage-ink/70"
@@ -263,6 +443,28 @@ export default function AdminReviewsPanel() {
                           <Star size={12} />
                           {review.featured ? "Unfeature" : "Feature"}
                         </button>
+                        {hasPendingReviewPhoto(review) && (
+                          <button
+                            type="button"
+                            data-admin-review-approve-photo="true"
+                            onClick={() => approvePhoto(review)}
+                            disabled={busyId !== null}
+                            className={actionClass}
+                          >
+                            <Check size={12} /> Approve photo
+                          </button>
+                        )}
+                        {review.photoPath && (
+                          <button
+                            type="button"
+                            data-admin-review-reject-photo="true"
+                            onClick={() => rejectPhoto(review)}
+                            disabled={busyId !== null}
+                            className={`${actionClass} text-red-700`}
+                          >
+                            <ImageOff size={12} /> Reject photo
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => remove(review)}

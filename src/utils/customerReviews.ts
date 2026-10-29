@@ -30,7 +30,167 @@ export const CUSTOMER_REVIEW_CREATE_KEYS = [
   "displayOrder",
   "createdAt",
   "createdByUid",
+  "photoPath",
+  "photoContentType",
+  "photoSizeBytes",
+  "photoConsent",
+  "photoStatus",
 ] as const;
+
+// --- Optional "wearing it" photo ------------------------------------------
+
+export const CUSTOMER_REVIEW_PHOTO_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export type CustomerReviewPhotoType = (typeof CUSTOMER_REVIEW_PHOTO_TYPES)[number];
+
+export const CUSTOMER_REVIEW_PHOTO_LIMITS = {
+  /** Largest file a customer may pick, before on-device compression. */
+  maxBytes: 5 * 1024 * 1024,
+  /** Longest side after compression. */
+  maxDimension: 1600,
+} as const;
+
+/** Private upload folder; storage.rules lets only admins read it. */
+export const CUSTOMER_REVIEW_PHOTO_ROOT = "customer-review-photos";
+
+export const CUSTOMER_REVIEW_PHOTO_CONSENT_LABEL =
+  "I agree ODOGWU may show this photo publicly with my review.";
+
+export interface CustomerReviewPhotoRecord {
+  path: string;
+  contentType: CustomerReviewPhotoType;
+  sizeBytes: number;
+}
+
+export function isCustomerReviewPhotoType(
+  value: unknown,
+): value is CustomerReviewPhotoType {
+  return (
+    typeof value === "string" &&
+    (CUSTOMER_REVIEW_PHOTO_TYPES as readonly string[]).includes(value)
+  );
+}
+
+/** Checks a picked file before compression; returns an error message or null. */
+export function validateCustomerReviewPhotoFile(file: {
+  type: string;
+  size: number;
+}): string | null {
+  if (!isCustomerReviewPhotoType(file.type)) {
+    return "Please choose a JPEG, PNG or WebP photo.";
+  }
+  if (file.size > CUSTOMER_REVIEW_PHOTO_LIMITS.maxBytes) {
+    return "That photo is larger than 5 MB. Please choose a smaller one.";
+  }
+  if (file.size <= 0) {
+    return "That photo looks empty. Please choose another one.";
+  }
+  return null;
+}
+
+/** Consent is required only when a photo is attached. */
+export function validateCustomerReviewPhotoConsent(
+  hasPhoto: boolean,
+  consent: boolean,
+): string | null {
+  return hasPhoto && !consent
+    ? "Please tick the box to agree we may show your photo, or remove the photo."
+    : null;
+}
+
+export function customerReviewPhotoExtension(
+  contentType: CustomerReviewPhotoType,
+): "jpg" | "png" | "webp" {
+  return contentType === "image/jpeg"
+    ? "jpg"
+    : contentType === "image/png"
+      ? "png"
+      : "webp";
+}
+
+/** customer-review-photos/{uid}/{reviewId}/photo.{ext}; mirrors storage.rules. */
+export function buildCustomerReviewPhotoPath(
+  uid: string,
+  reviewId: string,
+  contentType: CustomerReviewPhotoType,
+): string {
+  return `${CUSTOMER_REVIEW_PHOTO_ROOT}/${uid}/${reviewId}/photo.${customerReviewPhotoExtension(contentType)}`;
+}
+
+/** Public copy written when an admin approves the photo. */
+export function buildApprovedCustomerReviewPhotoPath(reviewId: string): string {
+  return `communityPhotos/reviews/${reviewId}.webp`;
+}
+
+/** Fields a guest create adds for a photo; it always starts "pending". */
+export function buildCustomerReviewPhotoFields(photo: CustomerReviewPhotoRecord) {
+  return {
+    photoPath: photo.path,
+    photoContentType: photo.contentType,
+    photoSizeBytes: photo.sizeBytes,
+    photoConsent: true as const,
+    photoStatus: "pending" as const,
+  };
+}
+
+/** Reads the optional photo fields; older reviews carry none. */
+export function normalizeReviewPhoto(
+  raw: Record<string, unknown>,
+): Partial<
+  Pick<
+    CustomerReview,
+    | "photoPath"
+    | "photoContentType"
+    | "photoSizeBytes"
+    | "photoConsent"
+    | "photoStatus"
+    | "photoUrl"
+  >
+> {
+  if (typeof raw.photoPath !== "string" || !raw.photoPath) return {};
+  const status =
+    raw.photoStatus === "approved" || raw.photoStatus === "pending"
+      ? raw.photoStatus
+      : undefined;
+  const url =
+    typeof raw.photoUrl === "string" && raw.photoUrl ? raw.photoUrl : undefined;
+  return {
+    photoPath: raw.photoPath,
+    ...(isCustomerReviewPhotoType(raw.photoContentType)
+      ? { photoContentType: raw.photoContentType }
+      : {}),
+    ...(typeof raw.photoSizeBytes === "number" && Number.isFinite(raw.photoSizeBytes)
+      ? { photoSizeBytes: raw.photoSizeBytes }
+      : {}),
+    photoConsent: raw.photoConsent === true,
+    ...(status ? { photoStatus: status } : {}),
+    ...(url ? { photoUrl: url } : {}),
+  };
+}
+
+/** Public surfaces show a photo only after an admin approved it. */
+export function approvedReviewPhotoUrl(
+  review: Pick<CustomerReview, "photoStatus" | "photoUrl">,
+): string | null {
+  return review.photoStatus === "approved" && review.photoUrl
+    ? review.photoUrl
+    : null;
+}
+
+export function hasPendingReviewPhoto(
+  review: Pick<CustomerReview, "photoStatus" | "photoPath">,
+): boolean {
+  return review.photoStatus === "pending" && Boolean(review.photoPath);
+}
+
+export function filterReviewsWithPendingPhotos(
+  reviews: readonly CustomerReview[],
+): CustomerReview[] {
+  return reviews.filter(hasPendingReviewPhoto);
+}
 
 export type CustomerReviewRating = CustomerReview["rating"];
 
@@ -187,6 +347,7 @@ export function normalizeCustomerReview(
     authorName: typeof raw.authorName === "string" ? raw.authorName : "",
     ...(location ? { location } : {}),
     ...normalizeReviewNationalities(raw),
+    ...normalizeReviewPhoto(raw),
     body: typeof raw.body === "string" ? raw.body : "",
     rating: clampRating(raw.rating),
     status: raw.status === "published" ? "published" : "hidden",

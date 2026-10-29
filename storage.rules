@@ -104,6 +104,25 @@ service firebase.storage {
         && isWithinCustomerDesignSizeLimit();
     }
 
+    // Customer review "wearing it" photo (optional, one per review). Guests
+    // upload with an anonymous Firebase identity. Create-only; the photo stays
+    // private until an admin approves it and copies it to communityPhotos/.
+    // The uploader may delete their own file only while no
+    // customer_reviews/{reviewId} document exists (clean-up after a failed
+    // review write); once the review exists only admins can delete it.
+    match /customer-review-photos/{uid}/{reviewId}/{fileName} {
+      allow read: if isAdmin();
+      allow delete: if isAdmin()
+        || (isOwner(uid)
+          && !firestore.exists(/databases/(default)/documents/customer_reviews/$(reviewId)));
+      allow create: if isOwner(uid)
+        && resource == null
+        && fileName.matches('photo[.](jpg|png|webp)')
+        && isAllowedCustomerDesignImage()
+        && request.resource.size > 0
+        && isWithinCustomerDesignSizeLimit();
+    }
+
     // Historical order references are readable by their owner but are never
     // writable or removable by customer clients.
     match /customer-order-designs/{ownerUid}/{orderId}/{designReferenceId}/{fileName} {

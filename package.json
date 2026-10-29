@@ -56,6 +56,8 @@
     "test:login-view": "node scripts/tsxWithViteProductionFirebase.mjs test_login_view_accessibility.tsx",
     "test:customer-reviews": "tsx test_customer_reviews.ts",
     "test:customer-reviews-ui": "node scripts/tsxWithViteProductionFirebase.mjs test_customer_reviews.ts",
+    "test:customer-review-photo": "tsx test_customer_review_photo.ts && node scripts/tsxWithViteProductionFirebase.mjs test_customer_review_photo_ui.tsx",
+    "test:customer-review-photo-rules-emulator": "firebase emulators:exec --only firestore,storage --project demo-odogwu-site-feedback --config firebase.site-feedback.emulator.json \"tsx test_customer_review_photo_rules_emulator.ts\"",
     "test:production-manifest-v2-measurements": "node scripts/tsxWithViteProductionFirebase.mjs test_production_manifest_v2_measurements.ts",
     "test:review-labels-match-step7": "node scripts/tsxWithViteProductionFirebase.mjs test_review_labels_match_step7.ts",
     "test:staff-readout-height-estimates": "node scripts/tsxWithViteProductionFirebase.mjs test_staff_readout_height_estimates.ts",
