@@ -40,6 +40,10 @@ import {
   getTraditionalAccessoryPrice,
 } from "./src/utils/decorativePricing";
 import { TRADITIONAL_ACCESSORY_IMAGES } from "./src/utils/traditionalAccessoryImages";
+import {
+  NECK_DESIGN_IMAGES,
+  NECK_DESIGN_OPTION_IDS,
+} from "./src/utils/neckDesignImages";
 import type {
   DecorativeFeature,
   DesignSelections,
@@ -833,6 +837,106 @@ const collarOptionLabels = collarGroups.flatMap((group) =>
     .map((span) => textContent(span).trim()),
 );
 assert.deepEqual(collarOptionLabels, expectedNeckOptionLabels);
+
+const assertNeckDesignPhotos = (scope: ReactTestInstance, garmentKey: string) => {
+  const occurrence = scope.findByProps({
+    "data-custom-detail-occurrence": garmentKey,
+  }).parent!;
+  const labels = occurrence.findAllByType("label");
+  const noneLabel = labels.find((label) => textContent(label).trim().startsWith("None"));
+  assert.ok(noneLabel, `${garmentKey} Neck None must render`);
+  assert.equal(
+    noneLabel.findAllByType("img").length,
+    0,
+    `${garmentKey} Neck None stays text-only`,
+  );
+  const seen = new Set<string>();
+  for (const optionId of NECK_DESIGN_OPTION_IDS) {
+    const label = labels.find((node) =>
+      node.findAllByType("input").some((input) =>
+        String(input.props.id || "").endsWith(`-neck_design-${optionId}`),
+      ),
+    );
+    assert.ok(label, `${garmentKey} must render ${optionId}`);
+    const img = label.findByType("img");
+    const expectedSrc = NECK_DESIGN_IMAGES[optionId].src;
+    assert.equal(img.props.src, expectedSrc);
+    assert.equal(img.props.alt, textContent(optionTitleSpan(label) || null).trim());
+    assert.match(String(img.props.className), /\bsize-16\b/);
+    assert.match(String(img.props.className), /\bobject-cover\b/);
+    assert.equal(label.findByType("input").props.type, "radio");
+    const children = label.children.filter(
+      (child): child is ReactTestInstance => typeof child !== "string",
+    );
+    const textColumn = children.find((child) =>
+      String(child.props.className || "").includes("flex-1"),
+    );
+    const photoHost = children.find((child) => child.findAllByType("img").includes(img));
+    assert.ok(textColumn, `${garmentKey} ${optionId} keeps the text column`);
+    assert.ok(photoHost, `${garmentKey} ${optionId} photo is inside the card`);
+    assert.ok(
+      children.indexOf(photoHost) > children.indexOf(textColumn),
+      `${garmentKey} ${optionId} photo sits after the text column`,
+    );
+    seen.add(expectedSrc);
+  }
+  assert.equal(seen.size, NECK_DESIGN_OPTION_IDS.length);
+};
+
+assert.deepEqual(
+  [...NECK_DESIGN_OPTION_IDS].sort(),
+  SEED_CUSTOM_DETAIL_CATALOG
+    .filter((option) => option.selectionGroup === "neck_design" && option.active)
+    .map((option) => option.id)
+    .sort(),
+  "Every active Neck Design option has a photo, and no extra ids are mapped",
+);
+for (const optionId of NECK_DESIGN_OPTION_IDS) {
+  const expectedSrc = NECK_DESIGN_IMAGES[optionId].src;
+  assert.equal(expectedSrc, `/images/neck-designs/${optionId}.webp`);
+  const diskPath = `public${expectedSrc}`;
+  assert.equal(existsSync(diskPath), true, diskPath);
+  const bytes = readFileSync(diskPath);
+  assert.equal(bytes.toString("ascii", 0, 4), "RIFF", diskPath);
+  assert.equal(bytes.toString("ascii", 8, 12), "WEBP", diskPath);
+}
+assertNeckDesignPhotos(neckFieldset, "base:shirt");
+for (const label of pocketFieldset.findAllByType("label")) {
+  assert.equal(
+    label.findAllByType("img").length,
+    0,
+    "Pocket tiles stay text-only",
+  );
+}
+const roundNeckLabel = neckFieldset.findAllByType("label").find((label) =>
+  label.findAllByType("input").some((input) =>
+    String(input.props.id || "").endsWith("-neck_design-neck_no_round"),
+  ),
+);
+assert.ok(roundNeckLabel);
+act(() => {
+  roundNeckLabel.findByType("img").props.onError();
+});
+const roundNeckAfterError = neckRenderer.root
+  .findAllByProps({ "data-custom-detail-group": "neck_design" })[0]
+  .findAllByType("label")
+  .find((label) =>
+    label.findAllByType("input").some((input) =>
+      String(input.props.id || "").endsWith("-neck_design-neck_no_round"),
+    ),
+  );
+assert.ok(roundNeckAfterError);
+assert.equal(roundNeckAfterError.findAllByType("img").length, 0);
+assert.match(
+  String(
+    roundNeckAfterError.findByProps({
+      "data-neck-design-image-fallback": "neck_no_round",
+    }).props.className,
+  ),
+  /\bsize-16\b/,
+  "A failed Neck Design photo keeps its card space",
+);
+
 assert.ok(
   collarGroups.every((group) =>
     group.findAllByType("label").every((label) => {
@@ -1108,6 +1212,8 @@ assert.equal(
   "Neck Design for Long Shirt",
   "Long Shirt Neck Design heading derives from its Main Garment label",
 );
+assertNeckDesignPhotos(shirtNeckGroup, "base:shirt");
+assertNeckDesignPhotos(shirtNeckGroup, "base:kaftan");
 assert.doesNotMatch(textContent(shirtNeckGroup), /^Standard Shirt$/m);
 assert.doesNotMatch(textContent(shirtNeckGroup), /^Long Shirt$/m);
 const longNeck = shirtNeckGroup.findByProps({
@@ -2091,6 +2197,8 @@ assert.equal(
 assert.match(textContent(dressNeckGroup), /No Collar/);
 assert.match(textContent(dressNeckGroup), /Vertical Collar/);
 assert.match(textContent(dressNeckGroup), /Flat Collar/);
+assertNeckDesignPhotos(dressNeckGroup, "base:dress");
+assertNeckDesignPhotos(dressNeckGroup, "base:full_length_gown");
 act(() => dressNeckRenderer.unmount());
 
 const fullFamilyOrderSelection = reconcileGarmentTypeStepSelection({
@@ -3359,6 +3467,7 @@ const renderNoneWordingStep = (
 const assertNeckNoneWording = (
   renderer: ReturnType<typeof create>,
   pocketGroup: "shirt_pockets" | "dress_pockets",
+  garmentKey: string,
 ) => {
   for (const selectionGroup of ["neck_design", "neck_additional"] as const) {
     const fieldset = renderer.root.findByProps({
@@ -3376,7 +3485,20 @@ const assertNeckNoneWording = (
     assert.ok(textContent(fieldset).includes(NECK_NONE_HELPER));
     assert.equal(textContent(fieldset).includes(PLAIN_NONE_DETAIL), false);
     assert.equal(textContent(fieldset).includes(PLAIN_NONE_HELPER), false);
+    if (selectionGroup === "neck_additional") {
+      for (const label of fieldset.findAllByType("label")) {
+        assert.equal(
+          label.findAllByType("img").length,
+          0,
+          "Neck Design - Additional stays text-only",
+        );
+      }
+    }
   }
+  assertNeckDesignPhotos(
+    renderer.root.findByProps({ "data-custom-detail-group": "neck_design" }),
+    garmentKey,
+  );
   const pockets = renderer.root.findByProps({
     "data-custom-detail-group": pocketGroup,
   });
@@ -3389,12 +3511,15 @@ const assertNeckNoneWording = (
   assert.equal(textContent(pockets).includes(NECK_NONE_LABEL), false);
   assert.equal(textContent(pockets).includes(NECK_NONE_DETAIL), false);
   assert.equal(textContent(pockets).includes(NECK_NONE_HELPER), false);
+  for (const label of pockets.findAllByType("label")) {
+    assert.equal(label.findAllByType("img").length, 0, `${pocketGroup} stays text-only`);
+  }
 };
 
 const shirtNoneWording = renderNoneWordingStep(["shirt"], "male");
-assertNeckNoneWording(shirtNoneWording, "shirt_pockets");
+assertNeckNoneWording(shirtNoneWording, "shirt_pockets", "base:shirt");
 const dressNoneWording = renderNoneWordingStep(["dress"], "female");
-assertNeckNoneWording(dressNoneWording, "dress_pockets");
+assertNeckNoneWording(dressNoneWording, "dress_pockets", "base:dress");
 act(() => {
   shirtNoneWording.unmount();
   dressNoneWording.unmount();

@@ -49,6 +49,7 @@ import {
 } from "../utils/garmentConstructionPricing";
 import type { TraditionalAccessory } from "../utils/decorativePricing";
 import { TRADITIONAL_ACCESSORY_IMAGES } from "../utils/traditionalAccessoryImages";
+import { getNeckDesignImage } from "../utils/neckDesignImages";
 import {
   DECORATIVE_FEATURE_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_DESCRIPTIONS,
@@ -528,6 +529,38 @@ const TraditionalAccessoryPhoto = ({
     <img
       src={TRADITIONAL_ACCESSORY_IMAGES[accessory].src}
       alt={accessory}
+      width={640}
+      height={640}
+      decoding="async"
+      onError={() => setFailed(true)}
+      className="size-16 shrink-0 self-center rounded-lg object-cover"
+    />
+  );
+};
+
+const NeckDesignPhoto = ({
+  optionId,
+  label,
+}: {
+  optionId: string;
+  label: string;
+}) => {
+  const [failed, setFailed] = useState(false);
+  const image = getNeckDesignImage(optionId);
+  if (!image) return null;
+  if (failed) {
+    return (
+      <span
+        aria-hidden="true"
+        data-neck-design-image-fallback={optionId}
+        className="size-16 shrink-0 self-center rounded-lg bg-heritage-gold/10"
+      />
+    );
+  }
+  return (
+    <img
+      src={image.src}
+      alt={label}
       width={640}
       height={640}
       decoding="async"
@@ -1166,6 +1199,9 @@ export const DormantFutureCustomDetailsStep = ({
               {!isPersonalizedRequirement && option.description && <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">{option.description}</span>}
               {!isPersonalizedRequirement && option.requiresEvaluation && <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
             </span>
+            {group.selectionGroup === "neck_design" ? (
+              <NeckDesignPhoto optionId={option.id} label={option.label} />
+            ) : null}
           </label>
         </div>
       );
