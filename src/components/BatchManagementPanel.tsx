@@ -4,6 +4,9 @@ import { StorageService } from "../services/storageService";
 import { Eye, Save, Settings } from "lucide-react";
 import { InputField, SelectField } from "./ui/FormControls";
 import { normalizeBatchStatus } from "../utils/batchStatus";
+import { normalizeBatchOngoingUntil } from "../utils/batchDateRange";
+import { getAdminBatchOrderState } from "../utils/adminBatchOrderState";
+import { getBatchOrderWindow } from "../utils/batchOrderWindow";
 import {
   getHomepageJoinBatchLabel,
   getHomepageOrderGatewayState,
@@ -101,6 +104,19 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
       setSaveFeedback("The registration closing date must follow the opening date.");
       return;
     }
+    const keepOpenAfterEndDate = formData.keepOpenAfterEndDate === true;
+    const ongoingUntilInput = (formData.ongoingUntil || "").trim();
+    const ongoingUntil = keepOpenAfterEndDate
+      ? normalizeBatchOngoingUntil(ongoingUntilInput)
+      : undefined;
+    if (keepOpenAfterEndDate && ongoingUntilInput && !ongoingUntil) {
+      setSaveFeedback("Enter the \"Open until\" date as a full date, or leave it blank.");
+      return;
+    }
+    if (ongoingUntil && ongoingUntil < endDate) {
+      setSaveFeedback("The \"Open until\" date must be on or after the end date.");
+      return;
+    }
     if (
       !Number.isFinite(targetGarments) ||
       targetGarments < homepageState.minimumGarments
@@ -132,7 +148,11 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
         status: normalizeBatchStatus(formData.status) as Batch["status"],
         visibility: formData.visibility || "PUBLIC",
         updatedDate: new Date().toISOString(),
+        keepOpenAfterEndDate,
       };
+      // "Open until" only exists while the keep-open toggle is on.
+      if (ongoingUntil) updatedBatch.ongoingUntil = ongoingUntil;
+      else delete updatedBatch.ongoingUntil;
 
       let batchesToSave = [updatedBatch];
       
@@ -150,10 +170,22 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
           batch,
         ),
       );
+      const savedOrderState = getAdminBatchOrderState(updatedBatch);
+      const savedOrderStateNote =
+        savedOrderState && !savedOrderState.customersCanOrder
+          ? ` ${updatedBatch.name}: ${savedOrderState.label}.${
+              getBatchOrderWindow(updatedBatch).dateReason === "ended"
+                ? ' Turn on "Keep open after end date (ongoing)" to keep taking orders.'
+                : ""
+            }`
+          : savedOrderState
+            ? ` ${updatedBatch.name}: ${savedOrderState.label}.`
+            : "";
       setSaveFeedback(
-        nextHomepageState.joinBatch
+        (nextHomepageState.joinBatch
           ? `Saved. The homepage button is now "${getHomepageJoinBatchLabel(nextHomepageState.joinBatch.name)}".`
-          : "Saved. No Type B homepage button is currently eligible.",
+          : "Saved. No Type B homepage button is currently eligible.") +
+          savedOrderStateNote,
       );
       setEditingBatchId(null);
       setFormData({});
@@ -210,7 +242,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
         <p className="max-w-xl text-xs leading-relaxed text-heritage-ink/65">
           {homepageState.joinBatch
             ? "This public batch is inside its registration window, accepts orders, and has capacity."
-            : "Type B appears when one public batch is open by its dates or manual status, allows orders, and has remaining capacity."}
+            : "Type B appears when one public batch is open by its dates (or kept open after its end date), allows orders, and has remaining capacity."}
         </p>
       </div>
 
@@ -241,190 +273,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
             {batches.map(batch => {
               const isEditing = (batch.id || batch.batchNumber.toString()) === editingBatchId;
               
-              if (isEditing) {
-                return (
-                  <tr key={batch.id || batch.batchNumber} className="border-b border-gray-50 bg-heritage-cream/10">
-                    <td className="p-3">
-                      <div className="space-y-3">
-                        <InputField 
-                           label="Batch Name" 
-                           value={formData.name || ""} 
-                           onChange={(e) => setFormData({...formData, name: e.target.value})} 
-                        />
-                        <InputField 
-                           label="Display Order" 
-                           type="number"
-                           value={formData.displayOrder?.toString() || ""} 
-                           onChange={(e) => setFormData({...formData, displayOrder: parseInt(e.target.value) || 0})} 
-                        />
-                        <SelectField
-                          label="Homepage Visibility"
-                          value={formData.visibility || "PUBLIC"}
-                          options={[
-                            { value: "PUBLIC", label: "Public" },
-                            { value: "PRIVATE", label: "Private" },
-                          ]}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              visibility: e.target.value as Batch["visibility"],
-                            })
-                          }
-                        />
-                      </div>
-                    </td>
-                    <td className="p-3 align-top">
-                      
-                      <div className="flex items-center gap-2 mt-2">
-                        <input 
-                           type="checkbox" 
-                           checked={formData.isAutoScheduled !== false}
-                           onChange={(e) => setFormData({...formData, isAutoScheduled: e.target.checked})}
-                           className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
-                        />
-                        <span className="text-xs font-bold text-gray-700">Auto-Pilot</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <input 
-                           type="checkbox" 
-                           checked={!!formData.isActive}
-                           onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
-                           className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
-                        />
-                        <span className="text-xs font-bold text-gray-700">Is Active Batch</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <input 
-                           type="checkbox" 
-                           checked={!!formData.allowOrders}
-                           onChange={(e) => setFormData({...formData, allowOrders: e.target.checked})}
-                           className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
-                        />
-                        <span className="text-xs font-bold text-gray-700">Allow Orders</span>
-                      </div>
-
-                      <div className="mt-4 space-y-3 border-t border-heritage-gold/15 pt-3">
-                        <InputField
-                          label="Target Garments"
-                          type="number"
-                          value={formData.targetGarments?.toString() || ""}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              targetGarments: Number(e.target.value),
-                            })
-                          }
-                        />
-                        <InputField
-                          label="Current Garments"
-                          type="number"
-                          value={formData.currentGarments?.toString() || "0"}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              currentGarments: Number(e.target.value),
-                            })
-                          }
-                        />
-                      </div>
-
-                    </td>
-                    <td className="p-3 align-top">
-                      <SelectField
-                        label="Override Status"
-                        value={formData.status || ""}
-                        options={statusOptions}
-                        onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                        disabled={formData.isAutoScheduled !== false}
-                      />
-                      {formData.isAutoScheduled !== false && (
-                         <span className="text-[10px] text-gray-400 mt-1 block">Disable auto-pilot to force override.</span>
-                      )}
-                    </td>
-                    <td className="p-3 align-top min-w-[200px]">
-                      <div className="space-y-3">
-                         <InputField 
-                           label="Start Date" 
-                           type="date"
-                           value={formData.startDate || ""} 
-                           onChange={(e) => setFormData({...formData, startDate: e.target.value})} 
-                        />
-                        <InputField 
-                           label="End Date" 
-                           type="date"
-                           value={formData.endDate || ""} 
-                           onChange={(e) => setFormData({...formData, endDate: e.target.value})} 
-                        />
-                        
-                        <div className="md:hidden space-y-3 mt-4 pt-4 border-t border-heritage-gold/20">
-                          <span className="text-[10px] font-bold text-heritage-green uppercase tracking-wider block">Production Stats</span>
-                          <div className="grid grid-cols-3 gap-2">
-                            <InputField 
-                               label="New" 
-                               type="number"
-                               value={formData.newParticipants?.toString() || ""} 
-                               onChange={(e) => setFormData({...formData, newParticipants: parseInt(e.target.value) || 0})} 
-                            />
-                            <InputField 
-                               label="Returning" 
-                               type="number"
-                               value={formData.previousParticipants?.toString() || ""} 
-                               onChange={(e) => setFormData({...formData, previousParticipants: parseInt(e.target.value) || 0})} 
-                            />
-                            <InputField 
-                               label="Dresses" 
-                               type="number"
-                               value={formData.dressesMade?.toString() || ""} 
-                               onChange={(e) => setFormData({...formData, dressesMade: parseInt(e.target.value) || 0})} 
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-3 align-top min-w-[120px] hidden md:table-cell">
-                      <InputField 
-                         label="New" 
-                         type="number"
-                         value={formData.newParticipants?.toString() || ""} 
-                         onChange={(e) => setFormData({...formData, newParticipants: parseInt(e.target.value) || 0})} 
-                      />
-                    </td>
-                    <td className="p-3 align-top min-w-[120px] hidden md:table-cell">
-                      <InputField 
-                         label="Returning" 
-                         type="number"
-                         value={formData.previousParticipants?.toString() || ""} 
-                         onChange={(e) => setFormData({...formData, previousParticipants: parseInt(e.target.value) || 0})} 
-                      />
-                    </td>
-                    <td className="p-3 align-top min-w-[120px] hidden md:table-cell">
-                      <InputField 
-                         label="Dresses" 
-                         type="number"
-                         value={formData.dressesMade?.toString() || ""} 
-                         onChange={(e) => setFormData({...formData, dressesMade: parseInt(e.target.value) || 0})} 
-                      />
-                    </td>
-                    <td className="p-3 align-top text-right space-y-2 flex flex-col items-end">
-                      <button 
-                         onClick={handleSave}
-                         disabled={isSaving}
-                         className="bg-heritage-green text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-heritage-forest transition"
-                      >
-                         <Save size={14} /> Save
-                      </button>
-                      <button 
-                         onClick={() => setEditingBatchId(null)}
-                         className="text-gray-500 hover:text-gray-700 text-xs font-bold px-4 py-2"
-                      >
-                         Cancel
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }
-
-              return (
+              const summaryRow = (
                 <tr key={batch.id || batch.batchNumber} className="border-b border-gray-50 hover:bg-gray-50/50">
                   <td className="p-3">
                     <strong className="block text-heritage-green font-display">Batch {batch.batchNumber}: {batch.name}</strong>
@@ -462,6 +311,20 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                      `}>
                        {batch.status}
                      </span>
+                     {(() => {
+                       const orderState = getAdminBatchOrderState(batch);
+                       return orderState ? (
+                         <span
+                           data-testid="batch-effective-order-state"
+                           data-customers-can-order={orderState.customersCanOrder ? "true" : "false"}
+                           className={`mt-1 block max-w-[11rem] text-[10px] font-semibold leading-snug ${
+                             orderState.customersCanOrder ? "text-heritage-green" : "text-red-700"
+                           }`}
+                         >
+                           {orderState.label}
+                         </span>
+                       ) : null;
+                     })()}
                   </td>
                   <td className="p-3">
                     <div className="text-[10px] text-gray-600 space-y-1">
@@ -491,14 +354,251 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                     </div>
                   </td>
                   <td className="p-3 text-right">
+                    {isEditing ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                        Editing…
+                      </span>
+                    ) : (
                     <button 
                        onClick={() => handleEdit(batch)}
                        className="text-heritage-gold hover:text-heritage-green text-xs font-bold underline"
                     >
                       Edit Timeline
                     </button>
+                    )}
                   </td>
                 </tr>
+              );
+
+              if (!isEditing) return summaryRow;
+
+              // Edit Timeline: the batch row stays as is; every field opens in one
+              // full-width row beneath it, so nothing needs horizontal scrolling.
+              return (
+                <React.Fragment key={batch.id || batch.batchNumber}>
+                  {summaryRow}
+                  <tr className="border-b border-heritage-gold/20 bg-heritage-cream/10">
+                    <td colSpan={8} className="p-4" data-testid="batch-edit-panel">
+                      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <strong className="text-heritage-green font-display">
+                          Editing Batch {batch.batchNumber}: {batch.name}
+                        </strong>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            data-testid="batch-edit-cancel-top"
+                            onClick={() => setEditingBatchId(null)}
+                            className="text-gray-500 hover:text-gray-700 text-xs font-bold px-4 py-2"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            data-testid="batch-edit-save-top"
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className="bg-heritage-green text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-heritage-forest transition"
+                          >
+                            <Save size={14} /> Save
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+                        <fieldset className="min-w-0 space-y-3">
+                          <legend className="mb-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                            Batch
+                          </legend>
+                          <InputField 
+                             label="Batch Name" 
+                             value={formData.name || ""} 
+                             onChange={(e) => setFormData({...formData, name: e.target.value})} 
+                          />
+                          <InputField 
+                             label="Display Order" 
+                             type="number"
+                             value={formData.displayOrder?.toString() || ""} 
+                             onChange={(e) => setFormData({...formData, displayOrder: parseInt(e.target.value) || 0})} 
+                          />
+                          <SelectField
+                            label="Homepage Visibility"
+                            value={formData.visibility || "PUBLIC"}
+                            options={[
+                              { value: "PUBLIC", label: "Public" },
+                              { value: "PRIVATE", label: "Private" },
+                            ]}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                visibility: e.target.value as Batch["visibility"],
+                              })
+                            }
+                          />
+                        </fieldset>
+                        <fieldset className="min-w-0 space-y-3">
+                          <legend className="mb-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                            Ordering
+                          </legend>
+                          <div className="flex items-center gap-2 mt-2">
+                            <input 
+                               type="checkbox" 
+                               checked={formData.isAutoScheduled !== false}
+                               onChange={(e) => setFormData({...formData, isAutoScheduled: e.target.checked})}
+                               className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
+                            />
+                            <span className="text-xs font-bold text-gray-700">Auto-Pilot</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <input 
+                               type="checkbox" 
+                               checked={!!formData.isActive}
+                               onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                               className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
+                            />
+                            <span className="text-xs font-bold text-gray-700">Is Active Batch</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <input 
+                               type="checkbox" 
+                               checked={!!formData.allowOrders}
+                               onChange={(e) => setFormData({...formData, allowOrders: e.target.checked})}
+                               className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
+                            />
+                            <span className="text-xs font-bold text-gray-700">Allow Orders</span>
+                          </div>
+                          <SelectField
+                            label="Override Status"
+                            value={formData.status || ""}
+                            options={statusOptions}
+                            onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                            disabled={formData.isAutoScheduled !== false}
+                          />
+                          {formData.isAutoScheduled !== false && (
+                             <span className="text-[10px] text-gray-400 mt-1 block">Disable auto-pilot to force override.</span>
+                          )}
+                        </fieldset>
+                        <fieldset className="min-w-0 space-y-3">
+                          <legend className="mb-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                            Dates
+                          </legend>
+                          <InputField 
+                             label="Start Date" 
+                             type="date"
+                             value={formData.startDate || ""} 
+                             onChange={(e) => setFormData({...formData, startDate: e.target.value})} 
+                          />
+                          <InputField 
+                             label="End Date" 
+                             type="date"
+                             value={formData.endDate || ""} 
+                             onChange={(e) => setFormData({...formData, endDate: e.target.value})} 
+                          />
+                          <div className="mt-2">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                data-testid="batch-keep-open-after-end-date"
+                                checked={formData.keepOpenAfterEndDate === true}
+                                onChange={(e) =>
+                                  setFormData({
+                                    ...formData,
+                                    keepOpenAfterEndDate: e.target.checked,
+                                  })
+                                }
+                                className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
+                              />
+                              <span className="text-xs font-bold text-gray-700">
+                                Keep open after end date (ongoing)
+                              </span>
+                            </label>
+                            <span className="mt-1 block text-[10px] text-gray-400">
+                              Only the end date is ignored. Allow Orders, capacity and production statuses still close the batch.
+                            </span>
+                            {formData.keepOpenAfterEndDate === true && (
+                              <div className="mt-2">
+                                <InputField
+                                  label="Open until (optional)"
+                                  type="date"
+                                  value={formData.ongoingUntil || ""}
+                                  onChange={(e) =>
+                                    setFormData({
+                                      ...formData,
+                                      ongoingUntil: e.target.value,
+                                    })
+                                  }
+                                />
+                                <span className="mt-1 block text-[10px] text-gray-400">
+                                  Blank keeps it open until you close it.
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </fieldset>
+                        <fieldset className="min-w-0 space-y-3 sm:col-span-2 lg:col-span-3">
+                          <legend className="mb-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                            Capacity &amp; production stats
+                          </legend>
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                            <InputField
+                              label="Target Garments"
+                              type="number"
+                              value={formData.targetGarments?.toString() || ""}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  targetGarments: Number(e.target.value),
+                                })
+                              }
+                            />
+                            <InputField
+                              label="Current Garments"
+                              type="number"
+                              value={formData.currentGarments?.toString() || "0"}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  currentGarments: Number(e.target.value),
+                                })
+                              }
+                            />
+                            <InputField 
+                               label="New" 
+                               type="number"
+                               value={formData.newParticipants?.toString() || ""} 
+                               onChange={(e) => setFormData({...formData, newParticipants: parseInt(e.target.value) || 0})} 
+                            />
+                            <InputField 
+                               label="Returning" 
+                               type="number"
+                               value={formData.previousParticipants?.toString() || ""} 
+                               onChange={(e) => setFormData({...formData, previousParticipants: parseInt(e.target.value) || 0})} 
+                            />
+                            <InputField 
+                               label="Dresses" 
+                               type="number"
+                               value={formData.dressesMade?.toString() || ""} 
+                               onChange={(e) => setFormData({...formData, dressesMade: parseInt(e.target.value) || 0})} 
+                            />
+                          </div>
+                        </fieldset>
+                      </div>
+                      <div className="mt-5 border-t border-heritage-gold/15 pt-4 flex items-center justify-end gap-2">
+                        <button
+                          data-testid="batch-edit-cancel-bottom"
+                          onClick={() => setEditingBatchId(null)}
+                          className="text-gray-500 hover:text-gray-700 text-xs font-bold px-4 py-2"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          data-testid="batch-edit-save-bottom"
+                          onClick={handleSave}
+                          disabled={isSaving}
+                          className="bg-heritage-green text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-heritage-forest transition"
+                        >
+                          <Save size={14} /> Save
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </React.Fragment>
               );
             })}
           </tbody>

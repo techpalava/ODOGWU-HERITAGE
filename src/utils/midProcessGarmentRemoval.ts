@@ -1,3 +1,4 @@
+import { parseBaseGarmentTypeFromKey } from "./garmentLengthVariant.js";
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
 import type {
@@ -44,7 +45,7 @@ import {
 } from "./garmentConstructionPricing";
 import {
   getMeasurementPhysicalGarments,
-  planMeasurementRequirements,
+  planPersonMeasurementRequirements,
   reconcileFutureMeasurementState,
 } from "./measurementBlueprint";
 import {
@@ -89,6 +90,11 @@ export interface RemoveFuturePhysicalGarmentOccurrenceInput
   extends FuturePhysicalGarmentRemovalState {
   targetGarmentKey: string;
   expectedAuthoritySignature: string;
+  /**
+   * Garments of the person whose measurementState this is (Step 7's active
+   * person). Omitted: every garment in the order, as for a single person.
+   */
+  measurementGarmentKeys?: readonly string[];
   selectedStyle?: StyleCategory | null;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   aiTryOnPolicy: AiTryOnReconciliationPolicy;
@@ -664,6 +670,10 @@ export const removeFuturePhysicalGarmentOccurrence = (
   ];
   let nextAdditionalGarmentConstructionState =
     input.additionalGarmentConstructionState;
+  // A main garment's Step 1 card is its key's type; Step 4 may have switched the garment itself
+  // to the other length.
+  const targetStepOneGarmentType =
+    parseBaseGarmentTypeFromKey(target.garmentKey) ?? target.garmentType;
 
   if (additionalMembership) {
     nextAdditionalGarmentConstructionState =
@@ -673,11 +683,11 @@ export const removeFuturePhysicalGarmentOccurrence = (
       );
   } else if (uploadedSource) {
     if (
-      input.garmentTypeSelection.garmentTypes.includes(target.garmentType)
+      input.garmentTypeSelection.garmentTypes.includes(targetStepOneGarmentType)
     ) {
       nextGarmentTypeSelection = removeStep1GarmentType({
         state: input.garmentTypeSelection,
-        garmentType: target.garmentType,
+        garmentType: targetStepOneGarmentType,
         normalizedCustomDetailCatalog: input.normalizedCustomDetailCatalog,
       });
     }
@@ -701,7 +711,7 @@ export const removeFuturePhysicalGarmentOccurrence = (
   } else {
     nextGarmentTypeSelection = removeStep1GarmentType({
       state: input.garmentTypeSelection,
-      garmentType: target.garmentType,
+      garmentType: targetStepOneGarmentType,
       normalizedCustomDetailCatalog: input.normalizedCustomDetailCatalog,
     });
   }
@@ -759,13 +769,24 @@ export const removeFuturePhysicalGarmentOccurrence = (
     });
   }
 
-  const measurementPlan = planMeasurementRequirements({
+  // Plan exactly like Step 7 (planWearerOrderMeasurements): only this
+  // person's remaining garments, with the same standard-sizing fallback for a
+  // Male or no-audience order, so the remaining values are kept, not dropped.
+  const survivingMeasurementGarments = getMeasurementPhysicalGarments({
+    garmentTypeSelection: nextAuthority.effectiveGarmentTypeSelection,
+    physicalOccurrences: nextAuthority.physicalOccurrences,
+  });
+  const measurementGarmentKeys = input.measurementGarmentKeys
+    ? new Set(input.measurementGarmentKeys)
+    : null;
+  const measurementPlan = planPersonMeasurementRequirements({
     route: input.measurementState.route,
     garmentTypeSelection: nextAuthority.effectiveGarmentTypeSelection,
-    physicalGarments: getMeasurementPhysicalGarments({
-      garmentTypeSelection: nextAuthority.effectiveGarmentTypeSelection,
-      physicalOccurrences: nextAuthority.physicalOccurrences,
-    }),
+    physicalGarments: measurementGarmentKeys
+      ? survivingMeasurementGarments.filter((garment) =>
+          measurementGarmentKeys.has(garment.garmentKey),
+        )
+      : survivingMeasurementGarments,
     garmentScopedCustomDetails: nextGarmentScopedCustomDetails,
     additionalGarmentConstructions:
       nextAdditionalGarmentConstructionState,

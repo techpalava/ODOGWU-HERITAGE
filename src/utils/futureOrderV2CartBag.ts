@@ -9,6 +9,7 @@ import {
   type FutureOrderCartItemV2,
 } from "./futureOrderV2Storage";
 import { isAwaitingPersonalizedPriceEvaluation } from "./designStudioFuturePaymentReview";
+import { repriceUnpaidIndividualDeliveryCandidate } from "./futureOrderPayableTotal";
 import { readFutureOrderV2ChargeableCents } from "./futureOrderV2PersonalizedPrice";
 
 export type ParkFutureOrderV2CandidateResult =
@@ -57,7 +58,14 @@ export const sanitizeFutureOrderV2CartItems = (
     if (seen.has(fingerprint) || seen.has(parsed.value.cartItemId)) return;
     seen.add(fingerprint);
     seen.add(parsed.value.cartItemId);
-    items.push(parsed.value);
+    const repricedCandidate = repriceUnpaidIndividualDeliveryCandidate(
+      parsed.value.candidate,
+    );
+    items.push(
+      repricedCandidate === parsed.value.candidate
+        ? parsed.value
+        : { ...parsed.value, candidate: repricedCandidate },
+    );
   });
   return items;
 };

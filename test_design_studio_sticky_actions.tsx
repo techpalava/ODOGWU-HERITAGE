@@ -173,7 +173,7 @@ assert.equal(
 assert.equal(isViewportFixed(fabricContinueWhileEditing.props.className), false);
 assert.match(
   textContent(fabricRenderer.root),
-  /Changing Fabric for Fabric Selection 1/,
+  /Choose a new fabric for Standard Shirt/,
 );
 assert.equal(
   fabricRenderer.root.findByProps({

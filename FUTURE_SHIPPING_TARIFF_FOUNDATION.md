@@ -5,7 +5,7 @@ This configuration is dormant reference data for the future nine-stage Design St
 ## Supplied values
 
 - Exact garment/weight references are 5 garments = 2 kg, 12 = 5 kg, 24 = 10 kg, and 48 = 20 kg. No interpolation is defined.
-- Individual Lagos-to-Eindhoven carriage remains pending because the source mentions EUR 125 while the price column states EUR 131.25. The NGN 200,000 note is retained in rule provenance.
+- Individual Lagos-to-Eindhoven carriage is confirmed at EUR 131.25 per 1–10 garments (under 5 kg). The source also mentioned EUR 125 and approximately NGN 200,000; EUR 125 is not the charged amount. Additional blocks of 10 garments each add another EUR 131.25.
 - Batch Lagos-to-Eindhoven carriage remains pending because EUR 15.09 is supplied but its per-garment versus per-order unit requires confirmation.
 - Batch duty/tax remains pending because EUR 3 conflicts with EUR 3.50 and its calculation basis is unknown.
 - Individual duty/tax remains pending because EUR 70 is supplied without a confirmed calculation basis.
@@ -16,4 +16,4 @@ Rates at or above 5 kg, weights inferred from non-reference garment counts, unma
 
 ## Production separation
 
-The current Selected Design Price already includes Lagos-to-Eindhoven shipping. The live five-stage shipping engine also has existing individual, batch, pickup, and multi-band final-mile behaviour. Activating these future rules inside Design Studio pricing, cart pricing, checkout validation, or persisted shipping snapshots would risk charging inbound or final-mile shipping twice. A later Step 8 integration must define the migration and activation boundary explicitly.
+Production Individual home delivery charges Lagos-to-Eindhoven shipping separately (EUR 131.25 per 10 garments / under 5 kg). Eindhoven pickup has no Lagos shipping charge. Community stays all-inclusive. The live five-stage shipping engine also has existing batch, pickup, and multi-band final-mile behaviour. Activating these future rules inside Design Studio pricing, cart pricing, checkout validation, or persisted shipping snapshots would risk charging inbound or final-mile shipping twice. A later Step 8 integration must define the migration and activation boundary explicitly.

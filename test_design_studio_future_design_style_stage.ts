@@ -95,10 +95,19 @@ assert.equal(
 );
 assert.match(componentSource, /min-h-11/);
 assert.match(componentSource, /sm:grid-cols-2 xl:grid-cols-3/);
-assert.match(componentSource, /Image unavailable/);
+// Card photos go through the shared DesignStyleImage (resized photo, retries,
+// "Image unavailable" + Tap to reload photo, failure reports).
+const designStyleImageSource = readFileSync(
+  new URL("./src/components/DesignStyleImage.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(componentSource, /<DesignStyleImage/);
+assert.match(componentSource, /surface="design-style-card"/);
 assert.match(componentSource, /data-style-card-image/);
 assert.match(componentSource, /data-style-card-image-fallback/);
-assert.match(componentSource, /onError=\{\(\) => setImageFailed\(true\)\}/);
+assert.match(designStyleImageSource, /Image unavailable/);
+assert.match(designStyleImageSource, /onError=\{image\.onError\}/);
+assert.match(designStyleImageSource, /FabricPhotoReloadButton/);
 assert.match(componentSource, /Originally designed for:/);
 assert.match(componentSource, /DesignStyleStepCatalogueEntry/);
 assert.match(componentSource, /Choose design styles you like/);

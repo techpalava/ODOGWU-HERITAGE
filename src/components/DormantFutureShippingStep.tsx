@@ -36,7 +36,10 @@ import {
 } from "../utils/step8AdditionalDelivery";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
-import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
+import {
+  formatIndividualShippingNote,
+  resolveIndividualInboundShippingDisplay,
+} from "../utils/individualInboundShippingDisplay";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
 interface DormantFutureShippingStepProps {
@@ -255,8 +258,8 @@ export const DormantFutureShippingStep = ({
   const shippingIntro =
     orderType === "Individual"
       ? isPickup
-        ? "Pick up in Eindhoven has no shipping charge."
-        : "Lagos → Eindhoven shipping is added to the total. This step adds pickup or additional delivery from Eindhoven."
+        ? "Lagos → Eindhoven shipping is added to the total at €131.25 per 10 garments (under 5 kg). Pick up in Eindhoven adds no extra charge."
+        : "Lagos → Eindhoven shipping is added to the total at €131.25 per 10 garments (under 5 kg). This step adds pickup or additional delivery from Eindhoven."
       : "Standard Shipping to Eindhoven is already included. This step only adds pickup or additional delivery from Eindhoven.";
   const isOtherDestination =
     isDelivery && state.destinationSelectionMode === "other_destination";
@@ -977,6 +980,7 @@ export const DormantFutureShippingStep = ({
             </dd>
           </div>
           {inboundShipping ? (
+            <>
             <div
               data-shipping-lagos-inbound="true"
               data-amount-cents={inboundShipping.amountCents}
@@ -987,6 +991,13 @@ export const DormantFutureShippingStep = ({
                 {money(inboundShipping.priceEur)}
               </dd>
             </div>
+            <p
+              data-shipping-lagos-note="true"
+              className="text-xs leading-relaxed text-white/70"
+            >
+              {formatIndividualShippingNote(inboundShipping)}
+            </p>
+            </>
           ) : null}
           <p className="text-xs leading-relaxed text-white/70">
             {constructionNote}

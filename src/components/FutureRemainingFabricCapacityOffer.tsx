@@ -14,6 +14,13 @@ export const REMAINING_FABRIC_CAPACITY_OFFER_TITLE =
 export const REMAINING_FABRIC_CAPACITY_OFFER_BODY =
   "You still have unused Fabric capacity if you would like to add another standard garment.";
 export const REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT = "Add Garment";
+/** Primary action: leaving leftover capacity unused is fine. */
+export const REMAINING_FABRIC_CAPACITY_OFFER_CONTINUE =
+  "Continue with leftover capacity";
+export const REMAINING_FABRIC_CAPACITY_OFFER_CONTINUE_NOTE =
+  "It's fine to leave capacity unused.";
+export const REMAINING_FABRIC_CAPACITY_OFFER_ADD_HEADING =
+  "Or add a garment to use it:";
 
 export const isRemainingFabricCapacityOfferAutoOpenStage = (
   stageId: DesignStudioStageId | string,
@@ -120,7 +127,8 @@ const RemainingFabricCapacityGrid = ({
             onClick={() => onAddGarment(offer.allocationId)}
             data-testid={`remaining-fabric-capacity-offer-add-${offer.allocationId}`}
             aria-label={`${REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT} using ${fabricName}`}
-            className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-heritage-green px-2.5 text-[11px] font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            data-remaining-fabric-capacity-add-secondary="true"
+            className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-heritage-green/40 bg-white px-2.5 text-[11px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
           >
             {REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT}
           </button>
@@ -321,24 +329,34 @@ export const FutureRemainingFabricCapacityOfferCard = ({
         </div>
       ) : (
         <>
+          {showContinueToDesignStyle ? (
+            // Continue is the primary action: leaving 1/2 unused is fine.
+            <div className="mt-3 flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={onContinue}
+                data-testid="remaining-fabric-capacity-offer-decline"
+                data-remaining-fabric-capacity-continue-primary="true"
+                data-continue-unlock-glow="on"
+                className={`inline-flex min-h-12 w-full max-w-full min-w-0 items-center justify-center rounded-xl px-4 text-center text-sm font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_UNLOCK_GLOW_CLASS}`}
+              >
+                <span className="min-w-0 text-balance">
+                  {REMAINING_FABRIC_CAPACITY_OFFER_CONTINUE}
+                </span>
+              </button>
+              <p className="text-center text-xs text-heritage-ink/65">
+                {REMAINING_FABRIC_CAPACITY_OFFER_CONTINUE_NOTE}
+              </p>
+              <p className="mt-2 text-xs font-bold uppercase tracking-wider text-heritage-green/80">
+                {REMAINING_FABRIC_CAPACITY_OFFER_ADD_HEADING}
+              </p>
+            </div>
+          ) : null}
           <RemainingFabricCapacityGrid
             offers={offers}
             fabrics={fabrics}
             onAddGarment={setChooserAllocationId}
           />
-          {showContinueToDesignStyle ? (
-            <div className="mt-3 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={onContinue}
-                data-testid="remaining-fabric-capacity-offer-decline"
-                data-continue-unlock-glow="on"
-                className={`inline-flex min-h-11 w-full max-w-full min-w-0 items-center justify-center rounded-xl px-4 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_UNLOCK_GLOW_CLASS}`}
-              >
-                <span className="min-w-0 text-balance">Continue to Design Style</span>
-              </button>
-            </div>
-          ) : null}
         </>
       )}
     </div>

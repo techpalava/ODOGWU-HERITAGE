@@ -1,11 +1,14 @@
 import type {
   DesignStudioStageId,
+  FabricGarmentType,
   FutureMeasurementStateV1,
+  GarmentTypeStepSelection,
   MeasurementUnit,
   SelectedMeasurementMethod,
   WearerOrderStateV2,
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
+import type { CanonicalMeasurementId } from "../config/MeasurementBlueprintConfig";
 import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
 import { projectPersonGarmentLabels } from "./occurrenceDisplayLabel";
 import {
@@ -20,6 +23,7 @@ import {
 } from "./futureOrderCandidate";
 import type { FutureOrderV2PaymentMethod } from "./futureOrderV2Payment";
 import {
+  formatIndividualShippingNote,
   INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE,
   resolveIndividualInboundShippingDisplay,
 } from "./individualInboundShippingDisplay";
@@ -34,9 +38,12 @@ import {
   isSelectedMeasurementMethod,
   MEASUREMENT_METHOD_LABELS,
   roundMeasurementDisplayValue,
-  getDemographicMeasurementCustomerLabel,
+  getMeasurementCustomerLabel,
   getMeasurementDefinition,
+  getSampleClothCustomerLabel,
+  resolveMeasurementLabelDemographic,
   resolveMeasurementLabelDemographicForGarments,
+  resolveMeasurementPlanningDemographic,
 } from "./measurementBlueprint";
 
 export const FUTURE_PAYMENT_UNAVAILABLE_MESSAGE =
@@ -200,6 +207,7 @@ export interface FuturePaymentReviewPricingRow {
   readonly label: string;
   readonly amountCents: number | null;
   readonly presentation: "amount" | "supporting_note" | "included";
+  readonly note?: string;
 }
 
 export const FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE =
@@ -289,11 +297,41 @@ export const getFuturePaymentReviewGarments = (
     ),
   }));
 
+/** Step 7's wording for the production equivalent of a laid-flat sample width. */
+const SAMPLE_CLOTH_PRODUCTION_EQUIVALENT_SUFFIX = ", production equivalent";
+
+/**
+ * The label Step 7 shows for this field: the body label (Chest / Borst by audience),
+ * or on Sample Cloth the sample label ("Waist across sample (laid flat)"). A laid-flat
+ * width shown as its doubled production value says so, as Step 7 does under the field.
+ */
+const measurementFieldLabel = ({
+  measurementId,
+  sampleRoute,
+  convertedFromSample,
+  labelDemographic,
+}: {
+  measurementId: string;
+  sampleRoute: boolean;
+  convertedFromSample: boolean;
+  labelDemographic: string;
+}): string => {
+  const id = measurementId as CanonicalMeasurementId;
+  if (!getMeasurementDefinition(id)) return humanizeIdentifier(measurementId);
+  const bodyLabel = getMeasurementCustomerLabel(id, labelDemographic);
+  if (!sampleRoute) return bodyLabel;
+  const sampleLabel = getSampleClothCustomerLabel(id, bodyLabel, labelDemographic);
+  return convertedFromSample
+    ? `${sampleLabel}${SAMPLE_CLOTH_PRODUCTION_EQUIVALENT_SUFFIX}`
+    : sampleLabel;
+};
+
 const toMeasurementItem = ({
   measurementId,
   valueCm,
   provenance,
   unit,
+  sampleRoute,
   convertedFromSample,
   labelDemographic,
   outsideUsualRange,
@@ -302,14 +340,18 @@ const toMeasurementItem = ({
   valueCm: number;
   provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
+  sampleRoute: boolean;
   convertedFromSample: boolean;
   labelDemographic: string;
   outsideUsualRange: boolean;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
-  label:
-    getDemographicMeasurementCustomerLabel(measurementId, labelDemographic) ??
-    humanizeIdentifier(measurementId),
+  label: measurementFieldLabel({
+    measurementId,
+    sampleRoute,
+    convertedFromSample,
+    labelDemographic,
+  }),
   displayValue: roundMeasurementDisplayValue(
     fromCanonicalCentimetres(valueCm, unit),
   ),
@@ -432,6 +474,7 @@ const mergeMeasurements = ({
       measurementId,
       ...value,
       unit,
+      sampleRoute,
       convertedFromSample: preferDerived,
       labelDemographic,
       outsideUsualRange: isMeasurementOutsideUsualRange(
@@ -509,7 +552,12 @@ type MeasurementReviewGarment = {
   readonly demographic?: string | null;
 };
 
-/** Step 1 demographic for these garments, used only for Chest / Borst wording. */
+/**
+ * Chest / Borst wording for one person's garments, resolved like Step 7 and
+ * Summary: the Step 1 audience, unless it cannot size one of these garments
+ * (for example a dress on a Male order), when Step 7 measures them with the
+ * standard sizing and words the fields "Chest / Borst". Wording only.
+ */
 const labelDemographicFor = (
   garments: readonly MeasurementReviewGarment[],
   garmentKeys?: readonly string[],
@@ -517,8 +565,26 @@ const labelDemographicFor = (
   const scoped = garmentKeys
     ? garments.filter((garment) => garmentKeys.includes(garment.garmentKey))
     : garments;
-  return resolveMeasurementLabelDemographicForGarments(
+  const audience = resolveMeasurementLabelDemographicForGarments(
     scoped.map((garment) => garment.demographic ?? null),
+  );
+  if (audience === "unisex") return audience;
+  return resolveMeasurementLabelDemographic(
+    resolveMeasurementPlanningDemographic({
+      garments: scoped.flatMap((garment) =>
+        garment.garmentType
+          ? [{
+              garmentKey: garment.garmentKey,
+              garmentType: garment.garmentType as FabricGarmentType,
+            }]
+          : [],
+      ),
+      garmentTypeSelection: {
+        garmentTypes: [],
+        demographic: audience,
+        constructionByGarment: {},
+      } as unknown as GarmentTypeStepSelection,
+    }),
   );
 };
 
@@ -558,7 +624,7 @@ const groupsFromMeasurementBag = (
         derived: derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
         route: state.route,
-        labelDemographic: labelDemographicFor(garments, [garmentKey]),
+        labelDemographic: labelDemographicFor(garments),
         diagnostics: state.diagnostics,
         garmentKey,
       });
@@ -661,7 +727,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
             derived: wearerDerived.byGarmentKey[garmentKey] || {},
             unit: wearer.measurement.unit,
             route: wearer.measurement.route,
-            labelDemographic: labelDemographicFor(candidate.garments, [garmentKey]),
+            labelDemographic: labelDemographicFor(candidate.garments, ownedKeys),
             diagnostics: wearer.measurement.diagnostics,
             garmentKey,
           });
@@ -708,6 +774,8 @@ export const getFuturePaymentReviewPricingRows = (
     batchType?: string | null;
     physicalGarmentCount?: number | null;
     fulfilmentMethod?: string | null;
+    /** Paid stored orders keep the Lagos amount actually charged. */
+    useStoredLagosAmount?: boolean;
   } | null,
 ): readonly FuturePaymentReviewPricingRow[] => {
   const includedInbound =
@@ -741,12 +809,28 @@ export const getFuturePaymentReviewPricingRows = (
       presentation: "supporting_note",
     },
   ];
-  if (includedInbound) {
+  const storedLagos = pricing.components.lagosToEindhovenShipping;
+  // A stored order saved without a Lagos charge (e.g. a pickup order from
+  // before pickup kept it) shows only what it actually charged.
+  const storedWithoutLagos =
+    display?.useStoredLagosAmount === true &&
+    storedLagos.status !== "separately_charged";
+  if (includedInbound && !storedWithoutLagos) {
+    const storedAmount =
+      display?.useStoredLagosAmount &&
+      storedLagos.status === "separately_charged" &&
+      typeof storedLagos.amountCents === "number"
+        ? storedLagos.amountCents
+        : includedInbound.amountCents;
     rows.push({
       id: "lagos_eindhoven_included",
       label: includedInbound.label,
-      amountCents: includedInbound.amountCents,
+      amountCents: storedAmount,
       presentation: "amount",
+      note:
+        storedAmount === includedInbound.amountCents
+          ? formatIndividualShippingNote(includedInbound)
+          : undefined,
     });
   }
   rows.push({

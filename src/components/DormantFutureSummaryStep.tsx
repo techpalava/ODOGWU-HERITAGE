@@ -38,13 +38,18 @@ import {
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 import { OrderContextDetails } from "./CustomerOrderContext";
 import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
-import { resolveIndividualInboundShippingDisplay } from "../utils/individualInboundShippingDisplay";
+import {
+  formatIndividualShippingNote,
+  resolveIndividualInboundShippingDisplay,
+} from "../utils/individualInboundShippingDisplay";
 import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 import {
   buildOptimizedImageSources,
+  DESIGN_STYLE_THUMB_IMAGE_PRESET,
   FABRIC_THUMB_IMAGE_PRESET,
 } from "../utils/optimizedImageUrl";
 import { FabricPhotoReloadButton } from "./FabricPhotoReloadButton";
+import { DesignStyleImage } from "./DesignStyleImage";
 import {
   formatSummaryGarmentTypeRoleLine,
   getSummaryGarmentReferenceImage,
@@ -223,34 +228,27 @@ const ChoiceActionButton = ({
   </button>
 );
 
-/** Stage 8 design thumb: retries a failed load once before "Image unavailable". */
+/** Stage 8 design thumb: resized catalogue photo, retries, then "Image unavailable" + reload. */
 const SummaryDesignPreview = ({
   imageUrl,
   alt,
+  reportCode,
 }: {
   imageUrl: string | null | undefined;
   alt: string;
-}) => {
-  const image = useImageLoadRetry(imageUrl);
-  if (image.failed) {
-    return (
-      <span className="flex h-full items-center justify-center p-2 text-center text-[10px] text-heritage-ink/45">
-        Image unavailable
-      </span>
-    );
-  }
-  return (
-    <img
-      src={image.src}
-      alt={alt}
-      loading="lazy"
-      decoding="async"
-      className="h-full w-full object-contain"
-      referrerPolicy="no-referrer"
-      onError={image.onError}
-    />
-  );
-};
+  reportCode?: string | null;
+}) => (
+  <DesignStyleImage
+    imageUrl={imageUrl}
+    alt={alt}
+    preset={DESIGN_STYLE_THUMB_IMAGE_PRESET}
+    surface="summary-design-style"
+    reportCode={reportCode}
+    imgClassName="h-full w-full object-contain"
+    fallbackClassName="flex h-full flex-col items-center justify-center gap-1 p-2 text-center text-[10px] text-heritage-ink/45"
+    compactFallback
+  />
+);
 
 /** Stage 8 garment card photo: the Step 1 garment-type reference, never the customer's design. */
 const SummaryGarmentReferencePhoto = ({
@@ -1162,6 +1160,7 @@ export const DormantFutureSummaryStep = ({
             <div className="aspect-[4/5] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/35">
               <SummaryDesignPreview
                 imageUrl={occurrence.image}
+                reportCode={occurrence.sourceKind === "uploaded" ? null : occurrence.name}
                 alt={
                   occurrence.sourceKind === "uploaded"
                     ? `Uploaded design preview for ${occurrence.occurrenceLabel}`
@@ -1410,6 +1409,7 @@ export const DormantFutureSummaryStep = ({
             </dd>
           </div>
           {includedInbound ? (
+            <>
             <div
               data-summary-included-inbound="true"
               data-amount-cents={includedInbound.amountCents}
@@ -1420,6 +1420,13 @@ export const DormantFutureSummaryStep = ({
                 {money(includedInbound.priceEur)}
               </dd>
             </div>
+            <p
+              data-summary-lagos-note="true"
+              className="text-xs leading-relaxed text-white/70"
+            >
+              {formatIndividualShippingNote(includedInbound)}
+            </p>
+            </>
           ) : null}
           {deliveryMethod ? (
             <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">

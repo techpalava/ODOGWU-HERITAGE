@@ -17,16 +17,36 @@ export type PrivateBatchSetupSubmission =
   | Readonly<{ status: "created" | "requires_sign_in" | "requires_draft_resolution" }>
   | Readonly<{ status: "error"; message: string }>;
 
+export interface PrivateBatchSubmitLimits {
+  readonly minParticipantsRequired: number;
+  readonly maxParticipantsAllowed: number;
+}
+
+/** Limits for a create call. Null until settings/business has settled. */
+export const resolvePrivateBatchSubmitLimits = (
+  settings: BusinessSettings,
+  settingsLoaded: boolean,
+): PrivateBatchSubmitLimits | null => {
+  if (!settingsLoaded) return null;
+  return {
+    minParticipantsRequired: settings.batchSettings.minParticipantsRequired,
+    maxParticipantsAllowed: settings.batchSettings.maxGarmentsPerBatch,
+  };
+};
+
 const fieldClassName =
   "mt-1 min-h-11 w-full rounded-xl border border-heritage-green/20 bg-white px-3 py-2 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30 disabled:cursor-wait disabled:opacity-60";
 
 export const PrivateBatchSetupView = ({
   businessSettings,
+  settingsLoaded,
   onBack,
   onSubmit,
   externalError = null,
 }: {
   businessSettings: BusinessSettings;
+  /** False until settings/business has settled: a snapshot, a load error, or the fallback wait. */
+  settingsLoaded: boolean;
   onBack: () => void;
   onSubmit: (values: PrivateBatchSetupValues) => Promise<PrivateBatchSetupSubmission>;
   externalError?: string | null;
@@ -34,18 +54,20 @@ export const PrivateBatchSetupView = ({
   const [batchName, setBatchName] = useState("");
   const [occasion, setOccasion] = useState("");
   const [description, setDescription] = useState("");
-  const [country, setCountry] = useState(
-    businessSettings.applicationSettings.defaultCountry || "",
-  );
+  // null means the customer has not typed in that field, so a later settings
+  // snapshot may replace the value. A string or number, including empty, is theirs.
+  const [countryDraft, setCountryDraft] = useState<string | null>(null);
   const [city, setCity] = useState("");
   const [preferredDeliveryMonth, setPreferredDeliveryMonth] = useState("");
-  const [expectedParticipants, setExpectedParticipants] = useState(
-    businessSettings.batchSettings.minParticipantsRequired,
-  );
+  const [participantsDraft, setParticipantsDraft] = useState<number | null>(null);
   const [closingDate, setClosingDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
+  const liveCountry = businessSettings.applicationSettings.defaultCountry || "";
+  const country = countryDraft ?? liveCountry;
+  const expectedParticipants =
+    participantsDraft ?? businessSettings.batchSettings.minParticipantsRequired;
 
   const minParticipants = businessSettings.batchSettings.minParticipantsRequired;
   const maxParticipants = businessSettings.batchSettings.maxGarmentsPerBatch;
@@ -53,7 +75,7 @@ export const PrivateBatchSetupView = ({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submissionInFlight.current) return;
+    if (submissionInFlight.current || !settingsLoaded) return;
     setError(null);
     if (!batchName.trim()) {
       setError("Please enter a name for your Private Batch.");
@@ -156,19 +178,20 @@ export const PrivateBatchSetupView = ({
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
               Country <span aria-hidden="true">*</span>
-              <input data-testid="private-batch-country" value={country} onChange={(event) => setCountry(event.target.value)} disabled={isSubmitting} className={fieldClassName} autoComplete="country-name" />
+              <input data-testid="private-batch-country" value={country} onChange={(event) => setCountryDraft(event.target.value)} disabled={isSubmitting} className={fieldClassName} autoComplete="country-name" />
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
               City <span aria-hidden="true">*</span>
               <input data-testid="private-batch-city" value={city} onChange={(event) => setCity(event.target.value)} disabled={isSubmitting} className={fieldClassName} autoComplete="address-level2" />
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
-              Delivery Target <span aria-hidden="true">*</span>
+              Delivery Target (Need Date) <span aria-hidden="true">*</span>
               <input data-testid="private-batch-delivery-target" type="month" value={preferredDeliveryMonth} onChange={(event) => setPreferredDeliveryMonth(event.target.value)} disabled={isSubmitting} className={fieldClassName} />
+              <span className="mt-1 block text-xs font-normal text-heritage-ink/60">Delivery period: 3 to 4 weeks</span>
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
               Expected Participants <span aria-hidden="true">*</span>
-              <input data-testid="private-batch-participants" type="number" min={minParticipants} max={maxParticipants} value={expectedParticipants} onChange={(event) => setExpectedParticipants(Number(event.target.value))} disabled={isSubmitting} className={fieldClassName} />
+              <input data-testid="private-batch-participants" type="number" min={minParticipants} max={maxParticipants} value={expectedParticipants} onChange={(event) => setParticipantsDraft(Number(event.target.value))} disabled={isSubmitting} className={fieldClassName} />
               <span className="mt-1 block text-xs font-normal text-heritage-ink/60">{minParticipants}–{maxParticipants} participants</span>
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green sm:col-span-2">
@@ -184,11 +207,16 @@ export const PrivateBatchSetupView = ({
             <button
               data-testid="create-private-batch-submit"
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !settingsLoaded}
+              aria-busy={!settingsLoaded || undefined}
               className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 py-3 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
             >
-              {isSubmitting ? "Creating Private Batch..." : "Create Private Batch"}
-              {!isSubmitting && <ArrowRight size={17} aria-hidden="true" />}
+              {!settingsLoaded
+                ? "Loading settings..."
+                : isSubmitting
+                  ? "Creating Private Batch..."
+                  : "Create Private Batch"}
+              {settingsLoaded && !isSubmitting && <ArrowRight size={17} aria-hidden="true" />}
             </button>
             <p className="mt-3 flex gap-2 text-xs leading-relaxed text-heritage-ink/65">
               <Users size={15} className="mt-0.5 shrink-0 text-heritage-gold" aria-hidden="true" />

@@ -34,7 +34,7 @@ act(() => { tree = create(<DormantFutureDesignStyleStep {...baseProps}
   activeOccurrenceTarget={second.target}
   onSelectOccurrence={target => { selected = target; }}
   onClearAssignment={request => { cleared = request; }} onSelectUploadFile={noop} />); });
-const clear = tree.root.findByProps({ "aria-label": "Clear design for Shirt 2" });
+const clear = tree.root.findByProps({ "aria-label": "Clear design for Standard Shirt 2" });
 assert.equal(clear.type, "button");
 act(() => clear.props.onClick());
 const secondClearRequest = baseProps.clearRequests.find(request =>
@@ -51,9 +51,9 @@ assert.deepEqual(selected, baseProps.occurrences[0].target);
 act(() => changeButtons[1].props.onClick({ stopPropagation: noop }));
 assert.deepEqual(selected, second.target);
 const input = tree.root.findAll(node => node.type === "input" && node.props.type === "file")
-  .find(node => node.props["aria-label"] === "Upload a design for Shirt 2")!;
+  .find(node => node.props["aria-label"] === "Upload a design for Standard Shirt 2")!;
 assert.ok(input);
-assert.equal(input.props["aria-label"], "Upload a design for Shirt 2");
+assert.equal(input.props["aria-label"], "Upload a design for Standard Shirt 2");
 assert.equal(tree.root.findByProps({ htmlFor: input.props.id }).type, "label");
 act(() => tree.unmount());
 
@@ -121,14 +121,14 @@ let edited: unknown;
 act(() => { tree = create(<DesignStudioOrderSummary
   // The live summary stays hidden until a garment is committed, so seed one.
   view={{ sections: [{ id: "construction", title: "Garments", editStage: "garment_type",
-    lines: [{ id: "garment-shirt", label: "Shirt", detail: null, amountLabel: null }] },
+    lines: [{ id: "garment-shirt", label: "Standard Shirt", detail: null, amountLabel: null }] },
     { id: "design_style", title: "Design Style", editStage: "design_style",
-    lines: ["Shirt", "Shirt 2", "Shirt 3"].map((label, index) => ({
+    lines: ["Standard Shirt", "Standard Shirt 2", "Standard Shirt 3"].map((label, index) => ({
       id: String(index), label, detail: index === 0 ? longName : index === 1 ? "Uploaded design" : "Not selected", amountLabel: null,
     })) }], totalStatus: "hidden", totalLabel: "Total", totalValueLabel: "Pending", totalAmountCents: null, quoteRequired: false }}
   unlockedStages={new Set(["design_style"])} currentStageId="custom_details"
   onEditStage={stage => { edited = stage; }} />); });
-assert.deepEqual(tree.root.findByProps({ "data-testid": "live-order-summary-section-design_style" }).findAllByType("li").map(row => text(row.findAllByType("p")[0])), ["Shirt", "Shirt 2", "Shirt 3"]);
+assert.deepEqual(tree.root.findByProps({ "data-testid": "live-order-summary-section-design_style" }).findAllByType("li").map(row => text(row.findAllByType("p")[0])), ["Standard Shirt", "Standard Shirt 2", "Standard Shirt 3"]);
 assert.ok(text(tree.root).includes(longName));
 const edit = tree.root.findByProps({ "aria-label": "Edit Design Style" });
 assert.equal(edit.type, "button");
@@ -140,9 +140,9 @@ const summary: FutureDesignStudioSummary = {
   status: "incomplete", blockers: [], garmentSummary: [], fabricSummary: [],
   designStyleSummary: null,
   designStyleOccurrences: [
-    { garmentKey: "base:shirt", occurrenceLabel: "Shirt", sourceKind: "catalogue", status: "selected", name: longName, image: "https://example.test/style.jpg", detail: "Catalogue design" },
-    { garmentKey: "additional:shirt:1", occurrenceLabel: "Shirt 2", sourceKind: "uploaded", status: "selected", name: "Uploaded design", image: null, detail: "Confirmed uploaded design" },
-    { garmentKey: "additional:shirt:2", occurrenceLabel: "Shirt 3", sourceKind: "unassigned", status: "needs_review", name: "Not selected", image: null, detail: null },
+    { garmentKey: "base:shirt", occurrenceLabel: "Standard Shirt", sourceKind: "catalogue", status: "selected", name: longName, image: "https://example.test/style.jpg", detail: "Catalogue design" },
+    { garmentKey: "additional:shirt:1", occurrenceLabel: "Standard Shirt 2", sourceKind: "uploaded", status: "selected", name: "Uploaded design", image: null, detail: "Confirmed uploaded design" },
+    { garmentKey: "additional:shirt:2", occurrenceLabel: "Standard Shirt 3", sourceKind: "unassigned", status: "needs_review", name: "Not selected", image: null, detail: null },
   ],
   customDetailsSummary: [], aiTryOnSummary: { status: "skipped", label: "Skipped" },
   measurementSummary: { route: "low_risk", routeLabel: "Low risk", unit: "inch", shared: [], byGarment: [] },
@@ -153,9 +153,9 @@ act(() => { tree = create(<DormantFutureSummaryStep summary={summary}
   onEditCustomDetails={noop} onEditAiTryOn={noop} onEditMeasurements={noop}
   canContinueToShipping={false} onContinueToShipping={noop} />); });
 assert.deepEqual(tree.root.findAllByType("h4").map(text), [
-  `Shirt: ${longName}`, "Shirt 2: Uploaded design", "Shirt 3: Not selected",
+  `Standard Shirt: ${longName}`, "Standard Shirt 2: Uploaded design", "Standard Shirt 3: Not selected",
 ]);
-assert.equal(tree.root.findByType("img").props.alt, `${longName} design for Shirt`);
+assert.equal(tree.root.findByType("img").props.alt, `${longName} design for Standard Shirt`);
 assert.ok(text(tree.root).includes("needs review"));
 const delivery = tree.root.findByProps({ "aria-describedby": "summary-shipping-lock-reason" });
 assert.equal(delivery.props.disabled, true);

@@ -927,14 +927,161 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    function hasValidSavedStudioOrderIndexShape(data, ownerUid) {
+      return data.schemaVersion == 1
+        && data.ownerUid == ownerUid
+        && data.itemIds is list
+        && data.itemIds.size() <= 5
+        && data.updatedAt is timestamp
+        && data.keys().hasOnly(["schemaVersion", "ownerUid", "itemIds", "updatedAt"])
+        && data.keys().hasAll(["schemaVersion", "ownerUid", "itemIds", "updatedAt"]);
+    }
+
+    function savedStudioOrderIndexAfter(ownerUid) {
+      return getAfter(/databases/$(database)/documents/savedStudioOrders/$(ownerUid)).data;
+    }
+
+    function hasValidSavedStudioOrderPriceSnapshot(data) {
+      return data is map
+        && data.schemaVersion == 1
+        && data.capturedAt is string
+        && data.keys().hasAll(["schemaVersion", "total", "garmentConstructionSubtotal", "customDetailsPrice", "capturedAt"])
+        && data.keys().hasOnly(["schemaVersion", "total", "garmentConstructionSubtotal", "customDetailsPrice", "capturedAt"]);
+    }
+
+    function hasValidSavedStudioOrderItemShape(data, ownerUid, savedOrderId) {
+      return data.schemaVersion == 1
+        && data.savedOrderId == savedOrderId
+        && data.ownerUid == ownerUid
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 60
+        && data.garmentSummary is string
+        && data.garmentSummary.size() <= 200
+        && data.savedStage is string
+        && data.savedStage in [
+          "garment_type",
+          "fabric",
+          "design_style",
+          "custom_details",
+          "personalized_additions",
+          "try_on",
+          "measurement",
+          "summary",
+          "shipping",
+          "payment"
+        ]
+        && data.savedStep is int
+        && data.savedStep >= 1
+        && data.savedStep <= 10
+        && data.revision is int
+        && data.revision > 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && hasValidFutureDraftPayload(data.draft)
+        && hasValidSavedStudioOrderPriceSnapshot(data.priceSnapshot)
+        && data.keys().hasAll([
+          "schemaVersion",
+          "savedOrderId",
+          "ownerUid",
+          "name",
+          "garmentSummary",
+          "savedStage",
+          "savedStep",
+          "draft",
+          "priceSnapshot",
+          "createdAt",
+          "updatedAt",
+          "revision"
+        ])
+        && data.keys().hasOnly([
+          "schemaVersion",
+          "savedOrderId",
+          "ownerUid",
+          "name",
+          "garmentSummary",
+          "savedStage",
+          "savedStep",
+          "resumeLocus",
+          "draft",
+          "priceSnapshot",
+          "createdAt",
+          "updatedAt",
+          "revision"
+        ]);
+    }
+
+    function savedStudioOrderItemPath(ownerUid, savedOrderId) {
+      return /databases/$(database)/documents/savedStudioOrders/$(ownerUid)/items/$(savedOrderId);
+    }
+
+    // The index may change by at most one id per write, and only in step
+    // with the item document in the same transaction: an added id must have
+    // its item written, a removed id must have its item deleted. With the
+    // 5-id limit this keeps the item count per customer at 5 or fewer.
+    function hasConsistentSavedStudioOrderIndexChange(ownerUid, beforeIds, afterIds) {
+      let added = afterIds.removeAll(beforeIds);
+      let removed = beforeIds.removeAll(afterIds);
+      return added.size() <= 1
+        && removed.size() <= 1
+        && (added.size() == 0
+          || existsAfter(savedStudioOrderItemPath(ownerUid, added[0])))
+        && (removed.size() == 0
+          || !existsAfter(savedStudioOrderItemPath(ownerUid, removed[0])));
+    }
+
+    match /savedStudioOrders/{ownerUid} {
+      allow read: if isAdmin() || ownsDocumentPath(ownerUid);
+      allow create: if ownsDocumentPath(ownerUid)
+        && hasValidSavedStudioOrderIndexShape(request.resource.data, ownerUid)
+        && request.resource.data.updatedAt == request.time
+        && hasConsistentSavedStudioOrderIndexChange(
+          ownerUid,
+          [],
+          request.resource.data.itemIds
+        );
+      allow update: if ownsDocumentPath(ownerUid)
+        && hasValidSavedStudioOrderIndexShape(request.resource.data, ownerUid)
+        && request.resource.data.updatedAt == request.time
+        && hasConsistentSavedStudioOrderIndexChange(
+          ownerUid,
+          resource.data.itemIds,
+          request.resource.data.itemIds
+        );
+      allow delete: if false;
+    }
+
+    match /savedStudioOrders/{ownerUid}/items/{savedOrderId} {
+      allow read: if isAdmin() || ownsDocumentPath(ownerUid);
+      allow create: if ownsDocumentPath(ownerUid)
+        && hasValidSavedStudioOrderItemShape(request.resource.data, ownerUid, savedOrderId)
+        && request.resource.data.revision == 1
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/savedStudioOrders/$(ownerUid))
+        && savedStudioOrderIndexAfter(ownerUid).itemIds.hasAny([savedOrderId])
+        && savedStudioOrderIndexAfter(ownerUid).itemIds.size() <= 5;
+      allow update: if ownsDocumentPath(ownerUid)
+        && hasValidSavedStudioOrderItemShape(request.resource.data, ownerUid, savedOrderId)
+        && savedStudioOrderIndexAfter(ownerUid).itemIds.hasAny([savedOrderId])
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.savedOrderId == resource.data.savedOrderId
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if ownsDocumentPath(ownerUid)
+        && existsAfter(/databases/$(database)/documents/savedStudioOrders/$(ownerUid))
+        && !savedStudioOrderIndexAfter(ownerUid).itemIds.hasAny([savedOrderId]);
+    }
+
     // Sticky Feedback button: guests and customers may create one bounded
     // record each time. Only admins (or the Admin SDK) can read or remove it.
     // Mirrors SITE_FEEDBACK_CREATE_KEYS and SITE_FEEDBACK_LIMITS in
     // src/utils/siteFeedback.ts.
-    function hasValidSiteFeedbackCreate(data) {
+    function hasValidSiteFeedbackCreate(data, feedbackId) {
       return data.keys().hasAll(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
-        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
-        && data.schemaVersion == 1
+        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt", "nationality", "photoPath", "photoContentType", "photoSizeBytes"])
+        && data.schemaVersion in [1, 2]
         && data.status == "new"
         && data.type in ["bug", "idea", "other"]
         && data.message is string
@@ -952,11 +1099,38 @@ service cloud.firestore {
         && data.viewport.size() <= 32
         && data.createdAt == request.time
         && (data.uid == null
-          || (request.auth != null && data.uid == request.auth.uid));
+          || (request.auth != null && data.uid == request.auth.uid))
+        && (!("nationality" in data) || data.nationality == null
+          || (data.nationality is string && data.nationality.matches("^[A-Z]{2}$")))
+        && hasValidSiteFeedbackPhoto(data, feedbackId);
+    }
+
+    // Optional photo (v2): all four photo fields null/absent, or a photo the
+    // caller uploaded to site-feedback/{their auth uid}/{this doc id}/photo.{ext}
+    // (storage.rules). Anonymous guest sessions count as the caller.
+    function hasValidSiteFeedbackPhoto(data, feedbackId) {
+      return (
+          (!("photoPath" in data) || data.photoPath == null)
+          && (!("photoContentType" in data) || data.photoContentType == null)
+          && (!("photoSizeBytes" in data) || data.photoSizeBytes == null)
+        ) || (
+          request.auth != null
+          && (
+            (data.photoContentType == "image/jpeg"
+              && data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.jpg")
+            || (data.photoContentType == "image/png"
+              && data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.png")
+            || (data.photoContentType == "image/webp"
+              && data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.webp")
+          )
+          && data.photoSizeBytes is int
+          && data.photoSizeBytes > 0
+          && data.photoSizeBytes <= 5 * 1024 * 1024
+        );
     }
 
     match /site_feedback/{feedbackId} {
-      allow create: if hasValidSiteFeedbackCreate(request.resource.data);
+      allow create: if hasValidSiteFeedbackCreate(request.resource.data, feedbackId);
       allow read, update, delete: if isAdmin();
     }
 

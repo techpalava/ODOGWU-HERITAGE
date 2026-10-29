@@ -1,27 +1,36 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { CheckCircle2, Loader2, MessageSquare, X } from "lucide-react";
+import { CheckCircle2, ImagePlus, Loader2, MessageSquare, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import {
   SITE_FEEDBACK_LIMITS,
+  SITE_FEEDBACK_NATIONALITY_OPTIONS,
+  SITE_FEEDBACK_PHOTO_TYPES,
   SITE_FEEDBACK_TYPES,
   SITE_FEEDBACK_TYPE_LABELS,
   readSiteFeedbackSends,
   recordSiteFeedbackSend,
   siteFeedbackRateLimitWaitMs,
   validateSiteFeedback,
+  validateSiteFeedbackPhoto,
   type SiteFeedbackContext,
   type SiteFeedbackType,
   type SiteFeedbackValidation,
 } from "../utils/siteFeedback.js";
+import {
+  markOrderFeedbackSubmittedAfterStep5,
+  readOrderFeedbackPromptState,
+  writeOrderFeedbackPromptState,
+} from "../utils/designStudioOrderFeedbackPrompt.js";
 
 type SubmitFeedback = (
   value: Extract<SiteFeedbackValidation, { ok: true }>["value"],
   context: SiteFeedbackContext,
+  photo: File | null,
 ) => Promise<string>;
 
-const defaultSubmit: SubmitFeedback = async (value, context) => {
+const defaultSubmit: SubmitFeedback = async (value, context, photo) => {
   const { submitSiteFeedback } = await import("../services/siteFeedbackService.js");
-  return submitSiteFeedback(value, context);
+  return submitSiteFeedback(value, context, photo);
 };
 
 /**
@@ -89,13 +98,33 @@ export function SiteFeedbackButton({
   const currentUser = useAppStore((state) => state.currentUser);
   const isCartOpen = useAppStore((state) => state.isCartOpen);
   const isMobileMenuOpen = useAppStore((state) => state.isMobileMenuOpen);
+  const siteFeedbackOpenRequest = useAppStore(
+    (state) => state.siteFeedbackOpenRequest,
+  );
+  const siteFeedbackOpenSource = useAppStore(
+    (state) => state.siteFeedbackOpenSource,
+  );
+  const siteFeedbackOpenTrigger = useAppStore(
+    (state) => state.siteFeedbackOpenTrigger,
+  );
+  const siteFeedbackOpenDraftKey = useAppStore(
+    (state) => state.siteFeedbackOpenDraftKey,
+  );
 
   const [open, setOpen] = useState(false);
+  const [orderFlowPrompt, setOrderFlowPrompt] = useState(false);
+  const activeOrderFlowTrigger = useRef<"after_step_5" | "after_step_10" | null>(
+    null,
+  );
+  const activeOrderFlowDraftKey = useRef<string | null>(null);
   const [covering, setCovering] = useState(false);
   const [type, setType] = useState<SiteFeedbackType>("idea");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
   const [honeypot, setHoneypot] = useState("");
+  const [nationality, setNationality] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<{
     field: string;
     error: string;
@@ -106,8 +135,48 @@ export function SiteFeedbackButton({
   const capturedStudioStep = useRef<string | null>(null);
 
   const tabRef = useRef<HTMLButtonElement>(null);
+  // The control that opened the panel (left tab or desktop header button) gets focus back on close.
+  const openerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Preview URL for the picked photo; revoked when it changes or unmounts.
+  useEffect(() => {
+    if (!photo || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+      setPhotoPreview(null);
+      return;
+    }
+    let url: string;
+    try {
+      url = URL.createObjectURL(photo);
+    } catch {
+      setPhotoPreview(null);
+      return;
+    }
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
+
+  const clearPhoto = () => {
+    setPhoto(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  };
+
+  const onPickPhoto = (file: File | null) => {
+    if (!file) {
+      clearPhoto();
+      return;
+    }
+    const check = validateSiteFeedbackPhoto(file);
+    if (check.ok === false) {
+      clearPhoto();
+      setFieldError({ field: "photo", error: (check as { error: string }).error });
+      return;
+    }
+    if (fieldError?.field === "photo") setFieldError(null);
+    setPhoto(file);
+  };
   const ids = useId();
 
   // Hide the tab whenever it would sit on a control.
@@ -135,26 +204,64 @@ export function SiteFeedbackButton({
     };
   }, []);
 
-  const openDialog = useCallback(() => {
+  const openDialog = useCallback((options?: { orderFlow?: boolean }) => {
+    openerRef.current =
+      typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     capturedStudioStep.current = activeTab === "design" ? readStudioStep() : null;
     setEmail((current) => current || currentUser?.email || "");
     setSent(false);
     setSubmitError(null);
     setFieldError(null);
+    setOrderFlowPrompt(options?.orderFlow === true);
+    if (!options?.orderFlow) {
+      activeOrderFlowTrigger.current = null;
+      activeOrderFlowDraftKey.current = null;
+    }
     setOpen(true);
   }, [activeTab, currentUser?.email]);
 
   const closeDialog = useCallback(() => {
     setOpen(false);
+    setOrderFlowPrompt(false);
+    activeOrderFlowTrigger.current = null;
+    activeOrderFlowDraftKey.current = null;
     if (sent) {
       setMessage("");
       setType("idea");
+      setPhoto(null);
       setSent(false);
     }
     if (typeof window !== "undefined") {
-      window.setTimeout(() => tabRef.current?.focus(), 0);
+      window.setTimeout(() => {
+        const opener = openerRef.current;
+        if (opener && opener.isConnected && opener !== document.body) opener.focus();
+        else tabRef.current?.focus();
+      }, 0);
     }
   }, [sent]);
+
+  // Header Feedback and Design Studio step prompts ask the store to open this panel.
+  const lastOpenRequest = useRef(siteFeedbackOpenRequest);
+  useEffect(() => {
+    if (siteFeedbackOpenRequest === lastOpenRequest.current) return;
+    lastOpenRequest.current = siteFeedbackOpenRequest;
+    const fromOrderFlow = siteFeedbackOpenSource === "order_flow";
+    activeOrderFlowTrigger.current = fromOrderFlow
+      ? siteFeedbackOpenTrigger
+      : null;
+    activeOrderFlowDraftKey.current = fromOrderFlow
+      ? siteFeedbackOpenDraftKey
+      : null;
+    openDialog({ orderFlow: fromOrderFlow });
+  }, [
+    siteFeedbackOpenRequest,
+    siteFeedbackOpenSource,
+    siteFeedbackOpenTrigger,
+    siteFeedbackOpenDraftKey,
+    openDialog,
+  ]);
 
   // Esc closes; Tab stays inside the dialog.
   useEffect(() => {
@@ -168,7 +275,7 @@ export function SiteFeedbackButton({
       if (event.key !== "Tab" || !dialogRef.current) return;
       const focusable = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), input:not([tabindex='-1']):not([disabled]), textarea:not([disabled]), [href]",
+          "button:not([disabled]), input:not([tabindex='-1']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]",
         ),
       );
       if (focusable.length === 0) return;
@@ -194,7 +301,7 @@ export function SiteFeedbackButton({
     event.preventDefault();
     if (sending) return;
     setSubmitError(null);
-    const validation = validateSiteFeedback({ type, message, email });
+    const validation = validateSiteFeedback({ type, message, email, nationality });
     if (validation.ok === false) {
       // tsconfig is not strict, so narrow explicitly.
       const failure = validation as Extract<SiteFeedbackValidation, { ok: false }>;
@@ -231,13 +338,27 @@ export function SiteFeedbackButton({
     };
     setSending(true);
     try {
-      await submit(validation.value, context);
+      await submit(validation.value, context, photo);
       recordSiteFeedbackSend(storage, now);
+      if (
+        activeOrderFlowTrigger.current === "after_step_5" &&
+        activeOrderFlowDraftKey.current
+      ) {
+        const draftKey = activeOrderFlowDraftKey.current;
+        const promptStorage =
+          typeof window !== "undefined" ? window.sessionStorage : null;
+        const next = markOrderFeedbackSubmittedAfterStep5(
+          readOrderFeedbackPromptState(promptStorage, draftKey),
+        );
+        writeOrderFeedbackPromptState(promptStorage, draftKey, next);
+      }
       setSent(true);
     } catch (error) {
       console.error("Feedback could not be sent:", error);
       setSubmitError(
-        "Sorry, your feedback could not be sent. Check your connection and try again.",
+        photo
+          ? "Sorry, your feedback could not be sent. Check your connection and try again. If it keeps failing, remove the photo and send again."
+          : "Sorry, your feedback could not be sent. Check your connection and try again.",
       );
     } finally {
       setSending(false);
@@ -260,10 +381,10 @@ export function SiteFeedbackButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         title="Send feedback"
-        onClick={openDialog}
+        onClick={() => openDialog()}
         tabIndex={hidden ? -1 : 0}
         aria-hidden={hidden ? true : undefined}
-        className={`fixed left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1.5 rounded-r-xl border border-l-0 border-heritage-gold/60 bg-heritage-green py-3 pl-[calc(0.25rem+env(safe-area-inset-left,0px))] pr-1 text-heritage-gold shadow-lg transition-opacity duration-200 hover:bg-heritage-forest focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:pointer-events-auto sm:gap-2 sm:py-4 sm:pr-1.5 ${
+        className={`fixed left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1.5 rounded-r-xl border border-l-0 border-heritage-gold/60 bg-heritage-green py-3 pl-[calc(0.25rem+env(safe-area-inset-left,0px))] pr-1 text-heritage-gold shadow-lg transition-opacity duration-200 hover:bg-heritage-forest focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:pointer-events-auto sm:gap-2 sm:py-4 sm:pr-1.5 xl:hidden ${
           hidden
             ? "pointer-events-none opacity-0"
             : covering
@@ -331,6 +452,16 @@ export function SiteFeedbackButton({
                 <p className="text-sm text-heritage-ink/75">
                   Spotted a problem or have an idea? Tell us. We'll see which page you're on.
                 </p>
+                {orderFlowPrompt ? (
+                  <button
+                    type="button"
+                    data-site-feedback-maybe-later="true"
+                    onClick={closeDialog}
+                    className="self-start rounded-full border border-heritage-gold/50 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                  >
+                    Maybe later
+                  </button>
+                ) : null}
                 <fieldset>
                   <legend className="mb-2 text-xs font-bold uppercase tracking-wider text-heritage-green">
                     Type
@@ -403,6 +534,79 @@ export function SiteFeedbackButton({
                   {errorFor("email") && (
                     <p className="mt-1 text-xs text-red-700" role="alert">
                       {errorFor("email")}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor={`${ids}-nationality`} className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-heritage-green">
+                    Nationality <span className="font-normal normal-case tracking-normal text-heritage-ink/55">(optional)</span>
+                  </label>
+                  <select
+                    id={`${ids}-nationality`}
+                    data-site-feedback-nationality="true"
+                    value={nationality}
+                    onChange={(event) => setNationality(event.target.value)}
+                    aria-invalid={errorFor("nationality") ? true : undefined}
+                    className="w-full rounded-full border border-heritage-gold/50 bg-white px-4 py-2.5 text-sm text-heritage-ink outline-none transition focus:border-heritage-green focus:ring-2 focus:ring-heritage-gold/50"
+                  >
+                    <option value="">Prefer not to say</option>
+                    {SITE_FEEDBACK_NATIONALITY_OPTIONS.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errorFor("nationality") && (
+                    <p className="mt-1 text-xs text-red-700" role="alert">
+                      {errorFor("nationality")}
+                    </p>
+                  )}
+                </div>
+
+                <div data-site-feedback-photo-field="true">
+                  <span id={`${ids}-photo-label`} className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-heritage-green">
+                    Add a photo or screenshot <span className="font-normal normal-case tracking-normal text-heritage-ink/55">(optional, JPEG, PNG or WebP, up to 5 MB)</span>
+                  </span>
+                  {photo && photoPreview ? (
+                    <div className="flex items-center gap-3 rounded-2xl border border-heritage-gold/50 bg-white p-2.5">
+                      <img
+                        src={photoPreview}
+                        alt="Selected photo preview"
+                        className="h-14 w-14 shrink-0 rounded-xl object-cover"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm text-heritage-ink/75">{photo.name}</span>
+                      <button
+                        type="button"
+                        onClick={clearPhoto}
+                        aria-label="Remove photo"
+                        className="rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor={`${ids}-photo`}
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded-full border border-dashed border-heritage-gold/70 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10 focus-within:ring-2 focus-within:ring-heritage-gold"
+                    >
+                      <ImagePlus aria-hidden="true" size={16} />
+                      Choose photo
+                      <input
+                        id={`${ids}-photo`}
+                        ref={photoInputRef}
+                        type="file"
+                        accept={SITE_FEEDBACK_PHOTO_TYPES.join(",")}
+                        aria-labelledby={`${ids}-photo-label`}
+                        aria-invalid={errorFor("photo") ? true : undefined}
+                        onChange={(event) => onPickPhoto(event.target.files?.[0] ?? null)}
+                        className="sr-only"
+                      />
+                    </label>
+                  )}
+                  {errorFor("photo") && (
+                    <p className="mt-1 text-xs text-red-700" role="alert" data-site-feedback-photo-error="true">
+                      {errorFor("photo")}
                     </p>
                   )}
                 </div>

@@ -21,6 +21,7 @@ const businessSettings = {
 const setupMarkup = renderToStaticMarkup(
   createElement(PrivateBatchSetupView, {
     businessSettings,
+    settingsLoaded: true,
     onBack: () => undefined,
     onSubmit: async () => ({ status: "created" as const }),
   }),
@@ -29,6 +30,10 @@ assert.match(setupMarkup, /Create a Private Batch/);
 assert.match(setupMarkup, /Private Batch Name/);
 assert.match(setupMarkup, /Occasion \/ Purpose/);
 assert.match(setupMarkup, /Description/);
+assert.match(setupMarkup, /Delivery Target \(Need Date\) <span aria-hidden="true">\*<\/span>/);
+assert.match(setupMarkup, /Delivery period: 3 to 4 weeks/);
+assert.match(setupMarkup, /Ordering Closes <span aria-hidden="true">\*<\/span>/);
+assert.doesNotMatch(setupMarkup, /Delivery Target(?! \(Need Date\))/);
 assert.doesNotMatch(setupMarkup, /Public \/ Private|Save as Draft|ownerUid|organizer ID/i);
 
 const createMarkup = renderToStaticMarkup(
@@ -57,9 +62,10 @@ let renderer!: ReturnType<typeof create>;
 await act(async () => {
   renderer = create(
     createElement(PrivateBatchSetupView, {
-      businessSettings,
-      onBack: () => undefined,
-      onSubmit: async (values) => {
+    businessSettings,
+    settingsLoaded: true,
+    onBack: () => undefined,
+    onSubmit: async (values) => {
         submissions += 1;
         assert.equal(values.batchName, "Family Wedding 2026");
         assert.equal(values.occasion, "Wedding");

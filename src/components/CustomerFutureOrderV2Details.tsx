@@ -17,6 +17,14 @@ import {
   workshopDispatchLabel,
 } from "../utils/futureOrderV2WorkshopProgress";
 import { WorkshopStageList } from "./WorkshopStageList";
+import type { Fabric } from "../types";
+import { getOrderGarmentPictures } from "../utils/orderGarmentPictures";
+import { OrderGarmentPictureTiles } from "./orderPictures/OrderGarmentPictures";
+import { useUploadedDesignPreviewServices } from "./orderPictures/useUploadedDesignPreview";
+import {
+  eagerLoadOrderPictureImages,
+  waitForOrderPicturesBeforePrint,
+} from "../utils/orderPicturePrintReadiness";
 import {
   futureOrderV2RedirectingMessage,
   futureOrderV2RedirectingPayLabel,
@@ -58,6 +66,8 @@ interface CustomerFutureOrderV2DetailsProps {
     | { readonly status: "updated"; readonly record: FutureOrderV2PersonalizedPriceRecord }
     | { readonly status: "failed"; readonly message: string }
   >;
+  /** The already-loaded fabric list, used only for picture lookups. */
+  fabrics?: readonly Fabric[];
   initialPayOutcome?: Exclude<
     FutureOrderV2DashboardPaymentOutcome,
     { status: "paid" } | { status: "redirecting" }
@@ -82,6 +92,7 @@ export const CustomerFutureOrderV2Details = ({
   personalizedPrice = null,
   onDecidePersonalizedPrice,
   initialPayOutcome = null,
+  fabrics = [],
 }: CustomerFutureOrderV2DetailsProps) => {
   const [localPayment, setLocalPayment] = useState<FutureOrderV2PaymentRecord | null>(null);
   const [payPhase, setPayPhase] = useState<DashboardPayPhase>("idle");
@@ -100,6 +111,22 @@ export const CustomerFutureOrderV2Details = ({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const printInFlightRef = useRef(false);
+  const { loader: uploadedDesignPreviews } = useUploadedDesignPreviewServices();
+  useEffect(() => eagerLoadOrderPictureImages(dialogRef.current), []);
+  const handlePrint = async () => {
+    if (printInFlightRef.current) return;
+    printInFlightRef.current = true;
+    try {
+      await waitForOrderPicturesBeforePrint(dialogRef.current, () =>
+        uploadedDesignPreviews.settle(),
+      );
+    } finally {
+      printInFlightRef.current = false;
+      window.print();
+    }
+  };
   useEffect(() => {
     closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -117,11 +144,18 @@ export const CustomerFutureOrderV2Details = ({
     ]),
   );
   const garments = getFuturePaymentReviewGarments(candidate);
+  const pictureByGarmentKey = new Map(
+    getOrderGarmentPictures(candidate, fabrics, { ownerUid: order.ownerUid }).map((picture) => [
+      picture.garmentKey,
+      picture,
+    ]),
+  );
   const measurementGroups = getFuturePaymentReviewMeasurementGroups(candidate);
   const pricingRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
     orderType: candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: candidate.garments.length,
     fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
+    useStoredLagosAmount: true,
   });
   const shipping = candidate.shipping.state;
   const customer = shipping.customerInformation;
@@ -285,6 +319,7 @@ export const CustomerFutureOrderV2Details = ({
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
       <div data-customer-v2-order-dialog-frame className="flex min-h-full items-center justify-center p-4">
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={headingId}
@@ -299,7 +334,9 @@ export const CustomerFutureOrderV2Details = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => {
+                  void handlePrint();
+                }}
                 className="bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
               >
                 <Printer size={12} aria-hidden="true" /> Print / Save PDF
@@ -349,12 +386,27 @@ export const CustomerFutureOrderV2Details = ({
 
             <DetailsSection title="Garments">
               <ul className="space-y-3">
-                {garments.map(({ garment, fabricAllocations, customDetails }) => (
+                {garments.map(({ garment, fabricAllocations, customDetails }) => {
+                  const picture = pictureByGarmentKey.get(garment.garmentKey);
+                  return (
                   <li
                     key={garment.garmentKey}
                     data-customer-v2-order-garment={garment.garmentKey}
-                    className="rounded-xl border border-heritage-green/10 p-3"
+                    className="rounded-xl border border-heritage-green/10 p-3 break-inside-avoid"
                   >
+                    {picture ? (
+                      <div
+                        data-customer-v2-order-garment-pictures={garment.garmentKey}
+                        className="mb-2 overflow-x-auto pb-1 print:overflow-visible"
+                      >
+                        <OrderGarmentPictureTiles
+                          picture={picture}
+                          tileClassName="w-16 sm:w-20 print:w-20"
+                          textClassName="text-[9px]"
+                          eager
+                        />
+                      </div>
+                    ) : null}
                     <p className="font-serif font-bold text-heritage-green">{garment.label}</p>
                     <p className="text-xs">Style: {styleByGarmentKey.get(garment.garmentKey) || "Not recorded"}</p>
                     {fabricAllocations.map((allocation) => (
@@ -374,7 +426,8 @@ export const CustomerFutureOrderV2Details = ({
                       </ul>
                     )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </DetailsSection>
 

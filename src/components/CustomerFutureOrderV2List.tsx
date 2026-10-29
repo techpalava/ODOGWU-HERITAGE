@@ -25,6 +25,9 @@ import {
 } from "../utils/futureOrderV2PersonalizedPrice";
 import { CustomerFutureOrderV2Details } from "./CustomerFutureOrderV2Details";
 import { WorkshopStageList } from "./WorkshopStageList";
+import type { Fabric } from "../types";
+import { getOrderGarmentPictures } from "../utils/orderGarmentPictures";
+import { OrderDesignThumbnail } from "./orderPictures/OrderGarmentPictures";
 
 interface CustomerFutureOrderV2ListProps {
   orders: readonly unknown[];
@@ -42,6 +45,8 @@ interface CustomerFutureOrderV2ListProps {
     | { readonly status: "updated"; readonly record: FutureOrderV2PersonalizedPriceRecord }
     | { readonly status: "failed"; readonly message: string }
   >;
+  /** The already-loaded fabric list, used only for picture lookups. */
+  fabrics?: readonly Fabric[];
 }
 
 interface CustomerFutureOrderV2Entry {
@@ -58,6 +63,7 @@ export const CustomerFutureOrderV2List = ({
   workshopByOrderId = new Map(),
   personalizedPricesByOrderId = new Map(),
   onDecidePersonalizedPrice,
+  fabrics = [],
 }: CustomerFutureOrderV2ListProps) => {
   const [internalOpenOrderId, setInternalOpenOrderId] = useState<string | null>(null);
   const openOrderId = controlledOpenOrderId !== undefined ? controlledOpenOrderId : internalOpenOrderId;
@@ -96,6 +102,12 @@ export const CustomerFutureOrderV2List = ({
           const payment = paymentsByOrderId.get(order.orderId);
           const personalizedPrice = personalizedPricesByOrderId.get(order.orderId) ?? null;
           const candidate = persisted.masterOrder.cartItem.candidate;
+          const pictureByGarmentKey = new Map(
+            getOrderGarmentPictures(candidate, fabrics, { ownerUid: persisted.ownerUid }).map((picture) => [
+              picture.garmentKey,
+              picture,
+            ]),
+          );
           const chargeableCents = readFutureOrderV2ChargeableCents(candidate, personalizedPrice);
           const additionSettlement = presentPersonalizedAdditionSettlement(candidate, personalizedPrice);
           const totalPaidCents = reportedPaidTotalCents({
@@ -138,15 +150,24 @@ export const CustomerFutureOrderV2List = ({
                 )}
               </div>
               <ul className="space-y-1 text-[10px] text-heritage-ink/75">
-                {order.occurrences.map((occurrence) => (
-                  <li key={`${occurrence.garmentKey}:${occurrence.occurrenceToken}`}>
-                    <span className="font-semibold">{occurrence.garmentLabel}</span>
-                    {" · "}
-                    {occurrence.style.kind === "catalogue"
-                      ? occurrence.style.name
-                      : "Uploaded design"}
-                  </li>
-                ))}
+                {order.occurrences.map((occurrence) => {
+                  const picture = pictureByGarmentKey.get(occurrence.garmentKey);
+                  return (
+                    <li
+                      key={`${occurrence.garmentKey}:${occurrence.occurrenceToken}`}
+                      className="flex items-center gap-2"
+                    >
+                      {picture ? <OrderDesignThumbnail picture={picture} /> : null}
+                      <span className="min-w-0">
+                        <span className="font-semibold">{occurrence.garmentLabel}</span>
+                        {" · "}
+                        {occurrence.style.kind === "catalogue"
+                          ? occurrence.style.name
+                          : "Uploaded design"}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
               {(() => {
                 const progress = presentFutureOrderV2WorkshopCard(
@@ -236,6 +257,7 @@ export const CustomerFutureOrderV2List = ({
           onDecidePersonalizedPrice={onDecidePersonalizedPrice}
           onClose={() => setOpenOrderId(null)}
           paymentActions={paymentActions}
+          fabrics={fabrics}
         />
       )}
     </section>

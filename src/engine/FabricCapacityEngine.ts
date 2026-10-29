@@ -55,20 +55,24 @@ export const FABRIC_APPEND_GARMENT_CHOICES: readonly FabricAppendGarmentChoice[]
 export function getFabricGarmentLabel(
   garmentType: FabricGarmentType,
 ): string {
-  // These two stable IDs were renamed for customers in Step 1. Delegate their
-  // display text to that authority while preserving the established labels for
-  // every other Fabric-domain garment type.
-  if (garmentType === "kaftan" || garmentType === "full_length_gown") {
+  // Customer garment names come from the Step 1 display authority
+  // (shirt/dress/skirt -> "Standard ...", kaftan -> "Long Shirt",
+  // full_length_gown -> "Long Dress"). Stable IDs are unchanged. The other
+  // Fabric-domain labels keep their established text.
+  if (
+    garmentType === "shirt" ||
+    garmentType === "dress" ||
+    garmentType === "skirt" ||
+    garmentType === "kaftan" ||
+    garmentType === "full_length_gown"
+  ) {
     return getStep1GarmentDisplayLabel(garmentType);
   }
   switch (garmentType) {
-    case "shirt": return "Shirt";
     case "trouser": return "Trouser";
-    case "skirt": return "Skirt";
     case "long_skirt": return "Long Skirt";
     case "standard_shorts": return "Nikka / Standard Shorts";
     case "bum_shorts": return "Bum Shorts";
-    case "dress": return "Dress";
     case "agbada": return "Agbada";
     case "other": return "Other Garment";
   }

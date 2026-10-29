@@ -32,6 +32,9 @@ export const FutureFabricCatalogueCard = ({
   removeTargetGarmentLabel,
   dataAttributes,
   orderAllocationOptions,
+  usedBySelectionsLabel,
+  disabledActionMessage,
+  preselected = false,
 }: {
   fabric: Fabric;
   presentation: FutureFabricCatalogueCardPresentation;
@@ -58,6 +61,12 @@ export const FutureFabricCatalogueCard = ({
     availabilityLabel: string;
     onSelect: () => void;
   }>;
+  /** Change Fabric USE AGAIN: which selection(s) already use this print. */
+  usedBySelectionsLabel?: string;
+  /** Shown on the disabled action itself (e.g. stock exhausted while changing). */
+  disabledActionMessage?: string;
+  /** Shown as the pre-selected choice: highlighted, its Select button pressed. */
+  preselected?: boolean;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
   const isCancelAction =
@@ -76,8 +85,12 @@ export const FutureFabricCatalogueCard = ({
       ? "border-amber-200 bg-amber-700 text-white"
       : stockPresentation.visible && stockPresentation.tone === "out_of_stock"
         ? "border-red-200 bg-red-700 text-white"
-        : "border-heritage-gold/30 bg-heritage-green text-white";
+        : stockPresentation.visible &&
+            stockPresentation.tone === "reusable_capacity"
+          ? "border-red-200 bg-red-600 text-white"
+          : "border-heritage-gold/30 bg-heritage-green text-white";
   const disabled =
+    Boolean(disabledActionMessage) ||
     Boolean(availabilityMessage) ||
     Boolean(actionDisabled) ||
     Boolean(
@@ -161,9 +174,12 @@ export const FutureFabricCatalogueCard = ({
 
   return (
     <article
-      className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
+      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm ${
+        preselected ? "border-heritage-green ring-2 ring-heritage-gold/60" : "border-gray-200"
+      }`}
       data-fabric-catalogue-card="true"
       data-fabric-card-code={fabric.code}
+      data-fabric-preselected={preselected ? "true" : undefined}
       {...Object.fromEntries(
         Object.entries(dataAttributes || {}).filter(
           ([, value]) => value !== undefined,
@@ -229,6 +245,28 @@ export const FutureFabricCatalogueCard = ({
         <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
           {fabric.code}
         </p>
+        {preselected ? (
+          <p className="mt-2">
+            <span
+              data-fabric-current="true"
+              className="inline-flex items-center gap-1 rounded-full border border-heritage-green/40 bg-heritage-green/10 px-2 py-0.5 text-[10px] font-bold leading-tight text-heritage-green"
+            >
+              <Check aria-hidden="true" size={12} />
+              Current Fabric
+            </span>
+          </p>
+        ) : null}
+        {usedBySelectionsLabel ? (
+          <p className="mt-2">
+            <span
+              data-fabric-used-by-selections="true"
+              title={usedBySelectionsLabel}
+              className="inline-flex rounded-full border border-heritage-gold/50 bg-heritage-gold/15 px-2 py-0.5 text-[10px] font-bold leading-tight text-heritage-forest"
+            >
+              {usedBySelectionsLabel}
+            </span>
+          </p>
+        ) : null}
         {availabilityMessage && (
           <p className="mt-2 text-xs font-semibold text-red-700">
             {availabilityMessage}
@@ -280,7 +318,7 @@ export const FutureFabricCatalogueCard = ({
               data-fabric-in-use="true"
               className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider text-white"
             >
-              IN USE
+              {statusLabel || "IN USE"}
             </span>
             {removeButton}
           </div>
@@ -305,11 +343,26 @@ export const FutureFabricCatalogueCard = ({
             </button>
             {removeButton}
           </div>
+        ) : disabledActionMessage ? (
+          <button
+            type="button"
+            disabled
+            data-fabric-card="true"
+            data-fabric-code={fabric.code}
+            data-fabric-status={resolvedStatusLabel}
+            data-fabric-action="none"
+            data-fabric-disabled-message="true"
+            aria-label={`${fabric.name}: ${disabledActionMessage}`}
+            aria-describedby={describedByValue}
+            className="mt-auto inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-center text-xs font-semibold leading-snug whitespace-normal break-words text-red-800"
+          >
+            {disabledActionMessage}
+          </button>
         ) : (
           <button
             type="button"
             disabled={disabled}
-            aria-pressed={actionPressed}
+            aria-pressed={actionPressed ?? (preselected || undefined)}
             onClick={onAction}
             data-fabric-card="true"
             data-fabric-code={fabric.code}

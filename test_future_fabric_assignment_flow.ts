@@ -147,7 +147,7 @@ assert.deepEqual(
     ),
   })),
   [{ fabricCode: "FAB-B", garmentKeys: ["base:shirt", "base:trouser"] }],
-  "Changing Fabric for a shared Shirt + Trouser allocation replaces the whole physical group.",
+  "Changing Fabric for a shared Standard Shirt + Trouser allocation replaces the whole physical group.",
 );
 const assign = (
   state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
@@ -270,32 +270,30 @@ assert.equal(
   "a full-capacity Long Dress must not create a half-capacity offer",
 );
 
-// Shirt + Trouser need one Fabric, so a second Fabric product is blocked.
+// Shirt + Trouser need one Fabric, but a garment may still go on a second
+// print: the limit is one piece per garment, not Fabrics Needed.
 const twoGarmentSelection = createSelection(["shirt", "trouser"]);
 const firstHalfState = assign(FabricAllocationStateEngine.initialize(), ["shirt", "trouser"], "base:shirt", "FAB-A");
 const firstHalfCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: firstHalfState, fabrics });
 assert.equal(firstHalfCompletion.isComplete, false);
 assert.deepEqual(getFutureRemainingFabricCapacityOffers({ fabricAllocationState: firstHalfState, fabricStageComplete: firstHalfCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true }), []);
-const blockedSecondFabric = assignFutureFabricToGarment({ state: firstHalfState, garmentTypeSelection: twoGarmentSelection, garmentKey: "base:trouser", fabricCode: "FAB-B", fabrics });
-assert.equal(blockedSecondFabric.status, "blocked");
-assert.equal(blockedSecondFabric.status === "blocked" ? blockedSecondFabric.reason : null, "FABRIC_QUANTITY_LIMIT_REACHED");
-assert.equal(blockedSecondFabric.state.fabricAllocations.length, 1);
-// A saved draft from before the limit may still hold separate halves. Its
-// selections are kept (and priced as saved), but Fabric cannot complete.
+const secondPrintResult = assignFutureFabricToGarment({ state: firstHalfState, garmentTypeSelection: twoGarmentSelection, garmentKey: "base:trouser", fabricCode: "FAB-B", fabrics });
+assert.equal(secondPrintResult.status, "assigned");
+assert.equal(secondPrintResult.state.fabricAllocations.length, 2);
+// Separate halves (one piece per garment) are allowed and complete the step.
 const separateHalvesState = FabricAllocationStateEngine.attemptAppendGarment(
   FabricAllocationStateEngine.createAllocationForFabric(firstHalfState, "FAB-B"),
   { code: "BASE_TROUSER", garmentSpec: { key: "base:trouser", garmentType: "trouser", fabricUnits: 1 }, sourceRole: "main" },
 );
 const separateHalvesCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: separateHalvesState, fabrics });
-assert.equal(separateHalvesCompletion.isComplete, false);
-assert.deepEqual(separateHalvesCompletion.blockers, [{ code: "FABRIC_QUANTITY_OVER_ALLOCATED" }]);
+assert.equal(separateHalvesCompletion.isComplete, true);
+assert.deepEqual(separateHalvesCompletion.blockers, []);
 assert.equal(separateHalvesState.fabricAllocations.length, 2);
 const separateHalvesPricing = resolveFabricAllocationMaterialPricing(separateHalvesState.fabricAllocations, fabrics);
 assert.equal(separateHalvesPricing.status, "resolved");
 if (separateHalvesPricing.status !== "resolved") throw new Error("Expected material pricing");
 assert.equal(separateHalvesPricing.allocationCount, 2);
 assert.equal(separateHalvesPricing.totalMaterialPrice, 30);
-assert.deepEqual(getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: separateHalvesCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true }), []);
 // Offer signatures are still checked with two half allocations, as a saved
 // draft can carry them; the stage-complete gate is forced for that check only.
 const combinedCapacityOffers = getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: true, hasEligibleHalfCapacityAdditionalGarment: true });
@@ -965,7 +963,7 @@ assert.deepEqual(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt", "base:trouser"],
-  "Changing Trouser's Fabric changes the whole shared Shirt + Trouser allocation.",
+  "Changing Trouser's Fabric changes the whole shared Standard Shirt + Trouser allocation.",
 );
 assert.deepEqual(
   separate.fabricAllocations[1].garmentAssignments.map(
@@ -1252,7 +1250,7 @@ assert.deepEqual(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt"],
-  "Removing Trouser must not depend on array order or silently target Shirt.",
+  "Removing Trouser must not depend on array order or silently target Standard Shirt.",
 );
 const sharedAfterShirtOnly = resolveFutureFabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -1461,7 +1459,7 @@ assert.deepEqual(
     { fabricCode: "FAB-A", garmentKeys: ["base:shirt", "base:trouser"] },
     { fabricCode: "FAB-B", garmentKeys: ["additional:shirt:1"] },
   ],
-  "Selecting Fabric B repairs only the exact Additional Shirt and preserves both base assignments.",
+  "Selecting Fabric B repairs only the exact Additional Standard Shirt and preserves both base assignments.",
 );
 assert.equal(
   getFutureFabricStageCompletion({
@@ -1557,7 +1555,7 @@ assert.ok(
       (assignment) => assignment.garmentKey === "additional:shirt:1",
     ),
   ),
-  "Removing the Step 1 Shirt assignment must leave the Step 4 additional Shirt assignment intact.",
+  "Removing the Step 1 Standard Shirt assignment must leave the Step 4 additional Standard Shirt assignment intact.",
 );
 assert.equal(
   mixedAfterShirtCancel.fabricAllocations.some((allocation) =>
@@ -1854,7 +1852,10 @@ assert.match(stepSource, /isConnected/);
 assert.match(stepSource, /focus\(\{ preventScroll: true \}\)/);
 assert.match(stepSource, /document\.activeElement === first/);
 assert.match(stepSource, /overflow-x-hidden/);
-assert.match(stepSource, /onAssignFabricToGarment\(fabric, garmentKey\)/);
+assert.match(
+  stepSource,
+  /onAssignFabricToGarment\(\s*fabric,\s*garmentKey,\s*placement,\s*options,?\s*\)/,
+);
 assert.match(stepSource, /handleFabricSelection\(/);
 assert.match(stepSource, /removeAssignedFabric\(/);
 assert.match(stepSource, /resolveFutureFabricCatalogueCardPresentation/);
@@ -2123,7 +2124,7 @@ assert.match(stepSource, /halfCapacityBlockedGarmentLabels/);
   });
   assert.deepEqual(
     unlabelled!.garmentLabels,
-    ["Shirt", "Shirt"],
+    ["Standard Shirt", "Standard Shirt"],
     "Callers without occurrence labels keep the existing Fabric-domain fallback.",
   );
 

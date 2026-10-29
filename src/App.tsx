@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, Suspense } from "react";
+import { useNotificationAutoDismiss } from "./hooks/useNotificationAutoDismiss";
 
 import {
   Check,
@@ -41,11 +42,22 @@ import {
 import {
   resolvePersistedDraftOrderContext,
 } from "./utils/orderContextIdentity";
+import { stampLinkedSavedOrderId } from "./utils/savedStudioOrderModel";
+import { allowNextStudioFutureDesignDraftSession } from "./services/retirePaidStudioDraft";
+import {
+  SavedStudioOrderProvider,
+  type SavedStudioOrderHydrateMode,
+} from "./components/SavedStudioOrderProvider";
+import type { SavedStudioOrderItemV1 } from "./utils/savedStudioOrderModel";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
-import { getCurrentRegistrationBatch } from "./utils/batchUtils";
+import {
+  getCurrentRegistrationBatch,
+  getHomepageClosedCurrentBatch,
+  getNextOpenCommunityBatch,
+} from "./utils/batchUtils";
 import { resolveHomepageCommunityBatchEntry } from "./utils/homepageOrderGateway";
 import {
   BATCH_MINIMUM_GARMENTS,
@@ -86,6 +98,8 @@ const galleryView = lazyView(() => import("./components/GalleryView"));
 const reviewsView = lazyView(() => import("./components/ReviewsView"));
 const loginView = lazyView(() => import("./components/LoginView"));
 const databaseView = lazyView(() => import("./components/DatabaseView"));
+const privacyPolicyView = lazyView(() => import("./components/PrivacyPolicyView"));
+const termsView = lazyView(() => import("./components/TermsView"));
 const HomeView = homeView.Component;
 const DesignStudioView = designStudioView.Component;
 const DashboardView = dashboardView.Component;
@@ -95,6 +109,8 @@ const GalleryView = galleryView.Component;
 const ReviewsView = reviewsView.Component;
 const LoginView = loginView.Component;
 const DatabaseView = databaseView.Component;
+const PrivacyPolicyView = privacyPolicyView.Component;
+const TermsView = termsView.Component;
 const IDLE_PREFETCH_VIEWS = [
   homeView.prefetch,
   galleryView.prefetch,
@@ -114,6 +130,7 @@ import {
 } from "./utils/appVersionCheck";
 import Footer from "./components/Footer";
 import { lazyView, prefetchWhenIdle } from "./utils/lazyView";
+import { legalPagePathFor } from "./utils/legalPages";
 import { ViewLoadingFallback } from "./components/ViewLoadingFallback";
 
 
@@ -121,6 +138,7 @@ import { AdminAuthGuard } from "./components/AdminAuthGuard";
 import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
 import { IndividualOrderStartDialog } from "./components/IndividualOrderStartDialog";
 import PrivateBatchSetupView, {
+  resolvePrivateBatchSubmitLimits,
   type PrivateBatchSetupSubmission,
   type PrivateBatchSetupValues,
 } from "./components/PrivateBatchSetupView";
@@ -197,7 +215,11 @@ export default function App() {
     setBatches,
     businessSettings,
     setBusinessSettings,
+    hasLoadedBusinessSettings,
   } = store;
+
+  // Every toast auto-dismisses here; callers only set the notification.
+  useNotificationAutoDismiss(notification, setNotification);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -214,6 +236,14 @@ export default function App() {
   // closure which happened to render the dialog.
   const homepageCurrentBatchesRef = React.useRef(batches);
   homepageCurrentBatchesRef.current = batches;
+
+  // Terms and Privacy have their own paths (/terms, /privacy) so they can be
+  // opened in a new tab. Keep the address bar in step with the active tab.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextPath = legalPagePathFor(activeTab, window.location);
+    if (nextPath) window.history.replaceState(window.history.state, "", nextPath);
+  }, [activeTab]);
 
   // Initialize async data
   React.useEffect(() => {
@@ -320,6 +350,17 @@ export default function App() {
         defaultCommunityPickupLocation,
       )?.orderContext || null
     : null;
+  const homepageJoinBatch = activeCommunityBatch
+    ? registrationBatch ?? null
+    : null;
+  // The homepage keeps a closed Join card for a current batch its end date
+  // closed. Its "Join next open batch" button only offers a batch the join
+  // flow accepts; nobody is moved automatically.
+  const homepageClosedBatch = getHomepageClosedCurrentBatch(batches) ?? null;
+  const homepageNextOpenBatch =
+    homepageClosedBatch && homepageJoinBatch
+      ? getNextOpenCommunityBatch(batches, homepageClosedBatch.id) ?? null
+      : null;
 
   const [adminPortalInitialTab, setAdminPortalInitialTab] = useState<
     "batches" | null
@@ -387,9 +428,6 @@ export default function App() {
     type: "success" | "info" = "success",
   ) => {
     setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
   };
 
   const resolveCurrentHomepageCommunityEntry = (batchId: string) =>
@@ -485,6 +523,75 @@ export default function App() {
     setPresetFabricCode(null);
     setOrderContext(context);
     setActiveTab("design");
+  };
+
+  const [studioContinueNonce, setStudioContinueNonce] = useState(0);
+
+  const inspectActiveDraftForSavedOrder = async () => {
+    const inspected = await getHomepageDraftReplacementService().inspect();
+    if (inspected.status === "valid") return inspected.existing.draft;
+    return GuestOrderSessionService.getFutureDesignDraft();
+  };
+
+  const hydrateSavedStudioOrder = async ({
+    item,
+    mode,
+  }: {
+    item: SavedStudioOrderItemV1;
+    mode: SavedStudioOrderHydrateMode;
+  }) => {
+    const authority = getHomepageDraftReplacementService();
+    if (mode === "replace") {
+      const inspected = await authority.inspect();
+      if (inspected.status === "valid") {
+        const discarded = await authority.discard(inspected.existing);
+        if (discarded.status !== "discarded") {
+          triggerNotification(
+            "We could not replace your unfinished order safely. It has not been changed.",
+            "info",
+          );
+          return;
+        }
+      } else if (inspected.status !== "empty") {
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+        return;
+      }
+    }
+    const draft = stampLinkedSavedOrderId(
+      {
+        ...item.draft,
+        currentStageId: item.savedStage,
+        currentStep: item.savedStep,
+        resumeLocus: item.resumeLocus ?? item.draft.resumeLocus,
+        updatedAt: new Date().toISOString(),
+      },
+      item.savedOrderId,
+    );
+    GuestOrderSessionService.saveFutureDesignDraft(draft);
+    const firebaseUser = auth.currentUser;
+    if (currentUser && firebaseUser && !firebaseUser.isAnonymous) {
+      const repository = createFirebaseAuthenticatedFutureDraftRepository({
+        customer: currentUser,
+        authResolved: true,
+        firebaseUser,
+      });
+      const loaded = await repository.load();
+      const expectedRevision =
+        loaded.status === "loaded" ? loaded.record.revision : null;
+      await repository.save(draft, expectedRevision);
+    }
+    allowNextStudioFutureDesignDraftSession();
+    const resumeContext =
+      resolvePersistedDraftOrderContext(
+        draft,
+        homepageCurrentBatchesRef.current,
+        homepageDefaultPickupLocationRef.current,
+      ) ?? freshIndividualOrderContext();
+    setStudioContinueNonce((current) => current + 1);
+    openDesignStudioForOrder(resumeContext);
   };
 
   React.useEffect(() => {
@@ -833,6 +940,19 @@ export default function App() {
   const createPrivateBatchFromSetup = async (
     values: PrivateBatchSetupValues,
   ): Promise<PrivateBatchSetupSubmission> => {
+    const loadedSettings = useAppStore.getState();
+    const limits = resolvePrivateBatchSubmitLimits(
+      loadedSettings.businessSettings,
+      loadedSettings.hasLoadedBusinessSettings,
+    );
+    if (!limits) {
+      return {
+        status: "error",
+        message:
+          "Private Batch settings are still loading. Please try again in a moment.",
+      };
+    }
+
     const firebaseUser = auth.currentUser;
     if (!currentUser || !firebaseUser || firebaseUser.isAnonymous) {
       store.setPendingRedirect("private-batch-setup");
@@ -844,17 +964,12 @@ export default function App() {
       const created = await createPrivateBatch({
         input: {
           ...values,
-          maxParticipants: businessSettings.batchSettings.maxGarmentsPerBatch,
+          maxParticipants: limits.maxParticipantsAllowed,
           organizerName: currentUser.name,
           deliveryWindow: values.preferredDeliveryMonth,
           status: "OPEN",
         },
-        limits: {
-          minParticipantsRequired:
-            businessSettings.batchSettings.minParticipantsRequired,
-          maxParticipantsAllowed:
-            businessSettings.batchSettings.maxGarmentsPerBatch,
-        },
+        limits,
       });
       setPresetStyleId(null);
       setPresetFabricCode(null);
@@ -1620,7 +1735,10 @@ export default function App() {
     );
   };
 
-  const handleLogin = (customer: Customer) => {
+  const handleLogin = (
+    customer: Customer,
+    options?: { isNewAccount?: boolean },
+  ) => {
     const user = {
       ...customer,
       email: AuthorizationEngine.getCanonicalEmail(customer.email),
@@ -1630,7 +1748,9 @@ export default function App() {
 
     setCurrentUser(user);
     triggerNotification(
-      `Welcome back, ${user.name}! Secure session activated.`,
+      options?.isNewAccount
+        ? `Welcome, ${user.name}! Your account is ready.`
+        : `Welcome back, ${user.name}! Secure session activated.`,
       "success",
     );
 
@@ -1832,6 +1952,10 @@ export default function App() {
   ]);
 
   return (
+    <SavedStudioOrderProvider
+      onHydrateSavedOrder={hydrateSavedStudioOrder}
+      inspectActiveDraft={inspectActiveDraftForSavedOrder}
+    >
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
       <AppVersionBanner />
       {/* Toast Notification HUD */}
@@ -1875,9 +1999,9 @@ export default function App() {
                 unfinishedOrderLabel={unfinishedOrderLabel}
                 onResumeUnfinishedOrder={handleResumeUnfinishedOrder}
                 onJoinCommunityBatch={handleJoinCommunityBatch}
-                joinBatch={
-                  activeCommunityBatch ? registrationBatch ?? null : null
-                }
+                joinBatch={homepageJoinBatch}
+                closedJoinBatch={homepageClosedBatch}
+                nextOpenBatch={homepageNextOpenBatch}
                 onCreatePrivateBatch={() => {
                   setPrivateBatchSetupError(null);
                   setActiveTab("private-batch-setup");
@@ -1923,6 +2047,7 @@ export default function App() {
             {activeTab === "private-batch-setup" && (
               <PrivateBatchSetupView
                 businessSettings={businessSettings}
+                settingsLoaded={hasLoadedBusinessSettings}
                 externalError={privateBatchSetupError}
                 onBack={() => {
                   setPrivateBatchSetupError(null);
@@ -1934,8 +2059,11 @@ export default function App() {
 
             {activeTab === "design" && (
               <DesignStudioView
+                key={`design-studio-${studioContinueNonce}`}
                 onAddToCart={handleAddToCart}
                 openCartDrawer={() => setIsCartOpen(true)}
+                onStartFreshIndividualOrder={handleRequestFreshIndividualOrder}
+                onJoinCommunityBatch={handleJoinCommunityBatch}
                 currentUser={currentUser}
                 orderContext={orderContext}
                 styles={styles}
@@ -2068,6 +2196,10 @@ export default function App() {
 
             {activeTab === "reviews" && <ReviewsView />}
 
+            {activeTab === "privacy" && <PrivacyPolicyView />}
+
+            {activeTab === "terms" && <TermsView />}
+
             {activeTab === "gallery" && (
               <GalleryView
                 showpieces={showpieces}
@@ -2120,7 +2252,7 @@ export default function App() {
 
       {/* PREMIUM FOOTER */}
       <Footer
-        joinBatch={activeCommunityBatch ? registrationBatch ?? null : null}
+        joinBatch={homepageClosedBatch ? null : homepageJoinBatch}
         onJoinCommunityBatch={handleJoinCommunityBatch}
       />
 
@@ -2593,5 +2725,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </SavedStudioOrderProvider>
   );
 }

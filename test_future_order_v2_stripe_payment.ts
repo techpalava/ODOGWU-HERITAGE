@@ -20,6 +20,7 @@ import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePa
 import {
   FutureOrderV2StripeCard,
   futureOrderV2ExpressCheckoutShell,
+  futureOrderV2ExpressWalletsFromChange,
   isFutureOrderV2ExpressCheckoutAmount,
   isFutureOrderV2ExpressWalletAvailable,
   isFutureOrderV2StripePayReady,
@@ -35,7 +36,10 @@ import {
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
-import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import {
+  quoteFutureOrderPayableTotal,
+  recomputeFutureOrderPayableTotal,
+} from "./src/utils/futureOrderPayableTotal";
 import { readFutureOrderV2ChargeableCents } from "./src/utils/futureOrderV2PersonalizedPrice";
 import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
 import {
@@ -94,7 +98,7 @@ assert.equal(readFutureOrderV2ReviewedTotalCents({
   cartItemId: prepared.cartItemId,
   paymentReference,
   masterOrder: prepared.masterOrder,
-}), 30000);
+}), 43125);
 
 const persisted = createPersistedFutureOrderV2({
   masterOrder: prepared.masterOrder,
@@ -336,7 +340,7 @@ const ownerAuthHeaders = { authorization: "Bearer owner-token" };
   );
   assert.equal(state.statusCode, 200);
   assert.deepEqual(created, {
-    amountCents: 30000,
+    amountCents: 43125,
     orderId: prepared.orderId,
     paymentReference,
     shipping: PICKUP_STRIPE_SHIPPING,
@@ -482,7 +486,7 @@ assert.match(stripeCardSource, /data-future-order-v2-method-ideal/);
 assert.match(stripeCardSource, /data-future-order-v2-method-card/);
 assert.match(stripeCardSource, /data-future-order-v2-method-klarna/);
 assert.match(stripeCardSource, /data-future-order-v2-klarna-help/);
-assert.match(stripeCardSource, /inline-flex w-full min-w-0 items-center justify-center gap-1\.5/);
+assert.match(stripeCardSource, /inline-flex min-w-fit items-center justify-center gap-1\.5 whitespace-nowrap/);
 assert.match(stripeCardSource, /FutureOrderV2MethodIcon method="card"/);
 assert.match(stripeCardSource, /FutureOrderV2MethodIcon method="ideal"/);
 assert.match(stripeCardSource, /FutureOrderV2MethodIcon method="klarna"/);
@@ -531,8 +535,19 @@ assert.match(stripeCardSource, /data-future-order-v2-express-checkout/);
 assert.match(stripeCardSource, /stashFutureOrderV2StripeReturnContext/);
 assert.match(stripeCardSource, /klarna:\s*"never"/);
 assert.equal(/klarna:\s*"auto"/.test(stripeCardSource), false);
-assert.match(stripeCardSource, /applePay:\s*"auto"/);
-assert.match(stripeCardSource, /googlePay:\s*"auto"/);
+assert.match(stripeCardSource, /applePay:\s*"always"/);
+assert.match(stripeCardSource, /googlePay:\s*"always"/);
+assert.equal(/applePay:\s*"auto"/.test(stripeCardSource), false);
+assert.equal(/googlePay:\s*"auto"/.test(stripeCardSource), false);
+assert.match(stripeCardSource, /link:\s*"never"/);
+assert.match(stripeCardSource, /paypal:\s*"never"/);
+assert.match(stripeCardSource, /amazonPay:\s*"never"/);
+assert.match(stripeCardSource, /currency:\s*"eur"/);
+// Wallet visibility comes only from availablepaymentmethodschange; the
+// deprecated ready payload must not be able to hide the box.
+assert.match(stripeCardSource, /expressCheckout\.on\("availablepaymentmethodschange"/);
+assert.equal(/expressCheckout\.on\("ready"/.test(stripeCardSource), false);
+assert.equal(stripeCardSource.includes("event.availablePaymentMethods"), false);
 assert.match(stripeCardSource, /allowedPaymentMethodTypes:\s*\["card"\]/);
 assert.equal(/allowedPaymentMethodTypes:\s*\[[^\]]*ideal/.test(stripeCardSource), false);
 assert.equal(stripeCardSource.includes("idealReady"), false);
@@ -570,6 +585,28 @@ assert.match(
 );
 assert.equal(reviewStepSource.includes("cardReady"), false);
 
+assert.equal(futureOrderV2ExpressWalletsFromChange(undefined), undefined);
+assert.deepEqual(
+  futureOrderV2ExpressWalletsFromChange({
+    applePay: { available: false },
+    googlePay: { available: true },
+  }),
+  { applePay: false, googlePay: true },
+);
+assert.deepEqual(futureOrderV2ExpressWalletsFromChange({}), {
+  applePay: false,
+  googlePay: false,
+});
+assert.equal(
+  isFutureOrderV2ExpressWalletAvailable(
+    futureOrderV2ExpressWalletsFromChange({ googlePay: { available: true } }),
+  ),
+  true,
+);
+assert.equal(
+  isFutureOrderV2ExpressWalletAvailable(futureOrderV2ExpressWalletsFromChange(undefined)),
+  false,
+);
 assert.equal(isFutureOrderV2ExpressWalletAvailable(undefined), false);
 assert.equal(isFutureOrderV2ExpressWalletAvailable(null), false);
 assert.equal(isFutureOrderV2ExpressWalletAvailable({}), false);
@@ -1128,7 +1165,7 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
       0,
       "EUR checkout hides Klarna when the PaymentIntent does not offer it",
     );
-    assert.match(String(methods.props.className), /grid-cols-2/);
+    assert.match(String(methods.props.className), /\bflex flex-wrap gap-2\b/);
   } finally {
     if (renderer) {
       await act(async () => {
@@ -1187,8 +1224,8 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
   );
   assert.equal(
     knownBaseCents,
-    pendingCandidate.pricing.garmentConstructionSubtotalCents,
-    "pickup charges the garment total with no shipping",
+    (pendingCandidate.pricing.garmentConstructionSubtotalCents ?? 0) + 13125,
+    "pickup keeps the Lagos → Eindhoven charge",
   );
   const pendingStored = createPersistedFutureOrderV2({
     masterOrder: pendingOrder,
@@ -1264,11 +1301,101 @@ assert.deepEqual(toFutureOrderV2KlarnaBillingDetails(PICKUP_STRIPE_SHIPPING), {
       },
     },
   );
-  assert.equal(tamperedResponse.state.statusCode, 400);
+  assert.equal(tamperedResponse.state.statusCode, 409);
   assert.equal(tamperedCharged, false);
+  assert.equal(
+    (tamperedResponse.state.body as { code?: string }).code,
+    "PRICE_OUTDATED",
+  );
   assert.equal(
     recomputeFutureOrderPayableTotal(tampered.masterOrder.cartItem.candidate).status,
     "rejected",
+  );
+}
+
+{
+  const staleParisOrderId = "future-order-stale-paris-14";
+  const staleParis = mutableClone(
+    createCatalogueAuthoritativeFutureOrderV2Fixture(staleParisOrderId),
+  );
+  staleParis.cartItem.candidate.garments = [
+    staleParis.cartItem.candidate.garments[0]!,
+  ];
+  staleParis.cartItem.candidate.shipping.state.fulfilmentMethod =
+    "destination_delivery";
+  staleParis.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.city =
+    "Paris";
+  staleParis.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.countryCode =
+    "FR";
+  const parisQuote = quoteFutureOrderPayableTotal(staleParis.cartItem.candidate);
+  assert.ok(parisQuote);
+  assert.equal(parisQuote.lagosToEindhovenShippingCents, 13125);
+  staleParis.cartItem.candidate.pricing.garmentConstructionSubtotalCents =
+    parisQuote.garmentConstructionSubtotalCents;
+  staleParis.cartItem.candidate.pricing.customDetailsCents =
+    parisQuote.customDetailsCents;
+  staleParis.cartItem.candidate.pricing.selectedDesignTotalCents =
+    parisQuote.selectedDesignTotalCents;
+  staleParis.cartItem.candidate.pricing.postEindhovenAdjustmentCents =
+    parisQuote.postEindhovenAdjustmentCents;
+  staleParis.cartItem.candidate.pricing.exactTotalCents = 9800;
+  staleParis.cartItem.candidate.pricing.components.customDetails = {
+    status: "separately_charged",
+    amountCents: parisQuote.customDetailsCents,
+  };
+  staleParis.cartItem.candidate.pricing.components.postEindhovenDelivery = {
+    status: "separately_charged",
+    amountCents: parisQuote.postEindhovenAdjustmentCents,
+  };
+  staleParis.cartItem.candidate.pricing.components.lagosToEindhovenShipping = {
+    status: "separately_charged",
+    amountCents: 1400,
+  };
+  staleParis.cartItem.candidate.shipping.additionalDeliveryFeeCents =
+    parisQuote.postEindhovenAdjustmentCents;
+  const staleStored = createPersistedFutureOrderV2({
+    masterOrder: staleParis,
+    owner: { uid: OWNER_UID, isAnonymous: false },
+    customerOwnerUid: OWNER_UID,
+    persistedAt: "2026-10-22T12:00:00.000Z",
+  });
+  assert.equal(staleStored.status, "valid");
+  if (staleStored.status !== "valid") {
+    throw new Error("Expected a stored €14 Paris ledger.");
+  }
+  const staleParisResponse = response();
+  let staleParisCharged = false;
+  await handleFutureOrderV2StripePayment(
+    {
+      method: "POST",
+      headers: ownerAuthHeaders,
+      body: {
+        orderId: staleParisOrderId,
+        paymentReference: `future-v2-payment-${staleParisOrderId}`,
+        masterOrder: staleParis,
+      },
+    },
+    staleParisResponse.res,
+    {
+      ...authDependencies({ order: staleStored.value }),
+      readPersistedOrder: async () => staleStored.value,
+      readPersonalizedPrice: async () => null,
+      readCatalog: async () => [],
+      async createPaymentIntent() {
+        staleParisCharged = true;
+        return {
+          id: "pi_test_stale_paris",
+          clientSecret: "secret",
+          paymentMethodTypes: ["card", "ideal"],
+        };
+      },
+    },
+  );
+  assert.equal(staleParisResponse.state.statusCode, 409);
+  assert.equal(staleParisCharged, false);
+  assert.equal(
+    (staleParisResponse.state.body as { code?: string }).code,
+    "PRICE_OUTDATED",
   );
 }
 
@@ -1302,7 +1429,7 @@ assert.equal(
   assert.ok(eurMethods.includes("data-future-order-v2-method-ideal"));
   assert.equal(eurMethods.includes("data-future-order-v2-method-klarna"), false);
   assert.equal(eurMethods.includes("data-future-order-v2-klarna-help"), false);
-  assert.match(eurMethods, /grid-cols-2/);
+  assert.match(eurMethods, /relative z-10 flex flex-wrap gap-2/);
   const withKlarna = renderToStaticMarkup(
     createElement(FutureOrderV2StripeCard, {
       amountCents: 7900,
@@ -1314,7 +1441,55 @@ assert.equal(
   );
   assert.ok(withKlarna.includes("data-future-order-v2-method-klarna"));
   assert.ok(withKlarna.includes("data-future-order-v2-klarna-help"));
-  assert.match(withKlarna, /grid-cols-3/);
+  assert.match(withKlarna, /relative z-10 flex flex-wrap gap-2/);
+  // Pill gap fix: unselected border >= 3:1 on heritage-green, labels never
+  // break mid-word ("IDEA L"), and the row wraps instead of squeezing.
+  for (const markup of [eurMethods, withKlarna]) {
+    const pills = [...markup.matchAll(/<button[^>]*role="radio"[^>]*>/g)].map((m) => m[0]);
+    assert.ok(pills.length >= 2);
+    for (const pill of pills) {
+      assert.match(pill, /\bwhitespace-nowrap\b/, "method label never wraps mid-word");
+      assert.match(pill, /\bmin-w-fit\b/, "pill is never narrower than its icon + label");
+      assert.doesNotMatch(pill, /\bmin-w-0\b/);
+      assert.match(pill, /\bgrow basis-0\b/);
+      if (pill.includes('aria-checked="true"')) {
+        assert.match(pill, /border-heritage-gold bg-heritage-gold\/15 text-white/);
+      } else {
+        assert.match(pill, /border-white\/50 bg-white\/5 text-white\/70 hover:border-white\/70/);
+      }
+      assert.doesNotMatch(pill, /border-white\/25/, "old 2.25:1 unselected border is gone");
+    }
+  }
+  const fourPills = renderToStaticMarkup(
+    createElement(FutureOrderV2StripeCard, {
+      amountCents: 30000,
+      orderId: "future-order-four-methods",
+      disabled: false,
+      offeredPaymentMethodTypes: ["card", "ideal", "klarna"],
+      shippingState: (() => {
+        const state = createEmptyFutureShippingState();
+        state.fulfilmentMethod = "destination_delivery";
+        state.customerInformation.fullName = "Joana Silva";
+        state.customerInformation.email = "joana@example.test";
+        state.customerInformation.deliveryAddress = {
+          addressLine1: "Avenida Paulista 1000",
+          city: "São Paulo",
+          stateRegion: "SP",
+          postalCode: "01310-100",
+          countryCode: "BR",
+        };
+        return state;
+      })(),
+      onReadyChange: () => undefined,
+    } as any),
+  );
+  const fourPillButtons = [...fourPills.matchAll(/<button[^>]*role="radio"[^>]*>/g)].map((m) => m[0]);
+  assert.equal(fourPillButtons.length, 4, "card + iDEAL + Klarna + Pix");
+  for (const pill of fourPillButtons) {
+    assert.match(pill, /grow basis-\[calc\(50%-0\.25rem\)\] sm:basis-0/, "four pills keep 2x2 below sm");
+    assert.match(pill, /\bwhitespace-nowrap\b/);
+  }
+  assert.doesNotMatch(stripeCardSource, /border-white\/25|hover:border-white\/40/);
 }
 {
   const loadingMarkup = renderToStaticMarkup(

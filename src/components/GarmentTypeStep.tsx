@@ -74,6 +74,10 @@ export const STEP1_GARMENT_REFERENCE_FRAME_CLASS =
 export const STEP1_GARMENT_SELECT_ATTENTION_CLASS =
   "motion-safe:animate-step1-select-attention motion-reduce:animate-none";
 
+/** Soft gold beam on the audience question while it still blocks Continue to Fabric. */
+export const STEP1_AUDIENCE_GUIDE_BEAM_CLASS =
+  "motion-safe:animate-step1-audience-beam motion-reduce:animate-none";
+
 export const STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS =
   "mt-2.5 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2 active:scale-[0.97]";
 
@@ -197,6 +201,11 @@ export interface GarmentTypeStepProps {
    * When omitted, the step derives the same three codes from its own props.
    */
   stageBlockers?: readonly GarmentTypeStageBlocker[];
+  /**
+   * A note under a selected card whose garment was switched to its other length in Step 4
+   * (the card stays selected: it is what the customer picked here).
+   */
+  lengthSwitchNotes?: Readonly<Partial<Record<FabricGarmentType, string>>>;
 }
 
 export const formatGarmentTypeStepEuro = (price: number): string =>
@@ -309,6 +318,7 @@ export const GarmentTypeStep = ({
   onContinue,
   continueDisabled = false,
   stageBlockers,
+  lengthSwitchNotes = {},
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
   const presentation = getGarmentTypeStepPresentation({
@@ -607,6 +617,14 @@ export const GarmentTypeStep = ({
                     <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
                       {category.fabricCapacityUsage}
                     </p>
+                    {category.selected && lengthSwitchNotes[category.garmentType] && (
+                      <p
+                        data-garment-type-length-switch-note={category.garmentType}
+                        className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
+                      >
+                        {lengthSwitchNotes[category.garmentType]}
+                      </p>
+                    )}
                     {category.selected && !isResolved && (
                       <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
                         <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
@@ -662,7 +680,7 @@ export const GarmentTypeStep = ({
           data-step1-audience-needed={audienceNeeded ? "true" : undefined}
           className={
             audienceNeeded
-              ? "mt-7 min-w-0 scroll-mt-24 rounded-2xl border-2 border-heritage-gold bg-heritage-cream/50 px-4 pb-5 pt-4 ring-2 ring-heritage-gold/80"
+              ? `mt-7 min-w-0 scroll-mt-24 rounded-2xl border border-heritage-gold bg-heritage-cream/50 px-4 pb-5 pt-4 ${STEP1_AUDIENCE_GUIDE_BEAM_CLASS}`
               : "mt-7 min-w-0 scroll-mt-24 border-t border-heritage-gold/15 pt-6"
           }
         >

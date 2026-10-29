@@ -110,7 +110,12 @@ export const futureOrderV2ExpressCheckoutShell = (walletsShown: boolean) =>
         className: "pointer-events-none",
       };
 
-const walletFlagsFromChange = (
+/**
+ * Reads the wallet flags from Stripe's availablepaymentmethodschange event.
+ * That event also fires on first render, so it alone decides whether the
+ * wallet box shows. The deprecated ready payload is not used.
+ */
+export const futureOrderV2ExpressWalletsFromChange = (
   paymentMethods:
     | {
         readonly applePay?: { readonly available?: boolean };
@@ -139,14 +144,14 @@ export const futureOrderV2VisibleStripeMethods = (
   return FUTURE_ORDER_V2_STRIPE_METHOD_ORDER.filter((method) => source.includes(method));
 };
 
-const stripeMethodGridClass = (count: number): string =>
-  count >= 4
-    ? "grid-cols-2 sm:grid-cols-4"
-    : count >= 3
-      ? "grid-cols-3"
-      : count === 2
-        ? "grid-cols-2"
-        : "grid-cols-1";
+/**
+ * Pill sizing for the method row. The row is flex-wrap, and each pill is at
+ * least as wide as its own icon + label, so a narrow column moves a pill to a
+ * new line instead of squeezing a label ("iDEAL") onto two lines. Four pills
+ * keep the old 2x2 layout below `sm` and share one row from `sm` when they fit.
+ */
+const stripeMethodPillBasisClass = (count: number): string =>
+  count >= 4 ? "grow basis-[calc(50%-0.25rem)] sm:basis-0" : "grow basis-0";
 
 /**
  * Card via Stripe Element, iDEAL or Klarna redirect, or Apple Pay / Google Pay.
@@ -589,9 +594,13 @@ export const FutureOrderV2StripeCard = ({
       allowedPaymentMethodTypes: ["card"],
     });
     const expressCheckout = elements.create("expressCheckout", {
+      // "always" lets Stripe show the wallet wherever it supports it. With "auto"
+      // Google Pay never shows on Safari, any iOS browser, or Firefox, and only
+      // shows elsewhere when a card is already saved. Stripe still hides a wallet
+      // the device or browser cannot use.
       paymentMethods: {
-        applePay: "auto",
-        googlePay: "auto",
+        applePay: "always",
+        googlePay: "always",
         link: "never",
         paypal: "never",
         amazonPay: "never",
@@ -607,11 +616,11 @@ export const FutureOrderV2StripeCard = ({
       if (cancelled) return;
       setExpressCheckoutVisible(isFutureOrderV2ExpressWalletAvailable(flags));
     };
-    expressCheckout.on("ready", (event) => {
-      applyAvailability(event.availablePaymentMethods);
-    });
+    // Only availablepaymentmethodschange drives visibility. It fires on first
+    // render and on every change. The ready event fires after it and its
+    // availablePaymentMethods field is deprecated, so it must not hide the box.
     expressCheckout.on("availablepaymentmethodschange", (event) => {
-      applyAvailability(walletFlagsFromChange(event.paymentMethods));
+      applyAvailability(futureOrderV2ExpressWalletsFromChange(event.paymentMethods));
     });
     expressCheckout.on("click", (event) => {
       if (
@@ -751,7 +760,7 @@ export const FutureOrderV2StripeCard = ({
       </div>
 
       <div
-        className={`relative z-10 grid ${stripeMethodGridClass(methodPillCount)} gap-2`}
+        className="relative z-10 flex flex-wrap gap-2"
         role="radiogroup"
         aria-label="Payment method"
         data-future-order-v2-payment-methods
@@ -764,10 +773,10 @@ export const FutureOrderV2StripeCard = ({
             data-future-order-v2-method-card
             disabled={disabled}
             onClick={() => selectMethod("card")}
-            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+            className={`inline-flex min-w-fit items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${stripeMethodPillBasisClass(methodPillCount)} ${
               method === "card"
                 ? "border-heritage-gold bg-heritage-gold/15 text-white"
-                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+                : "border-white/50 bg-white/5 text-white/70 hover:border-white/70"
             } disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <FutureOrderV2MethodIcon method="card" />
@@ -782,10 +791,10 @@ export const FutureOrderV2StripeCard = ({
             data-future-order-v2-method-ideal
             disabled={disabled}
             onClick={() => selectMethod("ideal")}
-            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+            className={`inline-flex min-w-fit items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${stripeMethodPillBasisClass(methodPillCount)} ${
               method === "ideal"
                 ? "border-heritage-gold bg-heritage-gold/15 text-white"
-                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+                : "border-white/50 bg-white/5 text-white/70 hover:border-white/70"
             } disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <FutureOrderV2MethodIcon method="ideal" />
@@ -800,10 +809,10 @@ export const FutureOrderV2StripeCard = ({
             data-future-order-v2-method-klarna
             disabled={disabled}
             onClick={() => selectMethod("klarna")}
-            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+            className={`inline-flex min-w-fit items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${stripeMethodPillBasisClass(methodPillCount)} ${
               method === "klarna"
                 ? "border-heritage-gold bg-heritage-gold/15 text-white"
-                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+                : "border-white/50 bg-white/5 text-white/70 hover:border-white/70"
             } disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <FutureOrderV2MethodIcon method="klarna" />
@@ -818,10 +827,10 @@ export const FutureOrderV2StripeCard = ({
             data-future-order-v2-method-pix
             disabled={disabled}
             onClick={() => selectMethod("pix")}
-            className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${
+            className={`inline-flex min-w-fit items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border-2 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition sm:px-3 ${stripeMethodPillBasisClass(methodPillCount)} ${
               method === "pix"
                 ? "border-heritage-gold bg-heritage-gold/15 text-white"
-                : "border-white/25 bg-white/5 text-white/70 hover:border-white/40"
+                : "border-white/50 bg-white/5 text-white/70 hover:border-white/70"
             } disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <FutureOrderV2MethodIcon method="pix" />

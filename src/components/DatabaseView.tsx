@@ -5,7 +5,11 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { projectTailoringMeasurementReadout } from "../utils/tailoringMeasurementProjection";
+import {
+  garmentDemographicByKeyFromGarments,
+  garmentTypeByKeyFromFabricAllocations,
+  projectTailoringMeasurementReadout,
+} from "../utils/tailoringMeasurementProjection";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Database,
@@ -38,6 +42,7 @@ import {
   ListCollapse,
   Pen,
   Star,
+  MessageSquare,
 } from "lucide-react";
 import {
   Fabric,
@@ -173,6 +178,7 @@ import {
 } from "../utils/futureOrderV2PersonalizedPrice";
 import { BatchManagementPanel } from "./BatchManagementPanel";
 import AdminReviewsPanel from "./AdminReviewsPanel";
+import AdminSiteFeedbackPanel from "./AdminSiteFeedbackPanel";
 import {
   getFabricGarmentLabel,
 } from "../engine/FabricCapacityEngine";
@@ -192,6 +198,7 @@ type TabType =
   | "showpieces"
   | "photos"
   | "reviews"
+  | "feedback"
   | "settings"
   | "media"
   | "plugins"
@@ -1684,7 +1691,7 @@ export default function DatabaseView({
       <div className="flex flex-col md:flex-row gap-6 lg:gap-8">
         {/* Navigation Sidebar / Mobile Scrollable Row */}
         <div className="w-full md:w-56 lg:w-64 shrink-0 overflow-x-auto md:overflow-visible pb-2 md:pb-0">
-          <div className="flex flex-row md:flex-col space-x-1 md:space-x-0 md:space-y-1 bg-heritage-forest/40 p-1 md:p-2 rounded-2xl border border-heritage-gold/10 w-max md:w-full min-w-full">
+          <div className="flex flex-row md:flex-col space-x-1 md:space-x-0 md:space-y-1 bg-[#12422C] p-1 md:p-2 rounded-2xl border border-heritage-gold/10 w-max md:w-full min-w-full">
             {[
               {
                 id: "documentation",
@@ -1701,6 +1708,7 @@ export default function DatabaseView({
               { id: "showpieces", label: "Gallery Showpieces", icon: Tag, condition: AuthorizationEngine.canManageShowpieces(currentUser) },
               { id: "photos", label: "Community & Cohorts", icon: Image, condition: AuthorizationEngine.canManageGallery(currentUser) },
               { id: "reviews", label: "Customer Reviews", icon: Star, condition: AuthorizationEngine.canManageGallery(currentUser) },
+              { id: "feedback", label: "Site Feedback", icon: MessageSquare, condition: AuthorizationEngine.canViewReports(currentUser) },
               { id: "media", label: "Media Library", icon: Image, condition: AuthorizationEngine.canManageMedia(currentUser) },
               { id: "plugins", label: "Plugins", icon: Puzzle, condition: AuthorizationEngine.canManageSettings(currentUser) },
               { id: "audit", label: "Audit Logs", icon: FileText, condition: AuthorizationEngine.canManageUsers(currentUser) },
@@ -1725,7 +1733,7 @@ export default function DatabaseView({
                   className={`flex items-center gap-2 px-3 py-2 md:py-2.5 text-[10px] md:text-[11px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer select-none whitespace-nowrap md:whitespace-normal text-left ${
                     isActive
                       ? "bg-heritage-green text-heritage-gold border border-heritage-gold/25 shadow-md font-bold"
-                      : "text-heritage-beige hover:text-white hover:bg-heritage-forest/30"
+                      : "text-white hover:text-white hover:bg-heritage-forest/30"
                   }`}
                 >
                   <Icon size={14} className="shrink-0" />
@@ -3712,8 +3720,11 @@ export default function DatabaseView({
                       />
                     </div>
                     {(() => {
+                      // Label each garment by the order's garment type (follows a length switch).
                       const tailoringReadout = projectTailoringMeasurementReadout(
                         editingItem.measurements,
+                        garmentTypeByKeyFromFabricAllocations(editingItem.fabricAllocations),
+                        garmentDemographicByKeyFromGarments(editingItem.garments),
                       );
                       if (!tailoringReadout) return null;
                       return (
@@ -3727,6 +3738,17 @@ export default function DatabaseView({
                                 {wearer.displayName}
                               </h4>
                               <p>Method: {wearer.methodLabel}</p>
+                              {wearer.methodNote && (
+                                <p data-tailoring-method-note className="text-heritage-bronze">
+                                  {wearer.methodNote}
+                                </p>
+                              )}
+                              {/* Step 7 order: shared values (Total Height first), then each garment. */}
+                              {wearer.shared.map((value) => (
+                                <p key={value.measurementId}>
+                                  Shared {value.label}: {value.display}
+                                </p>
+                              ))}
                               {wearer.garments.map((garment) => (
                                 <div key={garment.garmentKey}>
                                   <p className="font-semibold">
@@ -3737,15 +3759,10 @@ export default function DatabaseView({
                                   </p>
                                   {garment.values.map((value) => (
                                     <p key={value.measurementId} className="pl-3">
-                                      {value.measurementId}: {value.valueCm} cm
+                                      {value.label}: {value.display}
                                     </p>
                                   ))}
                                 </div>
-                              ))}
-                              {wearer.shared.map((value) => (
-                                <p key={value.measurementId}>
-                                  Shared {value.measurementId}: {value.valueCm} cm
-                                </p>
                               ))}
                             </section>
                           ))}
@@ -5880,6 +5897,9 @@ export default function DatabaseView({
                                             {wearer.displayName}
                                           </p>
                                           <p>Method: {wearer.methodLabel}</p>
+                                          {wearer.methodNote && (
+                                            <p data-tailoring-method-note>{wearer.methodNote}</p>
+                                          )}
                                           {wearer.garments.map((garment) => (
                                             <p key={garment.garmentKey}>
                                               {garment.label}
@@ -6683,6 +6703,11 @@ export default function DatabaseView({
                 <AdminReviewsPanel />
               )}
 
+            {activeTab === "feedback" &&
+              AuthorizationEngine.canViewReports(currentUser) && (
+                <AdminSiteFeedbackPanel />
+              )}
+
             {activeTab === "settings" && (
               <div className="space-y-6 text-left">
                 {/* Settings Sub-Tab Navigation */}
@@ -6895,7 +6920,7 @@ export default function DatabaseView({
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
                               Individual Order Shipping (
-                              {PRICING_CURRENCY})
+                              {PRICING_CURRENCY}) — not used for checkout
                             </label>
                             <input
                               type="number"
@@ -8826,7 +8851,8 @@ export default function DatabaseView({
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-gray-600 font-medium block">
-                              Individual Home Courier Shipping Rate (€)
+                              Individual Home Courier Shipping Rate (€) — not
+                              used for checkout
                             </label>
                             <input
                               type="number"
@@ -8846,6 +8872,10 @@ export default function DatabaseView({
                               }}
                               className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-heritage-gold font-mono"
                             />
+                            <p className="text-[9px] text-gray-400">
+                              Checkout uses €131.25 per 10 garments for Individual
+                              home delivery. This field is not read by pricing.
+                            </p>
                           </div>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

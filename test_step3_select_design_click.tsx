@@ -117,7 +117,7 @@ const continueButton = () =>
 
 assert.match(progress(), /0 of 3 garments assigned/);
 let dialog = await openDialog();
-await act(async () => checkbox(dialog, "Shirt").props.onChange());
+await act(async () => checkbox(dialog, "Standard Shirt").props.onChange());
 await act(async () => checkbox(dialog, "Trouser").props.onChange());
 assert.equal(renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.disabled, false);
 await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
@@ -132,7 +132,7 @@ assert.deepEqual(
 // The same card remains clickable and adds another occurrence without clearing prior mappings.
 assert.equal(useButton().props.disabled, false);
 dialog = await openDialog();
-assert.equal(checkbox(dialog, "Shirt").props.checked, true);
+assert.equal(checkbox(dialog, "Standard Shirt").props.checked, true);
 assert.equal(checkbox(dialog, "Trouser").props.checked, true);
 await act(async () => checkbox(dialog, "Bum Shorts").props.onChange());
 assert.match(

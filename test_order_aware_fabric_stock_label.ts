@@ -77,6 +77,15 @@ assert.equal(
   ),
   "1/2 Capacity Left",
 );
+{
+  const reusable = getOrderAwareFabricStockPresentation(
+    fabric(10, "OUT_OF_STOCK"),
+    emptyState,
+    { hasCompatibleReusableHalfCapacity: true },
+  );
+  // Rendered red on catalogue cards and in the assign panel.
+  assert.equal(reusable.visible && reusable.tone, "reusable_capacity");
+}
 
 // In stock: unchanged behaviour.
 const inStock = getOrderAwareFabricStockPresentation(fabric(10, "IN_STOCK"), emptyState);

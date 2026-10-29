@@ -247,15 +247,15 @@ const architectureView: LiveOrderSummaryView = {
       title: "Garments Ordered",
       editStage: "garment_type",
       lines: [
-        { id: "construction-base:shirt", label: "Standard Length Shirt, Mid-Long Sleeve", detail: null, amountLabel: "€70.00" },
-        { id: "construction-base:trouser", label: "With Rope", detail: null, amountLabel: "€75.00" },
+        { id: "construction-base:shirt", label: "Standard Shirt", detail: "Standard Length Shirt, Mid-Long Sleeve", amountLabel: "€70.00" },
+        { id: "construction-base:trouser", label: "Trouser", detail: "With Rope", amountLabel: "€75.00" },
       ],
       subsections: [{
         id: "additional_garments",
         title: "Additional Garments",
         editStage: "personalized_additions",
         focusGarmentKey: "additional:shirt:1",
-        lines: [{ id: "construction-additional:shirt:1", label: "Standard Length Shirt, Short Sleeve", detail: null, amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
+        lines: [{ id: "construction-additional:shirt:1", label: "Standard Shirt 2", detail: "Standard Length Shirt, Short Sleeve", amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
       }],
       footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€215.00", amountCents: 21500, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
       footers: [
@@ -361,6 +361,7 @@ assert.deepEqual(
 {
   const t = textOf(architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-construction")[0]);
   assert.ok(t.includes("Mid-Long") && t.includes("€70.00") && t.includes("With Rope") && t.includes("€75.00"));
+  assert.ok(t.includes("Trouser") && t.includes("Standard Shirt 2"));
   assert.ok(t.includes("Garments Ordered"));
 }
 assert.equal(architectureRenderer.root.findAllByProps({ "data-line-id": "construction-additional:shirt:1" }).length, 1, "an Additional Garment is shown once in Garments Ordered");
@@ -1833,5 +1834,76 @@ assert.match(
   wearerGateViewSource,
   /wearerOrder: wearerOrderForPlan,\s*unsavedWearerNameIds,/,
 );
+
+// Garments Ordered rows: garment name, then construction, then wearer and fit,
+// on main rows and Additional Garments rows alike.
+const nameConstructionView: LiveOrderSummaryView = {
+  sections: [
+    {
+      id: "construction",
+      title: "Garments Ordered",
+      editStage: "garment_type",
+      lines: [
+        {
+          id: "construction-base:trouser",
+          label: "Trouser",
+          detail: "With Rope",
+          wearerLabel: "Nol",
+          fitLabel: "Male fit",
+          amountLabel: "€75.00",
+          focusGarmentKey: "base:trouser",
+        },
+      ],
+      subsections: [{
+        id: "additional_garments",
+        title: "Additional Garments",
+        editStage: "personalized_additions",
+        focusGarmentKey: "additional:shirt:1",
+        lines: [{
+          id: "construction-additional:shirt:1",
+          label: "Standard Shirt 2",
+          detail: "Standard Length Shirt, Short Sleeve",
+          wearerLabel: "Pio",
+          fitLabel: "Female fit",
+          amountLabel: "€70.00",
+          focusGarmentKey: "additional:shirt:1",
+        }],
+      }],
+    },
+  ],
+  totalStatus: "pending",
+  totalLabel: "Current Total",
+  totalValueLabel: "Pending",
+  totalAmountCents: null,
+  quoteRequired: false,
+};
+let nameConstructionRenderer: ReturnType<typeof create>;
+act(() => {
+  nameConstructionRenderer = create(
+    createElement(DesignStudioOrderSummary, {
+      view: nameConstructionView,
+      unlockedStages: new Set<DesignStudioStageId>(["garment_type", "personalized_additions"]),
+      currentStageId: "measurement",
+      onEditStage: () => undefined,
+    }),
+  );
+});
+const rowParagraphs = (lineId: string) =>
+  oneByLineId(nameConstructionRenderer.root, lineId)
+    .findAll((node) => node.type === "p")
+    .map((node) => textOf(node));
+assert.deepEqual(
+  rowParagraphs("construction-base:trouser"),
+  ["Trouser", "With Rope", "Nol", "Male fit"],
+  "main row: garment name, construction, wearer, fit",
+);
+assert.deepEqual(
+  rowParagraphs("construction-additional:shirt:1"),
+  ["Standard Shirt 2", "Standard Length Shirt, Short Sleeve", "Pio", "Female fit"],
+  "Additional Garments row: garment name, construction, wearer, fit",
+);
+act(() => {
+  nameConstructionRenderer.unmount();
+});
 
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");

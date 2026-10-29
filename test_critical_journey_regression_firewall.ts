@@ -16,6 +16,7 @@ import {
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
+  assignFutureGarmentToExistingFabricAllocation,
   getFutureFabricStageCompletion,
   prepareHydratedFabricAllocationState,
 } from "./src/utils/designStudioFutureFabricStage";
@@ -217,7 +218,11 @@ const catalogStyleIdFor = (
     ),
   );
 
-  const additionalFabric = assignFutureFabricToGarment({
+  // #832 (Xavier, 2026-10-18) capped Fabrics at the number needed; Xavier
+  // replaced that on 2026-10-25 (fabric-print-freedom): the limit is one piece
+  // per garment, so the second Shirt may open its own Fabric. The base Fabric
+  // stays as it was.
+  const extraFabric = assignFutureFabricToGarment({
     state: normalOnly.state,
     garmentTypeSelection: step1,
     garmentKey: additional.garmentKey,
@@ -225,11 +230,32 @@ const catalogStyleIdFor = (
     fabrics,
     requiredPhysicalOccurrences: [base, additional],
   });
+  assert.equal(extraFabric.status, "assigned");
+  assert.equal(fabricCodeFor(extraFabric.state, base.garmentKey), "FAB-BASE");
+  assert.equal(fabricCodeFor(extraFabric.state, additional.garmentKey), "FAB-ADDITIONAL");
+
+  // The Additional Garment uses the spare room on the selected Fabric, under
+  // its own canonical key, without replacing the same-type base occurrence.
+  const baseAllocationId = normalOnly.state.fabricAllocations[0]!.allocationId;
+  const additionalFabric = assignFutureGarmentToExistingFabricAllocation({
+    state: normalOnly.state,
+    garmentTypeSelection: step1,
+    garmentKey: additional.garmentKey,
+    allocationId: baseAllocationId,
+    requiredPhysicalOccurrences: [base, additional],
+  });
   assert.equal(additionalFabric.status, "assigned");
   assert.equal(fabricCodeFor(additionalFabric.state, base.garmentKey), "FAB-BASE");
   assert.equal(
     fabricCodeFor(additionalFabric.state, additional.garmentKey),
-    "FAB-ADDITIONAL",
+    "FAB-BASE",
+    "the Additional Garment shares the selected Fabric",
+  );
+  assert.deepEqual(
+    additionalFabric.state.fabricAllocations
+      .flatMap((allocation) => allocation.garmentAssignments.map((assignment) => assignment.garmentKey))
+      .sort(),
+    [additional.garmentKey, base.garmentKey].sort(),
     "Additional Garment Fabric must not overwrite the same-type base occurrence",
   );
   assert.equal(
@@ -255,7 +281,7 @@ const catalogStyleIdFor = (
   );
   assert.equal(
     fabricCodeFor(additionalFabricRemount.reconciledState, additional.garmentKey),
-    "FAB-ADDITIONAL",
+    "FAB-BASE",
   );
 
   const styleOccurrences = [

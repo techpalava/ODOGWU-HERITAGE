@@ -24,7 +24,7 @@ const entry = {
     tier: "exact_match",
     selectable: true,
     requiresAdaptationConfirmation: false,
-    originalCompositionLabel: "Shirt",
+    originalCompositionLabel: "Standard Shirt",
     selectedGarmentLabels: ["Standard Shirt"],
     customerReason: "Designed for Standard Shirt.",
   },
@@ -81,7 +81,7 @@ await act(async () => {
 
 assert.match(
   textContent(renderer!.root),
-  /Choose Design Style for Shirt/,
+  /Choose Design Style for Standard Shirt/,
   "modal title must prefer the garment type label",
 );
 assert.equal(

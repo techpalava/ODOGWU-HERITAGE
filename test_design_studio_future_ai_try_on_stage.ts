@@ -87,7 +87,7 @@ assert.equal(
     isCustomDetailsStageReady: false,
   }).currentStageId,
   "custom_details",
-  "Step 5 must remain locked until Step 4 content is valid.",
+  "AI Try-on stays on Custom Details until that step's content is valid.",
 );
 
 assert.deepEqual(
@@ -97,6 +97,7 @@ assert.deepEqual(
     "fabric",
     "design_style",
     "custom_details",
+    "personalized_additions",
     "try_on",
     "measurement",
     "summary",
@@ -105,6 +106,10 @@ assert.deepEqual(
   ],
 );
 assert.deepEqual(DESIGN_STUDIO_STEPS[4], {
+  id: "personalized_additions",
+  label: "Personalized Additions",
+});
+assert.deepEqual(DESIGN_STUDIO_STEPS[5], {
   id: "try_on",
   label: "AI Try-on",
 });
@@ -128,7 +133,7 @@ assert.equal(isFutureMeasurementStageUnlocked(skippedWorkflow), true);
 assert.deepEqual(
   normalizeAiTryOnWorkflowState(JSON.parse(JSON.stringify(skippedWorkflow))),
   skippedWorkflow,
-  "A skipped Step 5 must remain complete after draft JSON restoration.",
+  "A skipped Step 6 must remain complete after draft JSON restoration.",
 );
 
 const readyWorkflow = reconcileAiTryOnWorkflow({
@@ -192,7 +197,7 @@ assert.equal(
   assert.equal(
     isFutureMeasurementStageUnlocked(workflow),
     false,
-    `${workflow.status} must not unlock Step 6.`,
+    `${workflow.status} must not unlock Measurement (Step 7).`,
   );
 });
 assert.deepEqual(
@@ -228,17 +233,21 @@ const stepperMarkup = renderToStaticMarkup(
 );
 assert.match(
   stepperMarkup,
-  /aria-label="Step 5: AI Try-on, completed"/,
+  /aria-label="Step 5: Personalized Additions, completed"/,
+);
+assert.match(
+  stepperMarkup,
+  /aria-label="Step 6: AI Try-on, completed"/,
   "Earlier completed steps must remain represented as navigable completed stages.",
 );
-assert.match(stepperMarkup, /aria-label="Step 7: Summary, locked"/);
+assert.match(stepperMarkup, /aria-label="Step 8: Summary, locked"/);
 assert.match(
   stepperMarkup,
-  /aria-label="Step 8: Delivery &amp; Pickup, locked"/,
+  /aria-label="Step 9: Delivery &amp; Pickup, locked"/,
 );
 assert.match(
   stepperMarkup,
-  /aria-label="Step 9: Order Review &amp; Payment, locked"/,
+  /aria-label="Step 10: Order Review &amp; Payment, locked"/,
 );
 
 const customDetailsSource = readFileSync(
@@ -262,7 +271,11 @@ const appSource = readFileSync("src/App.tsx", "utf8");
 
 assert.match(customDetailsSource, /isFutureCustomDetailsContentReady/);
 assert.match(customDetailsSource, /onContinue/);
-assert.match(customDetailsSource, /Continue to AI Try-on/);
+assert.match(
+  customDetailsSource,
+  /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"AI Try-on"\s*:\s*"Personalized Additions"/,
+);
+assert.match(customDetailsSource, /Continue to \$\{nextStageLabel\}/);
 assert.match(tryOnSource, /formatDesignStudioStepCounter\("try_on"\)/);
 assert.match(tryOnSource, /DesignStudioBackButton/);
 assert.match(tryOnSource, /const previousStageLabel = "Personalized Additions"/);
@@ -281,7 +294,7 @@ assert.equal(tryOnSource.includes("assetId"), false);
 assert.equal(tryOnSource.includes("setTimeout"), false);
 assert.equal(tryOnSource.includes("<input"), false);
 assert.equal(tryOnSource.includes("type=\"file\""), false);
-assert.match(stepperSource, /DESIGN_STUDIO_NINE_STAGE_FOUNDATION\.map/);
+assert.match(stepperSource, /DESIGN_STUDIO_TEN_STAGE_FOUNDATION\.map/);
 assert.match(stepperSource, /canEnterTryOn/);
 assert.match(stepperSource, /canEnterMeasurement/);
 assert.match(stepperSource, /data-step-state=\{state\}/);

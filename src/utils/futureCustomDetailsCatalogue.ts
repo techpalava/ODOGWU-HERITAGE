@@ -1,3 +1,4 @@
+import { getBaseGarmentConstruction } from "./garmentLengthVariant.js";
 import {
   ADDITIONAL_CLOTHES_COST_SECTION_ORDER,
   CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE,
@@ -276,9 +277,8 @@ const getConstructionForSubject = ({
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): GarmentConstructionPricingResolution | null =>
   subject.parentGarmentKey.startsWith("base:")
-    ? garmentTypeSelection.constructionByGarment[
-        subject.parentGarmentType
-      ] || null
+    ? getBaseGarmentConstruction(garmentTypeSelection, subject.parentGarmentKey) ||
+      null
     : additionalGarmentConstructions?.byGarmentKey[
         subject.parentGarmentKey
       ] || null;

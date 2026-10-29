@@ -1,5 +1,6 @@
 import type { Batch, CustomGroup, GuestDesignDraft, OrderContext } from "../types.js";
 import { CapacityService } from "../services/CapacityService.js";
+import { batchOrderWindowContextFields } from "./batchOrderWindow.js";
 
 export type CanonicalOrderIdentity =
   | Readonly<{ orderType: "Individual" }>
@@ -342,6 +343,7 @@ export const resolvePersistedDraftOrderContext = (
     currentMembers: CapacityService.getReservedCapacity(liveBatch),
     allowOrders: liveBatch.allowOrders,
     batchStatus: liveBatch.status,
+    ...batchOrderWindowContextFields(liveBatch),
     pickupLocation: liveBatch.pickupLocation || defaultPickupLocation,
   };
 };

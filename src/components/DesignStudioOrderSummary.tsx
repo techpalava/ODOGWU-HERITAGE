@@ -209,13 +209,13 @@ const SummarySection = ({
                 <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
                   {formatCustomDetailsGarmentLabel(line.label)}
                 </p>
-                <GarmentWearerLine line={line} />
-                <GarmentFitLine line={line} />
                 {line.detail ? (
                   <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
                     {line.detail}
                   </p>
                 ) : null}
+                <GarmentWearerLine line={line} />
+                <GarmentFitLine line={line} />
                 {line.supportingDetail ? (
                   <p className="mt-0.5 break-words text-[11px] font-semibold leading-snug text-heritage-ink/65">
                     {line.supportingDetail}
@@ -376,13 +376,13 @@ const SummarySubsection = ({
             <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
               {formatCustomDetailsGarmentLabel(line.label)}
             </p>
-            <GarmentWearerLine line={line} />
-            <GarmentFitLine line={line} />
             {line.detail ? (
               <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
                 {line.detail}
               </p>
             ) : null}
+            <GarmentWearerLine line={line} />
+            <GarmentFitLine line={line} />
             {line.supportingDetail ? (
               <p className="mt-0.5 break-words text-[11px] font-semibold leading-snug text-heritage-ink/65">
                 {line.supportingDetail}
@@ -588,6 +588,7 @@ export const DesignStudioOrderSummary = ({
                 </dd>
               </div>
               {view.costBreakdown.includedInboundShipping ? (
+                <>
                 <div
                   data-testid="live-order-summary-included-inbound"
                   data-amount-cents={
@@ -603,6 +604,15 @@ export const DesignStudioOrderSummary = ({
                     {view.costBreakdown.includedInboundShipping.valueLabel}
                   </dd>
                 </div>
+                {view.costBreakdown.includedInboundShipping.note ? (
+                  <p
+                    data-testid="live-order-summary-lagos-note"
+                    className="text-[11px] leading-relaxed text-heritage-ink/60"
+                  >
+                    {view.costBreakdown.includedInboundShipping.note}
+                  </p>
+                ) : null}
+                </>
               ) : null}
               {view.costBreakdown.shipping ? (
                 <div

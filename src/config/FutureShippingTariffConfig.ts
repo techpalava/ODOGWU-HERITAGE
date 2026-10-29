@@ -127,23 +127,22 @@ export const FUTURE_SHIPPING_TARIFF_RULES: readonly FutureShippingTariffRuleV1[]
       fulfilmentMethod: "individual_order",
       destinationZoneId: null,
       currency: "EUR",
-      amountCents: null,
-      candidateAmountsCents: Object.freeze([12500, 13125]),
+      amountCents: 13125,
       pricingUnit: "per_parcel",
       supportedGarmentCountBoundary: Object.freeze({
         minimumInclusive: 1,
-        maximumInclusive: 12,
+        maximumInclusive: 10,
       }),
       supportedWeightBoundary: Object.freeze({
         minimumKgInclusive: 0,
         maximumKgExclusive: 5,
       }),
       minimumBatchSize: null,
-      status: "pending_confirmation",
+      status: "active",
       provenanceNote:
-        "The source mentions approximately NGN 200,000 and EUR 125, while its price column states EUR 131.25 for individual Lagos-to-Eindhoven carriage.",
+        "Confirmed at EUR 131.25 per 1–10 garments (under 5 kg). The source also mentioned approximately NGN 200,000 and EUR 125; EUR 125 is not the charged amount.",
       confirmationReason:
-        "EUR 125 conflicts with EUR 131.25, so no single amount is authoritative.",
+        "EUR 131.25 per block of 10 garments (under 5 kg) is the confirmed Individual Lagos-to-Eindhoven home-delivery charge. EUR 125 was a conflicting source mention and is not used.",
     }),
     makeRule({
       ruleId: "future_inbound_batch_lagos_eindhoven",

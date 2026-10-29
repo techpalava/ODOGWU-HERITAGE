@@ -1,3 +1,4 @@
+import { legalPageTabFromPath } from "../utils/legalPages";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { create } from "zustand";
 import { CustomDetailOption, Customer, 
@@ -70,7 +71,8 @@ export interface AppState {
     | "about"
     | "gallery"
     | "database"
-    | "custom-order" | "private-batch-setup" | "login" | "reviews";
+    | "custom-order" | "private-batch-setup" | "login" | "reviews"
+    | "privacy" | "terms";
   pendingRedirect: string | null;
   setPendingRedirect: (redirect: string | null) => void;
   setActiveTab: (
@@ -81,11 +83,26 @@ export interface AppState {
       | "about"
       | "gallery"
       | "database"
-      | "custom-order" | "private-batch-setup" | "login" | "reviews",
+      | "custom-order" | "private-batch-setup" | "login" | "reviews"
+      | "privacy" | "terms",
   ) => void;
   /** Incremented by the site nav. App decides whether Design Studio may open. */
   designStudioNavRequest: number;
   requestDesignStudioFromNav: () => void;
+  /** Incremented by the desktop header Feedback button. SiteFeedbackButton opens its panel. */
+  siteFeedbackOpenRequest: number;
+  /**
+   * How the latest open was requested. `order_flow` shows Maybe later and ties
+   * submits to the Design Studio step prompt (once per draft).
+   */
+  siteFeedbackOpenSource: "manual" | "order_flow";
+  siteFeedbackOpenTrigger: "after_step_5" | "after_step_10" | null;
+  siteFeedbackOpenDraftKey: string | null;
+  requestSiteFeedbackOpen: (options?: {
+    source?: "manual" | "order_flow";
+    trigger?: "after_step_5" | "after_step_10" | null;
+    draftKey?: string | null;
+  }) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
   notification: { message: string; type: "success" | "info" } | null;
@@ -232,6 +249,25 @@ let authBootstrapSequence = 0;
 // only whether an initializeData invocation is still the newest startup run.
 let initializationRequestId = 0;
 let fabricsListenerUnsubscribe: (() => void) | null = null;
+/**
+ * Firestore's first settings snapshot is usually well under a couple of seconds.
+ * If that read never settles, Create Private Batch must not stay disabled: keep
+ * DEFAULT_BUSINESS_SETTINGS and treat the load as finished.
+ */
+export const BUSINESS_SETTINGS_LOAD_FALLBACK_MS = 8_000;
+let businessSettingsLoadFallbackMs = BUSINESS_SETTINGS_LOAD_FALLBACK_MS;
+let businessSettingsLoadFallback: ReturnType<typeof setTimeout> | null = null;
+
+export const setBusinessSettingsLoadFallbackMsForTests = (ms: number): void => {
+  businessSettingsLoadFallbackMs = ms;
+};
+
+const clearBusinessSettingsLoadFallback = (): void => {
+  if (businessSettingsLoadFallback !== null) {
+    clearTimeout(businessSettingsLoadFallback);
+    businessSettingsLoadFallback = null;
+  }
+};
 
 const attachFabricsListener = (
   set: (partial: {
@@ -321,7 +357,36 @@ const initialGuestSession =
     ? GuestOrderSessionService.getActiveSession()
     : null;
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>((set, get) => {
+  const markBusinessSettingsLoaded = (businessSettings?: BusinessSettings) => {
+    clearBusinessSettingsLoadFallback();
+    if (businessSettings) {
+      set({ businessSettings, hasLoadedBusinessSettings: true });
+      return;
+    }
+    if (!get().hasLoadedBusinessSettings) {
+      set({ hasLoadedBusinessSettings: true });
+    }
+  };
+
+  const armBusinessSettingsLoadFallback = (requestId: number) => {
+    clearBusinessSettingsLoadFallback();
+    if (get().hasLoadedBusinessSettings) return;
+    const timer = setTimeout(() => {
+      if (businessSettingsLoadFallback === timer) {
+        businessSettingsLoadFallback = null;
+      }
+      if (requestId !== initializationRequestId) return;
+      if (!get().hasLoadedBusinessSettings) {
+        set({ hasLoadedBusinessSettings: true });
+      }
+    }, businessSettingsLoadFallbackMs);
+    businessSettingsLoadFallback = timer;
+    const maybeUnref = timer as { unref?: () => void };
+    maybeUnref.unref?.();
+  };
+
+  return ({
   customDetailCatalog: [],
   setCustomDetailCatalog: (catalog) => {
     const nextCatalog =
@@ -332,7 +397,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   activeTab:
     (typeof window !== "undefined" &&
-      (sessionStorage.getItem("asml_active_tab") as any)) ||
+      (legalPageTabFromPath(window.location.pathname) ||
+        (sessionStorage.getItem("asml_active_tab") as any))) ||
     "home",
   setActiveTab: (tab) => {
     const state = get();
@@ -353,6 +419,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   designStudioNavRequest: 0,
   requestDesignStudioFromNav: () => {
     set({ designStudioNavRequest: get().designStudioNavRequest + 1 });
+  },
+  siteFeedbackOpenRequest: 0,
+  siteFeedbackOpenSource: "manual",
+  siteFeedbackOpenTrigger: null,
+  siteFeedbackOpenDraftKey: null,
+  requestSiteFeedbackOpen: (options) => {
+    set({
+      siteFeedbackOpenRequest: get().siteFeedbackOpenRequest + 1,
+      siteFeedbackOpenSource: options?.source ?? "manual",
+      siteFeedbackOpenTrigger: options?.trigger ?? null,
+      siteFeedbackOpenDraftKey: options?.draftKey ?? null,
+    });
   },
   pendingRedirect: null,
   setPendingRedirect: (redirect) => set({ pendingRedirect: redirect }),
@@ -816,6 +894,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const requestId = ++initializationRequestId;
     const isCurrentInitialization = () =>
       requestId === initializationRequestId;
+    clearBusinessSettingsLoadFallback();
     // This is a synchronous security boundary, not normal listener cleanup.
     // It must run before the first awaited data call so a stalled reload
     // cannot retain an earlier user's owner/member/admin capability.
@@ -854,11 +933,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!isCurrentInitialization()) return;
 
       storeUnsubs.push(
-        StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
-          if (settings) {
-            set({ businessSettings: settings, hasLoadedBusinessSettings: true });
-          }
-        })
+        StorageService.subscribeToDocument<BusinessSettings>(
+          "settings",
+          "business",
+          (settings) => {
+            if (!isCurrentInitialization()) return;
+            // A missing document is a settled read: keep the built-in defaults.
+            markBusinessSettingsLoaded(settings ?? undefined);
+          },
+          () => {
+            if (!isCurrentInitialization()) return;
+            markBusinessSettingsLoaded();
+          },
+        ),
       );
 
       // Private Batch authorization must react before the async customer
@@ -1044,6 +1131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
       );
 
+      armBusinessSettingsLoadFallback(requestId);
       const [catalog, storedSettings] = await Promise.all([
         catalogPromise,
         settingsPromise,
@@ -1073,11 +1161,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }
 
+      // A live snapshot (or an earlier settle) already published settings.
+      // A failed or empty one-shot read must not replace those with defaults.
+      const keepSettledSettings =
+        !storedSettings && get().hasLoadedBusinessSettings;
+      clearBusinessSettingsLoadFallback();
       set({
         customDetailCatalog: catalog,
         // others are set via subscriptions
-        businessSettings: savedBusinessSettings,
-        hasLoadedBusinessSettings: true,
+        ...(keepSettledSettings
+          ? {}
+          : {
+              businessSettings: savedBusinessSettings,
+              hasLoadedBusinessSettings: true,
+            }),
         mediaLibrary: [],
         plugins: [],
         auditLogs: [],
@@ -1087,6 +1184,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       if (!isCurrentInitialization()) return;
       console.error("Failed to initialize app data:", error);
+      markBusinessSettingsLoaded();
       set({
         isLoadingData: false,
         stylesLoadState: "error",
@@ -1097,7 +1195,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     }
   },
-}));
+  });
+});
 
 /**
  * Test-only source adapter seam. It installs the same store-lifetime access

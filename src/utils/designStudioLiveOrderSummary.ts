@@ -11,7 +11,10 @@ import {
   garmentConstructionInclusionNote,
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
 } from "./designPriceBreakdownPresentation";
-import { resolveIndividualInboundShippingDisplay } from "./individualInboundShippingDisplay";
+import {
+  formatIndividualShippingNote,
+  resolveIndividualInboundShippingDisplay,
+} from "./individualInboundShippingDisplay";
 import type { FutureShippingStageResolution } from "./designStudioFutureShipping";
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
@@ -155,6 +158,7 @@ export interface LiveOrderSummaryCostBreakdownLine {
   readonly label: string;
   readonly valueLabel: string;
   readonly amountCents: number | null;
+  readonly note?: string;
   /** @deprecated The Lagos band is a priced line and is part of the total. */
   readonly included?: boolean;
 }
@@ -579,22 +583,7 @@ const individualInboundChargeToAddCents = ({
     physicalGarmentCount: summary.garmentSummary.length,
     fulfilmentMethod,
   });
-  if (!inbound) {
-    // A restored exact snapshot can still carry a delivery-era Lagos band.
-    // Pickup drops that stored charge instead of keeping it in the total.
-    const storedLagos = candidatePricing?.components.lagosToEindhovenShipping;
-    if (
-      fulfilmentMethod === "eindhoven_pickup" &&
-      candidatePricing?.status === "exact" &&
-      candidatePricing.exactTotalCents !== null &&
-      storedLagos?.status === "separately_charged" &&
-      typeof storedLagos.amountCents === "number" &&
-      storedLagos.amountCents > 0
-    ) {
-      return -storedLagos.amountCents;
-    }
-    return 0;
-  }
+  if (!inbound) return 0;
   const lagos = candidatePricing?.components.lagosToEindhovenShipping;
   if (
     candidatePricing?.status === "exact" &&
@@ -718,6 +707,7 @@ const resolveCostBreakdown = ({
         label: includedInbound.label,
         valueLabel: moneyFromCents(includedInbound.amountCents),
         amountCents: includedInbound.amountCents,
+        note: formatIndividualShippingNote(includedInbound),
       }
     : null;
 
@@ -825,13 +815,10 @@ export const projectDesignStudioLiveOrderSummary = ({
   ): LiveOrderSummaryLine => {
     return {
       id: `construction-${garment.garmentKey}`,
-      // The selected clothing-price construction is this line's identity.
-      // Step 1 garment.label remains only when that choice is unresolved.
-      label:
-        mainConstructionIdentityLabel(garment) ||
-        garmentLabels.get(garment.garmentKey) ||
-        garment.label,
-      detail: null,
+      // Garment name leads (same as Stage 8 cards); the selected
+      // clothing-price construction sits underneath. Null when unresolved.
+      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      detail: mainConstructionIdentityLabel(garment),
       ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
       ...(garment.fitLabel ? { fitLabel: garment.fitLabel } : {}),
       amountLabel:

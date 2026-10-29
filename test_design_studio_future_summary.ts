@@ -2256,7 +2256,7 @@ const projectedTotalText = `€${(
   destinationDeliveryResolution.projectedTotalCents / 100
 ).toFixed(2)}`;
 const individualTotalText = `€${(
-  (destinationDeliveryResolution.projectedTotalCents + 1400) / 100
+  (destinationDeliveryResolution.projectedTotalCents + 13125) / 100
 ).toFixed(2)}`;
 assert.match(
   destinationDeliveryMarkup,
@@ -2266,14 +2266,19 @@ assert.match(
 assert.match(destinationDeliveryMarkup, /Lagos → Eindhoven shipping/);
 assert.match(destinationDeliveryMarkup, /data-summary-included-inbound="true"/);
 assert.equal(destinationDeliveryMarkup.includes("data-excluded-from-total"), false);
-assert.match(destinationDeliveryMarkup, /data-amount-cents="1400"/);
+assert.match(destinationDeliveryMarkup, /data-amount-cents="13125"/);
 assert.equal(
   destinationDeliveryMarkup.match(
     /data-summary-included-inbound="true"[\s\S]*?<\/div>/,
   )?.[0].includes("Included"),
   false,
 );
-assert.match(destinationDeliveryMarkup, /€14\.00/);
+assert.match(destinationDeliveryMarkup, /€131\.25/);
+assert.match(destinationDeliveryMarkup, /data-summary-lagos-note="true"/);
+assert.match(
+  destinationDeliveryMarkup,
+  /Shipping covers up to 10 garments \(under 5 kg\)\./,
+);
 assert.match(destinationDeliveryMarkup, /Includes fabric, tax, and sewing\./);
 assert.equal(exactSummary.garmentSummary.length, 1);
 const communitySummaryMarkup = renderSummaryMarkup(destinationDeliveryResolution, {
@@ -2285,6 +2290,7 @@ const communitySummaryMarkup = renderSummaryMarkup(destinationDeliveryResolution
 });
 assert.equal(communitySummaryMarkup.includes("Lagos → Eindhoven shipping"), false);
 assert.equal(communitySummaryMarkup.includes("data-summary-included-inbound"), false);
+assert.equal(communitySummaryMarkup.includes("data-summary-lagos-note"), false);
 assert.match(
   communitySummaryMarkup,
   /Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing\./,
@@ -2318,20 +2324,22 @@ assert.doesNotMatch(
   /<dt[^>]*>Shipping<\/dt>/,
   "pickup must omit a misleading monetary Shipping row",
 );
-assert.equal(
-  pickupSummaryMarkup.includes("Lagos → Eindhoven shipping"),
-  false,
-  "pickup summary does not add the Lagos band",
+assert.match(pickupSummaryMarkup, /data-summary-lagos-note="true"/);
+assert.match(
+  pickupSummaryMarkup,
+  /Lagos → Eindhoven shipping/,
+  "pickup summary keeps the Lagos band",
 );
-assert.equal(pickupSummaryMarkup.includes("data-summary-included-inbound"), false);
+assert.match(pickupSummaryMarkup, /data-summary-included-inbound="true"/);
+assert.match(pickupSummaryMarkup, /data-amount-cents="13125"/);
 if (pickupResolution.projectedTotalCents === null) {
   throw new Error("pickup must supply an authoritative payable projection");
 }
-const pickupTotalText = `€${(pickupResolution.projectedTotalCents / 100).toFixed(2)}`;
+const pickupTotalText = `€${((pickupResolution.projectedTotalCents + 13125) / 100).toFixed(2)}`;
 assert.match(
   pickupSummaryMarkup,
   new RegExp(`>Total</dt>[\\s\\S]*?>${pickupTotalText}</dd>`),
-  "pickup total is the design total with no shipping",
+  "pickup total is the design total plus the Lagos band, with no extra pickup fee",
 );
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);

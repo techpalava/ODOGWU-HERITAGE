@@ -85,10 +85,10 @@ assert.deepEqual(
 assert.deepEqual(
   removalTargets.map((target) => target.accessibleName),
   [
-    "Remove Shirt, base garment",
-    "Remove Shirt, additional garment 1",
-    "Remove Shirt, additional garment 2",
-    "Remove Skirt, base garment",
+    "Remove Standard Shirt, base garment",
+    "Remove Standard Shirt, additional garment 1",
+    "Remove Standard Shirt, additional garment 2",
+    "Remove Standard Skirt, base garment",
   ],
   "repeated physical occurrences must have unique customer-facing accessible names",
 );
@@ -356,7 +356,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   customButtons.map((button) => button.props["aria-label"]),
-  ["Remove Shirt, additional garment 1", "Remove Shirt, additional garment 2"],
+  ["Remove Standard Shirt, additional garment 1", "Remove Standard Shirt, additional garment 2"],
   "Step 5 Remove reuses the shared target accessible names",
 );
 const step5Trigger = {};
@@ -610,7 +610,7 @@ const alertDialog = dialogRenderer.root.findByProps({ role: "alertdialog" });
 assert.equal(alertDialog.props["aria-modal"], "true");
 assert.ok(alertDialog.props["aria-labelledby"]);
 assert.ok(alertDialog.props["aria-describedby"]);
-assert.match(textContent(alertDialog), /Remove Shirt\?/);
+assert.match(textContent(alertDialog), /Remove Standard Shirt\?/);
 assert.match(textContent(alertDialog), /all of its associated fabric, design style, custom details, and uploads/);
 assert.match(textContent(alertDialog), /Your other garments will remain unchanged\./);
 assert.ok(!textContent(alertDialog).includes("additional:shirt:2"));

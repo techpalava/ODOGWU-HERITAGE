@@ -77,6 +77,11 @@ import {
   reconcileAdditionalGarmentConstructionState,
 } from "./src/utils/additionalGarmentConstructionState";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import {
+  quoteFutureOrderPayableTotal,
+  recomputeFutureOrderPayableTotal,
+} from "./src/utils/futureOrderPayableTotal";
+import { parseFutureOrderCandidateV2 } from "./src/utils/futureOrderV2Storage";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const inspection = inspectCustomDetailCatalog(catalog);
@@ -652,11 +657,15 @@ assert.equal(
 );
 assert.equal(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.valueLabel,
-  "€14.00",
+  "€131.25",
 );
 assert.equal(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.amountCents,
-  1400,
+  13125,
+);
+assert.equal(
+  earlyIndividual.view.costBreakdown?.includedInboundShipping?.note,
+  "Shipping covers up to 10 garments (under 5 kg).",
 );
 assert.notEqual(
   earlyIndividual.view.costBreakdown?.includedInboundShipping?.included,
@@ -665,11 +674,11 @@ assert.notEqual(
 assert.equal(earlyIndividual.view.costBreakdown?.shipping, null);
 assert.equal(
   earlyIndividual.view.totalAmountCents,
-  (early.view.totalAmountCents || 0) + 1400,
-  "Step 1 adds the Individual Lagos band to the live total",
+  (early.view.totalAmountCents || 0) + 13125,
+  "Step 1 adds the Individual Lagos block to the live total",
 );
 assert.equal(
-  (earlyIndividual.view.costBreakdown?.subtotal.amountCents || 0) + 1400,
+  (earlyIndividual.view.costBreakdown?.subtotal.amountCents || 0) + 13125,
   earlyIndividual.view.totalAmountCents,
 );
 assert.equal(
@@ -808,9 +817,12 @@ hiddenSection(step1Only.view, "delivery");
 hiddenSection(step1Only.view, "optional_extras");
 hiddenSection(step1Only.view, "additional_clothes");
 assert.deepEqual(
-  section(step1Only.view, "construction").lines.map((line) => line.label),
-  ["Standard Length Shirt, Short Sleeve", "With Rope"],
-  "Garments Ordered names the selected construction, not the Step 1 garment",
+  section(step1Only.view, "construction").lines.map((line) => [line.label, line.detail]),
+  [
+    ["Standard Shirt", "Standard Length Shirt, Short Sleeve"],
+    ["Trouser", "With Rope"],
+  ],
+  "Garments Ordered leads with the garment name; the selected construction is the detail",
 );
 hiddenSection(step1Only.view, "standard_shipping");
 assert.equal(
@@ -1009,9 +1021,13 @@ assert.equal(
   "construction choices are not Included rows under Style & Options",
 );
 assert.equal(
-  constructionLine(presentationView, presentationGarment.garmentKey)?.label,
+  constructionLine(presentationView, presentationGarment.garmentKey)?.detail,
   baseConstruction.label,
-  "Garments Ordered uses the selected construction option as its identity",
+  "Garments Ordered shows the selected construction option under the garment name",
+);
+assert.equal(
+  constructionLine(presentationView, presentationGarment.garmentKey)?.label,
+  presentationGarment.label,
 );
 assert.equal(
   section(presentationView, "construction").footer?.amountCents,
@@ -1050,11 +1066,12 @@ const midLongOrder = buildAuthority({
 });
 const midLongLine = constructionLine(midLongOrder.view, "base:shirt");
 assert.ok(midLongLine);
+assert.equal(midLongLine.label, "Standard Shirt");
 assert.equal(
-  midLongLine.label,
+  midLongLine.detail,
   "Standard Length Shirt, Mid-Long Sleeve",
 );
-assert.match(midLongLine.label, /Mid-Long/);
+assert.match(midLongLine.detail || "", /Mid-Long/);
 assert.equal(midLongLine.amountLabel, "€70.00");
 assert.equal(
   midLongOrder.summary.garmentSummary[0]?.constructionTotalCents,
@@ -1088,6 +1105,16 @@ const multiFabric = buildAuthority({
     dress: fabricB,
   },
 });
+// Non-shirt garments: the construction labels ("With Rope", "... Length,
+// Sleeveless") never name the garment, so the name must lead the row.
+assert.deepEqual(
+  section(multiFabric.view, "construction").lines.map((line) => [line.label, line.detail]),
+  [
+    ["Standard Shirt", "Standard Length Shirt, Short Sleeve"],
+    ["Trouser", "With Rope"],
+    ["Standard Dress", "Standard Length, Sleeveless / Over Shoulder"],
+  ],
+);
 assert.deepEqual(
   section(multiFabric.view, "fabrics").lines.map((line) => `${line.label} — ${line.detail}`),
   [
@@ -1163,7 +1190,9 @@ const extraLine = constructionLine(extraCommitted.view, extraKeys[0]);
 assert.ok(extraLine, "committed extra garment must appear in construction rows");
 assert.equal(extraLine.id, `construction-${extraKeys[0]}`);
 assert.match(extraLine.label, /Shirt/);
-assert.equal(extraLine.detail, null);
+// Additional Garments rows also lead with the garment name; construction is the detail.
+assert.doesNotMatch(extraLine.label, /Length|Sleeve/);
+assert.match(extraLine.detail || "", /Standard Length Shirt/);
 assert.equal(extraLine.supportingDetail, undefined);
 assert.equal(
   additionalGarmentsSubsection(extraCommitted.view)?.focusGarmentKey,
@@ -1319,8 +1348,10 @@ assert.equal(
   twoExtraLines[1]?.amountLabel,
   `€${(secondExtraConstruction.totalPriceCents / 100).toFixed(2)}`,
 );
-assert.equal(twoExtraLines[0]?.detail, null);
-assert.equal(twoExtraLines[1]?.detail, null);
+assert.match(twoExtraLines[0]?.detail || "", /Length/);
+assert.match(twoExtraLines[1]?.detail || "", /Length/);
+assert.doesNotMatch(twoExtraLines[0]?.label || "", /Length/);
+assert.doesNotMatch(twoExtraLines[1]?.label || "", /Length/);
 
 const selectedTwoExtrasView = projectDesignStudioLiveOrderSummary({
   summary: {
@@ -1358,7 +1389,8 @@ assert.deepEqual(
   twoExtraKeys.map((garmentKey) => ({
     id: `construction-${garmentKey}`,
     focusGarmentKey: garmentKey,
-    detail: null,
+    // The selected construction sits under the garment name.
+    detail: "Standard Length Shirt, Short Sleeve",
     amountLabel: `€${(
       (twoExtras.additionalConstruction.state.byGarmentKey[garmentKey]?.status === "resolved"
         ? twoExtras.additionalConstruction.state.byGarmentKey[garmentKey].totalPriceCents
@@ -1603,33 +1635,23 @@ const individualPickup = buildAuthority({
 });
 assert.equal(individualPickup.summary.garmentSummary.length, 1);
 assert.equal(
-  individualPickup.view.costBreakdown?.includedInboundShipping ?? null,
-  null,
-  "pickup does not add the Individual Lagos band",
+  individualPickup.view.costBreakdown?.includedInboundShipping?.amountCents,
+  13125,
+  "pickup keeps the Individual Lagos band",
 );
 assert.equal(individualPickup.view.costBreakdown?.shipping ?? null, null);
 assert.equal(
   individualPickup.view.totalAmountCents,
-  pickup.view.totalAmountCents,
-  "pickup adds no Lagos band and no final-mile fee",
+  (pickup.view.totalAmountCents ?? 0) + 13125,
+  "pickup adds the Lagos band once and no final-mile fee",
 );
 assert.equal(
   individualPickup.view.costBreakdown?.subtotal.amountCents,
   pickup.view.totalAmountCents,
 );
 assert.equal(
-  individualPickup.view.costBreakdown?.subtotal.amountCents,
   individualPickup.view.totalAmountCents,
-);
-assert.equal(
-  individualPickup.candidateResult.candidate?.pricing.components
-    .lagosToEindhovenShipping.status,
-  "included_in_garment_construction",
-);
-assert.equal(
-  individualPickup.candidateResult.candidate?.pricing.components
-    .lagosToEindhovenShipping.amountCents,
-  null,
+  (individualPickup.view.costBreakdown?.subtotal.amountCents ?? 0) + 13125,
 );
 const communityPickup = buildAuthority({
   fabricByGarment: { shirt: fabricA },
@@ -1653,14 +1675,14 @@ const individualDelivery = buildAuthority({
 });
 assert.equal(
   individualDelivery.view.costBreakdown?.includedInboundShipping?.amountCents,
-  1400,
-  "address delivery still shows the €14 Lagos band",
+  13125,
+  "address delivery still shows the €131.25 Lagos block",
 );
 for (const [pieceCount, amountCents] of [
-  [5, 3500],
-  [13, 7000],
-  [25, 14000],
-  [49, 21000],
+  [5, 13125],
+  [13, 26250],
+  [25, 39375],
+  [49, 65625],
 ] as const) {
   const banded = projectDesignStudioLiveOrderSummary({
     summary: {
@@ -2499,11 +2521,13 @@ const namedWearers = buildAuthority({
 });
 const nolLine = constructionLine(namedWearers.view, "base:shirt");
 const pioLine = constructionLine(namedWearers.view, "base:kaftan");
-assert.equal(nolLine?.label, "Standard Length Shirt, Short Sleeve");
+assert.equal(nolLine?.label, "Standard Shirt");
+assert.equal(nolLine?.detail, "Standard Length Shirt, Short Sleeve");
 assert.equal(nolLine?.wearerLabel, "Nol");
 assert.equal(nolLine?.fitLabel, undefined);
 assert.equal(nolLine?.supportingDetail, undefined);
-assert.equal(pioLine?.label, "Long Length Shirt, Short Sleeve");
+assert.equal(pioLine?.label, "Long Shirt");
+assert.equal(pioLine?.detail, "Long Length Shirt, Short Sleeve");
 assert.equal(pioLine?.wearerLabel, "Pio");
 assert.equal(pioLine?.fitLabel, undefined);
 assert.equal(
@@ -2539,14 +2563,10 @@ assert.equal(constructionLine(blankWearers.view, "base:shirt")?.wearerLabel, und
 assert.equal(constructionLine(blankWearers.view, "base:shirt")?.fitLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.wearerLabel, undefined);
 assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.fitLabel, undefined);
-assert.equal(
-  constructionLine(blankWearers.view, "base:shirt")?.label,
-  "Standard Length Shirt, Short Sleeve",
-);
-assert.equal(
-  constructionLine(blankWearers.view, "base:kaftan")?.label,
-  "Long Length Shirt, Short Sleeve",
-);
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(constructionLine(blankWearers.view, "base:shirt")?.detail, "Standard Length Shirt, Short Sleeve");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.label, "Long Shirt");
+assert.equal(constructionLine(blankWearers.view, "base:kaftan")?.detail, "Long Length Shirt, Short Sleeve");
 assert.equal(
   section(blankWearers.view, "construction").lines.every((line) => line.wearerLabel == null),
   true,
@@ -2627,10 +2647,8 @@ const soloWearer = buildAuthority({
     { "base:shirt": "wearer-amaka" },
   ),
 });
-assert.equal(
-  constructionLine(soloWearer.view, "base:shirt")?.label,
-  "Standard Length Shirt, Short Sleeve",
-);
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.label, "Standard Shirt");
+assert.equal(constructionLine(soloWearer.view, "base:shirt")?.detail, "Standard Length Shirt, Short Sleeve");
 // Solo: no wearer line, even with a saved name.
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.wearerLabel, undefined);
 assert.equal(constructionLine(soloWearer.view, "base:shirt")?.fitLabel, undefined);
@@ -2691,5 +2709,82 @@ assert.match(helperSource, /projectFutureDesignStudioSummary|FutureDesignStudioS
 assert.match(helperSource, /getStep8OrderSummaryRows/);
 assert.match(helperSource, /LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL/);
 assert.match(helperSource, /constructionTotalCents/);
+
+
+// Step 4 length switch (#1091): an order with both lengths of a family may switch either garment,
+// ending with two garments of one type. Summary, candidate, server quote/recompute and storage
+// accept it; each garment keeps its own key.
+for (const testCase of [
+  { types: ["shirt", "kaftan"], key: "shirt", group: "shirt_construction", option: "shirt_long_short", to: "kaftan", demographic: "male", labels: ["Long Shirt", "Long Shirt 2"] },
+  { types: ["shirt", "kaftan"], key: "kaftan", group: "shirt_construction", option: "shirt_std_short", to: "shirt", demographic: "male", labels: ["Standard Shirt", "Standard Shirt 2"] },
+  { types: ["dress", "full_length_gown"], key: "dress", group: "dress_construction", option: "dress_long_sleeveless", to: "full_length_gown", demographic: "female", labels: ["Long Dress", "Long Dress 2"] },
+  { types: ["skirt", "long_skirt"], key: "long_skirt", group: "skirt_length", option: "skirt_std", to: "skirt", demographic: "female", labels: ["Standard Skirt", "Standard Skirt 2"] },
+] as const) {
+  const before = buildSelection([...testCase.types], testCase.demographic);
+  const selected = selectGarmentConstructionOption({
+    resolution: before.constructionByGarment[testCase.key]!,
+    selectionGroup: testCase.group,
+    optionId: testCase.option,
+    normalizedCustomDetailCatalog: catalog,
+  });
+  assert.equal(selected.status, "selected");
+  if (selected.status !== "selected") continue;
+  const switchedSelection: GarmentTypeStepSelection = {
+    ...before,
+    constructionByGarment: { ...before.constructionByGarment, [testCase.key]: selected.resolution },
+  };
+  const units = unitsFor(testCase.to);
+  const allocation: FabricAllocationState = {
+    fabricAllocations: testCase.types.map((garmentType, index) => ({
+      allocationId: `allocation-${index + 1}`,
+      fabricCode: [fabricA, fabricB][index]!.code,
+      garmentAssignments: [
+        {
+          garmentKey: `base:${garmentType}`,
+          code: `BASE_${testCase.to.toUpperCase()}`,
+          garmentType: testCase.to,
+          fabricUnits: units,
+          sourceRole: "main" as const,
+        },
+      ],
+    })),
+    activeAllocationId: "allocation-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const authority = buildAuthority({
+    garmentTypes: [...testCase.types],
+    demographic: testCase.demographic,
+    garmentTypeSelection: switchedSelection,
+    fabricAllocationState: allocation,
+    measurementRoute: "low_risk",
+    shippingState: {
+      ...withContact(createEmptyFutureShippingState()),
+      fulfilmentMethod: "eindhoven_pickup",
+    },
+  });
+  assert.deepEqual(
+    authority.summary.garmentSummary.map((garment) => [garment.garmentKey, garment.garmentType, garment.label]),
+    testCase.types.map((garmentType, index) => [`base:${garmentType}`, testCase.to, testCase.labels[index]]),
+    `${testCase.key} -> ${testCase.to}: two garments of one type in the summary`,
+  );
+  assert.ok(
+    authority.measurementPlan.requirements.some((requirement) => requirement.garmentKey === `base:${testCase.types[0]}`) &&
+      authority.measurementPlan.requirements.some((requirement) => requirement.garmentKey === `base:${testCase.types[1]}`),
+    "Each garment keeps its own measurements",
+  );
+  const candidate = authority.candidateResult.candidate;
+  assert.ok(candidate, `${testCase.key} -> ${testCase.to}: the order candidate builds`);
+  assert.deepEqual(candidate.garments.map((garment) => garment.garmentType), [testCase.to, testCase.to]);
+  // The payable total reads only the garments/pricing envelope, which V1 and V2 share.
+  const payable = candidate as unknown as Parameters<typeof quoteFutureOrderPayableTotal>[0];
+  const quote = quoteFutureOrderPayableTotal(payable);
+  assert.equal(quote?.exactTotalCents, candidate.pricing.exactTotalCents, "The server quote agrees");
+  assert.equal(recomputeFutureOrderPayableTotal(payable).status, "exact", "Server recompute agrees");
+  assert.ok(
+    parseFutureOrderCandidateV2(JSON.parse(JSON.stringify(candidate))),
+    "The saved order candidate parses back",
+  );
+}
 
 console.log("test_design_studio_live_order_summary.ts: all assertions passed");

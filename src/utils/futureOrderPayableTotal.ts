@@ -26,6 +26,10 @@ import { resolveStep8AdditionalDelivery } from "./step8AdditionalDelivery.js";
 const NON_AUTHORITATIVE_TOTAL_MESSAGE =
   "The order total does not match the catalogue and shipping price.";
 
+export const FUTURE_ORDER_PRICE_OUTDATED_CODE = "PRICE_OUTDATED" as const;
+export const FUTURE_ORDER_PRICE_OUTDATED_MESSAGE =
+  "Shipping prices changed. Review your order to see the new total.";
+
 const CLOTHING_PRICE_GROUPS = new Set<string>(CLOTHING_PRICE_SELECTION_GROUPS);
 const DECORATIVE_FEATURES = new Set<string>(
   Object.keys(DECORATIVE_FEATURE_PRICE_CENTS),
@@ -387,4 +391,132 @@ export const pendingPersonalizedKnownBaseIsAuthoritative = (
 ): boolean => {
   if (!hasEvaluationRequiredDetail(candidate)) return true;
   return recomputeFutureOrderPayableTotal(candidate, catalog).status === "not_exact";
+};
+
+const isIndividualFutureOrderCandidate = (
+  candidate: FutureOrderCandidateV2,
+): boolean => candidate.orderIdentity?.orderType === "Individual";
+
+/**
+ * Individual orders whose stored Lagos → Eindhoven amount no longer matches
+ * the current block quote must not be charged. Community/batch are skipped.
+ * Pickup and delivery use the same Lagos charge. Construction-only ledger
+ * mismatches keep the existing persist-time NON_AUTHORITATIVE_TOTAL path.
+ */
+export const refuseOutdatedStoredIndividualPayableTotal = (
+  candidate: FutureOrderCandidateV2,
+  _catalog: unknown = [],
+):
+  | { readonly status: "ok" }
+  | {
+      readonly status: "price_outdated";
+      readonly code: typeof FUTURE_ORDER_PRICE_OUTDATED_CODE;
+      readonly message: string;
+    } => {
+  if (!isIndividualFutureOrderCandidate(candidate)) {
+    return { status: "ok" };
+  }
+  const expectedLagos = individualLagosToEindhovenChargeCents({
+    orderType: candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: candidate.garments.length,
+    fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
+  });
+  const stored = candidate.pricing.components.lagosToEindhovenShipping;
+  const storedLagos =
+    stored.status === "separately_charged" ? stored.amountCents : null;
+  if (storedLagos === expectedLagos) {
+    return { status: "ok" };
+  }
+  return {
+    status: "price_outdated",
+    code: FUTURE_ORDER_PRICE_OUTDATED_CODE,
+    message: FUTURE_ORDER_PRICE_OUTDATED_MESSAGE,
+  };
+};
+
+/**
+ * Re-apply the current Individual Lagos → Eindhoven quote to an unpaid
+ * pickup or destination-delivery candidate. Community/batch, matching quotes,
+ * and paid orders are left unchanged.
+ */
+export const repriceUnpaidIndividualDeliveryCandidate = (
+  candidate: FutureOrderCandidateV2,
+  options: { readonly hasPaymentRecord?: boolean; readonly catalog?: unknown } = {},
+): FutureOrderCandidateV2 => {
+  if (options.hasPaymentRecord) return candidate;
+  if (!isIndividualFutureOrderCandidate(candidate)) return candidate;
+  const fulfilment = candidate.shipping.state.fulfilmentMethod;
+  if (fulfilment !== "destination_delivery" && fulfilment !== "eindhoven_pickup") {
+    return candidate;
+  }
+  const expectedLagos = individualLagosToEindhovenChargeCents({
+    orderType: candidate.orderIdentity?.orderType ?? null,
+    physicalGarmentCount: candidate.garments.length,
+    fulfilmentMethod: candidate.shipping.state.fulfilmentMethod,
+  });
+  if (expectedLagos === null) return candidate;
+  const stored = candidate.pricing.components.lagosToEindhovenShipping;
+  const storedLagos =
+    stored.status === "separately_charged" ? stored.amountCents : null;
+  const quote = quoteFutureOrderPayableTotal(candidate, options.catalog ?? []);
+  if (quote && candidate.pricing.status === "exact") {
+    if (
+      storedLagos === expectedLagos &&
+      candidate.pricing.exactTotalCents === quote.exactTotalCents
+    ) {
+      return candidate;
+    }
+    return {
+      ...candidate,
+      pricing: {
+        ...candidate.pricing,
+        exactTotalCents: quote.exactTotalCents,
+        postEindhovenAdjustmentCents: quote.postEindhovenAdjustmentCents,
+        components: {
+          ...candidate.pricing.components,
+          lagosToEindhovenShipping: {
+            status: "separately_charged",
+            amountCents: expectedLagos,
+          },
+        },
+      },
+      shipping: {
+        ...candidate.shipping,
+        additionalDeliveryFeeCents: quote.postEindhovenAdjustmentCents,
+      },
+    };
+  }
+  if (storedLagos === expectedLagos) return candidate;
+  const previousLagos = storedLagos ?? 0;
+  const delta = expectedLagos - previousLagos;
+  const nextLagos = {
+    status: "separately_charged" as const,
+    amountCents: expectedLagos,
+  };
+  if (
+    candidate.pricing.status === "exact" &&
+    candidate.pricing.exactTotalCents !== null
+  ) {
+    return {
+      ...candidate,
+      pricing: {
+        ...candidate.pricing,
+        exactTotalCents: candidate.pricing.exactTotalCents + delta,
+        components: {
+          ...candidate.pricing.components,
+          lagosToEindhovenShipping: nextLagos,
+        },
+      },
+    };
+  }
+  return {
+    ...candidate,
+    pricing: {
+      ...candidate.pricing,
+      components: {
+        ...candidate.pricing.components,
+        lagosToEindhovenShipping: nextLagos,
+      },
+    },
+  };
 };

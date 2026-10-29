@@ -55,7 +55,6 @@ export default function CustomerReviewForm({
       message: "Thank you! Your review has been published.",
       type: "success",
     });
-    setTimeout(() => setNotification(null), 4000);
   };
 
   const handleSubmit = async (event: FormEvent) => {

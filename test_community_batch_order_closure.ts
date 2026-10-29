@@ -103,6 +103,128 @@ const parsed = communityBatchFromRecord("batch-6", {
 });
 assert.equal(isCommunityBatchClosedForOrders(parsed, NOW), true);
 
+// Admin "Keep open after end date (ongoing)" toggle (keepOpenAfterEndDate).
+// Default stays closed (#785); the toggle overrides only the date check.
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: false },
+    NOW,
+  ),
+  true,
+  "Toggle off: Avatars past its end date stays closed.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true },
+    NOW,
+  ),
+  false,
+  "Toggle on, no Open until date: Avatars stays open past its end date.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, ongoingUntil: "2026-10-31" },
+    NOW,
+  ),
+  false,
+  "Toggle on with a future Open until date: open.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, ongoingUntil: "2026-10-16" },
+    NOW,
+  ),
+  true,
+  "Toggle on with a passed Open until date: closed.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, ongoingUntil: "2026-10-17" },
+    new Date("2026-10-17T23:59:59.000+01:00"),
+  ),
+  false,
+  "Open until closes at the same end-of-day +01:00 cutoff as endDate.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, ongoingUntil: "2026-10-17" },
+    new Date("2026-10-18T00:00:00.000+01:00"),
+  ),
+  true,
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, allowOrders: false },
+    NOW,
+  ),
+  true,
+  "allowOrders=false closes a batch even with the toggle on.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    {
+      ...avatarsPastDeadline,
+      keepOpenAfterEndDate: true,
+      targetGarments: 72,
+      currentGarments: 72,
+    },
+    NOW,
+  ),
+  true,
+  "Full capacity closes a batch even with the toggle on.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, status: "PRODUCTION_STARTED" },
+    NOW,
+  ),
+  true,
+  "Production statuses close a batch even with the toggle on.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    { ...avatarsPastDeadline, keepOpenAfterEndDate: true, status: "CLOSED" },
+    NOW,
+  ),
+  true,
+  "A manual CLOSED status closes a batch even with the toggle on.",
+);
+assert.equal(
+  isCommunityBatchClosedForOrders(
+    {
+      ...avatarsPastDeadline,
+      isAutoScheduled: true,
+      keepOpenAfterEndDate: true,
+    },
+    NOW,
+  ),
+  false,
+  "The toggle works for AUTO batches too.",
+);
+// The server reads the same fields from the Firestore record.
+const parsedOngoing = communityBatchFromRecord("batch-6", {
+  name: "Avatars",
+  startDate: "2026-07-06",
+  endDate: "2026-09-30",
+  status: "OPEN",
+  allowOrders: true,
+  isAutoScheduled: false,
+  isActive: true,
+  targetGarments: 72,
+  currentGarments: 1,
+  keepOpenAfterEndDate: true,
+  ongoingUntil: "2026-10-31",
+});
+assert.equal(parsedOngoing?.keepOpenAfterEndDate, true);
+assert.equal(parsedOngoing?.ongoingUntil, "2026-10-31");
+assert.equal(isCommunityBatchClosedForOrders(parsedOngoing, NOW), false);
+assert.equal(
+  communityBatchFromRecord("batch-6", { endDate: "2026-09-30", keepOpenAfterEndDate: "yes" })
+    ?.keepOpenAfterEndDate,
+  undefined,
+  "Only a boolean true turns the toggle on.",
+);
+
 function createResponse() {
   const state: { status: number; body: unknown } = { status: 200, body: undefined };
   const response: HttpResponse = {
@@ -175,6 +297,33 @@ await handleFutureOrderV2StripePayment(
 );
 assert.equal(openCart.state.status, 200);
 assert.equal((openCart.state.body as { accepted?: boolean }).accepted, true);
+
+// Server gate honours the keep-open toggle on the live record.
+const ongoingCart = createResponse();
+await handleFutureOrderV2StripePayment(
+  cartRequest({ orderType: "Community", batchId: "batch-6" }),
+  ongoingCart.response,
+  {
+    now: () => NOW,
+    readCommunityBatch: async () => ({ ...closedRecord, keepOpenAfterEndDate: true }),
+  },
+);
+assert.equal(ongoingCart.state.status, 200, "a kept-open batch admits cart items");
+
+const ongoingEndedCart = createResponse();
+await handleFutureOrderV2StripePayment(
+  cartRequest({ orderType: "Community", batchId: "batch-6" }),
+  ongoingEndedCart.response,
+  {
+    now: () => NOW,
+    readCommunityBatch: async () => ({
+      ...closedRecord,
+      keepOpenAfterEndDate: true,
+      ongoingUntil: "2026-10-01",
+    }),
+  },
+);
+assert.equal(ongoingEndedCart.state.status, 409, "a passed Open until date closes the cart");
 
 const individualCart = createResponse();
 await handleFutureOrderV2StripePayment(

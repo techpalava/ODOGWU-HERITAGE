@@ -1,4 +1,9 @@
-import { calculateIndividualShipping } from "./shippingPricing.js";
+import {
+  calculateIndividualShipping,
+  INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
+  INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
+  INDIVIDUAL_SHIPPING_KG_PER_BLOCK,
+} from "./shippingPricing.js";
 
 /** Display label for the included Individual inbound leg. */
 export const INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL =
@@ -13,7 +18,12 @@ export const INDIVIDUAL_GARMENT_CONSTRUCTION_INCLUSION_NOTE =
 export const INDIVIDUAL_PAYMENT_REVIEW_CONSTRUCTION_NOTE =
   "Fabric, tax, and sewing included.";
 
-/** Cents to add for an Individual order, or null when the band is not charged. */
+/**
+ * Cents to add for an Individual order, or null when Lagos → Eindhoven
+ * shipping is not charged. Garment count is the number of garment rows
+ * (`candidate.garments.length` / `summary.garmentSummary.length`); a set
+ * counts as 1 even when it has several physicalComponents.
+ */
 export const individualLagosToEindhovenChargeCents = (input: {
   orderType?: string | null;
   batchType?: string | null;
@@ -29,6 +39,10 @@ export interface IndividualInboundShippingDisplay {
   readonly amountCents: number;
   readonly weightBand: ReturnType<typeof calculateIndividualShipping>["weightBand"];
   readonly physicalGarmentCount: number;
+  readonly garmentCount: number;
+  readonly blockCount: number;
+  readonly coveredGarments: number;
+  readonly coveredWeightKg: number;
 }
 
 const isBatchOrder = (input: {
@@ -49,11 +63,26 @@ const isIndividualOrder = (input: {
   !isBatchOrder(input) &&
   (input.orderType === "Individual" || input.batchType === "alone");
 
+const formatBlockPriceEur = (): string =>
+  `€${(INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS / 100).toFixed(2)}`;
+
 /**
- * Individual Lagos→Eindhoven band.
- * Community, other batch routes, and Eindhoven pickup return null.
- * Callers add `amountCents` to the payable total once. Pickup never
- * carries this charge, even when an older draft still has a delivery quote.
+ * Shown only when there is a Lagos charge (Individual pickup or delivery).
+ * Never used for Community/batch orders.
+ */
+export const formatIndividualShippingNote = (
+  display: IndividualInboundShippingDisplay,
+): string => {
+  const baseline = `Shipping covers up to ${INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK} garments (under ${INDIVIDUAL_SHIPPING_KG_PER_BLOCK} kg).`;
+  if (display.blockCount < 2) return baseline;
+  return `${baseline} Your order has ${display.garmentCount} garments, so it uses the ${display.coveredWeightKg} kg range: ${display.blockCount} × ${formatBlockPriceEur()}.`;
+};
+
+/**
+ * Individual Lagos→Eindhoven block charge.
+ * Community and other batch routes return null. Eindhoven pickup keeps the
+ * same charge as delivery; delivery adds its final-mile fee separately.
+ * Callers add `amountCents` to the payable total once.
  */
 export const resolveIndividualInboundShippingDisplay = (input: {
   orderType?: string | null;
@@ -61,7 +90,6 @@ export const resolveIndividualInboundShippingDisplay = (input: {
   physicalGarmentCount: number;
   fulfilmentMethod?: string | null;
 }): IndividualInboundShippingDisplay | null => {
-  if (input.fulfilmentMethod === "eindhoven_pickup") return null;
   if (!isIndividualOrder(input)) return null;
   if (
     !Number.isInteger(input.physicalGarmentCount) ||
@@ -70,12 +98,19 @@ export const resolveIndividualInboundShippingDisplay = (input: {
     return null;
   }
   const quote = calculateIndividualShipping(input.physicalGarmentCount);
+  const blockCount = quote.blockCount ?? 1;
+  const coveredWeightKg =
+    quote.coveredWeightKg ?? blockCount * INDIVIDUAL_SHIPPING_KG_PER_BLOCK;
   return {
     label: INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL,
     includedLabel: INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL,
     priceEur: quote.priceEur,
-    amountCents: Math.round(quote.priceEur * 100),
+    amountCents: blockCount * INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
     weightBand: quote.weightBand,
     physicalGarmentCount: quote.garmentPieceCount,
+    garmentCount: quote.garmentPieceCount,
+    blockCount,
+    coveredGarments: blockCount * INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
+    coveredWeightKg,
   };
 };

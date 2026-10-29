@@ -412,6 +412,12 @@ await act(async () =>
     .props.onClick(),
 );
 await act(async () => renderer.update(renderStep(state, applyBulk)));
+// fabric-auto-pair: the Trouser joins the Shirt's piece automatically (no
+// Pair or use a new piece? popup); the Dress takes a new piece.
+assert.equal(
+  renderer.root.findAllByProps({ "data-fabric-piece-placement-dialog": "true" }).length,
+  0,
+);
 assert.deepEqual(
   state.fabricAllocations
     .flatMap((allocation) =>
@@ -565,22 +571,39 @@ await act(async () => {
 });
 const unusedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-C");
 assert.equal(unusedOneCard?.props["data-fabric-status"], "SELECT");
-// Shirt + Trouser need one Fabric: at that limit an unused Fabric is blocked.
-assert.equal(unusedOneCard?.props["data-fabric-action"], "none");
-assert.equal(unusedOneCard?.props.disabled, true);
+// Shirt + Trouser need one Fabric. fabric-print-freedom: at that count an
+// unused Fabric stays SELECTable (one piece per garment is the limit).
+assert.equal(unusedOneCard?.props["data-fabric-action"], "select");
+assert.notEqual(unusedOneCard?.props.disabled, true);
 assert.match(
   textContent(oneRenderer.root),
-  /You have selected the 1 fabric needed for this order/,
+  /You have the 1 fabric needed for this order\. You can use a selected fabric again for the remaining garments, or pick a different print\./,
 );
 await act(async () => unusedOneCard?.props.onClick({ currentTarget: {} }));
 await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
+assert.equal(dialogCount(oneRenderer.root), 1, "SELECT opens the assignment panel");
+{
+  await act(async () => {
+    oneRenderer.root
+      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
+      .props.onChange({ currentTarget: { checked: true } });
+  });
+  await act(async () =>
+    oneRenderer.root.findByProps({ "data-testid": "step1-fabric-assignment-confirm" }).props.onClick(),
+  );
+  await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
+}
 assert.equal(dialogCount(oneRenderer.root), 0);
 assert.deepEqual(
-  oneState.fabricAllocations.flatMap((allocation) =>
+  oneState.fabricAllocations.map((allocation) => [
+    allocation.fabricCode,
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ),
-  ["base:shirt"],
-  "An unused Fabric product must not create a second allocation at the required limit.",
+  ]),
+  [
+    ["FAB-A", ["base:shirt"]],
+    ["FAB-C", ["base:trouser"]],
+  ],
+  "An unused Fabric product creates a second piece for the remaining garment.",
 );
 
 oneState = applyFutureFabricCardSelection({
@@ -601,6 +624,11 @@ assert.equal(
   dialogCount(oneRenderer.root),
   0,
   "USE AGAIN with one remaining candidate must assign directly without the popup.",
+);
+// fabric-auto-pair: USE AGAIN pairs onto the Shirt's piece automatically.
+assert.equal(
+  oneRenderer.root.findAllByProps({ "data-fabric-piece-placement-dialog": "true" }).length,
+  0,
 );
 assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
@@ -1297,6 +1325,13 @@ assert.equal(
   );
   assert.equal(leftoverUiState.fabricAllocations.length, 0);
   assert.equal(stockLabel(), "1/2 Capacity Left");
+  // The "1/2 Capacity Left" label is red so it stands out from stock counts.
+  assert.match(
+    leftoverUiRenderer.root.findByProps({
+      "data-testid": "step1-fabric-assignment-stock-label",
+    }).props.className,
+    /\btext-red-600\b/,
+  );
   await act(async () =>
     leftoverUiRenderer.root
       .findByProps({ "data-step1-fabric-assignment-checkbox": "base:shirt" })

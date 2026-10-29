@@ -245,9 +245,14 @@ const reduced = evaluateStep1FabricAssignmentSelection({
   fabricCode: "FAB-A",
 });
 assert.equal(reduced.canAssignSelected, true);
+// Use Again: the Shirt already uses 1/2 of the saved FAB-A piece, so the
+// Trouser completes it (the summary used to ignore the Shirt and say 1/2
+// would remain).
+assert.equal(reduced.existingCapacityUnits, 1);
+assert.equal(reduced.capacityUnitsInUse, 2);
 assert.equal(
   reduced.groupingCapacityStatus,
-  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+  STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE,
 );
 const reducedCommit = commitStep1FabricAssignment({
   state: leftoverState,
@@ -506,19 +511,16 @@ const shirtThenTrouser = assignSameFabricProductToGarments({
   garmentKeys: ["base:trouser"],
 });
 assert.equal(shirtThenTrouser.status, "assigned");
-// Shirt + Trouser need one Fabric, so a second Fabric product is blocked.
-const blockedSecondProduct = assignSameFabricProductToGarments({
+// Shirt + Trouser need one Fabric, but the Trouser may still go on a second
+// print (limit is one piece per garment, not Fabrics Needed).
+const secondProduct = assignSameFabricProductToGarments({
   state: assignOne(twoTypes, "base:shirt", "FAB-A"),
   garmentTypeSelection: createSelection(twoTypes),
   fabricCode: "FAB-B",
   garmentKeys: ["base:trouser"],
 });
-assert.equal(blockedSecondProduct.status, "blocked");
-assert.equal(
-  blockedSecondProduct.status === "blocked" ? blockedSecondProduct.reason : null,
-  "FABRIC_QUANTITY_LIMIT_REACHED",
-);
-assert.equal(blockedSecondProduct.state.fabricAllocations.length, 1);
+assert.equal(secondProduct.status, "assigned");
+assert.equal(secondProduct.state.fabricAllocations.length, 2);
 const unusedZeroCandidate = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-C",
   garmentTypeSelection: createSelection(twoTypes),
@@ -551,8 +553,8 @@ const unusedOneCandidate = resolveStep1FabricCatalogueCardPresentation({
 assert.equal(unusedOneCandidate.status, "SELECT");
 assert.equal(
   unusedOneCandidate.action,
-  "none",
-  "At Fabrics Needed, an unused Fabric product must not offer Select.",
+  "select",
+  "At Fabrics Needed, an unused Fabric product still offers Select (one piece per garment).",
 );
 const usedOneCandidate = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -1070,7 +1072,7 @@ assert.deepEqual(assignedKeys(gownUseAllCommit.state).sort(), [
     visible: true,
     status: "REUSABLE_CAPACITY",
     label: "1/2 Capacity Left",
-    tone: "in_stock",
+    tone: "reusable_capacity",
   });
   assert.equal(empty.fabricAllocations.length, 0, "Pending preview must not persist allocation.");
   const deselected = projectPendingStep1FabricStockPresentation({
@@ -1118,7 +1120,7 @@ assert.deepEqual(assignedKeys(gownUseAllCommit.state).sort(), [
     visible: true,
     status: "REUSABLE_CAPACITY",
     label: "1/2 Capacity Left",
-    tone: "in_stock",
+    tone: "reusable_capacity",
   });
 }
 
