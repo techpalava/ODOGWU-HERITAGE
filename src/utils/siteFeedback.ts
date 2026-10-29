@@ -1,3 +1,9 @@
+import {
+  STEP8_COUNTRY_ZONE_INDEX,
+  STEP8_FAKE_COUNTRY_CODE_SENTINELS,
+  formatStep8CountryLabel,
+} from "../config/Step8AdditionalDeliveryConfig.js";
+
 /**
  * Site feedback: pure helpers shared by the floating Feedback button, its
  * Firestore write, and test_site_feedback.tsx. Field names and limits mirror
@@ -5,6 +11,12 @@
  */
 
 export const SITE_FEEDBACK_COLLECTION = "site_feedback";
+
+/** v2 adds the optional nationality and photo fields. The rules accept 1 and 2. */
+export const SITE_FEEDBACK_SCHEMA_VERSION = 2 as const;
+
+/** Storage prefix for feedback photos: site-feedback/{authUid}/{feedbackId}/photo.{ext}. */
+export const SITE_FEEDBACK_PHOTO_PREFIX = "site-feedback";
 
 export const SITE_FEEDBACK_TYPES = ["bug", "idea", "other"] as const;
 export type SiteFeedbackType = (typeof SITE_FEEDBACK_TYPES)[number];
@@ -24,10 +36,59 @@ export const SITE_FEEDBACK_LIMITS = {
   studioStepMax: 64,
   userAgentMax: 512,
   viewportMax: 32,
+  /** As picked by the visitor, before the on-device shrink. Matches storage.rules. */
+  photoMaxBytes: 5 * 1024 * 1024,
+  /** Longest side after the on-device shrink. */
+  photoMaxDimension: 1600,
 } as const;
 
-/** Every field a client create carries. Mirrors firestore.rules exactly. */
-export const SITE_FEEDBACK_CREATE_KEYS = [
+export const SITE_FEEDBACK_PHOTO_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export type SiteFeedbackPhotoType = (typeof SITE_FEEDBACK_PHOTO_TYPES)[number];
+
+const SITE_FEEDBACK_PHOTO_EXTENSIONS: Record<SiteFeedbackPhotoType, "jpg" | "png" | "webp"> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+export function isSiteFeedbackPhotoType(value: unknown): value is SiteFeedbackPhotoType {
+  return (
+    typeof value === "string" &&
+    (SITE_FEEDBACK_PHOTO_TYPES as readonly string[]).includes(value)
+  );
+}
+
+export interface SiteFeedbackNationalityOption {
+  code: string;
+  label: string;
+}
+
+/** Every ISO country from the Step 8 country list, by English name. */
+export const SITE_FEEDBACK_NATIONALITY_OPTIONS: readonly SiteFeedbackNationalityOption[] =
+  Object.freeze(
+    [...STEP8_COUNTRY_ZONE_INDEX.keys()]
+      .filter((code) => /^[A-Z]{2}$/.test(code) && !STEP8_FAKE_COUNTRY_CODE_SENTINELS.has(code))
+      .map((code) => ({ code, label: formatStep8CountryLabel(code) }))
+      .sort((a, b) => a.label.localeCompare(b.label, "en")),
+  );
+
+const NATIONALITY_CODES = new Set(SITE_FEEDBACK_NATIONALITY_OPTIONS.map((o) => o.code));
+
+export function isSiteFeedbackNationality(value: unknown): value is string {
+  return typeof value === "string" && NATIONALITY_CODES.has(value);
+}
+
+export function siteFeedbackNationalityLabel(code: string | null | undefined): string {
+  if (!code) return "";
+  return formatStep8CountryLabel(code);
+}
+
+/** Fields every create must carry (`hasAll` in firestore.rules; the v1 form sends exactly these). */
+export const SITE_FEEDBACK_REQUIRED_KEYS = [
   "schemaVersion",
   "status",
   "type",
@@ -40,6 +101,20 @@ export const SITE_FEEDBACK_CREATE_KEYS = [
   "viewport",
   "uid",
   "createdAt",
+] as const;
+
+/** v2 fields. Optional for the rules so the v1 form keeps working. */
+export const SITE_FEEDBACK_OPTIONAL_KEYS = [
+  "nationality",
+  "photoPath",
+  "photoContentType",
+  "photoSizeBytes",
+] as const;
+
+/** Every field a client create may carry (`hasOnly` in firestore.rules). */
+export const SITE_FEEDBACK_CREATE_KEYS = [
+  ...SITE_FEEDBACK_REQUIRED_KEYS,
+  ...SITE_FEEDBACK_OPTIONAL_KEYS,
 ] as const;
 
 /** Client-side spam guard: at most 3 sends per 10 minutes, 20 s apart. */
@@ -56,14 +131,21 @@ export interface SiteFeedbackInput {
   type: string;
   message: string;
   email?: string;
+  /** ISO country code, or empty for "Prefer not to say". */
+  nationality?: string;
 }
 
 export type SiteFeedbackValidation =
   | {
       ok: true;
-      value: { type: SiteFeedbackType; message: string; email: string | null };
+      value: {
+        type: SiteFeedbackType;
+        message: string;
+        email: string | null;
+        nationality?: string | null;
+      };
     }
-  | { ok: false; field: "type" | "message" | "email"; error: string };
+  | { ok: false; field: "type" | "message" | "email" | "nationality"; error: string };
 
 export function isSiteFeedbackType(value: unknown): value is SiteFeedbackType {
   return (
@@ -108,10 +190,54 @@ export function validateSiteFeedback(
       };
     }
   }
+  const nationality = (input.nationality ?? "").trim();
+  if (nationality && !isSiteFeedbackNationality(nationality)) {
+    return {
+      ok: false,
+      field: "nationality",
+      error: "Choose a country from the list, or Prefer not to say.",
+    };
+  }
   return {
     ok: true,
-    value: { type: input.type, message, email: email || null },
+    value: {
+      type: input.type,
+      message,
+      email: email || null,
+      ...(nationality ? { nationality } : {}),
+    },
   };
+}
+
+/** Checks the photo as picked, before the on-device shrink. */
+export function validateSiteFeedbackPhoto(
+  file: { type: string; size: number } | null | undefined,
+): { ok: true } | { ok: false; error: string } {
+  if (!file) return { ok: true };
+  if (!isSiteFeedbackPhotoType(file.type)) {
+    return { ok: false, error: "Please choose a JPEG, PNG or WebP image." };
+  }
+  if (file.size <= 0) {
+    return { ok: false, error: "That image is empty. Please choose another one." };
+  }
+  if (file.size > SITE_FEEDBACK_LIMITS.photoMaxBytes) {
+    return { ok: false, error: "That image is over 5 MB. Please choose a smaller one." };
+  }
+  return { ok: true };
+}
+
+export function buildSiteFeedbackPhotoPath(
+  authUid: string,
+  feedbackId: string,
+  contentType: SiteFeedbackPhotoType,
+): string {
+  return `${SITE_FEEDBACK_PHOTO_PREFIX}/${authUid}/${feedbackId}/photo.${SITE_FEEDBACK_PHOTO_EXTENSIONS[contentType]}`;
+}
+
+export interface SiteFeedbackPhotoRecord {
+  path: string;
+  contentType: SiteFeedbackPhotoType;
+  sizeBytes: number;
 }
 
 const clip = (value: string | null | undefined, max: number): string =>
@@ -131,9 +257,10 @@ export function buildSiteFeedbackCreatePayload<TTimestamp>(
   value: Extract<SiteFeedbackValidation, { ok: true }>["value"],
   context: SiteFeedbackContext,
   createdAt: TTimestamp,
+  photo: SiteFeedbackPhotoRecord | null = null,
 ) {
   return {
-    schemaVersion: 1 as const,
+    schemaVersion: SITE_FEEDBACK_SCHEMA_VERSION,
     status: "new" as const,
     type: value.type,
     message: value.message,
@@ -147,6 +274,10 @@ export function buildSiteFeedbackCreatePayload<TTimestamp>(
     viewport: clip(context.viewport, SITE_FEEDBACK_LIMITS.viewportMax),
     uid: context.uid,
     createdAt,
+    nationality: value.nationality ?? null,
+    photoPath: photo?.path ?? null,
+    photoContentType: photo?.contentType ?? null,
+    photoSizeBytes: photo?.sizeBytes ?? null,
   };
 }
 

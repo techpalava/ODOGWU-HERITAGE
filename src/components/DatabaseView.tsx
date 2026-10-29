@@ -42,6 +42,7 @@ import {
   ListCollapse,
   Pen,
   Star,
+  MessageSquare,
 } from "lucide-react";
 import {
   Fabric,
@@ -177,6 +178,7 @@ import {
 } from "../utils/futureOrderV2PersonalizedPrice";
 import { BatchManagementPanel } from "./BatchManagementPanel";
 import AdminReviewsPanel from "./AdminReviewsPanel";
+import AdminSiteFeedbackPanel from "./AdminSiteFeedbackPanel";
 import {
   getFabricGarmentLabel,
 } from "../engine/FabricCapacityEngine";
@@ -196,6 +198,7 @@ type TabType =
   | "showpieces"
   | "photos"
   | "reviews"
+  | "feedback"
   | "settings"
   | "media"
   | "plugins"
@@ -1705,6 +1708,7 @@ export default function DatabaseView({
               { id: "showpieces", label: "Gallery Showpieces", icon: Tag, condition: AuthorizationEngine.canManageShowpieces(currentUser) },
               { id: "photos", label: "Community & Cohorts", icon: Image, condition: AuthorizationEngine.canManageGallery(currentUser) },
               { id: "reviews", label: "Customer Reviews", icon: Star, condition: AuthorizationEngine.canManageGallery(currentUser) },
+              { id: "feedback", label: "Site Feedback", icon: MessageSquare, condition: AuthorizationEngine.canViewReports(currentUser) },
               { id: "media", label: "Media Library", icon: Image, condition: AuthorizationEngine.canManageMedia(currentUser) },
               { id: "plugins", label: "Plugins", icon: Puzzle, condition: AuthorizationEngine.canManageSettings(currentUser) },
               { id: "audit", label: "Audit Logs", icon: FileText, condition: AuthorizationEngine.canManageUsers(currentUser) },
@@ -6697,6 +6701,11 @@ export default function DatabaseView({
             {activeTab === "reviews" &&
               AuthorizationEngine.canManageGallery(currentUser) && (
                 <AdminReviewsPanel />
+              )}
+
+            {activeTab === "feedback" &&
+              AuthorizationEngine.canViewReports(currentUser) && (
+                <AdminSiteFeedbackPanel />
               )}
 
             {activeTab === "settings" && (

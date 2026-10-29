@@ -4,6 +4,12 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
   SITE_FEEDBACK_CREATE_KEYS,
   SITE_FEEDBACK_LIMITS,
+  SITE_FEEDBACK_NATIONALITY_OPTIONS,
+  SITE_FEEDBACK_OPTIONAL_KEYS,
+  SITE_FEEDBACK_REQUIRED_KEYS,
+  buildSiteFeedbackPhotoPath,
+  siteFeedbackNationalityLabel,
+  validateSiteFeedbackPhoto,
   SITE_FEEDBACK_RATE_LIMIT,
   buildSiteFeedbackCreatePayload,
   readSiteFeedbackSends,
@@ -56,11 +62,72 @@ assert.deepEqual(Object.keys(payload).sort(), [...SITE_FEEDBACK_CREATE_KEYS].sor
 assert.equal(payload.page.length, SITE_FEEDBACK_LIMITS.pageMax);
 assert.equal(payload.userAgent.length, SITE_FEEDBACK_LIMITS.userAgentMax);
 assert.equal(payload.status, "new");
-assert.equal(payload.schemaVersion, 1);
+assert.equal(payload.schemaVersion, 2);
+assert.equal(payload.nationality, null);
+assert.equal(payload.photoPath, null);
+assert.equal(payload.photoContentType, null);
+assert.equal(payload.photoSizeBytes, null);
+
+// --- nationality (optional, ISO code from the Step 8 country list) ----------
+assert.ok(SITE_FEEDBACK_NATIONALITY_OPTIONS.length > 200, "full country list");
+const ng = SITE_FEEDBACK_NATIONALITY_OPTIONS.find((o) => o.code === "NG");
+assert.equal(ng?.label, "Nigeria");
+assert.ok(SITE_FEEDBACK_NATIONALITY_OPTIONS.some((o) => o.code === "NL"));
+assert.ok(!SITE_FEEDBACK_NATIONALITY_OPTIONS.some((o) => ["XX", "ZZ", "OT"].includes(o.code)));
+const labels = SITE_FEEDBACK_NATIONALITY_OPTIONS.map((o) => o.label);
+assert.deepEqual(labels, [...labels].sort((a, b) => a.localeCompare(b, "en")), "alphabetical");
+assert.equal(new Set(SITE_FEEDBACK_NATIONALITY_OPTIONS.map((o) => o.code)).size, SITE_FEEDBACK_NATIONALITY_OPTIONS.length);
+assert.equal(siteFeedbackNationalityLabel("GH"), "Ghana");
+assert.equal(siteFeedbackNationalityLabel(null), "");
+const withNationality = validateSiteFeedback({ type: "idea", message: "Lovely site", nationality: "NG" });
+assert.deepEqual(withNationality, { ok: true, value: { type: "idea", message: "Lovely site", email: null, nationality: "NG" } });
+const badNationality = validateSiteFeedback({ type: "idea", message: "Lovely site", nationality: "Naija" });
+assert.equal(!badNationality.ok && (badNationality as { field: string }).field, "nationality");
+assert.ok(withNationality.ok);
+assert.equal(
+  buildSiteFeedbackCreatePayload(withNationality.value, { page: "/", tab: "home", studioStep: null, userAgent: "", viewport: "", uid: null }, "T").nationality,
+  "NG",
+);
+
+// --- photo (optional, one JPEG/PNG/WebP up to 5 MB as picked) ---------------
+assert.deepEqual(validateSiteFeedbackPhoto(null), { ok: true });
+assert.deepEqual(validateSiteFeedbackPhoto({ type: "image/png", size: 1000 }), { ok: true });
+assert.deepEqual(validateSiteFeedbackPhoto({ type: "image/webp", size: SITE_FEEDBACK_LIMITS.photoMaxBytes }), { ok: true });
+assert.equal(validateSiteFeedbackPhoto({ type: "image/gif", size: 1000 }).ok, false);
+assert.equal(validateSiteFeedbackPhoto({ type: "image/heic", size: 1000 }).ok, false);
+assert.equal(validateSiteFeedbackPhoto({ type: "image/jpeg", size: 0 }).ok, false);
+assert.equal(validateSiteFeedbackPhoto({ type: "image/jpeg", size: SITE_FEEDBACK_LIMITS.photoMaxBytes + 1 }).ok, false);
+assert.equal(buildSiteFeedbackPhotoPath("anonUid", "doc123", "image/webp"), "site-feedback/anonUid/doc123/photo.webp");
+assert.equal(buildSiteFeedbackPhotoPath("u", "d", "image/jpeg"), "site-feedback/u/d/photo.jpg");
+const withPhoto = buildSiteFeedbackCreatePayload(good.value, { page: "/", tab: "home", studioStep: null, userAgent: "", viewport: "", uid: null }, "T", {
+  path: "site-feedback/u/d/photo.png",
+  contentType: "image/png",
+  sizeBytes: 1234,
+});
+assert.equal(withPhoto.photoPath, "site-feedback/u/d/photo.png");
+assert.equal(withPhoto.photoContentType, "image/png");
+assert.equal(withPhoto.photoSizeBytes, 1234);
+assert.deepEqual(Object.keys(withPhoto).sort(), [...SITE_FEEDBACK_CREATE_KEYS].sort());
+
+const { fitSiteFeedbackPhoto } = await import("./src/utils/siteFeedbackPhoto");
+assert.deepEqual(fitSiteFeedbackPhoto(800, 600), { width: 800, height: 600 });
+assert.deepEqual(fitSiteFeedbackPhoto(4000, 3000), { width: 1600, height: 1200 });
+assert.deepEqual(fitSiteFeedbackPhoto(1000, 3200), { width: 500, height: 1600 });
 
 const rules = readFileSync("firestore.rules", "utf8");
+const listOf = (raw: string) =>
+  raw.split(",").map((key) => key.trim().replace(/"/g, "")).filter(Boolean).sort();
+const hasAll = rules.match(
+  /function hasValidSiteFeedbackCreate\(data, feedbackId\) \{[\s\S]*?data\.keys\(\)\.hasAll\(\[([^\]]*)\]\)/,
+);
+assert.ok(hasAll, "site feedback create rule must use hasAll");
+assert.deepEqual(listOf(hasAll[1]), [...SITE_FEEDBACK_REQUIRED_KEYS].sort(), "v1 form stays valid");
+assert.deepEqual(
+  [...SITE_FEEDBACK_CREATE_KEYS].sort(),
+  [...SITE_FEEDBACK_REQUIRED_KEYS, ...SITE_FEEDBACK_OPTIONAL_KEYS].sort(),
+);
 const hasOnly = rules.match(
-  /function hasValidSiteFeedbackCreate\(data\) \{[\s\S]*?data\.keys\(\)\.hasOnly\(\[([^\]]*)\]\)/,
+  /function hasValidSiteFeedbackCreate\(data, feedbackId\) \{[\s\S]*?data\.keys\(\)\.hasOnly\(\[([^\]]*)\]\)/,
 );
 assert.ok(hasOnly, "site feedback create rule must use hasOnly");
 assert.deepEqual(
@@ -69,7 +136,31 @@ assert.deepEqual(
 );
 const feedbackMatch = rules.match(/match \/site_feedback\/\{feedbackId\} \{([\s\S]*?)\n    \}/);
 assert.ok(feedbackMatch, "site_feedback rules block exists");
-assert.match(feedbackMatch[1], /allow create: if hasValidSiteFeedbackCreate\(request\.resource\.data\);/);
+assert.match(feedbackMatch[1], /allow create: if hasValidSiteFeedbackCreate\(request\.resource\.data, feedbackId\);/);
+assert.match(rules, /data\.schemaVersion in \[1, 2\]/);
+assert.match(rules, /data\.nationality\.matches\("\^\[A-Z\]\{2\}\$"\)/);
+for (const ext of ["jpg", "png", "webp"]) {
+  assert.ok(
+    rules.includes(`data.photoPath == "site-feedback/" + request.auth.uid + "/" + feedbackId + "/photo.${ext}"`),
+    `photo path rule for .${ext}`,
+  );
+}
+assert.match(rules, /data\.photoSizeBytes <= 5 \* 1024 \* 1024/);
+
+// Storage: own folder only, create-only, image types, 5 MB; admins read.
+const storageRules = readFileSync("storage.rules", "utf8");
+const photoBlock = storageRules.match(/match \/site-feedback\/\{uid\}\/\{feedbackId\}\/\{fileName\} \{([\s\S]*?)\n    \}/);
+assert.ok(photoBlock, "storage rule for site-feedback photos");
+assert.match(photoBlock[1], /allow read, delete: if isAdmin\(\);/);
+assert.match(photoBlock[1], /allow create: if isOwner\(uid\)/);
+assert.match(photoBlock[1], /fileName\.matches\('photo\[\.\]\(jpg\|png\|webp\)'\)/);
+assert.match(photoBlock[1], /isAllowedCustomerDesignImage\(\)/);
+assert.match(photoBlock[1], /isWithinCustomerDesignSizeLimit\(\)/);
+assert.doesNotMatch(photoBlock[1], /update/);
+assert.ok(
+  storageRules.indexOf("match /site-feedback/") < storageRules.lastIndexOf("match /{allPaths=**}"),
+  "site-feedback rule sits before the deny-all catch-all",
+);
 assert.match(feedbackMatch[1], /allow read, update, delete: if isAdmin\(\);/);
 assert.ok(
   rules.indexOf("match /site_feedback/") < rules.indexOf("match /{document=**}"),
@@ -101,7 +192,7 @@ const text = (node: ReactTestInstance): string =>
   node.children.map((child) => (typeof child === "string" ? child : text(child))).join("");
 
 const originalState = useAppStore.getState();
-const submitted: Array<{ value: unknown; context: any }> = [];
+const submitted: Array<{ value: unknown; context: any; photo: File | null }> = [];
 let failNext = false;
 let tree: ReturnType<typeof create> | undefined;
 try {
@@ -114,12 +205,12 @@ try {
   await act(async () => {
     tree = create(
       <SiteFeedbackButton
-        submit={async (value, context) => {
+        submit={async (value, context, photo) => {
           if (failNext) {
             failNext = false;
             throw new Error("offline");
           }
-          submitted.push({ value, context });
+          submitted.push({ value, context, photo });
           return "doc-1";
         }}
       />,
@@ -166,6 +257,7 @@ try {
   assert.deepEqual(submitted[0].value, { type: "bug", message: "The pickup step froze.", email: "ada@example.com" });
   assert.equal(submitted[0].context.tab, "about");
   assert.equal(submitted[0].context.studioStep, null);
+  assert.equal(submitted[0].photo, null, "no photo unless one is picked");
   assert.ok(tree!.root.findByProps({ "data-site-feedback-thanks": "true" }));
 
   // Close button returns to the tab.
@@ -181,6 +273,43 @@ try {
   await act(async () => honeypot.props.onChange({ target: { value: "http://spam" } }));
   await act(async () => d2.findByType("form").props.onSubmit({ preventDefault() {} }));
   assert.equal(submitted.length, 1, "honeypot submissions are dropped");
+  assert.ok(tree!.root.findByProps({ "data-site-feedback-thanks": "true" }));
+
+  // Nationality dropdown and photo field (both optional).
+  await act(async () => tree!.root.findByProps({ "aria-label": "Close feedback" }).props.onClick());
+  await act(async () => tree!.root.findByProps({ "data-site-feedback-tab": "true" }).props.onClick());
+  const d3 = tree!.root.find((n) => n.props?.role === "dialog" && n.type === "div");
+  const select = d3.findByProps({ "data-site-feedback-nationality": "true" });
+  assert.equal(select.type, "select");
+  assert.equal(select.props.value, "", "defaults to Prefer not to say");
+  const options = select.findAllByType("option");
+  assert.equal(options[0].props.value, "");
+  assert.equal(text(options[0]), "Prefer not to say");
+  assert.equal(options.length, SITE_FEEDBACK_NATIONALITY_OPTIONS.length + 1);
+  assert.match(text(d3), /Nationality/);
+  assert.match(text(d3), /Add a photo or screenshot/);
+  const fileInput = d3.find((n) => n.type === "input" && n.props.type === "file");
+  assert.equal(fileInput.props.accept, "image/jpeg,image/png,image/webp");
+
+  // A GIF is refused inline and nothing is kept.
+  await act(async () => fileInput.props.onChange({ target: { files: [{ name: "a.gif", type: "image/gif", size: 10 }] } }));
+  assert.match(text(tree!.root.findByProps({ "data-site-feedback-photo-error": "true" })), /JPEG, PNG or WebP/);
+  // Over 5 MB is refused too.
+  await act(async () => tree!.root.find((n) => n.type === "input" && n.props.type === "file").props.onChange({ target: { files: [{ name: "big.jpg", type: "image/jpeg", size: SITE_FEEDBACK_LIMITS.photoMaxBytes + 1 }] } }));
+  assert.match(text(tree!.root.findByProps({ "data-site-feedback-photo-error": "true" })), /over 5 MB/);
+  // A valid PNG is kept and sent with the nationality.
+  const png = new File([new Uint8Array(2048)], "shot.png", { type: "image/png" });
+  await act(async () => tree!.root.find((n) => n.type === "input" && n.props.type === "file").props.onChange({ target: { files: [png] } }));
+  assert.equal(tree!.root.findAll((n) => n.props?.["data-site-feedback-photo-error"] === "true").length, 0);
+  await act(async () => tree!.root.findByProps({ "data-site-feedback-nationality": "true" }).props.onChange({ target: { value: "NG" } }));
+  const d4 = tree!.root.find((n) => n.props?.role === "dialog" && n.type === "div");
+  await act(async () => d4.findByType("textarea").props.onChange({ target: { value: "Photo of the broken step." } }));
+  // Clear the honeypot left filled by the bot check above.
+  await act(async () => d4.find((n) => n.type === "input" && n.props.tabIndex === -1).props.onChange({ target: { value: "" } }));
+  await act(async () => d4.findByType("form").props.onSubmit({ preventDefault() {} }));
+  assert.equal(submitted.length, 2);
+  assert.deepEqual(submitted[1].value, { type: "idea", message: "Photo of the broken step.", email: "ada@example.com", nationality: "NG" });
+  assert.equal(submitted[1].photo, png);
   assert.ok(tree!.root.findByProps({ "data-site-feedback-thanks": "true" }));
 
   // Hidden while the cart drawer is open.
