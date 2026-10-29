@@ -111,17 +111,36 @@ await step(34, () => assertFails(uploadBytes(ref(anon.storage(), "customer-revie
 await step(35, () => assertFails(uploadBytes(ref(anon.storage(), "customer-review-photos/anon-1/x4/photo.webp"), webp, { contentType: "image/gif" })));
 await step(36, () => assertFails(uploadBytes(ref(anon.storage(), "customer-review-photos/anon-1/x5/photo.webp"), new Uint8Array(5 * 1024 * 1024 + 1), meta)));
 await step(37, () => assertFails(uploadBytes(ref(anon.storage(), "customer-review-photos/anon-1/x6/photo.webp"), new Uint8Array(0), meta)));
-// Only admins read or delete the private upload.
+// Only admins read the private upload.
 await step(38, () => assertFails(getBytes(ref(anon.storage(), path))));
 await step(39, () => assertFails(getBytes(ref(guest.storage(), path))));
 await step(40, () => assertSucceeds(getBytes(ref(admin.storage(), path))));
+// Owner cannot delete once the review document exists (r1 written in step 3).
 await step(41, () => assertFails(deleteObject(ref(anon.storage(), path))));
+// Orphan clean-up: no customer_reviews/{reviewId} doc, so the uploader may
+// delete their own file; nobody else (other uid, signed out) may.
+const orphan = "customer-review-photos/anon-1/orphan1/photo.webp";
+await step(46, () => assertSucceeds(uploadBytes(ref(anon.storage(), orphan), webp, meta)));
+await step(47, () => assertFails(deleteObject(ref(other.storage(), orphan))));
+await step(48, () => assertFails(deleteObject(ref(guest.storage(), orphan))));
+await step(49, () => assertSucceeds(deleteObject(ref(anon.storage(), orphan))));
+// Admins can delete an orphan too.
+const orphan2 = "customer-review-photos/anon-1/orphan2/photo.webp";
+await step(50, () => assertSucceeds(uploadBytes(ref(anon.storage(), orphan2), webp, meta)));
+await step(51, () => assertSucceeds(deleteObject(ref(admin.storage(), orphan2))));
+// The owner's delete right ends as soon as the review is written.
+const late = "customer-review-photos/anon-1/late1/photo.webp";
+await step(52, () => assertSucceeds(uploadBytes(ref(anon.storage(), late), webp, meta)));
+await step(53, () => assertSucceeds(setDoc(reviews(anon, "late1"), withPhoto("anon-1", "late1"))));
+await step(54, () => assertFails(deleteObject(ref(anon.storage(), late))));
 // Approval copy: admins write it, everyone can view it.
 const publicPath = "communityPhotos/reviews/r1.webp";
 await step(42, () => assertFails(uploadBytes(ref(anon.storage(), publicPath), webp, meta)));
 await step(43, () => assertSucceeds(uploadBytes(ref(admin.storage(), publicPath), webp, meta)));
 await step(44, () => assertSucceeds(getBytes(ref(guest.storage(), publicPath))));
+// Admin can still delete once the review exists.
 await step(45, () => assertSucceeds(deleteObject(ref(admin.storage(), path))));
+await step(55, () => assertSucceeds(deleteObject(ref(admin.storage(), late))));
 
 await env.cleanup();
 console.log("PASS: customer review photo Firestore and Storage rules (emulator)");

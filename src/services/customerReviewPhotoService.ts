@@ -58,7 +58,8 @@ const firebaseSubmitDeps: CustomerReviewPhotoSubmitDeps = {
  * photo is accepted (see prepareCustomerReviewPhoto). The photo is uploaded
  * first to customer-review-photos/{uid}/{reviewId}/photo.{ext}, then the
  * review is written with photoStatus "pending". If the review write fails,
- * the uploaded file is removed (best effort). Every attempt uses a fresh
+ * the uploaded file is removed by the same uploader (best effort; allowed by
+ * storage.rules only while the review document does not exist). Every attempt uses a fresh
  * review id, so a retry never collides with an earlier upload.
  */
 export async function submitCustomerReviewWithPhoto(
@@ -92,8 +93,16 @@ export async function submitCustomerReviewWithPhoto(
   try {
     await deps.writeReview(reviewId, data);
   } catch (error) {
+    // storage.rules lets the uploader delete their own file only while no
+    // customer_reviews/{reviewId} document exists, so the clean-up must run
+    // as the same Firebase identity that uploaded it.
     try {
-      await deps.deletePhoto(path);
+      const cleanupUid = await deps.ensureUploadUid();
+      if (cleanupUid === uid) {
+        await deps.deletePhoto(path);
+      } else {
+        console.error("Uploaded review photo not cleaned up: signed-in identity changed.");
+      }
     } catch (cleanupError) {
       console.error("Uploaded review photo could not be cleaned up:", cleanupError);
     }

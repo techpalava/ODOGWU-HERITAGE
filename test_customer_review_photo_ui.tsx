@@ -58,10 +58,14 @@ const webp = () => ({ blob: new Blob([new Uint8Array(321)], { type: "image/webp"
 const value = { authorName: "Ada Obi", body: "Beautiful agbada, perfect fit.", rating: 5 as const, nationality: "NG" };
 
 // --- Service: submit with injected deps --------------------------------------
-function submitDeps(fail: Partial<Record<"identity" | "upload" | "write" | "cleanup", boolean>> = {}) {
+function submitDeps(
+  fail: Partial<Record<"identity" | "upload" | "write" | "cleanup", boolean>> = {},
+  uids: string[] = [],
+) {
   const calls: string[] = [];
   const written: Record<string, unknown>[] = [];
   let n = 0;
+  let identityCalls = 0;
   return {
     calls,
     written,
@@ -70,7 +74,7 @@ function submitDeps(fail: Partial<Record<"identity" | "upload" | "write" | "clea
       ensureUploadUid: async () => {
         calls.push("identity");
         if (fail.identity) throw new Error("auth");
-        return "anon-uid";
+        return uids[identityCalls++] ?? "anon-uid";
       },
       uploadPhoto: async (path: string, photo: { blob: Blob; contentType: string }) => {
         calls.push(`upload:${path}:${photo.contentType}:${photo.blob.size}`);
@@ -123,6 +127,17 @@ function submitDeps(fail: Partial<Record<"identity" | "upload" | "write" | "clea
   const { deps, calls } = submitDeps({ write: true });
   await assert.rejects(submitCustomerReviewWithPhoto(value, webp(), deps), (e: any) => e.stage === "write");
   assert.equal(calls.at(-1), "delete:customer-review-photos/anon-uid/rev1/photo.webp");
+  // Clean-up re-checks the identity so the owner-only orphan delete rule applies.
+  assert.deepEqual(calls.slice(-2), ["identity", "delete:customer-review-photos/anon-uid/rev1/photo.webp"]);
+}
+{
+  // If the signed-in identity changed, no delete is attempted (rules would deny it).
+  const { deps, calls } = submitDeps({ write: true }, ["anon-uid", "someone-else"]);
+  const originalError = console.error;
+  console.error = () => {};
+  await assert.rejects(submitCustomerReviewWithPhoto(value, webp(), deps), (e: any) => e.stage === "write");
+  console.error = originalError;
+  assert.equal(calls.some((c) => c.startsWith("delete:")), false);
 }
 {
   // A failing cleanup does not hide the write error.
