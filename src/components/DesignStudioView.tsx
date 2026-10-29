@@ -63,6 +63,11 @@ import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJourneyStepper";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import {
+  decideOrderFeedbackPromptAfterNavigation,
+  readOrderFeedbackPromptState,
+  writeOrderFeedbackPromptState,
+} from "../utils/designStudioOrderFeedbackPrompt";
+import {
   canBeginFutureDesignDraftHydration,
   preserveUnresolvedCatalogueStyleSelection,
   resolveHydratedDesignStyleSelection,
@@ -999,6 +1004,12 @@ export default function DesignStudioView({
     (state) => state.customGroupPrivateAccessGeneration,
   );
   const setNotification = useAppStore((state) => state.setNotification);
+  const requestSiteFeedbackOpen = useAppStore(
+    (state) => state.requestSiteFeedbackOpen,
+  );
+  const orderFeedbackSessionIdRef = useRef(
+    `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+  );
   const customDetailCatalog = useAppStore(
     (state: any) => state.customDetailCatalog,
   );
@@ -1156,6 +1167,27 @@ export default function DesignStudioView({
     },
     [],
   );
+  const promptOrderFeedbackAfterSuccessfulContinue = (
+    fromStageId: DesignStudioStageId,
+    toStageId: DesignStudioStageId,
+  ) => {
+    const draftKey = `${futureDraftIdentityKey}:${orderFeedbackSessionIdRef.current}`;
+    const storage =
+      typeof window !== "undefined" ? window.sessionStorage : null;
+    const decision = decideOrderFeedbackPromptAfterNavigation({
+      draftKey,
+      fromStageId,
+      toStageId,
+      state: readOrderFeedbackPromptState(storage, draftKey),
+    });
+    if (!decision.shouldOpen || !decision.trigger) return;
+    writeOrderFeedbackPromptState(storage, draftKey, decision.nextState);
+    requestSiteFeedbackOpen({
+      source: "order_flow",
+      trigger: decision.trigger,
+      draftKey,
+    });
+  };
   const futureGarmentRemovalGenerationRef = useRef(0);
   const futureGarmentRemovalStageRetentionLeaseRef =
     useRef<RemovalStageRetentionLease | null>(null);
@@ -8009,7 +8041,11 @@ export default function DesignStudioView({
   const handleOpenDormantAiTryOnStage = () => {
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
     if (returnStage) {
+      const fromStageId = futureStageId;
       navigateToFutureStage(returnStage);
+      if (fromStageId === "personalized_additions") {
+        promptOrderFeedbackAfterSuccessfulContinue(fromStageId, returnStage);
+      }
       return;
     }
     if (
@@ -8024,7 +8060,11 @@ export default function DesignStudioView({
       );
       return;
     }
+    const fromStageId = futureStageId;
     navigateToFutureStage("try_on");
+    if (fromStageId === "personalized_additions") {
+      promptOrderFeedbackAfterSuccessfulContinue(fromStageId, "try_on");
+    }
   };
   const handleOpenDormantMeasurementStage = () => {
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
@@ -8118,7 +8158,11 @@ export default function DesignStudioView({
     setFuturePaymentReviewHandoff(
       createFutureOrderV2PaymentReviewHandoff(result.candidate),
     );
+    const fromStageId = futureStageId;
     navigateToFutureStage("payment");
+    if (fromStageId === "shipping") {
+      promptOrderFeedbackAfterSuccessfulContinue(fromStageId, "payment");
+    }
   };
   const handlePrepareFutureOrderV2 = async (): Promise<FutureOrderV2PaymentReviewHandoff | null> => {
     if (futureOrderV2PreparationInFlightRef.current) return null;

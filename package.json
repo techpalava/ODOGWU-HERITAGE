@@ -149,7 +149,9 @@
     "test:staff-preview-client-gate": "tsx test_staff_preview_client_gate.ts",
     "test:staff-preview-client-gate-react": "tsx test_staff_preview_client_gate_react.tsx",
     "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts",
-    "orders:normalize-email-case": "tsx src/scripts/normalizeOrderEmailCase.ts"
+    "orders:normalize-email-case": "tsx src/scripts/normalizeOrderEmailCase.ts",
+    "test:order-feedback-prompt": "tsx test_design_studio_order_feedback_prompt.ts",
+    "test:order-flow-feedback": "npm run test:order-feedback-prompt && npm run test:site-feedback"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
