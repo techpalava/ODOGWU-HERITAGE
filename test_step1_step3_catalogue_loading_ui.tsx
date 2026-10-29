@@ -39,7 +39,7 @@ const selection = (
 const compatibleStyle: StyleCategory = {
   id: "ui-compatible-shirt-trouser",
   name: "UI Compatible Set",
-  description: "Shirt + Trouser male.",
+  description: "Standard Shirt + Trouser male.",
   gender: "male",
   options: [],
   fabricCapacityComposition: [
@@ -51,7 +51,7 @@ const compatibleStyle: StyleCategory = {
 const incompatibleStyle: StyleCategory = {
   id: "ui-incompatible-dress",
   name: "UI Dress Only",
-  description: "Dress female.",
+  description: "Standard Dress female.",
   gender: "female",
   options: [],
   fabricCapacityComposition: [createStyleBaseGarmentSpec("dress")],
@@ -340,7 +340,7 @@ const renderStep3 = async ({
     },
   });
   assert.match(explicitV2.text, /2 of 2 garments assigned/);
-  assert.match(explicitV2.text, /Applied to Shirt, Trouser/);
+  assert.match(explicitV2.text, /Applied to Standard Shirt, Trouser/);
   assert.match(explicitV2.text, /Use Again/);
   assert.equal(explicitV2.continueDisabled, false);
   assert.equal(explicitV2.stageComplete, true);

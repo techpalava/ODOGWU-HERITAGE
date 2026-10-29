@@ -170,9 +170,9 @@ const beginReplacement = (
     onSelectUploadFile: (target: GarmentDesignStyleAssignmentTarget, file: File) =>
       selected.push({ target, file }),
   });
-  assert.ok(fileInputLabeled(renderer.root, /Replace uploaded design for Shirt/i));
-  const input = fileInputLabeled(renderer.root, /Replace uploaded design for Shirt/i)!;
-  assert.match(String(input.props["aria-label"]), /Replace uploaded design for Shirt/i);
+  assert.ok(fileInputLabeled(renderer.root, /Replace uploaded design for Standard Shirt/i));
+  const input = fileInputLabeled(renderer.root, /Replace uploaded design for Standard Shirt/i)!;
+  assert.match(String(input.props["aria-label"]), /Replace uploaded design for Standard Shirt/i);
   assert.equal(
     renderer.root.findAllByType("img").some(
       (image) => image.props.src === "blob:source-a",
@@ -205,12 +205,12 @@ const beginReplacement = (
     onSelectUploadFile: () => undefined,
   });
   assert.equal(
-    fileInputLabeled(renderer.root, /Replace uploaded design for Shirt/i),
+    fileInputLabeled(renderer.root, /Replace uploaded design for Standard Shirt/i),
     undefined,
   );
   assert.ok(fileInputLabeled(renderer.root, /Upload a design for /i));
   assert.equal(renderer.root.findByType("img").props.src, "blob:source-a");
-  assert.match(textContent(renderer.root), /Preparing a replacement design for Shirt/i);
+  assert.match(textContent(renderer.root), /Preparing a replacement design for Standard Shirt/i);
   assert.equal(ledger.assignmentsByGarmentKey[shirtTarget.garmentKey], previousTarget);
   assert.equal(ledger.assignmentsByGarmentKey[occurrences[1].garmentKey], previousSibling);
   act(() => renderer.unmount());
@@ -404,7 +404,7 @@ const beginReplacement = (
 }
 
 const shirtCard = (root: ReactTestInstance) =>
-  root.findByProps({ "data-occurrence-label": "Shirt" });
+  root.findByProps({ "data-occurrence-label": "Standard Shirt" });
 
 const catalogueModel = () =>
   createDesignStyleStepTestModel({
@@ -448,11 +448,11 @@ const leftoverUploadA = {
   );
   assert.match(
     String(preview.findByType("img").props.alt),
-    /Catalogue C design for Shirt/,
+    /Catalogue C design for Standard Shirt/,
   );
   assert.match(textContent(card), /Catalogue C/);
   assert.match(textContent(card), /Change Design/);
-  assert.ok(fileInputLabeled(card, /Upload a design for Shirt/i));
+  assert.ok(fileInputLabeled(card, /Upload a design for Standard Shirt/i));
   assert.match(textContent(card), /Clear/);
   act(() => renderer.unmount());
 }
@@ -536,7 +536,7 @@ const leftoverUploadA = {
   );
   assert.match(
     textContent(renderer.root),
-    /Preparing a replacement design for Shirt/i,
+    /Preparing a replacement design for Standard Shirt/i,
   );
   act(() => renderer.unmount());
 }

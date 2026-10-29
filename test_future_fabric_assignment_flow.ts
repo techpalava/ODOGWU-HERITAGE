@@ -147,7 +147,7 @@ assert.deepEqual(
     ),
   })),
   [{ fabricCode: "FAB-B", garmentKeys: ["base:shirt", "base:trouser"] }],
-  "Changing Fabric for a shared Shirt + Trouser allocation replaces the whole physical group.",
+  "Changing Fabric for a shared Standard Shirt + Trouser allocation replaces the whole physical group.",
 );
 const assign = (
   state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
@@ -963,7 +963,7 @@ assert.deepEqual(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt", "base:trouser"],
-  "Changing Trouser's Fabric changes the whole shared Shirt + Trouser allocation.",
+  "Changing Trouser's Fabric changes the whole shared Standard Shirt + Trouser allocation.",
 );
 assert.deepEqual(
   separate.fabricAllocations[1].garmentAssignments.map(
@@ -1250,7 +1250,7 @@ assert.deepEqual(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt"],
-  "Removing Trouser must not depend on array order or silently target Shirt.",
+  "Removing Trouser must not depend on array order or silently target Standard Shirt.",
 );
 const sharedAfterShirtOnly = resolveFutureFabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -1459,7 +1459,7 @@ assert.deepEqual(
     { fabricCode: "FAB-A", garmentKeys: ["base:shirt", "base:trouser"] },
     { fabricCode: "FAB-B", garmentKeys: ["additional:shirt:1"] },
   ],
-  "Selecting Fabric B repairs only the exact Additional Shirt and preserves both base assignments.",
+  "Selecting Fabric B repairs only the exact Additional Standard Shirt and preserves both base assignments.",
 );
 assert.equal(
   getFutureFabricStageCompletion({
@@ -1555,7 +1555,7 @@ assert.ok(
       (assignment) => assignment.garmentKey === "additional:shirt:1",
     ),
   ),
-  "Removing the Step 1 Shirt assignment must leave the Step 4 additional Shirt assignment intact.",
+  "Removing the Step 1 Standard Shirt assignment must leave the Step 4 additional Standard Shirt assignment intact.",
 );
 assert.equal(
   mixedAfterShirtCancel.fabricAllocations.some((allocation) =>
@@ -2124,7 +2124,7 @@ assert.match(stepSource, /halfCapacityBlockedGarmentLabels/);
   });
   assert.deepEqual(
     unlabelled!.garmentLabels,
-    ["Shirt", "Shirt"],
+    ["Standard Shirt", "Standard Shirt"],
     "Callers without occurrence labels keep the existing Fabric-domain fallback.",
   );
 

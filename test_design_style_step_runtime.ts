@@ -311,7 +311,7 @@ for (const [name, designStyleAssignmentDraft] of [
   });
   assert.deepEqual(
     different.projection.occurrences.map((item) => item.label),
-    ["Shirt", "Skirt", "Bum Shorts"],
+    ["Standard Shirt", "Standard Skirt", "Bum Shorts"],
   );
   assert.equal(different.activeTarget?.garmentKey, "base:shirt:1");
 
@@ -321,7 +321,7 @@ for (const [name, designStyleAssignmentDraft] of [
   });
   assert.deepEqual(
     repeated.projection.occurrences.map((item) => item.label),
-    ["Shirt", "Shirt 2", "Shirt 3"],
+    ["Standard Shirt", "Standard Shirt 2", "Standard Shirt 3"],
   );
   assert.equal(
     new Set(

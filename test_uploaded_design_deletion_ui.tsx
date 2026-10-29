@@ -131,7 +131,7 @@ const findDesignStyleContinueButton = (
   assert.equal(model.projection.isComplete, true);
   // 2bb8178 replaced the "Current assignment:" line with the Your Garments
   // mapping, which lists each garment with its assigned design.
-  assert.match(text, /Your Garments\s*Shirt\s*Uploaded design/);
+  assert.match(text, /Your Garments\s*Standard Shirt\s*Uploaded design/);
   assert.match(
     text,
     /Removing this assignment keeps the uploaded source available/i,
@@ -153,7 +153,7 @@ const findDesignStyleContinueButton = (
   assert.equal(uploadInputs.length, 1, "Only the per-garment upload input may render.");
   assert.equal(uploadInputs[0].props.type, "file");
   assert.equal(uploadInputs[0].props.accept, "image/jpeg,image/png,image/webp");
-  assert.match(String(uploadInputs[0].props["aria-label"]), /Replace uploaded design for Shirt/);
+  assert.match(String(uploadInputs[0].props["aria-label"]), /Replace uploaded design for Standard Shirt/);
   assert.equal(text.includes("Delete Image"), false);
   assert.equal(text.includes("Retry deleting"), false);
   assert.equal(text.includes(uploadReference.storagePath), false);
@@ -175,7 +175,7 @@ const findDesignStyleContinueButton = (
   assert.match(textContent(renderer.root), /0 of 1 garment assigned/);
   assert.match(
     textContent(renderer.root),
-    /Choose a design reference for Shirt to continue\./,
+    /Choose a design reference for Standard Shirt to continue\./,
   );
   assert.equal(
     findDesignStyleContinueButton(renderer).props.disabled,
