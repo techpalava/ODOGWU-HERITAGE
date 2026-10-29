@@ -420,6 +420,27 @@ const CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP: Partial<
   skirt_length: lengthGroups("skirt_std", "skirt_long"),
 };
 
+const NECK_AS_SHOWN_NONE_GROUPS = new Set<CustomDetailSelectionGroup>([
+  "neck_design",
+  "neck_additional",
+]);
+
+const noneOptionCopy = (selectionGroup: CustomDetailSelectionGroup) =>
+  NECK_AS_SHOWN_NONE_GROUPS.has(selectionGroup)
+    ? {
+        label: "None (As-is-in-Design photo)",
+        detail: "No change. Neck stays as shown in the design photo.",
+      }
+    : {
+        label: "None",
+        detail: "No selection for this category",
+      };
+
+const optionalGroupHelper = (selectionGroup: CustomDetailSelectionGroup) =>
+  NECK_AS_SHOWN_NONE_GROUPS.has(selectionGroup)
+    ? "Select an option, or keep None to match the design photo."
+    : "Select an option or keep None for this category.";
+
 const getGarmentFirstDetailLabel = (
   selectionGroup: CustomDetailSelectionGroup,
 ): string => {
@@ -1218,7 +1239,9 @@ export const DormantFutureCustomDetailsStep = ({
       );
     };
 
-    const renderNoneOption = () => (
+    const renderNoneOption = () => {
+      const noneCopy = noneOptionCopy(group.selectionGroup);
+      return (
       <label className={optionCardClassName(noneSelected)}>
         <input
           type="radio"
@@ -1228,11 +1251,12 @@ export const DormantFutureCustomDetailsStep = ({
           className="size-5 shrink-0 accent-heritage-green"
         />
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold leading-5 text-heritage-green">None</span>
-          <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">No selection for this category</span>
+          <span className="block text-sm font-bold leading-5 text-heritage-green">{noneCopy.label}</span>
+          <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">{noneCopy.detail}</span>
         </span>
       </label>
-    );
+      );
+    };
 
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
       <div
@@ -1424,7 +1448,7 @@ export const DormantFutureCustomDetailsStep = ({
             <span className={CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS}>{legendTitle}</span>
             <span className={CUSTOM_DETAIL_STATUS_BADGE_CLASS}>{getGroupStatus(statusGroup)}</span>
           </legend>
-          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : optionalGroupHelper(group.selectionGroup)}</p>
         </>
       ) : (
         <legend className="sr-only">{legendTitle}</legend>

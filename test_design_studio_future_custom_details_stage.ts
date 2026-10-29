@@ -739,9 +739,58 @@ assert.match(
 );
 assert.equal(
   textContent(optionTitleSpan(noneLabel) || null).trim(),
-  "None",
+  "None (As-is-in-Design photo)",
 );
-assert.ok(textContent(noneLabel).includes("No selection for this category"));
+assert.ok(
+  textContent(noneLabel).includes(
+    "No change. Neck stays as shown in the design photo.",
+  ),
+);
+assert.ok(
+  textContent(neckFieldset).includes(
+    "Select an option, or keep None to match the design photo.",
+  ),
+  "Neck Design keeps the design-photo helper",
+);
+const pocketFieldset = neckRenderer.root.findByProps({
+  "data-custom-detail-group": "shirt_pockets",
+});
+const pocketNoneLabel = pocketFieldset
+  .findAllByType("label")
+  .find((label) => textContent(label).trim().startsWith("None"));
+assert.ok(pocketNoneLabel, "Pocket must still render a None tile");
+assert.equal(
+  textContent(optionTitleSpan(pocketNoneLabel) || null).trim(),
+  "None",
+  "Pocket None stays the plain label",
+);
+assert.ok(
+  textContent(pocketNoneLabel).includes("No selection for this category"),
+  "Pocket None keeps the original small print",
+);
+assert.ok(
+  textContent(pocketFieldset).includes(
+    "Select an option or keep None for this category.",
+  ),
+  "Pocket keeps the original helper sentence",
+);
+assert.equal(
+  textContent(pocketFieldset).includes("None (As-is-in-Design photo)"),
+  false,
+);
+assert.equal(
+  textContent(pocketFieldset).includes(
+    "No change. Neck stays as shown in the design photo.",
+  ),
+  false,
+);
+assert.equal(
+  neckRenderer.root.findAllByProps({
+    "data-custom-detail-group": "neck_additional",
+  }).length,
+  0,
+  "Neck Design - Additional stays hidden while additional clothes costs are off",
+);
 assert.equal(
   noneLabel.parent,
   collarGrid.parent,
@@ -3226,5 +3275,129 @@ assert.match(studioSource, /reconcileGarmentScopedPersonalizedInputs/);
 assert.match(studioSource, /setGarmentScopedCustomDetailSelection/);
 assert.match(studioSource, /futureAdditionalGarmentConstructionOptions/);
 assert.equal(appSource.includes("future_nine_stage"), false);
+
+const NECK_NONE_LABEL = "None (As-is-in-Design photo)";
+const NECK_NONE_DETAIL = "No change. Neck stays as shown in the design photo.";
+const NECK_NONE_HELPER = "Select an option, or keep None to match the design photo.";
+const PLAIN_NONE_DETAIL = "No selection for this category";
+const PLAIN_NONE_HELPER = "Select an option or keep None for this category.";
+
+const renderNoneWordingStep = (
+  selectedGarmentTypes: string[],
+  selectedDemographic: "male" | "female",
+) => {
+  const garmentTypeSelection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes,
+    selectedDemographic,
+    normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+  }).selection;
+  const reconciliation = reconcileGarmentScopedCustomDetails({
+    garmentTypeSelection,
+    catalogInspection,
+    existingState: createEmptyGarmentScopedCustomDetailsState(),
+  });
+  const inputs = reconcileGarmentScopedPersonalizedInputs({
+    reconciliation,
+    catalogInspection,
+    existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+  });
+  const catalogue = projectFutureCustomDetailsCatalogue({
+    garmentTypeSelection,
+    style: null,
+    reconciliation,
+    activeOptions: catalogInspection.activeOptions,
+    additionalGarments: [],
+    showAdditionalClothesCosts: true,
+  });
+  const completion = validateGarmentScopedCustomDetailsCompletion({
+    earlierStagesComplete: true,
+    reconciliation,
+    personalizedInputs: inputs,
+  });
+  const pricing = calculateGarmentScopedCustomDetailsPricing({
+    reconciliation,
+    catalogInspection,
+  });
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureCustomDetailsStep, {
+        reconciliation,
+        catalogue,
+        personalizedInputs: inputs.state,
+        completion,
+        pricing,
+        orderLevelCustomDetailsPrice: 0,
+        constructionBreakdown: { status: "complete", rows: [] },
+        constructionSubtotal: 0,
+        designSelections: {},
+        selectedStyle: null,
+        additionalGarments: [],
+        additionalGarmentConstructionOptions: [],
+        onSingleSelect: () => undefined,
+        onClearSelection: () => undefined,
+        onConstructionSelect: () => undefined,
+        onToggleMultiSelect: () => undefined,
+        onPersonalizedTextChange: () => undefined,
+        onDecorativeFeatureEnable: () => undefined,
+        onDecorativeFeatureDisable: () => undefined,
+        onDecorativeFeatureGarmentAssign: () => undefined,
+        onClearDecorativeFeatures: () => undefined,
+        onMonogramPlacementChange: () => undefined,
+        onMonogramTextChange: () => undefined,
+        onAccessoryToggle: () => undefined,
+        onClearAccessories: () => undefined,
+        onAddAdditionalGarment: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  return renderer;
+};
+
+const assertNeckNoneWording = (
+  renderer: ReturnType<typeof create>,
+  pocketGroup: "shirt_pockets" | "dress_pockets",
+) => {
+  for (const selectionGroup of ["neck_design", "neck_additional"] as const) {
+    const fieldset = renderer.root.findByProps({
+      "data-custom-detail-group": selectionGroup,
+    });
+    const noneLabel = fieldset
+      .findAllByType("label")
+      .find((label) => textContent(label).includes(NECK_NONE_LABEL));
+    assert.ok(noneLabel, `${selectionGroup} must render the design-photo None tile`);
+    assert.equal(
+      textContent(optionTitleSpan(noneLabel) || null).trim(),
+      NECK_NONE_LABEL,
+    );
+    assert.ok(textContent(noneLabel).includes(NECK_NONE_DETAIL));
+    assert.ok(textContent(fieldset).includes(NECK_NONE_HELPER));
+    assert.equal(textContent(fieldset).includes(PLAIN_NONE_DETAIL), false);
+    assert.equal(textContent(fieldset).includes(PLAIN_NONE_HELPER), false);
+  }
+  const pockets = renderer.root.findByProps({
+    "data-custom-detail-group": pocketGroup,
+  });
+  const pocketNone = pockets
+    .findAllByType("label")
+    .find((label) => textContent(optionTitleSpan(label) || null).trim() === "None");
+  assert.ok(pocketNone, `${pocketGroup} must keep the plain None tile`);
+  assert.ok(textContent(pocketNone).includes(PLAIN_NONE_DETAIL));
+  assert.ok(textContent(pockets).includes(PLAIN_NONE_HELPER));
+  assert.equal(textContent(pockets).includes(NECK_NONE_LABEL), false);
+  assert.equal(textContent(pockets).includes(NECK_NONE_DETAIL), false);
+  assert.equal(textContent(pockets).includes(NECK_NONE_HELPER), false);
+};
+
+const shirtNoneWording = renderNoneWordingStep(["shirt"], "male");
+assertNeckNoneWording(shirtNoneWording, "shirt_pockets");
+const dressNoneWording = renderNoneWordingStep(["dress"], "female");
+assertNeckNoneWording(dressNoneWording, "dress_pockets");
+act(() => {
+  shirtNoneWording.unmount();
+  dressNoneWording.unmount();
+});
 
 console.log("PASS: future Custom Details stage navigation and scoped state contract");
