@@ -16,6 +16,11 @@ import {
   type SiteFeedbackType,
   type SiteFeedbackValidation,
 } from "../utils/siteFeedback.js";
+import {
+  markOrderFeedbackSubmittedAfterStep5,
+  readOrderFeedbackPromptState,
+  writeOrderFeedbackPromptState,
+} from "../utils/designStudioOrderFeedbackPrompt.js";
 
 type SubmitFeedback = (
   value: Extract<SiteFeedbackValidation, { ok: true }>["value"],
@@ -96,8 +101,22 @@ export function SiteFeedbackButton({
   const siteFeedbackOpenRequest = useAppStore(
     (state) => state.siteFeedbackOpenRequest,
   );
+  const siteFeedbackOpenSource = useAppStore(
+    (state) => state.siteFeedbackOpenSource,
+  );
+  const siteFeedbackOpenTrigger = useAppStore(
+    (state) => state.siteFeedbackOpenTrigger,
+  );
+  const siteFeedbackOpenDraftKey = useAppStore(
+    (state) => state.siteFeedbackOpenDraftKey,
+  );
 
   const [open, setOpen] = useState(false);
+  const [orderFlowPrompt, setOrderFlowPrompt] = useState(false);
+  const activeOrderFlowTrigger = useRef<"after_step_5" | "after_step_10" | null>(
+    null,
+  );
+  const activeOrderFlowDraftKey = useRef<string | null>(null);
   const [covering, setCovering] = useState(false);
   const [type, setType] = useState<SiteFeedbackType>("idea");
   const [message, setMessage] = useState("");
@@ -185,7 +204,7 @@ export function SiteFeedbackButton({
     };
   }, []);
 
-  const openDialog = useCallback(() => {
+  const openDialog = useCallback((options?: { orderFlow?: boolean }) => {
     openerRef.current =
       typeof document !== "undefined" && document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -195,11 +214,19 @@ export function SiteFeedbackButton({
     setSent(false);
     setSubmitError(null);
     setFieldError(null);
+    setOrderFlowPrompt(options?.orderFlow === true);
+    if (!options?.orderFlow) {
+      activeOrderFlowTrigger.current = null;
+      activeOrderFlowDraftKey.current = null;
+    }
     setOpen(true);
   }, [activeTab, currentUser?.email]);
 
   const closeDialog = useCallback(() => {
     setOpen(false);
+    setOrderFlowPrompt(false);
+    activeOrderFlowTrigger.current = null;
+    activeOrderFlowDraftKey.current = null;
     if (sent) {
       setMessage("");
       setType("idea");
@@ -215,13 +242,26 @@ export function SiteFeedbackButton({
     }
   }, [sent]);
 
-  // The desktop header Feedback button asks the store to open this same panel.
+  // Header Feedback and Design Studio step prompts ask the store to open this panel.
   const lastOpenRequest = useRef(siteFeedbackOpenRequest);
   useEffect(() => {
     if (siteFeedbackOpenRequest === lastOpenRequest.current) return;
     lastOpenRequest.current = siteFeedbackOpenRequest;
-    openDialog();
-  }, [siteFeedbackOpenRequest, openDialog]);
+    const fromOrderFlow = siteFeedbackOpenSource === "order_flow";
+    activeOrderFlowTrigger.current = fromOrderFlow
+      ? siteFeedbackOpenTrigger
+      : null;
+    activeOrderFlowDraftKey.current = fromOrderFlow
+      ? siteFeedbackOpenDraftKey
+      : null;
+    openDialog({ orderFlow: fromOrderFlow });
+  }, [
+    siteFeedbackOpenRequest,
+    siteFeedbackOpenSource,
+    siteFeedbackOpenTrigger,
+    siteFeedbackOpenDraftKey,
+    openDialog,
+  ]);
 
   // Esc closes; Tab stays inside the dialog.
   useEffect(() => {
@@ -300,6 +340,18 @@ export function SiteFeedbackButton({
     try {
       await submit(validation.value, context, photo);
       recordSiteFeedbackSend(storage, now);
+      if (
+        activeOrderFlowTrigger.current === "after_step_5" &&
+        activeOrderFlowDraftKey.current
+      ) {
+        const draftKey = activeOrderFlowDraftKey.current;
+        const promptStorage =
+          typeof window !== "undefined" ? window.sessionStorage : null;
+        const next = markOrderFeedbackSubmittedAfterStep5(
+          readOrderFeedbackPromptState(promptStorage, draftKey),
+        );
+        writeOrderFeedbackPromptState(promptStorage, draftKey, next);
+      }
       setSent(true);
     } catch (error) {
       console.error("Feedback could not be sent:", error);
@@ -329,7 +381,7 @@ export function SiteFeedbackButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         title="Send feedback"
-        onClick={openDialog}
+        onClick={() => openDialog()}
         tabIndex={hidden ? -1 : 0}
         aria-hidden={hidden ? true : undefined}
         className={`fixed left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center justify-center gap-1.5 rounded-r-xl border border-l-0 border-heritage-gold/60 bg-heritage-green py-3 pl-[calc(0.25rem+env(safe-area-inset-left,0px))] pr-1 text-heritage-gold shadow-lg transition-opacity duration-200 hover:bg-heritage-forest focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:pointer-events-auto sm:gap-2 sm:py-4 sm:pr-1.5 xl:hidden ${
@@ -400,6 +452,16 @@ export function SiteFeedbackButton({
                 <p className="text-sm text-heritage-ink/75">
                   Spotted a problem or have an idea? Tell us. We'll see which page you're on.
                 </p>
+                {orderFlowPrompt ? (
+                  <button
+                    type="button"
+                    data-site-feedback-maybe-later="true"
+                    onClick={closeDialog}
+                    className="self-start rounded-full border border-heritage-gold/50 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                  >
+                    Maybe later
+                  </button>
+                ) : null}
                 <fieldset>
                   <legend className="mb-2 text-xs font-bold uppercase tracking-wider text-heritage-green">
                     Type

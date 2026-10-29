@@ -167,7 +167,7 @@ export function Header() {
             <button
               type="button"
               data-site-feedback-header-button="true"
-              onClick={requestSiteFeedbackOpen}
+              onClick={() => requestSiteFeedbackOpen()}
               aria-label="Send feedback"
               aria-haspopup="dialog"
               title="Send feedback"
