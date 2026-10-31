@@ -2940,6 +2940,56 @@ assert.ok(
   "a newly added garment must expose a stable focus target inside Add Additional Garment",
 );
 
+const contextDesignPictures = [
+  {
+    garmentKey: "base:shirt",
+    design: {
+      sourceKind: "catalogue" as const,
+      name: "Agbada Royale",
+      imageUrl: "https://example.test/designs/agbada-royale.jpg",
+    },
+  },
+  {
+    garmentKey: additionalAssignment.garmentKey,
+    design: { sourceKind: "uploaded" as const, name: "Uploaded design", imageUrl: null },
+  },
+];
+const assertGarmentContextDesign = (
+  renderer: ReturnType<typeof create>,
+  stageName: string,
+  baseContext: ReturnType<ReturnType<typeof create>["root"]["findByProps"]>,
+  addedContext: ReturnType<ReturnType<typeof create>["root"]["findByProps"]>,
+) => {
+  const baseDesign = baseContext.findByProps({
+    "data-garment-context-design": "base:shirt",
+  });
+  assert.equal(baseDesign.type, "img", `${stageName}: catalogue design renders a thumbnail`);
+  assert.equal(baseDesign.props.src, "https://example.test/designs/agbada-royale.jpg");
+  assert.equal(baseDesign.props.alt, "Selected design for Standard Shirt");
+  assert.equal(baseDesign.props.loading, "lazy");
+  assert.equal(
+    textContent(baseContext.findByProps({ "data-garment-context-design-name": "base:shirt" })),
+    "Agbada Royale",
+    `${stageName}: Design line names the chosen design`,
+  );
+  assert.match(textContent(baseContext), /Assigned Fabric.*Design/s);
+  const addedDesign = addedContext.findByProps({
+    "data-garment-context-design": additionalAssignment.garmentKey,
+  });
+  assert.equal(addedDesign.type, "div", `${stageName}: missing design photo uses a dashed box`);
+  assert.equal(addedDesign.props.role, "img");
+  assert.match(String(addedDesign.props.className), /border-dashed/);
+  assert.match(textContent(addedDesign), /No design photo/);
+  assert.match(String(addedDesign.props["aria-label"]), /^No design photo for /);
+  assert.equal(
+    textContent(addedContext.findByProps({
+      "data-garment-context-design-name": additionalAssignment.garmentKey,
+    })),
+    "Uploaded design",
+  );
+  void renderer;
+};
+
 let additionalContextRenderer!: ReturnType<typeof create>;
 act(() => {
   additionalContextRenderer = create(
@@ -2978,6 +3028,7 @@ act(() => {
         pendingFabricGarment: null,
         awaitingFabricForPendingGarment: false,
       } as Parameters<typeof DormantFutureCustomDetailsStep>[0]["fabricAllocationState"],
+      garmentDesignPictures: contextDesignPictures,
       removalTargets: [{
         garmentKey: "base:shirt",
         occurrenceLabel: "Standard Shirt",
@@ -2995,6 +3046,7 @@ const addedContext = additionalContextRenderer.root.findByProps({
 });
 assert.match(textContent(baseContext), /Base Fabric/);
 assert.match(textContent(addedContext), /Added Fabric/);
+assertGarmentContextDesign(additionalContextRenderer, "Custom Details", baseContext, addedContext);
 assert.equal(
   additionalContextRenderer.root.findAllByProps({ "data-garment-removal-list": "custom_details" }).length,
   0,
@@ -3045,6 +3097,7 @@ act(() => {
         pendingFabricGarment: null,
         awaitingFabricForPendingGarment: false,
       } as Parameters<typeof DormantFutureCustomDetailsStep>[0]["fabricAllocationState"],
+      garmentDesignPictures: contextDesignPictures,
     }),
   );
 });
@@ -3058,6 +3111,12 @@ assert.match(textContent(step5BaseContext), /Shirt/);
 assert.match(textContent(step5BaseContext), /Base Fabric/);
 assert.match(textContent(step5AddedContext), /Added Fabric/);
 assert.match(textContent(step5AddedContext), /Additional/);
+assertGarmentContextDesign(
+  personalizedContextRenderer,
+  "Personalised Additions",
+  step5BaseContext,
+  step5AddedContext,
+);
 assert.equal(
   personalizedContextRenderer.root.findAllByProps({
     "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
@@ -3087,6 +3146,30 @@ assert.equal(
   "Step 4 context hooks remain scoped to Step 4",
 );
 act(() => personalizedContextRenderer.unmount());
+for (const contextStage of ["custom_details", "personalized_additions"] as const) {
+  let noDesignRenderer!: ReturnType<typeof create>;
+  act(() => {
+    noDesignRenderer = create(
+      createElement(DormantFutureCustomDetailsStep, {
+        ...additionalStepProps,
+        stage: contextStage,
+      }),
+    );
+  });
+  const missingDesign = noDesignRenderer.root.findByProps({
+    "data-garment-context-design": "base:shirt",
+  });
+  assert.equal(missingDesign.type, "div", `${contextStage}: no design shows the dashed box`);
+  assert.match(textContent(missingDesign), /No design photo/);
+  assert.equal(
+    textContent(noDesignRenderer.root.findByProps({
+      "data-garment-context-design-name": "base:shirt",
+    })),
+    "Not assigned",
+    `${contextStage}: Design line falls back to Not assigned like Fabric`,
+  );
+  act(() => noDesignRenderer.unmount());
+}
 assert.equal(
   addSection.props["data-additional-garment-management"],
   "true",

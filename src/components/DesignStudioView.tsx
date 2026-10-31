@@ -378,6 +378,7 @@ import {
 } from "../utils/designStudioResumeLocus";
 import { WearerAssignmentPanel } from "./WearerAssignmentPanel";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import { getFuturePaymentReviewGarmentPictures } from "../utils/futurePaymentReviewPictures";
 import {
   projectDesignStudioLiveOrderSummary,
   shouldShowPersistentLiveOrderSummary,
@@ -11163,6 +11164,10 @@ export default function DesignStudioView({
               : futureStep5PersonalizedAdditionsCompletion
           }
           pricing={futureCustomDetailsPricing}
+          garmentDesignPictures={getFuturePaymentReviewGarmentPictures(
+            null,
+            futureSummary,
+          )}
           orderLevelCustomDetailsPrice={
             futureFabricAuthoritativePricing?.customDetailsPrice || 0
           }
