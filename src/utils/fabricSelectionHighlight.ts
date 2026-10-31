@@ -30,8 +30,11 @@ export const FABRIC_SELECTION_BADGE_TONES: readonly FabricSelectionBadgeTone[] =
 export const FABRIC_SELECTION_CHANGING_CARD_CLASS =
   "border-heritage-gold ring-2 ring-heritage-gold ring-offset-2 ring-offset-white";
 
-/** Lower opacity, still readable and clickable. */
-export const FABRIC_SELECTION_DIMMED_CARD_CLASS = "opacity-60";
+/**
+ * Other cards during a change stay in full colour (no fade or greyscale);
+ * only the changing card gets the gold outline and CHANGING tag.
+ */
+export const FABRIC_SELECTION_DIMMED_CARD_CLASS = "";
 
 /** Breathing room under the sticky site header when jumping back to a card. */
 export const FABRIC_SELECTION_SCROLL_MARGIN_BREATHING_PX = 16;

@@ -134,7 +134,8 @@ assert.equal(
   FABRIC_SELECTION_DIMMED_CARD_CLASS,
 );
 assert.match(FABRIC_SELECTION_CHANGING_CARD_CLASS, /ring-heritage-gold/);
-assert.match(FABRIC_SELECTION_DIMMED_CARD_CLASS, /opacity-60/);
+assert.equal(FABRIC_SELECTION_DIMMED_CARD_CLASS, "", "other cards are not faded during a change");
+assert.equal(getFabricSelectionCardClass("dimmed"), "");
 assert.equal(
   getFirstChangingGarmentKey(
     ["base:shirt", "base:trouser", "base:skirt"],
@@ -360,8 +361,15 @@ assert.equal(textContent(shirtBadge), "1");
 assert.equal(textContent(skirtBadge), "2");
 assert.equal(shirtBadge.props.className, trouserBadge.props.className);
 assert.notEqual(shirtBadge.props.className, skirtBadge.props.className);
-assert.match(textContent(shirtCard), /Fabric Selection 1/);
-assert.match(textContent(skirtCard), /Fabric Selection 2/);
+// The card's facts grid shows "SELECTION" with the number under it.
+assert.equal(
+  textContent(shirtCard.findByProps({ "data-garment-card-fact": "selection" })),
+  "Selection1",
+);
+assert.equal(
+  textContent(skirtCard.findByProps({ "data-garment-card-fact": "selection" })),
+  "Selection2",
+);
 assert.equal(
   shirtCard.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length,
   0,
@@ -396,14 +404,14 @@ assert.equal(changingShirt.props["data-fabric-selection-highlight-anchor"], "tru
 assert.equal(keptTrouser.props["data-fabric-selection-highlight-anchor"], undefined);
 assert.match(String(changingShirt.props.className), /ring-heritage-gold/);
 assert.doesNotMatch(String(keptTrouser.props.className), /ring-heritage-gold/);
-assert.match(String(keptTrouser.props.className), /opacity-60/);
+assert.doesNotMatch(String(keptTrouser.props.className), /opacity-|grayscale/, "other cards stay in full colour");
 assert.ok(
   String(changingShirt.props.className).includes(
     FABRIC_SELECTION_CHANGING_SCROLL_MARGIN_CLASS,
   ),
   "highlighted card gets scroll-margin-top so it sits below the sticky header",
 );
-assert.match(String(dimmedSkirt.props.className), /opacity-60/);
+assert.doesNotMatch(String(dimmedSkirt.props.className), /opacity-|grayscale/, "other cards stay in full colour");
 assert.doesNotMatch(String(changingShirt.props.className), /opacity-60/);
 assert.equal(
   textContent(changingShirt.findByProps({ "data-fabric-selection-changing-tag": "true" })),

@@ -16,7 +16,7 @@ import {
   getFutureGarmentFabricPlanning,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
-import { ASSIGNED_FABRIC_PREVIEW_CLASSNAME } from "./src/components/AssignedFabricPreview";
+import { GARMENT_CARD_FABRIC_PHOTO_CLASSNAME } from "./src/components/AssignedFabricPreview";
 
 const require = createRequire(import.meta.url);
 const reactDomRuntime = require("react-dom") as {
@@ -142,13 +142,22 @@ for (const card of [assignedCard, unassignedCard]) {
     /\bflex-1\b/,
     "card content grows so the action button pins to the bottom of every card",
   );
-  assert.match(String(content.props.className), /sm:flex-row/);
+  assert.equal(content.props["data-garment-card-layout"], "photo-left");
+  const topRow = content.findByProps({ "data-garment-card-top-row": "true" });
+  const [photoSlot] = hostChildren(topRow);
+  assert.equal(photoSlot.props["data-garment-card-photo"], "true", "the fabric photo is on the left");
+  const [photo] = hostChildren(photoSlot);
+  assert.ok(
+    photo.props.className === GARMENT_CARD_FABRIC_PHOTO_CLASSNAME ||
+      photo.props["data-unassigned-fabric-placeholder"] === "true",
+    "the fabric photo (or its placeholder) fills the left photo slot",
+  );
   assert.equal(action.type, "button", "the action button is the last item in every card");
   const badge = card.findByProps({ "data-garment-fabric-badge": "true" });
-  assert.match(
-    String(badge.parent?.props.className),
-    /\bflex-col\b/,
-    "the badge always sits on its own line under the garment name",
+  const statusRow = card.findByProps({ "data-garment-card-status-row": "true" });
+  assert.ok(
+    statusRow.findAll((node) => node === badge).length === 1,
+    "the ASSIGNED / Needs fabric tag sits beside the photo",
   );
 }
 assert.equal(
@@ -157,7 +166,7 @@ assert.equal(
   "assigned and unassigned cards share one content layout",
 );
 const placeholder = unassignedCard.findByProps({ "data-unassigned-fabric-placeholder": "true" });
-for (const sizeClass of ASSIGNED_FABRIC_PREVIEW_CLASSNAME.split(" ").filter((name) => /h-|w-/.test(name))) {
+for (const sizeClass of GARMENT_CARD_FABRIC_PHOTO_CLASSNAME.split(" ").filter((name) => /h-|w-/.test(name))) {
   assert.ok(
     String(placeholder.props.className).split(" ").includes(sizeClass),
     `placeholder keeps the Fabric image size (${sizeClass})`,
