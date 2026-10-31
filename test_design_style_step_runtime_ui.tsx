@@ -617,6 +617,108 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     rows[2]!.findAllByType("button").some((button) => textContent(button) === "Upload Design"),
     true,
   );
+  // A row without a design keeps an empty, layout-only space where Clear would
+  // be, so every row's buttons line up. It is hidden from screen readers, not
+  // focusable or clickable, has no text, and rows with a design do not get one.
+  const placeholdersFor = (row: ReactTestInstance) =>
+    row.findAll((node) => node.props?.["data-design-clear-placeholder"] === "true");
+  assert.equal(placeholdersFor(rows[0]!).length, 0, "A row with a design has no Clear placeholder.");
+  assert.equal(placeholdersFor(rows[1]!).length, 0, "A row with a design has no Clear placeholder.");
+  const [placeholder] = placeholdersFor(rows[2]!);
+  assert.equal(placeholdersFor(rows[2]!).length, 1, "A row without a design keeps a Clear placeholder.");
+  assert.equal(placeholder!.type, "span");
+  assert.equal(placeholder!.props["aria-hidden"], "true");
+  assert.equal(placeholder!.props.tabIndex, undefined);
+  assert.equal(placeholder!.props.onClick, undefined);
+  assert.equal(placeholder!.props.role, undefined);
+  assert.equal(textContent(placeholder!), "");
+  const placeholderClasses = String(placeholder!.props.className).split(/\s+/);
+  for (const cls of ["invisible", "pointer-events-none", "h-0"]) {
+    assert.ok(placeholderClasses.includes(cls), `The Clear placeholder has ${cls}.`);
+  }
+  assert.equal(rows[2]!.findAllByType("button").length, 2, "A row without a design still has only Choose and Upload buttons.");
+  // The catalogue Clear is ONE button that shows a compact red X when the
+  // button row is too narrow for the "Clear" text (container query), and the
+  // text otherwise. Its accessible name and tooltip are the same at all sizes.
+  const clearButton = rows[0]!.findAllByType("button").find((button) => textContent(button) === "Clear")!;
+  assert.equal(rows[0]!.findAll((node) => node.type === "button" && node.props["data-design-clear-compact"] === "true").length, 1);
+  assert.equal(clearButton.props["data-design-clear-compact"], "true");
+  assert.match(clearButton.props["aria-label"], /^Clear design for /);
+  assert.equal(clearButton.props.title, clearButton.props["aria-label"]);
+  const xIcons = clearButton.findAllByType("svg");
+  assert.equal(xIcons.length, 1, "The Clear button holds one X icon.");
+  const clearClasses = String(clearButton.props.className).split(/\s+/);
+  for (const cls of ["size-10", "border-red-200", "text-red-700", "@min-[18.75rem]:w-auto", "@min-[18.75rem]:h-auto", "@min-[18.75rem]:min-h-9", "@min-[18.75rem]:px-2.5"]) {
+    assert.ok(clearClasses.includes(cls), `The Clear button has ${cls}.`);
+  }
+  const iconClasses = String(
+    clearButton.find((node) => typeof node.type !== "string" && node.props?.className?.includes?.("size-4")).props.className,
+  ).split(/\s+/);
+  assert.ok(iconClasses.includes("@min-[18.75rem]:hidden"), "The X hides when the Clear text fits.");
+  const clearText = clearButton.findByType("span");
+  assert.deepEqual(String(clearText.props.className).split(/\s+/), ["hidden", "@min-[18.75rem]:inline"]);
+  // The buttons row is the container the X/text switch measures.
+  assert.ok(
+    rows[0]!.findAll((node) => node.type === "div" && String(node.props.className || "").split(/\s+/).includes("@container")).length === 1,
+    "The button area is the query container.",
+  );
+  // Clicking the (X or text) Clear button clears exactly that garment.
+  {
+    const clearRequestsSeen: DesignStyleStepClearMutationRequest[] = [];
+    const clearRenderer = await renderModel(model, {
+      onClearAssignment: (request) => clearRequestsSeen.push(request),
+    });
+    const firstRow = clearRenderer.root.findAll((node) => node.props?.["data-occurrence-label"])[0]!;
+    const compactClear = firstRow.findAll(
+      (node) => node.type === "button" && node.props["data-design-clear-compact"] === "true",
+    )[0]!;
+    await act(async () => compactClear.props.onClick({ stopPropagation: () => undefined }));
+    assert.equal(clearRequestsSeen.length, 1, "Clear sends one clear request.");
+    assert.equal(
+      clearRequestsSeen[0]!.target.occurrenceToken,
+      firstRow.props["data-occurrence-token"],
+      "Clear targets its own garment.",
+    );
+    act(() => clearRenderer.unmount());
+  }
+  // The Clear placeholder tracks the same rule: 40px (the X) when narrow, the
+  // "Clear" text width otherwise.
+  for (const cls of ["w-10", "@min-[18.75rem]:w-auto", "@min-[18.75rem]:px-2.5", "@min-[18.75rem]:before:content-['Clear']"]) {
+    assert.ok(placeholderClasses.includes(cls), `The Clear placeholder has ${cls}.`);
+  }
+  // Rows without a design show a decorative "no design yet" card in the picture
+  // column (same size as the thumbnail) so garment and design names line up.
+  // It is hidden from screen readers, not focusable or clickable, and has no text.
+  const pictureCardsFor = (row: ReactTestInstance, kind: string) =>
+    row.findAll((node) => node.props?.["data-design-preview-placeholder"] === kind);
+  const [noDesignCard] = pictureCardsFor(rows[2]!, "no-design");
+  assert.equal(pictureCardsFor(rows[2]!, "no-design").length, 1, "A row without a design shows the placeholder card.");
+  assert.equal(noDesignCard!.type, "div");
+  assert.equal(noDesignCard!.props["aria-hidden"], "true");
+  assert.equal(noDesignCard!.props.tabIndex, undefined);
+  assert.equal(noDesignCard!.props.onClick, undefined);
+  assert.equal(noDesignCard!.props.role, undefined);
+  assert.equal(textContent(noDesignCard!), "", "The placeholder card has no text.");
+  const noDesignCardClasses = String(noDesignCard!.props.className).split(/\s+/);
+  for (const cls of ["h-14", "w-14", "sm:h-16", "sm:w-16", "rounded-lg", "border-dashed", "bg-heritage-cream/35"]) {
+    assert.ok(noDesignCardClasses.includes(cls), `The placeholder card has ${cls}.`);
+  }
+  assert.equal(noDesignCard!.findAllByType("svg").length, 1, "The placeholder card shows one faint garment icon.");
+  for (const row of rows.slice(0, 2)) {
+    assert.equal(pictureCardsFor(row, "no-design").length, 0, "A row with a design never shows the no-design card.");
+  }
+  for (const row of rows) {
+    const pictureColumn =
+      row.findAll((node) => node.props?.["data-selected-design-preview"] === "true").length +
+      pictureCardsFor(row, "no-design").length +
+      pictureCardsFor(row, "slot").length;
+    assert.equal(pictureColumn, 1, "Every row has exactly one picture column item.");
+  }
+  // This fixture's style has no picture, so rows with a design keep an empty,
+  // aria-hidden layout slot instead.
+  const [emptySlot] = pictureCardsFor(rows[0]!, "slot");
+  assert.equal(emptySlot!.props["aria-hidden"], "true");
+  assert.equal(emptySlot!.children.length, 0);
   const clearAll = renderer.root
     .findAllByType("button")
     .find((button) => textContent(button) === "Clear All")!;

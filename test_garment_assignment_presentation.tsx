@@ -180,6 +180,11 @@ assert.deepEqual(
   ["https://example.test/forest.jpg", "https://example.test/gold.jpg"],
   "repeated shirt occurrences retain their exact selected catalogue image",
 );
+assert.equal(
+  designRenderer.root.findAll((node) => node.props?.["data-design-preview-placeholder"] !== undefined).length,
+  0,
+  "rows that show a design picture do not also reserve an empty picture slot",
+);
 act(() => {
   designRenderer.update(
     <DormantFutureDesignStyleStep
