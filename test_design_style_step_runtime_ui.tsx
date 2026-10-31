@@ -809,6 +809,15 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     assert.equal(inputs[0]!.props.disabled, true, "The locked checkbox is disabled.");
     assert.equal(inputs[0]!.props.checked, false, "The locked checkbox is unticked.");
     assert.equal(inputs[0]!.props["data-design-mapping-locked-checkbox"], "true");
+    // The locked checkbox is drawn greyed out (grey border and fill) so it reads
+    // as disabled, while staying a visible 16px box (not hidden or faded out).
+    const lockedClasses = String(inputs[0]!.props.className).split(/\s+/);
+    for (const cls of ["border-gray-300", "bg-gray-100", "border-2", "size-4", "rounded-[3px]", "appearance-none", "cursor-not-allowed"]) {
+      assert.ok(lockedClasses.includes(cls), `The locked checkbox has ${cls}.`);
+    }
+    for (const cls of ["border-heritage-green/55", "bg-heritage-cream/60", "hidden", "invisible", "sr-only", "opacity-0"]) {
+      assert.ok(!lockedClasses.includes(cls), `The locked checkbox does not have ${cls}.`);
+    }
     const hintId = inputs[0]!.props["aria-describedby"];
     assert.ok(hintId, "The locked checkbox is described as locked.");
     assert.match(
@@ -849,6 +858,10 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   const differentStyleCheckbox = checkboxFor(dialog, 1);
   assert.equal(differentStyleCheckbox.props.disabled, false, "Change enables the checkbox.");
   assert.equal(differentStyleCheckbox.props["data-design-mapping-locked-checkbox"], undefined);
+  assert.ok(
+    !String(differentStyleCheckbox.props.className).split(/\s+/).includes("bg-gray-100"),
+    "An unlocked checkbox is not greyed out.",
+  );
   assert.equal(rowFor(dialog, 1).findAllByType("label").length, 1);
   assert.equal(sameStyleCheckbox.props.checked, true);
   assert.equal(sameStyleCheckbox.props.disabled, true);

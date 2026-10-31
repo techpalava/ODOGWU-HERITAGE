@@ -1095,7 +1095,7 @@ export const DormantFutureDesignStyleStep = ({
                         aria-describedby={lockedHintId}
                         data-design-mapping-locked-checkbox="true"
                         onChange={() => undefined}
-                        className="mt-0.5 size-4 shrink-0 cursor-not-allowed appearance-none rounded-[3px] border-2 border-heritage-green/55 bg-heritage-cream/60"
+                        className="mt-0.5 size-4 shrink-0 cursor-not-allowed appearance-none rounded-[3px] border-2 border-gray-300 bg-gray-100"
                       />
                       {rowText}
                       <span id={lockedHintId} className="sr-only">Locked. This garment already has a design. Tap Change to choose it for {pendingDisplayStyleName}.</span>
