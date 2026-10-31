@@ -19,6 +19,11 @@
       }
     ]
   },
+  "functions": {
+    "api/design-studio/transfer-uploaded-design-draft.ts": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/privacy",
@@ -43,6 +48,10 @@
     {
       "source": "/api/auth/email-code/verify",
       "destination": "/api/auth/pin-login?route=email-code-verify"
+    },
+    {
+      "source": "/api/ai-try-on",
+      "destination": "/api/design-studio/transfer-uploaded-design-draft?route=ai-try-on"
     }
   ],
   "headers": [
