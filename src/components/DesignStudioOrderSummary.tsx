@@ -33,7 +33,7 @@ const garmentPriceClassName =
  * 32px+ hit area from an absolutely positioned ::before that adds no height.
  */
 const garmentRowActionClassName =
-  "relative inline-flex items-center gap-1 rounded-sm p-0 text-[11.5px] font-bold uppercase leading-[1.125rem] tracking-[0.04em] transition before:absolute before:-inset-x-2 before:-inset-y-[7px] before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+  "relative inline-flex items-center gap-[3px] rounded-sm p-0 text-[10px] font-semibold uppercase leading-[1.125rem] tracking-[0.06em] transition before:absolute before:-inset-x-2 before:-inset-y-[7px] before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
 
 const quietGarmentMetaClassName = garmentDetailClassName;
 
@@ -100,7 +100,7 @@ const RemoveGarmentButton = ({
         }}
         className={`${garmentRowActionClassName} text-red-700 hover:text-red-900 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-45 ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
       >
-        <Trash2 aria-hidden="true" size={12} strokeWidth={2.4} />
+        <Trash2 aria-hidden="true" size={10} strokeWidth={2.25} className="shrink-0" />
         Remove
       </button>
       <BlockedGarmentRemovalReason
@@ -500,7 +500,7 @@ const SummarySubsection = ({
                   data-testid={`live-order-summary-edit-${subsection.id}-${line.focusGarmentKey}`}
                   className={`${garmentRowActionClassName} order-2 text-heritage-green hover:text-heritage-forest focus-visible:ring-heritage-gold`}
                 >
-                  <Pencil aria-hidden="true" size={12} strokeWidth={2.4} />
+                  <Pencil aria-hidden="true" size={10} strokeWidth={2.25} className="shrink-0" />
                   Edit
                 </button>
               ) : null}
