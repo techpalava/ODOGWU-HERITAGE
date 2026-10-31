@@ -15,8 +15,27 @@ import {
   BlockedGarmentRemovalReason,
 } from "./BlockedGarmentRemovalReason";
 
-const quietGarmentMetaClassName =
-  "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50";
+/**
+ * Garments Ordered row type scale (mockup Option A). Name and price share one
+ * line box so they sit on the same line; construction, wearer and fit share a
+ * readable mid-grey size, and REMOVE starts level with the construction line.
+ */
+const garmentNameClassName =
+  "break-words text-[15px] font-semibold leading-[1.375rem] text-heritage-green";
+const garmentDetailClassName =
+  "mt-0.5 break-words text-[13px] font-normal leading-[1.125rem] text-[#6f6f6f]";
+// The price box uses the name's sans font and line box, so the mono amount
+// sits on the name's baseline whatever monospace font the device has.
+const garmentPriceClassName =
+  "whitespace-nowrap text-right text-[15px] leading-[1.375rem] text-heritage-green";
+/**
+ * Compact text buttons for Garments Ordered rows: one text line tall, with a
+ * 32px+ hit area from an absolutely positioned ::before that adds no height.
+ */
+const garmentRowActionClassName =
+  "relative inline-flex items-center gap-1 rounded-sm p-0 text-[11.5px] font-bold uppercase leading-[1.125rem] tracking-[0.04em] transition before:absolute before:-inset-x-2 before:-inset-y-[7px] before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+
+const quietGarmentMetaClassName = garmentDetailClassName;
 
 const GarmentWearerLine = ({
   line,
@@ -79,9 +98,9 @@ const RemoveGarmentButton = ({
           }
           onRequestGarmentRemoval(target, event.currentTarget);
         }}
-        className={`inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
+        className={`${garmentRowActionClassName} text-red-700 hover:text-red-900 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-45 ${BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS}`}
       >
-        <Trash2 aria-hidden="true" size={11} />
+        <Trash2 aria-hidden="true" size={12} strokeWidth={2.4} />
         Remove
       </button>
       <BlockedGarmentRemovalReason
@@ -101,7 +120,7 @@ const RemoveGarmentButton = ({
  * Layout only: the amount is the projected label, unchanged.
  */
 const garmentOrderRowClassName =
-  "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 border-t border-heritage-gold/15 py-2 first:border-t-0";
+  "grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 border-t border-[#f1ede6] py-3 first:border-t-0";
 
 const GarmentOrderRowAside = ({
   amountLabel,
@@ -112,16 +131,17 @@ const GarmentOrderRowAside = ({
 }) => (
   <div
     data-live-order-summary-garment-aside="true"
-    className="flex shrink-0 flex-col items-end gap-0.5"
+    className="flex shrink-0 flex-col items-end"
   >
     {amountLabel ? (
-      <span className="whitespace-nowrap text-right font-mono text-[13px] font-semibold leading-snug text-heritage-green">
-        {amountLabel}
+      <span className={garmentPriceClassName}>
+        <span className="font-mono font-bold">{amountLabel}</span>
       </span>
     ) : null}
     {Children.toArray(children).length > 0 ? (
-      // The buttons keep their padded tap targets; pull them flush with the price.
-      <div className="-mb-1 -mr-1.5 flex items-center gap-1">{children}</div>
+      // Stacked and right-aligned: REMOVE first (level with the construction
+      // line), then EDIT when present. CSS order keeps the DOM/tab order.
+      <div className="mt-0.5 flex flex-col items-end gap-3.5">{children}</div>
     ) : null}
   </div>
 );
@@ -244,11 +264,23 @@ const SummarySection = ({
                 />
               ) : null}
               <div className="min-w-0 flex-1">
-                <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
+                <p
+                  className={
+                    isGarmentOrderSection
+                      ? garmentNameClassName
+                      : "break-words text-[13px] font-semibold leading-snug text-heritage-ink"
+                  }
+                >
                   {formatCustomDetailsGarmentLabel(line.label)}
                 </p>
                 {line.detail ? (
-                  <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
+                  <p
+                    className={
+                      isGarmentOrderSection
+                        ? garmentDetailClassName
+                        : "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65"
+                    }
+                  >
                     {line.detail}
                   </p>
                 ) : null}
@@ -430,11 +462,23 @@ const SummarySubsection = ({
           }
         >
           <div className="min-w-0">
-            <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
+            <p
+              className={
+                isGarmentOrderSubsection
+                  ? garmentNameClassName
+                  : "break-words text-[13px] font-semibold leading-snug text-heritage-ink"
+              }
+            >
               {formatCustomDetailsGarmentLabel(line.label)}
             </p>
             {line.detail ? (
-              <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
+              <p
+                className={
+                  isGarmentOrderSubsection
+                    ? garmentDetailClassName
+                    : "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65"
+                }
+              >
                 {line.detail}
               </p>
             ) : null}
@@ -454,9 +498,9 @@ const SummarySubsection = ({
                   onClick={() => onEdit(line.focusGarmentKey)}
                   aria-label={`Edit ${line.label}`}
                   data-testid={`live-order-summary-edit-${subsection.id}-${line.focusGarmentKey}`}
-                  className="inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  className={`${garmentRowActionClassName} order-2 text-heritage-green hover:text-heritage-forest focus-visible:ring-heritage-gold`}
                 >
-                  <Pencil aria-hidden="true" size={11} />
+                  <Pencil aria-hidden="true" size={12} strokeWidth={2.4} />
                   Edit
                 </button>
               ) : null}

@@ -1691,6 +1691,10 @@ act(() => {
     }),
   );
 });
+// Wearer and fit lines use the construction line's size and grey (the
+// component aliases one class string for all three).
+const garmentMetaClassName =
+  "mt-0.5 break-words text-[13px] font-normal leading-[1.125rem] text-[#6f6f6f]";
 const wearerNodes = wearerRenderer.root.findAll(
   (node) => typeof node.props?.["data-live-order-summary-wearer"] === "string",
 );
@@ -1704,12 +1708,12 @@ assert.deepEqual(
     [
       "base:shirt",
       "Nol",
-      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+      garmentMetaClassName,
     ],
     [
       "base:kaftan",
       "Person 2",
-      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+      garmentMetaClassName,
     ],
   ],
 );
@@ -1737,12 +1741,12 @@ assert.deepEqual(
     [
       "base:shirt",
       "Female fit",
-      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+      garmentMetaClassName,
     ],
     [
       "base:kaftan",
       "Male fit",
-      "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50",
+      garmentMetaClassName,
     ],
   ],
 );
