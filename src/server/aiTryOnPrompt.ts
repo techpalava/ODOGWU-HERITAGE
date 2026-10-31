@@ -43,16 +43,28 @@ const FABRIC_IGNORE_NOISE = `Ignore everything that is not the person, the garme
 const OUTPUT =
   "Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.";
 
+/**
+ * v3 (live smoke test, 31 Oct 2026): with only the customer and a catalogue
+ * photo of a real model, Gemini returned the catalogue photo itself (the
+ * model's face, body and background) and copied the whole outfit, trousers
+ * included, for a shirt-only order. v3 names the model as a stand-in to
+ * ignore, limits the copy to the ordered garments, keeps the customer's
+ * other clothing, and ends with an identity check. Paired with the image
+ * labels below.
+ */
 const GARMENT_MODE_LINES: readonly string[] = [
   "Virtual try-on photo edit.",
-  "Image 1: the customer. Image 2: the garment.",
-  "Edit image 1 so the person wears the garment from image 2.",
+  "Image 1: the customer. Image 2: a garment reference photo.",
+  "Edit image 1 so the customer wears the ordered garment from image 2.",
+  "The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.",
   KEEP_PERSON,
-  "Replace only the clothing the garment covers.",
+  "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
+  "Replace only the clothing it covers; keep the customer's other clothing and shoes from image 1.",
   "Copy the garment faithfully: construction, cut, length, neckline, sleeves, colour, pattern, embroidery and trims. Do not redesign it.",
   REALISM,
   GARMENT_IGNORE_NOISE,
   OUTPUT,
+  "Check: the face, body and background must be the customer's from image 1, not the model's.",
 ];
 
 const FABRIC_MODE_LINES: readonly string[] = [
@@ -154,6 +166,19 @@ export const buildAiTryOnOrderDetailsBlock = ({
     .slice(0, AI_TRY_ON_ORDER_DETAILS_MAX_LINES)
     .join("\n");
 };
+
+/**
+ * Garment mode only: a short text label sent right before each image, so
+ * Gemini cannot mix up the customer and the catalogue model. Fabric mode
+ * keeps its v2 layout (prompt, then images) and gets null.
+ */
+export const buildAiTryOnImageLabels = (mode: AiTryOnMode): readonly string[] | null =>
+  mode === "garment"
+    ? [
+        "Image 1, the customer to edit:",
+        "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
+      ]
+    : null;
 
 export const buildAiTryOnPrompt = ({
   mode,
