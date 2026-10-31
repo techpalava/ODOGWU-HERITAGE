@@ -1000,6 +1000,17 @@ export const DormantFutureDesignStyleStep = ({
                   : "Clear"}
               </button>
             ) : null}
+            {!occurrence.assignment ? (
+              // Layout-only stand-in for Clear so rows without a design keep
+              // their buttons in the same columns as rows that have one. It
+              // has Clear's width but no height (a wrapped narrow-screen line
+              // stays empty) and is never focusable, clickable or announced.
+              <span
+                aria-hidden="true"
+                data-design-clear-placeholder="true"
+                className="pointer-events-none invisible inline-flex h-0 select-none overflow-hidden border-x border-transparent px-2.5 text-[11px] font-bold before:content-['Clear']"
+              />
+            ) : null}
           </div>
           {showOccurrenceUploadStatus ? (
             <div

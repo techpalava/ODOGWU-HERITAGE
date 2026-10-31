@@ -617,6 +617,26 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     rows[2]!.findAllByType("button").some((button) => textContent(button) === "Upload Design"),
     true,
   );
+  // A row without a design keeps an empty, layout-only space where Clear would
+  // be, so every row's buttons line up. It is hidden from screen readers, not
+  // focusable or clickable, has no text, and rows with a design do not get one.
+  const placeholdersFor = (row: ReactTestInstance) =>
+    row.findAll((node) => node.props?.["data-design-clear-placeholder"] === "true");
+  assert.equal(placeholdersFor(rows[0]!).length, 0, "A row with a design has no Clear placeholder.");
+  assert.equal(placeholdersFor(rows[1]!).length, 0, "A row with a design has no Clear placeholder.");
+  const [placeholder] = placeholdersFor(rows[2]!);
+  assert.equal(placeholdersFor(rows[2]!).length, 1, "A row without a design keeps a Clear placeholder.");
+  assert.equal(placeholder!.type, "span");
+  assert.equal(placeholder!.props["aria-hidden"], "true");
+  assert.equal(placeholder!.props.tabIndex, undefined);
+  assert.equal(placeholder!.props.onClick, undefined);
+  assert.equal(placeholder!.props.role, undefined);
+  assert.equal(textContent(placeholder!), "");
+  const placeholderClasses = String(placeholder!.props.className).split(/\s+/);
+  for (const cls of ["invisible", "pointer-events-none", "h-0"]) {
+    assert.ok(placeholderClasses.includes(cls), `The Clear placeholder has ${cls}.`);
+  }
+  assert.equal(rows[2]!.findAllByType("button").length, 2, "A row without a design still has only Choose and Upload buttons.");
   const clearAll = renderer.root
     .findAllByType("button")
     .find((button) => textContent(button) === "Clear All")!;
