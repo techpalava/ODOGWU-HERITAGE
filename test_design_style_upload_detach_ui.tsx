@@ -134,6 +134,16 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     String(candidate.props["aria-label"] || "").includes("Remove uploaded design from Standard Shirt"),
   );
   assert.ok(button);
+  // The uploaded remove control keeps its full text look at every size: no
+  // compact red X, no icon, no added tooltip.
+  assert.deepEqual(button!.children, ["Remove uploaded design from Standard Shirt"]);
+  assert.equal(button!.props["data-design-clear-compact"], undefined);
+  assert.equal(button!.props.title, undefined);
+  assert.equal(button!.findAllByType("svg").length, 0);
+  assert.equal(
+    button!.props.className,
+    "inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2",
+  );
   act(() => button!.props.onClick());
   assert.deepEqual(requests, [model.clearRequest]);
   const result = detach(model);
