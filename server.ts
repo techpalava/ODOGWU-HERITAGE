@@ -134,6 +134,7 @@ app.post("/api/future-order-v2/paypal", async (req, res) => {
 // AI Try-on (on Vercel: rewritten onto api/design-studio/transfer-uploaded-design-draft.ts).
 app.get("/api/ai-try-on", (req, res) => handleAiTryOn(req, res));
 app.post("/api/ai-try-on", (req, res) => handleAiTryOn(req, res));
+app.delete("/api/ai-try-on", (req, res) => handleAiTryOn(req, res));
 app.post("/api/private-batches/create-invite", handleCreatePrivateBatchInvite);
 app.post("/api/private-batches/redeem-invite", handleRedeemPrivateBatchInvite);
 app.post("/api/private-batches/revoke-invite", handleRevokePrivateBatchInvite);

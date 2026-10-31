@@ -1,5 +1,7 @@
+import { deleteStoredAiTryOnPreviews } from "./aiTryOnGateway";
 /**
- * Browser-held key for the per-order AI Try-on limit (5 tries per order).
+ * Browser-held key for the per-order AI Try-on limit (5 tries per order)
+ * and owner key for the order's stored previews (Step 6).
  *
  * One random key per draft identity (guest or signed-in user), kept in
  * localStorage so a reload does not reset the order's tries. It is cleared
@@ -60,9 +62,33 @@ export const getOrCreateAiTryOnOrderKey = (
   return created;
 };
 
-export const clearAiTryOnOrderKeys = (store: KeyStore | null = defaultStore()): void => {
+/**
+ * Clears the keys when the dormant draft is cleared (order placed, or the
+ * draft discarded). First asks the server to delete every stored preview of
+ * those orders ("until you place your order"); the request uses keepalive
+ * so it survives navigation. If it fails, the 30-day expiry still applies.
+ */
+export const clearAiTryOnOrderKeys = (
+  store: KeyStore | null = defaultStore(),
+  deletePreviews: (orderKey: string) => unknown = (orderKey) =>
+    deleteStoredAiTryOnPreviews({ orderKey, previewId: null, keepalive: true }),
+): void => {
+  if (!store) return;
   try {
-    store?.removeItem(AI_TRY_ON_ORDER_KEY_STORAGE_KEY);
+    Object.values(readMap(store))
+      .filter((key) => typeof key === "string" && ORDER_KEY_PATTERN.test(key))
+      .forEach((orderKey) => {
+        try {
+          void deletePreviews(orderKey);
+        } catch {
+          // Best effort; the 30-day expiry is the backstop.
+        }
+      });
+  } catch {
+    // Ignore unreadable storage.
+  }
+  try {
+    store.removeItem(AI_TRY_ON_ORDER_KEY_STORAGE_KEY);
   } catch {
     // Ignore blocked storage.
   }

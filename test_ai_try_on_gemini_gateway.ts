@@ -166,6 +166,7 @@ const harness = ({
   const calls: AiTryOnGeminiRequest[] = [];
   const keysSeen: string[] = [];
   const logs: string[] = [];
+  const previewSaves: Array<{ image: { data: string } }> = [];
   const deps: AiTryOnHttpDependencies = {
     environment,
     getDb: () => db.asFirestore(),
@@ -179,9 +180,24 @@ const harness = ({
       };
     },
     createAssetId: () => "tryon-asset-1",
+    // Step 6: an in-memory preview store, so no test touches real Storage.
+    createPreviewStore: () => ({
+      async save(input) {
+        previewSaves.push(input);
+        return {
+          previewId: input.previewId,
+          wearerKey: input.wearerKey,
+          inputFingerprint: input.inputFingerprint,
+          expiresAt: "2026-12-01T00:00:00.000Z",
+        };
+      },
+      list: async () => [],
+      read: async () => null,
+      remove: async () => 0,
+    }),
     log: (line) => logs.push(line),
   };
-  return { deps, calls, keysSeen, logs, db };
+  return { deps, calls, keysSeen, logs, db, previewSaves };
 };
 
 // ---------------------------------------------------------------- fit hints
@@ -582,7 +598,7 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
 // Method guard.
 {
   const result = response();
-  await handleAiTryOn({ method: "DELETE", headers: {} }, result.res, harness().deps);
+  await handleAiTryOn({ method: "PUT", headers: {} }, result.res, harness().deps);
   assert.equal(result.state.status, 405);
 }
 
