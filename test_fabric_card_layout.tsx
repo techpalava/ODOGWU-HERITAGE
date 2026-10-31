@@ -220,6 +220,19 @@ const fact = (name: string) => facts.findByProps({ "data-garment-card-fact": nam
 assert.equal(textContent(fact("selection")), "Selection1");
 assert.equal(textContent(fact("capacity")), "Capacity2/2");
 assert.match(String(fact("capacity").props.className), /\btext-right\b/, "capacity is right-aligned");
+// Each label sits on the same line as its value (compact panel).
+for (const name of ["selection", "capacity", "uses"]) {
+  const className = String(fact(name).props.className);
+  assert.match(className, /\bflex\b/, `${name}: label and value share one row`);
+  assert.match(className, /\bitems-center\b/);
+  assert.match(className, /\bwhitespace-nowrap\b/, `${name}: never wraps`);
+  const [dt, dd] = fact(name).children.filter((c): c is ReactTestInstance => typeof c !== "string");
+  assert.equal(dt.type, "dt");
+  assert.equal(dd.type, "dd");
+  assert.doesNotMatch(String(dd.props.className ?? ""), /\bmt-/, `${name}: value is not pushed under its label`);
+}
+assert.match(String(fact("capacity").props.className), /\bjustify-end\b/, "capacity row is right-aligned");
+assert.match(String(facts.props.className), /\bgap-y-1\.5\b/, "compact gap between the two rows");
 assert.match(
   String(fact("capacity").findByProps({ "data-fabric-allocation-capacity": "true" }).props.className),
   /\bwhitespace-nowrap\b/,
