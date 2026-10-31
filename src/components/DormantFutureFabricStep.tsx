@@ -3793,21 +3793,27 @@ export const DormantFutureFabricStep = ({
                   </div>
                   {assigned && fabric ? (
                   <dl
-                    className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-2.5 rounded-lg bg-heritage-gold/15 px-3 py-2.5"
+                    className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 rounded-lg bg-heritage-gold/15 px-3 py-2.5"
                     data-garment-card-facts="true"
                   >
-                    <div data-garment-card-fact="selection">
+                    <div
+                      className="flex min-w-0 items-center gap-1.5 whitespace-nowrap"
+                      data-garment-card-fact="selection"
+                    >
                       <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-heritage-gold">Selection</dt>
-                      <dd className="mt-0.5 text-sm font-bold text-heritage-green">
+                      <dd className="text-sm font-bold text-heritage-green">
                         {selectionNumber}
                       </dd>
                     </div>
-                    <div className="text-right" data-garment-card-fact="capacity">
+                    <div
+                      className="flex items-center justify-end gap-1.5 whitespace-nowrap text-right"
+                      data-garment-card-fact="capacity"
+                    >
                       {allocationCapacity ? (
                         <>
                           <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-heritage-gold">Capacity</dt>
                           <dd
-                            className="mt-0.5 whitespace-nowrap text-sm font-bold text-heritage-green"
+                            className="whitespace-nowrap text-sm font-bold text-heritage-green"
                             data-fabric-allocation-capacity="true"
                           >
                             {allocationCapacity.usedUnits}/
@@ -3825,9 +3831,12 @@ export const DormantFutureFabricStep = ({
                         </>
                       ) : null}
                     </div>
-                    <div className="col-span-2" data-garment-card-fact="uses">
+                    <div
+                      className="col-span-2 flex min-w-0 items-center gap-1.5 whitespace-nowrap"
+                      data-garment-card-fact="uses"
+                    >
                       <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-heritage-gold">Uses</dt>
-                      <dd className="mt-0.5">
+                      <dd className="flex items-center">
                         <FabricPieceUsageMarker fabricUnits={assignment.fabricUnits} />
                       </dd>
                     </div>
