@@ -941,7 +941,7 @@ export const DormantFutureDesignStyleStep = ({
             </p>
           ) : null}
         </div>
-        <div className="col-span-2 flex min-w-0 flex-col items-stretch gap-1.5 lg:col-span-1 lg:items-end lg:self-center">
+        <div className="@container col-span-2 flex min-w-0 flex-col items-stretch gap-1.5 lg:col-span-1 lg:items-end lg:self-center">
           <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
@@ -1008,11 +1008,25 @@ export const DormantFutureDesignStyleStep = ({
                     ? `Remove uploaded design from ${garmentDisplayLabel}`
                     : `Clear design for ${garmentDisplayLabel}`
                 }
-                className="inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                title={isUploadedAssignment ? undefined : `Clear design for ${garmentDisplayLabel}`}
+                data-design-clear-compact={isUploadedAssignment ? undefined : "true"}
+                className={
+                  isUploadedAssignment
+                    ? "inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                    : // A 40px red X when the button row is too narrow for the
+                      // "Clear" text to fit beside Choose/Change and Upload
+                      // (container query on the row); the "Clear" text otherwise.
+                      "inline-flex size-10 items-center justify-center rounded-lg border border-red-200 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 @min-[18.75rem]:h-auto @min-[18.75rem]:min-h-9 @min-[18.75rem]:w-auto @min-[18.75rem]:px-2.5"
+                }
               >
-                {isUploadedAssignment
-                  ? `Remove uploaded design from ${garmentDisplayLabel}`
-                  : "Clear"}
+                {isUploadedAssignment ? (
+                  `Remove uploaded design from ${garmentDisplayLabel}`
+                ) : (
+                  <>
+                    <X aria-hidden="true" focusable="false" strokeWidth={2.5} className="size-4 @min-[18.75rem]:hidden" />
+                    <span className="hidden @min-[18.75rem]:inline">Clear</span>
+                  </>
+                )}
               </button>
             ) : null}
             {!occurrence.assignment ? (
@@ -1023,7 +1037,7 @@ export const DormantFutureDesignStyleStep = ({
               <span
                 aria-hidden="true"
                 data-design-clear-placeholder="true"
-                className="pointer-events-none invisible inline-flex h-0 select-none overflow-hidden border-x border-transparent px-2.5 text-[11px] font-bold before:content-['Clear']"
+                className="pointer-events-none invisible inline-flex h-0 w-10 select-none overflow-hidden border-x border-transparent text-[11px] font-bold @min-[18.75rem]:w-auto @min-[18.75rem]:px-2.5 @min-[18.75rem]:before:content-['Clear']"
               />
             ) : null}
           </div>
