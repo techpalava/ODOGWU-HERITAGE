@@ -50,7 +50,7 @@ import type { FutureMeasurementStateV1, GarmentTypeStepSelection } from "./src/t
 import type { HttpRequest, HttpResponse } from "./src/server/httpTypes";
 import type { Firestore } from "firebase-admin/firestore";
 
-const FAKE_KEY = "AIzaTESTONLY_not_a_real_key_0123456789abcdef";
+const FAKE_KEY = "fake-gemini-key-for-tests-only";
 
 // ---------------------------------------------------------------- fakes
 
