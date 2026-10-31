@@ -7,6 +7,7 @@ import {
 } from "../utils/aiTryOnWorkflow";
 import {
   AI_TRY_ON_ENDPOINT,
+  AI_TRY_ON_SESSION_HEADER_NAME,
   AI_TRY_ON_TRIES_PER_ORDER,
   type AiTryOnStoredPreviewSummary,
   type AiTryOnAvailabilityResponse,
@@ -35,6 +36,51 @@ const readJson = async (response: Response): Promise<unknown> => {
   } catch {
     return null;
   }
+};
+
+// ------------------------------------------------------------ Step 7 sessions
+
+/**
+ * Who is calling: a guest's server-issued session token (null until the
+ * server issues one) and, for signed-in customers, their Firebase ID token.
+ * The server finds the session from these; the browser never picks it.
+ */
+export interface AiTryOnCredentials {
+  readonly sessionToken: string | null;
+  readonly getIdToken: () => Promise<string | null>;
+}
+
+const SESSION_TOKEN_PATTERN = /^tts1_[A-Za-z0-9_-]{43}$/;
+
+/** ID token of a signed-in (non-anonymous) customer, or null. */
+export const readAiTryOnIdToken = async (): Promise<string | null> => {
+  try {
+    // Lazy import keeps static UI tests from initializing the Firebase client.
+    const { auth } = await import("./firebase");
+    const user = auth.currentUser;
+    if (!user || user.isAnonymous) return null;
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+};
+
+export const createAiTryOnCredentials = (
+  sessionToken: string | null,
+  getIdToken: () => Promise<string | null> = readAiTryOnIdToken,
+): AiTryOnCredentials => ({ sessionToken, getIdToken });
+
+const credentialHeaders = async (
+  credentials: AiTryOnCredentials | undefined,
+): Promise<Record<string, string>> => {
+  const headers: Record<string, string> = {};
+  if (!credentials) return headers;
+  if (credentials.sessionToken && SESSION_TOKEN_PATTERN.test(credentials.sessionToken)) {
+    headers[AI_TRY_ON_SESSION_HEADER_NAME] = credentials.sessionToken;
+  }
+  const idToken = await credentials.getIdToken().catch(() => null);
+  if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  return headers;
 };
 
 export const mapAiTryOnHttpResult = (
@@ -196,6 +242,8 @@ export type AiTryOnAvailabilityDetails =
       orderTriesRemaining: number | null;
       /** Stored previews of this order that are still valid (Step 6). */
       storedPreviews: AiTryOnStoredPreviewSummary[];
+      /** Guest session token to keep (Step 7); null for signed-in customers. */
+      sessionToken: string | null;
     }
   | { status: "unavailable" };
 
@@ -215,24 +263,29 @@ const parseStoredPreviews = (value: unknown): AiTryOnStoredPreviewSummary[] =>
     : [];
 
 /**
- * `GET /api/ai-try-on?orderKey=…` for the Design Studio step: availability
- * plus the tries left for this order. Any error reads as unavailable, so the
- * step falls back to "AI Try-on is currently unavailable".
+ * `POST /api/ai-try-on?action=session` for the Design Studio step: the
+ * server finds or mints this order's try-on session (Step 7) and reports
+ * the tries left and the stored previews. Any error reads as unavailable,
+ * so the step falls back to "AI Try-on is currently unavailable".
  */
 export const fetchAiTryOnAvailability = async ({
-  orderKey,
+  credentials,
   fetchImpl = (input, init) => fetch(input, init),
   endpoint = AI_TRY_ON_ENDPOINT,
 }: {
-  orderKey?: string | null;
+  credentials: AiTryOnCredentials;
   fetchImpl?: FetchLike;
   endpoint?: string;
 }): Promise<AiTryOnAvailabilityDetails> => {
   try {
-    const url = orderKey ? `${endpoint}?orderKey=${encodeURIComponent(orderKey)}` : endpoint;
-    const response = await fetchImpl(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
+    const response = await fetchImpl(`${endpoint}?action=session`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(await credentialHeaders(credentials)),
+      },
+      body: "{}",
       cache: "no-store",
     });
     const body = (await readJson(response)) as Record<string, unknown> | null;
@@ -252,6 +305,10 @@ export const fetchAiTryOnAvailability = async ({
       triesPerOrder,
       orderTriesRemaining: remaining,
       storedPreviews: parseStoredPreviews(body.previews),
+      sessionToken:
+        typeof body.sessionToken === "string" && SESSION_TOKEN_PATTERN.test(body.sessionToken)
+          ? body.sessionToken
+          : null,
     };
   } catch {
     return { status: "unavailable" };
@@ -336,17 +393,23 @@ export const mapAiTryOnPreviewResponse = (
 
 export const requestAiTryOnPreview = async ({
   request,
+  credentials,
   fetchImpl = (input, init) => fetch(input, init),
   endpoint = AI_TRY_ON_ENDPOINT,
 }: {
   request: AiTryOnGenerationRequest;
+  credentials?: AiTryOnCredentials;
   fetchImpl?: FetchLike;
   endpoint?: string;
 }): Promise<AiTryOnPreviewOutcome> => {
   try {
     const response = await fetchImpl(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(await credentialHeaders(credentials)),
+      },
       body: JSON.stringify(request),
     });
     return mapAiTryOnPreviewResponse(response.status, await readJson(response));
@@ -357,23 +420,24 @@ export const requestAiTryOnPreview = async ({
 
 // ------------------------------------------------------------ Step 6 storage
 
-/** Owner-only read of a stored preview (by order key). null when gone. */
+/** Owner-only read of a stored preview (by server session). null when gone. */
 export const fetchStoredAiTryOnPreview = async ({
-  orderKey,
+  credentials,
   previewId,
   fetchImpl = (input, init) => fetch(input, init),
   endpoint = AI_TRY_ON_ENDPOINT,
 }: {
-  orderKey: string;
+  credentials: AiTryOnCredentials;
   previewId: string;
   fetchImpl?: FetchLike;
   endpoint?: string;
 }): Promise<{ mimeType: string; data: string } | null> => {
   try {
-    const response = await fetchImpl(
-      `${endpoint}?orderKey=${encodeURIComponent(orderKey)}&previewId=${encodeURIComponent(previewId)}`,
-      { method: "GET", headers: { Accept: "application/json" }, cache: "no-store" },
-    );
+    const response = await fetchImpl(`${endpoint}?previewId=${encodeURIComponent(previewId)}`, {
+      method: "GET",
+      headers: { Accept: "application/json", ...(await credentialHeaders(credentials)) },
+      cache: "no-store",
+    });
     const body = (await readJson(response)) as Record<string, unknown> | null;
     const image = isRecord(body) && isRecord(body.image) ? body.image : null;
     if (
@@ -391,16 +455,21 @@ export const fetchStoredAiTryOnPreview = async ({
   }
 };
 
-/** Deletes one stored preview, or all of the order's previews (`previewId: null`). */
+/**
+ * Deletes one stored preview, or all of the session's previews
+ * (`previewId: null`). `closeSession` also ends the session (fresh order).
+ */
 export const deleteStoredAiTryOnPreviews = async ({
-  orderKey,
+  credentials,
   previewId,
+  closeSession = false,
   fetchImpl = (input, init) => fetch(input, init),
   endpoint = AI_TRY_ON_ENDPOINT,
   keepalive = false,
 }: {
-  orderKey: string;
+  credentials: AiTryOnCredentials;
   previewId: string | null;
+  closeSession?: boolean;
   fetchImpl?: FetchLike;
   endpoint?: string;
   keepalive?: boolean;
@@ -408,11 +477,12 @@ export const deleteStoredAiTryOnPreviews = async ({
   try {
     const target = previewId
       ? `previewId=${encodeURIComponent(previewId)}`
-      : "all=1";
-    const response = await fetchImpl(
-      `${endpoint}?orderKey=${encodeURIComponent(orderKey)}&${target}`,
-      { method: "DELETE", headers: { Accept: "application/json" }, keepalive },
-    );
+      : `all=1${closeSession ? "&close=1" : ""}`;
+    const response = await fetchImpl(`${endpoint}?${target}`, {
+      method: "DELETE",
+      headers: { Accept: "application/json", ...(await credentialHeaders(credentials)) },
+      keepalive,
+    });
     return response.ok;
   } catch {
     return false;

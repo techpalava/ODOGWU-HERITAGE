@@ -24,6 +24,7 @@ import {
   loadAiTryOnReferenceImageOnServer,
 } from "./src/server/aiTryOnReferenceImages";
 import { handleAiTryOn, type AiTryOnHttpDependencies } from "./src/server/aiTryOnHttp";
+import { createAiTryOnSessions, hashAiTryOnSessionToken } from "./src/server/aiTryOnSession";
 import { createAiTryOnUsageLimits } from "./src/server/aiTryOnUsageLimits";
 import {
   deleteStoredAiTryOnPreviews,
@@ -76,6 +77,7 @@ class FakeFirestore {
         const previous = options?.merge ? this.docs.get(ref.path) || {} : {};
         this.docs.set(ref.path, { ...previous, ...data });
       },
+      delete: (ref: { path: string }) => void this.docs.delete(ref.path),
     };
     const run = this.lock.then(() => fn(tx));
     this.lock = run.catch(() => undefined);
@@ -108,8 +110,9 @@ const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40, 3)]);
 const PERSON_PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("PERSON-PHOTO-MARKER-0001")]).toString("base64");
 const GEMINI_OUTPUT = Buffer.concat([png, Buffer.from("GEMINI-OUTPUT")]).toString("base64");
-const ORDER = "tryon-0123456789abcdef0123456789abcdef";
-const OTHER_ORDER = "tryon-ffffffffffffffffffffffffffffffff";
+// Step 7: guest session tokens the (real) session service mints in the harness.
+const ORDER = `tts1_${"A".repeat(43)}`;
+const OTHER_ORDER = `tts1_${"B".repeat(43)}`;
 const FINGERPRINT = "tryon-v1-0123456789abcdef";
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -124,14 +127,14 @@ const DAY = 24 * 60 * 60 * 1000;
 
   const saved = await store.save({
     orderKey: ORDER, wearerKey: "w-ada", previewId: firstId, inputFingerprint: FINGERPRINT,
-    promptVersion: "tryon-prompt-v2", image: { mimeType: "image/png", data: GEMINI_OUTPUT },
+    image: { mimeType: "image/png", data: GEMINI_OUTPUT },
   });
   assert.equal(saved.expiresAt, new Date(clock + AI_TRY_ON_PREVIEW_RETENTION_MS).toISOString());
   assert.equal(AI_TRY_ON_PREVIEW_RETENTION_MS, 30 * DAY, "kept for up to 30 days");
   const [path, object] = [...bucket.objects.entries()][0];
-  assert.match(path, new RegExp(`^${AI_TRY_ON_PREVIEW_STORAGE_PREFIX}/order-[0-9a-f]{64}/${firstId}\\.png$`));
+  assert.match(path, new RegExp(`^${AI_TRY_ON_PREVIEW_STORAGE_PREFIX}/order-[0-9a-f]{64}/[0-9a-f]{64}$`), "fixed path per wearer");
   assert.equal(path.includes(ORDER), false, "the raw order key is never in the path");
-  const options = object.options as { metadata: { cacheControl: string; metadata: Record<string, string> } };
+  const options = object.options as { metadata: { cacheControl: string } };
   assert.equal(options.metadata.cacheControl, "private, no-store");
   assert.equal(JSON.stringify(options).includes("firebaseStorageDownloadTokens"), false, "no public download URL");
   const [docPath, doc] = [...db.docs.entries()][0];
@@ -149,7 +152,7 @@ const DAY = 24 * 60 * 60 * 1000;
   const secondId = createAiTryOnPreviewId();
   await store.save({
     orderKey: ORDER, wearerKey: "w-ada", previewId: secondId, inputFingerprint: "tryon-v1-fedcba9876543210",
-    promptVersion: "tryon-prompt-v2", image: { mimeType: "image/png", data: GEMINI_OUTPUT },
+    image: { mimeType: "image/png", data: GEMINI_OUTPUT },
   });
   assert.equal(bucket.objects.size, 1, "old object deleted");
   assert.equal(db.docs.size, 1);
@@ -157,14 +160,14 @@ const DAY = 24 * 60 * 60 * 1000;
 
   await store.save({
     orderKey: ORDER, wearerKey: "w-obi", previewId: createAiTryOnPreviewId(), inputFingerprint: FINGERPRINT,
-    promptVersion: "tryon-prompt-v2", image: { mimeType: "image/jpeg", data: jpeg.toString("base64") },
+    image: { mimeType: "image/jpeg", data: jpeg.toString("base64") },
   });
   assert.equal((await store.list(ORDER)).length, 2);
 
   // Delete on request: one, then all; other orders untouched.
   await store.save({
     orderKey: OTHER_ORDER, wearerKey: "order", previewId: createAiTryOnPreviewId(), inputFingerprint: FINGERPRINT,
-    promptVersion: "tryon-prompt-v2", image: { mimeType: "image/png", data: GEMINI_OUTPUT },
+    image: { mimeType: "image/png", data: GEMINI_OUTPUT },
   });
   assert.equal(await store.remove(OTHER_ORDER, secondId), 0, "cannot delete another order's preview");
   assert.equal(await store.remove(ORDER, secondId), 1);
@@ -261,25 +264,35 @@ const serverHarness = () => {
       if (referenceFails) throw new AiTryOnReferenceImageError("reference_missing");
       return { mimeType: "image/png", data: png.toString("base64") };
     },
+    // Real Step 7 sessions on the fake Firestore; the two guest tokens are minted up front.
+    createSessions: (database, options) =>
+      createAiTryOnSessions(database, { ...options, createGuestToken: () => tokens.shift()! }),
+    compactPreviewImage: async (image) => ({ mimeType: image.mimeType as "image/png", data: image.data, bytes: 0, width: 1, height: 1 }),
     log: () => undefined,
   };
+  const tokens = [ORDER, OTHER_ORDER];
+  const ready = (async () => {
+    const sessions = createAiTryOnSessions(db.asFirestore(), { createGuestToken: () => tokens.shift()! });
+    await sessions.resolve({ uid: null, token: null });
+    await sessions.resolve({ uid: null, token: null });
+  })();
   return {
-    db, bucket, deps, referenceUrls, geminiRequests,
+    db, bucket, deps, referenceUrls, geminiRequests, ready,
     failReferences: () => { referenceFails = true; },
     failSaves: () => { saveFails = true; },
   };
 };
 
-const generate = async (h: ReturnType<typeof serverHarness>, overrides: Record<string, unknown> = {}) => {
+const generate = async (h: ReturnType<typeof serverHarness>, overrides: Record<string, unknown> = {}, session = ORDER) => {
+  await h.ready;
   const result = response();
   await handleAiTryOn(
     {
       method: "POST",
-      headers: { "x-forwarded-for": "203.0.113.9" },
+      headers: { "x-forwarded-for": "203.0.113.9", "x-ai-try-on-session": session },
       query: { route: "ai-try-on" },
       body: {
         mode: "fabric",
-        orderKey: ORDER,
         inputFingerprint: FINGERPRINT,
         wearerKey: "w-ada",
         personImage: { mimeType: "image/jpeg", data: PERSON_PHOTO },
@@ -294,9 +307,22 @@ const generate = async (h: ReturnType<typeof serverHarness>, overrides: Record<s
   return result.state;
 };
 
+/** `?orderKey=` in these URLs is shorthand: it is sent as the session header. */
 const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string, url: string) => {
+  await h.ready;
+  const parsed = new URL(url, "http://localhost");
+  const session = parsed.searchParams.get("orderKey");
+  parsed.searchParams.delete("orderKey");
   const result = response();
-  await handleAiTryOn({ method, headers: {}, url } as never, result.res, h.deps);
+  await handleAiTryOn(
+    {
+      method,
+      headers: session ? { "x-ai-try-on-session": session } : {},
+      url: `${parsed.pathname}${parsed.search}`,
+    } as never,
+    result.res,
+    h.deps,
+  );
   return result.state;
 };
 
@@ -329,7 +355,7 @@ const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string
   assert.equal(mapped.kind === "completed" && mapped.storedPreviewId, body.resultReference.assetId);
 
   // Reload: GET lists the order's previews; GET by id restores the image.
-  const list = await serverRequest(h, "GET", `/api/ai-try-on?orderKey=${ORDER}`);
+  const list = await serverRequest(h, "POST", `/api/ai-try-on?orderKey=${ORDER}&action=session`);
   const previews = (list.body as { previews: Array<{ previewId: string; wearerKey: string; inputFingerprint: string }> }).previews;
   assert.deepEqual(previews.map((p) => [p.previewId, p.wearerKey, p.inputFingerprint]), [[body.resultReference.assetId, "w-ada", FINGERPRINT]]);
   const id = body.resultReference.assetId;
@@ -338,12 +364,13 @@ const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string
   assert.equal((read.body as { image: { data: string } }).image.data, GEMINI_OUTPUT);
   assert.equal(read.headers["cache-control"], "no-store");
   assert.equal((await serverRequest(h, "GET", `/api/ai-try-on?orderKey=${OTHER_ORDER}&previewId=${id}`)).status, 404, "not the owner");
-  assert.equal(((await serverRequest(h, "GET", `/api/ai-try-on?orderKey=${OTHER_ORDER}`)).body as { previews: unknown[] }).previews.length, 0);
+  assert.equal(((await serverRequest(h, "POST", `/api/ai-try-on?orderKey=${OTHER_ORDER}&action=session`)).body as { previews: unknown[] }).previews.length, 0);
 
   // Delete on request.
   assert.equal((await serverRequest(h, "DELETE", `/api/ai-try-on?orderKey=${OTHER_ORDER}&previewId=${id}`)).body && h.bucket.objects.size, 1);
   assert.equal((await serverRequest(h, "DELETE", `/api/ai-try-on?orderKey=${ORDER}`)).status, 400, "needs an id or all=1");
-  assert.equal((await serverRequest(h, "DELETE", `/api/ai-try-on?orderKey=bad&previewId=${id}`)).status, 400);
+  assert.deepEqual((await serverRequest(h, "DELETE", `/api/ai-try-on?orderKey=bad&previewId=${id}`)).body, { status: "deleted", deleted: 0 }, "an unknown session deletes nothing");
+  assert.equal(h.bucket.objects.size, 1);
   const deleted = await serverRequest(h, "DELETE", `/api/ai-try-on?orderKey=${ORDER}&previewId=${id}`);
   assert.deepEqual(deleted.body, { status: "deleted", deleted: 1 });
   assert.equal(h.bucket.objects.size, 0);
@@ -367,7 +394,7 @@ const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string
   assert.equal(failed.status, 422);
   assert.equal((failed.body as { code: string }).code, "REFERENCE_IMAGE_UNAVAILABLE");
   assert.equal(h.geminiRequests.length, 0);
-  assert.equal(await createAiTryOnUsageLimits(h.db.asFirestore()).readOrderTriesRemaining(ORDER), 5);
+  assert.equal(await createAiTryOnUsageLimits(h.db.asFirestore()).readOrderTriesRemaining(hashAiTryOnSessionToken(ORDER)), 5);
   const mapped = mapAiTryOnPreviewResponse(422, failed.body);
   assert.equal(mapped.kind, "failed");
 
@@ -414,7 +441,11 @@ const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string
   const serverUsers = walk(join("src", "server")).filter((file) =>
     readFileSync(file, "utf8").includes("aiTryOnPreviewStore"),
   );
-  assert.deepEqual(serverUsers.sort(), [join("src", "server", "aiTryOnHttp.ts")], "only the owner gateway uses the store");
+  assert.deepEqual(
+    serverUsers.sort(),
+    [join("src", "server", "aiTryOnHttp.ts"), join("src", "server", "aiTryOnPaymentCleanup.ts")],
+    "only the owner gateway (and payment cleanup, which deletes) use the store",
+  );
   const workshopOrAdmin = walk("src").filter((file) => /admin|workshop|manifest|staff|production/i.test(file));
   assert.ok(workshopOrAdmin.length > 0);
   for (const file of workshopOrAdmin) {
@@ -432,17 +463,19 @@ const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string
     if (url.includes("gone")) return new Response(JSON.stringify({ code: "PREVIEW_NOT_FOUND" }), { status: 404 });
     return new Response(JSON.stringify({ status: "preview", image: { mimeType: "image/png", data: "iVBORw0KGgo=" } }));
   };
-  assert.deepEqual(await fetchStoredAiTryOnPreview({ orderKey: ORDER, previewId: "tryon-1", fetchImpl }), { mimeType: "image/png", data: "iVBORw0KGgo=" });
-  assert.equal(calls[0].url, `/api/ai-try-on?orderKey=${ORDER}&previewId=tryon-1`);
+  const credentials = { sessionToken: ORDER, getIdToken: async () => null };
+  assert.deepEqual(await fetchStoredAiTryOnPreview({ credentials, previewId: "tryon-1", fetchImpl }), { mimeType: "image/png", data: "iVBORw0KGgo=" });
+  assert.equal(calls[0].url, `/api/ai-try-on?previewId=tryon-1`);
+  assert.equal((calls[0].init?.headers as Record<string, string>)["X-AI-Try-On-Session"], ORDER, "token in a header, never the URL");
   assert.equal(calls[0].init?.cache, "no-store");
-  assert.equal(await fetchStoredAiTryOnPreview({ orderKey: ORDER, previewId: "gone", fetchImpl }), null);
-  assert.equal(await deleteStoredAiTryOnPreviews({ orderKey: ORDER, previewId: "tryon-1", fetchImpl }), true);
-  assert.equal(calls[2].url, `/api/ai-try-on?orderKey=${ORDER}&previewId=tryon-1`);
+  assert.equal(await fetchStoredAiTryOnPreview({ credentials, previewId: "gone", fetchImpl }), null);
+  assert.equal(await deleteStoredAiTryOnPreviews({ credentials, previewId: "tryon-1", fetchImpl }), true);
+  assert.equal(calls[2].url, `/api/ai-try-on?previewId=tryon-1`);
   assert.equal(calls[2].init?.method, "DELETE");
-  await deleteStoredAiTryOnPreviews({ orderKey: ORDER, previewId: null, fetchImpl, keepalive: true });
-  assert.equal(calls[3].url, `/api/ai-try-on?orderKey=${ORDER}&all=1`);
+  await deleteStoredAiTryOnPreviews({ credentials, previewId: null, fetchImpl, keepalive: true });
+  assert.equal(calls[3].url, `/api/ai-try-on?all=1`);
   assert.equal(calls[3].init?.keepalive, true);
-  assert.equal(await deleteStoredAiTryOnPreviews({ orderKey: ORDER, previewId: null, fetchImpl: async () => { throw new Error("offline"); } }), false);
+  assert.equal(await deleteStoredAiTryOnPreviews({ credentials, previewId: null, fetchImpl: async () => { throw new Error("offline"); } }), false);
 }
 
 // ------------------------------------------------------------ panel: restore after reload, delete my preview
@@ -467,7 +500,6 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps> = {}) => {
   let renderer!: ReturnType<typeof create>;
   const base: AiTryOnPhotoPanelProps = {
     targets: [target()],
-    orderKey: ORDER,
     triesPerOrder: 5,
     initialTriesRemaining: 4,
     onPreviewCreated: () => undefined,

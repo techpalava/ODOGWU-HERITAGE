@@ -349,7 +349,15 @@ import {
   fetchStoredAiTryOnPreview,
   type AiTryOnAvailabilityDetails,
 } from "../services/aiTryOnGateway";
-import { getOrCreateAiTryOnOrderKey } from "../services/aiTryOnOrderKey";
+import {
+  AI_TRY_ON_GUEST_IDENTITY_KEY,
+  aiTryOnCredentialsForIdentity,
+  saveAiTryOnSessionToken,
+} from "../services/aiTryOnSessionToken";
+import {
+  createAiTryOnCredentials,
+  type AiTryOnCredentials,
+} from "../services/aiTryOnGateway";
 import { AiTryOnPhotoPanel } from "./AiTryOnPhotoPanel";
 import { buildAiTryOnFitHints } from "../utils/aiTryOnFitHints";
 import { buildAiTryOnOrderDetails } from "../utils/aiTryOnOrderDetails";
@@ -3769,9 +3777,10 @@ export default function DesignStudioView({
   wearerOrderForPlanRef.current = wearerOrderForPlan;
   // AI Try-on (Step 5): one target per wearer, each with its own garments,
   // swatch, order details, fit hints and fingerprint. 5 tries per order.
-  const aiTryOnOrderKey = useMemo(
-    () => getOrCreateAiTryOnOrderKey(futureDraftIdentityKey),
-    [futureDraftIdentityKey],
+  // Step 7: the server issues the session; these are the caller's
+  // credentials for it (guest token and/or Firebase ID token).
+  const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
+    createAiTryOnCredentials(null, async () => null),
   );
   const aiTryOnWearerTargets = useMemo(
     () =>
@@ -3817,13 +3826,38 @@ export default function DesignStudioView({
   useEffect(() => {
     if (!guestDraftHydrated || futureStageId !== "try_on") return;
     let cancelled = false;
-    void fetchAiTryOnAvailability({ orderKey: aiTryOnOrderKey }).then((availability) => {
-      if (!cancelled) setAiTryOnAvailability(availability);
+    const credentials = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
+    void fetchAiTryOnAvailability({ credentials }).then((availability) => {
+      if (cancelled) return;
+      if (availability.status === "available") {
+        const signedIn = futureDraftIdentityKey.startsWith("authenticated:");
+        if (signedIn) {
+          // The account now owns the session. If the guest session was
+          // adopted, this guest-only close is a no-op; if the account already
+          // had a session, it deletes the guest's previews instead of leaving
+          // them unreachable until they expire.
+          if (credentials.sessionToken) {
+            void deleteStoredAiTryOnPreviews({
+              credentials: createAiTryOnCredentials(credentials.sessionToken, async () => null),
+              previewId: null,
+              closeSession: true,
+            });
+            saveAiTryOnSessionToken(AI_TRY_ON_GUEST_IDENTITY_KEY, null);
+          }
+          setAiTryOnCredentials(createAiTryOnCredentials(null, credentials.getIdToken));
+        } else {
+          saveAiTryOnSessionToken(futureDraftIdentityKey, availability.sessionToken);
+          setAiTryOnCredentials(
+            createAiTryOnCredentials(availability.sessionToken, credentials.getIdToken),
+          );
+        }
+      }
+      setAiTryOnAvailability(availability);
     });
     return () => {
       cancelled = true;
     };
-  }, [guestDraftHydrated, futureStageId, aiTryOnOrderKey]);
+  }, [guestDraftHydrated, futureStageId, futureDraftIdentityKey]);
   /**
    * Latest selected person, written on render and synchronously on select, so
    * handlers that run later in the same event never sync the live form to a
@@ -11424,15 +11458,15 @@ export default function DesignStudioView({
             aiTryOnWearerTargets.length > 0 ? (
               <AiTryOnPhotoPanel
                 targets={aiTryOnWearerTargets}
-                orderKey={aiTryOnOrderKey}
+                credentials={aiTryOnCredentials}
                 triesPerOrder={aiTryOnAvailability.triesPerOrder}
                 initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
                 storedPreviews={aiTryOnAvailability.storedPreviews}
                 loadStoredPreview={(previewId) =>
-                  fetchStoredAiTryOnPreview({ orderKey: aiTryOnOrderKey, previewId })
+                  fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId })
                 }
                 deleteStoredPreview={(previewId) =>
-                  deleteStoredAiTryOnPreviews({ orderKey: aiTryOnOrderKey, previewId })
+                  deleteStoredAiTryOnPreviews({ credentials: aiTryOnCredentials, previewId })
                 }
                 onPreviewCreated={handleAiTryOnPreviewCreated}
                 onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}

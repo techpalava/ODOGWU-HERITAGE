@@ -25,11 +25,6 @@ import {
   type AiTryOnPreviewOutcome,
 } from "./src/services/aiTryOnGateway";
 import {
-  AI_TRY_ON_ORDER_KEY_STORAGE_KEY,
-  clearAiTryOnOrderKeys,
-  getOrCreateAiTryOnOrderKey,
-} from "./src/services/aiTryOnOrderKey";
-import {
   AI_TRY_ON_PHOTO_ACCEPT,
   AI_TRY_ON_PHOTO_SIZE_ERROR,
   AI_TRY_ON_PHOTO_TYPE_ERROR,
@@ -231,26 +226,29 @@ const twoWearers: WearerOrderStateV2 = {
     calls.push(url);
     return new Response(JSON.stringify({ status: "available", triesPerOrder: 5, orderTriesRemaining: 3 }), { status: 200 });
   };
-  assert.deepEqual(await fetchAiTryOnAvailability({ orderKey: "tryon-abc12345", fetchImpl }), {
+  const credentials = { sessionToken: null, getIdToken: async () => null };
+  assert.deepEqual(await fetchAiTryOnAvailability({ credentials, fetchImpl }), {
     status: "available",
     triesPerOrder: 5,
     orderTriesRemaining: 3,
     storedPreviews: [],
+    sessionToken: null,
   });
-  assert.equal(calls[0], "/api/ai-try-on?orderKey=tryon-abc12345");
+  assert.equal(calls[0], "/api/ai-try-on?action=session");
   assert.deepEqual(
     await fetchAiTryOnAvailability({
+      credentials,
       fetchImpl: async () => new Response(JSON.stringify({ status: "unavailable", code: "NOT_CONFIGURED" })),
     }),
     { status: "unavailable" },
   );
   assert.deepEqual(
-    await fetchAiTryOnAvailability({ fetchImpl: async () => new Response("<html>404</html>", { status: 404 }) }),
+    await fetchAiTryOnAvailability({ credentials, fetchImpl: async () => new Response("<html>404</html>", { status: 404 }) }),
     { status: "unavailable" },
     "Vite dev server without the API reads as unavailable",
   );
   assert.deepEqual(
-    await fetchAiTryOnAvailability({ fetchImpl: async () => { throw new Error("offline"); } }),
+    await fetchAiTryOnAvailability({ credentials, fetchImpl: async () => { throw new Error("offline"); } }),
     { status: "unavailable" },
   );
 
@@ -308,27 +306,11 @@ const twoWearers: WearerOrderStateV2 = {
 }
 
 // ------------------------------------------------------------ order key
-
+// Step 7 replaced the browser-chosen order key with a server-issued session
+// (tested in test_ai_try_on_step7_session.ts).
 {
-  const backing = new Map<string, string>();
-  const store = {
-    getItem: (key: string) => backing.get(key) ?? null,
-    setItem: (key: string, value: string) => void backing.set(key, value),
-    removeItem: (key: string) => void backing.delete(key),
-  };
-  const first = getOrCreateAiTryOnOrderKey("guest", store);
-  assert.match(first, /^tryon-[0-9a-f]{32}$/);
-  assert.match(first, /^[A-Za-z0-9][A-Za-z0-9._:-]{7,191}$/, "matches the server order key pattern");
-  assert.equal(getOrCreateAiTryOnOrderKey("guest", store), first, "stable across reloads");
-  const authKey = getOrCreateAiTryOnOrderKey("authenticated:uid-1", store);
-  assert.notEqual(authKey, first);
-  assert.equal(backing.get(AI_TRY_ON_ORDER_KEY_STORAGE_KEY)?.includes("base64"), false);
-  const deletedOrders: string[] = [];
-  clearAiTryOnOrderKeys(store, (orderKey) => deletedOrders.push(orderKey));
-  assert.deepEqual(deletedOrders.sort(), [first, authKey].sort(), "stored previews deleted when the draft is cleared");
-  assert.notEqual(getOrCreateAiTryOnOrderKey("guest", store), first, "new order → new tries");
   const sessionSource = readFileSync("src/services/guestOrderSessionService.ts", "utf8");
-  assert.match(sessionSource, /clearFutureDesignDraft: \(\): void => \{[\s\S]*?clearAiTryOnOrderKeys\(\);/);
+  assert.match(sessionSource, /clearFutureDesignDraft: \(\): void => \{[\s\S]*?retireAiTryOnSessions\(\);/);
 }
 
 // ------------------------------------------------------------ panel
@@ -356,7 +338,6 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps> = {}) => {
   let renderer!: ReturnType<typeof create>;
   const base: AiTryOnPhotoPanelProps = {
     targets: [target()],
-    orderKey: "tryon-0123456789abcdef0123456789abcdef",
     triesPerOrder: 5,
     initialTriesRemaining: 5,
     onPreviewCreated: ({ wearerId }) => created.push(wearerId),
@@ -399,8 +380,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   const markup = renderToStaticMarkup(
     createElement(AiTryOnPhotoPanel, {
       targets: [target()],
-      orderKey: "tryon-0123456789abcdef0123456789abcdef",
-      triesPerOrder: 5,
+        triesPerOrder: 5,
       initialTriesRemaining: 5,
       onPreviewCreated: () => undefined,
       onUnavailable: () => undefined,
@@ -636,8 +616,7 @@ for (const [outcome, text] of errorCases) {
         generating,
         livePanel: createElement(AiTryOnPhotoPanel, {
           targets: [target()],
-          orderKey: "tryon-0123456789abcdef0123456789abcdef",
-          triesPerOrder: 5,
+                triesPerOrder: 5,
           initialTriesRemaining: 5,
           onPreviewCreated: () => undefined,
           onUnavailable: () => undefined,
@@ -760,7 +739,8 @@ class FakeFirestore {
   assert.equal(await limits.readOrderTriesRemaining("tryon-order-0001"), 5);
 }
 
-// GET ?orderKey= reports tries left; refunded failures report them too.
+// The session call reports tries left; refunded failures report them too.
+// (Step 7: the session is server-issued; a fake one is used here.)
 {
   const db = new FakeFirestore();
   const environment = { AI_TRY_ON_ENABLED: "true", GEMINI_API_KEY: "fake-gemini-key-for-tests-only" };
@@ -784,18 +764,24 @@ class FakeFirestore {
       read: async () => null,
       remove: async () => 0,
     }),
+    createSessions: () => ({
+      resolve: async () => ({ sessionId: "tryon-order-0002", sessionToken: null, created: false }),
+      authorize: async () => "tryon-order-0002",
+      close: async () => undefined,
+      findOpenForUid: async () => null,
+    }),
     log: () => undefined,
   };
   await createAiTryOnUsageLimits(db.asFirestore()).reserve("tryon-order-0002");
   const get = response();
-  await handleAiTryOn({ method: "GET", headers: {}, query: { route: "ai-try-on", orderKey: "tryon-order-0002" } } as never, get.res, deps as never);
-  assert.deepEqual(get.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4, previews: [] });
+  await handleAiTryOn({ method: "POST", headers: {}, query: { route: "ai-try-on", action: "session" } } as never, get.res, deps as never);
+  assert.deepEqual(get.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4, previews: [], sessionToken: null });
   const getUrl = response();
-  await handleAiTryOn({ method: "GET", headers: {}, url: "/api/ai-try-on?orderKey=tryon-order-0002" } as never, getUrl.res, deps as never);
-  assert.deepEqual(getUrl.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4, previews: [] });
-  const getBad = response();
-  await handleAiTryOn({ method: "GET", headers: {}, query: { orderKey: "x" } } as never, getBad.res, deps as never);
-  assert.deepEqual(getBad.state.body, { status: "available", triesPerOrder: 5 }, "invalid key ignored");
+  await handleAiTryOn({ method: "POST", headers: {}, url: "/api/ai-try-on?action=session" } as never, getUrl.res, deps as never);
+  assert.deepEqual(getUrl.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4, previews: [], sessionToken: null });
+  const getPlain = response();
+  await handleAiTryOn({ method: "GET", headers: {}, query: { orderKey: "x" } } as never, getPlain.res, deps as never);
+  assert.deepEqual(getPlain.state.body, { status: "available", triesPerOrder: 5 }, "plain GET: no session, no order key");
 
   const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32, 1)]).toString("base64");
   const post = response();
@@ -805,7 +791,6 @@ class FakeFirestore {
       headers: { "x-forwarded-for": "203.0.113.9" },
       body: {
         mode: "garment",
-        orderKey: "tryon-order-0002",
         inputFingerprint: "tryon-v1-0123456789abcdef",
         personImage: { mimeType: "image/jpeg", data: jpeg },
         garmentImage: { mimeType: "image/jpeg", data: jpeg },
