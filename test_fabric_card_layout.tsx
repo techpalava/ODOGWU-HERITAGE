@@ -202,7 +202,7 @@ assert.match(String(removeButton.props.className), /absolute right-1 top-1/, "×
 const statusRow = topRow.findByProps({ "data-garment-card-status-row": "true" });
 const assignedTag = statusRow.findByProps({ "data-garment-fabric-badge": "true" });
 assert.equal(textContent(assignedTag), "Assigned");
-assert.match(String(assignedTag.props.className), /bg-heritage-green\/10/, "soft green ASSIGNED chip");
+assert.match(String(assignedTag.props.className), /bg-\[#e8f1ec\]/, "soft green ASSIGNED chip (mockup #e8f1ec)");
 assert.equal(textContent(shirtCard.findByProps({ "data-garment-card-title": "true" })), "Standard Shirt");
 const fabricLine = shirtCard.findByProps({ "data-garment-card-fabric-line": "true" });
 assert.equal(textContent(fabricLine), "Card Layout A CL-A", "fabric name and muted code on one line");

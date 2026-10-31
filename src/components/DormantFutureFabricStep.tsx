@@ -3773,7 +3773,7 @@ export const DormantFutureFabricStep = ({
                           data-garment-fabric-badge="true"
                           className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-green ${
                             assigned
-                              ? "border-transparent bg-heritage-green/10"
+                              ? "border-[#e8f1ec] bg-[#e8f1ec]"
                               : "border-heritage-gold/30 bg-white"
                           }`}
                         >
