@@ -22,9 +22,9 @@ export const isUsableFabricColorHex = (
 export const ASSIGNED_FABRIC_PREVIEW_CLASSNAME =
   "h-[100px] w-full overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40 sm:h-[100px] sm:w-[128px] sm:shrink-0";
 
-/** Fills the full-width photo banner on the Fabric step garment cards. */
+/** Live-size photo on the left of the Fabric step garment cards (128x100 at every width). */
 export const GARMENT_CARD_FABRIC_PHOTO_CLASSNAME =
-  "absolute inset-0 h-full w-full overflow-hidden bg-heritage-cream/40";
+  "h-[100px] w-[128px] shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40";
 
 /**
  * Compact assigned-Fabric preview for garment cards. Derives from the current

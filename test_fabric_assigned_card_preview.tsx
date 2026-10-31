@@ -264,8 +264,8 @@ const assign = (
   assert.equal(img.props.decoding, "async");
   assert.match(
     String(preview.props.className),
-    /absolute inset-0 h-full w-full/,
-    "the preview fills the full-width card banner",
+    /h-\[100px\] w-\[128px\]/,
+    "the preview is the live-size 128x100 photo",
   );
   const assignedCard = renderer.root.findByProps({
     "data-garment-key": "base:shirt",
@@ -275,9 +275,9 @@ const assign = (
     (node): node is ReactTestInstance =>
       typeof node !== "string" &&
       typeof node.props.className === "string" &&
-      node.props["data-garment-card-layout"] === "photo-banner",
+      node.props["data-garment-card-layout"] === "photo-left",
   )[0];
-  assert.ok(layoutHost, "Assigned card content starts with the photo banner");
+  assert.ok(layoutHost, "Assigned card content puts the photo on the left");
   assert.match(String(layoutHost.props.className), /\bflex-col\b/);
 }
 
