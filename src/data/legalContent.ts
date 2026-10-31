@@ -60,6 +60,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       bullets: [
         "Our partner workshop in Nigeria: an independent production partner that makes your garments. It receives only the order details needed to make them: your name or the wearer's name, measurements, design choices, uploaded design pictures and any monogram text.",
         "Google (Firebase): sign-in (including Google sign-in), our database, and storage for uploaded pictures.",
+        "Google (Gemini API): creates AI Try-on previews from the photo, garment and fabric pictures, design choices and fit measurements you send when you use AI Try-on.",
         "Vercel: hosts this website and the servers behind it, including technical logs.",
         "Brevo: sends our sign-in code emails. If Brevo is unavailable, Google's Gmail service sends them instead.",
         "Stripe: processes card, iDEAL and, where offered, Klarna and Pix payments.",
@@ -76,6 +77,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       title: "Data sent outside the EU",
       paragraphs: [
         "Your garments are made by our independent partner workshop in Nigeria, which is outside the European Economic Area (EEA). The order details needed to make them (name or wearer name, measurements, design choices, uploaded design pictures and monogram text) are sent to that workshop. If you order delivery outside the Netherlands, the delivery details needed for that delivery go to the delivery partners for your destination. Some of our service providers may also process data outside the European Economic Area, for example in the United States.",
+        "When you use AI Try-on, Google may process and briefly store your photo and preview in any country where it has facilities.",
         "When data leaves the EEA, we rely on [TRANSFER SAFEGUARDS] to protect it. You can ask us for a copy of these safeguards.",
       ],
     },
@@ -87,6 +89,16 @@ export const PRIVACY_POLICY: LegalDocument = {
         "Orders, measurements and payment records: [ORDER RECORD RETENTION PERIOD], so we can handle remakes and complaints and meet tax rules.",
         "Sign-in codes: they expire after 10 minutes and can be used only once.",
         "Feedback and technical logs: [LOG AND FEEDBACK RETENTION PERIOD].",
+        "AI Try-on: we delete your photo as soon as the preview is created, and keep the preview privately for up to 30 days, or until you place your order, whichever is sooner. Google keeps the photo and preview for up to 55 days to detect misuse. Try-on counters are kept for 90 days per order and 1 hour per IP address, in scrambled (hashed) form.",
+      ],
+    },
+    {
+      id: "privacy-ai-try-on",
+      title: "AI Try-on photos",
+      paragraphs: [
+        "AI Try-on is optional. If you use it, you upload a photo of yourself, or of someone aged 18 or over who has agreed, so you can see a preview of your design. By uploading a photo, you agree that we can send it to Google's Gemini API (model gemini-2.5-flash-image), together with the garment picture and, if you choose one, the fabric picture. We also send the visible design choices for that person (such as neckline, sleeves and pockets, and where a monogram sits, but never its letters) and their fit measurements in centimetres. Google uses this only to create one preview image for you. We do not send names, contact details or prices.",
+        "We delete your photo as soon as the preview is created. We keep the preview privately for up to 30 days, or until you place your order, whichever is sooner, and delete it earlier if you ask. Try-on photos and previews are never shared with our workshop. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. To limit use, we count previews per order (5 per order, kept for 90 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
+        "Google acts as our processor. Under its paid Gemini API terms it does not use your photo or the preview to improve its products. It keeps them for up to 55 days only to detect and prevent misuse, and then deletes them. We cannot delete Google's copy within those 55 days.",
       ],
     },
     {

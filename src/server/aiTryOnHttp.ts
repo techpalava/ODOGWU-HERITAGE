@@ -53,8 +53,12 @@ import {
  * and one global generation (single transaction) → Gemini → release the
  * reservation if no image came back.
  *
- * Step 3 returns the image inline and stores nothing. Private storage,
- * consent and privacy copy are Steps 4–6.
+ * GET may carry `?orderKey=` to also report the tries left for that order.
+ * After a refunded failure the error body carries `orderTriesRemaining` so
+ * the Design Studio can say how many tries are left.
+ *
+ * Returns the image inline and stores nothing yet. Private preview storage
+ * and the photo deletion pipeline are Step 6.
  */
 
 type RequestWithRoute = HttpRequest & { query?: unknown; url?: string };
@@ -100,6 +104,7 @@ const sendError = (
   error: string,
   retryable: boolean,
   retryAfterSeconds?: number,
+  orderTriesRemaining?: number,
 ) => {
   setNoStore(res);
   if (retryAfterSeconds) res.setHeader("Retry-After", String(retryAfterSeconds));
@@ -108,6 +113,7 @@ const sendError = (
     code,
     retryable,
     ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+    ...(orderTriesRemaining !== undefined ? { orderTriesRemaining } : {}),
   };
   return res.status(status).json(body);
 };
@@ -240,6 +246,20 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
 
 const defaultGetDb = (): Firestore => getAdminServices().db;
 
+/** `?orderKey=` from Vercel/Express `req.query`, or from the raw URL. */
+const readQueryOrderKey = (req: RequestWithRoute): string | null => {
+  const query = isRecord(req.query) ? req.query : null;
+  let value: unknown = Array.isArray(query?.orderKey) ? query?.orderKey[0] : query?.orderKey;
+  if (value === undefined && typeof req.url === "string" && req.url.includes("?")) {
+    try {
+      value = new URL(req.url, "http://localhost").searchParams.get("orderKey") ?? undefined;
+    } catch {
+      value = undefined;
+    }
+  }
+  return typeof value === "string" && ORDER_KEY_PATTERN.test(value) ? value : null;
+};
+
 export async function handleAiTryOn(
   req: RequestWithRoute,
   res: HttpResponse,
@@ -259,11 +279,20 @@ export async function handleAiTryOn(
       return res.status(200).json(body);
     }
     try {
-      const count = await createLimits(await resolveDb()).readGlobalCount();
-      const body: AiTryOnAvailabilityResponse =
-        count >= AI_TRY_ON_GLOBAL_GENERATION_CAP
-          ? { status: "unavailable", code: "GLOBAL_LIMIT_REACHED" }
-          : { status: "available", triesPerOrder: AI_TRY_ON_TRIES_PER_ORDER };
+      const limits = createLimits(await resolveDb());
+      const count = await limits.readGlobalCount();
+      if (count >= AI_TRY_ON_GLOBAL_GENERATION_CAP) {
+        const body: AiTryOnAvailabilityResponse = { status: "unavailable", code: "GLOBAL_LIMIT_REACHED" };
+        return res.status(200).json(body);
+      }
+      const orderKey = readQueryOrderKey(req);
+      const body: AiTryOnAvailabilityResponse = {
+        status: "available",
+        triesPerOrder: AI_TRY_ON_TRIES_PER_ORDER,
+        ...(orderKey
+          ? { orderTriesRemaining: await limits.readOrderTriesRemaining(orderKey) }
+          : {}),
+      };
       return res.status(200).json(body);
     } catch {
       const body: AiTryOnAvailabilityResponse = { status: "unavailable", code: "NOT_CONFIGURED" };
@@ -356,6 +385,11 @@ export async function handleAiTryOn(
         reason: outcome.reason,
       }),
     );
+    // The reservation was released, so this try was not counted.
+    const orderTriesRemaining = Math.min(
+      AI_TRY_ON_TRIES_PER_ORDER,
+      reservation.orderTriesRemaining + 1,
+    );
     return outcome.kind === "rejected"
       ? sendError(
           res,
@@ -363,8 +397,18 @@ export async function handleAiTryOn(
           "PROVIDER_REJECTED",
           "AI Try-on could not create a preview from these photos.",
           outcome.retryable,
+          undefined,
+          orderTriesRemaining,
         )
-      : sendError(res, 502, "PROVIDER_FAILED", "AI Try-on could not be completed.", outcome.retryable);
+      : sendError(
+          res,
+          502,
+          "PROVIDER_FAILED",
+          "AI Try-on could not be completed.",
+          outcome.retryable,
+          undefined,
+          orderTriesRemaining,
+        );
   }
 
   log(

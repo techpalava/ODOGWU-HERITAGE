@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   RefreshCw,
@@ -21,7 +22,20 @@ interface DormantFutureAiTryOnStepProps {
   onRetry: () => void;
   onSkip: () => void;
   onContinue: () => void;
+  /**
+   * The live photo panel (AiTryOnPhotoPanel), passed only when
+   * `GET /api/ai-try-on` reports the gateway available. Without it the step
+   * shows the unavailable state and the skip button.
+   */
+  livePanel?: ReactNode;
 }
+
+/** Statuses that still show the status card next to the live panel. */
+const LIVE_STATUS_CARD = new Set<AiTryOnWorkflowStateV1["status"]>([
+  "awaiting_input",
+  "skipped",
+  "stale",
+]);
 
 const STATUS_PRESENTATION: Readonly<
   Record<
@@ -64,8 +78,7 @@ const STATUS_PRESENTATION: Readonly<
   },
   unavailable: {
     title: "AI Try-on is currently unavailable",
-    description:
-      "You can continue with your order without a Try-on preview. AI Try-on will be available when secure private-photo processing is ready.",
+    description: "You can continue with your order without a Try-on preview.",
   },
 };
 
@@ -76,7 +89,10 @@ export const DormantFutureAiTryOnStep = ({
   onRetry,
   onSkip,
   onContinue,
+  livePanel,
 }: DormantFutureAiTryOnStepProps) => {
+  const isLive = Boolean(livePanel);
+  const showStatusCard = !isLive || LIVE_STATUS_CARD.has(workflow.status);
   const presentation = STATUS_PRESENTATION[workflow.status];
   const { canRetry, canSkip } = getAiTryOnWorkflowAllowedActions({
     state: workflow,
@@ -122,12 +138,14 @@ export const DormantFutureAiTryOnStep = ({
           AI Try-on
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          AI Try-on will let you preview your selected garments, fabrics, and
-          visual details when secure private-photo processing is available.
+          {isLive
+            ? "Upload a photo to preview your selected garments, fabrics, and visual details on you."
+            : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
       </div>
 
       <div className="rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-6">
+        {showStatusCard && (
         <div
           role="status"
           aria-live="polite"
@@ -161,6 +179,9 @@ export const DormantFutureAiTryOnStep = ({
             )}
           </div>
         </div>
+        )}
+
+        {isLive && <div className={showStatusCard ? "mt-5" : ""}>{livePanel}</div>}
 
         <p className="mt-4 text-xs leading-relaxed text-heritage-ink/60">
           AI Try-on is optional. You can continue your order without it.
