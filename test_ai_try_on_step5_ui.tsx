@@ -231,6 +231,7 @@ const twoWearers: WearerOrderStateV2 = {
     status: "available",
     triesPerOrder: 5,
     orderTriesRemaining: 3,
+    accountTriesRemaining: null,
     storedPreviews: [],
     sessionToken: null,
   });
