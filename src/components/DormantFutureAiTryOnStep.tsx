@@ -28,6 +28,8 @@ interface DormantFutureAiTryOnStepProps {
    * shows the unavailable state and the skip button.
    */
   livePanel?: ReactNode;
+  /** A preview is generating: hide the skip button until it ends. */
+  generating?: boolean;
 }
 
 /** Statuses that still show the status card next to the live panel. */
@@ -90,6 +92,7 @@ export const DormantFutureAiTryOnStep = ({
   onSkip,
   onContinue,
   livePanel,
+  generating = false,
 }: DormantFutureAiTryOnStepProps) => {
   const isLive = Boolean(livePanel);
   const showStatusCard = !isLive || LIVE_STATUS_CARD.has(workflow.status);
@@ -199,7 +202,7 @@ export const DormantFutureAiTryOnStep = ({
               Retry
             </button>
           )}
-          {canSkip && (
+          {canSkip && !generating && (
             <button
               type="button"
               onClick={onSkip}

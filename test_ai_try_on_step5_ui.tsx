@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
@@ -602,6 +602,70 @@ for (const [outcome, text] of errorCases) {
   assert.match(live, /data-live="yes"/);
   assert.match(live, /Continue without AI Try-on/, "Try-on stays optional when available");
   assert.equal(live.includes("currently unavailable"), false);
+}
+
+// ------------------------------------------------------------ skip hidden while generating
+
+{
+  // Same wiring as DesignStudioView: the panel reports generating, the step hides skip.
+  const skipButtons = (renderer: ReturnType<typeof create>) =>
+    renderer.root.findAll(
+      (node) => node.type === "button" && /Continue without AI Try-on/.test(textOf(node)),
+    );
+  for (const finalOutcome of [
+    { kind: "failed", orderTriesRemaining: 5 },
+    {
+      kind: "completed",
+      resultReference: { kind: "verified_private_try_on_result", assetId: "tryon-1", ownerBindingId: "order-x" },
+      preview: { mimeType: "image/png", data: "iVBORw0KGgo=" },
+      orderTriesRemaining: 4,
+    },
+  ] as AiTryOnPreviewOutcome[]) {
+    let resolve!: (outcome: AiTryOnPreviewOutcome) => void;
+    const Wrapper = () => {
+      const [generating, setGenerating] = useState(false);
+      return createElement(DormantFutureAiTryOnStep, {
+        workflow: { schemaVersion: 1, status: "ready", inputFingerprint: "tryon-v1-0123456789abcdef" },
+        skipAllowed: true,
+        onBack: () => undefined,
+        onRetry: () => undefined,
+        onSkip: () => undefined,
+        onContinue: () => undefined,
+        generating,
+        livePanel: createElement(AiTryOnPhotoPanel, {
+          targets: [target()],
+          orderKey: "tryon-0123456789abcdef0123456789abcdef",
+          triesPerOrder: 5,
+          initialTriesRemaining: 5,
+          onPreviewCreated: () => undefined,
+          onUnavailable: () => undefined,
+          onGeneratingChange: setGenerating,
+          requestPreview: () => new Promise<AiTryOnPreviewOutcome>((done) => { resolve = done; }),
+          loadReferenceImage: async () => fakeImage,
+          preparePhoto: async () => fakeImage,
+          createThumbnailUrl: () => null,
+          revokeThumbnailUrl: () => undefined,
+        }),
+      });
+    };
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(createElement(Wrapper));
+    });
+    assert.equal(skipButtons(renderer).length, 1, "skip shown before generating");
+    await choosePhoto(renderer);
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = generateButton(renderer).props.onClick();
+    });
+    assert.match(textOf(renderer.root), /Creating your preview/);
+    assert.equal(skipButtons(renderer).length, 0, "skip hidden while a preview is generating");
+    await act(async () => {
+      resolve(finalOutcome);
+      await pending;
+    });
+    assert.equal(skipButtons(renderer).length, 1, `skip shown again after ${finalOutcome.kind}`);
+  }
 }
 
 // ------------------------------------------------------------ privacy boundary (source)

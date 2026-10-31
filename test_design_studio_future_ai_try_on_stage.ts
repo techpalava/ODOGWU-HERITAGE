@@ -321,6 +321,10 @@ assert.match(
 assert.match(studioSource, /gatewayAvailable: aiTryOnGatewayAvailable/);
 assert.match(studioSource, /aiTryOnAvailability\.status === "available"/);
 assert.equal(studioSource.includes("gatewayAvailable: true"), false);
+// Skip is hidden while a preview is generating (Xavier, Step 5).
+assert.match(tryOnSource, /\{canSkip && !generating && \(/);
+assert.match(studioSource, /onGeneratingChange=\{setAiTryOnGenerating\}/);
+assert.match(studioSource, /generating=\{aiTryOnGenerating\}/);
 assert.match(legacyCardSource, /Coming Soon/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 

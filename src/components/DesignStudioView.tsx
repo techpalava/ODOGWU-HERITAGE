@@ -1244,6 +1244,8 @@ export default function DesignStudioView({
     AiTryOnAvailabilityDetails | { status: "unknown" }
   >({ status: "unknown" });
   const aiTryOnGatewayAvailable = aiTryOnAvailability.status === "available";
+  /** A Try-on preview is generating; the step hides its skip button. */
+  const [aiTryOnGenerating, setAiTryOnGenerating] = useState(false);
   const [futureMeasurementState, setFutureMeasurementState] =
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
@@ -11425,9 +11427,11 @@ export default function DesignStudioView({
                 initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
                 onPreviewCreated={handleAiTryOnPreviewCreated}
                 onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
+                onGeneratingChange={setAiTryOnGenerating}
               />
             ) : undefined
           }
+          generating={aiTryOnGenerating}
         />
       ) : futureStageId === "measurement" ? (
         <>

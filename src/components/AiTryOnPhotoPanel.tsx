@@ -128,6 +128,8 @@ export interface AiTryOnPhotoPanelProps {
   }) => void;
   /** The gateway went away mid-flow (e.g. global cap reached). */
   onUnavailable: () => void;
+  /** True while a preview is generating; the step hides its skip button. */
+  onGeneratingChange?: (generating: boolean) => void;
   requestPreview?: (request: AiTryOnGenerationRequest) => Promise<AiTryOnPreviewOutcome>;
   loadReferenceImage?: (url: string) => Promise<AiTryOnInlineImage>;
   preparePhoto?: (file: File) => Promise<AiTryOnInlineImage>;
@@ -152,6 +154,7 @@ export const AiTryOnPhotoPanel = ({
   initialTriesRemaining,
   onPreviewCreated,
   onUnavailable,
+  onGeneratingChange,
   requestPreview = (request) => requestAiTryOnPreview({ request }),
   loadReferenceImage = (url) => loadAiTryOnReferenceImage(url),
   preparePhoto = (file) => prepareAiTryOnPersonPhoto(file),
@@ -176,6 +179,13 @@ export const AiTryOnPhotoPanel = ({
     initialTriesRemaining === 0 ? { kind: "out_of_previews" } : null,
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const onGeneratingChangeRef = useRef(onGeneratingChange);
+  onGeneratingChangeRef.current = onGeneratingChange;
+  useEffect(() => {
+    onGeneratingChangeRef.current?.(generating);
+  }, [generating]);
+  // Never leave the skip button hidden if the panel goes away mid-request.
+  useEffect(() => () => onGeneratingChangeRef.current?.(false), []);
   const photoRef = useRef<SelectedPhoto | null>(null);
   photoRef.current = photo;
 
