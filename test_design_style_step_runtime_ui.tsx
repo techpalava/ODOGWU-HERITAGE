@@ -637,6 +637,39 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     assert.ok(placeholderClasses.includes(cls), `The Clear placeholder has ${cls}.`);
   }
   assert.equal(rows[2]!.findAllByType("button").length, 2, "A row without a design still has only Choose and Upload buttons.");
+  // Rows without a design show a decorative "no design yet" card in the picture
+  // column (same size as the thumbnail) so garment and design names line up.
+  // It is hidden from screen readers, not focusable or clickable, and has no text.
+  const pictureCardsFor = (row: ReactTestInstance, kind: string) =>
+    row.findAll((node) => node.props?.["data-design-preview-placeholder"] === kind);
+  const [noDesignCard] = pictureCardsFor(rows[2]!, "no-design");
+  assert.equal(pictureCardsFor(rows[2]!, "no-design").length, 1, "A row without a design shows the placeholder card.");
+  assert.equal(noDesignCard!.type, "div");
+  assert.equal(noDesignCard!.props["aria-hidden"], "true");
+  assert.equal(noDesignCard!.props.tabIndex, undefined);
+  assert.equal(noDesignCard!.props.onClick, undefined);
+  assert.equal(noDesignCard!.props.role, undefined);
+  assert.equal(textContent(noDesignCard!), "", "The placeholder card has no text.");
+  const noDesignCardClasses = String(noDesignCard!.props.className).split(/\s+/);
+  for (const cls of ["h-14", "w-14", "sm:h-16", "sm:w-16", "rounded-lg", "border-dashed", "bg-heritage-cream/35"]) {
+    assert.ok(noDesignCardClasses.includes(cls), `The placeholder card has ${cls}.`);
+  }
+  assert.equal(noDesignCard!.findAllByType("svg").length, 1, "The placeholder card shows one faint garment icon.");
+  for (const row of rows.slice(0, 2)) {
+    assert.equal(pictureCardsFor(row, "no-design").length, 0, "A row with a design never shows the no-design card.");
+  }
+  for (const row of rows) {
+    const pictureColumn =
+      row.findAll((node) => node.props?.["data-selected-design-preview"] === "true").length +
+      pictureCardsFor(row, "no-design").length +
+      pictureCardsFor(row, "slot").length;
+    assert.equal(pictureColumn, 1, "Every row has exactly one picture column item.");
+  }
+  // This fixture's style has no picture, so rows with a design keep an empty,
+  // aria-hidden layout slot instead.
+  const [emptySlot] = pictureCardsFor(rows[0]!, "slot");
+  assert.equal(emptySlot!.props["aria-hidden"], "true");
+  assert.equal(emptySlot!.children.length, 0);
   const clearAll = renderer.root
     .findAllByType("button")
     .find((button) => textContent(button) === "Clear All")!;

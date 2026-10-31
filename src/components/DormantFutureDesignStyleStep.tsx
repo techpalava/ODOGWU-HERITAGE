@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Plus, X } from "lucide-react";
+import { Check, Plus, Shirt, X } from "lucide-react";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import {
   designStyleStepTargetsEqual,
@@ -872,11 +872,11 @@ export const DormantFutureDesignStyleStep = ({
             ? "design_style"
             : undefined
         }
-        className={`flex min-w-0 flex-col gap-1.5 border-l-2 px-3 py-2 ${
+        className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-l-2 px-3 py-2 sm:grid-cols-[4rem_minmax(0,1fr)] ${
           highlightPrefersReducedMotion
             ? ""
             : "transition-[background-color,border-color,box-shadow] duration-200"
-        } lg:flex-row lg:flex-wrap lg:items-center lg:gap-3 ${
+        } lg:grid-cols-[4rem_minmax(0,1fr)_22rem] lg:gap-x-3 ${
           isAssignmentFeedbackTarget
             ? "border-l-heritage-gold bg-heritage-cream/30 ring-2 ring-inset ring-heritage-gold/70"
             : "border-transparent bg-white"
@@ -909,8 +909,23 @@ export const DormantFutureDesignStyleStep = ({
               compactFallback
             />
           </div>
-        ) : null}
-        <div className="grid min-w-[11rem] flex-1 gap-0.5 lg:grid-cols-[auto_minmax(8rem,1fr)] lg:items-baseline lg:gap-x-4">
+        ) : !occurrence.assignment ? (
+          // Decorative "no design yet" card in the picture column, the same
+          // size and shape as the design thumbnail, so garment and design
+          // names start at the same x on every row.
+          <div
+            aria-hidden="true"
+            data-design-preview-placeholder="no-design"
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/40 bg-heritage-cream/35 sm:h-16 sm:w-16"
+          >
+            <Shirt aria-hidden="true" focusable="false" strokeWidth={1.5} className="h-6 w-6 text-heritage-green/25" />
+          </div>
+        ) : (
+          // Layout-only: a row with a design but no picture keeps the picture
+          // column empty so its names still line up.
+          <div aria-hidden="true" data-design-preview-placeholder="slot" className="h-14 w-14 sm:h-16 sm:w-16" />
+        )}
+        <div className="grid min-w-0 gap-0.5 lg:grid-cols-[12rem_minmax(8rem,16rem)] lg:items-baseline lg:gap-x-4">
           <p className="font-serif text-sm font-bold text-heritage-green">
             {garmentDisplayLabel}
           </p>
@@ -926,7 +941,7 @@ export const DormantFutureDesignStyleStep = ({
             </p>
           ) : null}
         </div>
-        <div className="flex min-w-0 flex-col items-stretch gap-1.5 lg:ml-auto lg:items-end lg:self-center">
+        <div className="col-span-2 flex min-w-0 flex-col items-stretch gap-1.5 lg:col-span-1 lg:items-end lg:self-center">
           <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
