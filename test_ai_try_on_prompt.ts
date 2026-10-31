@@ -278,7 +278,6 @@ assert.deepEqual(hostile, { garments: [{ garmentType: "shirt", optionIds: ["neck
 
 const request = (orderDetails: unknown) => ({
   mode: "garment",
-  orderKey: "draft-abc12345",
   inputFingerprint: "tryon-v1-0123456789abcdef",
   personImage: { mimeType: "image/png", data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(30)]).toString("base64") },
   garmentImage: { mimeType: "image/png", data: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(30)]).toString("base64") },

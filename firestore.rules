@@ -1185,14 +1185,22 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // AI Try-on (Step 6): stored previews and per-order counters are
-    // server-only (Admin SDK). No client, admin, staff or workshop access;
+    // AI Try-on (Steps 6-7): stored previews, per-session counters and the
+    // server-issued sessions are server-only (Admin SDK). No client, admin, staff or workshop access;
     // owners reach their preview only through /api/ai-try-on.
     match /aiTryOnPreviews/{document=**} {
       allow read, write: if false;
     }
 
     match /aiTryOnUsage/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnSessions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnSessionOwners/{document=**} {
       allow read, write: if false;
     }
 
