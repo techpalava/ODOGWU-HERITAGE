@@ -136,7 +136,8 @@ const readCards = (root: ReactTestInstance) =>
         badge: badges.length ? textContent(badges[0]) : null,
         marker: markers.length ? String(markers[0].props["data-fabric-piece-usage"]) : null,
         markerText: markers.length ? textContent(markers[0]) : null,
-        capacity: capacity.length ? textContent(capacity[0]) : null,
+        // The leading " · " is screen-reader only (the visible dot is CSS).
+        capacity: capacity.length ? textContent(capacity[0]).replace(/^\s*·\s*/, "") : null,
       };
     });
 
@@ -189,11 +190,27 @@ assert.match(String(titleHosts[2].props.className), /\bml-auto\b/, "× is pushed
 const fabricLine = shirtCard.findByProps({ "data-garment-card-fabric-line": "true" });
 assert.equal(textContent(fabricLine), "Card Layout A CL-A", "fabric name and muted code on one line");
 const selectionLine = shirtCard.findByProps({ "data-garment-card-selection-line": "true" });
-assert.equal(textContent(selectionLine), "Fabric Selection 1·Capacity: 2/2");
-assert.match(String(selectionLine.props.className), /text-heritage-gold/);
+assert.equal(textContent(selectionLine), "Fabric Selection 1 · Capacity: 2/2");
+const selectionParts = selectionLine.findAll(
+  (n) => typeof n.type === "string" && /\bwhitespace-nowrap\b/.test(String(n.props.className)),
+);
+assert.equal(selectionParts.length, 2, "Fabric Selection and Capacity are each one unbreakable part");
+for (const part of selectionParts) {
+  assert.match(String(part.props.className), /before:content-\['·'\]/, "the dot is drawn before each part");
+}
+assert.match(String(selectionLine.props.className), /\boverflow-hidden\b/, "a dot that starts a wrapped line is clipped");
+assert.match(String(selectionLine.findByType("p").props.className), /text-heritage-gold/);
+const codeSpan = fabricLine.findByProps({ children: "CL-A" });
+assert.match(String(codeSpan.props.className), /\bwhitespace-nowrap\b/, "the fabric code never breaks inside");
 const statusRow = shirtCard.findByProps({ "data-garment-card-status-row": "true" });
 assert.equal(statusRow.findAll((n) => n.props["data-fabric-piece-usage"] === "half").length > 0, true);
 assert.equal(textContent(statusRow.findByProps({ "data-garment-fabric-badge": "true" })), "Assigned");
+assert.match(String(statusRow.props.className), /\bflex-nowrap\b/, "marker and tags share one row");
+assert.match(String(statusRow.props.className), /\bjustify-between\b/);
+assert.match(
+  String(statusRow.findByProps({ "data-garment-fabric-badge": "true" }).props.className),
+  /\bwhitespace-nowrap\b/,
+);
 const photo = shirtCard.findByProps({ "data-assigned-fabric-preview": "true" });
 assert.equal(photo.props.className, GARMENT_CARD_FABRIC_PHOTO_CLASSNAME);
 assert.match(GARMENT_CARD_FABRIC_PHOTO_CLASSNAME, /h-\[88px\] w-\[88px\] shrink-0/, "photo shrinks on phones");

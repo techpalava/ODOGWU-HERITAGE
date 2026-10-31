@@ -27,7 +27,7 @@ export const FabricPieceUsageMarker = ({
     <span
       data-fabric-piece-usage={usage}
       title={FABRIC_PIECE_USAGE_ACCESSIBLE_LABEL[usage]}
-      className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold text-heritage-green"
+      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-heritage-green"
     >
       <svg
         aria-hidden="true"

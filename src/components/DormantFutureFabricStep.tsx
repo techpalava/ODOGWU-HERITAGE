@@ -239,6 +239,10 @@ const STEP2_FABRIC_CAPACITY_INTRO =
 const UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE =
   "No selected Fabric has capacity for this garment. Change a Fabric assignment or remove a Fabric selection.";
 
+/** One unbreakable part of the "Fabric Selection N · Capacity: x/2" line; its "·" is drawn before it. */
+const GARMENT_CARD_SELECTION_PART_CLASSNAME =
+  "relative whitespace-nowrap pl-3 before:absolute before:left-[4px] before:content-['·']";
+
 const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
   garmentType === "other"
     ? "Other Garment"
@@ -3743,28 +3747,39 @@ export const DormantFutureFabricStep = ({
                           data-garment-card-fabric-line="true"
                         >
                           {fabric.name}{" "}
-                          <span className="text-heritage-ink/45">{fabric.code}</span>
+                          <span className="whitespace-nowrap text-heritage-ink/45">
+                            {fabric.code}
+                          </span>
                         </p>
-                        <p
-                          className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-bold uppercase tracking-wide text-heritage-gold"
+                        {/* Each part is unbreakable; the "·" before a part is CSS and
+                            sits in the clipped gutter when that part starts a new line,
+                            so a wrapped line never ends or starts with a dot. */}
+                        <div
+                          className="overflow-hidden"
                           data-garment-card-selection-line="true"
                         >
-                          <span>Fabric Selection {selectionNumber}</span>
-                          {allocationCapacity ? (
-                            <>
-                              <span aria-hidden="true">·</span>
-                              <span data-fabric-allocation-capacity="true">
-                                Capacity:{" "}
-                                {allocationCapacity.usedUnits}/
-                                {allocationCapacity.usedUnits +
-                                  allocationCapacity.remainingUnits}
-                                {allocationCapacity.remainingUnits > 0
-                                  ? ` · ${allocationCapacity.remainingUnits}/2 available`
-                                  : ""}
+                          <p className="-ml-3 flex flex-wrap text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
+                            <span className={GARMENT_CARD_SELECTION_PART_CLASSNAME}>
+                              Fabric Selection {selectionNumber}
+                            </span>
+                            {allocationCapacity ? (
+                              <span className="contents" data-fabric-allocation-capacity="true">
+                                <span className={GARMENT_CARD_SELECTION_PART_CLASSNAME}>
+                                  <span className="sr-only"> · </span>
+                                  Capacity: {allocationCapacity.usedUnits}/
+                                  {allocationCapacity.usedUnits +
+                                    allocationCapacity.remainingUnits}
+                                </span>
+                                {allocationCapacity.remainingUnits > 0 ? (
+                                  <span className={GARMENT_CARD_SELECTION_PART_CLASSNAME}>
+                                    <span className="sr-only"> · </span>
+                                    {allocationCapacity.remainingUnits}/2 available
+                                  </span>
+                                ) : null}
                               </span>
-                            </>
-                          ) : null}
-                        </p>
+                            ) : null}
+                          </p>
+                        </div>
                       </>
                     ) : (
                       <p className="text-xs text-heritage-ink/60">
@@ -3785,7 +3800,7 @@ export const DormantFutureFabricStep = ({
                       </p>
                     )}
                     <div
-                      className="mt-auto flex min-w-0 flex-wrap items-center justify-between gap-2 pt-1"
+                      className="mt-auto flex min-w-0 flex-nowrap items-center justify-between gap-2 pt-1"
                       data-garment-card-status-row="true"
                     >
                       {assigned ? (
@@ -3793,18 +3808,18 @@ export const DormantFutureFabricStep = ({
                       ) : (
                         <span aria-hidden="true" />
                       )}
-                      <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                      <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
                         {selectionHighlight === "changing" ? (
                           <span
                             data-fabric-selection-changing-tag="true"
-                            className="shrink-0 rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
+                            className="shrink-0 whitespace-nowrap rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
                           >
                             Changing
                           </span>
                         ) : null}
                         <span
                           data-garment-fabric-badge="true"
-                          className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide ${
+                          className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide ${
                             assigned
                               ? "border-heritage-green/25 bg-heritage-green/5 text-heritage-green"
                               : "border-heritage-gold/30 bg-white text-heritage-green"
