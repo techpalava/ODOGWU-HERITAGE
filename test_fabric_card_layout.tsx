@@ -1,5 +1,5 @@
 /**
- * Fabric step garment cards: photo-left layout and the green half/full piece
+ * Fabric step garment cards: photo-banner layout, facts grid and the green half/full piece
  * marker. Pure UI: the marker reads the garment's existing fabricUnits, badges
  * stay one number per fabric piece, and the cards stay wired to the Garment
  * Type selection, × removal, Continue gating and a restored draft.
@@ -31,7 +31,10 @@ const reactDomRuntime = require("react-dom") as {
   createPortal: (children: unknown, container: unknown) => unknown;
 };
 reactDomRuntime.createPortal = (children) => children;
-const { DormantFutureFabricStep } = await import("./src/components/DormantFutureFabricStep");
+const { DormantFutureFabricStep, formatGarmentCardFreeCapacity } = await import(
+  "./src/components/DormantFutureFabricStep"
+);
+assert.equal(formatGarmentCardFreeCapacity(1), "½ free");
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 // --- Marker rules come straight from fabricUnits ---
@@ -136,8 +139,7 @@ const readCards = (root: ReactTestInstance) =>
         badge: badges.length ? textContent(badges[0]) : null,
         marker: markers.length ? String(markers[0].props["data-fabric-piece-usage"]) : null,
         markerText: markers.length ? textContent(markers[0]) : null,
-        // The leading " · " is screen-reader only (the visible dot is CSS).
-        capacity: capacity.length ? textContent(capacity[0]).replace(/^\s*·\s*/, "") : null,
+        capacity: capacity.length ? textContent(capacity[0]) : null,
       };
     });
 
@@ -158,9 +160,9 @@ let cards = readCards(renderer.root);
 assert.deepEqual(
   cards.map(({ key, status, badge, marker, capacity }) => ({ key, status, badge, marker, capacity })),
   [
-    { key: "base:shirt", status: "assigned", badge: "1", marker: "half", capacity: "Capacity: 2/2" },
-    { key: "base:trouser", status: "assigned", badge: "1", marker: "half", capacity: "Capacity: 2/2" },
-    { key: "base:full_length_gown", status: "assigned", badge: "2", marker: "full", capacity: "Capacity: 2/2" },
+    { key: "base:shirt", status: "assigned", badge: "1", marker: "half", capacity: "2/2" },
+    { key: "base:trouser", status: "assigned", badge: "1", marker: "half", capacity: "2/2" },
+    { key: "base:full_length_gown", status: "assigned", badge: "2", marker: "full", capacity: "2/2" },
   ],
   "badges stay one number per piece; the long-length garment shows Full piece",
 );
@@ -179,44 +181,61 @@ const shirtCard = renderer.root.findByProps({
   "data-garment-key": "base:shirt",
   "data-assignment-status": "assigned",
 });
-const titleRow = shirtCard.findByProps({ "data-garment-card-title-row": "true" });
-const titleHosts = titleRow.children.filter(
-  (child): child is ReactTestInstance => typeof child !== "string",
-);
-assert.equal(titleHosts[0].props["data-fabric-selection-badge"], "true", "badge leads the top row");
-assert.equal(textContent(titleHosts[1]), "Standard Shirt");
-assert.equal(titleHosts[2].props["aria-label"], "Remove fabric from Standard Shirt", "× ends the top row");
-assert.match(String(titleHosts[2].props.className), /\bml-auto\b/, "× is pushed to the right");
+const banner = shirtCard.findByProps({ "data-garment-card-banner": "true" });
+assert.match(String(banner.props.className), /h-\[92px\]/, "photo banner is about 92px tall");
+assert.match(String(banner.props.className), /-mx-4 -mt-4/, "banner spans the full card width");
+const photo = banner.findByProps({ "data-assigned-fabric-preview": "true" });
+assert.equal(photo.props.className, GARMENT_CARD_FABRIC_PHOTO_CLASSNAME);
+assert.match(GARMENT_CARD_FABRIC_PHOTO_CLASSNAME, /absolute inset-0 h-full w-full/);
+const badgeOnBanner = banner.findByProps({ "data-fabric-selection-badge": "true" });
+assert.match(String(badgeOnBanner.props.className), /absolute left-3 top-3/, "badge sits top-left on the photo");
+assert.match(String(badgeOnBanner.props.className), /shadow-\[/, "badge has a soft drop shadow");
+assert.doesNotMatch(String(badgeOnBanner.props.className), /\bring-|\bborder\b/, "badge has no white ring");
+const removeButton = banner.findByProps({ "aria-label": "Remove fabric from Standard Shirt" });
+assert.match(String(removeButton.props.className), /absolute right-1 top-1/, "× sits top-right on the photo");
+const statusRow = banner.findByProps({ "data-garment-card-status-row": "true" });
+assert.match(String(statusRow.props.className), /absolute bottom-2 right-2/, "tags sit bottom-right on the photo");
+const assignedTag = statusRow.findByProps({ "data-garment-fabric-badge": "true" });
+assert.equal(textContent(assignedTag), "Assigned");
+assert.match(String(assignedTag.props.className), /\bbg-white\b/);
+assert.equal(textContent(shirtCard.findByProps({ "data-garment-card-title": "true" })), "Standard Shirt");
 const fabricLine = shirtCard.findByProps({ "data-garment-card-fabric-line": "true" });
 assert.equal(textContent(fabricLine), "Card Layout A CL-A", "fabric name and muted code on one line");
-const selectionLine = shirtCard.findByProps({ "data-garment-card-selection-line": "true" });
-assert.equal(textContent(selectionLine), "Fabric Selection 1 · Capacity: 2/2");
-const selectionParts = selectionLine.findAll(
-  (n) => typeof n.type === "string" && /\bwhitespace-nowrap\b/.test(String(n.props.className)),
-);
-assert.equal(selectionParts.length, 2, "Fabric Selection and Capacity are each one unbreakable part");
-for (const part of selectionParts) {
-  assert.match(String(part.props.className), /before:content-\['·'\]/, "the dot is drawn before each part");
-}
-assert.match(String(selectionLine.props.className), /\boverflow-hidden\b/, "a dot that starts a wrapped line is clipped");
-assert.match(String(selectionLine.findByType("p").props.className), /text-heritage-gold/);
 const codeSpan = fabricLine.findByProps({ children: "CL-A" });
 assert.match(String(codeSpan.props.className), /\bwhitespace-nowrap\b/, "the fabric code never breaks inside");
-const statusRow = shirtCard.findByProps({ "data-garment-card-status-row": "true" });
-assert.equal(statusRow.findAll((n) => n.props["data-fabric-piece-usage"] === "half").length > 0, true);
-assert.equal(textContent(statusRow.findByProps({ "data-garment-fabric-badge": "true" })), "Assigned");
-assert.match(String(statusRow.props.className), /\bflex-nowrap\b/, "marker and tags share one row");
-assert.match(String(statusRow.props.className), /\bjustify-between\b/);
+const facts = shirtCard.findByProps({ "data-garment-card-facts": "true" });
+assert.equal(facts.type, "dl");
+assert.match(String(facts.props.className), /grid-cols-\[1fr_auto\]/);
+assert.match(String(facts.props.className), /\bborder-t\b/, "thin divider above the facts");
+const fact = (name: string) => facts.findByProps({ "data-garment-card-fact": name });
+assert.equal(textContent(fact("selection")), "Selection1");
+assert.equal(textContent(fact("capacity")), "Capacity2/2");
+assert.match(String(fact("capacity").props.className), /\btext-right\b/, "capacity is right-aligned");
 assert.match(
-  String(statusRow.findByProps({ "data-garment-fabric-badge": "true" }).props.className),
+  String(fact("capacity").findByProps({ "data-fabric-allocation-capacity": "true" }).props.className),
   /\bwhitespace-nowrap\b/,
 );
-const photo = shirtCard.findByProps({ "data-assigned-fabric-preview": "true" });
-assert.equal(photo.props.className, GARMENT_CARD_FABRIC_PHOTO_CLASSNAME);
-assert.match(GARMENT_CARD_FABRIC_PHOTO_CLASSNAME, /h-\[88px\] w-\[88px\] shrink-0/, "photo shrinks on phones");
-assert.match(GARMENT_CARD_FABRIC_PHOTO_CLASSNAME, /sm:h-\[104px\] sm:w-\[104px\]/, "104px square from sm up");
+assert.equal(fact("uses").findAll((n) => n.props["data-fabric-piece-usage"] === "half").length > 0, true);
+const grid = renderer.root.findByProps({ "data-garment-card-grid": "true" });
+assert.match(String(grid.props.className), /\bitems-stretch\b/, "cards in a row share one height");
+assert.match(String(grid.props.className), /minmax\(230px,1fr\)/, "columns auto-fill at a ~230px minimum");
 const change = shirtCard.findByProps({ "aria-label": "Change fabric for Standard Shirt" });
 assert.match(String(change.props.className), /\bw-full\b/, "Change Fabric is full width");
+
+// --- Changing state: the CHANGING tag joins ASSIGNED on the banner ---
+await act(async () => {
+  change.props.onClick({ currentTarget: change.instance ?? null });
+});
+const changingCard = renderer.root.findByProps({
+  "data-garment-key": "base:shirt",
+  "data-assignment-status": "assigned",
+});
+assert.equal(changingCard.props["data-fabric-selection-highlight"], "changing");
+const changingRow = changingCard.findByProps({ "data-garment-card-status-row": "true" });
+assert.equal(changingRow.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length, 1);
+await act(async () => {
+  renderer.update(renderStep(selection, state));
+});
 
 // --- (c) Continue gating unchanged: complete state shows Continue ---
 const completeContinue = renderer.root.findAll(
@@ -240,7 +259,7 @@ assert.deepEqual(
   { status: "unassigned", badge: null, marker: null },
   "removed garment returns to an unassigned card with no badge or marker",
 );
-assert.equal(cards.find((card) => card.key === "base:trouser")!.capacity, "Capacity: 1/2 · 1/2 available");
+assert.equal(cards.find((card) => card.key === "base:trouser")!.capacity, "1/2 (½ free)");
 const unassigned = renderer.root.findByProps({
   "data-garment-key": "base:shirt",
   "data-assignment-status": "unassigned",
@@ -294,4 +313,4 @@ assert.deepEqual(readCards(renderer.root), live, "a restored draft shows the sam
 await act(async () => {
   renderer.unmount();
 });
-console.log("PASS: Fabric garment cards use the photo-left layout and the half/full piece marker");
+console.log("PASS: Fabric garment cards use the photo-banner layout, facts grid and half/full piece marker");

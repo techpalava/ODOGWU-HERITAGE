@@ -360,8 +360,15 @@ assert.equal(textContent(shirtBadge), "1");
 assert.equal(textContent(skirtBadge), "2");
 assert.equal(shirtBadge.props.className, trouserBadge.props.className);
 assert.notEqual(shirtBadge.props.className, skirtBadge.props.className);
-assert.match(textContent(shirtCard), /Fabric Selection 1/);
-assert.match(textContent(skirtCard), /Fabric Selection 2/);
+// The card's facts grid shows "SELECTION" with the number under it.
+assert.equal(
+  textContent(shirtCard.findByProps({ "data-garment-card-fact": "selection" })),
+  "Selection1",
+);
+assert.equal(
+  textContent(skirtCard.findByProps({ "data-garment-card-fact": "selection" })),
+  "Selection2",
+);
 assert.equal(
   shirtCard.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length,
   0,

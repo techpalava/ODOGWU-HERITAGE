@@ -142,20 +142,21 @@ for (const card of [assignedCard, unassignedCard]) {
     /\bflex-1\b/,
     "card content grows so the action button pins to the bottom of every card",
   );
-  assert.match(String(content.props.className), /\bflex-row\b/, "photo sits left of the details at every width");
-  assert.equal(content.props["data-garment-card-layout"], "photo-left");
-  const [photo] = hostChildren(content);
+  assert.equal(content.props["data-garment-card-layout"], "photo-banner");
+  const [banner] = hostChildren(content);
+  assert.equal(banner.props["data-garment-card-banner"], "true", "the photo banner is the first item");
+  const [photo] = hostChildren(banner);
   assert.ok(
     photo.props.className === GARMENT_CARD_FABRIC_PHOTO_CLASSNAME ||
       photo.props["data-unassigned-fabric-placeholder"] === "true",
-    "the fabric photo (or its placeholder) is the first, left-hand item",
+    "the fabric photo (or its placeholder) fills the banner",
   );
   assert.equal(action.type, "button", "the action button is the last item in every card");
   const badge = card.findByProps({ "data-garment-fabric-badge": "true" });
   const statusRow = card.findByProps({ "data-garment-card-status-row": "true" });
   assert.ok(
     statusRow.findAll((node) => node === badge).length === 1,
-    "the ASSIGNED / Needs fabric tag sits in the bottom status row",
+    "the ASSIGNED / Needs fabric tag sits on the banner",
   );
 }
 assert.equal(
