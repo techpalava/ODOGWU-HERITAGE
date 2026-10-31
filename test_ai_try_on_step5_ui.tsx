@@ -235,6 +235,7 @@ const twoWearers: WearerOrderStateV2 = {
     status: "available",
     triesPerOrder: 5,
     orderTriesRemaining: 3,
+    storedPreviews: [],
   });
   assert.equal(calls[0], "/api/ai-try-on?orderKey=tryon-abc12345");
   assert.deepEqual(
@@ -319,9 +320,12 @@ const twoWearers: WearerOrderStateV2 = {
   assert.match(first, /^tryon-[0-9a-f]{32}$/);
   assert.match(first, /^[A-Za-z0-9][A-Za-z0-9._:-]{7,191}$/, "matches the server order key pattern");
   assert.equal(getOrCreateAiTryOnOrderKey("guest", store), first, "stable across reloads");
-  assert.notEqual(getOrCreateAiTryOnOrderKey("authenticated:uid-1", store), first);
+  const authKey = getOrCreateAiTryOnOrderKey("authenticated:uid-1", store);
+  assert.notEqual(authKey, first);
   assert.equal(backing.get(AI_TRY_ON_ORDER_KEY_STORAGE_KEY)?.includes("base64"), false);
-  clearAiTryOnOrderKeys(store);
+  const deletedOrders: string[] = [];
+  clearAiTryOnOrderKeys(store, (orderKey) => deletedOrders.push(orderKey));
+  assert.deepEqual(deletedOrders.sort(), [first, authKey].sort(), "stored previews deleted when the draft is cleared");
   assert.notEqual(getOrCreateAiTryOnOrderKey("guest", store), first, "new order → new tries");
   const sessionSource = readFileSync("src/services/guestOrderSessionService.ts", "utf8");
   assert.match(sessionSource, /clearFutureDesignDraft: \(\): void => \{[\s\S]*?clearAiTryOnOrderKeys\(\);/);
@@ -366,7 +370,6 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps> = {}) => {
         orderTriesRemaining: 4,
       };
     },
-    loadReferenceImage: async () => fakeImage,
     preparePhoto: async () => fakeImage,
     createThumbnailUrl: () => null,
     revokeThumbnailUrl: () => undefined,
@@ -456,7 +459,10 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   const sent = requests[0] as Record<string, unknown>;
   assert.equal(sent.mode, "garment");
   assert.equal(sent.inputFingerprint, "tryon-v1-0123456789abcdef", "Ada's own fingerprint");
-  assert.equal("fabricSwatchImage" in sent, false);
+  assert.equal("fabricSwatchImageUrl" in sent, false);
+  assert.equal(sent.garmentImageUrl, "https://example.test/style-a.jpg", "server loads the picture");
+  assert.equal("garmentImage" in sent, false, "no client-side reference download");
+  assert.equal(sent.wearerKey, "w-ada");
   const result = renderer.root.find((node) => node.type === "img" && /AI try-on preview for Ada/.test(node.props.alt));
   assert.equal(result.props.src, "data:image/png;base64,iVBORw0KGgo=");
   assert.match(textOf(renderer.root), new RegExp(AI_TRY_ON_PREVIEW_DISCLAIMER.slice(0, 40)));
@@ -475,22 +481,16 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
 }
 
 {
-  // Fabric mode sends the swatch third.
-  const loaded: string[] = [];
+  // Fabric mode sends the swatch URL; the server loads it third.
   const { renderer, requests } = renderPanel({
     targets: [target({ mode: "fabric", fabricSwatchImageUrl: "https://example.test/red.jpg" })],
-    loadReferenceImage: async (url) => {
-      loaded.push(url);
-      return fakeImage;
-    },
   });
   await choosePhoto(renderer);
   await act(async () => {
     await generateButton(renderer).props.onClick();
   });
-  assert.deepEqual(loaded, ["https://example.test/style-a.jpg", "https://example.test/red.jpg"]);
   assert.equal((requests[0] as { mode: string }).mode, "fabric");
-  assert.ok((requests[0] as { fabricSwatchImage?: unknown }).fabricSwatchImage);
+  assert.equal((requests[0] as { fabricSwatchImageUrl?: string }).fabricSwatchImageUrl, "https://example.test/red.jpg");
 }
 
 const errorCases: Array<[AiTryOnPreviewOutcome, string]> = [
@@ -539,16 +539,14 @@ for (const [outcome, text] of errorCases) {
   assert.match(textOf(gif.renderer.root), /Please choose a JPEG, PNG or WebP photo\./);
   assert.equal(generateButton(gif.renderer).props.disabled, true);
 
-  let posted = 0;
+  // The server could not load a catalogue picture: failed, no try used.
   const cors = renderPanel({
-    loadReferenceImage: async () => { throw new Error("cors"); },
-    requestPreview: async () => { posted += 1; return { kind: "failed", orderTriesRemaining: null }; },
+    requestPreview: async () => ({ kind: "failed", orderTriesRemaining: 5 }),
   });
   await choosePhoto(cors.renderer);
   await act(async () => {
     await generateButton(cors.renderer).props.onClick();
   });
-  assert.equal(posted, 0, "no request (and no try) when a reference picture cannot load");
   assert.match(textOf(cors.renderer.root), /so you still have 5 left/);
 
   const uploadedDesign = renderPanel({ targets: [target({ garmentImageUrl: null })] });
@@ -645,7 +643,6 @@ for (const [outcome, text] of errorCases) {
           onUnavailable: () => undefined,
           onGeneratingChange: setGenerating,
           requestPreview: () => new Promise<AiTryOnPreviewOutcome>((done) => { resolve = done; }),
-          loadReferenceImage: async () => fakeImage,
           preparePhoto: async () => fakeImage,
           createThumbnailUrl: () => null,
           revokeThumbnailUrl: () => undefined,
@@ -781,15 +778,21 @@ class FakeFirestore {
     getDb: () => db.asFirestore(),
     consumeIpRateLimit: async () => undefined,
     createGenerateContent: () => async () => { throw Object.assign(new Error("upstream"), { status: 503 }); },
+    createPreviewStore: () => ({
+      save: async () => { throw new Error("not expected"); },
+      list: async () => [],
+      read: async () => null,
+      remove: async () => 0,
+    }),
     log: () => undefined,
   };
   await createAiTryOnUsageLimits(db.asFirestore()).reserve("tryon-order-0002");
   const get = response();
   await handleAiTryOn({ method: "GET", headers: {}, query: { route: "ai-try-on", orderKey: "tryon-order-0002" } } as never, get.res, deps as never);
-  assert.deepEqual(get.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4 });
+  assert.deepEqual(get.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4, previews: [] });
   const getUrl = response();
   await handleAiTryOn({ method: "GET", headers: {}, url: "/api/ai-try-on?orderKey=tryon-order-0002" } as never, getUrl.res, deps as never);
-  assert.deepEqual(getUrl.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4 });
+  assert.deepEqual(getUrl.state.body, { status: "available", triesPerOrder: 5, orderTriesRemaining: 4, previews: [] });
   const getBad = response();
   await handleAiTryOn({ method: "GET", headers: {}, query: { orderKey: "x" } } as never, getBad.res, deps as never);
   assert.deepEqual(getBad.state.body, { status: "available", triesPerOrder: 5 }, "invalid key ignored");

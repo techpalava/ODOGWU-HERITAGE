@@ -6,6 +6,7 @@ import {
   Loader2,
   Sparkles,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import type { AiTryOnVerifiedPrivateResultReference } from "../types";
 import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract";
@@ -15,7 +16,6 @@ import {
   AiTryOnPhotoError,
   AI_TRY_ON_PHOTO_PROCESSING_ERROR,
   fitsAiTryOnTotalLimit,
-  loadAiTryOnReferenceImage,
   prepareAiTryOnPersonPhoto,
   validateAiTryOnPhotoFile,
 } from "../utils/aiTryOnPhoto";
@@ -23,15 +23,21 @@ import {
   requestAiTryOnPreview,
   type AiTryOnPreviewOutcome,
 } from "../services/aiTryOnGateway";
-import type { AiTryOnGenerationRequest } from "../utils/aiTryOnGatewayContract";
+import type {
+  AiTryOnGenerationRequest,
+  AiTryOnStoredPreviewSummary,
+} from "../utils/aiTryOnGatewayContract";
 
 /**
  * Step 5 AI Try-on photo panel: wearer picker, consent notice, "How we use
  * your photo", photo tips, photo picker, Generate, result and errors.
  *
- * Privacy boundary: the photo and the preview live only in this
- * component's memory. Nothing here is written to the draft, the order or
- * browser storage; the parent receives only the opaque result reference.
+ * Privacy boundary: the photo lives only in this component's memory and in
+ * the generation request; it is dropped once the preview is made. The
+ * preview is shown from memory; the server keeps it privately (Step 6) and
+ * this panel restores it after a reload through the owner-only gateway.
+ * Nothing here is written to the draft, the order or browser storage; the
+ * parent receives only the opaque result reference.
  */
 
 export const AI_TRY_ON_CONSENT_NOTICE =
@@ -83,9 +89,13 @@ export const AI_TRY_ON_MESSAGES = {
   failed: (left: number) =>
     `We couldn't create a preview this time. This try wasn't counted, so you still have ${left} left. Try again, or use a different photo.`,
   photoBlocked: "We couldn't use this photo. This try wasn't counted. Please try a different photo.",
+  previewDeleted: "Your preview was deleted.",
+  deleteFailed: "We couldn't delete your preview. Please try again.",
 } as const;
 
 type PanelMessage =
+  | { kind: "preview_deleted" }
+  | { kind: "delete_failed" }
   | { kind: "out_of_previews" }
   | { kind: "too_many_tries" }
   | { kind: "failed"; left: number }
@@ -101,6 +111,10 @@ const messageText = (message: PanelMessage): string => {
       return AI_TRY_ON_MESSAGES.failed(message.left);
     case "photo_blocked":
       return AI_TRY_ON_MESSAGES.photoBlocked;
+    case "preview_deleted":
+      return AI_TRY_ON_MESSAGES.previewDeleted;
+    case "delete_failed":
+      return AI_TRY_ON_MESSAGES.deleteFailed;
   }
 };
 
@@ -108,6 +122,8 @@ interface WearerPreview {
   inputFingerprint: string;
   mimeType: string;
   data: string;
+  /** Server-side id when the preview is stored privately. */
+  storedPreviewId: string | null;
 }
 
 interface SelectedPhoto {
@@ -131,7 +147,12 @@ export interface AiTryOnPhotoPanelProps {
   /** True while a preview is generating; the step hides its skip button. */
   onGeneratingChange?: (generating: boolean) => void;
   requestPreview?: (request: AiTryOnGenerationRequest) => Promise<AiTryOnPreviewOutcome>;
-  loadReferenceImage?: (url: string) => Promise<AiTryOnInlineImage>;
+  /** Stored, still-valid previews of this order (from GET). */
+  storedPreviews?: readonly AiTryOnStoredPreviewSummary[];
+  /** Owner-only read of a stored preview; null when it is gone. */
+  loadStoredPreview?: (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
+  /** Deletes a stored preview; true on success. */
+  deleteStoredPreview?: (previewId: string) => Promise<boolean>;
   preparePhoto?: (file: File) => Promise<AiTryOnInlineImage>;
   createThumbnailUrl?: (file: File) => string | null;
   revokeThumbnailUrl?: (url: string) => void;
@@ -156,7 +177,9 @@ export const AiTryOnPhotoPanel = ({
   onUnavailable,
   onGeneratingChange,
   requestPreview = (request) => requestAiTryOnPreview({ request }),
-  loadReferenceImage = (url) => loadAiTryOnReferenceImage(url),
+  storedPreviews = [],
+  loadStoredPreview = async () => null,
+  deleteStoredPreview = async () => false,
   preparePhoto = (file) => prepareAiTryOnPersonPhoto(file),
   createThumbnailUrl = defaultThumbnail,
   revokeThumbnailUrl = defaultRevoke,
@@ -175,6 +198,12 @@ export const AiTryOnPhotoPanel = ({
   const [generating, setGenerating] = useState(false);
   const [triesRemaining, setTriesRemaining] = useState<number | null>(initialTriesRemaining);
   const [previews, setPreviews] = useState<Record<string, WearerPreview>>({});
+  /** Stored previews by wearer, minus any deleted in this session. */
+  const [stored, setStored] = useState<Record<string, AiTryOnStoredPreviewSummary>>(() =>
+    Object.fromEntries(storedPreviews.map((entry) => [entry.wearerKey, entry])),
+  );
+  const [deleting, setDeleting] = useState(false);
+  const restoringRef = useRef(new Set<string>());
   const [message, setMessage] = useState<PanelMessage | null>(
     initialTriesRemaining === 0 ? { kind: "out_of_previews" } : null,
   );
@@ -224,8 +253,71 @@ export const AiTryOnPhotoPanel = ({
   const hasPreview = (entry: AiTryOnWearerTarget) =>
     Boolean(
       entry.inputFingerprint &&
-        previews[entry.wearerId]?.inputFingerprint === entry.inputFingerprint,
+        (previews[entry.wearerId]?.inputFingerprint === entry.inputFingerprint ||
+          stored[entry.wearerId]?.inputFingerprint === entry.inputFingerprint),
     );
+
+  // Reload: restore the selected wearer's stored preview while it is valid
+  // for that wearer's current design.
+  useEffect(() => {
+    if (!target?.inputFingerprint) return;
+    const summary = stored[target.wearerId];
+    if (!summary || summary.inputFingerprint !== target.inputFingerprint) return;
+    if (previews[target.wearerId]?.inputFingerprint === target.inputFingerprint) return;
+    if (restoringRef.current.has(summary.previewId)) return;
+    restoringRef.current.add(summary.previewId);
+    const wearerId = target.wearerId;
+    void loadStoredPreview(summary.previewId).then((image) => {
+      if (!image) {
+        setStored((current) => {
+          const next = { ...current };
+          if (next[wearerId]?.previewId === summary.previewId) delete next[wearerId];
+          return next;
+        });
+        return;
+      }
+      setPreviews((current) =>
+        current[wearerId]?.inputFingerprint === summary.inputFingerprint
+          ? current
+          : {
+              ...current,
+              [wearerId]: {
+                inputFingerprint: summary.inputFingerprint,
+                mimeType: image.mimeType,
+                data: image.data,
+                storedPreviewId: summary.previewId,
+              },
+            },
+      );
+    });
+  }, [target?.wearerId, target?.inputFingerprint, stored, previews, loadStoredPreview]);
+
+  const handleDeletePreview = async () => {
+    if (!target || !preview?.storedPreviewId || deleting) return;
+    const wearerId = target.wearerId;
+    const previewId = preview.storedPreviewId;
+    setDeleting(true);
+    try {
+      const ok = await deleteStoredPreview(previewId);
+      if (!ok) {
+        setMessage({ kind: "delete_failed" });
+        return;
+      }
+      setPreviews((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      setStored((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      setMessage({ kind: "preview_deleted" });
+    } finally {
+      setDeleting(false);
+    }
+  };
   const missingGarmentImage = Boolean(target && !target.garmentImageUrl);
   const canGenerate =
     Boolean(target?.inputFingerprint) &&
@@ -291,30 +383,21 @@ export const AiTryOnPhotoPanel = ({
     setGenerating(true);
     setMessage(null);
     try {
-      let garmentImage: AiTryOnInlineImage;
-      let fabricSwatchImage: AiTryOnInlineImage | undefined;
-      try {
-        garmentImage = await loadReferenceImage(target.garmentImageUrl);
-        if (target.mode === "fabric" && target.fabricSwatchImageUrl) {
-          fabricSwatchImage = await loadReferenceImage(target.fabricSwatchImageUrl);
-        }
-      } catch {
-        // No request was sent, so no try was used.
+      if (!fitsAiTryOnTotalLimit([currentPhoto.image])) {
         setMessage({ kind: "failed", left });
         return;
       }
-      const images = [currentPhoto.image, garmentImage, ...(fabricSwatchImage ? [fabricSwatchImage] : [])];
-      if (!fitsAiTryOnTotalLimit(images)) {
-        setMessage({ kind: "failed", left });
-        return;
-      }
+      // Step 6: the server loads the catalogue pictures itself, so browser
+      // CORS on the Storage bucket no longer matters.
+      const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
       const request: AiTryOnGenerationRequest = {
-        mode: fabricSwatchImage ? "fabric" : "garment",
+        mode: fabricMode ? "fabric" : "garment",
         orderKey,
         inputFingerprint,
+        wearerKey: wearerId,
         personImage: currentPhoto.image,
-        garmentImage,
-        ...(fabricSwatchImage ? { fabricSwatchImage } : {}),
+        garmentImageUrl: target.garmentImageUrl,
+        ...(fabricMode ? { fabricSwatchImageUrl: target.fabricSwatchImageUrl! } : {}),
         ...(target.fitHints.length ? { fitHints: target.fitHints } : {}),
         ...(target.orderDetails ? { orderDetails: target.orderDetails } : {}),
       };
@@ -327,8 +410,15 @@ export const AiTryOnPhotoPanel = ({
               inputFingerprint,
               mimeType: outcome.preview.mimeType,
               data: outcome.preview.data,
+              storedPreviewId: outcome.storedPreviewId ?? null,
             },
           }));
+          // The new preview replaces this wearer's stored one on the server.
+          setStored((current) => {
+            const next = { ...current };
+            delete next[wearerId];
+            return next;
+          });
           const remaining = outcome.orderTriesRemaining ?? Math.max(0, left - 1);
           setTriesRemaining(remaining);
           // The photo has done its job; drop it from memory.
@@ -541,11 +631,19 @@ export const AiTryOnPhotoPanel = ({
         {!generating && message && (
           <div
             id={`${idPrefix}-message`}
-            role="alert"
+            role={message.kind === "preview_deleted" ? "status" : "alert"}
             data-ai-try-on-message={message.kind}
-            className="flex items-start gap-3 rounded-xl border border-heritage-gold/40 bg-amber-50 p-4"
+            className={
+              message.kind === "preview_deleted"
+                ? "flex items-start gap-3 rounded-xl border border-heritage-green/25 bg-heritage-cream/40 p-4"
+                : "flex items-start gap-3 rounded-xl border border-heritage-gold/40 bg-amber-50 p-4"
+            }
           >
-            <AlertTriangle aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
+            {message.kind === "preview_deleted" ? (
+              <CheckCircle2 aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-green" />
+            ) : (
+              <AlertTriangle aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
+            )}
             <p className="text-sm leading-relaxed text-heritage-ink/85">{messageText(message)}</p>
           </div>
         )}
@@ -561,6 +659,22 @@ export const AiTryOnPhotoPanel = ({
           <figcaption className="text-xs leading-relaxed text-heritage-ink/65">
             {AI_TRY_ON_PREVIEW_DISCLAIMER}
           </figcaption>
+          {preview.storedPreviewId && (
+            <button
+              type="button"
+              onClick={handleDeletePreview}
+              disabled={deleting}
+              data-ai-try-on-delete
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/25 bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green hover:border-heritage-green disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? (
+                <Loader2 aria-hidden="true" size={14} className="animate-spin" />
+              ) : (
+                <Trash2 aria-hidden="true" size={14} />
+              )}
+              Delete my preview
+            </button>
+          )}
         </figure>
       )}
     </div>

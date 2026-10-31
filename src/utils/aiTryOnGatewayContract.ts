@@ -53,9 +53,14 @@ export interface AiTryOnGenerationRequest {
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
   readonly inputFingerprint: string;
   readonly personImage: AiTryOnInlineImage;
-  readonly garmentImage: AiTryOnInlineImage;
-  /** Required in `fabric` mode, refused in `garment` mode. */
+  /** Garment picture: inline, or (Step 6) a catalogue URL the server loads. */
+  readonly garmentImage?: AiTryOnInlineImage;
+  readonly garmentImageUrl?: string;
+  /** Required in `fabric` mode (inline or URL), refused in `garment` mode. */
   readonly fabricSwatchImage?: AiTryOnInlineImage;
+  readonly fabricSwatchImageUrl?: string;
+  /** Wearer the preview belongs to (one stored preview per wearer). */
+  readonly wearerKey?: string;
   readonly fitHints?: readonly AiTryOnFitHint[];
   /** Visible order details (ids/enums only); rendered server-side. */
   readonly orderDetails?: AiTryOnOrderDetails | null;
@@ -70,7 +75,17 @@ export type AiTryOnErrorCode =
   | "ORDER_TRY_LIMIT_REACHED"
   | "GLOBAL_LIMIT_REACHED"
   | "PROVIDER_REJECTED"
-  | "PROVIDER_FAILED";
+  | "PROVIDER_FAILED"
+  | "REFERENCE_IMAGE_UNAVAILABLE"
+  | "PREVIEW_NOT_FOUND";
+
+/** A stored preview of this order (Step 6), listed by GET ?orderKey=. */
+export interface AiTryOnStoredPreviewSummary {
+  readonly previewId: string;
+  readonly wearerKey: string;
+  readonly inputFingerprint: string;
+  readonly expiresAt: string;
+}
 
 export type AiTryOnAvailabilityResponse =
   | {
@@ -78,6 +93,8 @@ export type AiTryOnAvailabilityResponse =
       readonly triesPerOrder: number;
       /** Present when GET carried `?orderKey=`. */
       readonly orderTriesRemaining?: number;
+      /** Live stored previews of this order (GET ?orderKey=). */
+      readonly previews?: readonly AiTryOnStoredPreviewSummary[];
     }
   | { readonly status: "unavailable"; readonly code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED" };
 
@@ -89,8 +106,10 @@ export interface AiTryOnGenerationSuccess {
     readonly assetId: string;
     readonly ownerBindingId: string;
   };
-  /** Returned inline only. Private preview storage is Step 6. */
+  /** Returned inline; also stored privately when `previewStored` is true. */
   readonly image: { readonly mimeType: string; readonly data: string };
+  readonly previewStored: boolean;
+  readonly previewExpiresAt?: string;
   readonly orderTriesRemaining: number;
   /** Prompt wording the image was made with. */
   readonly promptVersion: string;
