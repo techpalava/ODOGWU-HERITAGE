@@ -242,6 +242,16 @@ const changingCard = renderer.root.findByProps({
 assert.equal(changingCard.props["data-fabric-selection-highlight"], "changing");
 const changingRow = changingCard.findByProps({ "data-garment-card-status-row": "true" });
 assert.equal(changingRow.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length, 1);
+const otherDuringChange = renderer.root.findByProps({
+  "data-garment-key": "base:trouser",
+  "data-assignment-status": "assigned",
+});
+assert.equal(otherDuringChange.props["data-fabric-selection-highlight"], "dimmed");
+assert.doesNotMatch(String(otherDuringChange.props.className), /opacity-|grayscale/, "other cards stay in full colour");
+assert.equal(otherDuringChange.findAllByProps({ "data-fabric-selection-changing-tag": "true" }).length, 0);
+for (const button of otherDuringChange.findAllByType("button")) {
+  assert.notEqual(button.props.disabled, true, "other cards' buttons keep today's (enabled) state");
+}
 await act(async () => {
   renderer.update(renderStep(selection, state));
 });
