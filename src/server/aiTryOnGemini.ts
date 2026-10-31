@@ -90,6 +90,7 @@ export const runAiTryOnGemini = async ({
   generateContent,
   prompt,
   images,
+  imageLabels = null,
   timeoutMs = 50_000,
   secret,
 }: {
@@ -97,6 +98,8 @@ export const runAiTryOnGemini = async ({
   prompt: string;
   /** Ordered as described by the prompt: person, garment, then fabric swatch. */
   images: readonly AiTryOnInlineImage[];
+  /** Optional text label sent before each image (garment mode, prompt v3). */
+  imageLabels?: readonly string[] | null;
   timeoutMs?: number;
   secret?: string | null;
 }): Promise<AiTryOnGeminiOutcome> => {
@@ -110,9 +113,11 @@ export const runAiTryOnGemini = async ({
           role: "user",
           parts: [
             { text: prompt },
-            ...images.map((image) => ({
-              inlineData: { mimeType: image.mimeType, data: image.data },
-            })),
+            ...images.flatMap((image, index) => {
+              const label = imageLabels?.[index];
+              const imagePart = { inlineData: { mimeType: image.mimeType, data: image.data } };
+              return label ? [{ text: label }, imagePart] : [imagePart];
+            }),
           ],
         },
       ],

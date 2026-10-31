@@ -18,7 +18,7 @@ import {
   runAiTryOnGemini,
   type AiTryOnGenerateContent,
 } from "./aiTryOnGemini.js";
-import { buildAiTryOnPrompt } from "./aiTryOnPrompt.js";
+import { buildAiTryOnImageLabels, buildAiTryOnPrompt } from "./aiTryOnPrompt.js";
 import {
   createAiTryOnPreviewId,
   createAiTryOnPreviewStore,
@@ -660,6 +660,7 @@ export async function handleAiTryOn(
       orderDetails: parsed.orderDetails,
     }),
     images,
+    imageLabels: buildAiTryOnImageLabels(parsed.mode),
     secret: apiKey,
   });
   const latencyMs = now() - startedAt;
