@@ -9,6 +9,12 @@ import type {
 } from "../types.js";
 import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import type { GarmentScopedCustomDetailsCompletionResult } from "./garmentScopedCustomDetailsDomain.js";
+import {
+  fitHintsFingerprintIdentity,
+  type AiTryOnFitHint,
+} from "./aiTryOnFitHints.js";
+import type { AiTryOnGenerationRequest } from "./aiTryOnGatewayContract.js";
+import { DESIGN_STUDIO_STAGE_IDS } from "./designSourceJourney.js";
 
 export const AI_TRY_ON_WORKFLOW_SCHEMA_VERSION = 1 as const;
 
@@ -227,7 +233,24 @@ export interface AiTryOnVisualInput {
     ownerBindingId: string;
   } | null;
   personalizedInputRevision?: string | null;
+  /**
+   * Tier-1 measurement fit hints sent to the prompt. Included in the
+   * fingerprint only when non-empty, so orders without measurements keep
+   * their existing fingerprint.
+   */
+  measurementFitHints?: readonly AiTryOnFitHint[] | null;
 }
+
+/**
+ * Fit hints may only change the Try-on fingerprint when Measurement comes
+ * before AI Try-on in the journey (PR #1181). While Try-on comes first,
+ * folding later measurements in would turn a finished Try-on stale and lock
+ * Measurement again, so the hints still reach the prompt but not the
+ * fingerprint.
+ */
+export const AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT =
+  DESIGN_STUDIO_STAGE_IDS.indexOf("measurement") <
+  DESIGN_STUDIO_STAGE_IDS.indexOf("try_on");
 
 /** Builds identity only from stable visual semantics, never labels, prices, URLs, or raw text. */
 export const createAiTryOnVisualInputFingerprint = (
@@ -321,6 +344,10 @@ export const createAiTryOnVisualInputFingerprint = (
         .map(([garmentKey, generation]) => ({ garmentKey, generation }))
         .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
 
+  const measurementFitHints = fitHintsFingerprintIdentity(
+    input.measurementFitHints,
+  );
+
   return hashVisualIdentity({
     demographic: input.garmentTypeSelection.demographic,
     garmentTypes: [...input.garmentTypeSelection.garmentTypes].sort(),
@@ -332,6 +359,7 @@ export const createAiTryOnVisualInputFingerprint = (
     occurrenceIdentities,
     detailSelections,
     personalizedInputRevision: input.personalizedInputRevision || null,
+    ...(measurementFitHints ? { measurementFitHints } : {}),
     customerPhotoAssetIdentity:
       privatePhoto &&
       isOpaqueReference(privatePhoto.assetId) &&
@@ -588,13 +616,27 @@ export type AiTryOnGatewayAvailability =
 
 export type AiTryOnGatewayJobResult =
   | { status: "processing"; jobReference: AiTryOnResumableJobReference }
-  | { status: "completed"; resultReference: AiTryOnVerifiedPrivateResultReference }
+  | {
+      status: "completed";
+      resultReference: AiTryOnVerifiedPrivateResultReference;
+      /**
+       * Inline preview from the server. Kept in memory only: it is never
+       * persisted to the draft (normalize refuses data: URLs) until private
+       * storage lands in Step 6.
+       */
+      preview?: { mimeType: string; data: string };
+      orderTriesRemaining?: number;
+    }
   | { status: "failed"; code: AiTryOnFailureCode; retryable: boolean }
   | { status: "unavailable"; code: "not_configured" };
 
 export interface AiTryOnGateway {
   getAvailability(): Promise<AiTryOnGatewayAvailability>;
-  start(inputFingerprint: string): Promise<AiTryOnGatewayJobResult>;
+  /** `request` carries the photos and fit hints for a real generation. */
+  start(
+    inputFingerprint: string,
+    request?: AiTryOnGenerationRequest,
+  ): Promise<AiTryOnGatewayJobResult>;
   resume(jobReference: AiTryOnResumableJobReference): Promise<AiTryOnGatewayJobResult>;
   cancel?(jobReference: AiTryOnResumableJobReference): Promise<void>;
 }

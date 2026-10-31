@@ -332,6 +332,7 @@ import {
   setGarmentScopedCustomDetailText,
 } from "../utils/garmentScopedCustomDetailInputsState";
 import {
+  AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   createEmptyAiTryOnWorkflowState,
   isFutureCustomDetailsContentReady,
@@ -339,6 +340,7 @@ import {
   reconcileAiTryOnWorkflow,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
+import { buildAiTryOnFitHints } from "../utils/aiTryOnFitHints";
 import {
   createEmptyFutureMeasurementState,
   getActiveFutureMeasurementEntered,
@@ -3636,6 +3638,18 @@ export default function DesignStudioView({
   );
   const isFuturePersonalizedAdditionsNavigationReady =
     isFutureCustomDetailsStageReady && monogramNamesReady;
+  // Tier-1 fit hints come only from the customer's own Measurement step.
+  // They join the fingerprint only once Measurement precedes AI Try-on (#1181).
+  const futureAiTryOnFitHints = useMemo(
+    () =>
+      buildAiTryOnFitHints({
+        measurement: futureMeasurementState,
+        garmentKeys: futureDesignStyleStepProjection.occurrences.map(
+          (occurrence) => occurrence.target.garmentKey,
+        ),
+      }),
+    [futureMeasurementState, futureDesignStyleStepProjection.occurrences],
+  );
   const futureAiTryOnInputFingerprint = futureScopedCustomDetailsReconciliation
     ? createAiTryOnFingerprintFromOccurrenceAssignments({
         customDetailsReady: isFutureCustomDetailsStageReady,
@@ -3652,6 +3666,9 @@ export default function DesignStudioView({
           garmentScopedCustomDetails:
             futureScopedCustomDetailsReconciliation.state,
           physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+          ...(AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT
+            ? { measurementFitHints: futureAiTryOnFitHints }
+            : {}),
         },
       })
     : null;
