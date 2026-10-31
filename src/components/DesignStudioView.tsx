@@ -341,6 +341,7 @@ import {
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
 import { buildAiTryOnFitHints } from "../utils/aiTryOnFitHints";
+import { buildAiTryOnOrderDetails } from "../utils/aiTryOnOrderDetails";
 import {
   createEmptyFutureMeasurementState,
   getActiveFutureMeasurementEntered,
@@ -3650,6 +3651,31 @@ export default function DesignStudioView({
       }),
     [futureMeasurementState, futureDesignStyleStepProjection.occurrences],
   );
+  // Visible order details for the Try-on prompt (ids only; no prices, names or letters).
+  const futureAiTryOnOrderDetails = useMemo(
+    () =>
+      buildAiTryOnOrderDetails({
+        occurrences: authoritativePhysicalOccurrencesForDomain,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        additionalGarmentConstructions:
+          designSelections.additionalGarmentConstructions?.byGarmentKey,
+        garmentScopedCustomDetails: futureScopedCustomDetailsReconciliation?.state,
+        decorativeFeaturesByGarmentKey: designSelections.decorativeFeaturesByGarmentKey,
+        monogramPlacementByGarmentKey: designSelections.monogramPlacementByGarmentKey,
+        fabricAllocations: fabricAllocationState.fabricAllocations,
+        fabrics,
+      }),
+    [
+      authoritativePhysicalOccurrencesForDomain,
+      effectiveJourneyGarmentTypeSelection,
+      designSelections.additionalGarmentConstructions,
+      futureScopedCustomDetailsReconciliation?.state,
+      designSelections.decorativeFeaturesByGarmentKey,
+      designSelections.monogramPlacementByGarmentKey,
+      fabricAllocationState.fabricAllocations,
+      fabrics,
+    ],
+  );
   const futureAiTryOnInputFingerprint = futureScopedCustomDetailsReconciliation
     ? createAiTryOnFingerprintFromOccurrenceAssignments({
         customDetailsReady: isFutureCustomDetailsStageReady,
@@ -3669,6 +3695,7 @@ export default function DesignStudioView({
           ...(AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT
             ? { measurementFitHints: futureAiTryOnFitHints }
             : {}),
+          orderDetails: futureAiTryOnOrderDetails,
         },
       })
     : null;

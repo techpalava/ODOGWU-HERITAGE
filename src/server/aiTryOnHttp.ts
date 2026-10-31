@@ -22,9 +22,14 @@ import {
 import { buildAiTryOnPrompt } from "./aiTryOnPrompt.js";
 import { normalizeAiTryOnFitHints, type AiTryOnFitHint } from "../utils/aiTryOnFitHints.js";
 import {
+  normalizeAiTryOnOrderDetails,
+  type AiTryOnOrderDetails,
+} from "../utils/aiTryOnOrderDetails.js";
+import {
   AI_TRY_ON_GLOBAL_GENERATION_CAP,
   AI_TRY_ON_MAX_IMAGE_BYTES,
   AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES,
+  AI_TRY_ON_PROMPT_VERSION,
   AI_TRY_ON_ROUTE,
   AI_TRY_ON_TRIES_PER_ORDER,
   type AiTryOnAvailabilityResponse,
@@ -119,6 +124,7 @@ const ALLOWED_KEYS = new Set([
   "garmentImage",
   "fabricSwatchImage",
   "fitHints",
+  "orderDetails",
 ]);
 
 const matchesMagicBytes = (bytes: Buffer, mimeType: AiTryOnImageMimeType) => {
@@ -167,6 +173,7 @@ type ParsedRequest =
       inputFingerprint: string;
       images: AiTryOnInlineImage[];
       fitHints: AiTryOnFitHint[];
+      orderDetails: AiTryOnOrderDetails | null;
     }
   | { ok: false; status: 400 | 413; code: "INVALID_REQUEST" | "PAYLOAD_TOO_LARGE"; error: string };
 
@@ -226,7 +233,9 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
   if (totalBytes > AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES) return tooLarge;
   const fitHints = normalizeAiTryOnFitHints(parsedBody.fitHints);
   if (!fitHints) return invalid("Fit hints are not valid.");
-  return { ok: true, mode, orderKey, inputFingerprint, images, fitHints };
+  const orderDetails = normalizeAiTryOnOrderDetails(parsedBody.orderDetails);
+  if (orderDetails === "invalid") return invalid("Order details are not valid.");
+  return { ok: true, mode, orderKey, inputFingerprint, images, fitHints, orderDetails };
 };
 
 const defaultGetDb = (): Firestore => getAdminServices().db;
@@ -320,7 +329,11 @@ export async function handleAiTryOn(
   const startedAt = now();
   const outcome = await runAiTryOnGemini({
     generateContent: (dependencies.createGenerateContent ?? createGeminiGenerateContent)(apiKey),
-    prompt: buildAiTryOnPrompt({ mode: parsed.mode, fitHints: parsed.fitHints }),
+    prompt: buildAiTryOnPrompt({
+      mode: parsed.mode,
+      fitHints: parsed.fitHints,
+      orderDetails: parsed.orderDetails,
+    }),
     images: parsed.images,
     secret: apiKey,
   });
@@ -337,6 +350,7 @@ export async function handleAiTryOn(
         event: "ai_try_on",
         outcome: outcome.kind,
         mode: parsed.mode,
+        promptVersion: AI_TRY_ON_PROMPT_VERSION,
         fitHints: parsed.fitHints.length,
         latencyMs,
         reason: outcome.reason,
@@ -358,6 +372,7 @@ export async function handleAiTryOn(
       event: "ai_try_on",
       outcome: "completed",
       mode: parsed.mode,
+      promptVersion: AI_TRY_ON_PROMPT_VERSION,
       fitHints: parsed.fitHints.length,
       latencyMs,
     }),
@@ -372,6 +387,7 @@ export async function handleAiTryOn(
     },
     image: outcome.image,
     orderTriesRemaining: reservation.orderTriesRemaining,
+    promptVersion: AI_TRY_ON_PROMPT_VERSION,
   };
   setNoStore(res);
   return res.status(200).json(body);
