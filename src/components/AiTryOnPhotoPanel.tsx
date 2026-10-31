@@ -453,10 +453,12 @@ export const AiTryOnPhotoPanel = ({
         </h3>
         <ul
           aria-labelledby={tipsId}
-          className="mt-2 grid gap-1.5 text-sm leading-relaxed text-heritage-ink/75 sm:grid-cols-2"
+          // Column flow (not a grid): each column stacks on its own, so a
+          // two-line tip never leaves a gap beside the other column's rows.
+          className="mt-2 text-sm leading-relaxed text-heritage-ink/75 sm:columns-2 sm:gap-x-8"
         >
           {AI_TRY_ON_PHOTO_TIPS.map((tip) => (
-            <li key={tip} className="flex gap-2">
+            <li key={tip} className="mb-1.5 flex break-inside-avoid gap-2">
               <CheckCircle2 aria-hidden="true" size={15} className="mt-0.5 shrink-0 text-heritage-green/70" />
               <span>{tip}</span>
             </li>

@@ -416,6 +416,10 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.match(markup, /accept="image\/jpeg,image\/png,image\/webp"/);
   assert.match(markup, /5 tries left/);
   assert.match(markup, /disabled=""[^>]*>.*Generate preview/s, "Generate waits for a photo");
+  // Tips use column flow, not a row grid, so a wrapped tip can't misalign the other column.
+  assert.match(markup, /sm:columns-2/);
+  assert.equal(/<ul[^>]*sm:grid-cols-2/.test(markup), false);
+  assert.match(markup, /break-inside-avoid/);
   AI_TRY_ON_PHOTO_TIPS.forEach((tip) => assert.ok(markup.includes(tip.replace(/'/g, "&#x27;")), tip));
   assert.deepEqual(
     AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => bullet.label),
