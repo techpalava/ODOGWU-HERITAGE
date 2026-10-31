@@ -71,6 +71,7 @@ export type AiTryOnErrorCode =
   | "NOT_CONFIGURED"
   | "RATE_LIMITED"
   | "ORDER_TRY_LIMIT_REACHED"
+  | "ACCOUNT_TRY_LIMIT_REACHED"
   | "GLOBAL_LIMIT_REACHED"
   | "PROVIDER_REJECTED"
   | "PROVIDER_FAILED"
@@ -95,6 +96,8 @@ export type AiTryOnAvailabilityResponse =
       readonly triesPerOrder: number;
       /** Present on `POST ?action=session` (Step 7). */
       readonly orderTriesRemaining?: number;
+      /** Signed-in customers only: tries left in the account's 30-day window. */
+      readonly accountTriesRemaining?: number;
       /** Live stored previews of the session (`POST ?action=session`). */
       readonly previews?: readonly AiTryOnStoredPreviewSummary[];
       /**
@@ -125,6 +128,8 @@ export interface AiTryOnGenerationSuccess {
   readonly previewStored: boolean;
   readonly previewExpiresAt?: string;
   readonly orderTriesRemaining: number;
+  /** Signed-in customers only. */
+  readonly accountTriesRemaining?: number;
   /** Prompt wording the image was made with. */
   readonly promptVersion: string;
 }
@@ -136,11 +141,16 @@ export interface AiTryOnErrorResponse {
   readonly retryAfterSeconds?: number;
   /** Tries left for the order after a refunded (uncounted) failure. */
   readonly orderTriesRemaining?: number;
+  /** Signed-in customers only: account tries left after a refunded failure. */
+  readonly accountTriesRemaining?: number;
 }
 
 /** Locked limits (Xavier). */
 export const AI_TRY_ON_GLOBAL_GENERATION_CAP = 1000;
 export const AI_TRY_ON_TRIES_PER_ORDER = 5;
+/** Signed-in accounts: at most 15 previews in any rolling 30 days, across orders. */
+export const AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW = 15;
+export const AI_TRY_ON_ACCOUNT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Each decoded image stays small enough for Vercel's 4.5 MB request body. */
 export const AI_TRY_ON_MAX_IMAGE_BYTES = 1_400_000;
