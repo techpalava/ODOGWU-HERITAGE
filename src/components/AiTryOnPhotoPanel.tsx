@@ -59,7 +59,7 @@ export const AI_TRY_ON_HOW_WE_USE_BULLETS: ReadonlyArray<{ label: string; text: 
   },
   {
     label: "Fair use:",
-    text: "each order gets 5 previews, shared by everyone on the order. We also limit how many requests one connection can make in an hour. To count these, we store a scrambled code made from your order and your IP address, never the photo itself.",
+    text: "each order gets 5 previews, shared by everyone on the order, and a signed-in account gets up to 15 previews in any 30 days. We also limit how many requests one connection can make in an hour. To count these, we store scrambled codes made from your order, your account and your IP address, never the photo itself.",
   },
   {
     label: "It's optional:",

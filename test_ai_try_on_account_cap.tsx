@@ -25,6 +25,7 @@ import {
   type AiTryOnPreviewOutcome,
 } from "./src/services/aiTryOnGateway";
 import {
+  AI_TRY_ON_HOW_WE_USE_BULLETS,
   AI_TRY_ON_MESSAGES,
   AiTryOnPhotoPanel,
   type AiTryOnPhotoPanelProps,
@@ -350,6 +351,19 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
 const alertText = (renderer: ReturnType<typeof create>) =>
   textOf(renderer.root.find((node) => node.type === "div" && node.props.role === "alert"));
 
+// Approved privacy wording (Xavier): the Fair use bullet mentions the account counter.
+{
+  const fairUse = AI_TRY_ON_HOW_WE_USE_BULLETS.find((bullet) => bullet.label === "Fair use:");
+  assert.equal(
+    fairUse?.text,
+    "each order gets 5 previews, shared by everyone on the order, and a signed-in account gets up to 15 previews in any 30 days. We also limit how many requests one connection can make in an hour. To count these, we store scrambled codes made from your order, your account and your IP address, never the photo itself.",
+  );
+  assert.ok(
+    readFileSync("src/data/legalContent.ts", "utf8").includes(
+      "To limit use, we count previews per order (5 per order, kept for 90 days), per signed-in account (15 in any 30 days, kept for 30 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
+    ),
+  );
+}
 assert.equal(
   AI_TRY_ON_MESSAGES.accountOutOfPreviews,
   "You've used all 15 AI Try-on previews on your account in the last 30 days. You can still continue without one.",

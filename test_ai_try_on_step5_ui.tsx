@@ -672,7 +672,7 @@ for (const [outcome, text] of errorCases) {
   assert.match(section!.paragraphs![0], /By uploading a photo, you agree/);
   assert.equal(
     section!.paragraphs![1],
-    "We delete your photo as soon as the preview is created. We keep the preview privately for up to 30 days, or until you place your order, whichever is sooner, and delete it earlier if you ask. Try-on photos and previews are never shared with our workshop. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. To limit use, we count previews per order (5 per order, kept for 90 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
+    "We delete your photo as soon as the preview is created. We keep the preview privately for up to 30 days, or until you place your order, whichever is sooner, and delete it earlier if you ask. Try-on photos and previews are never shared with our workshop. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. To limit use, we count previews per order (5 per order, kept for 90 days), per signed-in account (15 in any 30 days, kept for 30 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
   );
   const all = JSON.stringify(PRIVACY_POLICY);
   assert.match(all, /Google \(Gemini API\): creates AI Try-on previews/);
