@@ -264,8 +264,8 @@ const assign = (
   assert.equal(img.props.decoding, "async");
   assert.match(
     String(preview.props.className),
-    /sm:w-\[128px\]/,
-    "Desktop preview uses a fixed right-column width",
+    /sm:h-\[104px\] sm:w-\[104px\]/,
+    "Desktop preview is a fixed 104px square on the left",
   );
   const assignedCard = renderer.root.findByProps({
     "data-garment-key": "base:shirt",
@@ -275,12 +275,13 @@ const assign = (
     (node): node is ReactTestInstance =>
       typeof node !== "string" &&
       typeof node.props.className === "string" &&
-      node.props.className.includes("sm:flex-row"),
+      node.props["data-garment-card-layout"] === "photo-left",
   )[0];
   assert.ok(
     layoutHost,
-    "Assigned card content uses a responsive left/right layout",
+    "Assigned card content puts the photo left of the details",
   );
+  assert.match(String(layoutHost.props.className), /\bflex-row\b/);
 }
 
 // ---------------------------------------------------------------------------

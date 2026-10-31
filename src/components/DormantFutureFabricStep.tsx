@@ -32,9 +32,10 @@ import {
 } from "../utils/fabricStepGuideFlow";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
-  ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
   AssignedFabricPreview,
+  GARMENT_CARD_FABRIC_PHOTO_CLASSNAME,
 } from "./AssignedFabricPreview";
+import { FabricPieceUsageMarker } from "./FabricPieceUsageMarker";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
 import { FabricSelectionSummaryRow } from "./FabricSelectionSummaryRow";
 import {
@@ -3658,48 +3659,49 @@ export const DormantFutureFabricStep = ({
                     : undefined
                 }
               >
-                {/* Same layout for every card: details beside a fixed-size image
-                    slot, content grows so the action button pins to the bottom. */}
-                <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-start">
-                  {selectionNumber != null ? (
-                    <span
-                      data-fabric-selection-badge="true"
-                      role="img"
-                      aria-label={`Fabric Selection ${selectionNumber}`}
-                      className={`pointer-events-none absolute left-3 top-3 z-10 ${getFabricSelectionBadgeClass(
-                        selectionNumber,
-                      )}`}
+                {/* Same layout for every card: square photo on the left, details
+                    beside it, content grows so the action button pins to the bottom. */}
+                <div
+                  className="flex min-w-0 flex-1 flex-row items-start gap-3"
+                  data-garment-card-layout="photo-left"
+                >
+                  {assigned ? (
+                    <AssignedFabricPreview
+                      fabric={fabric}
+                      garmentKey={assignment.garmentKey}
+                      garmentLabel={garmentLabel}
+                      fabricCode={assigned.allocation.fabricCode}
+                      className={GARMENT_CARD_FABRIC_PHOTO_CLASSNAME}
+                    />
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      data-unassigned-fabric-placeholder="true"
+                      className={`${GARMENT_CARD_FABRIC_PHOTO_CLASSNAME} flex items-center justify-center border-dashed`}
                     >
-                      {selectionNumber}
-                    </span>
-                  ) : null}
-                  <div className="min-w-0 flex-1 pl-8">
-                    <div className="flex min-w-0 items-start gap-2">
-                      {/* Title on its own line and the badge always below it,
-                          so every card lines up whatever the name length. */}
-                      <div className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center gap-1.5">
-                        <p className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
-                          {garmentLabel}
-                        </p>
+                      <Layers3 size={22} className="text-heritage-gold/60" />
+                    </div>
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col gap-1 self-stretch">
+                    <div
+                      className="flex min-w-0 items-start gap-2"
+                      data-garment-card-title-row="true"
+                    >
+                      {selectionNumber != null ? (
                         <span
-                          data-garment-fabric-badge="true"
-                          className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide ${
-                            assigned
-                              ? "border-heritage-green/25 bg-heritage-green/5 text-heritage-green"
-                              : "border-heritage-gold/30 bg-white text-heritage-green"
-                          }`}
+                          data-fabric-selection-badge="true"
+                          role="img"
+                          aria-label={`Fabric Selection ${selectionNumber}`}
+                          className={`pointer-events-none shrink-0 ${getFabricSelectionBadgeClass(
+                            selectionNumber,
+                          )}`}
                         >
-                          {assigned ? "Assigned" : "Needs fabric"}
+                          {selectionNumber}
                         </span>
-                        {selectionHighlight === "changing" ? (
-                          <span
-                            data-fabric-selection-changing-tag="true"
-                            className="shrink-0 rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
-                          >
-                            Changing
-                          </span>
-                        ) : null}
-                      </div>
+                      ) : null}
+                      <p className="min-w-0 flex-1 break-words pt-0.5 text-sm font-bold leading-snug text-heritage-green">
+                        {garmentLabel}
+                      </p>
                       {assigned && (
                         <button
                           type="button"
@@ -3724,7 +3726,7 @@ export const DormantFutureFabricStep = ({
                               fabric?.name ?? "Selected fabric",
                             )
                           }
-                          className={`-mr-2 -mt-1 ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${fabricGuideBeamClass(
+                          className={`-my-2.5 -mr-2 ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${fabricGuideBeamClass(
                             "garment_remove",
                             assignment.garmentKey,
                           )}`}
@@ -3736,62 +3738,83 @@ export const DormantFutureFabricStep = ({
                     </div>
                     {assigned && fabric ? (
                       <>
-                        <p className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/70">
-                          {fabric.name} ({fabric.code})
+                        <p
+                          className="break-words text-xs leading-relaxed text-heritage-ink/70"
+                          data-garment-card-fabric-line="true"
+                        >
+                          {fabric.name}{" "}
+                          <span className="text-heritage-ink/45">{fabric.code}</span>
                         </p>
-                        <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
-                          Fabric Selection {selectionNumber}
+                        <p
+                          className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-bold uppercase tracking-wide text-heritage-gold"
+                          data-garment-card-selection-line="true"
+                        >
+                          <span>Fabric Selection {selectionNumber}</span>
+                          {allocationCapacity ? (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span data-fabric-allocation-capacity="true">
+                                Capacity:{" "}
+                                {allocationCapacity.usedUnits}/
+                                {allocationCapacity.usedUnits +
+                                  allocationCapacity.remainingUnits}
+                                {allocationCapacity.remainingUnits > 0
+                                  ? ` · ${allocationCapacity.remainingUnits}/2 available`
+                                  : ""}
+                              </span>
+                            </>
+                          ) : null}
                         </p>
-                        {allocationCapacity ? (
-                          <p
-                            className="mt-1 text-[10px] font-bold uppercase tracking-wide text-heritage-gold"
-                            data-fabric-allocation-capacity="true"
-                          >
-                            Capacity:{" "}
-                            {allocationCapacity.usedUnits}/
-                            {allocationCapacity.usedUnits +
-                              allocationCapacity.remainingUnits}
-                            {allocationCapacity.remainingUnits > 0
-                              ? ` · ${allocationCapacity.remainingUnits}/2 available`
-                              : ""}
-                          </p>
-                        ) : null}
                       </>
                     ) : (
-                      <p className="mt-2 text-xs text-heritage-ink/60">
+                      <p className="text-xs text-heritage-ink/60">
                         Fabric not assigned
                       </p>
                     )}
                     {unassignedFabricAction === "blocked" ? (
                       <p
-                        className="mt-2 text-xs font-semibold text-red-700"
+                        className="text-xs font-semibold text-red-700"
                         data-unassigned-fabric-blocked="true"
                       >
                         {UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE}
                       </p>
                     ) : null}
                     {fabricStatus && (
-                      <p className="mt-2 text-xs font-semibold text-red-700">
+                      <p className="text-xs font-semibold text-red-700">
                         {fabricStatus}
                       </p>
                     )}
-                  </div>
-                  {assigned ? (
-                    <AssignedFabricPreview
-                      fabric={fabric}
-                      garmentKey={assignment.garmentKey}
-                      garmentLabel={garmentLabel}
-                      fabricCode={assigned.allocation.fabricCode}
-                    />
-                  ) : (
                     <div
-                      aria-hidden="true"
-                      data-unassigned-fabric-placeholder="true"
-                      className={`${ASSIGNED_FABRIC_PREVIEW_CLASSNAME} hidden items-center justify-center border-dashed sm:flex`}
+                      className="mt-auto flex min-w-0 flex-wrap items-center justify-between gap-2 pt-1"
+                      data-garment-card-status-row="true"
                     >
-                      <Layers3 size={22} className="text-heritage-gold/60" />
+                      {assigned ? (
+                        <FabricPieceUsageMarker fabricUnits={assignment.fabricUnits} />
+                      ) : (
+                        <span aria-hidden="true" />
+                      )}
+                      <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                        {selectionHighlight === "changing" ? (
+                          <span
+                            data-fabric-selection-changing-tag="true"
+                            className="shrink-0 rounded-full border border-heritage-gold bg-heritage-gold/15 px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-gold"
+                          >
+                            Changing
+                          </span>
+                        ) : null}
+                        <span
+                          data-garment-fabric-badge="true"
+                          className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase leading-none tracking-wide ${
+                            assigned
+                              ? "border-heritage-green/25 bg-heritage-green/5 text-heritage-green"
+                              : "border-heritage-gold/30 bg-white text-heritage-green"
+                          }`}
+                        >
+                          {assigned ? "Assigned" : "Needs fabric"}
+                        </span>
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
                 {assigned ? (
                   <button
