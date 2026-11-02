@@ -37,6 +37,7 @@ import type {
   StyleCategory,
 } from "../types";
 import { AssignedFabricPreview } from "./AssignedFabricPreview";
+import type { FuturePaymentReviewGarmentPicture } from "../utils/futurePaymentReviewPictures";
 import {
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
@@ -203,6 +204,14 @@ interface DormantFutureCustomDetailsStepProps {
   >;
   fabrics?: readonly Fabric[];
   fabricAllocationState?: FabricAllocationState | null;
+  /**
+   * Per-garment chosen Design Style picture (catalogue image or uploaded
+   * design preview), matched by garmentKey. Presentation only.
+   */
+  garmentDesignPictures?: readonly Pick<
+    FuturePaymentReviewGarmentPicture,
+    "garmentKey" | "design"
+  >[];
   fabricAnnouncement?: string;
   fabricPersistentError?: string | null;
   focusAdditionalGarmentKey?: string | null;
@@ -214,6 +223,42 @@ interface DormantFutureCustomDetailsStepProps {
   onContinue: () => void;
   orderSummary?: ReactNode;
 }
+
+const GarmentContextDesignThumb = ({
+  garmentKey,
+  garmentLabel,
+  imageUrl,
+}: {
+  garmentKey: string;
+  garmentLabel: string;
+  imageUrl: string | null;
+}) => {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (imageUrl && failedUrl !== imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt={`Selected design for ${garmentLabel}`}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailedUrl(imageUrl)}
+        data-garment-context-design={garmentKey}
+        className="size-11 shrink-0 rounded-lg border border-heritage-gold/25 bg-heritage-cream/40 object-cover"
+      />
+    );
+  }
+  return (
+    <div
+      role="img"
+      aria-label={`No design photo for ${garmentLabel}`}
+      data-garment-context-design={garmentKey}
+      data-garment-context-design-missing="true"
+      className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/35 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
+    >
+      No design photo
+    </div>
+  );
+};
 
 export type AdditionalGarmentCustomDetailsChoice =
   | { mode: "choose" }
@@ -616,6 +661,7 @@ export const DormantFutureCustomDetailsStep = ({
   onRequestGarmentRemoval,
   fabrics = [],
   fabricAllocationState = null,
+  garmentDesignPictures = [],
   fabricAnnouncement = "",
   fabricPersistentError = null,
   focusAdditionalGarmentKey,
@@ -1956,6 +2002,10 @@ export const DormantFutureCustomDetailsStep = ({
               ? getStep1GarmentReferenceImage(context.garmentType)
               : null;
             const assigned = getAssignedFabricForGarment(context.garmentKey);
+            const design =
+              garmentDesignPictures.find(
+                (picture) => picture.garmentKey === context.garmentKey,
+              )?.design ?? null;
             return (
               <article
                 key={context.garmentKey}
@@ -2003,6 +2053,11 @@ export const DormantFutureCustomDetailsStep = ({
                     No Fabric
                   </div>
                 )}
+                <GarmentContextDesignThumb
+                  garmentKey={context.garmentKey}
+                  garmentLabel={garmentLabel}
+                  imageUrl={design?.imageUrl ?? null}
+                />
                 <div className="min-w-0 text-xs leading-snug">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <p className="text-heritage-ink/60">Garment</p>
@@ -2016,6 +2071,13 @@ export const DormantFutureCustomDetailsStep = ({
                   <p className="mt-1 text-heritage-ink/60">Assigned Fabric</p>
                   <p className="break-words font-semibold text-heritage-ink">
                     {assigned?.fabric?.name || assigned?.fabricCode || "Not assigned"}
+                  </p>
+                  <p className="mt-1 text-heritage-ink/60">Design</p>
+                  <p
+                    data-garment-context-design-name={context.garmentKey}
+                    className="break-words font-semibold text-heritage-ink"
+                  >
+                    {design?.name || "Not assigned"}
                   </p>
                 </div>
               </article>
