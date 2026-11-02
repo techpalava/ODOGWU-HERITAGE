@@ -26,6 +26,11 @@ import {
   withImageRetryMarker,
 } from "./src/hooks/useImageLoadRetry";
 
+// Design Style's locked Continue stays clickable (aria-disabled) so it can jump
+// to the first garment without a design.
+const isContinueLocked = (button: { props: Record<string, unknown> }) =>
+  button.props.disabled === true || button.props["aria-disabled"] === "true";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const selection = (
@@ -564,7 +569,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     ),
     new RegExp(`${count} of 3 garments assigned`),
   );
-  assert.equal(continueButton(renderer.root).props.disabled, !complete);
+  assert.equal(isContinueLocked(continueButton(renderer.root)), !complete);
   assert.equal(
     renderer.root.findByProps({ "data-stage-id": "design_style" }).props[
       "data-stage-complete"
@@ -746,7 +751,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     /Choose a design for each garment/,
   );
   assert.equal(model.projection.completedCount, 0);
-  assert.equal(continueButton(renderer.root).props.disabled, true);
+  assert.equal(isContinueLocked(continueButton(renderer.root)), true);
 }
 
 // Malformed V2 is a fail-closed recovery state, never a normal empty catalogue.
@@ -776,7 +781,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       .length,
     0,
   );
-  assert.equal(continueButton(renderer.root).props.disabled, true);
+  assert.equal(isContinueLocked(continueButton(renderer.root)), true);
   const blockedUpload = renderer.root
     .findAllByType("button")
     .find((button) => textContent(button) === "Upload Design");
@@ -811,7 +816,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
         .length,
       0,
     );
-    assert.equal(continueButton(renderer.root).props.disabled, true);
+    assert.equal(isContinueLocked(continueButton(renderer.root)), true);
     const loadingUpload = renderer.root
       .findAllByType("button")
       .find((button) => textContent(button) === "Upload Design");

@@ -14,6 +14,11 @@ import {
   createDesignStyleStepTestModel,
 } from "./testing/designStyleStepFixtures";
 
+// Design Style's locked Continue stays clickable (aria-disabled) so it can jump
+// to the first garment without a design.
+const isContinueLocked = (button: { props: Record<string, unknown> }) =>
+  button.props.disabled === true || button.props["aria-disabled"] === "true";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const garmentTypeSelection: GarmentTypeStepSelection = {
@@ -123,7 +128,7 @@ assert.equal(renderer.root.findByProps({ "data-testid": "apply-design-mapping" }
 await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
 
 assert.match(progress(), /2 of 3 garments assigned/);
-assert.equal(continueButton().props.disabled, true);
+assert.equal(isContinueLocked(continueButton()), true);
 assert.deepEqual(
   textContent(renderer.root.findByProps({ "data-testid": "assignment-keys" })).split("|").sort(),
   ["base:shirt:1", "base:trouser:1"],
@@ -142,7 +147,7 @@ assert.match(
 await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
 
 assert.match(progress(), /3 of 3 garments assigned/);
-assert.equal(continueButton().props.disabled, false);
+assert.equal(isContinueLocked(continueButton()), false);
 assert.deepEqual(
   textContent(renderer.root.findByProps({ "data-testid": "assignment-keys" })).split("|").sort(),
   ["base:bum_shorts:1", "base:shirt:1", "base:trouser:1"],

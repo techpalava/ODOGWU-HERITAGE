@@ -17,6 +17,11 @@ import {
   createDesignStyleStepTestModel,
 } from "./testing/designStyleStepFixtures";
 
+// Design Style's locked Continue stays clickable (aria-disabled) so it can jump
+// to the first garment without a design.
+const isContinueLocked = (button: { props: Record<string, unknown> }) =>
+  button.props.disabled === true || button.props["aria-disabled"] === "true";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
@@ -251,9 +256,10 @@ assert.deepEqual(
   ["back", "forward"],
   "An incomplete Design Style footer keeps Back and locked Continue on one row.",
 );
-assert.equal(incompleteFooterButtons[1].props.disabled, true);
+assert.equal(isContinueLocked(incompleteFooterButtons[1]), true);
 assert.ok(
-  incompleteStyleAction.findByProps({ "data-studio-step-actions-note": "true" }),
+  incompleteStyleAction.findByProps({ "data-studio-step-actions-forward-note": "true" }),
+  "The locked Design Style note sits under the bottom Continue.",
 );
 
 await act(async () => {
@@ -276,7 +282,7 @@ assert.deepEqual(
   ["back", "forward"],
   "A complete Design Style footer keeps Back and enabled Continue on one row.",
 );
-assert.equal(completeFooterButtons[1].props.disabled, false);
+assert.equal(isContinueLocked(completeFooterButtons[1]), false);
 assert.equal(
   completeStyleAction.findAll(
     (node) => node.props?.["data-studio-step-actions-note"] === "true",

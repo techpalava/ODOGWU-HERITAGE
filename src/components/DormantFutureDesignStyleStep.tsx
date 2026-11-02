@@ -172,6 +172,26 @@ const assignmentListClassName = (count: number): string =>
     count > 2 ? " divide-y divide-heritage-green/15" : ""
   }`;
 
+/**
+ * Soft gold beam on the "X of N garments assigned" pill while Continue to
+ * Custom Details is locked. Slower and softer than the note under Continue.
+ * Reduced motion: no animation, a steady heritage gold border.
+ */
+export const STEP3_PROGRESS_BEAM_CLASS =
+  "motion-safe:animate-step3-progress-beam motion-reduce:animate-none motion-reduce:border-heritage-gold";
+
+/** Soft gold beam on the note under the locked bottom Continue. */
+export const STEP3_CONTINUE_NOTE_BEAM_CLASS =
+  "motion-safe:animate-step3-continue-note-beam motion-reduce:animate-none motion-reduce:border-heritage-gold";
+
+/** One short gold pulse on the garment card a locked Continue jumps to. None for reduced motion. */
+export const STEP3_CONTINUE_TARGET_PULSE_CLASS =
+  "motion-safe:animate-step3-continue-target-pulse";
+
+const STEP3_CONTINUE_TARGET_PULSE_MS = 1200;
+
+export const STEP3_CONTINUE_NOTE_ID = "design-style-continue-lock-note";
+
 const DesignStyleCatalogueCardImage = ({
   imageUrl,
   alt,
@@ -247,6 +267,11 @@ export const DormantFutureDesignStyleStep = ({
   const detailsCloseRef = useRef<HTMLButtonElement | null>(null);
   const detailsTriggerRef = useRef<HTMLElement | null>(null);
   const allDesignsRef = useRef<HTMLDivElement | null>(null);
+  const mappingsSectionRef = useRef<HTMLElement | null>(null);
+  const continueTargetPulseTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const continueTargetFrameRef = useRef<number | null>(null);
   const continueActionRef = useRef<HTMLDivElement | null>(null);
   const previousExactSetCompleteRef = useRef(exactSetComplete);
   const completingAssignmentScrollYRef = useRef<number | null>(null);
@@ -288,6 +313,14 @@ export const DormantFutureDesignStyleStep = ({
   >(null);
   const [highlightPrefersReducedMotion, setHighlightPrefersReducedMotion] =
     useState(false);
+  // Card a locked Continue (or the progress pill) jumped to: focusable while
+  // targeted, and pulses once.
+  const [continueTargetToken, setContinueTargetToken] = useState<
+    string | null
+  >(null);
+  const [continueTargetPulseToken, setContinueTargetPulseToken] = useState<
+    string | null
+  >(null);
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
   const uploadInputIdPrefix = useId();
@@ -297,6 +330,8 @@ export const DormantFutureDesignStyleStep = ({
   const firstIncompleteOccurrence = occurrences.find(
     (occurrence) => occurrence.status !== "complete",
   );
+  const showContinueLockNote =
+    !exactSetComplete && Boolean(firstIncompleteOccurrence);
   const baseOccurrences = useMemo(
     () =>
       occurrences.filter(
@@ -497,9 +532,76 @@ export const DormantFutureDesignStyleStep = ({
       if (continueFocusTimerRef.current !== null) {
         clearTimeout(continueFocusTimerRef.current);
       }
+      if (continueTargetPulseTimerRef.current !== null) {
+        clearTimeout(continueTargetPulseTimerRef.current);
+      }
+      if (
+        continueTargetFrameRef.current !== null &&
+        typeof window !== "undefined"
+      ) {
+        window.cancelAnimationFrame?.(continueTargetFrameRef.current);
+      }
     },
     [],
   );
+
+  /**
+   * Locked Continue and the progress pill: scroll to the first garment that
+   * still needs a design, focus it and pulse it once. Falls back to Your
+   * Garments, then the catalogue, when that garment has no card. Never
+   * continues.
+   */
+  const revealFirstIncompleteGarment = () => {
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const token = firstIncompleteOccurrence?.target.occurrenceToken ?? null;
+    const card = token ? garmentCardRefs.current.get(token) : undefined;
+    const target: HTMLElement | null =
+      card ?? mappingsSectionRef.current ?? allDesignsRef.current;
+    if (!target) return;
+    target.scrollIntoView?.({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+    if (continueTargetPulseTimerRef.current !== null) {
+      clearTimeout(continueTargetPulseTimerRef.current);
+      continueTargetPulseTimerRef.current = null;
+    }
+    if (
+      continueTargetFrameRef.current !== null &&
+      typeof window !== "undefined"
+    ) {
+      window.cancelAnimationFrame?.(continueTargetFrameRef.current);
+      continueTargetFrameRef.current = null;
+    }
+    const pulseToken = card && token ? token : null;
+    setContinueTargetToken(pulseToken);
+    // Clear first so a repeat tap restarts the one-shot pulse.
+    setContinueTargetPulseToken(null);
+    const focusAndPulse = () => {
+      continueTargetFrameRef.current = null;
+      target.focus?.({ preventScroll: true });
+      if (!pulseToken) return;
+      setContinueTargetPulseToken(pulseToken);
+      continueTargetPulseTimerRef.current = setTimeout(() => {
+        continueTargetPulseTimerRef.current = null;
+        setContinueTargetPulseToken((current) =>
+          current === pulseToken ? null : current,
+        );
+      }, STEP3_CONTINUE_TARGET_PULSE_MS);
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      continueTargetFrameRef.current =
+        window.requestAnimationFrame(focusAndPulse);
+    } else {
+      focusAndPulse();
+    }
+  };
 
   const selectedOccurrences = useMemo(
     () =>
@@ -811,6 +913,10 @@ export const DormantFutureDesignStyleStep = ({
   ) => {
     const isAssignmentFeedbackTarget =
       highlightedOccurrenceToken === occurrence.target.occurrenceToken;
+    const isContinueTarget =
+      continueTargetToken === occurrence.target.occurrenceToken;
+    const isContinueTargetPulsing =
+      continueTargetPulseToken === occurrence.target.occurrenceToken;
     const occurrenceClearRequest =
       clearRequests.find((request) =>
         designStyleStepTargetsEqual(request.target, occurrence.target),
@@ -857,7 +963,13 @@ export const DormantFutureDesignStyleStep = ({
         }}
         role="listitem"
         tabIndex={
-          isAssignmentFeedbackTarget && !exactSetComplete ? -1 : undefined
+          (isAssignmentFeedbackTarget || isContinueTarget) && !exactSetComplete
+            ? -1
+            : undefined
+        }
+        data-step3-continue-target={isContinueTarget ? "true" : undefined}
+        data-step3-continue-target-pulse={
+          isContinueTargetPulsing ? "true" : undefined
         }
         data-occurrence-label={occurrence.label}
         data-occurrence-token={occurrence.target.occurrenceToken}
@@ -880,7 +992,7 @@ export const DormantFutureDesignStyleStep = ({
           isAssignmentFeedbackTarget
             ? "border-l-heritage-gold bg-heritage-cream/30 ring-2 ring-inset ring-heritage-gold/70"
             : "border-transparent bg-white"
-        }`}
+        }${isContinueTargetPulsing ? ` ${STEP3_CONTINUE_TARGET_PULSE_CLASS}` : ""}`}
       >
         {occurrence.assignment && selectedDesignImage ? (
           <div
@@ -1222,6 +1334,8 @@ export const DormantFutureDesignStyleStep = ({
               onClick: onContinue,
               disabled: !exactSetComplete,
               locked: !exactSetComplete,
+              onLockedClick: revealFirstIncompleteGarment,
+              describedBy: showContinueLockNote ? STEP3_CONTINUE_NOTE_ID : undefined,
               ariaLabel: "Continue to Custom Details",
             }}
           />
@@ -1235,7 +1349,22 @@ export const DormantFutureDesignStyleStep = ({
               ? "Choose a catalogue design or upload a JPEG, PNG, or WebP image."
               : "Choose a design reference for your garments."}
           </p>
-          <div aria-live="polite" data-testid="step3-assignment-progress" className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-1.5 text-xs font-bold text-heritage-green">{exactSetComplete && <Check aria-hidden="true" size={14} />}<span>{completedCount} of {totalCount} garment{totalCount === 1 ? "" : "s"} assigned</span></div>
+          {/* The live region stays mounted; the pill inside is a button only
+              while Continue is locked. */}
+          <div aria-live="polite" data-testid="step3-assignment-progress-region" className="mt-4">
+            {exactSetComplete ? (
+              <div data-testid="step3-assignment-progress" data-step3-progress-beam="off" className="inline-flex items-center gap-1.5 rounded-full border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-1.5 text-xs font-bold text-heritage-green"><Check aria-hidden="true" size={14} /><span>{completedCount} of {totalCount} garment{totalCount === 1 ? "" : "s"} assigned</span></div>
+            ) : (
+              <button
+                type="button"
+                data-testid="step3-assignment-progress"
+                data-step3-progress-beam="on"
+                onClick={revealFirstIncompleteGarment}
+                aria-describedby={showContinueLockNote ? STEP3_CONTINUE_NOTE_ID : undefined}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-1.5 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${STEP3_PROGRESS_BEAM_CLASS}`}
+              ><span>{completedCount} of {totalCount} garment{totalCount === 1 ? "" : "s"} assigned</span></button>
+            )}
+          </div>
           {reviewMessage && <div role="alert" data-testid="step3-migration-review" className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">Review your Design Style choices</p><p className="mt-1 text-xs leading-relaxed">{reviewMessage}</p></div>}
           {mutationError && <div role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">{mutationError}</div>}
           {runtimeStatus === "hydrating" && !draftHydrationFailed && !draftHydrationUnrecoverable && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
@@ -1246,7 +1375,7 @@ export const DormantFutureDesignStyleStep = ({
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
 
           {baseOccurrences.length > 0 && (
-            <section aria-labelledby="current-design-mappings-title" className="mt-5">
+            <section ref={mappingsSectionRef} aria-labelledby="current-design-mappings-title" className="mt-5">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
                 {occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
@@ -1333,8 +1462,13 @@ export const DormantFutureDesignStyleStep = ({
             slot="footer"
             backDestination="Fabric"
             onBack={onBack}
-            note={!exactSetComplete && firstIncompleteOccurrence ? (
-              <p role="status" className="w-full text-xs font-semibold text-amber-800">
+            forwardNote={showContinueLockNote && firstIncompleteOccurrence ? (
+              <p
+                id={STEP3_CONTINUE_NOTE_ID}
+                role="status"
+                data-testid="step3-continue-lock-note"
+                className={`w-full rounded-lg border border-heritage-gold/45 bg-white px-3 py-2 sm:w-max sm:max-w-full text-xs font-semibold text-amber-800 ${STEP3_CONTINUE_NOTE_BEAM_CLASS}`}
+              >
                 Choose a design reference for {firstIncompleteOccurrence.label} to continue.
               </p>
             ) : null}
@@ -1343,6 +1477,8 @@ export const DormantFutureDesignStyleStep = ({
               onClick: onContinue,
               disabled: !exactSetComplete,
               locked: !exactSetComplete,
+              onLockedClick: revealFirstIncompleteGarment,
+              describedBy: showContinueLockNote ? STEP3_CONTINUE_NOTE_ID : undefined,
               ariaLabel: "Continue to Custom Details",
             }}
           />
