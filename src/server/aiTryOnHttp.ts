@@ -171,6 +171,8 @@ export interface AiTryOnHttpDependencies {
   createUsageLimits?: (db: Firestore) => AiTryOnUsageLimits;
   consumeIpRateLimit?: (db: Firestore, ip: string) => Promise<void>;
   createGenerateContent?: (apiKey: string) => AiTryOnGenerateContent;
+  /** Wait before the one capacity retry (tests skip the real 2-4 s). */
+  geminiRetrySleep?: (ms: number) => Promise<void>;
   createAssetId?: () => string;
   /** Private preview storage (Step 6). */
   createPreviewStore?: (db: Firestore) => AiTryOnPreviewStore;
@@ -853,6 +855,7 @@ export async function handleAiTryOn(
       : buildAiTryOnImageLabels(parsed.mode),
     aspectRatio: defaultModel ? "3:4" : photoAspectRatio,
     secret: apiKey,
+    ...(dependencies.geminiRetrySleep ? { sleep: dependencies.geminiRetrySleep } : {}),
   });
   const latencyMs = now() - startedAt;
 
@@ -870,6 +873,7 @@ export async function handleAiTryOn(
         promptVersion,
         fitHints: parsed.fitHints.length,
         latencyMs,
+        attempts: outcome.attempts ?? 1,
         reason: outcome.reason,
       }),
     );
@@ -936,6 +940,7 @@ export async function handleAiTryOn(
       promptVersion,
       fitHints: parsed.fitHints.length,
       latencyMs,
+      attempts: outcome.attempts ?? 1,
       previewStored: Boolean(stored),
     }),
   );

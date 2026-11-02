@@ -19,7 +19,9 @@ import { buildAiTryOnPrompt } from "./src/server/aiTryOnPrompt";
 import {
   AI_TRY_ON_GEMINI_MODEL,
   readGeminiApiKey,
+  AI_TRY_ON_GEMINI_RETRY_MIN_REMAINING_MS,
   AI_TRY_ON_GEMINI_TIMEOUT_MS,
+  isGeminiCapacityError,
   runAiTryOnGemini,
   type AiTryOnGeminiRequest,
   type AiTryOnGeminiResponseLike,
@@ -847,6 +849,113 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
   assert.equal(sentSwatch, png);
   assert.equal(h2.calls[0].config.imageConfig, undefined);
   assert.ok(h2.logs.some((line) => line.includes("swatch_crop_skipped")));
+}
+
+// Capacity retry: one retry after 2-4 s for 503 / UNAVAILABLE / overloaded / high demand only.
+{
+  const httpError = (status: number | undefined, message: string) => Object.assign(new Error(message), status === undefined ? {} : { status });
+  const highDemand = httpError(503, '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}');
+  assert.equal(isGeminiCapacityError(highDemand), true);
+  assert.equal(isGeminiCapacityError(httpError(undefined, "The model is overloaded. Please try again later.")), true);
+  assert.equal(isGeminiCapacityError(httpError(undefined, "fetch failed")), false);
+  assert.equal(isGeminiCapacityError(httpError(429, "RESOURCE_EXHAUSTED: quota exceeded")), false, "429 is quota, not retried");
+  assert.equal(isGeminiCapacityError(httpError(500, "INTERNAL high demand")), false, "only 503 among HTTP statuses");
+  assert.equal(AI_TRY_ON_GEMINI_RETRY_MIN_REMAINING_MS, 40_000);
+
+  const run = async (errors: Array<Error | null>, { elapsedPerCall = 1_000, random = 0.5 } = {}) => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    let calls = 0;
+    const outcome = await runAiTryOnGemini({
+      generateContent: async () => {
+        const error = errors[calls] ?? null;
+        calls += 1;
+        clock += elapsedPerCall;
+        if (error) throw error;
+        return imageResponse;
+      },
+      prompt: "p",
+      images: [{ mimeType: "image/png", data: png }],
+      now: () => clock,
+      sleep: async (ms) => { sleeps.push(ms); clock += ms; },
+      random: () => random,
+    });
+    return { outcome, calls, sleeps };
+  };
+  const recovered = await run([highDemand, null]);
+  assert.equal(recovered.outcome.ok, true);
+  assert.equal(recovered.outcome.attempts, 2);
+  assert.equal(recovered.calls, 2);
+  assert.deepEqual(recovered.sleeps, [3_000], "2 s + jitter (0-2 s)");
+  assert.deepEqual((await run([highDemand, null], { random: 0 })).sleeps, [2_000]);
+  assert.deepEqual((await run([highDemand, null], { random: 0.9999 })).sleeps, [3_999]);
+  const twice = await run([highDemand, highDemand]);
+  assert.equal(twice.outcome.ok, false);
+  assert.equal(twice.calls, 2, "never more than one retry");
+  assert.equal(twice.outcome.attempts, 2);
+  assert.match(twice.outcome.ok === false ? twice.outcome.reason : "", /status=503/);
+  for (const [error, why] of [
+    [httpError(429, "RESOURCE_EXHAUSTED"), "429"],
+    [httpError(500, "INTERNAL"), "500"],
+    [httpError(400, "INVALID_ARGUMENT"), "400"],
+    [httpError(undefined, "socket hang up"), "network"],
+  ] as const) {
+    const single = await run([error, null]);
+    assert.equal(single.calls, 1, `${why}: no retry`);
+    assert.equal(single.outcome.ok, false);
+    assert.equal(single.outcome.attempts, 1);
+  }
+  // Too little budget left (first attempt took 77 s: 120 - 77 - 3 = 40 s is the edge).
+  assert.equal((await run([highDemand, null], { elapsedPerCall: 77_000 })).calls, 2, "exactly 40 s left: retry");
+  const late = await run([highDemand, null], { elapsedPerCall: 77_001 });
+  assert.equal(late.calls, 1, "under 40 s left: fail as before");
+  assert.equal(late.sleeps.length, 0);
+  // A no-image answer is not a capacity error.
+  let noImageCalls = 0;
+  const noImage = await runAiTryOnGemini({
+    generateContent: async () => { noImageCalls += 1; return { candidates: [{ finishReason: "SAFETY" }] }; },
+    prompt: "p",
+    images: [],
+    sleep: async () => undefined,
+  });
+  assert.equal(noImage.ok, false);
+  assert.equal(noImageCalls, 1);
+}
+
+// Capacity retry through the route: one reservation, one refund, IP and global counted once.
+{
+  const highDemand = Object.assign(new Error("This model is currently experiencing high demand."), { status: 503 });
+  for (const recovers of [true, false]) {
+    const h = harness();
+    let geminiCalls = 0;
+    const ipCharges: string[] = [];
+    h.deps.consumeIpRateLimit = async (_database, ip) => { ipCharges.push(ip); };
+    h.deps.createGenerateContent = () => async () => {
+      geminiCalls += 1;
+      if (geminiCalls === 1 || !recovers) throw highDemand;
+      return imageResponse;
+    };
+    const slept: number[] = [];
+    h.deps.geminiRetrySleep = async (ms) => { slept.push(ms); };
+    const result = response();
+    await handleAiTryOn(post(validBody()), result.res, h.deps);
+    assert.equal(geminiCalls, 2, "one retry");
+    assert.equal(slept.length, 1);
+    assert.ok(slept[0] >= 2_000 && slept[0] < 4_000);
+    assert.equal(ipCharges.length, 1, "IP window charged once");
+    const body = result.state.body as { orderTriesRemaining?: number; status?: string };
+    if (recovers) {
+      assert.equal(result.state.status, 200);
+      assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER - 1, "one try used");
+      assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 1, "global counted once");
+    } else {
+      assert.equal(result.state.status, 502);
+      assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER, "refunded once, never below or above");
+      assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count ?? 0, 0, "global refunded");
+    }
+    const logLine = h.logs.find((line) => line.includes('"event":"ai_try_on"') && line.includes("attempts"));
+    assert.match(logLine ?? "", /"attempts":2/);
+  }
 }
 
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");
