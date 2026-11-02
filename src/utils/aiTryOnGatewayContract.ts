@@ -25,8 +25,10 @@ export type AiTryOnMode = "garment" | "fabric";
  * Version of the server prompt text (src/server/aiTryOnPrompt.ts).
  * Bump on any wording change. Folded into the Try-on fingerprint so a result
  * made with older wording turns stale. v1 was the Step 3 trial wording.
+ * v3: garment mode treats the catalogue model as a stand-in and copies only
+ * the ordered garment (fabric-mode text unchanged).
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v2" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v3" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric

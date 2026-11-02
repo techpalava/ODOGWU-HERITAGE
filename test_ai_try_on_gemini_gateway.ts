@@ -318,7 +318,7 @@ assert.equal(normalizeAiTryOnFitHints("178"), null);
 
 const garmentPrompt = buildAiTryOnPrompt({ mode: "garment" });
 const fabricPrompt = buildAiTryOnPrompt({ mode: "fabric" });
-assert.match(garmentPrompt, /Image 2: the garment\./);
+assert.match(garmentPrompt, /Image 2: a garment reference photo\./);
 assert.equal(/swatch|image 3/i.test(garmentPrompt), false, "garment mode never mentions a swatch");
 assert.match(fabricPrompt, /Image 3: the fabric swatch/);
 assert.notEqual(garmentPrompt, fabricPrompt);
@@ -416,6 +416,24 @@ assert.match(studioSource, /AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT\s*\?\s*\{ measure
     sent[0].contents[0].parts.map((part) => ("text" in part ? "text" : part.inlineData.data)),
     ["text", "AAAA", "BBBB"],
   );
+  const labelled: AiTryOnGeminiRequest[] = [];
+  await runAiTryOnGemini({
+    generateContent: async (request) => {
+      labelled.push(request);
+      return imageResponse;
+    },
+    prompt: "p",
+    images: [
+      { mimeType: "image/jpeg", data: "AAAA" },
+      { mimeType: "image/png", data: "BBBB" },
+    ],
+    imageLabels: ["L1", "L2"],
+  });
+  assert.deepEqual(
+    labelled[0].contents[0].parts.map((part) => ("text" in part ? part.text : part.inlineData.data)),
+    ["p", "L1", "AAAA", "L2", "BBBB"],
+    "each label goes right before its image",
+  );
   const noImage = await runAiTryOnGemini({
     generateContent: async () => ({ candidates: [{ finishReason: "SAFETY", content: { parts: [{ text: "no" }] } }] }),
     prompt: "p",
@@ -500,7 +518,14 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
   const promptText = (h.calls[0].contents[0].parts[0] as { text: string }).text;
   assert.match(promptText, /- Height: 178$/m);
   assert.match(promptText, /- Long sleeve length: 63$/m, "server re-rounds hint values");
-  assert.equal(h.calls[0].contents[0].parts.length, 3, "garment mode: prompt + person + garment");
+  // Prompt v3: garment mode labels each image right before it.
+  assert.deepEqual(
+    h.calls[0].contents[0].parts.map((part) => ("text" in part ? part.text.split(",")[0] : "image")),
+    [promptText.split(",")[0], "Image 1", "image", "Image 2", "image"],
+    "garment mode: prompt, label + person, label + garment",
+  );
+  assert.match((h.calls[0].contents[0].parts[3] as { text: string }).text, /stand-in model; do not use them/);
+  assert.equal(h.calls[0].contents[0].parts.filter((part) => "inlineData" in part).length, 2);
   assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 1);
   const orderDocs = [...h.db.docs.keys()].filter((key) => key.startsWith("aiTryOnUsage/order-"));
   assert.equal(orderDocs.length, 1);
@@ -515,7 +540,8 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
     h.deps,
   );
   assert.equal(fabric.state.status, 200);
-  assert.equal(h.calls[1].contents[0].parts.length, 4);
+  assert.equal(h.calls[1].contents[0].parts.length, 4, "fabric mode layout unchanged: prompt + 3 images, no labels");
+  assert.equal(h.calls[1].contents[0].parts.slice(1).every((part) => "inlineData" in part), true);
   assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /Image 3: the fabric swatch/);
 
   // 5 tries per order: tries 3–5 succeed, try 6 is refused before Gemini.

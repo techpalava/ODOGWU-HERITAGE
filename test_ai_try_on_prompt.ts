@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import {
   AI_TRY_ON_PROMPT_VERSION,
   buildAiTryOnFitBlock,
+  buildAiTryOnImageLabels,
   buildAiTryOnPrompt,
 } from "./src/server/aiTryOnPrompt";
 import { chooseAiTryOnMode } from "./src/utils/aiTryOnGatewayContract";
@@ -36,14 +37,17 @@ import { parseAiTryOnGenerationRequest } from "./src/server/aiTryOnHttp";
 // ---------------------------------------------------------------- snapshots
 
 const GARMENT_SNAPSHOT = `Virtual try-on photo edit.
-Image 1: the customer. Image 2: the garment.
-Edit image 1 so the person wears the garment from image 2.
+Image 1: the customer. Image 2: a garment reference photo.
+Edit image 1 so the customer wears the ordered garment from image 2.
+The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 Keep the person exactly as in image 1: identity, face, hair, skin tone, body shape, pose, hands and background.
-Replace only the clothing the garment covers.
+Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
+Replace only the clothing it covers; keep the customer's other clothing and shoes from image 1.
 Copy the garment faithfully: construction, cut, length, neckline, sleeves, colour, pattern, embroidery and trims. Do not redesign it.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
 Ignore everything that is not the person or the garment: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
-Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.`;
+Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.
+Check: the face, body and background must be the customer's from image 1, not the model's.`;
 
 const FABRIC_SNAPSHOT = `Virtual try-on photo edit with a fabric change.
 Image 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.
@@ -85,7 +89,7 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v2": createHash("sha256")
+  "tryon-prompt-v3": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -98,7 +102,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v2");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v3");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -107,6 +111,22 @@ for (let run = 0; run < 3; run += 1) {
   assert.equal(buildAiTryOnPrompt({ mode: "fabric", fitHints: shuffledHints }), `${FABRIC_SNAPSHOT}\n\n${FIT_SNAPSHOT}`, "deterministic");
 }
 assert.equal(/swatch|image 3/i.test(GARMENT_SNAPSHOT), false, "garment mode never mentions a swatch");
+// v3 garment-mode fix (live smoke test returned the catalogue model photo).
+assert.match(GARMENT_SNAPSHOT, /person in image 2 is only a stand-in model/);
+assert.match(GARMENT_SNAPSHOT, /never return image 2/);
+assert.match(GARMENT_SNAPSHOT, /Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt\./);
+assert.match(GARMENT_SNAPSHOT, /keep the customer's other clothing and shoes from image 1/);
+assert.match(GARMENT_SNAPSHOT.split("\n").at(-1)!, /^Check: .*customer's from image 1, not the model's\.$/, "identity check is the last line");
+assert.equal(
+  buildAiTryOnPrompt({ mode: "fabric" }),
+  FABRIC_SNAPSHOT,
+  "v3 leaves fabric-mode wording unchanged",
+);
+assert.deepEqual(buildAiTryOnImageLabels("garment"), [
+  "Image 1, the customer to edit:",
+  "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
+]);
+assert.equal(buildAiTryOnImageLabels("fabric"), null, "fabric mode sends no image labels");
 assert.match(FABRIC_SNAPSHOT, /Do not invent or add prints/);
 for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
   assert.match(prompt, /identity, face, hair, skin tone, body shape, pose/);
@@ -118,7 +138,8 @@ for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
 }
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
-assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 230, "garment prompt stays short");
+// v3 added the stand-in-model and ordered-garment lines (+30 words); still under fabric mode.
+assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 290, "garment prompt stays short");
 assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 300, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
@@ -364,7 +385,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v2": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v3": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
