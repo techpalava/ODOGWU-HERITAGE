@@ -29,6 +29,8 @@ export interface AiTryOnGeminiRequest {
   config: {
     responseModalities: string[];
     abortSignal?: AbortSignal;
+    /** Model mode only: keep the studio model's 3:4 full-body frame. */
+    imageConfig?: { aspectRatio: "3:4" };
   };
 }
 
@@ -91,6 +93,7 @@ export const runAiTryOnGemini = async ({
   prompt,
   images,
   imageLabels = null,
+  aspectRatio = null,
   timeoutMs = 50_000,
   secret,
 }: {
@@ -100,6 +103,12 @@ export const runAiTryOnGemini = async ({
   images: readonly AiTryOnInlineImage[];
   /** Optional text label sent before each image (garment mode, prompt v3). */
   imageLabels?: readonly string[] | null;
+  /**
+   * Model mode: output aspect ratio. Without it Gemini answers 1:1 and crops
+   * a 3:4 full-body model at the shins (live check, 2 Nov 2026). The photo
+   * flow sends none, so its request is unchanged.
+   */
+  aspectRatio?: "3:4" | null;
   timeoutMs?: number;
   secret?: string | null;
 }): Promise<AiTryOnGeminiOutcome> => {
@@ -122,7 +131,11 @@ export const runAiTryOnGemini = async ({
         },
       ],
       // Same modalities as the Step 2 trial that succeeded.
-      config: { responseModalities: ["TEXT", "IMAGE"], abortSignal: controller.signal },
+      config: {
+        responseModalities: ["TEXT", "IMAGE"],
+        abortSignal: controller.signal,
+        ...(aspectRatio ? { imageConfig: { aspectRatio } } : {}),
+      },
     });
     const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
     const parts = candidates.flatMap((candidate) =>

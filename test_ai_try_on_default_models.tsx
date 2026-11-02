@@ -371,6 +371,7 @@ const harness = () => {
   const texts = parts.map((part) => part.text).filter(Boolean).join("\n");
   assert.ok(texts.includes(buildAiTryOnModelPrompt({ mode: "garment" })), "model-mode prompt");
   assert.ok(texts.includes(buildAiTryOnModelImageLabels("garment")[0]), "model-mode labels");
+  assert.deepEqual((request as unknown as { config: { imageConfig?: unknown } }).config.imageConfig, { aspectRatio: "3:4" }, "full-body 3:4 output");
   assert.equal(h.bucket.under(AI_TRY_ON_MODEL_RESULT_STORAGE_PREFIX).length, 1, "shared result saved");
   const wearerCopies = h.db.inCollection(AI_TRY_ON_PREVIEW_COLLECTION);
   assert.equal(wearerCopies.length, 1, "per-wearer copy for this session");
@@ -455,6 +456,7 @@ const harness = () => {
   assert.ok(texts.includes(buildAiTryOnPrompt({ mode: "garment", fitHints: fitHints as never })), "photo prompt with fit hints");
   assert.ok(texts.includes(buildAiTryOnImageLabels("garment")![0]));
   assert.equal(parts.find((part) => part.inlineData)?.inlineData?.data, PERSON_PHOTO, "image 1 is the customer's photo");
+  assert.equal("imageConfig" in (h.geminiRequests[0] as unknown as { config: object }).config, false, "photo request config unchanged");
   assert.equal(h.bucket.under(AI_TRY_ON_MODEL_RESULT_STORAGE_PREFIX).length, 0, "photos are never shared");
   assert.equal("modelId" in h.db.inCollection(AI_TRY_ON_PREVIEW_COLLECTION)[0][1], false);
 }
@@ -660,9 +662,12 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(byData(renderer, "data-ai-try-on-shown-on-model").length, 1);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "model choice restored");
+  assert.equal(hasConsent(renderer), false);
   await click(byData(renderer, "data-ai-try-on-delete")[0]);
   assert.deepEqual(deleted, [STORED]);
   assert.equal(byData(renderer, "data-ai-try-on-result").length, 0);
+  assert.equal(hasConsent(renderer), true, "delete clears the wearer's model choice");
 }
 
 {

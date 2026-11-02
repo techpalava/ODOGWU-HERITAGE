@@ -345,6 +345,14 @@ export const AiTryOnPhotoPanel = ({
               },
             },
       );
+      // A restored model preview brings back that wearer's model choice.
+      const restoredModelId = summary.modelId;
+      if (restoredModelId && findAiTryOnDefaultModel(restoredModelId)) {
+        setModelByWearer((current) =>
+          current[wearerId] ? current : { ...current, [wearerId]: restoredModelId },
+        );
+        setModelPickerOpen(true);
+      }
     });
   }, [target?.wearerId, target?.inputFingerprint, stored, previews, loadStoredPreview]);
 

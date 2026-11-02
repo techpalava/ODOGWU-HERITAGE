@@ -821,6 +821,7 @@ export async function handleAiTryOn(
     imageLabels: defaultModel
       ? buildAiTryOnModelImageLabels(parsed.mode)
       : buildAiTryOnImageLabels(parsed.mode),
+    aspectRatio: defaultModel ? "3:4" : null,
     secret: apiKey,
   });
   const latencyMs = now() - startedAt;
