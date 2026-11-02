@@ -2050,7 +2050,7 @@ assert.match(stepperSource, /onSelectPayment/);
 assert.match(summarySource, /Continue to Delivery/);
 assert.match(summarySource, /disabled/);
 assert.match(summarySource, /DesignStudioBackButton/);
-assert.match(summarySource, /backDestination="Measurement"/);
+assert.match(summarySource, /backDestination="AI Try-on"/);
 assert.match(
   summarySource,
   /Both inches and centimetres are shown, with your preferred unit first\./,
