@@ -106,7 +106,7 @@ const renderHarness = (
 };
 
 const continueButton = (renderer: ReactTestRenderer) =>
-  renderer.root.findAllByType("button").find((node) => node.props["aria-label"] === "Continue to Summary");
+  renderer.root.findAllByType("button").find((node) => node.props["aria-label"] === "Continue to AI Try-on");
 
 const requiredInputs = (renderer: ReactTestRenderer) =>
   renderer.root.findAllByProps({ "data-measurement-section": "required" }).flatMap((section) =>

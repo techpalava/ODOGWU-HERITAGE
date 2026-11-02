@@ -102,8 +102,8 @@ const stepFiles: Array<[string, string, RegExp[]]> = [
   ["2 Fabric", "src/components/DormantFutureFabricStep.tsx", [/destination: "Design Style"/, /future-fabric-continue-action/]],
   ["3 Design Style", "src/components/DormantFutureDesignStyleStep.tsx", [/disabled: !exactSetComplete,\s*locked: !exactSetComplete/, /future-design-style-continue-action/]],
   ["4/5 Custom Details + Personalized Additions", "src/components/DormantFutureCustomDetailsStep.tsx", [/disabled: !canContinue,\s*locked: !canContinue/]],
-  ["6 AI Try-on", "src/components/DormantFutureAiTryOnStep.tsx", [/locked: !\(workflow\.status === "completed" \|\| workflow\.status === "skipped"\)/]],
-  ["7 Measurement", "src/components/DormantFutureMeasurementStep.tsx", [/disabled: !canContinueToSummary,\s*locked: !canContinueToSummary/]],
+  ["6 Measurement", "src/components/DormantFutureMeasurementStep.tsx", [/disabled: !canContinueToSummary,\s*locked: !canContinueToSummary/]],
+  ["7 AI Try-on", "src/components/DormantFutureAiTryOnStep.tsx", [/locked: !\(workflow\.status === "completed" \|\| workflow\.status === "skipped"\)/]],
   ["8 Summary", "src/components/DormantFutureSummaryStep.tsx", [/disabled: !canContinueToShipping,\s*locked: !canContinueToShipping/]],
   ["9 Delivery & Pickup", "src/components/DormantFutureShippingStep.tsx", [/label: "Review Order"[\s\S]*?disabled: !reviewReady,\s*locked: !reviewReady/]],
 ];

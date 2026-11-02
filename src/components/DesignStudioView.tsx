@@ -4246,6 +4246,11 @@ export default function DesignStudioView({
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
     summaryUnlockedByMeasurements;
+  // AI Try-on (Step 7) sits between Measurement and Summary, so Summary also
+  // waits until the try-on is completed or skipped (the existing gate that
+  // used to unlock Measurement).
+  const isFutureAiTryOnFinishedForSummary =
+    isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow);
   const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
     futureSummary.status,
   );
@@ -4382,12 +4387,12 @@ export default function DesignStudioView({
       currentlyEnterable.add("personalized_additions");
     }
     if (isFuturePersonalizedAdditionsNavigationReady) {
-      currentlyEnterable.add("try_on");
-    }
-    if (isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow)) {
       currentlyEnterable.add("measurement");
     }
-    if (isFutureSummaryStageUnlocked) {
+    if (summaryUnlockedByMeasurements) {
+      currentlyEnterable.add("try_on");
+    }
+    if (isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary) {
       currentlyEnterable.add("summary");
     }
     if (isFutureShippingUnlocked) {
@@ -4409,8 +4414,9 @@ export default function DesignStudioView({
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
     isFuturePersonalizedAdditionsNavigationReady,
-    futureAiTryOnWorkflow,
+    summaryUnlockedByMeasurements,
     isFutureSummaryStageUnlocked,
+    isFutureAiTryOnFinishedForSummary,
     isFutureShippingUnlocked,
     isFuturePaymentReviewUnlocked,
   ]);
@@ -5480,15 +5486,19 @@ export default function DesignStudioView({
           (garment) => garment.garmentKey,
         ),
       });
+      const restoredMeasurementsReady =
+        restoredWearerRuntimes.length > 0
+          ? restoredMeasurementsComplete
+          : isFutureSummaryUnlockedByMeasurements(
+              restoredReconciledMeasurementState,
+            );
       const canRestoreSummary =
         restoredFabricCompletion.isComplete &&
         restoredSourceReady &&
         !restoredUploadedSource &&
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion) &&
         isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow) &&
-        (restoredWearerRuntimes.length > 0
-          ? restoredMeasurementsComplete
-          : isFutureSummaryUnlockedByMeasurements(restoredReconciledMeasurementState));
+        restoredMeasurementsReady;
       const restoredShippingResolution = reconcileFutureShippingState({
         state: restoredShippingState,
         garmentCount: restoredMembershipOccurrences.length,
@@ -5500,9 +5510,6 @@ export default function DesignStudioView({
           businessSettings.productionSettings.defaultPickupLocation || "",
       });
       const canRestoreShipping = canRestoreSummary;
-      const restoredMeasurementUnlocked = isFutureMeasurementStageUnlocked(
-        restoredAiTryOnWorkflow,
-      );
       const restoredPersonalizedAdditionsReady =
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion);
       const restoredStep4Ready = isFutureCustomDetailsContentReady(
@@ -5518,17 +5525,22 @@ export default function DesignStudioView({
           ? "shipping"
           : storedDraft?.currentStageId === "summary" && canRestoreSummary
             ? "summary"
-            : storedDraft?.currentStageId === "measurement" &&
+            : storedDraft?.currentStageId === "try_on" &&
                 restoredFabricCompletion.isComplete &&
                 restoredSourceReady &&
-                restoredMeasurementUnlocked
-              ? "measurement"
-              : storedDraft?.currentStageId === "try_on" &&
+                restoredPersonalizedAdditionsReady &&
+                restoredMeasurementsReady
+              ? "try_on"
+              : storedDraft?.currentStageId === "measurement" &&
                   restoredFabricCompletion.isComplete &&
-                  restoredSourceReady &&
-                  restoredPersonalizedAdditionsReady
-                ? "try_on"
-                : storedDraft?.currentStageId === "personalized_additions" &&
+                  restoredSourceReady
+                ? "measurement"
+                : storedDraft?.currentStageId === "try_on" &&
+                    restoredFabricCompletion.isComplete &&
+                    restoredSourceReady &&
+                    restoredPersonalizedAdditionsReady
+                  ? "measurement"
+                  : storedDraft?.currentStageId === "personalized_additions" &&
                     restoredFabricCompletion.isComplete &&
                     restoredSourceReady &&
                     restoredStep4Ready
@@ -8240,15 +8252,10 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !isFuturePersonalizedAdditionsNavigationReady &&
+      !summaryUnlockedByMeasurements &&
       !isStageHistoricallyUnlocked("try_on")
     ) {
-      navigateToFutureStage(
-        isFutureStep4CustomDetailsReady
-          ? "personalized_additions"
-          : "custom_details",
-        getValidationNavigationTarget(),
-      );
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
       return;
     }
     const fromStageId = futureStageId;
@@ -8264,10 +8271,15 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow) &&
+      !isFuturePersonalizedAdditionsNavigationReady &&
       !isStageHistoricallyUnlocked("measurement")
     ) {
-      navigateToFutureStage("try_on", getValidationNavigationTarget());
+      navigateToFutureStage(
+        isFutureStep4CustomDetailsReady
+          ? "personalized_additions"
+          : "custom_details",
+        getValidationNavigationTarget(),
+      );
       return;
     }
     navigateToFutureStage("measurement");
@@ -8283,6 +8295,13 @@ export default function DesignStudioView({
       !isStageHistoricallyUnlocked("summary")
     ) {
       navigateToFutureStage("measurement", getValidationNavigationTarget());
+      return;
+    }
+    if (
+      !isFutureAiTryOnFinishedForSummary &&
+      !isStageHistoricallyUnlocked("summary")
+    ) {
+      navigateToFutureStage("try_on", getValidationNavigationTarget());
       return;
     }
     navigateToFutureStage("summary");
@@ -9129,7 +9148,7 @@ export default function DesignStudioView({
     });
     if (!transition.ok) return;
     setFutureAiTryOnWorkflow(transition.state);
-    navigateToFutureStage("measurement");
+    navigateToFutureStage("summary");
   };
   const handleFutureMeasurementRouteChange = (route: MeasurementMethodId) => {
     if (futureMeasurementHydrationInvalid) return;
@@ -11152,11 +11171,11 @@ export default function DesignStudioView({
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
         canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
-        canEnterTryOn={isFuturePersonalizedAdditionsNavigationReady}
-        canEnterMeasurement={isFutureMeasurementStageUnlocked(
-          futureAiTryOnWorkflow,
-        )}
-        canEnterSummary={isFutureSummaryStageUnlocked}
+        canEnterTryOn={summaryUnlockedByMeasurements}
+        canEnterMeasurement={isFuturePersonalizedAdditionsNavigationReady}
+        canEnterSummary={
+          isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary
+        }
         canEnterShipping={isFutureShippingUnlocked}
         canEnterPayment={isFuturePaymentReviewUnlocked}
         onSelectGarmentType={handleStepperJump(() => navigateToFutureStage("garment_type"))}
@@ -11524,7 +11543,7 @@ export default function DesignStudioView({
           onContinue={
             futureStageId === "custom_details"
               ? handleOpenDormantPersonalizedAdditionsStage
-              : handleOpenDormantAiTryOnStage
+              : handleOpenDormantMeasurementStage
           }
           orderSummary={
             embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
@@ -11545,10 +11564,10 @@ export default function DesignStudioView({
         <DormantFutureAiTryOnStep
           workflow={futureAiTryOnWorkflow}
           skipAllowed
-          onBack={() => handleBackDuringSummaryEdit("personalized_additions")}
+          onBack={() => handleBackDuringSummaryEdit("measurement")}
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
-          onContinue={handleOpenDormantMeasurementStage}
+          onContinue={handleOpenDormantSummaryStage}
           livePanel={
             aiTryOnAvailability.status === "available" &&
             futureAiTryOnInputFingerprint &&
@@ -11771,8 +11790,8 @@ export default function DesignStudioView({
             }
           }}
           onRouteChange={handleFutureMeasurementRouteChange}
-          onBack={() => handleBackDuringSummaryEdit("try_on")}
-          onContinue={handleOpenDormantSummaryStage}
+          onBack={() => handleBackDuringSummaryEdit("personalized_additions")}
+          onContinue={handleOpenDormantAiTryOnStage}
         />
         </>
       ) : futureStageId === "summary" ? (
@@ -11791,7 +11810,7 @@ export default function DesignStudioView({
           summary={futureSummary}
           orderContext={customerOrderContextPresentation}
           inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
-          onBack={() => navigateToFutureStage("measurement")}
+          onBack={() => navigateToFutureStage("try_on")}
           onEditGarments={() => {
             beginSummaryEditReturn({ focusStageId: "garment_type" });
             navigateToFutureStage("garment_type");

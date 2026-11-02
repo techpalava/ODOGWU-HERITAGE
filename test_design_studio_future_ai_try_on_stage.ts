@@ -98,8 +98,8 @@ assert.deepEqual(
     "design_style",
     "custom_details",
     "personalized_additions",
-    "try_on",
     "measurement",
+    "try_on",
     "summary",
     "shipping",
     "payment",
@@ -110,6 +110,10 @@ assert.deepEqual(DESIGN_STUDIO_STEPS[4], {
   label: "Personalized Additions",
 });
 assert.deepEqual(DESIGN_STUDIO_STEPS[5], {
+  id: "measurement",
+  label: "Measurement",
+});
+assert.deepEqual(DESIGN_STUDIO_STEPS[6], {
   id: "try_on",
   label: "AI Try-on",
 });
@@ -133,7 +137,7 @@ assert.equal(isFutureMeasurementStageUnlocked(skippedWorkflow), true);
 assert.deepEqual(
   normalizeAiTryOnWorkflowState(JSON.parse(JSON.stringify(skippedWorkflow))),
   skippedWorkflow,
-  "A skipped Step 6 must remain complete after draft JSON restoration.",
+  "A skipped AI Try-on must remain complete after draft JSON restoration.",
 );
 
 const readyWorkflow = reconcileAiTryOnWorkflow({
@@ -197,7 +201,21 @@ assert.equal(
   assert.equal(
     isFutureMeasurementStageUnlocked(workflow),
     false,
-    `${workflow.status} must not unlock Measurement (Step 7).`,
+    `${workflow.status} is not a completed or skipped AI Try-on.`,
+  );
+  assert.equal(
+    createDormantDesignStudioJourneyState({
+      persistedDraft: {
+        currentStageId: "measurement",
+        garmentTypeSelection,
+        aiTryOnWorkflow: workflow,
+      },
+      normalizedCustomDetailCatalog: catalog.activeOptions,
+      isFabricStageComplete: true,
+      isCustomDetailsStageReady: true,
+    }).currentStageId,
+    "measurement",
+    `${workflow.status} must not lock Measurement.`,
   );
 });
 assert.deepEqual(
@@ -210,8 +228,8 @@ assert.deepEqual(
 
 const stepperMarkup = renderToStaticMarkup(
   createElement(DesignStudioJourneyStepper, {
-    currentStageId: "measurement",
-    highestUnlockedStageIndex: 5,
+    currentStageId: "try_on",
+    highestUnlockedStageIndex: 6,
     canEnterFabric: true,
     canEnterDesignStyle: true,
     canEnterCustomDetails: true,
@@ -237,8 +255,12 @@ assert.match(
 );
 assert.match(
   stepperMarkup,
-  /aria-label="Step 6: AI Try-on, completed"/,
+  /aria-label="Step 6: Measurement, completed"/,
   "Earlier completed steps must remain represented as navigable completed stages.",
+);
+assert.match(
+  stepperMarkup,
+  /aria-label="Step 7: AI Try-on, current"/,
 );
 assert.match(stepperMarkup, /aria-label="Step 8: Summary, locked"/);
 assert.match(
@@ -273,15 +295,15 @@ assert.match(customDetailsSource, /isFutureCustomDetailsContentReady/);
 assert.match(customDetailsSource, /onContinue/);
 assert.match(
   customDetailsSource,
-  /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"AI Try-on"\s*:\s*"Personalized Additions"/,
+  /const nextStageLabel = isPersonalizedAdditionsStage\s*\?\s*"Measurement"\s*:\s*"Personalized Additions"/,
 );
 assert.match(customDetailsSource, /Continue to \$\{nextStageLabel\}/);
 assert.match(tryOnSource, /formatDesignStudioStepCounter\("try_on"\)/);
 assert.match(tryOnSource, /DesignStudioBackButton/);
-assert.match(tryOnSource, /const previousStageLabel = "Personalized Additions"/);
+assert.match(tryOnSource, /const previousStageLabel = "Measurement"/);
 assert.equal((tryOnSource.match(/backDestination=\{previousStageLabel\}/g) || []).length, 2);
 assert.equal(tryOnSource.includes('backDestination="Custom Details"'), false);
-assert.match(tryOnSource, /Continue to Measurement is locked/);
+assert.match(tryOnSource, /Continue to Summary is locked/);
 assert.match(tryOnSource, /aria-live="polite"/);
 assert.match(tryOnSource, /Continue without AI Try-on/);
 assert.match(tryOnSource, /AI Try-on is currently unavailable/);
@@ -306,7 +328,15 @@ assert.equal(livePanelSource.includes("type=\"checkbox\""), false, "consent is a
 // Privacy boundary: no photo or preview data is persisted in workflow state,
 // the draft, or browser storage.
 assert.equal(livePanelSource.includes("assetId"), false);
-assert.equal(livePanelSource.includes("jobId"), false);
+// The busy-retry ticket id (#1277) is only passed to the release call; it is
+// never written to the workflow, the draft or browser storage.
+assert.ok(
+  livePanelSource
+    .split("\n")
+    .filter((line) => line.includes("jobId"))
+    .every((line) => /releaseBusyJob|giveUpBusy|releaseAiTryOnBusyJob/.test(line)),
+  "jobId appears only in the busy-job release call",
+);
 assert.equal(/localStorage|sessionStorage|indexedDB/.test(livePanelSource), false);
 assert.match(stepperSource, /DESIGN_STUDIO_TEN_STAGE_FOUNDATION\.map/);
 assert.match(stepperSource, /canEnterTryOn/);
@@ -315,17 +345,31 @@ assert.match(stepperSource, /data-step-state=\{state\}/);
 assert.match(studioSource, /handleOpenDormantAiTryOnStage/);
 assert.match(
   studioSource,
-  /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("measurement"\)\}/,
 );
 // Availability comes from GET /api/ai-try-on (Step 5); unknown/unavailable → false.
 assert.match(studioSource, /gatewayAvailable: aiTryOnGatewayAvailable/);
 assert.match(studioSource, /aiTryOnAvailability\.status === "available"/);
 assert.equal(studioSource.includes("gatewayAvailable: true"), false);
-// Skip is hidden while a preview is generating (Xavier, Step 5).
-assert.match(tryOnSource, /\{canSkip && !generating && \(/);
+// While a preview is generating the skip button stays and reads "Continue
+// while we make your preview" (#1270 background generation); it continues to
+// Summary, the step after AI Try-on.
+assert.match(tryOnSource, /\{canSkip && \(/);
+assert.match(tryOnSource, /generating \? AI_TRY_ON_BACKGROUND_COPY\.continueWhileGenerating : "Continue without AI Try-on"/);
+assert.match(studioSource, /onSkip=\{handleSkipDormantAiTryOn\}/);
+assert.match(studioSource, /event: \{ type: "skip" \},[\s\S]{0,160}navigateToFutureStage\("summary"\)/);
 assert.match(studioSource, /onGeneratingChange=\{setAiTryOnGenerating\}/);
 assert.match(studioSource, /generating=\{aiTryOnGenerating\}/);
 assert.match(legacyCardSource, /Coming Soon/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 
+// Step order: Measurement (6) -> AI Try-on (7) -> Summary (8). AI Try-on opens
+// only when Measurement is complete; Summary still waits until the try-on is
+// completed or skipped (stepper, Continue and the stage list agree).
+assert.match(studioSource, /canEnterTryOn=\{summaryUnlockedByMeasurements\}/);
+assert.match(studioSource, /canEnterMeasurement=\{isFuturePersonalizedAdditionsNavigationReady\}/);
+assert.match(studioSource, /isFutureAiTryOnFinishedForSummary =\s+isFutureMeasurementStageUnlocked\(futureAiTryOnWorkflow\)/);
+assert.match(studioSource, /canEnterSummary=\{\s+isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary\s+\}/);
+assert.match(studioSource, /if \(isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary\) \{\s+currentlyEnterable\.add\("summary"\)/);
+assert.match(studioSource, /!isFutureAiTryOnFinishedForSummary &&\s+!isStageHistoricallyUnlocked\("summary"\)\s+\) \{\s+navigateToFutureStage\("try_on", getValidationNavigationTarget\(\)\)/);
 console.log("PASS: dormant future AI Try-on stage navigation and truthful UI");

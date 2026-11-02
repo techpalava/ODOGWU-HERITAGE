@@ -1182,17 +1182,17 @@ export const DormantFutureMeasurementStep = ({
       <header className="rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           slot="header"
-          backDestination="AI Try-on"
+          backDestination="Personalized Additions"
           onBack={onBack}
           className="mb-3"
           forward={{
-            destination: "Summary",
+            destination: "AI Try-on",
             onClick: onContinue,
             disabled: !canContinueToSummary,
             locked: !canContinueToSummary,
             onLockedClick: () =>
               requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
-            ariaLabel: "Continue to Summary",
+            ariaLabel: "Continue to AI Try-on",
           }}
         />
         <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
@@ -1851,7 +1851,7 @@ export const DormantFutureMeasurementStep = ({
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           slot="footer"
-          backDestination="AI Try-on"
+          backDestination="Personalized Additions"
           onBack={onBack}
           note={(
             <>
@@ -1865,13 +1865,13 @@ export const DormantFutureMeasurementStep = ({
             </>
           )}
           forward={{
-            destination: "Summary",
+            destination: "AI Try-on",
             onClick: onContinue,
             disabled: !canContinueToSummary,
             locked: !canContinueToSummary,
             onLockedClick: () =>
               requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
-            ariaLabel: "Continue to Summary",
+            ariaLabel: "Continue to AI Try-on",
             "aria-describedby": "measurement-risk-selection-notice",
           }}
         />

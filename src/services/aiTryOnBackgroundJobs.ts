@@ -6,7 +6,7 @@ import type { AiTryOnStoredPreviewSummary } from "../utils/aiTryOnGatewayContrac
  * Background AI Try-on generation (one in-flight request per wearer).
  *
  * The request runs here, outside any step component, so the customer can
- * move on to Measurement and later steps while Gemini works (the app is a
+ * move on to Summary and later steps while Gemini works (the app is a
  * single page; steps never reload it). React hosts read the jobs:
  * - the AI Try-on panel applies a settled job to its own state (preview,
  *   tries left) whenever it is mounted, even if that is later;

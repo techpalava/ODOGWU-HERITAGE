@@ -646,7 +646,7 @@ try {
       const step = measurementSteps[0]!;
       assert.equal(step.props.hydrationInvalid, true);
       const continueButtons = renderer.root.findAllByType("button").filter((button) =>
-        collectText(button).includes("Continue to Summary"),
+        collectText(button).includes("Continue to AI Try-on"),
       );
       continueButtons.forEach((button) => {
         assert.equal(button.props.disabled, true);
