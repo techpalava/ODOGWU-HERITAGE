@@ -347,6 +347,7 @@ import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
   fetchStoredAiTryOnPreview,
+  releaseAiTryOnBusyJob,
   type AiTryOnAvailabilityDetails,
 } from "../services/aiTryOnGateway";
 import {
@@ -3892,6 +3893,7 @@ export default function DesignStudioView({
         return availability.status === "available" ? availability.storedPreviews : null;
       },
       loadStoredPreview: (previewId) => fetchStoredAiTryOnPreview({ credentials, previewId }),
+      giveUpBusy: (wearerId, jobId) => releaseAiTryOnBusyJob({ credentials, jobId, wearerKey: wearerId }),
     });
   }, [guestDraftHydrated, futureDraftIdentityKey]);
   /**

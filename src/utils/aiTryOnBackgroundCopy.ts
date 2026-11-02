@@ -18,12 +18,19 @@ export const AI_TRY_ON_BACKGROUND_COPY = {
   /** Status chip by the step bar. */
   chipOne: (name: string | null) => `Making ${aiTryOnPossessive(name)} preview…`,
   chipMany: (count: number) => `Making ${count} previews…`,
+  /** Status chip while Gemini is busy and we keep retrying (approved, option A). */
+  chipBusy: (name: string | null) => `Still making ${aiTryOnPossessive(name)} preview… it's busy right now`,
+  /** Panel, while that wearer's request is being retried (approved, option A). */
+  panelBusy:
+    "Lots of people are making previews right now. We'll keep trying for a few minutes; you can carry on and we'll let you know.",
   /** Toast: ready. */
   readyTitle: (name: string | null) => `${capitalise(aiTryOnPossessive(name))} preview is ready`,
   readyAction: "View preview",
   /** Toast: failed (live request; no try was used). */
   failedTitle: (name: string | null) => `We couldn't create ${aiTryOnPossessive(name)} preview`,
   failedBody: "This try wasn't counted.",
+  /** Toast and panel: still busy after the retries; the try was refunded (approved, option A). */
+  busyFailedBody: "It's still too busy. This try wasn't counted. Please try again in a little while.",
   /** Toast: the page reloaded mid-request and no preview turned up. */
   resumeFailedBody: "The page reloaded before it finished. Check AI Try-on for how many tries you have left.",
   retryAction: "Try again",

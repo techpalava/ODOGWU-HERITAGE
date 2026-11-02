@@ -765,7 +765,7 @@ class FakeFirestore {
     environment,
     getDb: () => db.asFirestore(),
     consumeIpRateLimit: async () => undefined,
-    createGenerateContent: () => async () => { throw Object.assign(new Error("upstream"), { status: 503 }); },
+    createGenerateContent: () => async () => { throw Object.assign(new Error("upstream"), { status: 500 }); },
     createPreviewStore: () => ({
       save: async () => { throw new Error("not expected"); },
       list: async () => [],

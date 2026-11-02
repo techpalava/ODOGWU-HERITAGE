@@ -7,6 +7,14 @@ import {
 } from "./aiTryOnImagePrep.js";
 import type { Firestore } from "firebase-admin/firestore";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
+import {
+  AI_TRY_ON_BUSY_JOB_ID_PATTERN,
+  AI_TRY_ON_BUSY_MIN_GAP_MS,
+  AI_TRY_ON_BUSY_RETRY_IP_LIMIT,
+  createAiTryOnBusyJobs,
+  type AiTryOnBusyClaim,
+  type AiTryOnBusyJobs,
+} from "./aiTryOnBusyJobs.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import {
   AuthRateLimitError,
@@ -199,6 +207,10 @@ export interface AiTryOnHttpDependencies {
   loadDefaultModelImage?: LoadAiTryOnDefaultModelImage;
   /** Shared model-mode result cache. */
   createModelResultCache?: (db: Firestore) => AiTryOnModelResultCache;
+  /** Busy retries: held jobs (`aiTryOnJobs`). */
+  createBusyJobs?: (db: Firestore, limits: AiTryOnUsageLimits) => AiTryOnBusyJobs;
+  /** Light per-IP window for busy retries only. */
+  consumeBusyRetryIpLimit?: (db: Firestore, ip: string) => Promise<void>;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -243,6 +255,7 @@ const ALLOWED_KEYS = new Set([
   "wearerKey",
   "fitHints",
   "orderDetails",
+  "busyJobId",
 ]);
 const WEARER_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 const PREVIEW_ID_PATTERN = /^tryon-[0-9a-f-]{36}$/;
@@ -305,6 +318,8 @@ type ParsedRequest =
       fabric: AiTryOnReferenceSource | null;
       fitHints: AiTryOnFitHint[];
       orderDetails: AiTryOnOrderDetails | null;
+      /** A busy retry of a held try. */
+      busyJobId: string | null;
     }
   | { ok: false; status: 400 | 413; code: "INVALID_REQUEST" | "PAYLOAD_TOO_LARGE"; error: string };
 
@@ -405,6 +420,10 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
   if (!fitHints) return invalid("Fit hints are not valid.");
   const orderDetails = normalizeAiTryOnOrderDetails(parsedBody.orderDetails);
   if (orderDetails === "invalid") return invalid("Order details are not valid.");
+  const busyJobId = parsedBody.busyJobId === undefined ? null : parsedBody.busyJobId;
+  if (busyJobId !== null && (typeof busyJobId !== "string" || !AI_TRY_ON_BUSY_JOB_ID_PATTERN.test(busyJobId))) {
+    return invalid("A valid busy job id is required.");
+  }
   return {
     ok: true,
     mode,
@@ -416,6 +435,7 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
     fabric,
     fitHints,
     orderDetails,
+    busyJobId: busyJobId as string | null,
   };
 };
 
@@ -490,6 +510,18 @@ export async function handleAiTryOn(
       },
     });
 
+  const createJobs = (db: Firestore, limits: AiTryOnUsageLimits): AiTryOnBusyJobs =>
+    (dependencies.createBusyJobs ?? ((database, usage) => createAiTryOnBusyJobs(database, usage, { now })))(db, limits);
+  /** Refunds a session's busy jobs; never blocks the caller. */
+  const sweepJobs = async (db: Firestore, sessionId: string, all: boolean) => {
+    try {
+      const refunded = await createJobs(db, createLimits(db)).sweep(sessionId, { all });
+      if (refunded) log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: all ? "session_closed" : "expired", jobs: refunded }));
+    } catch {
+      // A job left behind expires; the TTL policy removes it.
+    }
+  };
+
   // Caller identity: a verified non-anonymous Firebase user, or a guest
   // (with or without a session token). A bad ID token is refused rather
   // than silently treated as a guest.
@@ -511,6 +543,30 @@ export async function handleAiTryOn(
     sendError(res, 401, "AUTH_REQUIRED", "Sign in again to use AI Try-on.", false);
   const sessionRequired = () =>
     sendError(res, 401, "SESSION_REQUIRED", "Your AI Try-on session has ended. Reload to start again.", false);
+
+  // Busy retry given up by the browser (time ran out, or a reload found no
+  // preview): refund the held try once. Unknown or running jobs: nothing.
+  if (req.method === "DELETE" && readQueryParam(req, "busyJobId") !== null) {
+    const jobId = readQueryParam(req, "busyJobId")!;
+    const wearerKey = readQueryParam(req, "wearerKey") ?? AI_TRY_ON_DEFAULT_WEARER_KEY;
+    if (!AI_TRY_ON_BUSY_JOB_ID_PATTERN.test(jobId) || !WEARER_KEY_PATTERN.test(wearerKey)) {
+      return sendError(res, 400, "INVALID_REQUEST", "A valid busy job id is required.", false);
+    }
+    const identity = await readIdentity();
+    if (identity === "auth_failed") return authFailed();
+    try {
+      const db = await resolveDb();
+      const sessionId = await createSessions(db).authorize(identity);
+      const released = sessionId
+        ? await createJobs(db, createLimits(db)).giveUp({ sessionId, wearerKey, jobId })
+        : false;
+      if (released) log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "gave_up" }));
+      setNoStore(res);
+      return res.status(200).json({ status: "released", released });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+    }
+  }
 
   // Stored preview read/delete: owner-only by server session, and available
   // even when generation is switched off, so a customer can always delete.
@@ -543,7 +599,11 @@ export async function handleAiTryOn(
       const store = createStore(db);
       if (req.method === "DELETE") {
         const deleted = await store.remove(sessionId, deleteAll ? null : previewId);
-        if (closeSession) await createSessions(db).close(sessionId);
+        if (closeSession) {
+          await createSessions(db).close(sessionId);
+          // Fresh order: a try still held for a busy retry goes back.
+          await sweepJobs(db, sessionId, true);
+        }
         setNoStore(res);
         return res.status(200).json({ status: "deleted", deleted });
       }
@@ -596,6 +656,8 @@ export async function handleAiTryOn(
         if (error instanceof AiTryOnGuestSessionLimitError) return unavailable("RATE_LIMITED");
         throw error;
       }
+      // A busy try whose browser never came back is refunded before counting.
+      await sweepJobs(db, session.sessionId, false);
       let previews: StoredPreviewList = [];
       try {
         previews = await createStore(db).list(session.sessionId);
@@ -645,7 +707,96 @@ export async function handleAiTryOn(
   } catch {
     return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
   }
-  if (!sessionId) return sessionRequired();
+  if (!sessionId) {
+    // A busy retry after the order was placed or cleared: stop retrying.
+    return parsed.busyJobId
+      ? sendError(res, 409, "SESSION_CLOSED", "This AI Try-on session has ended.", false)
+      : sessionRequired();
+  }
+  const limits = createLimits(db);
+  const jobs = createJobs(db, limits);
+
+  // Busy retry: reuse the held try (no new try, IP window or global count).
+  let claim: Extract<AiTryOnBusyClaim, { kind: "claimed" }> | null = null;
+  if (parsed.busyJobId) {
+    try {
+      await (dependencies.consumeBusyRetryIpLimit ??
+        ((database: Firestore, ip: string) =>
+          consumeAuthRateLimit(database, AI_TRY_ON_BUSY_RETRY_IP_LIMIT, ip, now)))(db, getClientIp(req));
+    } catch (error) {
+      if (error instanceof AuthRateLimitError) {
+        return sendError(res, 429, "RATE_LIMITED", "Too many AI Try-on requests. Please wait and try again.", true, error.retryAfterSeconds);
+      }
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+    }
+    let claimed: AiTryOnBusyClaim;
+    try {
+      claimed = await jobs.claim({
+        sessionId,
+        wearerKey: parsed.wearerKey,
+        jobId: parsed.busyJobId,
+        inputFingerprint: parsed.inputFingerprint,
+      });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+    }
+    if (claimed.kind === "gone") {
+      return sendError(res, 410, "BUSY_JOB_GONE", "This AI Try-on request has ended.", false);
+    }
+    if (claimed.kind === "too_soon") {
+      return sendError(res, 429, "RATE_LIMITED", "Please wait a moment before trying again.", true, Math.ceil(claimed.retryAfterMs / 1000));
+    }
+    if (claimed.kind === "exhausted") {
+      log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "exhausted" }));
+      return sendBusyFinal();
+    }
+    claim = claimed;
+  } else {
+    let free: boolean;
+    try {
+      free = await jobs.beforeNewRequest({ sessionId, wearerKey: parsed.wearerKey });
+    } catch {
+      free = true;
+    }
+    if (!free) {
+      return sendError(res, 409, "BUSY_JOB_ACTIVE", "A preview is already being made for this person.", false);
+    }
+  }
+
+  /** Tries left now (after a refund or a held try); informative only. */
+  async function readTriesLeft(): Promise<{ order: number; account: number | null }> {
+    try {
+      return {
+        order: await limits.readOrderTriesRemaining(sessionId!),
+        account: identity !== "auth_failed" && identity.uid !== null ? await limits.readAccountTriesRemaining(identity.uid) : null,
+      };
+    } catch {
+      return { order: AI_TRY_ON_TRIES_PER_ORDER, account: null };
+    }
+  }
+  /** The busy try ended without a preview and was refunded. */
+  async function sendBusyFinal() {
+    const left = await readTriesLeft();
+    return sendError(
+      res,
+      503,
+      "PROVIDER_BUSY",
+      "AI Try-on is very busy right now. Please try again later.",
+      false,
+      undefined,
+      left.order,
+      left.account,
+    );
+  }
+  /** Settles a claimed job that ends here for another reason (refund once). */
+  const refundClaim = async () => {
+    if (!claim) return;
+    try {
+      if (await jobs.refund(claim)) log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "other_failure" }));
+    } catch {
+      // The job expires and the next session call refunds it.
+    }
+  };
 
   /** Charges the per-IP window; returns the sent error, or null when allowed. */
   const chargeIpRateLimit = async (): Promise<unknown> => {
@@ -671,7 +822,7 @@ export async function handleAiTryOn(
   const defaultModel = parsed.defaultModel;
   // Photo flow: charged first, as before. Model mode: charged only on a
   // cache miss, so a reused result costs nothing.
-  if (!defaultModel) {
+  if (!defaultModel && !claim) {
     const limited = await chargeIpRateLimit();
     if (limited !== null) return limited;
   }
@@ -699,6 +850,7 @@ export async function handleAiTryOn(
         reason: error instanceof AiTryOnReferenceImageError ? error.message : "reference_error",
       }),
     );
+    await refundClaim();
     return sendError(
       res,
       422,
@@ -727,7 +879,6 @@ export async function handleAiTryOn(
     }
   }
 
-  const limits = createLimits(db);
   const promptVersion = defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
   const saveWearerPreview = async (previewId: string, image: { mimeType: string; data: string }) => {
     let saved: Awaited<ReturnType<AiTryOnPreviewStore["save"]>> | null;
@@ -783,6 +934,8 @@ export async function handleAiTryOn(
     }
     const hit = modelCache ? await modelCache.reuse(modelCacheKey) : null;
     if (hit) {
+      // A reused result never uses a try, so a held busy try goes back.
+      await refundClaim();
       const previewId = (dependencies.createAssetId ?? createAiTryOnPreviewId)();
       const stored = await saveWearerPreview(previewId, hit);
       let orderTriesRemaining: number = AI_TRY_ON_TRIES_PER_ORDER;
@@ -820,18 +973,23 @@ export async function handleAiTryOn(
       setNoStore(res);
       return res.status(200).json(body);
     }
-    const limited = await chargeIpRateLimit();
-    if (limited !== null) return limited;
+    if (!claim) {
+      const limited = await chargeIpRateLimit();
+      if (limited !== null) return limited;
+    }
   }
 
-  let reservation;
-  try {
-    // Signed-in customers also use one of the account's 15 tries per 30 days.
-    reservation = await limits.reserve(sessionId, { accountUid: identity.uid });
-  } catch {
-    return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+  // The try: newly reserved, or the one a busy job already holds.
+  let reservation: Awaited<ReturnType<AiTryOnUsageLimits["reserve"]>> | null = null;
+  if (!claim) {
+    try {
+      // Signed-in customers also use one of the account's 15 tries per 30 days.
+      reservation = await limits.reserve(sessionId, { accountUid: identity.uid });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+    }
   }
-  if (reservation.ok === false) {
+  if (reservation && reservation.ok === false) {
     if (reservation.code === "ACCOUNT_TRY_LIMIT_REACHED") {
       log(JSON.stringify({ event: "ai_try_on", outcome: "account_limit_reached" }));
       return sendError(
@@ -878,32 +1036,88 @@ export async function handleAiTryOn(
   const latencyMs = now() - startedAt;
 
   if (outcome.ok === false) {
+    const logFailure = (busy: string | null) =>
+      log(
+        JSON.stringify({
+          event: "ai_try_on",
+          outcome: outcome.kind,
+          mode: parsed.mode,
+          promptVersion,
+          fitHints: parsed.fitHints.length,
+          latencyMs,
+          attempts: outcome.attempts ?? 1,
+          ...(busy ? { busy, busyRequest: claim ? claim.requests : 1 } : {}),
+          reason: outcome.reason,
+        }),
+      );
+    // Still over capacity: keep the try held for the browser's next retry.
+    if (outcome.capacity) {
+      let next: { jobId: string } | "refunded" | "gone" | null = null;
+      try {
+        if (claim) {
+          const settled = await jobs.release(claim);
+          next = settled === "held" ? { jobId: claim.jobId } : settled;
+        } else if (reservation && reservation.ok) {
+          next = await jobs.hold({
+            sessionId,
+            wearerKey: parsed.wearerKey,
+            inputFingerprint: parsed.inputFingerprint,
+            orderDocId: reservation.orderDocId,
+            account: reservation.account,
+          });
+        }
+      } catch {
+        next = null;
+      }
+      if (next && typeof next === "object") {
+        logFailure("held");
+        setNoStore(res);
+        res.setHeader("Retry-After", String(AI_TRY_ON_BUSY_MIN_GAP_MS / 1000));
+        const body: AiTryOnErrorResponse = {
+          error: "AI Try-on is very busy right now. We'll keep trying.",
+          code: "PROVIDER_BUSY",
+          retryable: true,
+          retryAfterSeconds: AI_TRY_ON_BUSY_MIN_GAP_MS / 1000,
+          busyJobId: next.jobId,
+          ...(reservation && reservation.ok ? { orderTriesRemaining: reservation.orderTriesRemaining } : {}),
+          ...(reservation && reservation.ok && reservation.accountTriesRemaining !== null
+            ? { accountTriesRemaining: reservation.accountTriesRemaining }
+            : {}),
+        };
+        return res.status(503).json(body);
+      }
+      if (claim) {
+        // Out of retries (refunded once here), or already refunded elsewhere.
+        logFailure("gave_up");
+        if (next === "gone") log(JSON.stringify({ event: "ai_try_on", outcome: "busy_job_gone" }));
+        return sendBusyFinal();
+      }
+      // The job could not be held: fail as before (refund below).
+    }
+    if (claim) {
+      await refundClaim();
+      logFailure("ended");
+      const left = await readTriesLeft();
+      return outcome.kind === "rejected"
+        ? sendError(res, 422, "PROVIDER_REJECTED", "AI Try-on could not create a preview from these photos.", outcome.retryable, undefined, left.order, left.account)
+        : sendError(res, 502, "PROVIDER_FAILED", "AI Try-on could not be completed.", outcome.retryable, undefined, left.order, left.account);
+    }
+    const reserved = reservation as Extract<NonNullable<typeof reservation>, { ok: true }>;
     try {
-      await limits.release(reservation.orderDocId, reservation.account);
+      await limits.release(reserved.orderDocId, reserved.account);
     } catch {
       // A failed release only makes the cap stricter; never block the reply.
     }
-    log(
-      JSON.stringify({
-        event: "ai_try_on",
-        outcome: outcome.kind,
-        mode: parsed.mode,
-        promptVersion,
-        fitHints: parsed.fitHints.length,
-        latencyMs,
-        attempts: outcome.attempts ?? 1,
-        reason: outcome.reason,
-      }),
-    );
+    logFailure(null);
     // The reservation was released, so this try was not counted.
     const orderTriesRemaining = Math.min(
       AI_TRY_ON_TRIES_PER_ORDER,
-      reservation.orderTriesRemaining + 1,
+      reserved.orderTriesRemaining + 1,
     );
     const accountTriesRemaining =
-      reservation.accountTriesRemaining === null
+      reserved.accountTriesRemaining === null
         ? null
-        : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reservation.accountTriesRemaining + 1);
+        : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reserved.accountTriesRemaining + 1);
     return outcome.kind === "rejected"
       ? sendError(
           res,
@@ -926,6 +1140,19 @@ export async function handleAiTryOn(
           accountTriesRemaining,
         );
   }
+
+  // A preview was made: a held busy try is now used.
+  if (claim) {
+    try {
+      await jobs.complete(claim);
+    } catch {
+      // Left running: its lease lapses and an expiry sweep would refund it.
+    }
+  }
+  const triesAfter =
+    reservation && reservation.ok
+      ? { order: reservation.orderTriesRemaining, account: reservation.accountTriesRemaining }
+      : await readTriesLeft();
 
   const previewId = (dependencies.createAssetId ?? createAiTryOnPreviewId)();
   // Step 7: one compact WebP is both stored and returned. If re-encoding
@@ -959,6 +1186,7 @@ export async function handleAiTryOn(
       fitHints: parsed.fitHints.length,
       latencyMs,
       attempts: outcome.attempts ?? 1,
+      ...(claim ? { busy: "recovered", busyRequest: claim.requests } : {}),
       previewStored: Boolean(stored),
     }),
   );
@@ -973,10 +1201,8 @@ export async function handleAiTryOn(
     image: preview,
     previewStored: Boolean(stored),
     ...(stored ? { previewExpiresAt: stored.expiresAt } : {}),
-    orderTriesRemaining: reservation.orderTriesRemaining,
-    ...(reservation.accountTriesRemaining !== null
-      ? { accountTriesRemaining: reservation.accountTriesRemaining }
-      : {}),
+    orderTriesRemaining: triesAfter.order,
+    ...(triesAfter.account !== null ? { accountTriesRemaining: triesAfter.account } : {}),
     promptVersion,
     ...(defaultModel ? { modelId: defaultModel.id, cacheHit: false } : {}),
   };

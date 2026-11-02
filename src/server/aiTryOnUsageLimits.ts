@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Firestore } from "firebase-admin/firestore";
+import type { DocumentReference, Firestore, Transaction } from "firebase-admin/firestore";
 import type { AuthRateLimitRule } from "./authRateLimit.js";
 import {
   AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
@@ -109,6 +109,12 @@ export interface AiTryOnUsageLimits {
   readAccountTriesRemaining(uid: string): Promise<number>;
   reserve(orderKey: string, options?: { accountUid?: string | null }): Promise<AiTryOnReservation>;
   release(orderDocId: string, account?: AiTryOnAccountReservation | null): Promise<void>;
+  /**
+   * Releases a try held by `guard` (a busy job holding `orderDocId` and
+   * `account`) exactly once: only while the guard exists and `accept`s its
+   * data, deleting it in the same transaction. True when released.
+   */
+  releaseHeld(guard: DocumentReference, accept: (data: Record<string, unknown>) => boolean): Promise<boolean>;
 }
 
 export const createAiTryOnUsageLimits = (
@@ -128,6 +134,46 @@ export const createAiTryOnUsageLimits = (
   const windowMs = options.accountWindowMs ?? AI_TRY_ON_ACCOUNT_WINDOW_MS;
   const collection = () => db.collection(AI_TRY_ON_USAGE_COLLECTION);
   const globalRef = () => collection().doc(AI_TRY_ON_GLOBAL_USAGE_DOC);
+
+  /** Reads what a release needs; the returned function writes it (reads first, as Firestore requires). */
+  const readRelease = async (
+    transaction: Transaction,
+    orderDocId: string,
+    account: AiTryOnAccountReservation | null,
+  ) => {
+    const orderRef = collection().doc(orderDocId);
+    const global = globalRef();
+    const accountRef = account ? collection().doc(account.docId) : null;
+    const [globalSnapshot, orderSnapshot, accountSnapshot] = await Promise.all([
+      transaction.get(global),
+      transaction.get(orderRef),
+      accountRef ? transaction.get(accountRef) : Promise.resolve(null),
+    ]);
+    return () => {
+      const at = new Date(now());
+      const globalCount = globalSnapshot.exists ? readCount(globalSnapshot.data()) : 0;
+      const orderCount = orderSnapshot.exists ? readLiveOrderCount(orderSnapshot.data(), at.getTime()) : 0;
+      if (globalCount > 0) {
+        transaction.set(global, { count: globalCount - 1, updatedAt: at }, { merge: true });
+      }
+      if (orderCount > 0) {
+        transaction.set(orderRef, { count: orderCount - 1, updatedAt: at }, { merge: true });
+      }
+      if (account && accountRef && accountSnapshot && accountSnapshot.exists) {
+        const uses = readLiveAccountUses(accountSnapshot.data(), at.getTime(), windowMs);
+        const index = uses.indexOf(account.reservedAtMs);
+        if (index >= 0) {
+          uses.splice(index, 1);
+          transaction.set(accountRef, {
+            kind: "account",
+            uses,
+            updatedAt: at,
+            expiresAt: new Date((uses.length ? uses[uses.length - 1]! : at.getTime()) + windowMs),
+          });
+        }
+      }
+    };
+  };
 
   return {
     async readGlobalCount() {
@@ -216,39 +262,21 @@ export const createAiTryOnUsageLimits = (
       });
     },
     async release(orderDocId, account = null) {
-      const orderRef = collection().doc(orderDocId);
-      const global = globalRef();
-      const accountRef = account ? collection().doc(account.docId) : null;
       await db.runTransaction(async (transaction) => {
-        const [globalSnapshot, orderSnapshot, accountSnapshot] = await Promise.all([
-          transaction.get(global),
-          transaction.get(orderRef),
-          accountRef ? transaction.get(accountRef) : Promise.resolve(null),
-        ]);
-        const at = new Date(now());
-        const globalCount = globalSnapshot.exists ? readCount(globalSnapshot.data()) : 0;
-        const orderCount = orderSnapshot.exists
-          ? readLiveOrderCount(orderSnapshot.data(), at.getTime())
-          : 0;
-        if (globalCount > 0) {
-          transaction.set(global, { count: globalCount - 1, updatedAt: at }, { merge: true });
-        }
-        if (orderCount > 0) {
-          transaction.set(orderRef, { count: orderCount - 1, updatedAt: at }, { merge: true });
-        }
-        if (account && accountRef && accountSnapshot && accountSnapshot.exists) {
-          const uses = readLiveAccountUses(accountSnapshot.data(), at.getTime(), windowMs);
-          const index = uses.indexOf(account.reservedAtMs);
-          if (index >= 0) {
-            uses.splice(index, 1);
-            transaction.set(accountRef, {
-              kind: "account",
-              uses,
-              updatedAt: at,
-              expiresAt: new Date((uses.length ? uses[uses.length - 1]! : at.getTime()) + windowMs),
-            });
-          }
-        }
+        const apply = await readRelease(transaction, orderDocId, account);
+        apply();
+      });
+    },
+    async releaseHeld(guard, accept) {
+      return db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(guard);
+        const data = snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
+        if (!data || !accept(data) || typeof data.orderDocId !== "string") return false;
+        const account = (data.account ?? null) as AiTryOnAccountReservation | null;
+        const apply = await readRelease(transaction, data.orderDocId, account);
+        apply();
+        transaction.delete(guard);
+        return true;
       });
     },
   };

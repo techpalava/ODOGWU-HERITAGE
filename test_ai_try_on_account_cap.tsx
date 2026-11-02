@@ -201,7 +201,7 @@ const harness = () => {
     },
     createGenerateContent: () => async () => {
       counters.gemini += 1;
-      if (geminiFails) throw Object.assign(new Error("upstream 503"), { status: 503 });
+      if (geminiFails) throw Object.assign(new Error("upstream 500"), { status: 500 });
       return { candidates: [{ finishReason: "STOP", content: { parts: [{ inlineData: { mimeType: "image/png", data: png } }] } }] };
     },
     createPreviewStore: (database) => createAiTryOnPreviewStore(database, new FakeBucket()),

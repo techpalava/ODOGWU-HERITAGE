@@ -6,6 +6,8 @@ import {
   type AiTryOnPreviewStore,
 } from "./aiTryOnPreviewStore.js";
 import { createAiTryOnSessions, type AiTryOnSessions } from "./aiTryOnSession.js";
+import { createAiTryOnUsageLimits } from "./aiTryOnUsageLimits.js";
+import { createAiTryOnBusyJobs, type AiTryOnBusyJobs } from "./aiTryOnBusyJobs.js";
 
 /**
  * Step 7: when an order's payment is recorded, delete every stored AI
@@ -23,6 +25,8 @@ import { createAiTryOnSessions, type AiTryOnSessions } from "./aiTryOnSession.js
  *   30-day expiry is the final backstop. A second sweep after the close
  *   catches a background preview saved in between; the generate route
  *   removes any saved after the close itself.
+ * - A try still held for a busy retry is refunded once (its retries now
+ *   get 409 SESSION_CLOSED).
  */
 export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 3000;
 
@@ -30,6 +34,7 @@ export interface AiTryOnPaymentCleanupDependencies {
   getDb?: () => Firestore;
   createSessions?: (db: Firestore) => AiTryOnSessions;
   createStore?: (db: Firestore) => AiTryOnPreviewStore;
+  createBusyJobs?: (db: Firestore) => AiTryOnBusyJobs;
   log?: (line: string) => void;
   timeoutMs?: number;
 }
@@ -62,7 +67,15 @@ export const retireAiTryOnSessionForPaidOrder = async (
     // A preview made in the background can be saved between the delete and
     // the close; sweep once more now that no new one can be saved.
     deleted += await store.remove(sessionId, null);
-    log(JSON.stringify({ event: "ai_try_on_payment_cleanup", status: "deleted", previews: deleted }));
+    let busyRefunded = 0;
+    try {
+      busyRefunded = await (
+        dependencies.createBusyJobs ?? ((database) => createAiTryOnBusyJobs(database, createAiTryOnUsageLimits(database)))
+      )(db).sweep(sessionId, { all: true });
+    } catch {
+      // Held jobs expire on their own; the TTL policy removes them.
+    }
+    log(JSON.stringify({ event: "ai_try_on_payment_cleanup", status: "deleted", previews: deleted, busyRefunded }));
     return "deleted";
   };
   let timer: ReturnType<typeof setTimeout> | undefined;

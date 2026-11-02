@@ -344,6 +344,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     handledByHost: false,
     toast: "open",
     focusRequested: false,
+    busy: false,
   };
   const views: string[] = [];
   const retries: string[] = [];
