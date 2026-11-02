@@ -1,3 +1,4 @@
+import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
   CheckCircle2,
@@ -71,7 +72,7 @@ export const AI_TRY_ON_HOW_WE_USE_BULLETS: ReadonlyArray<{ label: string; text: 
   },
   {
     label: "What we keep:",
-    text: "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, whichever comes first, and delete it sooner if you ask. We never share it with our workshop.",
+    text: AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY.panelNotice,
   },
   {
     label: "Fair use:",
