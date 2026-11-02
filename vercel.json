@@ -21,7 +21,7 @@
   },
   "functions": {
     "api/design-studio/transfer-uploaded-design-draft.ts": {
-      "maxDuration": 60,
+      "maxDuration": 130,
       "includeFiles": "public/ai-try-on-models/**"
     }
   },

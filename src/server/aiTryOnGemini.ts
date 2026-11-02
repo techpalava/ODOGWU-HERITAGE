@@ -90,13 +90,14 @@ const statusOf = (error: unknown): number | null => {
 };
 
 /**
- * Gemini request limit. The function's maxDuration is 60 s (vercel.json).
- * Before Gemini the handler spends ~2 s (session, rate limits, reference
- * fetches); after it, re-encode plus Storage/Firestore writes take ~1-2 s.
- * 55 s leaves 5 s for both, with ~1.5 s spare. Was 50 s; a v5 fabric-mode run timed out
- * at 50 s (live retest, 2 Nov 2026).
+ * Gemini request limit. The AI Try-on function's maxDuration is 130 s
+ * (vercel.json; Hobby with Fluid Compute allows up to 300 s). Outside
+ * Gemini the handler spends ~2-2.5 s (session, rate limits, reference
+ * fetches, swatch crop, re-encode, Storage/Firestore writes), so 120 s
+ * leaves a 10 s margin. History: 50 s, then 55 s; live fabric-mode runs on
+ * 2 Nov 2026 took 31-34 s but two timed out at 50 s and 55 s.
  */
-export const AI_TRY_ON_GEMINI_TIMEOUT_MS = 55_000;
+export const AI_TRY_ON_GEMINI_TIMEOUT_MS = 120_000;
 
 export const runAiTryOnGemini = async ({
   generateContent,

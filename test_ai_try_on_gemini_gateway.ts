@@ -468,11 +468,11 @@ assert.match(studioSource, /AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT\s*\?\s*\{ measure
     timeoutMs: 5,
   });
   assert.deepEqual(timedOut.ok === false && [timedOut.reason, timedOut.retryable], ["timeout", true]);
-// Default Gemini limit: 55 s, safely under the function's 60 s maxDuration.
-assert.equal(AI_TRY_ON_GEMINI_TIMEOUT_MS, 55_000);
+// Default Gemini limit: 120 s, with 10 s spare under the function's 130 s maxDuration.
+assert.equal(AI_TRY_ON_GEMINI_TIMEOUT_MS, 120_000);
 assert.ok(
-  AI_TRY_ON_GEMINI_TIMEOUT_MS <= JSON.parse(readFileSync("vercel.json", "utf8")).functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration * 1000 - 5_000,
-  "at least 5 s left for the rest of the request",
+  AI_TRY_ON_GEMINI_TIMEOUT_MS <= JSON.parse(readFileSync("vercel.json", "utf8")).functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration * 1000 - 10_000,
+  "at least 10 s left for the rest of the request",
 );
 }
 
@@ -696,7 +696,9 @@ assert.ok(
       rewrite.destination === "/api/design-studio/transfer-uploaded-design-draft?route=ai-try-on",
   ),
 );
-assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration, 60);
+// 130 s ceiling (Hobby + Fluid Compute allows 300 s); this function also serves the draft transfer route.
+assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration, 130);
+assert.ok(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration <= 300, "Hobby plan maximum");
 
 // The browser bundle never reads the key.
 for (const path of ["src/services/aiTryOnGateway.ts", "src/utils/aiTryOnGatewayContract.ts", "src/utils/aiTryOnFitHints.ts", "src/utils/aiTryOnWorkflow.ts"]) {
