@@ -5,6 +5,7 @@
  */
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -510,6 +511,7 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps> = {}) => {
     preparePhoto: async () => ({ mimeType: "image/jpeg", data: "/9j/4AAQ" }),
     createThumbnailUrl: () => null,
     revokeThumbnailUrl: () => undefined,
+    jobStore: createAiTryOnBackgroundJobs({ storage: null }),
     ...props,
   };
   act(() => { renderer = create(createElement(AiTryOnPhotoPanel, base)); });

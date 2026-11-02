@@ -32,6 +32,13 @@ import {
   type AiTryOnCredentials,
   type AiTryOnPreviewOutcome,
 } from "../services/aiTryOnGateway";
+import {
+  aiTryOnBackgroundJobs,
+  useAiTryOnBackgroundJobs,
+  type AiTryOnBackgroundJob,
+  type AiTryOnBackgroundJobs,
+} from "../services/aiTryOnBackgroundJobs";
+import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
 import type {
   AiTryOnGenerationRequest,
   AiTryOnStoredPreviewSummary,
@@ -118,6 +125,7 @@ export const AI_TRY_ON_MESSAGES = {
   deleteFailed: "We couldn't delete your preview. Please try again.",
 } as const;
 
+
 type PanelMessage =
   | { kind: "preview_deleted" }
   | { kind: "delete_failed" }
@@ -178,6 +186,8 @@ export interface AiTryOnPhotoPanelProps {
   onPreviewCreated: (event: {
     wearerId: string;
     resultReference: AiTryOnVerifiedPrivateResultReference;
+    /** The wearer's design the preview was made for. */
+    inputFingerprint: string;
   }) => void;
   /** The gateway went away mid-flow (e.g. global cap reached). */
   onUnavailable: () => void;
@@ -193,6 +203,10 @@ export interface AiTryOnPhotoPanelProps {
   preparePhoto?: (file: File) => Promise<AiTryOnInlineImage>;
   createThumbnailUrl?: (file: File) => string | null;
   revokeThumbnailUrl?: (url: string) => void;
+  /** Background requests (one per wearer); outlive this panel. */
+  jobStore?: AiTryOnBackgroundJobs;
+  /** Order/identity scope of the jobs this panel shows. */
+  jobScope?: string;
 }
 
 const defaultThumbnail = (file: File) =>
@@ -221,6 +235,8 @@ export const AiTryOnPhotoPanel = ({
   preparePhoto = (file) => prepareAiTryOnPersonPhoto(file),
   createThumbnailUrl = defaultThumbnail,
   revokeThumbnailUrl = defaultRevoke,
+  jobStore = aiTryOnBackgroundJobs,
+  jobScope = "default",
 }: AiTryOnPhotoPanelProps) => {
   const idPrefix = useId();
   const howWeUseId = `${idPrefix}-how-we-use`;
@@ -233,7 +249,6 @@ export const AiTryOnPhotoPanel = ({
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [preparingPhoto, setPreparingPhoto] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [triesRemaining, setTriesRemaining] = useState<number | null>(initialTriesRemaining);
   const [accountTriesRemaining, setAccountTriesRemaining] = useState<number | null>(
     initialAccountTriesRemaining,
@@ -257,11 +272,25 @@ export const AiTryOnPhotoPanel = ({
         : null,
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const jobs = useAiTryOnBackgroundJobs(jobStore);
+  const jobFor = (wearerId: string | undefined): AiTryOnBackgroundJob | null => {
+    const job = wearerId ? jobs[wearerId] : undefined;
+    return job && job.scope === jobScope ? job : null;
+  };
+  const anyGenerating = targets.some((entry) => jobFor(entry.wearerId)?.status === "running");
   const onGeneratingChangeRef = useRef(onGeneratingChange);
   onGeneratingChangeRef.current = onGeneratingChange;
+  const onPreviewCreatedRef = useRef(onPreviewCreated);
+  onPreviewCreatedRef.current = onPreviewCreated;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
+  const mountedAtRef = useRef(Date.now());
+  const resultRef = useRef<HTMLElement | null>(null);
+  const [highlightResult, setHighlightResult] = useState(false);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    onGeneratingChangeRef.current?.(generating);
-  }, [generating]);
+    onGeneratingChangeRef.current?.(anyGenerating);
+  }, [anyGenerating]);
   // Never leave the skip button hidden if the panel goes away mid-request.
   useEffect(() => () => onGeneratingChangeRef.current?.(false), []);
   const photoRef = useRef<SelectedPhoto | null>(null);
@@ -292,6 +321,15 @@ export const AiTryOnPhotoPanel = ({
 
   const target =
     targets.find((entry) => entry.wearerId === selectedWearerId) || targets[0] || null;
+  /** This wearer's request is running (other wearers may still be chosen). */
+  const generating = jobFor(target?.wearerId)?.status === "running";
+
+  // Tell the job store who is on screen: a request that ends while its
+  // wearer is shown here reports inline, otherwise with a toast.
+  useEffect(() => {
+    jobStore.setVisibleWearer(target?.wearerId ?? null);
+  }, [jobStore, target?.wearerId]);
+  useEffect(() => () => jobStore.setVisibleWearer(null), [jobStore]);
   const showPicker = targets.length > 1;
   // Tries shown = the smaller of the order's and (signed in) the account's.
   const left = Math.min(triesRemaining ?? triesPerOrder, accountTriesRemaining ?? Infinity);
@@ -406,7 +444,7 @@ export const AiTryOnPhotoPanel = ({
   };
 
   const selectWearer = (wearerId: string) => {
-    if (generating || wearerId === selectedWearerId) return;
+    if (wearerId === selectedWearerId) return;
     // A photo belongs to one person; never carry it to another wearer.
     clearPhoto();
     setPhotoError(null);
@@ -468,7 +506,135 @@ export const AiTryOnPhotoPanel = ({
     }
   };
 
-  const handleGenerate = async () => {
+  /** Applies a settled background job to this panel (once per job). */
+  const applyJob = (job: AiTryOnBackgroundJob) => {
+    const wearerId = job.wearerId;
+    // Tries left come from the response only when it ended while this panel
+    // was open; otherwise the step's fresh availability read has them.
+    const live = (job.settledAt ?? 0) >= mountedAtRef.current && Boolean(job.outcome);
+    const outcome = job.outcome;
+    if (job.status === "completed" && job.preview) {
+      const preview = job.preview;
+      setPreviews((current) => ({
+        ...current,
+        [wearerId]: {
+          inputFingerprint: job.inputFingerprint,
+          mimeType: preview.mimeType,
+          data: preview.data,
+          storedPreviewId: job.storedPreviewId,
+          modelId: job.modelId,
+        },
+      }));
+      // The new preview replaces this wearer's stored one on the server.
+      setStored((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      // The photo has done its job; drop it from memory.
+      if (photoRef.current?.wearerId === wearerId) clearPhoto();
+      if (live && outcome?.kind === "completed") {
+        setTriesRemaining(
+          (current) => outcome.orderTriesRemaining ?? Math.max(0, (current ?? triesPerOrder) - 1),
+        );
+        if (typeof outcome.accountTriesRemaining === "number") {
+          setAccountTriesRemaining(outcome.accountTriesRemaining);
+        }
+      }
+      return;
+    }
+    if (!live || !outcome) return;
+    // Messages show only for the wearer on screen when the request ended.
+    const show = (next: PanelMessage) => {
+      if (job.seenInline) setMessage(next);
+    };
+    switch (outcome.kind) {
+      case "order_limit_reached":
+        setTriesRemaining(0);
+        show({ kind: "out_of_previews" });
+        break;
+      case "account_limit_reached":
+        setAccountTriesRemaining(0);
+        show({ kind: "account_out_of_previews" });
+        break;
+      case "rate_limited":
+        show({ kind: "too_many_tries" });
+        break;
+      case "photo_blocked":
+        if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
+        if (typeof outcome.accountTriesRemaining === "number") {
+          setAccountTriesRemaining(outcome.accountTriesRemaining);
+        }
+        show({ kind: "photo_blocked" });
+        break;
+      case "failed": {
+        const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
+        const accountRemaining =
+          typeof outcome.accountTriesRemaining === "number"
+            ? outcome.accountTriesRemaining
+            : accountTriesRemaining;
+        setTriesRemaining(remaining);
+        setAccountTriesRemaining(accountRemaining);
+        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
+        break;
+      }
+      case "unavailable":
+        onUnavailableRef.current();
+        break;
+    }
+  };
+
+  useEffect(() => {
+    for (const job of Object.values(jobs)) {
+      if (job.scope !== jobScope || job.status === "running" || job.appliedByPanel) continue;
+      if (!targets.some((entry) => entry.wearerId === job.wearerId)) continue;
+      jobStore.markAppliedByPanel(job.wearerId);
+      applyJob(job);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, jobScope, targets]);
+
+  // "View preview" from a toast: show that wearer, then scroll to and
+  // briefly highlight the preview.
+  const focusJob = Object.values(jobs).find(
+    (job) => job.scope === jobScope && job.focusRequested && targets.some((entry) => entry.wearerId === job.wearerId),
+  );
+  useEffect(() => {
+    if (!focusJob) return;
+    if (focusJob.wearerId !== target?.wearerId) {
+      selectWearer(focusJob.wearerId);
+      return;
+    }
+    // "Try again" (or a preview that no longer matches): show the wearer only.
+    if (focusJob.status !== "completed" || !preview) {
+      if (focusJob.status === "completed" && focusJob.inputFingerprint === target?.inputFingerprint) return;
+      jobStore.clearFocus(focusJob.wearerId);
+      return;
+    }
+    jobStore.clearFocus(focusJob.wearerId);
+    // After the step's own scroll to its top has run. Not tied to this
+    // effect's cleanup: clearing the request above re-runs it.
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
+      resultRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      setHighlightResult(true);
+    }, 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusJob?.wearerId, focusJob?.focusRequested, target?.wearerId, preview]);
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!highlightResult) return;
+    const timer = setTimeout(() => setHighlightResult(false), 2400);
+    return () => clearTimeout(timer);
+  }, [highlightResult]);
+
+  const handleGenerate = () => {
     if (!target || !target.inputFingerprint || !target.garmentImageUrl) return;
     const model = currentPhoto ? null : currentModel;
     if (!currentPhoto && !model) return;
@@ -476,95 +642,49 @@ export const AiTryOnPhotoPanel = ({
       setMessage(outOfPreviews);
       return;
     }
+    if (jobStore.isRunning(target.wearerId)) return;
     const wearerId = target.wearerId;
     const inputFingerprint = target.inputFingerprint;
-    setGenerating(true);
     setMessage(null);
-    try {
-      if (currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
-        setMessage({ kind: "failed", left });
-        return;
-      }
-      // Step 6: the server loads the catalogue pictures itself, so browser
-      // CORS on the Storage bucket no longer matters.
-      const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
-      // Model mode sends no fit hints: they describe the customer, not the
-      // model, and would stop a saved model result from being reused.
-      const request: AiTryOnGenerationRequest = {
-        mode: fabricMode ? "fabric" : "garment",
-        inputFingerprint,
-        wearerKey: wearerId,
-        ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
-        garmentImageUrl: target.garmentImageUrl,
-        ...(fabricMode ? { fabricSwatchImageUrl: target.fabricSwatchImageUrl! } : {}),
-        ...(!model && target.fitHints.length ? { fitHints: target.fitHints } : {}),
-        ...(target.orderDetails ? { orderDetails: target.orderDetails } : {}),
-      };
-      const outcome = await requestPreview(request);
-      switch (outcome.kind) {
-        case "completed": {
-          setPreviews((current) => ({
-            ...current,
-            [wearerId]: {
-              inputFingerprint,
-              mimeType: outcome.preview.mimeType,
-              data: outcome.preview.data,
-              storedPreviewId: outcome.storedPreviewId ?? null,
-              modelId: model ? model.id : null,
-            },
-          }));
-          // The new preview replaces this wearer's stored one on the server.
-          setStored((current) => {
-            const next = { ...current };
-            delete next[wearerId];
-            return next;
-          });
-          const remaining = outcome.orderTriesRemaining ?? Math.max(0, (triesRemaining ?? triesPerOrder) - 1);
-          setTriesRemaining(remaining);
-          if (typeof outcome.accountTriesRemaining === "number") {
-            setAccountTriesRemaining(outcome.accountTriesRemaining);
-          }
-          // The photo has done its job; drop it from memory.
-          clearPhoto();
-          onPreviewCreated({ wearerId, resultReference: outcome.resultReference });
-          break;
-        }
-        case "order_limit_reached":
-          setTriesRemaining(0);
-          setMessage({ kind: "out_of_previews" });
-          break;
-        case "account_limit_reached":
-          setAccountTriesRemaining(0);
-          setMessage({ kind: "account_out_of_previews" });
-          break;
-        case "rate_limited":
-          setMessage({ kind: "too_many_tries" });
-          break;
-        case "photo_blocked":
-          if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
-          if (typeof outcome.accountTriesRemaining === "number") {
-            setAccountTriesRemaining(outcome.accountTriesRemaining);
-          }
-          setMessage({ kind: "photo_blocked" });
-          break;
-        case "failed": {
-          const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
-          const accountRemaining =
-            typeof outcome.accountTriesRemaining === "number"
-              ? outcome.accountTriesRemaining
-              : accountTriesRemaining;
-          setTriesRemaining(remaining);
-          setAccountTriesRemaining(accountRemaining);
-          setMessage({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
-          break;
-        }
-        case "unavailable":
-          onUnavailable();
-          break;
-      }
-    } finally {
-      setGenerating(false);
+    if (currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
+      setMessage({ kind: "failed", left });
+      return;
     }
+    // Step 6: the server loads the catalogue pictures itself, so browser
+    // CORS on the Storage bucket no longer matters.
+    const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
+    // Model mode sends no fit hints: they describe the customer, not the
+    // model, and would stop a saved model result from being reused.
+    const request: AiTryOnGenerationRequest = {
+      mode: fabricMode ? "fabric" : "garment",
+      inputFingerprint,
+      wearerKey: wearerId,
+      ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
+      garmentImageUrl: target.garmentImageUrl,
+      ...(fabricMode ? { fabricSwatchImageUrl: target.fabricSwatchImageUrl! } : {}),
+      ...(!model && target.fitHints.length ? { fitHints: target.fitHints } : {}),
+      ...(target.orderDetails ? { orderDetails: target.orderDetails } : {}),
+    };
+    // The request belongs to the job store, not this panel: it keeps going
+    // when the customer moves to another step.
+    jobStore.start({
+      wearerId,
+      wearerName: targets.length > 1 ? target.label : null,
+      inputFingerprint,
+      scope: jobScope,
+      modelId: model ? model.id : null,
+      run: async () => {
+        const outcome = await requestPreview(request);
+        if (outcome.kind === "completed") {
+          onPreviewCreatedRef.current({
+            wearerId,
+            resultReference: outcome.resultReference,
+            inputFingerprint,
+          });
+        }
+        return outcome;
+      },
+    });
   };
 
   if (!target) return null;
@@ -592,7 +712,6 @@ export const AiTryOnPhotoPanel = ({
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  disabled={generating}
                   onClick={() => selectWearer(entry.wearerId)}
                   data-wearer-chip={entry.wearerId}
                   className={`inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
@@ -834,7 +953,7 @@ export const AiTryOnPhotoPanel = ({
           >
             <Loader2 aria-hidden="true" size={20} className="shrink-0 animate-spin text-heritage-green" />
             <p className="text-sm text-heritage-ink/80">
-              Creating your preview. This can take up to a minute.
+              {AI_TRY_ON_BACKGROUND_COPY.panelGenerating(targets.length > 1 ? target.label : null)}
             </p>
           </div>
         )}
@@ -860,7 +979,14 @@ export const AiTryOnPhotoPanel = ({
       </div>
 
       {preview && !generating && (
-        <figure className="space-y-3" data-ai-try-on-result>
+        <figure
+          ref={resultRef}
+          className={`space-y-3 rounded-2xl transition-shadow duration-500 ${
+            highlightResult ? "ring-4 ring-heritage-gold/70 ring-offset-4" : ""
+          }`}
+          data-ai-try-on-result
+          data-ai-try-on-highlight={highlightResult ? "true" : undefined}
+        >
           <img
             src={`data:${preview.mimeType};base64,${preview.data}`}
             alt={`AI try-on preview for ${target.label}`}

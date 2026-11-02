@@ -630,4 +630,76 @@ for (const mode of ["webhook", "browser"] as const) {
   }
 }
 
+// ------------------------------------------------------------ Phase B: paid while generating
+{
+  // The order is paid while Gemini works (background generation): payment
+  // cleanup deletes the previews and closes the session. The preview saved
+  // afterwards must be taken back out; the customer only sees it inline.
+  const h = httpHarness();
+  const logs: string[] = [];
+  h.deps.log = (line) => logs.push(line);
+  const started = await session(h);
+  const token = (started.body as { sessionToken: string }).sessionToken;
+  const sessions = createAiTryOnSessions(h.db.asFirestore());
+  h.deps.createGenerateContent = () => async () => {
+    h.counters.gemini += 1;
+    await sessions.close(hashAiTryOnSessionToken(token));
+    return { candidates: [{ finishReason: "STOP", content: { parts: [{ inlineData: { mimeType: "image/png", data: png } }] } }] };
+  };
+  const paidMidway = await generate(h, { "x-ai-try-on-session": token });
+  assert.equal(paidMidway.status, 200);
+  const body = paidMidway.body as { status: string; previewStored: boolean; previewExpiresAt?: string };
+  assert.equal(body.status, "completed");
+  assert.equal(body.previewStored, false, "not kept after the order was placed");
+  assert.equal(body.previewExpiresAt, undefined);
+  assert.equal(h.bucket.objects.size, 0, "preview file removed");
+  assert.equal(
+    [...h.db.docs.keys()].some((path) => path.startsWith("aiTryOnPreviews/")),
+    false,
+    "preview record removed",
+  );
+  assert.ok(logs.some((line) => line.includes('"outcome":"preview_removed_session_closed"')));
+  assert.equal(h.counters.gemini, 1, "one generation");
+
+  // Session still open: the preview is kept as before.
+  const k = httpHarness();
+  const open = await session(k);
+  const openToken = (open.body as { sessionToken: string }).sessionToken;
+  const kept = await generate(k, { "x-ai-try-on-session": openToken });
+  assert.equal((kept.body as { previewStored: boolean }).previewStored, true);
+  assert.ok(k.bucket.objects.size > 0);
+  assert.ok([...k.db.docs.keys()].some((path) => path.startsWith("aiTryOnPreviews/")), "record kept");
+}
+
+{
+  // Payment cleanup: a background preview saved between the delete and the
+  // close is swept by the second pass.
+  const db = new FakeFirestore();
+  const bucket = new FakeBucket();
+  const sessions = createAiTryOnSessions(db.asFirestore());
+  const realStore = createAiTryOnPreviewStore(db.asFirestore(), bucket);
+  const { sessionId } = await sessions.resolve({ uid: UID_A, token: null });
+  let removes = 0;
+  const racingStore = {
+    ...realStore,
+    remove: async (orderKey: string, previewId: string | null) => {
+      const count = await realStore.remove(orderKey, previewId);
+      removes += 1;
+      if (removes === 1) {
+        // Saved by a generation that finished just now.
+        await realStore.save({ orderKey, wearerKey: "w-ada", previewId: `tryon-${"6".repeat(8)}-6666-4666-8666-${"6".repeat(12)}`, inputFingerprint: FINGERPRINT, image: { mimeType: "image/webp", data: "UklGRg==" } });
+      }
+      return count;
+    },
+  };
+  assert.equal(
+    await retireAiTryOnSessionForPaidOrder({ ownerUid: UID_A }, { getDb: () => db.asFirestore(), createStore: () => racingStore, log: () => undefined }),
+    "deleted",
+  );
+  assert.equal(removes, 2, "sweeps again after closing");
+  assert.equal(bucket.objects.size, 0, "nothing outlives the order");
+  assert.equal(await sessions.authorize({ uid: UID_A, token: null }), null);
+  void sessionId;
+}
+
 console.log("PASS: AI Try-on Step 7 server sessions, payment cleanup and compact previews");

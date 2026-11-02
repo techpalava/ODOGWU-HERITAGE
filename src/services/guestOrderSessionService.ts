@@ -1,4 +1,5 @@
 import { retireAiTryOnSessions } from "./aiTryOnSessionToken";
+import { aiTryOnBackgroundJobs } from "./aiTryOnBackgroundJobs";
 import type {
   CartItem,
   Customer,
@@ -490,6 +491,8 @@ export const GuestOrderSessionService = {
     // Deletes this order's AI Try-on previews and closes its session, so
     // the next order starts with a fresh session and its own tries.
     retireAiTryOnSessions();
+    // A preview still being made for the cleared order must not pop up later.
+    aiTryOnBackgroundJobs.discardAll();
   },
 
   getFutureDesignDraftMigrationResult: () =>

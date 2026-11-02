@@ -4,6 +4,7 @@
  * (consent notice, How we use, tips, picker, Generate, errors, result) and
  * the server's 90-day order counters. Gemini and fetch are always mocked.
  */
+import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement, useState } from "react";
@@ -355,6 +356,7 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps> = {}) => {
     preparePhoto: async () => fakeImage,
     createThumbnailUrl: () => null,
     revokeThumbnailUrl: () => undefined,
+    jobStore: createAiTryOnBackgroundJobs({ storage: null }),
     ...props,
   };
   act(() => {
@@ -593,7 +595,7 @@ for (const [outcome, text] of errorCases) {
   // Same wiring as DesignStudioView: the panel reports generating, the step hides skip.
   const skipButtons = (renderer: ReturnType<typeof create>) =>
     renderer.root.findAll(
-      (node) => node.type === "button" && /Continue without AI Try-on/.test(textOf(node)),
+      (node) => node.type === "button" && /Continue without AI Try-on|Continue while we make your preview/.test(textOf(node)),
     );
   for (const finalOutcome of [
     { kind: "failed", orderTriesRemaining: 5 },
@@ -605,6 +607,7 @@ for (const [outcome, text] of errorCases) {
     },
   ] as AiTryOnPreviewOutcome[]) {
     let resolve!: (outcome: AiTryOnPreviewOutcome) => void;
+    const jobStore = createAiTryOnBackgroundJobs({ storage: null });
     const Wrapper = () => {
       const [generating, setGenerating] = useState(false);
       return createElement(DormantFutureAiTryOnStep, {
@@ -622,6 +625,7 @@ for (const [outcome, text] of errorCases) {
           onPreviewCreated: () => undefined,
           onUnavailable: () => undefined,
           onGeneratingChange: setGenerating,
+          jobStore,
           requestPreview: () => new Promise<AiTryOnPreviewOutcome>((done) => { resolve = done; }),
           preparePhoto: async () => fakeImage,
           createThumbnailUrl: () => null,
@@ -640,12 +644,15 @@ for (const [outcome, text] of errorCases) {
       pending = generateButton(renderer).props.onClick();
     });
     assert.match(textOf(renderer.root), /Creating your preview/);
-    assert.equal(skipButtons(renderer).length, 0, "skip hidden while a preview is generating");
+    // Phase B: the customer can move on while the preview is made.
+    assert.equal(skipButtons(renderer).length, 1, "skip stays while a preview is generating");
+    assert.match(textOf(skipButtons(renderer)[0]), /Continue while we make your preview/);
     await act(async () => {
       resolve(finalOutcome);
       await pending;
     });
-    assert.equal(skipButtons(renderer).length, 1, `skip shown again after ${finalOutcome.kind}`);
+    assert.equal(skipButtons(renderer).length, 1, `skip shown after ${finalOutcome.kind}`);
+    assert.match(textOf(skipButtons(renderer)[0]), /Continue without AI Try-on/);
   }
 }
 
