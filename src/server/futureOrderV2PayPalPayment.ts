@@ -1,4 +1,5 @@
 import { retireAiTryOnSessionForPaidOrder } from "./aiTryOnPaymentCleanup.js";
+import { sendOrderConfirmationEmail } from "./orderConfirmationEmail.js";
 import type { Firestore } from "firebase-admin/firestore";
 import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
 import {
@@ -880,11 +881,17 @@ export const handleFutureOrderV2PayPalCapture = async (
     case "already_recorded":
       try {
         await (dependencies.onPaymentRecorded ??
-          ((input: { ownerUid: string; orderId: string; db: unknown }) =>
-            retireAiTryOnSessionForPaidOrder(
+          (async (input: { ownerUid: string; orderId: string; db: unknown }) => {
+            await retireAiTryOnSessionForPaidOrder(
               { ownerUid: input.ownerUid, orderId: input.orderId },
               { getDb: () => input.db as Firestore },
-            )))({ ownerUid: outcome.record.ownerUid, orderId: outcome.record.orderId, db: services.db });
+            );
+            // After the AI preview copy, so the email can mention it.
+            await sendOrderConfirmationEmail(
+              { ownerUid: input.ownerUid, orderId: input.orderId },
+              { getDb: () => input.db as Firestore },
+            );
+          }))({ ownerUid: outcome.record.ownerUid, orderId: outcome.record.orderId, db: services.db });
       } catch {
         // Never let post-payment cleanup affect the payment response.
       }

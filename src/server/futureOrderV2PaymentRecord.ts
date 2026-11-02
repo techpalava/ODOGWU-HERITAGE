@@ -1,4 +1,5 @@
 import { retireAiTryOnSessionForPaidOrder } from "./aiTryOnPaymentCleanup.js";
+import { sendOrderConfirmationEmail } from "./orderConfirmationEmail.js";
 import Stripe from "stripe";
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
@@ -503,11 +504,17 @@ export const createFutureOrderV2PaymentRecordHandler = (
   const onPaymentRecorded = async (record: { ownerUid: string; orderId: string }, db: unknown) => {
     try {
       await (dependencies.onPaymentRecorded ??
-        ((input: { ownerUid: string; orderId: string; db: unknown }) =>
-          retireAiTryOnSessionForPaidOrder(
+        (async (input: { ownerUid: string; orderId: string; db: unknown }) => {
+          await retireAiTryOnSessionForPaidOrder(
             { ownerUid: input.ownerUid, orderId: input.orderId },
             { getDb: () => input.db as Firestore },
-          )))({ ownerUid: record.ownerUid, orderId: record.orderId, db });
+          );
+          // After the AI preview copy, so the email can mention it.
+          await sendOrderConfirmationEmail(
+            { ownerUid: input.ownerUid, orderId: input.orderId },
+            { getDb: () => input.db as Firestore },
+          );
+        }))({ ownerUid: record.ownerUid, orderId: record.orderId, db });
     } catch {
       // Never let post-payment cleanup affect the payment response.
     }
