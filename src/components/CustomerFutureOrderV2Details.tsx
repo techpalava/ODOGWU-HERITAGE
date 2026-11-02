@@ -1,3 +1,4 @@
+import { AiTryOnOrderImagePanel } from "./AiTryOnOrderImagePanel";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, FileText, LockKeyhole, Printer, X } from "lucide-react";
@@ -382,6 +383,12 @@ export const CustomerFutureOrderV2Details = ({
                   />
                 </div>
               </DetailsSection>
+            ) : null}
+
+            {payment ? (
+              <div className="print:hidden" data-customer-v2-order-ai-preview={order.orderId}>
+                <AiTryOnOrderImagePanel orderId={order.orderId} variant="customer" />
+              </div>
             ) : null}
 
             <DetailsSection title="Garments">
