@@ -19,6 +19,7 @@ import { buildAiTryOnPrompt } from "./src/server/aiTryOnPrompt";
 import {
   AI_TRY_ON_GEMINI_MODEL,
   readGeminiApiKey,
+  AI_TRY_ON_GEMINI_TIMEOUT_MS,
   runAiTryOnGemini,
   type AiTryOnGeminiRequest,
   type AiTryOnGeminiResponseLike,
@@ -467,6 +468,12 @@ assert.match(studioSource, /AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT\s*\?\s*\{ measure
     timeoutMs: 5,
   });
   assert.deepEqual(timedOut.ok === false && [timedOut.reason, timedOut.retryable], ["timeout", true]);
+// Default Gemini limit: 55 s, safely under the function's 60 s maxDuration.
+assert.equal(AI_TRY_ON_GEMINI_TIMEOUT_MS, 55_000);
+assert.ok(
+  AI_TRY_ON_GEMINI_TIMEOUT_MS <= JSON.parse(readFileSync("vercel.json", "utf8")).functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration * 1000 - 5_000,
+  "at least 5 s left for the rest of the request",
+);
 }
 
 assert.equal(readGeminiApiKey({}), null);

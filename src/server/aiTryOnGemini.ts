@@ -88,13 +88,22 @@ const statusOf = (error: unknown): number | null => {
   return typeof status === "number" ? status : null;
 };
 
+/**
+ * Gemini request limit. The function's maxDuration is 60 s (vercel.json).
+ * Before Gemini the handler spends ~2 s (session, rate limits, reference
+ * fetches); after it, re-encode plus Storage/Firestore writes take ~1-2 s.
+ * 55 s leaves 5 s for both, with ~1.5 s spare. Was 50 s; a v5 fabric-mode run timed out
+ * at 50 s (live retest, 2 Nov 2026).
+ */
+export const AI_TRY_ON_GEMINI_TIMEOUT_MS = 55_000;
+
 export const runAiTryOnGemini = async ({
   generateContent,
   prompt,
   images,
   imageLabels = null,
   aspectRatio = null,
-  timeoutMs = 50_000,
+  timeoutMs = AI_TRY_ON_GEMINI_TIMEOUT_MS,
   secret,
 }: {
   generateContent: AiTryOnGenerateContent;
