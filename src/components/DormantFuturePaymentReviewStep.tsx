@@ -18,6 +18,7 @@ import { DesignStudioStepGuide } from "./DesignStudioStepGuide";
 import { DualUnitMeasurementPill } from "./DualUnitMeasurementPill";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AI_TRY_ON_ORDER_IMAGE_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
 import {
   BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS,
@@ -112,6 +113,11 @@ interface DormantFuturePaymentReviewStepProps {
   onSignInToPay?: () => void;
   /** Starting radio. Customers begin on card; tests pass ideal or klarna. */
   initialPaymentMethod?: FutureOrderV2PaymentMethod;
+  /**
+   * The wearers' current AI previews, before payment only (thumbnails /
+   * out-of-date notes). Passed only when at least one wearer has one.
+   */
+  aiTryOnOrderPreviews?: ReactNode;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -668,6 +674,7 @@ export const DormantFuturePaymentReviewStep = ({
   onEditStage,
   survivorSummary = null,
   removalTargets = [],
+  aiTryOnOrderPreviews = null,
   onRequestGarmentRemoval,
   onPay,
   onParkCompleteOrder,
@@ -728,6 +735,8 @@ export const DormantFuturePaymentReviewStep = ({
     "payment" in result ? result.payment : null;
   const paymentIsProcessing =
     payment?.status === "processing" || payment?.status === "redirecting";
+  // Before payment only: after payment the session previews are retired.
+  const showAiTryOnPreviews = Boolean(aiTryOnOrderPreviews) && payment?.status !== "confirmed";
   const paymentIsAuthorized = payment?.status === "authorized";
   const paymentIsRecording =
     payment?.status === "authorized" && Boolean(payment.recording);
@@ -1051,7 +1060,11 @@ export const DormantFuturePaymentReviewStep = ({
 
           <ReviewSection
             title="AI Try-on"
-            description="Only the safe workflow status is shown."
+            description={
+              showAiTryOnPreviews
+                ? AI_TRY_ON_ORDER_IMAGE_COPY.summarySectionWithImages
+                : "Only the safe workflow status is shown."
+            }
             editLabel="Edit AI Try-on"
             onEdit={() => onEditStage("try_on")}
           >
@@ -1066,6 +1079,7 @@ export const DormantFuturePaymentReviewStep = ({
                 </p>
               </div>
             </div>
+            {showAiTryOnPreviews ? aiTryOnOrderPreviews : null}
           </ReviewSection>
 
           <ReviewSection
