@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { getAdminServices } from "./firebaseAdmin.js";
@@ -20,6 +19,17 @@ import {
   type AiTryOnGenerateContent,
 } from "./aiTryOnGemini.js";
 import { buildAiTryOnPrompt } from "./aiTryOnPrompt.js";
+import {
+  createAiTryOnPreviewId,
+  createAiTryOnPreviewStore,
+  type AiTryOnPreviewBucket,
+  type AiTryOnPreviewStore,
+} from "./aiTryOnPreviewStore.js";
+import {
+  AiTryOnReferenceImageError,
+  loadAiTryOnReferenceImageOnServer,
+  type AiTryOnReferenceBucket,
+} from "./aiTryOnReferenceImages.js";
 import { normalizeAiTryOnFitHints, type AiTryOnFitHint } from "../utils/aiTryOnFitHints.js";
 import {
   normalizeAiTryOnOrderDetails,
@@ -53,15 +63,26 @@ import {
  * and one global generation (single transaction) → Gemini → release the
  * reservation if no image came back.
  *
- * GET may carry `?orderKey=` to also report the tries left for that order.
- * After a refunded failure the error body carries `orderTriesRemaining` so
- * the Design Studio can say how many tries are left.
+ * GET may carry `?orderKey=` to also report the tries left for that order
+ * and its stored previews. After a refunded failure the error body carries
+ * `orderTriesRemaining` so the Design Studio can say how many tries are left.
  *
- * Returns the image inline and stores nothing yet. Private preview storage
- * and the photo deletion pipeline are Step 6.
+ * Step 6 storage:
+ * - The person photo lives only in this request: it is parsed into memory,
+ *   sent to Gemini and dropped when the request ends. It is never written
+ *   to Storage, Firestore, logs or temp files.
+ * - Garment/fabric pictures may be sent as catalogue URLs; the server loads
+ *   them (own bucket via Admin SDK, or images.unsplash.com), so browser CORS
+ *   no longer matters.
+ * - The generated preview is returned inline AND stored privately
+ *   (aiTryOnPreviewStore) for up to 30 days.
+ * - `GET ?orderKey=&previewId=` returns a stored preview to its owner;
+ *   `DELETE ?orderKey=&previewId=` (or `&all=1`) deletes it. Both work even
+ *   when generation is switched off, so a customer can always delete.
  */
 
 type RequestWithRoute = HttpRequest & { query?: unknown; url?: string };
+type StoredPreviewList = Awaited<ReturnType<AiTryOnPreviewStore["list"]>>;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,6 +112,10 @@ export interface AiTryOnHttpDependencies {
   consumeIpRateLimit?: (db: Firestore, ip: string) => Promise<void>;
   createGenerateContent?: (apiKey: string) => AiTryOnGenerateContent;
   createAssetId?: () => string;
+  /** Private preview storage (Step 6). */
+  createPreviewStore?: (db: Firestore) => AiTryOnPreviewStore;
+  /** Server-side garment/fabric picture loader (Step 6). */
+  loadReferenceImage?: (url: string) => Promise<AiTryOnInlineImage>;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -128,10 +153,22 @@ const ALLOWED_KEYS = new Set([
   "inputFingerprint",
   "personImage",
   "garmentImage",
+  "garmentImageUrl",
   "fabricSwatchImage",
+  "fabricSwatchImageUrl",
+  "wearerKey",
   "fitHints",
   "orderDetails",
 ]);
+const WEARER_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
+const PREVIEW_ID_PATTERN = /^tryon-[0-9a-f-]{36}$/;
+const MAX_URL_LENGTH = 2048;
+export const AI_TRY_ON_DEFAULT_WEARER_KEY = "order";
+
+/** A garment/fabric picture: inline bytes, or a catalogue URL the server loads. */
+export type AiTryOnReferenceSource =
+  | { kind: "inline"; image: AiTryOnInlineImage }
+  | { kind: "url"; url: string };
 
 const matchesMagicBytes = (bytes: Buffer, mimeType: AiTryOnImageMimeType) => {
   if (mimeType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -177,7 +214,10 @@ type ParsedRequest =
       mode: AiTryOnMode;
       orderKey: string;
       inputFingerprint: string;
-      images: AiTryOnInlineImage[];
+      wearerKey: string;
+      personImage: AiTryOnInlineImage;
+      garment: AiTryOnReferenceSource;
+      fabric: AiTryOnReferenceSource | null;
       fitHints: AiTryOnFitHint[];
       orderDetails: AiTryOnOrderDetails | null;
     }
@@ -216,49 +256,97 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
   if (typeof inputFingerprint !== "string" || !FINGERPRINT_PATTERN.test(inputFingerprint)) {
     return invalid("A valid try-on fingerprint is required.");
   }
-  const hasSwatch = parsedBody.fabricSwatchImage !== undefined;
+  const wearerKey =
+    parsedBody.wearerKey === undefined ? AI_TRY_ON_DEFAULT_WEARER_KEY : parsedBody.wearerKey;
+  if (typeof wearerKey !== "string" || !WEARER_KEY_PATTERN.test(wearerKey)) {
+    return invalid("A valid wearer key is required.");
+  }
+  const hasSwatch =
+    parsedBody.fabricSwatchImage !== undefined || parsedBody.fabricSwatchImageUrl !== undefined;
   if (mode === "garment" && hasSwatch) {
     return invalid("Garment mode does not take a fabric swatch.");
   }
   if (mode === "fabric" && !hasSwatch) {
     return invalid("Fabric mode needs a fabric swatch.");
   }
-  const sources = [
-    parsedBody.personImage,
-    parsedBody.garmentImage,
-    ...(mode === "fabric" ? [parsedBody.fabricSwatchImage] : []),
-  ];
-  const images: AiTryOnInlineImage[] = [];
   let totalBytes = 0;
-  for (const source of sources) {
-    const parsed = parseImage(source);
+  const person = parseImage(parsedBody.personImage);
+  if (person.ok === false) return person.tooLarge ? tooLarge : invalid("Images must be JPEG, PNG, or WebP.");
+  totalBytes += person.bytes;
+  const parseReference = (
+    inline: unknown,
+    url: unknown,
+  ): AiTryOnReferenceSource | ParsedRequest => {
+    if (inline !== undefined && url !== undefined) return invalid("Send a picture or its URL, not both.");
+    if (url !== undefined) {
+      if (typeof url !== "string" || url.length > MAX_URL_LENGTH || !/^https:\/\//.test(url)) {
+        return invalid("Picture URLs must be https.");
+      }
+      return { kind: "url", url };
+    }
+    const parsed = parseImage(inline);
     if (parsed.ok === false) return parsed.tooLarge ? tooLarge : invalid("Images must be JPEG, PNG, or WebP.");
     totalBytes += parsed.bytes;
-    images.push(parsed.image);
+    return { kind: "inline", image: parsed.image };
+  };
+  const garment = parseReference(parsedBody.garmentImage, parsedBody.garmentImageUrl);
+  if ("ok" in garment) return garment;
+  let fabric: AiTryOnReferenceSource | null = null;
+  if (mode === "fabric") {
+    const parsedFabric = parseReference(parsedBody.fabricSwatchImage, parsedBody.fabricSwatchImageUrl);
+    if ("ok" in parsedFabric) return parsedFabric;
+    fabric = parsedFabric;
   }
   if (totalBytes > AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES) return tooLarge;
   const fitHints = normalizeAiTryOnFitHints(parsedBody.fitHints);
   if (!fitHints) return invalid("Fit hints are not valid.");
   const orderDetails = normalizeAiTryOnOrderDetails(parsedBody.orderDetails);
   if (orderDetails === "invalid") return invalid("Order details are not valid.");
-  return { ok: true, mode, orderKey, inputFingerprint, images, fitHints, orderDetails };
+  return {
+    ok: true,
+    mode,
+    orderKey,
+    inputFingerprint,
+    wearerKey,
+    personImage: person.image,
+    garment,
+    fabric,
+    fitHints,
+    orderDetails,
+  };
 };
 
 const defaultGetDb = (): Firestore => getAdminServices().db;
 
-/** `?orderKey=` from Vercel/Express `req.query`, or from the raw URL. */
-const readQueryOrderKey = (req: RequestWithRoute): string | null => {
+/** A query parameter from Vercel/Express `req.query`, or from the raw URL. */
+const readQueryParam = (req: RequestWithRoute, name: string): string | null => {
   const query = isRecord(req.query) ? req.query : null;
-  let value: unknown = Array.isArray(query?.orderKey) ? query?.orderKey[0] : query?.orderKey;
+  let value: unknown = Array.isArray(query?.[name]) ? (query?.[name] as unknown[])[0] : query?.[name];
   if (value === undefined && typeof req.url === "string" && req.url.includes("?")) {
     try {
-      value = new URL(req.url, "http://localhost").searchParams.get("orderKey") ?? undefined;
+      value = new URL(req.url, "http://localhost").searchParams.get(name) ?? undefined;
     } catch {
       value = undefined;
     }
   }
-  return typeof value === "string" && ORDER_KEY_PATTERN.test(value) ? value : null;
+  return typeof value === "string" ? value : null;
 };
+const readQueryOrderKey = (req: RequestWithRoute): string | null => {
+  const value = readQueryParam(req, "orderKey");
+  return value && ORDER_KEY_PATTERN.test(value) ? value : null;
+};
+const readQueryPreviewId = (req: RequestWithRoute): string | null => {
+  const value = readQueryParam(req, "previewId");
+  return value && PREVIEW_ID_PATTERN.test(value) ? value : null;
+};
+
+const defaultPreviewStore = (db: Firestore): AiTryOnPreviewStore =>
+  createAiTryOnPreviewStore(db, getAdminServices().storage.bucket() as unknown as AiTryOnPreviewBucket);
+
+const defaultLoadReferenceImage = (url: string) =>
+  loadAiTryOnReferenceImageOnServer(url, {
+    bucket: getAdminServices().storage.bucket() as unknown as AiTryOnReferenceBucket,
+  });
 
 export async function handleAiTryOn(
   req: RequestWithRoute,
@@ -271,6 +359,47 @@ export async function handleAiTryOn(
   const resolveDb = async () => (dependencies.getDb ? dependencies.getDb() : defaultGetDb());
   const createLimits = dependencies.createUsageLimits ?? ((db: Firestore) => createAiTryOnUsageLimits(db));
   const enabled = isAiTryOnEnabled(environment);
+
+  const createStore = dependencies.createPreviewStore ?? defaultPreviewStore;
+
+  // Stored preview read/delete: owner-only by order key, and available even
+  // when generation is switched off, so a customer can always delete.
+  if (req.method === "DELETE" || (req.method === "GET" && readQueryParam(req, "previewId") !== null)) {
+    const orderKey = readQueryOrderKey(req);
+    const previewId = readQueryPreviewId(req);
+    const deleteAll = req.method === "DELETE" && readQueryParam(req, "all") === "1";
+    if (!orderKey || (!previewId && !deleteAll)) {
+      return sendError(res, 400, "INVALID_REQUEST", "A valid order key and preview id are required.", false);
+    }
+    let store: AiTryOnPreviewStore;
+    try {
+      store = createStore(await resolveDb());
+    } catch {
+      return sendError(res, 503, "NOT_CONFIGURED", "AI Try-on previews are unavailable.", true);
+    }
+    try {
+      if (req.method === "DELETE") {
+        const deleted = await store.remove(orderKey, deleteAll ? null : previewId);
+        setNoStore(res);
+        return res.status(200).json({ status: "deleted", deleted });
+      }
+      const preview = await store.read(orderKey, previewId!);
+      if (!preview) {
+        return sendError(res, 404, "PREVIEW_NOT_FOUND", "This preview is no longer available.", false);
+      }
+      setNoStore(res);
+      return res.status(200).json({
+        status: "preview",
+        previewId: preview.summary.previewId,
+        wearerKey: preview.summary.wearerKey,
+        inputFingerprint: preview.summary.inputFingerprint,
+        expiresAt: preview.summary.expiresAt,
+        image: { mimeType: preview.mimeType, data: preview.data },
+      });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on previews are temporarily unavailable.", true);
+    }
+  }
 
   if (req.method === "GET") {
     setNoStore(res);
@@ -286,12 +415,21 @@ export async function handleAiTryOn(
         return res.status(200).json(body);
       }
       const orderKey = readQueryOrderKey(req);
+      let previews: StoredPreviewList | undefined;
+      if (orderKey) {
+        try {
+          previews = await createStore(await resolveDb()).list(orderKey);
+        } catch {
+          previews = undefined;
+        }
+      }
       const body: AiTryOnAvailabilityResponse = {
         status: "available",
         triesPerOrder: AI_TRY_ON_TRIES_PER_ORDER,
         ...(orderKey
           ? { orderTriesRemaining: await limits.readOrderTriesRemaining(orderKey) }
           : {}),
+        ...(previews ? { previews } : {}),
       };
       return res.status(200).json(body);
     } catch {
@@ -300,8 +438,8 @@ export async function handleAiTryOn(
     }
   }
   if (req.method !== "POST") {
-    res.setHeader("Allow", "GET, POST");
-    return sendError(res, 405, "METHOD_NOT_ALLOWED", "Use GET or POST.", false);
+    res.setHeader("Allow", "GET, POST, DELETE");
+    return sendError(res, 405, "METHOD_NOT_ALLOWED", "Use GET, POST or DELETE.", false);
   }
   if (!enabled) {
     return sendError(res, 503, "NOT_CONFIGURED", "AI Try-on is currently unavailable.", false);
@@ -335,6 +473,36 @@ export async function handleAiTryOn(
     return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
   }
 
+  // Garment/fabric pictures sent as URLs are loaded here, before a try is
+  // reserved, so an unreadable picture never uses one.
+  const loadReference = dependencies.loadReferenceImage ?? defaultLoadReferenceImage;
+  const resolveReference = async (source: AiTryOnReferenceSource) =>
+    source.kind === "inline" ? source.image : loadReference(source.url);
+  let images: AiTryOnInlineImage[];
+  try {
+    images = [
+      parsed.personImage,
+      await resolveReference(parsed.garment),
+      ...(parsed.fabric ? [await resolveReference(parsed.fabric)] : []),
+    ];
+  } catch (error) {
+    log(
+      JSON.stringify({
+        event: "ai_try_on",
+        outcome: "reference_unavailable",
+        mode: parsed.mode,
+        reason: error instanceof AiTryOnReferenceImageError ? error.message : "reference_error",
+      }),
+    );
+    return sendError(
+      res,
+      422,
+      "REFERENCE_IMAGE_UNAVAILABLE",
+      "The garment or fabric picture could not be loaded.",
+      false,
+    );
+  }
+
   const limits = createLimits(db);
   let reservation;
   try {
@@ -363,7 +531,7 @@ export async function handleAiTryOn(
       fitHints: parsed.fitHints,
       orderDetails: parsed.orderDetails,
     }),
-    images: parsed.images,
+    images,
     secret: apiKey,
   });
   const latencyMs = now() - startedAt;
@@ -411,6 +579,21 @@ export async function handleAiTryOn(
         );
   }
 
+  const previewId = (dependencies.createAssetId ?? createAiTryOnPreviewId)();
+  let stored: { expiresAt: string } | null = null;
+  try {
+    stored = await createStore(db).save({
+      orderKey: parsed.orderKey,
+      wearerKey: parsed.wearerKey,
+      previewId,
+      inputFingerprint: parsed.inputFingerprint,
+      promptVersion: AI_TRY_ON_PROMPT_VERSION,
+      image: outcome.image,
+    });
+  } catch {
+    // The customer still gets the inline preview; it just isn't kept.
+    stored = null;
+  }
   log(
     JSON.stringify({
       event: "ai_try_on",
@@ -419,6 +602,7 @@ export async function handleAiTryOn(
       promptVersion: AI_TRY_ON_PROMPT_VERSION,
       fitHints: parsed.fitHints.length,
       latencyMs,
+      previewStored: Boolean(stored),
     }),
   );
   const body: AiTryOnGenerationSuccess = {
@@ -426,10 +610,12 @@ export async function handleAiTryOn(
     inputFingerprint: parsed.inputFingerprint,
     resultReference: {
       kind: "verified_private_try_on_result",
-      assetId: (dependencies.createAssetId ?? (() => `tryon-${randomUUID()}`))(),
+      assetId: previewId,
       ownerBindingId: `order-${hashAiTryOnOrderKey(parsed.orderKey).slice(0, 32)}`,
     },
     image: outcome.image,
+    previewStored: Boolean(stored),
+    ...(stored ? { previewExpiresAt: stored.expiresAt } : {}),
     orderTriesRemaining: reservation.orderTriesRemaining,
     promptVersion: AI_TRY_ON_PROMPT_VERSION,
   };

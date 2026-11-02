@@ -344,7 +344,9 @@ import {
 } from "../utils/aiTryOnWorkflow";
 import { buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
 import {
+  deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
+  fetchStoredAiTryOnPreview,
   type AiTryOnAvailabilityDetails,
 } from "../services/aiTryOnGateway";
 import { getOrCreateAiTryOnOrderKey } from "../services/aiTryOnOrderKey";
@@ -11430,6 +11432,13 @@ export default function DesignStudioView({
                 orderKey={aiTryOnOrderKey}
                 triesPerOrder={aiTryOnAvailability.triesPerOrder}
                 initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
+                storedPreviews={aiTryOnAvailability.storedPreviews}
+                loadStoredPreview={(previewId) =>
+                  fetchStoredAiTryOnPreview({ orderKey: aiTryOnOrderKey, previewId })
+                }
+                deleteStoredPreview={(previewId) =>
+                  deleteStoredAiTryOnPreviews({ orderKey: aiTryOnOrderKey, previewId })
+                }
                 onPreviewCreated={handleAiTryOnPreviewCreated}
                 onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
                 onGeneratingChange={setAiTryOnGenerating}

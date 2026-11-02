@@ -163,21 +163,6 @@ export async function prepareAiTryOnPersonPhoto(
   return prepareAiTryOnInlineImage(file, encoder);
 }
 
-type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-
-/** Garment or fabric picture from the catalogue, re-encoded the same way. */
-export async function loadAiTryOnReferenceImage(
-  url: string,
-  {
-    fetchImpl = (input, init) => fetch(input, init),
-    encoder,
-  }: { fetchImpl?: FetchLike; encoder?: AiTryOnImageEncoder | null } = {},
-): Promise<AiTryOnInlineImage> {
-  const response = await fetchImpl(url, { mode: "cors", credentials: "omit" });
-  if (!response.ok) throw new AiTryOnPhotoError(AI_TRY_ON_PHOTO_PROCESSING_ERROR);
-  return prepareAiTryOnInlineImage(await response.blob(), encoder);
-}
-
 /** Decoded byte size of base64 data (for the total-size check). */
 export const inlineImageBytes = (image: AiTryOnInlineImage): number => {
   const padding = image.data.endsWith("==") ? 2 : image.data.endsWith("=") ? 1 : 0;

@@ -8,6 +8,7 @@ import {
 import {
   AI_TRY_ON_ENDPOINT,
   AI_TRY_ON_TRIES_PER_ORDER,
+  type AiTryOnStoredPreviewSummary,
   type AiTryOnAvailabilityResponse,
   type AiTryOnErrorResponse,
   type AiTryOnGenerationRequest,
@@ -189,8 +190,29 @@ export const runAiTryOnGeneration = async ({
 // ------------------------------------------------------------ Step 5 UI
 
 export type AiTryOnAvailabilityDetails =
-  | { status: "available"; triesPerOrder: number; orderTriesRemaining: number | null }
+  | {
+      status: "available";
+      triesPerOrder: number;
+      orderTriesRemaining: number | null;
+      /** Stored previews of this order that are still valid (Step 6). */
+      storedPreviews: AiTryOnStoredPreviewSummary[];
+    }
   | { status: "unavailable" };
+
+const PREVIEW_ID_PATTERN = /^tryon-[0-9a-f-]{36}$/;
+
+const parseStoredPreviews = (value: unknown): AiTryOnStoredPreviewSummary[] =>
+  Array.isArray(value)
+    ? value.filter(
+        (entry): entry is AiTryOnStoredPreviewSummary =>
+          isRecord(entry) &&
+          typeof entry.previewId === "string" &&
+          PREVIEW_ID_PATTERN.test(entry.previewId) &&
+          typeof entry.wearerKey === "string" &&
+          typeof entry.inputFingerprint === "string" &&
+          typeof entry.expiresAt === "string",
+      )
+    : [];
 
 /**
  * `GET /api/ai-try-on?orderKey=…` for the Design Studio step: availability
@@ -225,7 +247,12 @@ export const fetchAiTryOnAvailability = async ({
       typeof body.orderTriesRemaining === "number" && body.orderTriesRemaining >= 0
         ? Math.min(triesPerOrder, Math.floor(body.orderTriesRemaining))
         : null;
-    return { status: "available", triesPerOrder, orderTriesRemaining: remaining };
+    return {
+      status: "available",
+      triesPerOrder,
+      orderTriesRemaining: remaining,
+      storedPreviews: parseStoredPreviews(body.previews),
+    };
   } catch {
     return { status: "unavailable" };
   }
@@ -242,6 +269,8 @@ export type AiTryOnPreviewOutcome =
       resultReference: AiTryOnGenerationSuccess["resultReference"];
       preview: { mimeType: string; data: string };
       orderTriesRemaining: number | null;
+      /** Set when the server stored the preview privately (Step 6). */
+      storedPreviewId?: string | null;
     }
   | { kind: "order_limit_reached" }
   | { kind: "rate_limited"; retryAfterSeconds: number | null }
@@ -273,6 +302,12 @@ export const mapAiTryOnPreviewResponse = (
         preview: { mimeType: image.mimeType, data: image.data },
         orderTriesRemaining:
           typeof body.orderTriesRemaining === "number" ? body.orderTriesRemaining : null,
+        storedPreviewId:
+          body.previewStored === true &&
+          typeof resultReference.assetId === "string" &&
+          PREVIEW_ID_PATTERN.test(resultReference.assetId)
+            ? resultReference.assetId
+            : null,
       };
     }
     return { kind: "failed", orderTriesRemaining: null };
@@ -317,5 +352,69 @@ export const requestAiTryOnPreview = async ({
     return mapAiTryOnPreviewResponse(response.status, await readJson(response));
   } catch {
     return { kind: "failed", orderTriesRemaining: null };
+  }
+};
+
+// ------------------------------------------------------------ Step 6 storage
+
+/** Owner-only read of a stored preview (by order key). null when gone. */
+export const fetchStoredAiTryOnPreview = async ({
+  orderKey,
+  previewId,
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+}: {
+  orderKey: string;
+  previewId: string;
+  fetchImpl?: FetchLike;
+  endpoint?: string;
+}): Promise<{ mimeType: string; data: string } | null> => {
+  try {
+    const response = await fetchImpl(
+      `${endpoint}?orderKey=${encodeURIComponent(orderKey)}&previewId=${encodeURIComponent(previewId)}`,
+      { method: "GET", headers: { Accept: "application/json" }, cache: "no-store" },
+    );
+    const body = (await readJson(response)) as Record<string, unknown> | null;
+    const image = isRecord(body) && isRecord(body.image) ? body.image : null;
+    if (
+      !response.ok ||
+      !image ||
+      typeof image.data !== "string" ||
+      typeof image.mimeType !== "string" ||
+      !IMAGE_MIME_TYPES.has(image.mimeType)
+    ) {
+      return null;
+    }
+    return { mimeType: image.mimeType, data: image.data };
+  } catch {
+    return null;
+  }
+};
+
+/** Deletes one stored preview, or all of the order's previews (`previewId: null`). */
+export const deleteStoredAiTryOnPreviews = async ({
+  orderKey,
+  previewId,
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+  keepalive = false,
+}: {
+  orderKey: string;
+  previewId: string | null;
+  fetchImpl?: FetchLike;
+  endpoint?: string;
+  keepalive?: boolean;
+}): Promise<boolean> => {
+  try {
+    const target = previewId
+      ? `previewId=${encodeURIComponent(previewId)}`
+      : "all=1";
+    const response = await fetchImpl(
+      `${endpoint}?orderKey=${encodeURIComponent(orderKey)}&${target}`,
+      { method: "DELETE", headers: { Accept: "application/json" }, keepalive },
+    );
+    return response.ok;
+  } catch {
+    return false;
   }
 };
