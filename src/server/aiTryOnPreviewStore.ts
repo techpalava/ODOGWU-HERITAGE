@@ -7,7 +7,9 @@ import { hashAiTryOnOrderKey } from "./aiTryOnUsageLimits.js";
  *
  * - The customer's photo is NEVER stored here (or anywhere): only Gemini's
  *   output image is saved.
- * - Image bytes: Firebase Storage `ai-try-on-previews/<sessionHash>/<docId>`,
+ * - Image bytes: Cloud Storage `ai-try-on-previews/<sessionHash>/<docId>` in
+ *   the dedicated private bucket (`AI_TRY_ON_STORAGE_BUCKET`, soft delete
+ *   off; the default bucket only when that is unset outside production),
  *   written by the Admin SDK with no download token, so there is no public
  *   URL. Client Storage rules deny the whole prefix (also for admins).
  *   The path is fixed per wearer, so a new preview overwrites the old file:

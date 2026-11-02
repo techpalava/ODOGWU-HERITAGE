@@ -16,6 +16,7 @@ import {
   type AiTryOnBusyJobs,
 } from "./aiTryOnBusyJobs.js";
 import { getAdminServices } from "./firebaseAdmin.js";
+import { aiTryOnStorageBucket, isAiTryOnStorageReady } from "./aiTryOnStorageBucket.js";
 import {
   AuthRateLimitError,
   consumeAuthRateLimit,
@@ -103,7 +104,9 @@ import {
  * `GET|POST /api/ai-try-on`: server-side Gemini virtual try-on.
  *
  * Live only when BOTH `AI_TRY_ON_ENABLED=true` and `GEMINI_API_KEY` are set
- * in the server environment. Otherwise GET reports `unavailable` and POST
+ * in the server environment, and, in production (`VERCEL_ENV=production`),
+ * the dedicated private bucket `AI_TRY_ON_STORAGE_BUCKET` (see
+ * aiTryOnStorageBucket). Otherwise GET reports `unavailable` and POST
  * returns 503 without touching Firestore or Gemini, so the Design Studio
  * keeps its existing "AI Try-on is currently unavailable" state.
  *
@@ -171,7 +174,9 @@ export const isAiTryOnEnabled = (
   environment: Record<string, string | undefined> = process.env,
 ): boolean =>
   environment.AI_TRY_ON_ENABLED?.trim().toLowerCase() === "true" &&
-  readGeminiApiKey(environment) !== null;
+  readGeminiApiKey(environment) !== null &&
+  // Production also needs the dedicated private bucket (AI_TRY_ON_STORAGE_BUCKET).
+  isAiTryOnStorageReady(environment);
 
 export interface AiTryOnHttpDependencies {
   environment?: Record<string, string | undefined>;
@@ -465,12 +470,12 @@ const readQueryPreviewId = (req: RequestWithRoute): string | null => {
 };
 
 const defaultPreviewStore = (db: Firestore): AiTryOnPreviewStore =>
-  createAiTryOnPreviewStore(db, getAdminServices().storage.bucket() as unknown as AiTryOnPreviewBucket);
+  createAiTryOnPreviewStore(db, aiTryOnStorageBucket() as unknown as AiTryOnPreviewBucket);
 
 const defaultModelResultCache = (db: Firestore): AiTryOnModelResultCache =>
   createAiTryOnModelResultCache(
     db,
-    getAdminServices().storage.bucket() as unknown as AiTryOnModelResultBucket,
+    aiTryOnStorageBucket() as unknown as AiTryOnModelResultBucket,
   );
 
 const defaultVerifyIdToken = (token: string) => getAdminServices().auth.verifyIdToken(token);
