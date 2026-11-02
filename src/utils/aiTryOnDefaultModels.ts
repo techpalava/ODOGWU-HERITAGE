@@ -11,14 +11,14 @@
 
 export type AiTryOnModelGroup = "men" | "women";
 export type AiTryOnModelSkinTone = "light" | "medium" | "deep";
-export type AiTryOnModelBuild = "slim" | "medium" | "plus";
+export type AiTryOnModelBuild = "regular" | "medium" | "plus";
 
 export interface AiTryOnDefaultModel {
   readonly id: string;
   readonly group: AiTryOnModelGroup;
   readonly skinTone: AiTryOnModelSkinTone;
   readonly build: AiTryOnModelBuild;
-  /** Short customer-facing description (pending Xavier's wording approval). */
+  /** Short customer-facing description (wording approved by Xavier). */
   readonly label: string;
 }
 
@@ -33,7 +33,7 @@ const SKIN_TONE_LABELS: Readonly<Record<AiTryOnModelSkinTone, string>> = {
   deep: "Deep skin tone",
 };
 const BUILD_LABELS: Readonly<Record<AiTryOnModelBuild, string>> = {
-  slim: "slim build",
+  regular: "regular build",
   medium: "medium build",
   plus: "plus-size",
 };
@@ -53,14 +53,14 @@ const model = (
 
 /** Display order: skin tones first, then builds, men before women. */
 export const AI_TRY_ON_DEFAULT_MODELS: readonly AiTryOnDefaultModel[] = [
-  model("male-1-light", "men", "light", "slim"),
-  model("male-2-medium", "men", "medium", "slim"),
-  model("male-3-deep", "men", "deep", "slim"),
+  model("male-1-light", "men", "light", "regular"),
+  model("male-2-medium", "men", "medium", "regular"),
+  model("male-3-deep", "men", "deep", "regular"),
   model("male-medium-build", "men", "medium", "medium"),
   model("male-plus", "men", "medium", "plus"),
-  model("female-1-light", "women", "light", "slim"),
-  model("female-2-medium", "women", "medium", "slim"),
-  model("female-3-deep", "women", "deep", "slim"),
+  model("female-1-light", "women", "light", "regular"),
+  model("female-2-medium", "women", "medium", "regular"),
+  model("female-3-deep", "women", "deep", "regular"),
   model("female-medium-build", "women", "medium", "medium"),
   model("female-plus", "women", "medium", "plus"),
 ];

@@ -142,7 +142,7 @@ export const DormantFutureAiTryOnStep = ({
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
           {isLive
-            ? "Upload a photo to preview your selected garments, fabrics, and visual details on you."
+            ? "Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."
             : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
       </div>

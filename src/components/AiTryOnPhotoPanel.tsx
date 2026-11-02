@@ -92,8 +92,8 @@ export const AI_TRY_ON_PREVIEW_DISCLAIMER =
   "This is an AI preview to help you picture your outfit. The real garment, fabric colour, pattern placement and fit may look different. We make your order from your measurements and choices, not from this image.";
 
 /**
- * Model mode ("No photo? Try it on a model"). Wording pending Xavier's
- * approval. No consent notice: no personal photo is involved.
+ * Model mode ("No photo? Try it on a model"). Wording approved by Xavier.
+ * No consent notice: no personal photo is involved.
  */
 export const AI_TRY_ON_MODEL_COPY = {
   option: "No photo? Try it on a model",

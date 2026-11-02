@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { DormantFutureAiTryOnStep } from "./src/components/DormantFutureAiTryOnStep";
 import type { Firestore } from "firebase-admin/firestore";
 import {
   AI_TRY_ON_DEFAULT_MODELS,
@@ -65,7 +67,7 @@ const DAY = 24 * 60 * 60 * 1000;
   for (const group of ["men", "women"] as const) {
     const models = AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === group);
     assert.deepEqual(new Set(models.map((m) => m.skinTone)), new Set(["light", "medium", "deep"]), `${group}: skin tones`);
-    assert.deepEqual(new Set(models.map((m) => m.build)), new Set(["slim", "medium", "plus"]), `${group}: builds`);
+    assert.deepEqual(new Set(models.map((m) => m.build)), new Set(["regular", "medium", "plus"]), `${group}: builds`);
   }
   const files = readdirSync("public/ai-try-on-models").sort();
   assert.deepEqual(files, AI_TRY_ON_DEFAULT_MODELS.map((m) => `${m.id}.webp`).sort(), "one WebP per model, nothing else");
@@ -78,6 +80,23 @@ const DAY = 24 * 60 * 60 * 1000;
     assert.equal(loaded.mimeType, "image/webp");
     assert.equal(loaded.data, bytes.toString("base64"));
   }
+  // Approved captions: the original six are "regular build".
+  assert.deepEqual(
+    AI_TRY_ON_DEFAULT_MODELS.map((m) => `${m.id}: ${m.label}`),
+    [
+      "male-1-light: Light skin tone, regular build",
+      "male-2-medium: Medium skin tone, regular build",
+      "male-3-deep: Deep skin tone, regular build",
+      "male-medium-build: Medium skin tone, medium build",
+      "male-plus: Medium skin tone, plus-size",
+      "female-1-light: Light skin tone, regular build",
+      "female-2-medium: Medium skin tone, regular build",
+      "female-3-deep: Deep skin tone, regular build",
+      "female-medium-build: Medium skin tone, medium build",
+      "female-plus: Medium skin tone, plus-size",
+    ],
+  );
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.some((m) => /slim/i.test(m.label)), false);
   assert.equal(findAiTryOnDefaultModel("../secrets"), null);
   assert.equal(findAiTryOnDefaultModel(undefined), null);
   // Bundled into the AI Try-on function so the server reads them from disk.
@@ -668,6 +687,30 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.deepEqual(deleted, [STORED]);
   assert.equal(byData(renderer, "data-ai-try-on-result").length, 0);
   assert.equal(hasConsent(renderer), true, "delete clears the wearer's model choice");
+}
+
+{
+  // Approved step subtitle (live) and approved model-mode copy.
+  const live = renderToStaticMarkup(
+    createElement(DormantFutureAiTryOnStep, {
+      workflow: { schemaVersion: 1, status: "ready", inputFingerprint: FINGERPRINT },
+      skipAllowed: true,
+      onBack: () => undefined,
+      onRetry: () => undefined,
+      onSkip: () => undefined,
+      onContinue: () => undefined,
+      livePanel: createElement("div"),
+    }),
+  );
+  assert.ok(live.includes("Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."));
+  assert.deepEqual(AI_TRY_ON_MODEL_COPY, {
+    option: "No photo? Try it on a model",
+    heading: "Choose a model",
+    intro: "See the design on one of our AI-generated models instead of a photo of you.",
+    filterAll: "All",
+    shownOnModel: "Shown on one of our AI-generated models, not on you, so the fit won't match your measurements.",
+    usePhotoInstead: "Use a photo instead",
+  });
 }
 
 {
