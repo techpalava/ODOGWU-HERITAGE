@@ -31,6 +31,14 @@ export type AiTryOnMode = "garment" | "fabric";
 export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v3" as const;
 
 /**
+ * Version of the model-mode prompt text (default try-on models). Separate
+ * from AI_TRY_ON_PROMPT_VERSION so the photo flow's fingerprints never turn
+ * stale because of model-mode wording. Folded into the shared model-result
+ * cache key: bump on any model-mode wording change.
+ */
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v1" as const;
+
+/**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
  * swatch image, garment mode otherwise.
  */
@@ -52,7 +60,14 @@ export interface AiTryOnGenerationRequest {
   readonly mode: AiTryOnMode;
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
   readonly inputFingerprint: string;
-  readonly personImage: AiTryOnInlineImage;
+  /** The customer's photo. Exactly one of personImage / defaultModelId. */
+  readonly personImage?: AiTryOnInlineImage;
+  /**
+   * Model mode: one of AI_TRY_ON_DEFAULT_MODELS. The server loads the
+   * picture itself; garment and fabric must be catalogue URLs, and no fit
+   * hints are sent (they describe the customer, not the model).
+   */
+  readonly defaultModelId?: string;
   /** Garment picture: inline, or (Step 6) a catalogue URL the server loads. */
   readonly garmentImage?: AiTryOnInlineImage;
   readonly garmentImageUrl?: string;
@@ -90,6 +105,8 @@ export interface AiTryOnStoredPreviewSummary {
   readonly wearerKey: string;
   readonly inputFingerprint: string;
   readonly expiresAt: string;
+  /** Set when the preview shows a default model rather than the customer. */
+  readonly modelId?: string;
 }
 
 export type AiTryOnAvailabilityResponse =
@@ -134,6 +151,13 @@ export interface AiTryOnGenerationSuccess {
   readonly accountTriesRemaining?: number;
   /** Prompt wording the image was made with. */
   readonly promptVersion: string;
+  /** Model mode only: the default model shown. */
+  readonly modelId?: string;
+  /**
+   * Model mode only: true when a saved result was reused. A reused result
+   * never uses a try and never calls Gemini.
+   */
+  readonly cacheHit?: boolean;
 }
 
 export interface AiTryOnErrorResponse {

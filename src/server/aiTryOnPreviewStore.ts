@@ -34,6 +34,8 @@ export interface StoredAiTryOnPreviewSummary {
   readonly wearerKey: string;
   readonly inputFingerprint: string;
   readonly expiresAt: string;
+  /** Model mode: the default model shown (no customer photo involved). */
+  readonly modelId?: string;
 }
 
 export interface AiTryOnPreviewStore {
@@ -43,6 +45,7 @@ export interface AiTryOnPreviewStore {
     previewId: string;
     inputFingerprint: string;
     image: { mimeType: string; data: string };
+    modelId?: string;
   }): Promise<StoredAiTryOnPreviewSummary>;
   list(orderKey: string): Promise<StoredAiTryOnPreviewSummary[]>;
   read(
@@ -70,6 +73,7 @@ interface PreviewDoc {
   inputFingerprint: string;
   mimeType: string;
   expiresAt: Date;
+  modelId?: string;
 }
 
 export const aiTryOnPreviewStoragePath = (orderDocId: string, docId: string): string =>
@@ -97,6 +101,7 @@ export const createAiTryOnPreviewStore = (
     wearerKey: doc.wearerKey,
     inputFingerprint: doc.inputFingerprint,
     expiresAt: new Date(readMillis(doc.expiresAt) ?? 0).toISOString(),
+    ...(typeof doc.modelId === "string" ? { modelId: doc.modelId } : {}),
   });
   const isLive = (doc: PreviewDoc) => {
     const expiresAt = readMillis(doc.expiresAt);
@@ -115,7 +120,7 @@ export const createAiTryOnPreviewStore = (
   };
 
   return {
-    async save({ orderKey, wearerKey, previewId, inputFingerprint, image }) {
+    async save({ orderKey, wearerKey, previewId, inputFingerprint, image, modelId }) {
       const orderDocId = `order-${hashAiTryOnOrderKey(orderKey)}`;
       const id = aiTryOnPreviewDocId(orderKey, wearerKey);
       const storagePath = aiTryOnPreviewStoragePath(orderDocId, id);
@@ -127,6 +132,7 @@ export const createAiTryOnPreviewStore = (
         inputFingerprint,
         mimeType: image.mimeType,
         expiresAt: new Date(now() + AI_TRY_ON_PREVIEW_RETENTION_MS),
+        ...(modelId ? { modelId } : {}),
       };
       const file = bucket.file(storagePath);
       try {

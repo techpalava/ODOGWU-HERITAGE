@@ -1204,6 +1204,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Shared default-model try-on results: server-only, like the previews.
+    match /aiTryOnModelResults/{document=**} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

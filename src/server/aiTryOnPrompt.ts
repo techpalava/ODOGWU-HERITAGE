@@ -5,6 +5,7 @@ import {
   type AiTryOnFitHint,
 } from "../utils/aiTryOnFitHints.js";
 import {
+  AI_TRY_ON_MODEL_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
   type AiTryOnMode,
 } from "../utils/aiTryOnGatewayContract.js";
@@ -27,7 +28,7 @@ import {
  * Garment mode and fabric mode are separate prompts. A fabric swatch is only
  * ever described in fabric mode.
  */
-export { AI_TRY_ON_PROMPT_VERSION };
+export { AI_TRY_ON_MODEL_PROMPT_VERSION, AI_TRY_ON_PROMPT_VERSION };
 
 const KEEP_PERSON =
   "Keep the person exactly as in image 1: identity, face, hair, skin tone, body shape, pose, hands and background.";
@@ -198,3 +199,82 @@ export const buildAiTryOnPrompt = ({
     .filter(Boolean)
     .join("\n\n");
 };
+
+// ------------------------------------------------------------ model mode
+
+/**
+ * Model mode ("No photo? Try it on a model"): image 1 is one of our default
+ * studio models instead of the customer. Both garment and fabric mode reuse
+ * the v3 garment-mode protections: the person in the garment reference is a
+ * stand-in who must never replace our studio model, only the ordered
+ * garment is copied, the studio model keeps their other clothing and shoes,
+ * and the prompt ends with an identity check. Every image gets a label.
+ * No fit block: fit hints describe the customer, not the model. Versioned
+ * by AI_TRY_ON_MODEL_PROMPT_VERSION (pinned in test_ai_try_on_default_models).
+ */
+const KEEP_MODEL =
+  "Keep the studio model exactly as in image 1: identity, face, hair, skin tone, body shape, pose, hands and background.";
+const MODEL_STAND_IN =
+  "Any person in image 2 is only a stand-in. Never use their face, body, pose or background, and never return image 2.";
+const MODEL_OUTPUT =
+  "Output one photorealistic full-body photo of the studio model from image 1 only, head to feet in frame. No text, labels, numbers, logos, watermarks or borders anywhere in the image.";
+const MODEL_CHECK =
+  "Check: the face, body, skin tone and background must be the studio model's from image 1, not the stand-in's.";
+
+const MODEL_GARMENT_MODE_LINES: readonly string[] = [
+  "Virtual try-on photo edit on a studio model.",
+  "Image 1: our studio model. Image 2: a garment reference photo.",
+  "Edit image 1 so the studio model wears the ordered garment from image 2.",
+  MODEL_STAND_IN,
+  KEEP_MODEL,
+  "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
+  "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
+  "Copy the garment faithfully: construction, cut, length, neckline, sleeves, colour, pattern, embroidery and trims. Do not redesign it.",
+  REALISM,
+  `Ignore everything that is not the studio model or the garment: ${NOISE}`,
+  MODEL_OUTPUT,
+  MODEL_CHECK,
+];
+
+const MODEL_FABRIC_MODE_LINES: readonly string[] = [
+  "Virtual try-on photo edit on a studio model, with a fabric change.",
+  "Image 1: our studio model. Image 2: the garment design. Image 3: the fabric swatch.",
+  "Edit image 1 so the studio model wears the ordered garment from image 2, made from the fabric in image 3.",
+  MODEL_STAND_IN,
+  KEEP_MODEL,
+  "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
+  "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
+  "From image 2 take only the construction: cut, length, neckline, sleeves, seams, embroidery and trim placement. Ignore its original fabric colour and print.",
+  "From image 3 take only the fabric: colour, pattern, texture and sheen. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.",
+  "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
+  REALISM,
+  `Ignore everything that is not the studio model, the garment or the fabric: ${NOISE}`,
+  MODEL_OUTPUT,
+  MODEL_CHECK,
+];
+
+export const buildAiTryOnModelImageLabels = (mode: AiTryOnMode): readonly string[] =>
+  mode === "fabric"
+    ? [
+        "Image 1, the studio model to dress:",
+        "Image 2, garment design reference only. Any person wearing it is a stand-in; do not use them:",
+        "Image 3, fabric swatch for the garment:",
+      ]
+    : [
+        "Image 1, the studio model to dress:",
+        "Image 2, garment reference only. Any person wearing it is a stand-in; do not use them:",
+      ];
+
+export const buildAiTryOnModelPrompt = ({
+  mode,
+  orderDetails,
+}: {
+  mode: AiTryOnMode;
+  orderDetails?: AiTryOnOrderDetails | null;
+}): string =>
+  [
+    (mode === "fabric" ? MODEL_FABRIC_MODE_LINES : MODEL_GARMENT_MODE_LINES).join("\n"),
+    buildAiTryOnOrderDetailsBlock({ mode, orderDetails }),
+  ]
+    .filter(Boolean)
+    .join("\n\n");

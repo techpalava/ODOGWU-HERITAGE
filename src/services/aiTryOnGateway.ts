@@ -16,6 +16,7 @@ import {
   type AiTryOnGenerationRequest,
   type AiTryOnGenerationSuccess,
 } from "../utils/aiTryOnGatewayContract";
+import { findAiTryOnDefaultModel } from "../utils/aiTryOnDefaultModels";
 
 /**
  * Browser side of the AI Try-on gateway. Talks only to our own
@@ -266,15 +267,21 @@ const withAccountTriesRemaining = (value: unknown): { accountTriesRemaining?: nu
 
 const parseStoredPreviews = (value: unknown): AiTryOnStoredPreviewSummary[] =>
   Array.isArray(value)
-    ? value.filter(
-        (entry): entry is AiTryOnStoredPreviewSummary =>
-          isRecord(entry) &&
-          typeof entry.previewId === "string" &&
-          PREVIEW_ID_PATTERN.test(entry.previewId) &&
-          typeof entry.wearerKey === "string" &&
-          typeof entry.inputFingerprint === "string" &&
-          typeof entry.expiresAt === "string",
-      )
+    ? value
+        .filter(
+          (entry): entry is AiTryOnStoredPreviewSummary =>
+            isRecord(entry) &&
+            typeof entry.previewId === "string" &&
+            PREVIEW_ID_PATTERN.test(entry.previewId) &&
+            typeof entry.wearerKey === "string" &&
+            typeof entry.inputFingerprint === "string" &&
+            typeof entry.expiresAt === "string",
+        )
+        .map((entry) => {
+          const { modelId, ...summary } = entry;
+          // Only a known default model id is kept (model-mode previews).
+          return findAiTryOnDefaultModel(modelId) ? { ...summary, modelId: modelId! } : summary;
+        })
     : [];
 
 /**
@@ -346,6 +353,9 @@ export type AiTryOnPreviewOutcome =
       accountTriesRemaining?: number | null;
       /** Set when the server stored the preview privately (Step 6). */
       storedPreviewId?: string | null;
+      /** Model mode: the default model shown, and whether a saved result was reused. */
+      modelId?: string;
+      cacheHit?: boolean;
     }
   | { kind: "order_limit_reached" }
   /** Signed-in account used its 15 tries in the last 30 days. */
@@ -386,6 +396,9 @@ export const mapAiTryOnPreviewResponse = (
           PREVIEW_ID_PATTERN.test(resultReference.assetId)
             ? resultReference.assetId
             : null,
+        ...(findAiTryOnDefaultModel(body.modelId)
+          ? { modelId: body.modelId as string, cacheHit: body.cacheHit === true }
+          : {}),
       };
     }
     return { kind: "failed", orderTriesRemaining: null };
