@@ -295,7 +295,9 @@ const noteCallSites = [
 ];
 for (const sourcePath of noteCallSites) {
   const source = readFileSync(sourcePath, "utf8");
-  const noteAt = source.indexOf("note={");
+  // Design Style passes its lock note as forwardNote (under the bottom Continue).
+  const noteMatch = /\b(?:note|forwardNote)=\{/.exec(source);
+  const noteAt = noteMatch ? noteMatch.index : -1;
   assert.ok(noteAt >= 0, `${sourcePath} passes note`);
   const forwardAt = source.indexOf("forward=", noteAt);
   assert.ok(forwardAt > noteAt, `${sourcePath} keeps forward as its own prop`);
