@@ -4,6 +4,7 @@
  * on top of the 5-per-order, 10/hour IP and 1000 global limits. Guests are
  * unaffected. All mocked: no Gemini, Firebase or network calls.
  */
+import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
@@ -335,6 +336,7 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps>) => {
       preparePhoto: async () => ({ mimeType: "image/jpeg" as const, data: "/9j/4AAQ" }),
       createThumbnailUrl: () => null,
       revokeThumbnailUrl: () => undefined,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
       ...props,
     }));
   });

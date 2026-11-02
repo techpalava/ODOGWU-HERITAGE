@@ -730,8 +730,9 @@ export async function handleAiTryOn(
   const limits = createLimits(db);
   const promptVersion = defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
   const saveWearerPreview = async (previewId: string, image: { mimeType: string; data: string }) => {
+    let saved: Awaited<ReturnType<AiTryOnPreviewStore["save"]>> | null;
     try {
-      return await createStore(db).save({
+      saved = await createStore(db).save({
         orderKey: sessionId!,
         wearerKey: parsed.wearerKey,
         previewId,
@@ -743,6 +744,23 @@ export async function handleAiTryOn(
       // The customer still gets the inline preview; it just isn't kept.
       return null;
     }
+    // Background generation: the order may have been paid while Gemini
+    // worked, which deletes the session's previews and closes it. A preview
+    // saved after that must not outlive the order, so check again and take
+    // it back out ("kept until you place your order").
+    try {
+      const stillOpen = await createSessions(db).authorize(identity);
+      if (stillOpen === sessionId) return saved;
+    } catch {
+      // Unknown: remove it to be safe; the customer keeps the inline image.
+    }
+    try {
+      await createStore(db).remove(sessionId!, previewId);
+    } catch {
+      // The 30-day expiry is the backstop.
+    }
+    log(JSON.stringify({ event: "ai_try_on", outcome: "preview_removed_session_closed" }));
+    return null;
   };
   const ownerBindingId = `session-${hashAiTryOnOrderKey(sessionId).slice(0, 32)}`;
 

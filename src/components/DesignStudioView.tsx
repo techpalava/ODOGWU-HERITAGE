@@ -359,6 +359,16 @@ import {
   type AiTryOnCredentials,
 } from "../services/aiTryOnGateway";
 import { AiTryOnPhotoPanel } from "./AiTryOnPhotoPanel";
+import {
+  aiTryOnBackgroundJobs,
+  useAiTryOnBackgroundJobs,
+} from "../services/aiTryOnBackgroundJobs";
+import {
+  AiTryOnBackLink,
+  AiTryOnBackgroundToasts,
+  AiTryOnGeneratingChip,
+  aiTryOnToastKind,
+} from "./AiTryOnBackgroundToasts";
 import { buildAiTryOnFitHints } from "../utils/aiTryOnFitHints";
 import { buildAiTryOnOrderDetails } from "../utils/aiTryOnOrderDetails";
 import {
@@ -3859,6 +3869,31 @@ export default function DesignStudioView({
       cancelled = true;
     };
   }, [guestDraftHydrated, futureStageId, futureDraftIdentityKey]);
+  // Background AI Try-on: requests outlive the step, one per wearer.
+  const aiTryOnJobScope = futureDraftIdentityKey;
+  const aiTryOnJobs = useAiTryOnBackgroundJobs();
+  const aiTryOnScopedJobs = Object.values(aiTryOnJobs).filter(
+    (job) => job.scope === aiTryOnJobScope,
+  );
+  /** Latest values for request callbacks that end after many renders. */
+  const futureAiTryOnInputFingerprintRef = useRef(futureAiTryOnInputFingerprint);
+  futureAiTryOnInputFingerprintRef.current = futureAiTryOnInputFingerprint;
+  const aiTryOnWearerTargetsRef = useRef(aiTryOnWearerTargets);
+  aiTryOnWearerTargetsRef.current = aiTryOnWearerTargets;
+  // After a reload mid-request: look for the stored preview instead of
+  // sending the request again (never a second try).
+  useEffect(() => {
+    if (!guestDraftHydrated) return;
+    const credentials = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
+    aiTryOnBackgroundJobs.resume({
+      scope: futureDraftIdentityKey,
+      listStoredPreviews: async () => {
+        const availability = await fetchAiTryOnAvailability({ credentials });
+        return availability.status === "available" ? availability.storedPreviews : null;
+      },
+      loadStoredPreview: (previewId) => fetchStoredAiTryOnPreview({ credentials, previewId }),
+    });
+  }, [guestDraftHydrated, futureDraftIdentityKey]);
   /**
    * Latest selected person, written on render and synchronously on select, so
    * handlers that run later in the same event never sync the live form to a
@@ -9037,20 +9072,53 @@ export default function DesignStudioView({
   };
   /** A wearer's preview completes the order-level Try-on (opaque reference only). */
   const handleAiTryOnPreviewCreated = ({
+    wearerId,
     resultReference,
+    inputFingerprint,
   }: {
     wearerId: string;
     resultReference: AiTryOnVerifiedPrivateResultReference;
+    inputFingerprint: string;
   }) => {
+    // The request may end long after Generate (background): read the
+    // design as it is now, and skip a preview of a design since changed.
+    const target = aiTryOnWearerTargetsRef.current.find((entry) => entry.wearerId === wearerId);
+    if (!target || target.inputFingerprint !== inputFingerprint) return;
     setFutureAiTryOnWorkflow((current) =>
       recordAiTryOnPreviewCompletion({
         state: current,
-        currentInputFingerprint: futureAiTryOnInputFingerprint,
+        currentInputFingerprint: futureAiTryOnInputFingerprintRef.current,
         resultReference,
         jobId: `preview-${Date.now().toString(36)}`,
       }),
     );
   };
+  /** Where "View preview" came from, for the "Back to <step>" link. */
+  const [aiTryOnReturnTo, setAiTryOnReturnTo] = useState<{
+    stage: DesignStudioStageId;
+    scrollY: number;
+  } | null>(null);
+  const openAiTryOnForWearer = (wearerId: string) => {
+    aiTryOnBackgroundJobs.requestFocus(wearerId);
+    if (futureStageId !== "try_on") {
+      setAiTryOnReturnTo({
+        stage: futureStageId,
+        scrollY: typeof window !== "undefined" ? window.scrollY : 0,
+      });
+      navigateToFutureStage("try_on");
+    }
+  };
+  const handleAiTryOnBack = () => {
+    const returnTo = aiTryOnReturnTo;
+    if (!returnTo) return;
+    setAiTryOnReturnTo(null);
+    pendingResumeScrollYRef.current = returnTo.scrollY;
+    navigateToFutureStage(returnTo.stage);
+  };
+  // The link belongs to one trip to AI Try-on.
+  useEffect(() => {
+    if (futureStageId !== "try_on") setAiTryOnReturnTo(null);
+  }, [futureStageId]);
   const handleSkipDormantAiTryOn = () => {
     const transition = transitionAiTryOnWorkflow({
       state: futureAiTryOnWorkflow,
@@ -11102,6 +11170,18 @@ export default function DesignStudioView({
         onSelectShipping={handleStepperJump(handleOpenDormantShippingStage)}
         onSelectPayment={handleStepperJump(handleOpenDormantPaymentReviewStage)}
       />
+      <AiTryOnGeneratingChip
+        jobs={aiTryOnScopedJobs
+          .filter((job) => job.status === "running")
+          .map((job) => ({
+            ...job,
+            wearerName:
+              aiTryOnWearerTargets.length > 1
+                ? aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)?.label ??
+                  job.wearerName
+                : null,
+          }))}
+      />
       <div
         data-studio-step-layout={showShellLiveOrderSummary ? "true" : undefined}
         className={
@@ -11450,6 +11530,16 @@ export default function DesignStudioView({
         />
         </div>
       ) : futureStageId === "try_on" ? (
+        <>
+        {aiTryOnReturnTo ? (
+          <AiTryOnBackLink
+            stepName={
+              DESIGN_STUDIO_STEPS.find((step) => step.id === aiTryOnReturnTo.stage)?.label ||
+              "Design Studio"
+            }
+            onClick={handleAiTryOnBack}
+          />
+        ) : null}
         <DormantFutureAiTryOnStep
           workflow={futureAiTryOnWorkflow}
           skipAllowed
@@ -11477,11 +11567,13 @@ export default function DesignStudioView({
                 onPreviewCreated={handleAiTryOnPreviewCreated}
                 onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
                 onGeneratingChange={setAiTryOnGenerating}
+                jobScope={aiTryOnJobScope}
               />
             ) : undefined
           }
           generating={aiTryOnGenerating}
         />
+        </>
       ) : futureStageId === "measurement" ? (
         <>
         {showLaterStageRemainingFabricCapacityPrompt ? (
@@ -11878,6 +11970,29 @@ export default function DesignStudioView({
           </div>
         ) : null}
       </div>
+      <AiTryOnBackgroundToasts
+        toasts={aiTryOnScopedJobs
+          .filter((job) => job.status !== "running" && job.toast === "open")
+          .map((job) => ({
+            // Names come from the order as it is now (also after a reload).
+            job: {
+              ...job,
+              wearerName:
+                aiTryOnWearerTargets.length > 1
+                  ? aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)?.label ??
+                    job.wearerName
+                  : null,
+            },
+            kind: aiTryOnToastKind(
+              job,
+              aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)
+                ?.inputFingerprint,
+            ),
+          }))}
+        onView={openAiTryOnForWearer}
+        onRetry={openAiTryOnForWearer}
+        onClose={(wearerId) => aiTryOnBackgroundJobs.closeToast(wearerId)}
+      />
       <DesignStudioScrollFabHost
         stageLabel={currentStageLabel}
         topTargetRef={futureStageNavigationTargetRef}

@@ -5,6 +5,7 @@
  * after last use), per-wearer picker behaviour, and that the photo flow is
  * unchanged. Gemini, Firestore, Storage and fetch are always faked.
  */
+import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
@@ -594,6 +595,7 @@ const renderPanel = (props: Partial<AiTryOnPhotoPanelProps> = {}) => {
     preparePhoto: async () => ({ mimeType: "image/jpeg", data: "/9j/4AAQ" }),
     createThumbnailUrl: () => null,
     revokeThumbnailUrl: () => undefined,
+    jobStore: createAiTryOnBackgroundJobs({ storage: null }),
     ...props,
   };
   act(() => {

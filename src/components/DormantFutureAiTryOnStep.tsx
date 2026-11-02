@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   SkipForward,
 } from "lucide-react";
+import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
 import {
   DesignStudioStepActions,
   studioContinueNavInteractionClass,
@@ -28,7 +29,10 @@ interface DormantFutureAiTryOnStepProps {
    * shows the unavailable state and the skip button.
    */
   livePanel?: ReactNode;
-  /** A preview is generating: hide the skip button until it ends. */
+  /**
+   * A preview is generating: the skip button reads "Continue while we make
+   * your preview"; the request carries on in the background.
+   */
   generating?: boolean;
 }
 
@@ -202,7 +206,7 @@ export const DormantFutureAiTryOnStep = ({
               Retry
             </button>
           )}
-          {canSkip && !generating && (
+          {canSkip && (
             <button
               type="button"
               onClick={onSkip}
@@ -210,7 +214,9 @@ export const DormantFutureAiTryOnStep = ({
               className={`inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`}
             >
               <SkipForward aria-hidden="true" size={14} className="shrink-0" />
-              <span className="min-w-0 text-balance">Continue without AI Try-on</span>
+              <span className="min-w-0 text-balance">
+                {generating ? AI_TRY_ON_BACKGROUND_COPY.continueWhileGenerating : "Continue without AI Try-on"}
+              </span>
             </button>
           )}
         </div>

@@ -20,7 +20,9 @@ import { createAiTryOnSessions, type AiTryOnSessions } from "./aiTryOnSession.js
  * - Logs carry no PII: no uid, order id or session id, only counts.
  * - Previews are deleted BEFORE the session closes, so a failure part-way
  *   leaves the session open for the next payment event to retry; the
- *   30-day expiry is the final backstop.
+ *   30-day expiry is the final backstop. A second sweep after the close
+ *   catches a background preview saved in between; the generate route
+ *   removes any saved after the close itself.
  */
 export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 3000;
 
@@ -55,8 +57,11 @@ export const retireAiTryOnSessionForPaidOrder = async (
           getAdminServices().storage.bucket() as unknown as AiTryOnPreviewBucket,
         ))
     )(db);
-    const deleted = await store.remove(sessionId, null);
+    let deleted = await store.remove(sessionId, null);
     await sessions.close(sessionId);
+    // A preview made in the background can be saved between the delete and
+    // the close; sweep once more now that no new one can be saved.
+    deleted += await store.remove(sessionId, null);
     log(JSON.stringify({ event: "ai_try_on_payment_cleanup", status: "deleted", previews: deleted }));
     return "deleted";
   };
