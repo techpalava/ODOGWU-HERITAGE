@@ -149,10 +149,13 @@ export const AiTryOnOrderPreviewThumbnails = ({
   entries,
   loadImage,
   onMakeNew,
+  notice,
 }: {
   entries: readonly AiTryOnOrderPreviewEntry[];
   loadImage: LoadImage;
   onMakeNew: (wearerId: string) => void;
+  /** Shown under the fresh previews (Review & Payment: what happens at payment). */
+  notice?: string;
 }) => {
   if (entries.length === 0) return null;
   const fresh = entries.filter(
@@ -172,6 +175,14 @@ export const AiTryOnOrderPreviewThumbnails = ({
             ))}
           </div>
           <p className="text-xs leading-relaxed text-heritage-ink/60">{AI_TRY_ON_PREVIEW_DISCLAIMER}</p>
+          {notice ? (
+            <p
+              className="rounded-xl border border-heritage-green/20 bg-heritage-green/5 p-3 text-xs leading-relaxed text-heritage-ink/75"
+              data-ai-try-on-order-saved-notice
+            >
+              {notice}
+            </p>
+          ) : null}
         </>
       ) : null}
       {stale.map((entry) => (

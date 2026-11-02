@@ -64,7 +64,7 @@ export interface FutureOrderV2PayPalPaymentDependencies {
   /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
   readCatalog?: () => Promise<unknown>;
   /** Runs after a payment is recorded (AI Try-on preview cleanup, Step 7). Never throws. */
-  onPaymentRecorded?: (input: { ownerUid: string; db: unknown }) => Promise<unknown>;
+  onPaymentRecorded?: (input: { ownerUid: string; orderId: string; db: unknown }) => Promise<unknown>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -880,11 +880,11 @@ export const handleFutureOrderV2PayPalCapture = async (
     case "already_recorded":
       try {
         await (dependencies.onPaymentRecorded ??
-          ((input: { ownerUid: string; db: unknown }) =>
+          ((input: { ownerUid: string; orderId: string; db: unknown }) =>
             retireAiTryOnSessionForPaidOrder(
-              { ownerUid: input.ownerUid },
+              { ownerUid: input.ownerUid, orderId: input.orderId },
               { getDb: () => input.db as Firestore },
-            )))({ ownerUid: outcome.record.ownerUid, db: services.db });
+            )))({ ownerUid: outcome.record.ownerUid, orderId: outcome.record.orderId, db: services.db });
       } catch {
         // Never let post-payment cleanup affect the payment response.
       }

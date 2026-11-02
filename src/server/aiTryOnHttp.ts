@@ -1,4 +1,9 @@
 import {
+  isAiTryOnOrderId,
+  parseAiTryOnOrderSelectionInput,
+  saveAiTryOnOrderSelection,
+} from "./aiTryOnOrderImages.js";
+import {
   cropAiTryOnFabricSwatch,
   readAiTryOnPhotoAspectRatio,
   type AiTryOnGeminiAspectRatio,
@@ -16,6 +21,7 @@ import {
   type AiTryOnBusyJobs,
 } from "./aiTryOnBusyJobs.js";
 import { getAdminServices } from "./firebaseAdmin.js";
+import { aiTryOnStorageBucket, isAiTryOnStorageReady } from "./aiTryOnStorageBucket.js";
 import {
   AuthRateLimitError,
   consumeAuthRateLimit,
@@ -103,7 +109,9 @@ import {
  * `GET|POST /api/ai-try-on`: server-side Gemini virtual try-on.
  *
  * Live only when BOTH `AI_TRY_ON_ENABLED=true` and `GEMINI_API_KEY` are set
- * in the server environment. Otherwise GET reports `unavailable` and POST
+ * in the server environment, and, in production (`VERCEL_ENV=production`),
+ * the dedicated private bucket `AI_TRY_ON_STORAGE_BUCKET` (see
+ * aiTryOnStorageBucket). Otherwise GET reports `unavailable` and POST
  * returns 503 without touching Firestore or Gemini, so the Design Studio
  * keeps its existing "AI Try-on is currently unavailable" state.
  *
@@ -171,7 +179,9 @@ export const isAiTryOnEnabled = (
   environment: Record<string, string | undefined> = process.env,
 ): boolean =>
   environment.AI_TRY_ON_ENABLED?.trim().toLowerCase() === "true" &&
-  readGeminiApiKey(environment) !== null;
+  readGeminiApiKey(environment) !== null &&
+  // Production also needs the dedicated private bucket (AI_TRY_ON_STORAGE_BUCKET).
+  isAiTryOnStorageReady(environment);
 
 export interface AiTryOnHttpDependencies {
   environment?: Record<string, string | undefined>;
@@ -465,12 +475,12 @@ const readQueryPreviewId = (req: RequestWithRoute): string | null => {
 };
 
 const defaultPreviewStore = (db: Firestore): AiTryOnPreviewStore =>
-  createAiTryOnPreviewStore(db, getAdminServices().storage.bucket() as unknown as AiTryOnPreviewBucket);
+  createAiTryOnPreviewStore(db, aiTryOnStorageBucket() as unknown as AiTryOnPreviewBucket);
 
 const defaultModelResultCache = (db: Firestore): AiTryOnModelResultCache =>
   createAiTryOnModelResultCache(
     db,
-    getAdminServices().storage.bucket() as unknown as AiTryOnModelResultBucket,
+    aiTryOnStorageBucket() as unknown as AiTryOnModelResultBucket,
   );
 
 const defaultVerifyIdToken = (token: string) => getAdminServices().auth.verifyIdToken(token);
@@ -620,6 +630,47 @@ export async function handleAiTryOn(
         expiresAt: preview.summary.expiresAt,
         image: { mimeType: preview.mimeType, data: preview.data },
       });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on previews are temporarily unavailable.", true);
+    }
+  }
+
+  // Before payment: which of this session's previews go with the order
+  // (copied to the order when its payment is recorded). Signed-in owners
+  // only; never needed for payment, so the browser ignores failures.
+  if (req.method === "POST" && readQueryParam(req, "action") === "order-selection") {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+    const selections = parseAiTryOnOrderSelectionInput(body.selections);
+    if (!isAiTryOnOrderId(body.orderId) || !selections) {
+      return sendError(res, 400, "INVALID_REQUEST", "A valid order and preview list are required.", false);
+    }
+    const identity = await readIdentity();
+    if (identity === "auth_failed") return authFailed();
+    if (!identity.uid) {
+      return sendError(res, 401, "AUTH_REQUIRED", "Sign in again to use AI Try-on.", false);
+    }
+    try {
+      const db = await resolveDb();
+      const sessionId = await createSessions(db).authorize(identity);
+      if (!sessionId) return sessionRequired();
+      const result = await saveAiTryOnOrderSelection({
+        db,
+        store: createStore(db),
+        sessionId,
+        uid: identity.uid,
+        orderId: body.orderId,
+        selections,
+        now,
+      });
+      log(JSON.stringify({ event: "ai_try_on", outcome: `order_selection_${result}`, previews: selections.length }));
+      setNoStore(res);
+      if (result === "order_not_found") {
+        return sendError(res, 404, "INVALID_REQUEST", "This order was not found.", false);
+      }
+      if (result === "preview_not_found") {
+        return sendError(res, 404, "PREVIEW_NOT_FOUND", "This preview is no longer available.", false);
+      }
+      return res.status(200).json({ status: result });
     } catch {
       return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on previews are temporarily unavailable.", true);
     }

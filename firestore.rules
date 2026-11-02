@@ -1214,6 +1214,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // AI preview saved with a paid order (60 days) and the pre-payment
+    // choice of previews: server-only. Owners and admins read the image
+    // only through the signed-in order image route.
+    match /aiTryOnOrderSelections/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnOrderImages/{document=**} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
