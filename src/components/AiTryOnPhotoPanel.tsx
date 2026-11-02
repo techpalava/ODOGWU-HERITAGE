@@ -7,10 +7,18 @@ import {
   Sparkles,
   AlertTriangle,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import type { AiTryOnVerifiedPrivateResultReference } from "../types";
 import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract";
 import type { AiTryOnWearerTarget } from "../utils/aiTryOnWearerTargets";
+import {
+  AI_TRY_ON_DEFAULT_MODELS,
+  AI_TRY_ON_MODEL_GROUP_LABELS,
+  aiTryOnDefaultModelImageUrl,
+  findAiTryOnDefaultModel,
+  type AiTryOnModelGroup,
+} from "../utils/aiTryOnDefaultModels";
 import {
   AI_TRY_ON_PHOTO_ACCEPT,
   AiTryOnPhotoError,
@@ -83,6 +91,19 @@ export const AI_TRY_ON_PHOTO_TIPS: readonly string[] = [
 export const AI_TRY_ON_PREVIEW_DISCLAIMER =
   "This is an AI preview to help you picture your outfit. The real garment, fabric colour, pattern placement and fit may look different. We make your order from your measurements and choices, not from this image.";
 
+/**
+ * Model mode ("No photo? Try it on a model"). Wording pending Xavier's
+ * approval. No consent notice: no personal photo is involved.
+ */
+export const AI_TRY_ON_MODEL_COPY = {
+  option: "No photo? Try it on a model",
+  heading: "Choose a model",
+  intro: "See the design on one of our AI-generated models instead of a photo of you.",
+  filterAll: "All",
+  shownOnModel: "Shown on one of our AI-generated models, not on you, so the fit won't match your measurements.",
+  usePhotoInstead: "Use a photo instead",
+} as const;
+
 export const AI_TRY_ON_MESSAGES = {
   outOfPreviews:
     "You've used all 5 AI Try-on previews for this order. They're shared by everyone on the order. You can still continue without one.",
@@ -131,6 +152,8 @@ interface WearerPreview {
   data: string;
   /** Server-side id when the preview is stored privately. */
   storedPreviewId: string | null;
+  /** Model mode: the default model shown. */
+  modelId: string | null;
 }
 
 interface SelectedPhoto {
@@ -222,6 +245,10 @@ export const AiTryOnPhotoPanel = ({
   );
   const [deleting, setDeleting] = useState(false);
   const restoringRef = useRef(new Set<string>());
+  /** Model mode: the default model chosen for each wearer. */
+  const [modelByWearer, setModelByWearer] = useState<Record<string, string>>({});
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelFilter, setModelFilter] = useState<AiTryOnModelGroup | "all">("all");
   const [message, setMessage] = useState<PanelMessage | null>(() =>
     initialAccountTriesRemaining === 0
       ? { kind: "account_out_of_previews" }
@@ -271,6 +298,7 @@ export const AiTryOnPhotoPanel = ({
   const outOfPreviews: PanelMessage =
     accountTriesRemaining === 0 ? { kind: "account_out_of_previews" } : { kind: "out_of_previews" };
   const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
+  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
   const preview =
     target && target.inputFingerprint
       ? previews[target.wearerId]?.inputFingerprint === target.inputFingerprint
@@ -313,6 +341,7 @@ export const AiTryOnPhotoPanel = ({
                 mimeType: image.mimeType,
                 data: image.data,
                 storedPreviewId: summary.previewId,
+                modelId: summary.modelId ?? null,
               },
             },
       );
@@ -340,6 +369,12 @@ export const AiTryOnPhotoPanel = ({
         delete next[wearerId];
         return next;
       });
+      // Clearing the preview also clears this wearer's model choice.
+      setModelByWearer((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
       setMessage({ kind: "preview_deleted" });
     } finally {
       setDeleting(false);
@@ -349,7 +384,7 @@ export const AiTryOnPhotoPanel = ({
   const canGenerate =
     Boolean(target?.inputFingerprint) &&
     !missingGarmentImage &&
-    Boolean(currentPhoto) &&
+    Boolean(currentPhoto || currentModel) &&
     !generating &&
     !preparingPhoto &&
     left > 0;
@@ -369,6 +404,25 @@ export const AiTryOnPhotoPanel = ({
     setPhotoError(null);
     setMessage(left === 0 ? outOfPreviews : null);
     setSelectedWearerId(wearerId);
+    setModelPickerOpen(Boolean(modelByWearer[wearerId]));
+  };
+
+  const chooseModel = (modelId: string) => {
+    if (!target || generating) return;
+    // A wearer uses either a photo or a model, never both.
+    clearPhoto();
+    setPhotoError(null);
+    setModelByWearer((current) => ({ ...current, [target.wearerId]: modelId }));
+  };
+
+  const closeModelPicker = () => {
+    if (!target || generating) return;
+    setModelPickerOpen(false);
+    setModelByWearer((current) => {
+      const next = { ...current };
+      delete next[target.wearerId];
+      return next;
+    });
   };
 
   const handlePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -385,6 +439,13 @@ export const AiTryOnPhotoPanel = ({
     setPreparingPhoto(true);
     try {
       const image = await preparePhoto(file);
+      // A photo replaces this wearer's model choice.
+      setModelPickerOpen(false);
+      setModelByWearer((current) => {
+        const next = { ...current };
+        delete next[target.wearerId];
+        return next;
+      });
       setPhoto((current) => {
         if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
         return { wearerId: target.wearerId, image, thumbnailUrl: createThumbnailUrl(file) };
@@ -400,7 +461,9 @@ export const AiTryOnPhotoPanel = ({
   };
 
   const handleGenerate = async () => {
-    if (!target || !target.inputFingerprint || !target.garmentImageUrl || !currentPhoto) return;
+    if (!target || !target.inputFingerprint || !target.garmentImageUrl) return;
+    const model = currentPhoto ? null : currentModel;
+    if (!currentPhoto && !model) return;
     if (left <= 0) {
       setMessage(outOfPreviews);
       return;
@@ -410,21 +473,23 @@ export const AiTryOnPhotoPanel = ({
     setGenerating(true);
     setMessage(null);
     try {
-      if (!fitsAiTryOnTotalLimit([currentPhoto.image])) {
+      if (currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
         setMessage({ kind: "failed", left });
         return;
       }
       // Step 6: the server loads the catalogue pictures itself, so browser
       // CORS on the Storage bucket no longer matters.
       const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
+      // Model mode sends no fit hints: they describe the customer, not the
+      // model, and would stop a saved model result from being reused.
       const request: AiTryOnGenerationRequest = {
         mode: fabricMode ? "fabric" : "garment",
         inputFingerprint,
         wearerKey: wearerId,
-        personImage: currentPhoto.image,
+        ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
         garmentImageUrl: target.garmentImageUrl,
         ...(fabricMode ? { fabricSwatchImageUrl: target.fabricSwatchImageUrl! } : {}),
-        ...(target.fitHints.length ? { fitHints: target.fitHints } : {}),
+        ...(!model && target.fitHints.length ? { fitHints: target.fitHints } : {}),
         ...(target.orderDetails ? { orderDetails: target.orderDetails } : {}),
       };
       const outcome = await requestPreview(request);
@@ -437,6 +502,7 @@ export const AiTryOnPhotoPanel = ({
               mimeType: outcome.preview.mimeType,
               data: outcome.preview.data,
               storedPreviewId: outcome.storedPreviewId ?? null,
+              modelId: model ? model.id : null,
             },
           }));
           // The new preview replaces this wearer's stored one on the server.
@@ -545,57 +611,61 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
-      <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
-        <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
-          {AI_TRY_ON_CONSENT_NOTICE}{" "}
-          <button
-            type="button"
-            aria-expanded={howWeUseOpen}
-            aria-controls={howWeUseId}
-            onClick={() => setHowWeUseOpen((open) => !open)}
-            className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
-          >
-            How we use your photo
-            <ChevronDown
-              aria-hidden="true"
-              size={14}
-              className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-        </p>
-        {howWeUseOpen && (
+      {!currentModel && (
+        <>
+        <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
+          <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
+            {AI_TRY_ON_CONSENT_NOTICE}{" "}
+            <button
+              type="button"
+              aria-expanded={howWeUseOpen}
+              aria-controls={howWeUseId}
+              onClick={() => setHowWeUseOpen((open) => !open)}
+              className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            >
+              How we use your photo
+              <ChevronDown
+                aria-hidden="true"
+                size={14}
+                className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+          </p>
+          {howWeUseOpen && (
+            <ul
+              id={howWeUseId}
+              className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
+            >
+              {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
+                <li key={bullet.label}>
+                  <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
+                  {bullet.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h3 id={tipsId} className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">
+            Tips for a good preview
+          </h3>
           <ul
-            id={howWeUseId}
-            className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
+            aria-labelledby={tipsId}
+            // Column flow (not a grid): each column stacks on its own, so a
+            // two-line tip never leaves a gap beside the other column's rows.
+            className="mt-2 text-sm leading-relaxed text-heritage-ink/75 sm:columns-2 sm:gap-x-8"
           >
-            {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
-              <li key={bullet.label}>
-                <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
-                {bullet.text}
+            {AI_TRY_ON_PHOTO_TIPS.map((tip) => (
+              <li key={tip} className="mb-1.5 flex break-inside-avoid gap-2">
+                <CheckCircle2 aria-hidden="true" size={15} className="mt-0.5 shrink-0 text-heritage-green/70" />
+                <span>{tip}</span>
               </li>
             ))}
           </ul>
-        )}
-      </div>
-
-      <div>
-        <h3 id={tipsId} className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">
-          Tips for a good preview
-        </h3>
-        <ul
-          aria-labelledby={tipsId}
-          // Column flow (not a grid): each column stacks on its own, so a
-          // two-line tip never leaves a gap beside the other column's rows.
-          className="mt-2 text-sm leading-relaxed text-heritage-ink/75 sm:columns-2 sm:gap-x-8"
-        >
-          {AI_TRY_ON_PHOTO_TIPS.map((tip) => (
-            <li key={tip} className="mb-1.5 flex break-inside-avoid gap-2">
-              <CheckCircle2 aria-hidden="true" size={15} className="mt-0.5 shrink-0 text-heritage-green/70" />
-              <span>{tip}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+        </div>
+        </>
+      )}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -621,6 +691,97 @@ export const AiTryOnPhotoPanel = ({
             )}
             {currentPhoto ? "Change photo" : "Choose a photo"}
           </label>
+          {!modelPickerOpen && (
+            <button
+              type="button"
+              onClick={() => setModelPickerOpen(true)}
+              disabled={generating || missingGarmentImage}
+              data-ai-try-on-model-option
+              className="inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <UserRound aria-hidden="true" size={15} />
+              {AI_TRY_ON_MODEL_COPY.option}
+            </button>
+          )}
+          {modelPickerOpen && (
+            <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker>
+              <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
+                {AI_TRY_ON_MODEL_COPY.heading}
+              </legend>
+              <p className="text-sm leading-relaxed text-heritage-ink/70">{AI_TRY_ON_MODEL_COPY.intro}</p>
+              <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: filter`}>
+                {(["all", "men", "women"] as const).map((group) => (
+                  <button
+                    key={group}
+                    type="button"
+                    role="radio"
+                    aria-checked={modelFilter === group}
+                    onClick={() => setModelFilter(group)}
+                    data-ai-try-on-model-filter={group}
+                    className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-bold uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                      modelFilter === group
+                        ? "border-heritage-green bg-heritage-green text-white"
+                        : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                    }`}
+                  >
+                    {group === "all" ? AI_TRY_ON_MODEL_COPY.filterAll : AI_TRY_ON_MODEL_GROUP_LABELS[group]}
+                  </button>
+                ))}
+              </div>
+              {(["men", "women"] as const)
+                .filter((group) => modelFilter === "all" || modelFilter === group)
+                .map((group) => (
+                  <div key={group} className="mt-4" data-ai-try-on-model-group={group}>
+                    <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">
+                      {AI_TRY_ON_MODEL_GROUP_LABELS[group]}
+                    </h4>
+                    <div
+                      className="mt-2 flex gap-3 overflow-x-auto pb-2"
+                      role="radiogroup"
+                      aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: ${AI_TRY_ON_MODEL_GROUP_LABELS[group]}`}
+                    >
+                      {AI_TRY_ON_DEFAULT_MODELS.filter((entry) => entry.group === group).map((entry) => {
+                        const selected = currentModel?.id === entry.id;
+                        return (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            disabled={generating}
+                            onClick={() => chooseModel(entry.id)}
+                            data-ai-try-on-model={entry.id}
+                            className={`flex w-24 shrink-0 flex-col items-center gap-1 rounded-xl border-2 p-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+                              selected ? "border-heritage-green bg-heritage-cream/50" : "border-transparent hover:border-heritage-green/30"
+                            }`}
+                          >
+                            <img
+                              src={aiTryOnDefaultModelImageUrl(entry)}
+                              alt=""
+                              loading="lazy"
+                              width={88}
+                              height={120}
+                              className="h-[7.5rem] w-[5.5rem] rounded-lg bg-heritage-cream/40 object-cover"
+                            />
+                            <span className="text-[11px] leading-tight text-heritage-ink/80">{entry.label}</span>
+                            {selected && <span className="sr-only">(selected)</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              <button
+                type="button"
+                onClick={closeModelPicker}
+                disabled={generating}
+                data-ai-try-on-model-close
+                className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {AI_TRY_ON_MODEL_COPY.usePhotoInstead}
+              </button>
+            </fieldset>
+          )}
           {currentPhoto?.thumbnailUrl && (
             <img
               src={currentPhoto.thumbnailUrl}
@@ -697,8 +858,13 @@ export const AiTryOnPhotoPanel = ({
             alt={`AI try-on preview for ${target.label}`}
             className="mx-auto max-h-[32rem] w-auto max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain"
           />
-          <figcaption className="text-xs leading-relaxed text-heritage-ink/65">
-            {AI_TRY_ON_PREVIEW_DISCLAIMER}
+          <figcaption className="space-y-1 text-xs leading-relaxed text-heritage-ink/65">
+            {preview.modelId && (
+              <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-model>
+                {AI_TRY_ON_MODEL_COPY.shownOnModel}
+              </span>
+            )}
+            <span className="block">{AI_TRY_ON_PREVIEW_DISCLAIMER}</span>
           </figcaption>
           {preview.storedPreviewId && (
             <button

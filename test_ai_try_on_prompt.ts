@@ -152,7 +152,12 @@ assert.match(
   readFileSync("src/utils/aiTryOnWorkflow.ts", "utf8"),
   /promptVersion: AI_TRY_ON_PROMPT_VERSION/,
 );
-assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /promptVersion: AI_TRY_ON_PROMPT_VERSION,\n {2}\};/);
+// The photo flow's response reports AI_TRY_ON_PROMPT_VERSION; model mode reports its own.
+assert.match(
+  readFileSync("src/server/aiTryOnHttp.ts", "utf8"),
+  /const promptVersion = defaultModel \? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;/,
+);
+assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /\n {4}promptVersion,\n {4}\.\.\.\(defaultModel/);
 
 // ---------------------------------------------------------------- mode choice
 

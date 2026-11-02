@@ -18,7 +18,26 @@ import {
   runAiTryOnGemini,
   type AiTryOnGenerateContent,
 } from "./aiTryOnGemini.js";
-import { buildAiTryOnImageLabels, buildAiTryOnPrompt } from "./aiTryOnPrompt.js";
+import {
+  buildAiTryOnImageLabels,
+  buildAiTryOnModelImageLabels,
+  buildAiTryOnModelPrompt,
+  buildAiTryOnPrompt,
+} from "./aiTryOnPrompt.js";
+import {
+  loadAiTryOnDefaultModelImage,
+  type LoadAiTryOnDefaultModelImage,
+} from "./aiTryOnDefaultModelImages.js";
+import {
+  createAiTryOnModelResultCache,
+  createAiTryOnModelResultKey,
+  type AiTryOnModelResultBucket,
+  type AiTryOnModelResultCache,
+} from "./aiTryOnModelResultCache.js";
+import {
+  findAiTryOnDefaultModel,
+  type AiTryOnDefaultModel,
+} from "../utils/aiTryOnDefaultModels.js";
 import {
   createAiTryOnPreviewId,
   createAiTryOnPreviewStore,
@@ -50,6 +69,7 @@ import {
 import {
   AI_TRY_ON_GLOBAL_GENERATION_CAP,
   AI_TRY_ON_MAX_IMAGE_BYTES,
+  AI_TRY_ON_MODEL_PROMPT_VERSION,
   AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES,
   AI_TRY_ON_PROMPT_VERSION,
   AI_TRY_ON_ROUTE,
@@ -102,6 +122,16 @@ import {
  * ID token>`; guests send `X-AI-Try-On-Session: <token>` once they have one.
  * Generated previews are re-encoded to compact WebP (≤1024 px, q80) before
  * they are stored or returned.
+ *
+ * Model mode (`defaultModelId` instead of `personImage`): one of our
+ * fictional studio models wears the garment. The server reads the model
+ * picture from the deployed files and computes a shared cache key
+ * (aiTryOnModelResultCache) from what Gemini would receive. A hit is served
+ * with no IP-limit charge, no try reserved and no Gemini call; a miss runs
+ * the normal checks (per-IP window, order/account/global reservation) and
+ * saves the result to the shared cache. Either way the customer also gets
+ * a per-wearer copy in aiTryOnPreviews, so reload, "Delete my preview" and
+ * payment cleanup behave exactly as for photos.
  */
 
 type RequestWithRoute = HttpRequest & { query?: unknown; url?: string };
@@ -152,6 +182,10 @@ export interface AiTryOnHttpDependencies {
   consumeGuestSessionLimit?: (db: Firestore, ip: string) => Promise<void>;
   /** Re-encodes the preview before it is stored and returned (Step 7). */
   compactPreviewImage?: CompactAiTryOnPreviewImage;
+  /** Default model pictures (model mode). */
+  loadDefaultModelImage?: LoadAiTryOnDefaultModelImage;
+  /** Shared model-mode result cache. */
+  createModelResultCache?: (db: Firestore) => AiTryOnModelResultCache;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -188,6 +222,7 @@ const ALLOWED_KEYS = new Set([
   "mode",
   "inputFingerprint",
   "personImage",
+  "defaultModelId",
   "garmentImage",
   "garmentImageUrl",
   "fabricSwatchImage",
@@ -250,7 +285,9 @@ type ParsedRequest =
       mode: AiTryOnMode;
       inputFingerprint: string;
       wearerKey: string;
-      personImage: AiTryOnInlineImage;
+      /** Exactly one of personImage (photo flow) and defaultModel (model mode). */
+      personImage: AiTryOnInlineImage | null;
+      defaultModel: AiTryOnDefaultModel | null;
       garment: AiTryOnReferenceSource;
       fabric: AiTryOnReferenceSource | null;
       fitHints: AiTryOnFitHint[];
@@ -302,9 +339,30 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
     return invalid("Fabric mode needs a fabric swatch.");
   }
   let totalBytes = 0;
-  const person = parseImage(parsedBody.personImage);
-  if (person.ok === false) return person.tooLarge ? tooLarge : invalid("Images must be JPEG, PNG, or WebP.");
-  totalBytes += person.bytes;
+  let personImage: AiTryOnInlineImage | null = null;
+  let defaultModel: AiTryOnDefaultModel | null = null;
+  if (parsedBody.defaultModelId !== undefined) {
+    // Model mode: no customer photo, catalogue pictures only (so the shared
+    // cache never holds customer content) and no fit hints (they describe
+    // the customer, not the model, and would break reuse).
+    if (parsedBody.personImage !== undefined) return invalid("Send a photo or a model, not both.");
+    defaultModel = findAiTryOnDefaultModel(parsedBody.defaultModelId);
+    if (!defaultModel) return invalid("Unknown try-on model.");
+    if (parsedBody.garmentImage !== undefined || parsedBody.fabricSwatchImage !== undefined) {
+      return invalid("Model try-on takes catalogue picture URLs only.");
+    }
+    if (
+      parsedBody.fitHints !== undefined &&
+      !(Array.isArray(parsedBody.fitHints) && parsedBody.fitHints.length === 0)
+    ) {
+      return invalid("Model try-on does not take fit hints.");
+    }
+  } else {
+    const person = parseImage(parsedBody.personImage);
+    if (person.ok === false) return person.tooLarge ? tooLarge : invalid("Images must be JPEG, PNG, or WebP.");
+    totalBytes += person.bytes;
+    personImage = person.image;
+  }
   const parseReference = (
     inline: unknown,
     url: unknown,
@@ -339,7 +397,8 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
     mode,
     inputFingerprint,
     wearerKey,
-    personImage: person.image,
+    personImage,
+    defaultModel,
     garment,
     fabric,
     fitHints,
@@ -374,6 +433,12 @@ const readQueryPreviewId = (req: RequestWithRoute): string | null => {
 
 const defaultPreviewStore = (db: Firestore): AiTryOnPreviewStore =>
   createAiTryOnPreviewStore(db, getAdminServices().storage.bucket() as unknown as AiTryOnPreviewBucket);
+
+const defaultModelResultCache = (db: Firestore): AiTryOnModelResultCache =>
+  createAiTryOnModelResultCache(
+    db,
+    getAdminServices().storage.bucket() as unknown as AiTryOnModelResultBucket,
+  );
 
 const defaultVerifyIdToken = (token: string) => getAdminServices().auth.verifyIdToken(token);
 
@@ -569,22 +634,33 @@ export async function handleAiTryOn(
   }
   if (!sessionId) return sessionRequired();
 
-  try {
-    await (dependencies.consumeIpRateLimit ??
-      ((database: Firestore, ip: string) =>
-        consumeAuthRateLimit(database, AI_TRY_ON_IP_RATE_LIMIT, ip, now)))(db, getClientIp(req));
-  } catch (error) {
-    if (error instanceof AuthRateLimitError) {
-      return sendError(
-        res,
-        429,
-        "RATE_LIMITED",
-        "Too many AI Try-on requests. Please wait and try again.",
-        true,
-        error.retryAfterSeconds,
-      );
+  /** Charges the per-IP window; returns the sent error, or null when allowed. */
+  const chargeIpRateLimit = async (): Promise<unknown> => {
+    try {
+      await (dependencies.consumeIpRateLimit ??
+        ((database: Firestore, ip: string) =>
+          consumeAuthRateLimit(database, AI_TRY_ON_IP_RATE_LIMIT, ip, now)))(db, getClientIp(req));
+      return null;
+    } catch (error) {
+      if (error instanceof AuthRateLimitError) {
+        return sendError(
+          res,
+          429,
+          "RATE_LIMITED",
+          "Too many AI Try-on requests. Please wait and try again.",
+          true,
+          error.retryAfterSeconds,
+        );
+      }
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
     }
-    return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+  };
+  const defaultModel = parsed.defaultModel;
+  // Photo flow: charged first, as before. Model mode: charged only on a
+  // cache miss, so a reused result costs nothing.
+  if (!defaultModel) {
+    const limited = await chargeIpRateLimit();
+    if (limited !== null) return limited;
   }
 
   // Garment/fabric pictures sent as URLs are loaded here, before a try is
@@ -595,7 +671,9 @@ export async function handleAiTryOn(
   let images: AiTryOnInlineImage[];
   try {
     images = [
-      parsed.personImage,
+      defaultModel
+        ? await (dependencies.loadDefaultModelImage ?? loadAiTryOnDefaultModelImage)(defaultModel)
+        : parsed.personImage!,
       await resolveReference(parsed.garment),
       ...(parsed.fabric ? [await resolveReference(parsed.fabric)] : []),
     ];
@@ -618,6 +696,84 @@ export async function handleAiTryOn(
   }
 
   const limits = createLimits(db);
+  const promptVersion = defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
+  const saveWearerPreview = async (previewId: string, image: { mimeType: string; data: string }) => {
+    try {
+      return await createStore(db).save({
+        orderKey: sessionId!,
+        wearerKey: parsed.wearerKey,
+        previewId,
+        inputFingerprint: parsed.inputFingerprint,
+        image,
+        ...(defaultModel ? { modelId: defaultModel.id } : {}),
+      });
+    } catch {
+      // The customer still gets the inline preview; it just isn't kept.
+      return null;
+    }
+  };
+  const ownerBindingId = `session-${hashAiTryOnOrderKey(sessionId).slice(0, 32)}`;
+
+  // Model mode: a saved result for exactly these inputs is reused for free.
+  let modelCache: AiTryOnModelResultCache | null = null;
+  let modelCacheKey: string | null = null;
+  if (defaultModel) {
+    modelCacheKey = createAiTryOnModelResultKey({
+      modelId: defaultModel.id,
+      modelImage: images[0],
+      mode: parsed.mode,
+      garmentImage: images[1],
+      fabricImage: images[2] ?? null,
+      orderDetails: parsed.orderDetails,
+    });
+    try {
+      modelCache = (dependencies.createModelResultCache ?? defaultModelResultCache)(db);
+    } catch {
+      modelCache = null;
+    }
+    const hit = modelCache ? await modelCache.reuse(modelCacheKey) : null;
+    if (hit) {
+      const previewId = (dependencies.createAssetId ?? createAiTryOnPreviewId)();
+      const stored = await saveWearerPreview(previewId, hit);
+      let orderTriesRemaining: number = AI_TRY_ON_TRIES_PER_ORDER;
+      let accountTriesRemaining: number | null = null;
+      try {
+        orderTriesRemaining = await limits.readOrderTriesRemaining(sessionId);
+        if (identity.uid !== null) {
+          accountTriesRemaining = await limits.readAccountTriesRemaining(identity.uid);
+        }
+      } catch {
+        // Counts are informative only; the hit is still served.
+      }
+      log(
+        JSON.stringify({
+          event: "ai_try_on",
+          outcome: "model_cache_hit",
+          mode: parsed.mode,
+          promptVersion,
+          previewStored: Boolean(stored),
+        }),
+      );
+      const body: AiTryOnGenerationSuccess = {
+        status: "completed",
+        inputFingerprint: parsed.inputFingerprint,
+        resultReference: { kind: "verified_private_try_on_result", assetId: previewId, ownerBindingId },
+        image: hit,
+        previewStored: Boolean(stored),
+        ...(stored ? { previewExpiresAt: stored.expiresAt } : {}),
+        orderTriesRemaining,
+        ...(accountTriesRemaining !== null ? { accountTriesRemaining } : {}),
+        promptVersion,
+        modelId: defaultModel.id,
+        cacheHit: true,
+      };
+      setNoStore(res);
+      return res.status(200).json(body);
+    }
+    const limited = await chargeIpRateLimit();
+    if (limited !== null) return limited;
+  }
+
   let reservation;
   try {
     // Signed-in customers also use one of the account's 15 tries per 30 days.
@@ -654,13 +810,17 @@ export async function handleAiTryOn(
   const startedAt = now();
   const outcome = await runAiTryOnGemini({
     generateContent: (dependencies.createGenerateContent ?? createGeminiGenerateContent)(apiKey),
-    prompt: buildAiTryOnPrompt({
-      mode: parsed.mode,
-      fitHints: parsed.fitHints,
-      orderDetails: parsed.orderDetails,
-    }),
+    prompt: defaultModel
+      ? buildAiTryOnModelPrompt({ mode: parsed.mode, orderDetails: parsed.orderDetails })
+      : buildAiTryOnPrompt({
+          mode: parsed.mode,
+          fitHints: parsed.fitHints,
+          orderDetails: parsed.orderDetails,
+        }),
     images,
-    imageLabels: buildAiTryOnImageLabels(parsed.mode),
+    imageLabels: defaultModel
+      ? buildAiTryOnModelImageLabels(parsed.mode)
+      : buildAiTryOnImageLabels(parsed.mode),
     secret: apiKey,
   });
   const latencyMs = now() - startedAt;
@@ -676,7 +836,7 @@ export async function handleAiTryOn(
         event: "ai_try_on",
         outcome: outcome.kind,
         mode: parsed.mode,
-        promptVersion: AI_TRY_ON_PROMPT_VERSION,
+        promptVersion,
         fitHints: parsed.fitHints.length,
         latencyMs,
         reason: outcome.reason,
@@ -728,17 +888,13 @@ export async function handleAiTryOn(
   }
   let stored: { expiresAt: string } | null = null;
   if (compacted) {
-    try {
-      stored = await createStore(db).save({
-        orderKey: sessionId,
-        wearerKey: parsed.wearerKey,
-        previewId,
-        inputFingerprint: parsed.inputFingerprint,
-        image: preview,
-      });
-    } catch {
-      // The customer still gets the inline preview; it just isn't kept.
-      stored = null;
+    stored = await saveWearerPreview(previewId, preview);
+    if (modelCache && modelCacheKey && defaultModel) {
+      try {
+        await modelCache.save(modelCacheKey, { modelId: defaultModel.id, mode: parsed.mode, image: preview });
+      } catch {
+        log(JSON.stringify({ event: "ai_try_on", outcome: "model_cache_save_failed" }));
+      }
     }
   }
   log(
@@ -746,7 +902,7 @@ export async function handleAiTryOn(
       event: "ai_try_on",
       outcome: "completed",
       mode: parsed.mode,
-      promptVersion: AI_TRY_ON_PROMPT_VERSION,
+      promptVersion,
       fitHints: parsed.fitHints.length,
       latencyMs,
       previewStored: Boolean(stored),
@@ -758,7 +914,7 @@ export async function handleAiTryOn(
     resultReference: {
       kind: "verified_private_try_on_result",
       assetId: previewId,
-      ownerBindingId: `session-${hashAiTryOnOrderKey(sessionId).slice(0, 32)}`,
+      ownerBindingId,
     },
     image: preview,
     previewStored: Boolean(stored),
@@ -767,7 +923,8 @@ export async function handleAiTryOn(
     ...(reservation.accountTriesRemaining !== null
       ? { accountTriesRemaining: reservation.accountTriesRemaining }
       : {}),
-    promptVersion: AI_TRY_ON_PROMPT_VERSION,
+    promptVersion,
+    ...(defaultModel ? { modelId: defaultModel.id, cacheHit: false } : {}),
   };
   setNoStore(res);
   return res.status(200).json(body);
