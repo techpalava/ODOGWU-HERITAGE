@@ -170,6 +170,7 @@ export const DesignStudioStepActions = ({
   backDisabled = false,
   forward,
   note,
+  forwardNote,
   className = "",
 }: {
   /** Header and footer must both use this component so their rows cannot diverge. */
@@ -179,6 +180,13 @@ export const DesignStudioStepActions = ({
   backDisabled?: boolean;
   forward?: DesignStudioForwardButtonProps;
   note?: ReactNode;
+  /**
+   * Optional note that sits directly under the forward (Continue) button, on
+   * its own line of the button row. Phones: full width under Back + Continue,
+   * above Save Order. sm and up: right-aligned with Continue's right edge; the
+   * note's content may size itself (for example w-max) and stretch left.
+   */
+  forwardNote?: ReactNode;
   className?: string;
 }) => {
   const saveAction = useSaveOrderAction();
@@ -203,7 +211,9 @@ export const DesignStudioStepActions = ({
           Continue are flex-1 basis-0, so wrapping never splits those two. */}
       <div
         data-studio-step-actions-buttons="true"
-        className="flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap"
+        className={`flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap ${
+          forward && forwardNote ? "sm:flex-wrap" : ""
+        }`}
       >
         <DesignStudioBackButton
           destination={backDestination}
@@ -217,7 +227,23 @@ export const DesignStudioStepActions = ({
             className="max-sm:order-last max-sm:max-w-none max-sm:flex-none max-sm:basis-full"
           />
         ) : null}
-        {forward ? (
+        {forward && forwardNote ? (
+          <div
+            data-studio-step-actions-forward-column="true"
+            className="contents"
+          >
+            <DesignStudioForwardButton
+              {...forward}
+              className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+            />
+            <div
+              data-studio-step-actions-forward-note="true"
+              className="flex w-full min-w-0 basis-full justify-end"
+            >
+              {forwardNote}
+            </div>
+          </div>
+        ) : forward ? (
           <DesignStudioForwardButton
             {...forward}
             className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}

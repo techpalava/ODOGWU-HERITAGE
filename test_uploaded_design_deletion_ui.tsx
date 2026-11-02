@@ -10,6 +10,11 @@ import {
   createDesignStyleStepTestModel,
 } from "./testing/designStyleStepFixtures";
 
+// Design Style's locked Continue stays clickable (aria-disabled) so it can jump
+// to the first garment without a design.
+const isContinueLocked = (button: { props: Record<string, unknown> }) =>
+  button.props.disabled === true || button.props["aria-disabled"] === "true";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const uploadReference = createCustomerDesignUploadReference({
@@ -160,7 +165,7 @@ const findDesignStyleContinueButton = (
   assert.equal(text.includes(uploadReference.designReferenceId), false);
   assert.equal(text.includes("blob:private-uploaded-design-preview"), false);
   assert.equal(
-    findDesignStyleContinueButton(renderer).props.disabled,
+    isContinueLocked(findDesignStyleContinueButton(renderer)),
     false,
   );
 }
@@ -178,7 +183,7 @@ const findDesignStyleContinueButton = (
     /Choose a design reference for Standard Shirt to continue\./,
   );
   assert.equal(
-    findDesignStyleContinueButton(renderer).props.disabled,
+    isContinueLocked(findDesignStyleContinueButton(renderer)),
     true,
   );
 }

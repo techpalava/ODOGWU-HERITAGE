@@ -20,6 +20,9 @@
   --animate-live-order-summary-enter: live-order-summary-enter 350ms ease-out 1;
   --animate-step-guide-beam: step-guide-beam 3.4s ease-in-out infinite;
   --animate-step1-audience-beam: step1-audience-beam 2.8s ease-in-out infinite;
+  --animate-step3-progress-beam: step3-progress-beam 3.6s ease-in-out infinite;
+  --animate-step3-continue-note-beam: step1-audience-beam 2.8s ease-in-out infinite;
+  --animate-step3-continue-target-pulse: step2-next-unassigned 1.2s ease-out 1;
   --animate-measurement-guide-flash: measurement-guide-flash 800ms ease-out 1;
   --animate-continue-unlock-glow: continue-unlock-glow 2.4s ease-in-out infinite;
   --animate-continue-ring-blink: continue-ring-blink 2.4s step-end infinite;
@@ -135,6 +138,20 @@
   50% {
     border-color: rgb(197 168 92 / 1);
     box-shadow: 0 0 14px 1px rgb(197 168 92 / 0.32);
+  }
+}
+
+/* Step 3 progress pill: slower and softer than the Step 1 audience beam, so
+   it does not compete with the note under Continue. */
+@keyframes step3-progress-beam {
+  0%,
+  100% {
+    border-color: rgb(197 168 92 / 0.35);
+    box-shadow: 0 0 0 0 rgb(197 168 92 / 0);
+  }
+  50% {
+    border-color: rgb(197 168 92 / 0.85);
+    box-shadow: 0 0 8px 0 rgb(197 168 92 / 0.2);
   }
 }
 

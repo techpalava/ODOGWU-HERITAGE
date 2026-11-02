@@ -170,6 +170,7 @@ for (const action of customDetailsForwardActions) {
   assert.match(action, /onClick: onContinue,/);
   assert.match(action, /disabled: !exactSetComplete,/);
   assert.match(action, /locked: !exactSetComplete,/);
+  assert.match(action, /onLockedClick: revealFirstIncompleteGarment,/);
   assert.match(action, /ariaLabel: "Continue to Custom Details",/);
 }
 assert.match(
@@ -178,8 +179,12 @@ assert.match(
 );
 assert.match(
   styleStepSource,
-  /!exactSetComplete && firstIncompleteOccurrence \? \([\s\S]*?role="status"[\s\S]*?\{firstIncompleteOccurrence\.label\}[\s\S]*?\) : null/,
+  /showContinueLockNote && firstIncompleteOccurrence \? \([\s\S]*?role="status"[\s\S]*?\{firstIncompleteOccurrence\.label\}[\s\S]*?\) : null/,
   "locked Continue explains which garment still needs a design",
+);
+assert.match(
+  styleStepSource,
+  /const showContinueLockNote =\s*!exactSetComplete && Boolean\(firstIncompleteOccurrence\);/,
 );
 const occurrenceMutationHandlers = studioSource.slice(
   studioSource.indexOf("const handleAssignFutureCatalogueStyle"),

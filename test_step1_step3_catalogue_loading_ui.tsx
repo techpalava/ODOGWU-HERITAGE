@@ -22,6 +22,11 @@ import {
   createDesignStyleStepTestModel,
 } from "./testing/designStyleStepFixtures";
 
+// Design Style's locked Continue stays clickable (aria-disabled) so it can jump
+// to the first garment without a design.
+const isContinueLocked = (button: { props: Record<string, unknown> }) =>
+  button.props.disabled === true || button.props["aria-disabled"] === "true";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
@@ -114,7 +119,7 @@ const renderStep3 = async ({
   });
   return {
     text: textContent(renderer.root),
-    continueDisabled: continueButtons.length > 0 && continueButtons.every((button) => Boolean(button.props.disabled)),
+    continueDisabled: continueButtons.length > 0 && continueButtons.every((button) => isContinueLocked(button)),
     stageComplete: renderer.root.findByProps({
       "data-stage-id": "design_style",
     }).props["data-stage-complete"],
