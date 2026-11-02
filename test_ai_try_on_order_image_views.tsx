@@ -250,7 +250,12 @@ const adminView = readFileSync("src/components/DatabaseView.tsx", "utf8");
 assert.match(adminView, /\{basePayment \? <AdminAiTryOnOrderImage orderId=\{history\.orderId\} \/> : null\}/);
 assert.match(COPY.adminDeleteDialogBody, /cancelling or refunding/);
 const copySource = readFileSync("src/utils/aiTryOnOrderImageCopy.ts", "utf8");
-assert.match(copySource, /DRAFT, NOT YET APPROVED[^\n]*\n[^\n]*\n\s*\*\/\n\s*adminDeleteDialogBody:/, "the admin body stays marked DRAFT until approved");
+assert.equal(copySource.includes("DRAFT"), false, "every string is approved");
+assert.equal(
+  COPY.adminDeleteDialogBody,
+  "This deletes the customer's AI preview for this order for everyone. Use it when cancelling or refunding. This can't be undone.",
+  "approved verbatim",
+);
 // No automatic deletion: only the request route calls the delete helper.
 const http = readFileSync("src/server/aiTryOnHttp.ts", "utf8");
 assert.equal((http.match(/deleteAiTryOnOrderImages\(/g) || []).length, 1);
