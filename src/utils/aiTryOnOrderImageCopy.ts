@@ -54,8 +54,8 @@ export const AI_TRY_ON_ORDER_IMAGE_COPY = {
     "For reference only. Make the garment from the order details and measurements, not from this image.",
   adminNoImage: "No AI preview saved with this order.",
   /**
-   * DRAFT, NOT YET APPROVED (2 Nov 2026, 18:10 WAT). Admin "Delete AI preview" confirm body.
-   * The admin button reuses approved lines 16, 17 and 19-22; line 18 is customer wording.
+   * Admin "Delete AI preview" confirm body, approved by Xavier (2 Nov 2026, 19:27 WAT).
+   * The admin button reuses lines 16, 17 and 19-22; line 18 is customer wording.
    */
   adminDeleteDialogBody:
     "This deletes the customer's AI preview for this order for everyone. Use it when cancelling or refunding. This can't be undone.",
