@@ -108,9 +108,9 @@ const DAY = 24 * 60 * 60 * 1000;
 
 // ------------------------------------------------------------ model-mode prompt
 {
-  // v2 / v4: the fabric swatch always decides the fabric (both bumped together).
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v2");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v4");
+  // v2 / v4: the fabric swatch always decides the fabric. v3 / v5: swatch text is ignored.
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v3");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v5");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -132,6 +132,8 @@ const DAY = 24 * 60 * 60 * 1000;
     assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen\. Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
     assert.match(fabricPrompt, /Order details, for the garment style only\..*They never change the fabric from image 3\./);
     assert.match(fabricPrompt, /\nFabric: exactly as in image 3\n/);
+    assert.match(fabricPrompt, /Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image\./);
+    assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("printed on the swatch"), false);
     for (const label of ["Brown", "#724137", "Lace"]) assert.equal(fabricPrompt.includes(label), false, `model mode: no "${label}" text`);
   }
   assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("image 3"), false);

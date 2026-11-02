@@ -30,8 +30,10 @@ export type AiTryOnMode = "garment" | "fabric";
  * v4: fabric mode lets the swatch (image 3) always decide the fabric; the
  * catalogue colour/category text is no longer sent, and order details
  * decide style only.
+ * v5: fabric mode also gets the v3 stand-in line, image labels and identity
+ * check, and ignores any text printed on the swatch.
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v4" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v5" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -39,8 +41,9 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v4" as const;
  * stale because of model-mode wording. Folded into the shared model-result
  * cache key: bump on any model-mode wording change.
  * v2: same swatch-wins fabric rule as photo prompt v4.
+ * v3: fabric mode ignores any text printed on the swatch (as photo v5).
  */
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v2" as const;
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v3" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric

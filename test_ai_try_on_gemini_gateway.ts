@@ -540,8 +540,14 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
     h.deps,
   );
   assert.equal(fabric.state.status, 200);
-  assert.equal(h.calls[1].contents[0].parts.length, 4, "fabric mode layout unchanged: prompt + 3 images, no labels");
-  assert.equal(h.calls[1].contents[0].parts.slice(1).every((part) => "inlineData" in part), true);
+  // Prompt v5: fabric mode labels each image right before it too.
+  assert.deepEqual(
+    h.calls[1].contents[0].parts.map((part) => ("text" in part ? part.text.split(",")[0] : "image")),
+    ["Virtual try-on photo edit with a fabric change.\nImage 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.\nEdit image 1 so the person wears the garment from image 2", "Image 1", "image", "Image 2", "image", "Image 3", "image"],
+    "fabric mode: prompt, label + person, label + garment, label + swatch",
+  );
+  assert.match((h.calls[1].contents[0].parts[5] as { text: string }).text, /^Image 3, fabric swatch, for colour and pattern only:$/);
+  assert.equal(h.calls[1].contents[0].parts.filter((part) => "inlineData" in part).length, 3);
   assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /Image 3: the fabric swatch/);
 
   // 5 tries per order: tries 3–5 succeed, try 6 is refused before Gemini.
