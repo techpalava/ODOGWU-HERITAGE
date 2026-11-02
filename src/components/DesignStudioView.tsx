@@ -351,6 +351,11 @@ import {
   type AiTryOnAvailabilityDetails,
 } from "../services/aiTryOnGateway";
 import {
+  AiTryOnOrderPreviewThumbnails,
+  selectAiTryOnOrderPreviews,
+  type AiTryOnOrderPreviewSummary,
+} from "./AiTryOnOrderPreviewThumbnails";
+import {
   AI_TRY_ON_GUEST_IDENTITY_KEY,
   aiTryOnCredentialsForIdentity,
   saveAiTryOnSessionToken,
@@ -9129,6 +9134,75 @@ export default function DesignStudioView({
       navigateToFutureStage("try_on");
     }
   };
+  // Summary (Step 8) and Review & Payment (Step 10), before payment: the
+  // wearers' stored previews, read fresh from the server on entering either
+  // step (and again when a background preview finishes), so a preview
+  // deleted on AI Try-on never shows here. Images come from the finished
+  // job in memory when it has one, otherwise from the owner-only route.
+  const [aiTryOnOrderPreviewSummaries, setAiTryOnOrderPreviewSummaries] = useState<
+    AiTryOnOrderPreviewSummary[]
+  >([]);
+  const futurePaymentReviewConfirmed = Boolean(
+    futurePaymentReviewHandoff &&
+      "payment" in futurePaymentReviewHandoff &&
+      (futurePaymentReviewHandoff as { payment?: { status?: string } | null }).payment?.status ===
+        "confirmed",
+  );
+  const aiTryOnFinishedPreviewKey = aiTryOnScopedJobs
+    .filter((job) => job.status === "completed" && job.storedPreviewId)
+    .map((job) => job.storedPreviewId)
+    .sort()
+    .join(",");
+  // The gateway is known to be on (AI Try-on was opened in this visit), or
+  // the draft records a preview (also after a reload straight onto Summary).
+  // Production with try-on off has neither, so it sends no request.
+  const aiTryOnOrderPreviewStageActive =
+    (futureStageId === "summary" || futureStageId === "payment") &&
+    (aiTryOnGatewayAvailable ||
+      futureAiTryOnWorkflow.status === "completed" ||
+      futureAiTryOnWorkflow.status === "stale") &&
+    !futurePaymentReviewConfirmed;
+  useEffect(() => {
+    if (!aiTryOnOrderPreviewStageActive) return;
+    let cancelled = false;
+    void fetchAiTryOnAvailability({ credentials: aiTryOnCredentials }).then((availability) => {
+      if (cancelled) return;
+      setAiTryOnOrderPreviewSummaries(
+        availability.status === "available" ? availability.storedPreviews : [],
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiTryOnOrderPreviewStageActive, futureStageId, aiTryOnCredentials, aiTryOnFinishedPreviewKey]);
+  const aiTryOnOrderPreviewImagesRef = useRef(new Map<string, { mimeType: string; data: string }>());
+  const aiTryOnScopedJobsRef = useRef(aiTryOnScopedJobs);
+  aiTryOnScopedJobsRef.current = aiTryOnScopedJobs;
+  const loadAiTryOnOrderPreviewImage = useCallback(
+    async (previewId: string) => {
+      const cached = aiTryOnOrderPreviewImagesRef.current.get(previewId);
+      if (cached) return cached;
+      const job = aiTryOnScopedJobsRef.current.find(
+        (entry) => entry.storedPreviewId === previewId && entry.preview,
+      );
+      const image =
+        job?.preview ?? (await fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId }));
+      if (image) aiTryOnOrderPreviewImagesRef.current.set(previewId, image);
+      return image;
+    },
+    [aiTryOnCredentials],
+  );
+  const aiTryOnOrderPreviewEntries = aiTryOnOrderPreviewStageActive
+    ? selectAiTryOnOrderPreviews(aiTryOnWearerTargets, aiTryOnOrderPreviewSummaries)
+    : [];
+  const aiTryOnOrderPreviewsNode =
+    aiTryOnOrderPreviewEntries.length > 0 ? (
+      <AiTryOnOrderPreviewThumbnails
+        entries={aiTryOnOrderPreviewEntries}
+        loadImage={loadAiTryOnOrderPreviewImage}
+        onMakeNew={openAiTryOnForWearer}
+      />
+    ) : null;
   const handleAiTryOnBack = () => {
     const returnTo = aiTryOnReturnTo;
     if (!returnTo) return;
@@ -11807,6 +11881,7 @@ export default function DesignStudioView({
           />
         ) : null}
         <DormantFutureSummaryStep
+          aiTryOnOrderPreviews={aiTryOnOrderPreviewsNode}
           summary={futureSummary}
           orderContext={customerOrderContextPresentation}
           inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
@@ -11931,6 +12006,7 @@ export default function DesignStudioView({
         futurePaymentReviewHandoff ? (
           <DormantFuturePaymentReviewStep
             result={futurePaymentReviewHandoff}
+            aiTryOnOrderPreviews={aiTryOnOrderPreviewsNode}
             orderContext={customerOrderContextPresentation}
             inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
             survivorSummary={futureSummary}

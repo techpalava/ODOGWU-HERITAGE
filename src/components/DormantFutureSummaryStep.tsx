@@ -9,7 +9,8 @@ import {
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DualUnitMeasurementPill } from "./DualUnitMeasurementPill";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { AI_TRY_ON_ORDER_IMAGE_COPY } from "../utils/aiTryOnOrderImageCopy";
 import type React from "react";
 import {
   BLOCKED_GARMENT_REMOVAL_BUTTON_CLASS,
@@ -97,6 +98,11 @@ interface DormantFutureSummaryStepProps {
   ) => void;
   /** Draft-only; omit when the order is no longer freely editable. */
   onRequestCancelOrder?: () => void;
+  /**
+   * The wearers' current AI previews (thumbnails / out-of-date notes).
+   * Passed only when at least one wearer has a stored preview.
+   */
+  aiTryOnOrderPreviews?: ReactNode;
 }
 
 const money = (value: number): string =>
@@ -505,6 +511,7 @@ export const DormantFutureSummaryStep = ({
   onEditDesignStyle,
   onEditCustomDetails,
   onEditAiTryOn,
+  aiTryOnOrderPreviews = null,
   onEditMeasurements,
   onEditMeasurementGroup,
   onEditGarment,
@@ -1233,13 +1240,18 @@ export const DormantFutureSummaryStep = ({
       <div className="grid min-w-0 gap-5 lg:grid-cols-2">
         <Section
           title="AI Try-on"
-          description="Your private try-on status is shown without exposing any image or provider details."
+          description={
+            aiTryOnOrderPreviews
+              ? AI_TRY_ON_ORDER_IMAGE_COPY.summarySectionWithImages
+              : "Your private try-on status is shown without exposing any image or provider details."
+          }
           editLabel="Edit AI Try-on"
           onEdit={onEditAiTryOn}
         >
           <p className="text-sm font-semibold text-heritage-green">
             {summary.aiTryOnSummary.label}
           </p>
+          {aiTryOnOrderPreviews}
         </Section>
         <Section
           title="Measurements"
