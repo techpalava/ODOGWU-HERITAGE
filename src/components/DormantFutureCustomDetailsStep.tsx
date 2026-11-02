@@ -1993,14 +1993,15 @@ export const DormantFutureCustomDetailsStep = ({
           ),
         )
       : null;
-    const canCollapseGarmentList =
-      collapseGarmentList &&
-      garmentKeysInOrder.length > MAIN_PERSONALIZED_GARMENT_PREVIEW_COUNT;
-    const garmentListExpanded =
-      !canCollapseGarmentList || mainPersonalizedGarmentsExpanded;
     const hiddenGarmentCount = collapsedVisibleKeys
       ? garmentKeysInOrder.length - collapsedVisibleKeys.size
       : 0;
+    const canCollapseGarmentList =
+      collapseGarmentList &&
+      garmentKeysInOrder.length > MAIN_PERSONALIZED_GARMENT_PREVIEW_COUNT &&
+      hiddenGarmentCount > 0;
+    const garmentListExpanded =
+      !canCollapseGarmentList || mainPersonalizedGarmentsExpanded;
 
     return (
       <section

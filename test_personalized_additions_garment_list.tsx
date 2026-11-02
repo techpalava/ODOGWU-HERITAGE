@@ -619,4 +619,65 @@ act(() => {
   additionalRenderer.unmount();
 });
 
+const garmentsPastPreview = manyGarmentKeys.slice(2);
+let everyLaterGarmentSelected = manyGarmentOrder.reconciliation.state;
+for (const garmentKey of garmentsPastPreview) {
+  everyLaterGarmentSelected = setGarmentScopedCustomDetailSelection(
+    everyLaterGarmentSelected,
+    garmentKey,
+    PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+    PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  );
+}
+const nothingHidden = projectOrder({
+  garmentTypes: MANY_GARMENTS,
+  existingState: everyLaterGarmentSelected,
+});
+let nothingHiddenRenderer!: ReturnType<typeof create>;
+act(() => {
+  nothingHiddenRenderer = create(renderStep(nothingHidden));
+});
+const nothingHiddenSection = nothingHiddenRenderer.root.findByProps({
+  "data-custom-detail-section": "miscellaneous-personalized-additional",
+});
+assert.deepEqual(
+  occurrenceKeysIn(nothingHiddenSection),
+  manyGarmentKeys,
+  "selected garments past the preview stay visible when none would be hidden",
+);
+for (const garmentKey of garmentsPastPreview) {
+  assert.equal(
+    nothingHiddenSection.findAllByProps({
+      "data-custom-detail-conditional-garment": garmentKey,
+    }).length,
+    1,
+    `${garmentKey} keeps its requirement textarea when the toggle is omitted`,
+  );
+}
+assert.equal(
+  nothingHiddenRenderer.root.findAllByProps({
+    "data-personalized-garment-list-toggle": "main",
+  }).length,
+  0,
+  "no toggle when collapsing would hide zero garments",
+);
+assert.equal(
+  textContent(nothingHiddenRenderer.root).includes("Show all garments (0 more)"),
+  false,
+);
+assert.equal(
+  textContent(nothingHiddenRenderer.root).includes("Show fewer garments"),
+  false,
+);
+assert.equal(
+  nothingHiddenRenderer.root.findByProps({
+    "data-stage-id": "personalized_additions",
+  }).props["data-stage-complete"],
+  false,
+  "empty requirements on those selected garments still block Continue",
+);
+act(() => {
+  nothingHiddenRenderer.unmount();
+});
+
 console.log("PASS: personalized additions garment list order and collapse");
