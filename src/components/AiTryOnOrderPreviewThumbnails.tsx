@@ -63,14 +63,14 @@ export const selectAiTryOnOrderPreviews = (
 export const AI_TRY_ON_ORDER_IMAGE_CLASS =
   "mx-auto block aspect-[2/3] h-auto max-h-[560px] w-full max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain";
 
-type LoadImage = (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
+export type AiTryOnOrderLoadImage = (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
 
-const Thumbnail = ({
+export const AiTryOnOrderPreviewImage = ({
   entry,
   loadImage,
 }: {
   entry: Extract<AiTryOnOrderPreviewEntry, { kind: "fresh" }>;
-  loadImage: LoadImage;
+  loadImage: AiTryOnOrderLoadImage;
 }) => {
   const [image, setImage] = useState<{ mimeType: string; data: string } | null | "loading">("loading");
   const [enlarged, setEnlarged] = useState(false);
@@ -152,7 +152,7 @@ export const AiTryOnOrderPreviewThumbnails = ({
   notice,
 }: {
   entries: readonly AiTryOnOrderPreviewEntry[];
-  loadImage: LoadImage;
+  loadImage: AiTryOnOrderLoadImage;
   onMakeNew: (wearerId: string) => void;
   /** Shown under the fresh previews (Review & Payment: what happens at payment). */
   notice?: string;
@@ -171,7 +171,7 @@ export const AiTryOnOrderPreviewThumbnails = ({
             data-ai-try-on-order-preview-count={fresh.length}
           >
             {fresh.map((entry) => (
-              <Thumbnail key={entry.previewId} entry={entry} loadImage={loadImage} />
+              <AiTryOnOrderPreviewImage key={entry.previewId} entry={entry} loadImage={loadImage} />
             ))}
           </div>
           <p className="text-xs leading-relaxed text-heritage-ink/60">{AI_TRY_ON_PREVIEW_DISCLAIMER}</p>

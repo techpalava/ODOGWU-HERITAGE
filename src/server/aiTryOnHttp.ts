@@ -1,6 +1,8 @@
 import {
+  deleteAiTryOnOrderImages,
   isAiTryOnOrderId,
   parseAiTryOnOrderSelectionInput,
+  readAiTryOnOrderImageRecord,
   saveAiTryOnOrderSelection,
 } from "./aiTryOnOrderImages.js";
 import {
@@ -208,7 +210,9 @@ export interface AiTryOnHttpDependencies {
   /** Verifies a Firebase ID token (Step 7). */
   verifyIdToken?: (
     token: string,
-  ) => Promise<{ uid: string; firebase?: { sign_in_provider?: unknown } }>;
+  ) => Promise<{ uid: string; admin?: unknown; firebase?: { sign_in_provider?: unknown } }>;
+  /** The try-on bucket, for the images saved with paid orders (PR 3). */
+  getOrderImageBucket?: () => AiTryOnPreviewBucket;
   /** Consumes one new-guest-session slot for this IP (Step 7). */
   consumeGuestSessionLimit?: (db: Firestore, ip: string) => Promise<void>;
   /** Re-encodes the preview before it is stored and returned (Step 7). */
@@ -483,6 +487,13 @@ const defaultModelResultCache = (db: Firestore): AiTryOnModelResultCache =>
     aiTryOnStorageBucket() as unknown as AiTryOnModelResultBucket,
   );
 
+/** Firestore Timestamp (stored) or Date (tests) to milliseconds. */
+const readOrderImageExpiry = (value: unknown): number => {
+  const toMillis = (value as { toMillis?: () => number } | null)?.toMillis;
+  if (typeof toMillis === "function") return toMillis.call(value);
+  return value instanceof Date ? value.getTime() : NaN;
+};
+
 const defaultVerifyIdToken = (token: string) => getAdminServices().auth.verifyIdToken(token);
 
 const defaultLoadReferenceImage = (url: string) =>
@@ -553,6 +564,92 @@ export async function handleAiTryOn(
     sendError(res, 401, "AUTH_REQUIRED", "Sign in again to use AI Try-on.", false);
   const sessionRequired = () =>
     sendError(res, 401, "SESSION_REQUIRED", "Your AI Try-on session has ended. Reload to start again.", false);
+
+  // The AI preview saved with a paid order (PR 3): the order's owner or an
+  // admin (team / tailors), signed in. Available even when generation is
+  // switched off. The image itself is never a public URL.
+  const orderAction = readQueryParam(req, "action");
+  if (
+    (orderAction === "order-images" && (req.method === "GET" || req.method === "DELETE")) ||
+    (orderAction === "order-image" && req.method === "GET")
+  ) {
+    const orderId = readQueryParam(req, "orderId");
+    if (!isAiTryOnOrderId(orderId)) {
+      return sendError(res, 400, "INVALID_REQUEST", "A valid order is required.", false);
+    }
+    const authorization = readHeader(req, "authorization");
+    const bearer = authorization?.match(/^Bearer ([^\s]+)$/)?.[1] ?? null;
+    if (!bearer) return authFailed();
+    let viewer: { uid: string; admin: boolean };
+    try {
+      const verified = await (dependencies.verifyIdToken ?? defaultVerifyIdToken)(bearer);
+      const provider = verified.firebase?.sign_in_provider;
+      if (typeof provider !== "string" || !provider || provider === "anonymous" || !verified.uid) {
+        return authFailed();
+      }
+      viewer = { uid: verified.uid, admin: verified.admin === true };
+    } catch {
+      return authFailed();
+    }
+    const notFound = () =>
+      sendError(res, 404, "PREVIEW_NOT_FOUND", "This preview is no longer available.", false);
+    try {
+      const db = await resolveDb();
+      const record = await readAiTryOnOrderImageRecord(db, orderId);
+      let allowed = viewer.admin || record?.ownerUid === viewer.uid;
+      if (!record && !allowed) {
+        const order = await db.collection("orders").doc(orderId).get();
+        allowed = order.exists && (order.data() as { ownerUid?: unknown } | undefined)?.ownerUid === viewer.uid;
+      }
+      if (!allowed) return notFound();
+      const bucket = (dependencies.getOrderImageBucket ?? (() => aiTryOnStorageBucket() as unknown as AiTryOnPreviewBucket))();
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      if (req.method === "DELETE") {
+        const deleted = await deleteAiTryOnOrderImages({
+          db,
+          bucket,
+          orderId,
+          reason: record?.ownerUid === viewer.uid ? "customer" : "admin",
+          now,
+        });
+        log(JSON.stringify({ event: "ai_try_on_order_images", status: "deleted_on_request", images: deleted }));
+        setNoStore(res);
+        return res.status(200).json({ status: "deleted", deleted });
+      }
+      const expiresAt = record ? readOrderImageExpiry(record.expiresAt) : NaN;
+      const status = !record
+        ? "none"
+        : record.status === "deleted"
+          ? "deleted"
+          : !(expiresAt > now())
+            ? "expired"
+            : "saved";
+      if (orderAction === "order-images") {
+        setNoStore(res);
+        return res.status(200).json({
+          status,
+          ...(status === "saved"
+            ? {
+                expiresAt: new Date(expiresAt).toISOString(),
+                images: record!.images.map((image) => ({
+                  wearerKey: image.wearerKey,
+                  label: image.label,
+                  onModel: image.onModel,
+                })),
+              }
+            : {}),
+        });
+      }
+      const wearerKey = readQueryParam(req, "wearerKey");
+      const image = status === "saved" ? record!.images.find((entry) => entry.wearerKey === wearerKey) : undefined;
+      if (!image) return notFound();
+      const [bytes] = await bucket.file(image.path).download();
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json({ image: { mimeType: image.mimeType, data: bytes.toString("base64") } });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on previews are temporarily unavailable.", true);
+    }
+  }
 
   // Busy retry given up by the browser (time ran out, or a reload found no
   // preview): refund the held try once. Unknown or running jobs: nothing.

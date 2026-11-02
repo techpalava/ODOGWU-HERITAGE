@@ -1,3 +1,4 @@
+import { AiTryOnOrderImagePanel } from "./AiTryOnOrderImagePanel";
 import { COMMUNITY_BATCH_CHECKING_MESSAGE } from "../utils/communityBatchOrderClosure";
 import {
   AlertTriangle,
@@ -1451,6 +1452,9 @@ export const DormantFuturePaymentReviewStep = ({
                 Go to my dashboard
               </button>
             )}
+            <div className="mt-5 text-heritage-ink" data-future-order-v2-confirmed-ai-preview>
+              <AiTryOnOrderImagePanel orderId={preparation.orderId} variant="confirmation" />
+            </div>
           </div>
         </div>
       </section>
