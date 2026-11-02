@@ -9152,9 +9152,14 @@ export default function DesignStudioView({
     .map((job) => job.storedPreviewId)
     .sort()
     .join(",");
+  // The gateway is known to be on (AI Try-on was opened in this visit), or
+  // the draft records a preview (also after a reload straight onto Summary).
+  // Production with try-on off has neither, so it sends no request.
   const aiTryOnOrderPreviewStageActive =
     (futureStageId === "summary" || futureStageId === "payment") &&
-    aiTryOnGatewayAvailable &&
+    (aiTryOnGatewayAvailable ||
+      futureAiTryOnWorkflow.status === "completed" ||
+      futureAiTryOnWorkflow.status === "stale") &&
     !futurePaymentReviewConfirmed;
   useEffect(() => {
     if (!aiTryOnOrderPreviewStageActive) return;

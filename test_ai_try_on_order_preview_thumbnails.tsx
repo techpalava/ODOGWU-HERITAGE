@@ -95,7 +95,7 @@ assert.equal(renderer.toJSON(), null);
 const studio = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.match(studio, /<DormantFutureSummaryStep\s+aiTryOnOrderPreviews=\{aiTryOnOrderPreviewsNode\}/);
 assert.match(studio, /<DormantFuturePaymentReviewStep\s+result=\{futurePaymentReviewHandoff\}\s+aiTryOnOrderPreviews=\{aiTryOnOrderPreviewsNode\}/);
-assert.match(studio, /\(futureStageId === "summary" \|\| futureStageId === "payment"\) &&\s+aiTryOnGatewayAvailable &&\s+!futurePaymentReviewConfirmed/);
+assert.match(studio, /\(futureStageId === "summary" \|\| futureStageId === "payment"\) &&\s+\(aiTryOnGatewayAvailable \|\|\s+futureAiTryOnWorkflow\.status === "completed" \|\|\s+futureAiTryOnWorkflow\.status === "stale"\) &&\s+!futurePaymentReviewConfirmed/);
 assert.match(studio, /onMakeNew=\{openAiTryOnForWearer\}/);
 const review = readFileSync("src/components/DormantFuturePaymentReviewStep.tsx", "utf8");
 assert.match(review, /showAiTryOnPreviews = Boolean\(aiTryOnOrderPreviews\) && payment\?\.status !== "confirmed"/);
