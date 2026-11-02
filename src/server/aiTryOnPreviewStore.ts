@@ -7,13 +7,17 @@ import { hashAiTryOnOrderKey } from "./aiTryOnUsageLimits.js";
  *
  * - The customer's photo is NEVER stored here (or anywhere): only Gemini's
  *   output image is saved.
- * - Image bytes: Firebase Storage `ai-try-on-previews/<orderHash>/<id>.<ext>`,
+ * - Image bytes: Firebase Storage `ai-try-on-previews/<sessionHash>/<docId>`,
  *   written by the Admin SDK with no download token, so there is no public
  *   URL. Client Storage rules deny the whole prefix (also for admins).
- * - Metadata: Firestore `aiTryOnPreviews/<sha256(order, wearer)>`, one doc
- *   per wearer per order (a new preview replaces the old one). Client rules
- *   deny the collection; only this server reads it.
- * - Owner access is by the order key only (the server compares hashes).
+ *   The path is fixed per wearer, so a new preview overwrites the old file:
+ *   exactly one file per wearer per session, never an orphaned older copy.
+ * - Metadata: Firestore `aiTryOnPreviews/<sha256(session, wearer)>`, one
+ *   small doc per wearer per session. Client rules deny the collection.
+ * - If the metadata write fails after the upload, the upload is deleted, so
+ *   a failure leaves neither a file nor a record.
+ * - Owner access is by the server-issued session (Step 7). The `orderKey`
+ *   argument below is that server session id.
  * - Kept for up to 30 days (`expiresAt`), or until the order is placed (the
  *   browser deletes all previews for its order key when the draft is
  *   retired), or until the customer deletes it. Expired previews are never
@@ -24,12 +28,6 @@ import { hashAiTryOnOrderKey } from "./aiTryOnUsageLimits.js";
 export const AI_TRY_ON_PREVIEW_COLLECTION = "aiTryOnPreviews";
 export const AI_TRY_ON_PREVIEW_STORAGE_PREFIX = "ai-try-on-previews";
 export const AI_TRY_ON_PREVIEW_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-
-const EXTENSIONS: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
 
 export interface StoredAiTryOnPreviewSummary {
   readonly previewId: string;
@@ -44,7 +42,6 @@ export interface AiTryOnPreviewStore {
     wearerKey: string;
     previewId: string;
     inputFingerprint: string;
-    promptVersion: string;
     image: { mimeType: string; data: string };
   }): Promise<StoredAiTryOnPreviewSummary>;
   list(orderKey: string): Promise<StoredAiTryOnPreviewSummary[]>;
@@ -65,18 +62,18 @@ export interface AiTryOnPreviewBucket {
   };
 }
 
+/** Kept minimal: no prompt, size or timestamps beyond the TTL field. */
 interface PreviewDoc {
   orderDocId: string;
   wearerKey: string;
   previewId: string;
   inputFingerprint: string;
-  promptVersion: string;
-  storagePath: string;
   mimeType: string;
-  bytes: number;
-  createdAt: Date;
   expiresAt: Date;
 }
+
+export const aiTryOnPreviewStoragePath = (orderDocId: string, docId: string): string =>
+  `${AI_TRY_ON_PREVIEW_STORAGE_PREFIX}/${orderDocId}/${docId}`;
 
 const readMillis = (value: unknown): number | null => {
   if (value instanceof Date) return value.getTime();
@@ -106,7 +103,7 @@ export const createAiTryOnPreviewStore = (
     return expiresAt !== null && expiresAt > now();
   };
   const deleteDoc = async (id: string, doc: PreviewDoc) => {
-    await bucket.file(doc.storagePath).delete({ ignoreNotFound: true });
+    await bucket.file(aiTryOnPreviewStoragePath(doc.orderDocId, id)).delete({ ignoreNotFound: true });
     await collection().doc(id).delete();
   };
   const orderDocs = async (orderKey: string) => {
@@ -118,38 +115,35 @@ export const createAiTryOnPreviewStore = (
   };
 
   return {
-    async save({ orderKey, wearerKey, previewId, inputFingerprint, promptVersion, image }) {
+    async save({ orderKey, wearerKey, previewId, inputFingerprint, image }) {
       const orderDocId = `order-${hashAiTryOnOrderKey(orderKey)}`;
       const id = aiTryOnPreviewDocId(orderKey, wearerKey);
-      const extension = EXTENSIONS[image.mimeType] || "png";
-      const storagePath = `${AI_TRY_ON_PREVIEW_STORAGE_PREFIX}/${orderDocId}/${previewId}.${extension}`;
+      const storagePath = aiTryOnPreviewStoragePath(orderDocId, id);
       const bytes = Buffer.from(image.data, "base64");
-      const createdAt = new Date(now());
       const doc: PreviewDoc = {
         orderDocId,
         wearerKey,
         previewId,
         inputFingerprint,
-        promptVersion,
-        storagePath,
         mimeType: image.mimeType,
-        bytes: bytes.length,
-        createdAt,
-        expiresAt: new Date(createdAt.getTime() + AI_TRY_ON_PREVIEW_RETENTION_MS),
+        expiresAt: new Date(now() + AI_TRY_ON_PREVIEW_RETENTION_MS),
       };
-      const ref = collection().doc(id);
-      const previous = await ref.get();
-      await bucket.file(storagePath).save(bytes, {
-        resumable: false,
-        contentType: image.mimeType,
-        // No firebaseStorageDownloadTokens: there is no public download URL.
-        metadata: { cacheControl: "private, no-store", metadata: { kind: "ai-try-on-preview" } },
-      });
-      await ref.set(doc);
-      const old = previous.exists ? (previous.data() as PreviewDoc) : null;
-      if (old && old.storagePath && old.storagePath !== storagePath) {
-        // The wearer's earlier preview is replaced, never kept alongside.
-        await bucket.file(old.storagePath).delete({ ignoreNotFound: true }).catch(() => undefined);
+      const file = bucket.file(storagePath);
+      try {
+        // Same path for the same wearer: overwrites the previous preview.
+        await file.save(bytes, {
+          resumable: false,
+          contentType: image.mimeType,
+          // No firebaseStorageDownloadTokens: there is no public download URL.
+          metadata: { cacheControl: "private, no-store" },
+        });
+        await collection().doc(id).set(doc);
+      } catch (error) {
+        // Leave nothing half-written: no file without a record, and no record
+        // pointing at a file that now holds other bytes.
+        await file.delete({ ignoreNotFound: true }).catch(() => undefined);
+        await collection().doc(id).delete().catch(() => undefined);
+        throw error;
       }
       return summarize(doc);
     },
@@ -169,7 +163,9 @@ export const createAiTryOnPreviewStore = (
         await deleteDoc(entry.id, entry.doc).catch(() => undefined);
         return null;
       }
-      const [bytes] = await bucket.file(entry.doc.storagePath).download();
+      const [bytes] = await bucket
+        .file(aiTryOnPreviewStoragePath(entry.doc.orderDocId, entry.id))
+        .download();
       return { mimeType: entry.doc.mimeType, data: bytes.toString("base64"), summary: summarize(entry.doc) };
     },
     async remove(orderKey, previewId) {

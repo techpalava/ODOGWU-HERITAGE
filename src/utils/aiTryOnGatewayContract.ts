@@ -48,8 +48,6 @@ export interface AiTryOnInlineImage {
 
 export interface AiTryOnGenerationRequest {
   readonly mode: AiTryOnMode;
-  /** Opaque draft/order identity used for the per-order try limit. */
-  readonly orderKey: string;
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
   readonly inputFingerprint: string;
   readonly personImage: AiTryOnInlineImage;
@@ -77,9 +75,13 @@ export type AiTryOnErrorCode =
   | "PROVIDER_REJECTED"
   | "PROVIDER_FAILED"
   | "REFERENCE_IMAGE_UNAVAILABLE"
-  | "PREVIEW_NOT_FOUND";
+  | "PREVIEW_NOT_FOUND"
+  /** Step 7: no open server session for this caller (call `?action=session`). */
+  | "SESSION_REQUIRED"
+  /** Step 7: a Firebase ID token was sent but could not be verified. */
+  | "AUTH_REQUIRED";
 
-/** A stored preview of this order (Step 6), listed by GET ?orderKey=. */
+/** A stored preview of this session's order (Step 6). */
 export interface AiTryOnStoredPreviewSummary {
   readonly previewId: string;
   readonly wearerKey: string;
@@ -91,12 +93,24 @@ export type AiTryOnAvailabilityResponse =
   | {
       readonly status: "available";
       readonly triesPerOrder: number;
-      /** Present when GET carried `?orderKey=`. */
+      /** Present on `POST ?action=session` (Step 7). */
       readonly orderTriesRemaining?: number;
-      /** Live stored previews of this order (GET ?orderKey=). */
+      /** Live stored previews of the session (`POST ?action=session`). */
       readonly previews?: readonly AiTryOnStoredPreviewSummary[];
+      /**
+       * Guests only: the server-issued session token to send back in the
+       * `X-AI-Try-On-Session` header. Signed-in customers get null; their
+       * session is found from the Firebase ID token.
+       */
+      readonly sessionToken?: string | null;
     }
-  | { readonly status: "unavailable"; readonly code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED" };
+  | {
+      readonly status: "unavailable";
+      readonly code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED" | "RATE_LIMITED" | "AUTH_REQUIRED";
+    };
+
+/** Step 7: header carrying a guest's server-issued session token. */
+export const AI_TRY_ON_SESSION_HEADER_NAME = "X-AI-Try-On-Session";
 
 export interface AiTryOnGenerationSuccess {
   readonly status: "completed";

@@ -1,4 +1,4 @@
-import { clearAiTryOnOrderKeys } from "./aiTryOnOrderKey";
+import { retireAiTryOnSessions } from "./aiTryOnSessionToken";
 import type {
   CartItem,
   Customer,
@@ -487,8 +487,9 @@ export const GuestOrderSessionService = {
 
   clearFutureDesignDraft: (): void => {
     getDesignStudioDraftRepository()?.clearFutureDraftV1();
-    // The next order starts with its own AI Try-on tries.
-    clearAiTryOnOrderKeys();
+    // Deletes this order's AI Try-on previews and closes its session, so
+    // the next order starts with a fresh session and its own tries.
+    retireAiTryOnSessions();
   },
 
   getFutureDesignDraftMigrationResult: () =>

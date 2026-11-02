@@ -21,6 +21,7 @@ import {
 } from "../utils/aiTryOnPhoto";
 import {
   requestAiTryOnPreview,
+  type AiTryOnCredentials,
   type AiTryOnPreviewOutcome,
 } from "../services/aiTryOnGateway";
 import type {
@@ -134,7 +135,8 @@ interface SelectedPhoto {
 
 export interface AiTryOnPhotoPanelProps {
   targets: readonly AiTryOnWearerTarget[];
-  orderKey: string;
+  /** Step 7: who is calling, for the server-issued session. */
+  credentials?: AiTryOnCredentials;
   triesPerOrder: number;
   /** From GET; null when the server did not report it. */
   initialTriesRemaining: number | null;
@@ -170,13 +172,13 @@ const defaultRevoke = (url: string) => {
 
 export const AiTryOnPhotoPanel = ({
   targets,
-  orderKey,
+  credentials,
   triesPerOrder,
   initialTriesRemaining,
   onPreviewCreated,
   onUnavailable,
   onGeneratingChange,
-  requestPreview = (request) => requestAiTryOnPreview({ request }),
+  requestPreview = (request) => requestAiTryOnPreview({ request, credentials }),
   storedPreviews = [],
   loadStoredPreview = async () => null,
   deleteStoredPreview = async () => false,
@@ -392,7 +394,6 @@ export const AiTryOnPhotoPanel = ({
       const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
       const request: AiTryOnGenerationRequest = {
         mode: fabricMode ? "fabric" : "garment",
-        orderKey,
         inputFingerprint,
         wearerKey: wearerId,
         personImage: currentPhoto.image,
