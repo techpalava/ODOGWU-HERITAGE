@@ -1,5 +1,5 @@
 /**
- * DRAFT WORDING (not yet approved by Xavier). Every new customer-facing
+ * Wording approved by Xavier (2 Nov 2026, 17:53 WAT), use verbatim. Every new customer-facing
  * string for the AI Try-on image outside the AI Try-on step lives here:
  * Summary / Review thumbnails, the order image after payment (confirmation,
  * My Orders, admin), the Delete AI preview button and dialog, the privacy
@@ -7,7 +7,7 @@
  *
  * Retention used in the wording: 60 days after payment (Xavier, 2 Nov 2026).
  */
-export const AI_TRY_ON_ORDER_IMAGE_COPY_STATUS = "DRAFT" as const;
+export const AI_TRY_ON_ORDER_IMAGE_COPY_STATUS = "APPROVED" as const;
 
 export const AI_TRY_ON_ORDER_IMAGE_RETENTION_DAYS = 60;
 
@@ -67,7 +67,7 @@ export const AI_TRY_ON_ORDER_IMAGE_COPY = {
 } as const;
 
 /**
- * Privacy wording (DRAFT). Replaces the AI Try-on retention sentences in
+ * Privacy wording (approved). Replaces the AI Try-on retention sentences in
  * src/data/legalContent.ts and the panel notice (PR 4).
  */
 export const AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY = {

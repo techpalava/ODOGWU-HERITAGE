@@ -19,7 +19,7 @@ import {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-assert.equal(AI_TRY_ON_ORDER_IMAGE_COPY_STATUS, "DRAFT", "wording stays DRAFT until Xavier approves it");
+assert.equal(AI_TRY_ON_ORDER_IMAGE_COPY_STATUS, "APPROVED", "wording approved by Xavier (2 Nov 2026)");
 
 const targets = [
   { wearerId: "w-me", label: "For me", inputFingerprint: "fp-me" },
