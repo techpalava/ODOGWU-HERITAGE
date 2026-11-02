@@ -52,14 +52,17 @@ Check: the face, body and background must be the customer's from image 1, not th
 const FABRIC_SNAPSHOT = `Virtual try-on photo edit with a fabric change.
 Image 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.
 Edit image 1 so the person wears the garment from image 2, made from the fabric in image 3.
+The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 Keep the person exactly as in image 1: identity, face, hair, skin tone, body shape, pose, hands and background.
 Replace only the clothing the garment covers.
 From image 2 take only the construction: cut, length, neckline, sleeves, seams, embroidery and trim placement. Ignore its original fabric colour and print.
-From image 3 take only the fabric: colour, pattern, texture and sheen. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
+From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
 Use only what is in image 3. Do not invent or add prints, motifs or colours.
+Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
 Ignore everything that is not the person, the garment or the fabric: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
-Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.`;
+Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.
+Check: the face, body and background must be the customer's from image 1, not the model's.`;
 
 const FIT_SNAPSHOT = `Fit guide in cm, for garment length, sleeve length and ease only. Never show these numbers, and never reshape the person's body to match them:
 - Height: 178
@@ -89,7 +92,7 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v3": createHash("sha256")
+  "tryon-prompt-v6": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -102,7 +105,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v3");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v6");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -120,13 +123,23 @@ assert.match(GARMENT_SNAPSHOT.split("\n").at(-1)!, /^Check: .*customer's from im
 assert.equal(
   buildAiTryOnPrompt({ mode: "fabric" }),
   FABRIC_SNAPSHOT,
-  "v3 leaves fabric-mode wording unchanged",
+  "v5 fabric-mode wording",
 );
 assert.deepEqual(buildAiTryOnImageLabels("garment"), [
   "Image 1, the customer to edit:",
   "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
 ]);
-assert.equal(buildAiTryOnImageLabels("fabric"), null, "fabric mode sends no image labels");
+// v5: fabric mode labels each image too (live retest returned the stand-in model).
+assert.deepEqual(buildAiTryOnImageLabels("fabric"), [
+  "Image 1, the customer to edit:",
+  "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
+  "Image 3, fabric swatch, for colour and pattern only:",
+]);
+assert.match(FABRIC_SNAPSHOT, /person in image 2 is only a stand-in model/);
+assert.match(FABRIC_SNAPSHOT, /never return image 2/);
+assert.match(FABRIC_SNAPSHOT, /Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image\./);
+assert.match(FABRIC_SNAPSHOT, /Image 3 always decides these/, "swatch-wins rule kept");
+assert.match(FABRIC_SNAPSHOT.split("\n").at(-1)!, /^Check: .*customer's from image 1, not the model's\.$/, "fabric identity check is the last line");
 assert.match(FABRIC_SNAPSHOT, /Do not invent or add prints/);
 for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
   assert.match(prompt, /identity, face, hair, skin tone, body shape, pose/);
@@ -140,7 +153,8 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
 // v3 added the stand-in-model and ordered-garment lines (+30 words); still under fabric mode.
 assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 290, "garment prompt stays short");
-assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 300, "fabric prompt stays short");
+// v4 added the swatch-always-wins rule (+15 words); v5 the stand-in, swatch-text and identity lines (+50).
+assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 370, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
   8,
@@ -275,10 +289,22 @@ Garment 1: Standard Shirt
 Garment 2: Trouser
 - Pockets: Regular Side Waist Pockets
 - Waistband: With Belt Holder`;
+// v4: in fabric mode the order details decide style only, and the fabric's
+// catalogue colour/category text never reaches the prompt (image 3 wins).
 const ORDER_BLOCK_FABRIC = ORDER_BLOCK_GARMENT.replace(
-  "image:\n",
-  "image:\nFabric, as in image 3: Royal Blue (#1F3A93), Aso-Oke\n",
+  "Order details. Show these on the garment; where they differ from image 2, follow these. Never write any of it on the image:\n",
+  "Order details, for the garment style only. Show these on the garment; where they differ from image 2, follow these. They never change the fabric from image 3. Never write any of it on the image:\nFabric: exactly as in image 3\n",
 );
+{
+  const fabricPrompt = buildAiTryOnPrompt({ mode: "fabric", orderDetails: { ...built!, fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } });
+  for (const label of ["Brown", "#724137", "Lace", "Royal Blue", "#1F3A93", "Aso-Oke"]) {
+    assert.equal(fabricPrompt.includes(label), false, `fabric label "${label}" never reaches the prompt`);
+  }
+  assert.match(fabricPrompt, /Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
+  assert.match(fabricPrompt, /colour, pattern, motif scale, texture and sheen/);
+  assert.match(fabricPrompt, /for the garment style only/);
+  assert.match(fabricPrompt, /They never change the fabric from image 3\./);
+}
 assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: built }), ORDER_BLOCK_GARMENT, "garment mode has no fabric line");
 assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built }), ORDER_BLOCK_FABRIC);
 assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: null }), "");
@@ -390,7 +416,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v3": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v6": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),

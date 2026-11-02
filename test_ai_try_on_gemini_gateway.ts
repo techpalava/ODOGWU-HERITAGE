@@ -19,6 +19,9 @@ import { buildAiTryOnPrompt } from "./src/server/aiTryOnPrompt";
 import {
   AI_TRY_ON_GEMINI_MODEL,
   readGeminiApiKey,
+  AI_TRY_ON_GEMINI_RETRY_MIN_REMAINING_MS,
+  AI_TRY_ON_GEMINI_TIMEOUT_MS,
+  isGeminiCapacityError,
   runAiTryOnGemini,
   type AiTryOnGeminiRequest,
   type AiTryOnGeminiResponseLike,
@@ -467,6 +470,12 @@ assert.match(studioSource, /AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT\s*\?\s*\{ measure
     timeoutMs: 5,
   });
   assert.deepEqual(timedOut.ok === false && [timedOut.reason, timedOut.retryable], ["timeout", true]);
+// Default Gemini limit: 120 s, with 10 s spare under the function's 130 s maxDuration.
+assert.equal(AI_TRY_ON_GEMINI_TIMEOUT_MS, 120_000);
+assert.ok(
+  AI_TRY_ON_GEMINI_TIMEOUT_MS <= JSON.parse(readFileSync("vercel.json", "utf8")).functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration * 1000 - 10_000,
+  "at least 10 s left for the rest of the request",
+);
 }
 
 assert.equal(readGeminiApiKey({}), null);
@@ -540,8 +549,14 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
     h.deps,
   );
   assert.equal(fabric.state.status, 200);
-  assert.equal(h.calls[1].contents[0].parts.length, 4, "fabric mode layout unchanged: prompt + 3 images, no labels");
-  assert.equal(h.calls[1].contents[0].parts.slice(1).every((part) => "inlineData" in part), true);
+  // Prompt v5: fabric mode labels each image right before it too.
+  assert.deepEqual(
+    h.calls[1].contents[0].parts.map((part) => ("text" in part ? part.text.split(",")[0] : "image")),
+    ["Virtual try-on photo edit with a fabric change.\nImage 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.\nEdit image 1 so the person wears the garment from image 2", "Image 1", "image", "Image 2", "image", "Image 3", "image"],
+    "fabric mode: prompt, label + person, label + garment, label + swatch",
+  );
+  assert.match((h.calls[1].contents[0].parts[5] as { text: string }).text, /^Image 3, fabric swatch, for colour and pattern only:$/);
+  assert.equal(h.calls[1].contents[0].parts.filter((part) => "inlineData" in part).length, 3);
   assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /Image 3: the fabric swatch/);
 
   // 5 tries per order: tries 3–5 succeed, try 6 is refused before Gemini.
@@ -683,7 +698,9 @@ assert.ok(
       rewrite.destination === "/api/design-studio/transfer-uploaded-design-draft?route=ai-try-on",
   ),
 );
-assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration, 60);
+// 130 s ceiling (Hobby + Fluid Compute allows 300 s); this function also serves the draft transfer route.
+assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration, 130);
+assert.ok(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration <= 300, "Hobby plan maximum");
 
 // The browser bundle never reads the key.
 for (const path of ["src/services/aiTryOnGateway.ts", "src/utils/aiTryOnGatewayContract.ts", "src/utils/aiTryOnFitHints.ts", "src/utils/aiTryOnWorkflow.ts"]) {
@@ -779,6 +796,166 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
   const flaky = createHttpAiTryOnGateway({ fetchImpl: async () => { throw new Error("network"); } });
   const flakyRun = await runAiTryOnGeneration({ gateway: flaky, state: ready, request: validBody() as never, skipAllowed: true });
   assert.deepEqual(flakyRun.state.failure, { code: "interrupted", retryable: true });
+}
+
+// Prompt v6: central swatch crop and the customer photo's aspect ratio.
+{
+  const h = harness();
+  const cropped: string[] = [];
+  h.deps.cropFabricSwatch = async (image) => {
+    cropped.push(image.data);
+    return { mimeType: "image/jpeg", data: Buffer.from("CROPPED").toString("base64") };
+  };
+  const photoRatios: string[] = [];
+  h.deps.readPhotoAspectRatio = async (image) => {
+    photoRatios.push(image.data);
+    return "2:3";
+  };
+  const fabric = response();
+  await handleAiTryOn(
+    post(validBody({ mode: "fabric", fabricSwatchImage: { mimeType: "image/png", data: png } })),
+    fabric.res,
+    h.deps,
+  );
+  assert.equal(fabric.state.status, 200);
+  assert.deepEqual(cropped, [png], "the swatch (and only the swatch) is cropped");
+  assert.deepEqual(photoRatios, [jpeg], "aspect ratio read from the customer photo");
+  const inline = h.calls[0].contents[0].parts.filter((part) => "inlineData" in part) as Array<{ inlineData: { mimeType: string; data: string } }>;
+  assert.equal(inline.length, 3);
+  assert.deepEqual(inline[2].inlineData, { mimeType: "image/jpeg", data: Buffer.from("CROPPED").toString("base64") }, "Gemini gets the cropped swatch");
+  assert.equal(inline[0].inlineData.data, jpeg, "customer photo untouched");
+  assert.equal(inline[1].inlineData.data, png, "garment picture untouched");
+  assert.deepEqual(h.calls[0].config.imageConfig, { aspectRatio: "2:3" }, "photo flow asks for the photo's shape");
+
+  // Garment mode: no swatch to crop, still the photo's shape.
+  const garment = response();
+  await handleAiTryOn(post(validBody()), garment.res, h.deps);
+  assert.equal(garment.state.status, 200);
+  assert.equal(cropped.length, 1, "garment mode crops nothing");
+  assert.deepEqual(h.calls[1].config.imageConfig, { aspectRatio: "2:3" });
+
+  // Undecodable pictures never block a try: the swatch is sent as before and no ratio is requested.
+  const h2 = harness();
+  h2.deps.cropFabricSwatch = async () => { throw new Error("bad swatch"); };
+  h2.deps.readPhotoAspectRatio = async () => { throw new Error("bad photo"); };
+  const fallback = response();
+  await handleAiTryOn(
+    post(validBody({ mode: "fabric", fabricSwatchImage: { mimeType: "image/png", data: png } })),
+    fallback.res,
+    h2.deps,
+  );
+  assert.equal(fallback.state.status, 200);
+  const sentSwatch = (h2.calls[0].contents[0].parts.filter((part) => "inlineData" in part).at(-1) as { inlineData: { data: string } }).inlineData.data;
+  assert.equal(sentSwatch, png);
+  assert.equal(h2.calls[0].config.imageConfig, undefined);
+  assert.ok(h2.logs.some((line) => line.includes("swatch_crop_skipped")));
+}
+
+// Capacity retry: one retry after 2-4 s for 503 / UNAVAILABLE / overloaded / high demand only.
+{
+  const httpError = (status: number | undefined, message: string) => Object.assign(new Error(message), status === undefined ? {} : { status });
+  const highDemand = httpError(503, '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}');
+  assert.equal(isGeminiCapacityError(highDemand), true);
+  assert.equal(isGeminiCapacityError(httpError(undefined, "The model is overloaded. Please try again later.")), true);
+  assert.equal(isGeminiCapacityError(httpError(undefined, "fetch failed")), false);
+  assert.equal(isGeminiCapacityError(httpError(429, "RESOURCE_EXHAUSTED: quota exceeded")), false, "429 is quota, not retried");
+  assert.equal(isGeminiCapacityError(httpError(500, "INTERNAL high demand")), false, "only 503 among HTTP statuses");
+  assert.equal(AI_TRY_ON_GEMINI_RETRY_MIN_REMAINING_MS, 40_000);
+
+  const run = async (errors: Array<Error | null>, { elapsedPerCall = 1_000, random = 0.5 } = {}) => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    let calls = 0;
+    const outcome = await runAiTryOnGemini({
+      generateContent: async () => {
+        const error = errors[calls] ?? null;
+        calls += 1;
+        clock += elapsedPerCall;
+        if (error) throw error;
+        return imageResponse;
+      },
+      prompt: "p",
+      images: [{ mimeType: "image/png", data: png }],
+      now: () => clock,
+      sleep: async (ms) => { sleeps.push(ms); clock += ms; },
+      random: () => random,
+    });
+    return { outcome, calls, sleeps };
+  };
+  const recovered = await run([highDemand, null]);
+  assert.equal(recovered.outcome.ok, true);
+  assert.equal(recovered.outcome.attempts, 2);
+  assert.equal(recovered.calls, 2);
+  assert.deepEqual(recovered.sleeps, [3_000], "2 s + jitter (0-2 s)");
+  assert.deepEqual((await run([highDemand, null], { random: 0 })).sleeps, [2_000]);
+  assert.deepEqual((await run([highDemand, null], { random: 0.9999 })).sleeps, [3_999]);
+  const twice = await run([highDemand, highDemand]);
+  assert.equal(twice.outcome.ok, false);
+  assert.equal(twice.calls, 2, "never more than one retry");
+  assert.equal(twice.outcome.attempts, 2);
+  assert.match(twice.outcome.ok === false ? twice.outcome.reason : "", /status=503/);
+  for (const [error, why] of [
+    [httpError(429, "RESOURCE_EXHAUSTED"), "429"],
+    [httpError(500, "INTERNAL"), "500"],
+    [httpError(400, "INVALID_ARGUMENT"), "400"],
+    [httpError(undefined, "socket hang up"), "network"],
+  ] as const) {
+    const single = await run([error, null]);
+    assert.equal(single.calls, 1, `${why}: no retry`);
+    assert.equal(single.outcome.ok, false);
+    assert.equal(single.outcome.attempts, 1);
+  }
+  // Too little budget left (first attempt took 77 s: 120 - 77 - 3 = 40 s is the edge).
+  assert.equal((await run([highDemand, null], { elapsedPerCall: 77_000 })).calls, 2, "exactly 40 s left: retry");
+  const late = await run([highDemand, null], { elapsedPerCall: 77_001 });
+  assert.equal(late.calls, 1, "under 40 s left: fail as before");
+  assert.equal(late.sleeps.length, 0);
+  // A no-image answer is not a capacity error.
+  let noImageCalls = 0;
+  const noImage = await runAiTryOnGemini({
+    generateContent: async () => { noImageCalls += 1; return { candidates: [{ finishReason: "SAFETY" }] }; },
+    prompt: "p",
+    images: [],
+    sleep: async () => undefined,
+  });
+  assert.equal(noImage.ok, false);
+  assert.equal(noImageCalls, 1);
+}
+
+// Capacity retry through the route: one reservation, one refund, IP and global counted once.
+{
+  const highDemand = Object.assign(new Error("This model is currently experiencing high demand."), { status: 503 });
+  for (const recovers of [true, false]) {
+    const h = harness();
+    let geminiCalls = 0;
+    const ipCharges: string[] = [];
+    h.deps.consumeIpRateLimit = async (_database, ip) => { ipCharges.push(ip); };
+    h.deps.createGenerateContent = () => async () => {
+      geminiCalls += 1;
+      if (geminiCalls === 1 || !recovers) throw highDemand;
+      return imageResponse;
+    };
+    const slept: number[] = [];
+    h.deps.geminiRetrySleep = async (ms) => { slept.push(ms); };
+    const result = response();
+    await handleAiTryOn(post(validBody()), result.res, h.deps);
+    assert.equal(geminiCalls, 2, "one retry");
+    assert.equal(slept.length, 1);
+    assert.ok(slept[0] >= 2_000 && slept[0] < 4_000);
+    assert.equal(ipCharges.length, 1, "IP window charged once");
+    const body = result.state.body as { orderTriesRemaining?: number; status?: string };
+    if (recovers) {
+      assert.equal(result.state.status, 200);
+      assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER - 1, "one try used");
+      assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 1, "global counted once");
+    } else {
+      assert.equal(result.state.status, 502);
+      assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER, "refunded once, never below or above");
+      assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count ?? 0, 0, "global refunded");
+    }
+    const logLine = h.logs.find((line) => line.includes('"event":"ai_try_on"') && line.includes("attempts"));
+    assert.match(logLine ?? "", /"attempts":2/);
+  }
 }
 
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");

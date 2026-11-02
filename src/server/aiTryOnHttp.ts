@@ -1,3 +1,10 @@
+import {
+  cropAiTryOnFabricSwatch,
+  readAiTryOnPhotoAspectRatio,
+  type AiTryOnGeminiAspectRatio,
+  type CropAiTryOnFabricSwatch,
+  type ReadAiTryOnPhotoAspectRatio,
+} from "./aiTryOnImagePrep.js";
 import type { Firestore } from "firebase-admin/firestore";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { getAdminServices } from "./firebaseAdmin.js";
@@ -164,9 +171,15 @@ export interface AiTryOnHttpDependencies {
   createUsageLimits?: (db: Firestore) => AiTryOnUsageLimits;
   consumeIpRateLimit?: (db: Firestore, ip: string) => Promise<void>;
   createGenerateContent?: (apiKey: string) => AiTryOnGenerateContent;
+  /** Wait before the one capacity retry (tests skip the real 2-4 s). */
+  geminiRetrySleep?: (ms: number) => Promise<void>;
   createAssetId?: () => string;
   /** Private preview storage (Step 6). */
   createPreviewStore?: (db: Firestore) => AiTryOnPreviewStore;
+  /** Central crop of the fabric swatch before Gemini (prompt v6 / model v4). */
+  cropFabricSwatch?: CropAiTryOnFabricSwatch;
+  /** Photo flow: nearest Gemini aspect ratio of the customer photo (prompt v6). */
+  readPhotoAspectRatio?: ReadAiTryOnPhotoAspectRatio;
   /** Server-side garment/fabric picture loader (Step 6). */
   loadReferenceImage?: (url: string) => Promise<AiTryOnInlineImage>;
   /** Server-issued sessions (Step 7). */
@@ -695,6 +708,25 @@ export async function handleAiTryOn(
     );
   }
 
+  // v6: drop the swatch's edges (printed codes, selvedge text) and match
+  // the output shape to the customer photo. Neither step may block a try:
+  // an undecodable picture falls back to what was sent before v6.
+  if (images[2]) {
+    try {
+      images[2] = await (dependencies.cropFabricSwatch ?? cropAiTryOnFabricSwatch)(images[2]);
+    } catch {
+      log(JSON.stringify({ event: "ai_try_on", outcome: "swatch_crop_skipped", mode: parsed.mode }));
+    }
+  }
+  let photoAspectRatio: AiTryOnGeminiAspectRatio | null = null;
+  if (!defaultModel) {
+    try {
+      photoAspectRatio = await (dependencies.readPhotoAspectRatio ?? readAiTryOnPhotoAspectRatio)(images[0]);
+    } catch {
+      photoAspectRatio = null;
+    }
+  }
+
   const limits = createLimits(db);
   const promptVersion = defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
   const saveWearerPreview = async (previewId: string, image: { mimeType: string; data: string }) => {
@@ -821,8 +853,9 @@ export async function handleAiTryOn(
     imageLabels: defaultModel
       ? buildAiTryOnModelImageLabels(parsed.mode)
       : buildAiTryOnImageLabels(parsed.mode),
-    aspectRatio: defaultModel ? "3:4" : null,
+    aspectRatio: defaultModel ? "3:4" : photoAspectRatio,
     secret: apiKey,
+    ...(dependencies.geminiRetrySleep ? { sleep: dependencies.geminiRetrySleep } : {}),
   });
   const latencyMs = now() - startedAt;
 
@@ -840,6 +873,7 @@ export async function handleAiTryOn(
         promptVersion,
         fitHints: parsed.fitHints.length,
         latencyMs,
+        attempts: outcome.attempts ?? 1,
         reason: outcome.reason,
       }),
     );
@@ -906,6 +940,7 @@ export async function handleAiTryOn(
       promptVersion,
       fitHints: parsed.fitHints.length,
       latencyMs,
+      attempts: outcome.attempts ?? 1,
       previewStored: Boolean(stored),
     }),
   );

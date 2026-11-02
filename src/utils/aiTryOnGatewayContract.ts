@@ -27,16 +27,27 @@ export type AiTryOnMode = "garment" | "fabric";
  * made with older wording turns stale. v1 was the Step 3 trial wording.
  * v3: garment mode treats the catalogue model as a stand-in and copies only
  * the ordered garment (fabric-mode text unchanged).
+ * v4: fabric mode lets the swatch (image 3) always decide the fabric; the
+ * catalogue colour/category text is no longer sent, and order details
+ * decide style only.
+ * v5: fabric mode also gets the v3 stand-in line, image labels and identity
+ * check, and ignores any text printed on the swatch.
+ * v6: the server sends a central crop of the swatch and asks Gemini for the
+ * customer photo's nearest aspect ratio (request change, same wording).
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v3" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v6" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
  * from AI_TRY_ON_PROMPT_VERSION so the photo flow's fingerprints never turn
  * stale because of model-mode wording. Folded into the shared model-result
  * cache key: bump on any model-mode wording change.
+ * v2: same swatch-wins fabric rule as photo prompt v4.
+ * v3: fabric mode ignores any text printed on the swatch (as photo v5).
+ * v4: the swatch is sent as a central crop (as photo v6). The cache key
+ * hashes the cropped bytes too; the bump makes the change explicit.
  */
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v1" as const;
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v4" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric

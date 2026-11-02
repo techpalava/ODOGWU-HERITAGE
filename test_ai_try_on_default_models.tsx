@@ -108,8 +108,9 @@ const DAY = 24 * 60 * 60 * 1000;
 
 // ------------------------------------------------------------ model-mode prompt
 {
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v1");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v3", "photo-flow prompt version unchanged");
+  // v2 / v4: swatch decides the fabric. v3 / v5: swatch text ignored. v4 / v6: swatch cropped, photo aspect ratio.
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v4");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v6");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -123,6 +124,18 @@ const DAY = 24 * 60 * 60 * 1000;
     assert.ok(buildAiTryOnModelImageLabels(mode).every((label) => label.startsWith("Image ")));
   }
   assert.match(buildAiTryOnModelPrompt({ mode: "fabric" }), /made from the fabric in image 3/);
+  {
+    const fabricPrompt = buildAiTryOnModelPrompt({
+      mode: "fabric",
+      orderDetails: { garments: [{ garmentType: "shirt", optionIds: [], decorations: [] }], fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } as never,
+    });
+    assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen\. Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
+    assert.match(fabricPrompt, /Order details, for the garment style only\..*They never change the fabric from image 3\./);
+    assert.match(fabricPrompt, /\nFabric: exactly as in image 3\n/);
+    assert.match(fabricPrompt, /Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image\./);
+    assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("printed on the swatch"), false);
+    for (const label of ["Brown", "#724137", "Lace"]) assert.equal(fabricPrompt.includes(label), false, `model mode: no "${label}" text`);
+  }
   assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("image 3"), false);
   const details: AiTryOnOrderDetails = { garments: [{ garmentType: "shirt", optionIds: [], decorations: ["embroidery"] }] } as never;
   assert.match(buildAiTryOnModelPrompt({ mode: "garment", orderDetails: details }), /Order details\./);

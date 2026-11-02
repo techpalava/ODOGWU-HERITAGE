@@ -41,6 +41,25 @@ const NOISE =
 const GARMENT_IGNORE_NOISE = `Ignore everything that is not the person or the garment: ${NOISE}`;
 const FABRIC_IGNORE_NOISE = `Ignore everything that is not the person, the garment or the fabric: ${NOISE}`;
 
+/**
+ * v4 (live smoke test, 2 Nov 2026): fabric mode sent the catalogue colour
+ * and category as text ("Brown (#724137), Lace") and told Gemini to follow
+ * order details over the pictures, so a royal-blue wax print came back
+ * brown. The swatch picture now always decides the fabric, and the fabric's
+ * text labels no longer reach the prompt. Order details decide style only.
+ */
+const FABRIC_FROM_SWATCH =
+  "From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.";
+
+const STAND_IN =
+  "The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.";
+
+const IDENTITY_CHECK =
+  "Check: the face, body and background must be the customer's from image 1, not the model's.";
+
+const SWATCH_TEXT =
+  "Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image.";
+
 const OUTPUT =
   "Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.";
 
@@ -57,7 +76,7 @@ const GARMENT_MODE_LINES: readonly string[] = [
   "Virtual try-on photo edit.",
   "Image 1: the customer. Image 2: a garment reference photo.",
   "Edit image 1 so the customer wears the ordered garment from image 2.",
-  "The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.",
+  STAND_IN,
   KEEP_PERSON,
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
   "Replace only the clothing it covers; keep the customer's other clothing and shoes from image 1.",
@@ -65,21 +84,31 @@ const GARMENT_MODE_LINES: readonly string[] = [
   REALISM,
   GARMENT_IGNORE_NOISE,
   OUTPUT,
-  "Check: the face, body and background must be the customer's from image 1, not the model's.",
+  IDENTITY_CHECK,
 ];
 
+/**
+ * v5 (live retest, 2 Nov 2026): with the swatch-wins rule alone, Gemini
+ * returned the garment photo's stand-in model (face, pose, background)
+ * dressed in the right fabric, and copied the swatch's product code into the
+ * corner. Fabric mode now gets garment mode's v3 protections (stand-in line,
+ * image labels, closing identity check) plus SWATCH_TEXT.
+ */
 const FABRIC_MODE_LINES: readonly string[] = [
   "Virtual try-on photo edit with a fabric change.",
   "Image 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.",
   "Edit image 1 so the person wears the garment from image 2, made from the fabric in image 3.",
+  STAND_IN,
   KEEP_PERSON,
   "Replace only the clothing the garment covers.",
   "From image 2 take only the construction: cut, length, neckline, sleeves, seams, embroidery and trim placement. Ignore its original fabric colour and print.",
-  "From image 3 take only the fabric: colour, pattern, texture and sheen. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.",
+  FABRIC_FROM_SWATCH,
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
+  SWATCH_TEXT,
   REALISM,
   FABRIC_IGNORE_NOISE,
   OUTPUT,
+  IDENTITY_CHECK,
 ];
 
 const FIT_ORDER = new Map<string, number>(
@@ -113,7 +142,8 @@ const FIELD_RANK = new Map<string, number>(
 
 /**
  * Compact order-details block, rendered only from validated ids. The fabric
- * line appears in fabric mode only (garment mode copies image 2's fabric).
+ * line appears in fabric mode only (garment mode copies image 2's fabric)
+ * and only points at image 3: no colour or category text (v4).
  * Monograms are described as a mark; the customer's letters never reach the
  * prompt. Empty details → no block at all.
  */
@@ -126,12 +156,10 @@ export const buildAiTryOnOrderDetailsBlock = ({
 }): string => {
   if (!orderDetails) return "";
   const lines: string[] = [];
-  const fabric = mode === "fabric" ? orderDetails.fabric : undefined;
-  if (fabric) {
-    const colour = [fabric.colour, fabric.colourHex ? `(${fabric.colourHex})` : ""]
-      .filter(Boolean)
-      .join(" ");
-    lines.push(`Fabric, as in image 3: ${[colour, fabric.category].filter(Boolean).join(", ")}`);
+  // v4: the catalogue colour and category stay out of the prompt. Image 3
+  // alone decides the fabric; text labels can be wrong and must never win.
+  if (mode === "fabric" && orderDetails.fabric) {
+    lines.push("Fabric: exactly as in image 3");
   }
   const numbered = orderDetails.garments.length > 1;
   orderDetails.garments.forEach((garment, index) => {
@@ -161,7 +189,9 @@ export const buildAiTryOnOrderDetailsBlock = ({
   });
   if (lines.length === 0) return "";
   return [
-    "Order details. Show these on the garment; where they differ from image 2, follow these. Never write any of it on the image:",
+    mode === "fabric"
+      ? "Order details, for the garment style only. Show these on the garment; where they differ from image 2, follow these. They never change the fabric from image 3. Never write any of it on the image:"
+      : "Order details. Show these on the garment; where they differ from image 2, follow these. Never write any of it on the image:",
     ...lines,
   ]
     .slice(0, AI_TRY_ON_ORDER_DETAILS_MAX_LINES)
@@ -169,17 +199,21 @@ export const buildAiTryOnOrderDetailsBlock = ({
 };
 
 /**
- * Garment mode only: a short text label sent right before each image, so
- * Gemini cannot mix up the customer and the catalogue model. Fabric mode
- * keeps its v2 layout (prompt, then images) and gets null.
+ * A short text label sent right before each image, so Gemini cannot mix up
+ * the customer and the catalogue model. Garment mode since v3, fabric mode
+ * since v5.
  */
-export const buildAiTryOnImageLabels = (mode: AiTryOnMode): readonly string[] | null =>
-  mode === "garment"
+export const buildAiTryOnImageLabels = (mode: AiTryOnMode): readonly string[] =>
+  mode === "fabric"
     ? [
         "Image 1, the customer to edit:",
         "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
+        "Image 3, fabric swatch, for colour and pattern only:",
       ]
-    : null;
+    : [
+        "Image 1, the customer to edit:",
+        "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
+      ];
 
 export const buildAiTryOnPrompt = ({
   mode,
@@ -245,8 +279,9 @@ const MODEL_FABRIC_MODE_LINES: readonly string[] = [
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
   "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
   "From image 2 take only the construction: cut, length, neckline, sleeves, seams, embroidery and trim placement. Ignore its original fabric colour and print.",
-  "From image 3 take only the fabric: colour, pattern, texture and sheen. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.",
+  FABRIC_FROM_SWATCH,
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
+  SWATCH_TEXT,
   REALISM,
   `Ignore everything that is not the studio model, the garment or the fabric: ${NOISE}`,
   MODEL_OUTPUT,
