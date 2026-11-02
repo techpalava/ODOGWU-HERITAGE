@@ -99,7 +99,9 @@ assert.match(block(http, "const defaultPreviewStore"), /aiTryOnStorageBucket\(\)
 assert.match(block(http, "const defaultModelResultCache"), /aiTryOnStorageBucket\(\)/, "model cache uses the dedicated bucket");
 assert.match(block(http, "const defaultLoadReferenceImage"), /getAdminServices\(\)\.storage\.bucket\(\)/, "catalogue pictures stay in the default bucket");
 assert.doesNotMatch(block(http, "const defaultLoadReferenceImage"), /aiTryOnStorageBucket/);
-assert.match(cleanup, /createAiTryOnPreviewStore\(\s*database,\s*aiTryOnStorageBucket\(\) as unknown as AiTryOnPreviewBucket/, "payment cleanup uses the dedicated bucket");
+// The store and the copy to a paid order (PR 2) share one dedicated bucket.
+assert.match(cleanup, /dependencies\.getBucket \?\? \(\(\) => aiTryOnStorageBucket\(\) as unknown as AiTryOnPreviewBucket\)/, "payment cleanup uses the dedicated bucket");
+assert.match(cleanup, /createAiTryOnPreviewStore\(database, bucket\(\)\)/, "the preview store gets that bucket");
 assert.doesNotMatch(cleanup, /storage\.bucket\(\)/, "payment cleanup no longer uses the default bucket");
 
 // The bucket name is server-only configuration.

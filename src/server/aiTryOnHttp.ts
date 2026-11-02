@@ -1,4 +1,9 @@
 import {
+  isAiTryOnOrderId,
+  parseAiTryOnOrderSelectionInput,
+  saveAiTryOnOrderSelection,
+} from "./aiTryOnOrderImages.js";
+import {
   cropAiTryOnFabricSwatch,
   readAiTryOnPhotoAspectRatio,
   type AiTryOnGeminiAspectRatio,
@@ -625,6 +630,47 @@ export async function handleAiTryOn(
         expiresAt: preview.summary.expiresAt,
         image: { mimeType: preview.mimeType, data: preview.data },
       });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on previews are temporarily unavailable.", true);
+    }
+  }
+
+  // Before payment: which of this session's previews go with the order
+  // (copied to the order when its payment is recorded). Signed-in owners
+  // only; never needed for payment, so the browser ignores failures.
+  if (req.method === "POST" && readQueryParam(req, "action") === "order-selection") {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+    const selections = parseAiTryOnOrderSelectionInput(body.selections);
+    if (!isAiTryOnOrderId(body.orderId) || !selections) {
+      return sendError(res, 400, "INVALID_REQUEST", "A valid order and preview list are required.", false);
+    }
+    const identity = await readIdentity();
+    if (identity === "auth_failed") return authFailed();
+    if (!identity.uid) {
+      return sendError(res, 401, "AUTH_REQUIRED", "Sign in again to use AI Try-on.", false);
+    }
+    try {
+      const db = await resolveDb();
+      const sessionId = await createSessions(db).authorize(identity);
+      if (!sessionId) return sessionRequired();
+      const result = await saveAiTryOnOrderSelection({
+        db,
+        store: createStore(db),
+        sessionId,
+        uid: identity.uid,
+        orderId: body.orderId,
+        selections,
+        now,
+      });
+      log(JSON.stringify({ event: "ai_try_on", outcome: `order_selection_${result}`, previews: selections.length }));
+      setNoStore(res);
+      if (result === "order_not_found") {
+        return sendError(res, 404, "INVALID_REQUEST", "This order was not found.", false);
+      }
+      if (result === "preview_not_found") {
+        return sendError(res, 404, "PREVIEW_NOT_FOUND", "This preview is no longer available.", false);
+      }
+      return res.status(200).json({ status: result });
     } catch {
       return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on previews are temporarily unavailable.", true);
     }

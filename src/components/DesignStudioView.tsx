@@ -347,6 +347,7 @@ import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
   fetchStoredAiTryOnPreview,
+  saveAiTryOnOrderSelection,
   releaseAiTryOnBusyJob,
   type AiTryOnAvailabilityDetails,
 } from "../services/aiTryOnGateway";
@@ -355,6 +356,7 @@ import {
   selectAiTryOnOrderPreviews,
   type AiTryOnOrderPreviewSummary,
 } from "./AiTryOnOrderPreviewThumbnails";
+import { AI_TRY_ON_ORDER_IMAGE_COPY } from "../utils/aiTryOnOrderImageCopy";
 import {
   AI_TRY_ON_GUEST_IDENTITY_KEY,
   aiTryOnCredentialsForIdentity,
@@ -8532,6 +8534,7 @@ export default function DesignStudioView({
         outcome.attempt.orderId,
         linkedSavedOrderIdRef.current,
       );
+      rememberAiTryOnOrderSelection(outcome.attempt.orderId);
       const preparedHandoff = createFutureOrderV2PaymentReviewHandoff(
         outcome.attempt.candidate,
         {
@@ -9200,8 +9203,29 @@ export default function DesignStudioView({
         entries={aiTryOnOrderPreviewEntries}
         loadImage={loadAiTryOnOrderPreviewImage}
         onMakeNew={openAiTryOnForWearer}
+        notice={futureStageId === "payment" ? AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice : undefined}
       />
     ) : null;
+  // Order prepared: the current previews go with it at payment (PR 2). Out-
+  // of-date previews are never sent. Fire and forget: never blocks payment.
+  function rememberAiTryOnOrderSelection(orderId: string) {
+    const selections = aiTryOnOrderPreviewEntries.flatMap((entry) => {
+      if (entry.kind !== "fresh") return [];
+      const target = aiTryOnWearerTargets.find((item) => item.wearerId === entry.wearerId);
+      return target?.inputFingerprint
+        ? [
+            {
+              wearerKey: entry.wearerId,
+              previewId: entry.previewId,
+              inputFingerprint: target.inputFingerprint,
+              label: entry.label,
+            },
+          ]
+        : [];
+    });
+    if (selections.length === 0) return;
+    void saveAiTryOnOrderSelection({ credentials: aiTryOnCredentials, orderId, selections });
+  }
   const handleAiTryOnBack = () => {
     const returnTo = aiTryOnReturnTo;
     if (!returnTo) return;

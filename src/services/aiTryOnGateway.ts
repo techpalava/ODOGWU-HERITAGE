@@ -541,6 +541,45 @@ export const deleteStoredAiTryOnPreviews = async ({
 };
 
 /**
+ * Before payment: tells the server which current previews go with the
+ * order, so they are saved with it when the payment is recorded. Never
+ * needed for payment: false on any failure.
+ */
+export const saveAiTryOnOrderSelection = async ({
+  credentials,
+  orderId,
+  selections,
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+}: {
+  credentials: AiTryOnCredentials;
+  orderId: string;
+  selections: readonly {
+    wearerKey: string;
+    previewId: string;
+    inputFingerprint: string;
+    label: string;
+  }[];
+  fetchImpl?: FetchLike;
+  endpoint?: string;
+}): Promise<boolean> => {
+  try {
+    const response = await fetchImpl(`${endpoint}?action=order-selection`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(await credentialHeaders(credentials)),
+      },
+      body: JSON.stringify({ orderId, selections }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Busy retries given up (time ran out, or a reload found no preview): the
  * server refunds the held try once. True when a try was refunded.
  */

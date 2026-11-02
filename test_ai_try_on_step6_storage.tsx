@@ -444,8 +444,12 @@ const serverRequest = async (h: ReturnType<typeof serverHarness>, method: string
   );
   assert.deepEqual(
     serverUsers.sort(),
-    [join("src", "server", "aiTryOnHttp.ts"), join("src", "server", "aiTryOnPaymentCleanup.ts")],
-    "only the owner gateway (and payment cleanup, which deletes) use the store",
+    [
+      join("src", "server", "aiTryOnHttp.ts"),
+      join("src", "server", "aiTryOnOrderImages.ts"),
+      join("src", "server", "aiTryOnPaymentCleanup.ts"),
+    ],
+    "only the owner gateway, payment cleanup (which deletes) and the copy to a paid order use the store",
   );
   const workshopOrAdmin = walk("src").filter((file) => /admin|workshop|manifest|staff|production/i.test(file));
   assert.ok(workshopOrAdmin.length > 0);

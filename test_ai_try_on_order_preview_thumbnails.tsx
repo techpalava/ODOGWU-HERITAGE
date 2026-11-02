@@ -83,6 +83,20 @@ const close = renderer.root.findAll((node) => node.type === "button" && node.pro
 await act(async () => { close[0].props.onClick(); });
 assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-order-preview-enlarged"] !== undefined && node.type === "div").length, 0);
 
+// Review & Payment (PR 2): the pre-payment notice sits under the previews; Summary has none.
+assert.ok(!text.includes(COPY.savedWithOrderNotice), "no notice unless asked (Summary)");
+await act(async () => {
+  renderer.update(createElement(AiTryOnOrderPreviewThumbnails, { entries, loadImage, onMakeNew: () => {}, notice: COPY.savedWithOrderNotice }));
+  await flush();
+});
+assert.ok(JSON.stringify(renderer.toJSON()).includes(COPY.savedWithOrderNotice));
+let staleOnly!: ReturnType<typeof create>;
+await act(async () => {
+  staleOnly = create(createElement(AiTryOnOrderPreviewThumbnails, { entries: entries.filter((entry) => entry.kind === "stale"), loadImage, onMakeNew: () => {}, notice: COPY.savedWithOrderNotice }));
+  await flush();
+});
+assert.ok(!JSON.stringify(staleOnly.toJSON()).includes(COPY.savedWithOrderNotice), "no notice when nothing will be saved");
+
 // 3. An image that can't load is left out (no broken picture).
 let failing!: ReturnType<typeof create>;
 await act(async () => {

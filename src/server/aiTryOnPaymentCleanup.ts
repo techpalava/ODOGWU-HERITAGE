@@ -9,6 +9,7 @@ import {
 import { createAiTryOnSessions, type AiTryOnSessions } from "./aiTryOnSession.js";
 import { createAiTryOnUsageLimits } from "./aiTryOnUsageLimits.js";
 import { createAiTryOnBusyJobs, type AiTryOnBusyJobs } from "./aiTryOnBusyJobs.js";
+import { copyAiTryOnOrderImagesForPaidOrder } from "./aiTryOnOrderImages.js";
 
 /**
  * Step 7: when an order's payment is recorded, delete every stored AI
@@ -28,6 +29,9 @@ import { createAiTryOnBusyJobs, type AiTryOnBusyJobs } from "./aiTryOnBusyJobs.j
  *   removes any saved after the close itself.
  * - A try still held for a busy retry is refunded once (its retries now
  *   get 409 SESSION_CLOSED).
+ * - With the order id, the previews chosen for that order are first copied
+ *   to the order (60 days, aiTryOnOrderImages.ts). A failed copy never stops
+ *   the payment or the cleanup.
  */
 export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 3000;
 
@@ -36,6 +40,8 @@ export interface AiTryOnPaymentCleanupDependencies {
   createSessions?: (db: Firestore) => AiTryOnSessions;
   createStore?: (db: Firestore) => AiTryOnPreviewStore;
   createBusyJobs?: (db: Firestore) => AiTryOnBusyJobs;
+  /** The try-on bucket (order images are copied into it). */
+  getBucket?: () => AiTryOnPreviewBucket;
   log?: (line: string) => void;
   timeoutMs?: number;
 }
@@ -43,7 +49,7 @@ export interface AiTryOnPaymentCleanupDependencies {
 export type AiTryOnPaymentCleanupResult = "deleted" | "no_session" | "failed" | "timeout";
 
 export const retireAiTryOnSessionForPaidOrder = async (
-  { ownerUid }: { ownerUid: string },
+  { ownerUid, orderId }: { ownerUid: string; orderId?: string },
   dependencies: AiTryOnPaymentCleanupDependencies = {},
 ): Promise<AiTryOnPaymentCleanupResult> => {
   const log = dependencies.log ?? ((line: string) => console.info(line));
@@ -55,14 +61,32 @@ export const retireAiTryOnSessionForPaidOrder = async (
       log(JSON.stringify({ event: "ai_try_on_payment_cleanup", status: "no_session" }));
       return "no_session";
     }
+    const bucket = () =>
+      (dependencies.getBucket ?? (() => aiTryOnStorageBucket() as unknown as AiTryOnPreviewBucket))();
     const store = (
-      dependencies.createStore ??
-      ((database) =>
-        createAiTryOnPreviewStore(
-          database,
-          aiTryOnStorageBucket() as unknown as AiTryOnPreviewBucket,
-        ))
+      dependencies.createStore ?? ((database) => createAiTryOnPreviewStore(database, bucket()))
     )(db);
+    if (orderId) {
+      try {
+        const copied = await copyAiTryOnOrderImagesForPaidOrder({
+          db,
+          store,
+          bucket: bucket(),
+          sessionId,
+          orderId,
+          ownerUid,
+        });
+        log(JSON.stringify({ event: "ai_try_on_order_images", status: copied.result, images: copied.images }));
+      } catch (error) {
+        log(
+          JSON.stringify({
+            event: "ai_try_on_order_images",
+            status: "failed",
+            error: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      }
+    }
     let deleted = await store.remove(sessionId, null);
     await sessions.close(sessionId);
     // A preview made in the background can be saved between the delete and

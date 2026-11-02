@@ -101,7 +101,7 @@ export interface FutureOrderV2PaymentRecordDependencies {
    * Runs after a payment is recorded (AI Try-on preview cleanup, Step 7).
    * Must never throw or block for long; failures are only logged.
    */
-  onPaymentRecorded?: (input: { ownerUid: string; db: unknown }) => Promise<unknown>;
+  onPaymentRecorded?: (input: { ownerUid: string; orderId: string; db: unknown }) => Promise<unknown>;
 }
 
 const readCustomDetailCatalog = async (db: unknown): Promise<unknown[]> => {
@@ -500,14 +500,14 @@ export const createFutureOrderV2PaymentRecordHandler = (
   const now = dependencies.now || (() => new Date());
   const log = dependencies.log || ((message: string) => console.info(message));
   const readCatalog = dependencies.readCatalog ?? readCustomDetailCatalog;
-  const onPaymentRecorded = async (ownerUid: string, db: unknown) => {
+  const onPaymentRecorded = async (record: { ownerUid: string; orderId: string }, db: unknown) => {
     try {
       await (dependencies.onPaymentRecorded ??
-        ((input: { ownerUid: string; db: unknown }) =>
+        ((input: { ownerUid: string; orderId: string; db: unknown }) =>
           retireAiTryOnSessionForPaidOrder(
-            { ownerUid: input.ownerUid },
+            { ownerUid: input.ownerUid, orderId: input.orderId },
             { getDb: () => input.db as Firestore },
-          )))({ ownerUid, db });
+          )))({ ownerUid: record.ownerUid, orderId: record.orderId, db });
     } catch {
       // Never let post-payment cleanup affect the payment response.
     }
@@ -590,7 +590,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
       });
     }
     if (outcome.status === "recorded" || outcome.status === "already_recorded") {
-      await onPaymentRecorded(outcome.record.ownerUid, db);
+      await onPaymentRecorded(outcome.record, db);
       return reply(200, { received: true, status: outcome.status });
     }
     return reply(200, { received: true, status: "ignored", reason: outcome.status });
@@ -798,7 +798,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
         );
       default:
         log(`future-order-v2-payment-record status=${outcome.status}`);
-        await onPaymentRecorded(outcome.record.ownerUid, services.db);
+        await onPaymentRecorded(outcome.record, services.db);
         return setNoStore(res)
           .status(outcome.status === "recorded" ? 201 : 200)
           .json(outcome);
