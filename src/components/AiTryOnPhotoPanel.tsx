@@ -1,0 +1,1046 @@
+import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
+import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ImagePlus,
+  Loader2,
+  Sparkles,
+  AlertTriangle,
+  Trash2,
+  UserRound,
+} from "lucide-react";
+import type { AiTryOnVerifiedPrivateResultReference } from "../types";
+import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract";
+import type { AiTryOnWearerTarget } from "../utils/aiTryOnWearerTargets";
+import {
+  AI_TRY_ON_DEFAULT_MODELS,
+  AI_TRY_ON_MODEL_GROUP_LABELS,
+  aiTryOnDefaultModelImageUrl,
+  findAiTryOnDefaultModel,
+  type AiTryOnModelGroup,
+} from "../utils/aiTryOnDefaultModels";
+import {
+  AI_TRY_ON_PHOTO_ACCEPT,
+  AiTryOnPhotoError,
+  AI_TRY_ON_PHOTO_PROCESSING_ERROR,
+  fitsAiTryOnTotalLimit,
+  prepareAiTryOnPersonPhoto,
+  validateAiTryOnPhotoFile,
+} from "../utils/aiTryOnPhoto";
+import {
+  requestAiTryOnPreview,
+  releaseAiTryOnBusyJob,
+  type AiTryOnCredentials,
+  type AiTryOnPreviewOutcome,
+} from "../services/aiTryOnGateway";
+import {
+  aiTryOnBackgroundJobs,
+  useAiTryOnBackgroundJobs,
+  type AiTryOnBackgroundJob,
+  type AiTryOnBackgroundJobs,
+} from "../services/aiTryOnBackgroundJobs";
+import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
+import type {
+  AiTryOnGenerationRequest,
+  AiTryOnStoredPreviewSummary,
+} from "../utils/aiTryOnGatewayContract";
+
+/**
+ * Step 5 AI Try-on photo panel: wearer picker, consent notice, "How we use
+ * your photo", photo tips, photo picker, Generate, result and errors.
+ *
+ * Privacy boundary: the photo lives only in this component's memory and in
+ * the generation request; it is dropped once the preview is made. The
+ * preview is shown from memory; the server keeps it privately (Step 6) and
+ * this panel restores it after a reload through the owner-only gateway.
+ * Nothing here is written to the draft, the order or browser storage; the
+ * parent receives only the opaque result reference.
+ */
+
+export const AI_TRY_ON_CONSENT_NOTICE =
+  "By uploading a photo, you agree that The Odogwu Heritage can send it to Google's Gemini AI to create a try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed to it.";
+
+export const AI_TRY_ON_HOW_WE_USE_BULLETS: ReadonlyArray<{ label: string; text: string }> = [
+  {
+    label: "What we send:",
+    text: "your photo, the garment picture and, if you chose a fabric, the fabric picture. We also send the design choices and fit measurements for this person. We send them to Google's Gemini AI only to create your preview. We never send names, contact details, prices or the letters of a monogram.",
+  },
+  {
+    label: "What Google does with it:",
+    text: "Google processes it for us as our service provider. Under Google's paid API terms, it does not use your photo or the preview to improve its products. Google keeps each request and result for up to 55 days, only to detect misuse, and it may store them briefly in any country where it has facilities.",
+  },
+  {
+    label: "What we keep:",
+    text: AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY.panelNotice,
+  },
+  {
+    label: "Fair use:",
+    text: "each order gets 5 previews, shared by everyone on the order, and a signed-in account gets up to 15 previews in any 30 days. We also limit how many requests one connection can make in an hour. To count these, we store scrambled codes made from your order, your account and your IP address, never the photo itself.",
+  },
+  {
+    label: "It's optional:",
+    text: "you can continue without AI Try-on. It never changes your order, price or measurements.",
+  },
+  {
+    label: "It's a preview:",
+    text: "the image is made by AI and is only a guide.",
+  },
+];
+
+export const AI_TRY_ON_PHOTO_TIPS: readonly string[] = [
+  "One person only, standing, facing the camera.",
+  "Full body from head to feet, if you can.",
+  "A plain background and soft, even light.",
+  "A real photo, not a screenshot. No app buttons, text, frames, filters or stickers.",
+  "Nothing covering your body, such as a bag, coat or a large hat.",
+  "JPEG, PNG or WebP.",
+];
+
+export const AI_TRY_ON_PREVIEW_DISCLAIMER =
+  "This is an AI preview to help you picture your outfit. The real garment, fabric colour, pattern placement and fit may look different. We make your order from your measurements and choices, not from this image.";
+
+/**
+ * Model mode ("No photo? Try it on a model"). Wording approved by Xavier.
+ * No consent notice: no personal photo is involved.
+ */
+export const AI_TRY_ON_MODEL_COPY = {
+  option: "No photo? Try it on a model",
+  heading: "Choose a model",
+  intro: "See the design on one of our AI-generated models instead of a photo of you.",
+  filterAll: "All",
+  shownOnModel: "Shown on one of our AI-generated models, not on you, so the fit won't match your measurements.",
+  usePhotoInstead: "Use a photo instead",
+} as const;
+
+export const AI_TRY_ON_MESSAGES = {
+  outOfPreviews:
+    "You've used all 5 AI Try-on previews for this order. They're shared by everyone on the order. You can still continue without one.",
+  // Pending Xavier's approval (account cap, follow-up to Step 7).
+  accountOutOfPreviews:
+    "You've used all 15 AI Try-on previews on your account in the last 30 days. You can still continue without one.",
+  tooManyTries: "That's a lot of tries in a short time. Please wait a while and try again.",
+  failed: (left: number) =>
+    `We couldn't create a preview this time. This try wasn't counted, so you still have ${left} left. Try again, or use a different photo.`,
+  photoBlocked: "We couldn't use this photo. This try wasn't counted. Please try a different photo.",
+  previewDeleted: "Your preview was deleted.",
+  deleteFailed: "We couldn't delete your preview. Please try again.",
+} as const;
+
+
+type PanelMessage =
+  | { kind: "preview_deleted" }
+  | { kind: "delete_failed" }
+  | { kind: "out_of_previews" }
+  | { kind: "account_out_of_previews" }
+  | { kind: "too_many_tries" }
+  | { kind: "failed"; left: number }
+  /** Still busy after the retries (try refunded). */
+  | { kind: "busy_failed" }
+  | { kind: "photo_blocked" };
+
+const messageText = (message: PanelMessage): string => {
+  switch (message.kind) {
+    case "out_of_previews":
+      return AI_TRY_ON_MESSAGES.outOfPreviews;
+    case "account_out_of_previews":
+      return AI_TRY_ON_MESSAGES.accountOutOfPreviews;
+    case "too_many_tries":
+      return AI_TRY_ON_MESSAGES.tooManyTries;
+    case "failed":
+      return AI_TRY_ON_MESSAGES.failed(message.left);
+    case "busy_failed":
+      return AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
+    case "photo_blocked":
+      return AI_TRY_ON_MESSAGES.photoBlocked;
+    case "preview_deleted":
+      return AI_TRY_ON_MESSAGES.previewDeleted;
+    case "delete_failed":
+      return AI_TRY_ON_MESSAGES.deleteFailed;
+  }
+};
+
+interface WearerPreview {
+  inputFingerprint: string;
+  mimeType: string;
+  data: string;
+  /** Server-side id when the preview is stored privately. */
+  storedPreviewId: string | null;
+  /** Model mode: the default model shown. */
+  modelId: string | null;
+}
+
+interface SelectedPhoto {
+  wearerId: string;
+  image: AiTryOnInlineImage;
+  thumbnailUrl: string | null;
+}
+
+export interface AiTryOnPhotoPanelProps {
+  targets: readonly AiTryOnWearerTarget[];
+  /** Step 7: who is calling, for the server-issued session. */
+  credentials?: AiTryOnCredentials;
+  triesPerOrder: number;
+  /** From GET; null when the server did not report it. */
+  initialTriesRemaining: number | null;
+  /**
+   * Signed-in customers: tries left in the account's rolling 30 days
+   * (15 across all orders). Null for guests. The panel shows the smaller
+   * of this and the order's tries.
+   */
+  initialAccountTriesRemaining?: number | null;
+  onPreviewCreated: (event: {
+    wearerId: string;
+    resultReference: AiTryOnVerifiedPrivateResultReference;
+    /** The wearer's design the preview was made for. */
+    inputFingerprint: string;
+  }) => void;
+  /** The gateway went away mid-flow (e.g. global cap reached). */
+  onUnavailable: () => void;
+  /** True while a preview is generating; the step hides its skip button. */
+  onGeneratingChange?: (generating: boolean) => void;
+  requestPreview?: (request: AiTryOnGenerationRequest) => Promise<AiTryOnPreviewOutcome>;
+  /** Stored, still-valid previews of this order (from GET). */
+  storedPreviews?: readonly AiTryOnStoredPreviewSummary[];
+  /** Owner-only read of a stored preview; null when it is gone. */
+  loadStoredPreview?: (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
+  /** Deletes a stored preview; true on success. */
+  deleteStoredPreview?: (previewId: string) => Promise<boolean>;
+  preparePhoto?: (file: File) => Promise<AiTryOnInlineImage>;
+  createThumbnailUrl?: (file: File) => string | null;
+  revokeThumbnailUrl?: (url: string) => void;
+  /** Background requests (one per wearer); outlive this panel. */
+  jobStore?: AiTryOnBackgroundJobs;
+  /** Busy retries given up: refunds the held try on the server. */
+  releaseBusyJob?: (jobId: string, wearerKey: string) => Promise<unknown>;
+  /** Order/identity scope of the jobs this panel shows. */
+  jobScope?: string;
+}
+
+const defaultThumbnail = (file: File) =>
+  typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+    ? URL.createObjectURL(file)
+    : null;
+const defaultRevoke = (url: string) => {
+  if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+    URL.revokeObjectURL(url);
+  }
+};
+
+export const AiTryOnPhotoPanel = ({
+  targets,
+  credentials,
+  triesPerOrder,
+  initialTriesRemaining,
+  initialAccountTriesRemaining = null,
+  onPreviewCreated,
+  onUnavailable,
+  onGeneratingChange,
+  requestPreview = (request) => requestAiTryOnPreview({ request, credentials }),
+  storedPreviews = [],
+  loadStoredPreview = async () => null,
+  deleteStoredPreview = async () => false,
+  preparePhoto = (file) => prepareAiTryOnPersonPhoto(file),
+  createThumbnailUrl = defaultThumbnail,
+  revokeThumbnailUrl = defaultRevoke,
+  jobStore = aiTryOnBackgroundJobs,
+  releaseBusyJob = (jobId, wearerKey) => releaseAiTryOnBusyJob({ credentials, jobId, wearerKey }),
+  jobScope = "default",
+}: AiTryOnPhotoPanelProps) => {
+  const idPrefix = useId();
+  const howWeUseId = `${idPrefix}-how-we-use`;
+  const photoInputId = `${idPrefix}-photo`;
+  const tipsId = `${idPrefix}-tips`;
+  const [selectedWearerId, setSelectedWearerId] = useState<string>(
+    targets[0]?.wearerId || "",
+  );
+  const [howWeUseOpen, setHowWeUseOpen] = useState(false);
+  const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const [triesRemaining, setTriesRemaining] = useState<number | null>(initialTriesRemaining);
+  const [accountTriesRemaining, setAccountTriesRemaining] = useState<number | null>(
+    initialAccountTriesRemaining,
+  );
+  const [previews, setPreviews] = useState<Record<string, WearerPreview>>({});
+  /** Stored previews by wearer, minus any deleted in this session. */
+  const [stored, setStored] = useState<Record<string, AiTryOnStoredPreviewSummary>>(() =>
+    Object.fromEntries(storedPreviews.map((entry) => [entry.wearerKey, entry])),
+  );
+  const [deleting, setDeleting] = useState(false);
+  const restoringRef = useRef(new Set<string>());
+  /** Model mode: the default model chosen for each wearer. */
+  const [modelByWearer, setModelByWearer] = useState<Record<string, string>>({});
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelFilter, setModelFilter] = useState<AiTryOnModelGroup | "all">("all");
+  const [message, setMessage] = useState<PanelMessage | null>(() =>
+    initialAccountTriesRemaining === 0
+      ? { kind: "account_out_of_previews" }
+      : initialTriesRemaining === 0
+        ? { kind: "out_of_previews" }
+        : null,
+  );
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const jobs = useAiTryOnBackgroundJobs(jobStore);
+  const jobFor = (wearerId: string | undefined): AiTryOnBackgroundJob | null => {
+    const job = wearerId ? jobs[wearerId] : undefined;
+    return job && job.scope === jobScope ? job : null;
+  };
+  const anyGenerating = targets.some((entry) => jobFor(entry.wearerId)?.status === "running");
+  const onGeneratingChangeRef = useRef(onGeneratingChange);
+  onGeneratingChangeRef.current = onGeneratingChange;
+  const onPreviewCreatedRef = useRef(onPreviewCreated);
+  onPreviewCreatedRef.current = onPreviewCreated;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
+  const mountedAtRef = useRef(Date.now());
+  const resultRef = useRef<HTMLElement | null>(null);
+  const [highlightResult, setHighlightResult] = useState(false);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    onGeneratingChangeRef.current?.(anyGenerating);
+  }, [anyGenerating]);
+  // Never leave the skip button hidden if the panel goes away mid-request.
+  useEffect(() => () => onGeneratingChangeRef.current?.(false), []);
+  const photoRef = useRef<SelectedPhoto | null>(null);
+  photoRef.current = photo;
+
+  useEffect(() => {
+    setTriesRemaining(initialTriesRemaining);
+    setAccountTriesRemaining(initialAccountTriesRemaining);
+    if (initialAccountTriesRemaining === 0) setMessage({ kind: "account_out_of_previews" });
+    else if (initialTriesRemaining === 0) setMessage({ kind: "out_of_previews" });
+  }, [initialTriesRemaining, initialAccountTriesRemaining]);
+
+  // Keep the selection valid when wearers change.
+  useEffect(() => {
+    if (!targets.some((target) => target.wearerId === selectedWearerId)) {
+      setSelectedWearerId(targets[0]?.wearerId || "");
+    }
+  }, [targets, selectedWearerId]);
+
+  // Drop the in-memory photo on unmount.
+  useEffect(
+    () => () => {
+      const current = photoRef.current;
+      if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
+    },
+    [revokeThumbnailUrl],
+  );
+
+  const target =
+    targets.find((entry) => entry.wearerId === selectedWearerId) || targets[0] || null;
+  /** This wearer's request is running (other wearers may still be chosen). */
+  const generating = jobFor(target?.wearerId)?.status === "running";
+  const busy = generating && Boolean(jobFor(target?.wearerId)?.busy);
+
+  // Tell the job store who is on screen: a request that ends while its
+  // wearer is shown here reports inline, otherwise with a toast.
+  useEffect(() => {
+    jobStore.setVisibleWearer(target?.wearerId ?? null);
+  }, [jobStore, target?.wearerId]);
+  useEffect(() => () => jobStore.setVisibleWearer(null), [jobStore]);
+  const showPicker = targets.length > 1;
+  // Tries shown = the smaller of the order's and (signed in) the account's.
+  const left = Math.min(triesRemaining ?? triesPerOrder, accountTriesRemaining ?? Infinity);
+  const outOfPreviews: PanelMessage =
+    accountTriesRemaining === 0 ? { kind: "account_out_of_previews" } : { kind: "out_of_previews" };
+  const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
+  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
+  const preview =
+    target && target.inputFingerprint
+      ? previews[target.wearerId]?.inputFingerprint === target.inputFingerprint
+        ? previews[target.wearerId]
+        : null
+      : null;
+  const hasPreview = (entry: AiTryOnWearerTarget) =>
+    Boolean(
+      entry.inputFingerprint &&
+        (previews[entry.wearerId]?.inputFingerprint === entry.inputFingerprint ||
+          stored[entry.wearerId]?.inputFingerprint === entry.inputFingerprint),
+    );
+
+  // Reload: restore the selected wearer's stored preview while it is valid
+  // for that wearer's current design.
+  useEffect(() => {
+    if (!target?.inputFingerprint) return;
+    const summary = stored[target.wearerId];
+    if (!summary || summary.inputFingerprint !== target.inputFingerprint) return;
+    if (previews[target.wearerId]?.inputFingerprint === target.inputFingerprint) return;
+    if (restoringRef.current.has(summary.previewId)) return;
+    restoringRef.current.add(summary.previewId);
+    const wearerId = target.wearerId;
+    void loadStoredPreview(summary.previewId).then((image) => {
+      if (!image) {
+        setStored((current) => {
+          const next = { ...current };
+          if (next[wearerId]?.previewId === summary.previewId) delete next[wearerId];
+          return next;
+        });
+        return;
+      }
+      setPreviews((current) =>
+        current[wearerId]?.inputFingerprint === summary.inputFingerprint
+          ? current
+          : {
+              ...current,
+              [wearerId]: {
+                inputFingerprint: summary.inputFingerprint,
+                mimeType: image.mimeType,
+                data: image.data,
+                storedPreviewId: summary.previewId,
+                modelId: summary.modelId ?? null,
+              },
+            },
+      );
+      // A restored model preview brings back that wearer's model choice.
+      const restoredModelId = summary.modelId;
+      if (restoredModelId && findAiTryOnDefaultModel(restoredModelId)) {
+        setModelByWearer((current) =>
+          current[wearerId] ? current : { ...current, [wearerId]: restoredModelId },
+        );
+        setModelPickerOpen(true);
+      }
+    });
+  }, [target?.wearerId, target?.inputFingerprint, stored, previews, loadStoredPreview]);
+
+  const handleDeletePreview = async () => {
+    if (!target || !preview?.storedPreviewId || deleting) return;
+    const wearerId = target.wearerId;
+    const previewId = preview.storedPreviewId;
+    setDeleting(true);
+    try {
+      const ok = await deleteStoredPreview(previewId);
+      if (!ok) {
+        setMessage({ kind: "delete_failed" });
+        return;
+      }
+      setPreviews((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      setStored((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      // Clearing the preview also clears this wearer's model choice.
+      setModelByWearer((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      setMessage({ kind: "preview_deleted" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+  const missingGarmentImage = Boolean(target && !target.garmentImageUrl);
+  const canGenerate =
+    Boolean(target?.inputFingerprint) &&
+    !missingGarmentImage &&
+    Boolean(currentPhoto || currentModel) &&
+    !generating &&
+    !preparingPhoto &&
+    left > 0;
+
+  const clearPhoto = () => {
+    setPhoto((current) => {
+      if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
+      return null;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const selectWearer = (wearerId: string) => {
+    if (wearerId === selectedWearerId) return;
+    // A photo belongs to one person; never carry it to another wearer.
+    clearPhoto();
+    setPhotoError(null);
+    setMessage(left === 0 ? outOfPreviews : null);
+    setSelectedWearerId(wearerId);
+    setModelPickerOpen(Boolean(modelByWearer[wearerId]));
+  };
+
+  const chooseModel = (modelId: string) => {
+    if (!target || generating) return;
+    // A wearer uses either a photo or a model, never both.
+    clearPhoto();
+    setPhotoError(null);
+    setModelByWearer((current) => ({ ...current, [target.wearerId]: modelId }));
+  };
+
+  const closeModelPicker = () => {
+    if (!target || generating) return;
+    setModelPickerOpen(false);
+    setModelByWearer((current) => {
+      const next = { ...current };
+      delete next[target.wearerId];
+      return next;
+    });
+  };
+
+  const handlePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file || !target) return;
+    setMessage(left === 0 ? outOfPreviews : null);
+    const invalid = validateAiTryOnPhotoFile(file);
+    if (invalid) {
+      clearPhoto();
+      setPhotoError(invalid);
+      return;
+    }
+    setPhotoError(null);
+    setPreparingPhoto(true);
+    try {
+      const image = await preparePhoto(file);
+      // A photo replaces this wearer's model choice.
+      setModelPickerOpen(false);
+      setModelByWearer((current) => {
+        const next = { ...current };
+        delete next[target.wearerId];
+        return next;
+      });
+      setPhoto((current) => {
+        if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
+        return { wearerId: target.wearerId, image, thumbnailUrl: createThumbnailUrl(file) };
+      });
+    } catch (error) {
+      clearPhoto();
+      setPhotoError(
+        error instanceof AiTryOnPhotoError ? error.message : AI_TRY_ON_PHOTO_PROCESSING_ERROR,
+      );
+    } finally {
+      setPreparingPhoto(false);
+    }
+  };
+
+  /** Applies a settled background job to this panel (once per job). */
+  const applyJob = (job: AiTryOnBackgroundJob) => {
+    const wearerId = job.wearerId;
+    // Tries left come from the response only when it ended while this panel
+    // was open; otherwise the step's fresh availability read has them.
+    const live = (job.settledAt ?? 0) >= mountedAtRef.current && Boolean(job.outcome);
+    const outcome = job.outcome;
+    if (job.status === "completed" && job.preview) {
+      const preview = job.preview;
+      setPreviews((current) => ({
+        ...current,
+        [wearerId]: {
+          inputFingerprint: job.inputFingerprint,
+          mimeType: preview.mimeType,
+          data: preview.data,
+          storedPreviewId: job.storedPreviewId,
+          modelId: job.modelId,
+        },
+      }));
+      // The new preview replaces this wearer's stored one on the server.
+      setStored((current) => {
+        const next = { ...current };
+        delete next[wearerId];
+        return next;
+      });
+      // The photo has done its job; drop it from memory.
+      if (photoRef.current?.wearerId === wearerId) clearPhoto();
+      if (live && outcome?.kind === "completed") {
+        setTriesRemaining(
+          (current) => outcome.orderTriesRemaining ?? Math.max(0, (current ?? triesPerOrder) - 1),
+        );
+        if (typeof outcome.accountTriesRemaining === "number") {
+          setAccountTriesRemaining(outcome.accountTriesRemaining);
+        }
+      }
+      return;
+    }
+    if (!live || !outcome) return;
+    // Messages show only for the wearer on screen when the request ended.
+    const show = (next: PanelMessage) => {
+      if (job.seenInline) setMessage(next);
+    };
+    switch (outcome.kind) {
+      case "order_limit_reached":
+        setTriesRemaining(0);
+        show({ kind: "out_of_previews" });
+        break;
+      case "account_limit_reached":
+        setAccountTriesRemaining(0);
+        show({ kind: "account_out_of_previews" });
+        break;
+      case "rate_limited":
+        show({ kind: "too_many_tries" });
+        break;
+      case "photo_blocked":
+        if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
+        if (typeof outcome.accountTriesRemaining === "number") {
+          setAccountTriesRemaining(outcome.accountTriesRemaining);
+        }
+        show({ kind: "photo_blocked" });
+        break;
+      case "failed": {
+        const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
+        const accountRemaining =
+          typeof outcome.accountTriesRemaining === "number"
+            ? outcome.accountTriesRemaining
+            : accountTriesRemaining;
+        setTriesRemaining(remaining);
+        setAccountTriesRemaining(accountRemaining);
+        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
+        break;
+      }
+      case "busy_failed":
+        if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
+        if (typeof outcome.accountTriesRemaining === "number") {
+          setAccountTriesRemaining(outcome.accountTriesRemaining);
+        }
+        show({ kind: "busy_failed" });
+        break;
+      case "busy":
+        // Never settles a job (the store keeps retrying).
+        break;
+      case "unavailable":
+        onUnavailableRef.current();
+        break;
+    }
+  };
+
+  useEffect(() => {
+    for (const job of Object.values(jobs)) {
+      if (job.scope !== jobScope || job.status === "running" || job.appliedByPanel) continue;
+      if (!targets.some((entry) => entry.wearerId === job.wearerId)) continue;
+      jobStore.markAppliedByPanel(job.wearerId);
+      applyJob(job);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, jobScope, targets]);
+
+  // "View preview" from a toast: show that wearer, then scroll to and
+  // briefly highlight the preview.
+  const focusJob = Object.values(jobs).find(
+    (job) => job.scope === jobScope && job.focusRequested && targets.some((entry) => entry.wearerId === job.wearerId),
+  );
+  useEffect(() => {
+    if (!focusJob) return;
+    if (focusJob.wearerId !== target?.wearerId) {
+      selectWearer(focusJob.wearerId);
+      return;
+    }
+    // "Try again" (or a preview that no longer matches): show the wearer only.
+    if (focusJob.status !== "completed" || !preview) {
+      if (focusJob.status === "completed" && focusJob.inputFingerprint === target?.inputFingerprint) return;
+      jobStore.clearFocus(focusJob.wearerId);
+      return;
+    }
+    jobStore.clearFocus(focusJob.wearerId);
+    // After the step's own scroll to its top has run. Not tied to this
+    // effect's cleanup: clearing the request above re-runs it.
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => {
+      focusTimerRef.current = null;
+      resultRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      setHighlightResult(true);
+    }, 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusJob?.wearerId, focusJob?.focusRequested, target?.wearerId, preview]);
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!highlightResult) return;
+    const timer = setTimeout(() => setHighlightResult(false), 2400);
+    return () => clearTimeout(timer);
+  }, [highlightResult]);
+
+  const handleGenerate = () => {
+    if (!target || !target.inputFingerprint || !target.garmentImageUrl) return;
+    const model = currentPhoto ? null : currentModel;
+    if (!currentPhoto && !model) return;
+    if (left <= 0) {
+      setMessage(outOfPreviews);
+      return;
+    }
+    if (jobStore.isRunning(target.wearerId)) return;
+    const wearerId = target.wearerId;
+    const inputFingerprint = target.inputFingerprint;
+    setMessage(null);
+    if (currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
+      setMessage({ kind: "failed", left });
+      return;
+    }
+    // Step 6: the server loads the catalogue pictures itself, so browser
+    // CORS on the Storage bucket no longer matters.
+    const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
+    // Model mode sends no fit hints: they describe the customer, not the
+    // model, and would stop a saved model result from being reused.
+    const request: AiTryOnGenerationRequest = {
+      mode: fabricMode ? "fabric" : "garment",
+      inputFingerprint,
+      wearerKey: wearerId,
+      ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
+      garmentImageUrl: target.garmentImageUrl,
+      ...(fabricMode ? { fabricSwatchImageUrl: target.fabricSwatchImageUrl! } : {}),
+      ...(!model && target.fitHints.length ? { fitHints: target.fitHints } : {}),
+      ...(target.orderDetails ? { orderDetails: target.orderDetails } : {}),
+    };
+    // The request belongs to the job store, not this panel: it keeps going
+    // when the customer moves to another step.
+    jobStore.start({
+      wearerId,
+      wearerName: targets.length > 1 ? target.label : null,
+      inputFingerprint,
+      scope: jobScope,
+      modelId: model ? model.id : null,
+      run: async (busyJobId) => {
+        const outcome = await requestPreview(busyJobId ? { ...request, busyJobId } : request);
+        if (outcome.kind === "completed") {
+          onPreviewCreatedRef.current({
+            wearerId,
+            resultReference: outcome.resultReference,
+            inputFingerprint,
+          });
+        }
+        return outcome;
+      },
+      giveUpBusy: (jobId) => releaseBusyJob(jobId, wearerId),
+    });
+  };
+
+  if (!target) return null;
+
+  const triesLabel = `${left} ${left === 1 ? "try" : "tries"} left`;
+
+  return (
+    <div className="space-y-5" data-ai-try-on-panel="live">
+      {showPicker && (
+        <fieldset className="min-w-0">
+          <legend className="font-serif text-lg font-bold text-heritage-green">
+            Who's this for?
+          </legend>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+            Choose the person in the photo. We'll use only their garments, fabric, details and
+            measurements.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Who's this for?">
+            {targets.map((entry) => {
+              const selected = entry.wearerId === target.wearerId;
+              const done = hasPreview(entry);
+              return (
+                <button
+                  key={entry.wearerId}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => selectWearer(entry.wearerId)}
+                  data-wearer-chip={entry.wearerId}
+                  className={`inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+                    selected
+                      ? "border-heritage-green bg-heritage-green text-white"
+                      : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                  }`}
+                >
+                  <span className="min-w-0 truncate">{entry.label}</span>
+                  {done && (
+                    <>
+                      <CheckCircle2
+                        aria-hidden="true"
+                        size={16}
+                        className={selected ? "text-white" : "text-heritage-green"}
+                      />
+                      <span className="sr-only">(preview ready)</span>
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
+      {!currentModel && (
+        <>
+        <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
+          <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
+            {AI_TRY_ON_CONSENT_NOTICE}{" "}
+            <button
+              type="button"
+              aria-expanded={howWeUseOpen}
+              aria-controls={howWeUseId}
+              onClick={() => setHowWeUseOpen((open) => !open)}
+              className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            >
+              How we use your photo
+              <ChevronDown
+                aria-hidden="true"
+                size={14}
+                className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+          </p>
+          {howWeUseOpen && (
+            <ul
+              id={howWeUseId}
+              className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
+            >
+              {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
+                <li key={bullet.label}>
+                  <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
+                  {bullet.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h3 id={tipsId} className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">
+            Tips for a good preview
+          </h3>
+          <ul
+            aria-labelledby={tipsId}
+            // Column flow (not a grid): each column stacks on its own, so a
+            // two-line tip never leaves a gap beside the other column's rows.
+            className="mt-2 text-sm leading-relaxed text-heritage-ink/75 sm:columns-2 sm:gap-x-8"
+          >
+            {AI_TRY_ON_PHOTO_TIPS.map((tip) => (
+              <li key={tip} className="mb-1.5 flex break-inside-avoid gap-2">
+                <CheckCircle2 aria-hidden="true" size={15} className="mt-0.5 shrink-0 text-heritage-green/70" />
+                <span>{tip}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        </>
+      )}
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <input
+            ref={fileInputRef}
+            id={photoInputId}
+            type="file"
+            accept={AI_TRY_ON_PHOTO_ACCEPT}
+            className="sr-only"
+            disabled={generating || preparingPhoto || missingGarmentImage}
+            onChange={handlePhotoChange}
+          />
+          <label
+            htmlFor={photoInputId}
+            className={`inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-heritage-green/40 bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green hover:border-heritage-green sm:w-auto ${
+              generating || preparingPhoto || missingGarmentImage ? "pointer-events-none opacity-60" : ""
+            }`}
+          >
+            {preparingPhoto ? (
+              <Loader2 aria-hidden="true" size={15} className="animate-spin" />
+            ) : (
+              <ImagePlus aria-hidden="true" size={15} />
+            )}
+            {currentPhoto ? "Change photo" : "Choose a photo"}
+          </label>
+          {!modelPickerOpen && (
+            <button
+              type="button"
+              onClick={() => setModelPickerOpen(true)}
+              disabled={generating || missingGarmentImage}
+              data-ai-try-on-model-option
+              className="inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <UserRound aria-hidden="true" size={15} />
+              {AI_TRY_ON_MODEL_COPY.option}
+            </button>
+          )}
+          {modelPickerOpen && (
+            <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker>
+              <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
+                {AI_TRY_ON_MODEL_COPY.heading}
+              </legend>
+              <p className="text-sm leading-relaxed text-heritage-ink/70">{AI_TRY_ON_MODEL_COPY.intro}</p>
+              <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: filter`}>
+                {(["all", "men", "women"] as const).map((group) => (
+                  <button
+                    key={group}
+                    type="button"
+                    role="radio"
+                    aria-checked={modelFilter === group}
+                    onClick={() => setModelFilter(group)}
+                    data-ai-try-on-model-filter={group}
+                    className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-bold uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                      modelFilter === group
+                        ? "border-heritage-green bg-heritage-green text-white"
+                        : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                    }`}
+                  >
+                    {group === "all" ? AI_TRY_ON_MODEL_COPY.filterAll : AI_TRY_ON_MODEL_GROUP_LABELS[group]}
+                  </button>
+                ))}
+              </div>
+              {(["men", "women"] as const)
+                .filter((group) => modelFilter === "all" || modelFilter === group)
+                .map((group) => (
+                  <div key={group} className="mt-4" data-ai-try-on-model-group={group}>
+                    <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">
+                      {AI_TRY_ON_MODEL_GROUP_LABELS[group]}
+                    </h4>
+                    <div
+                      className="mt-2 flex gap-3 overflow-x-auto pb-2"
+                      role="radiogroup"
+                      aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: ${AI_TRY_ON_MODEL_GROUP_LABELS[group]}`}
+                    >
+                      {AI_TRY_ON_DEFAULT_MODELS.filter((entry) => entry.group === group).map((entry) => {
+                        const selected = currentModel?.id === entry.id;
+                        return (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            disabled={generating}
+                            onClick={() => chooseModel(entry.id)}
+                            data-ai-try-on-model={entry.id}
+                            className={`flex w-24 shrink-0 flex-col items-center gap-1 rounded-xl border-2 p-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+                              selected ? "border-heritage-green bg-heritage-cream/50" : "border-transparent hover:border-heritage-green/30"
+                            }`}
+                          >
+                            <img
+                              src={aiTryOnDefaultModelImageUrl(entry)}
+                              alt=""
+                              loading="lazy"
+                              width={88}
+                              height={120}
+                              className="h-[7.5rem] w-[5.5rem] rounded-lg bg-heritage-cream/40 object-cover"
+                            />
+                            <span className="text-[11px] leading-tight text-heritage-ink/80">{entry.label}</span>
+                            {selected && <span className="sr-only">(selected)</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              <button
+                type="button"
+                onClick={closeModelPicker}
+                disabled={generating}
+                data-ai-try-on-model-close
+                className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {AI_TRY_ON_MODEL_COPY.usePhotoInstead}
+              </button>
+            </fieldset>
+          )}
+          {currentPhoto?.thumbnailUrl && (
+            <img
+              src={currentPhoto.thumbnailUrl}
+              alt={`Photo chosen for ${target.label}`}
+              className="h-32 w-24 rounded-lg border border-heritage-green/15 object-cover"
+            />
+          )}
+          {photoError && (
+            <p role="alert" className="text-sm font-medium text-red-700">
+              {photoError}
+            </p>
+          )}
+          {missingGarmentImage && (
+            <p className="text-sm leading-relaxed text-heritage-ink/70">
+              A preview needs a catalogue picture of this garment, so it isn't available for
+              uploaded designs yet.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={!canGenerate}
+            aria-describedby={message ? `${idPrefix}-message` : undefined}
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition-opacity hover:bg-heritage-green/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+          >
+            {generating ? (
+              <Loader2 aria-hidden="true" size={15} className="animate-spin" />
+            ) : (
+              <Sparkles aria-hidden="true" size={15} />
+            )}
+            <span>{preview ? "Make a new preview" : "Generate preview"}</span>
+            <span className="font-medium normal-case tracking-normal text-white/80">· {triesLabel}</span>
+          </button>
+        </div>
+      </div>
+
+      <div aria-live="polite" aria-atomic="true">
+        {generating && (
+          <div
+            className="flex items-center gap-3 rounded-xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
+            data-ai-try-on-loading={busy ? "busy" : ""}
+          >
+            <Loader2 aria-hidden="true" size={20} className="shrink-0 animate-spin text-heritage-green" />
+            <p className="text-sm text-heritage-ink/80">
+              {busy
+                ? AI_TRY_ON_BACKGROUND_COPY.panelBusy
+                : AI_TRY_ON_BACKGROUND_COPY.panelGenerating(targets.length > 1 ? target.label : null)}
+            </p>
+          </div>
+        )}
+        {!generating && message && (
+          <div
+            id={`${idPrefix}-message`}
+            role={message.kind === "preview_deleted" ? "status" : "alert"}
+            data-ai-try-on-message={message.kind}
+            className={
+              message.kind === "preview_deleted"
+                ? "flex items-start gap-3 rounded-xl border border-heritage-green/25 bg-heritage-cream/40 p-4"
+                : "flex items-start gap-3 rounded-xl border border-heritage-gold/40 bg-amber-50 p-4"
+            }
+          >
+            {message.kind === "preview_deleted" ? (
+              <CheckCircle2 aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-green" />
+            ) : (
+              <AlertTriangle aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
+            )}
+            <p className="text-sm leading-relaxed text-heritage-ink/85">{messageText(message)}</p>
+          </div>
+        )}
+      </div>
+
+      {preview && !generating && (
+        <figure
+          ref={resultRef}
+          className={`space-y-3 rounded-2xl transition-shadow duration-500 ${
+            highlightResult ? "ring-4 ring-heritage-gold/70 ring-offset-4" : ""
+          }`}
+          data-ai-try-on-result
+          data-ai-try-on-highlight={highlightResult ? "true" : undefined}
+        >
+          <img
+            src={`data:${preview.mimeType};base64,${preview.data}`}
+            alt={`AI try-on preview for ${target.label}`}
+            className="mx-auto max-h-[32rem] w-auto max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain"
+          />
+          <figcaption className="space-y-1 text-xs leading-relaxed text-heritage-ink/65">
+            {preview.modelId && (
+              <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-model>
+                {AI_TRY_ON_MODEL_COPY.shownOnModel}
+              </span>
+            )}
+            <span className="block">{AI_TRY_ON_PREVIEW_DISCLAIMER}</span>
+          </figcaption>
+          {preview.storedPreviewId && (
+            <button
+              type="button"
+              onClick={handleDeletePreview}
+              disabled={deleting}
+              data-ai-try-on-delete
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/25 bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green hover:border-heritage-green disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? (
+                <Loader2 aria-hidden="true" size={14} className="animate-spin" />
+              ) : (
+                <Trash2 aria-hidden="true" size={14} />
+              )}
+              Delete my preview
+            </button>
+          )}
+        </figure>
+      )}
+    </div>
+  );
+};

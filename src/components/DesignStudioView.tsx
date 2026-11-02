@@ -33,6 +33,7 @@ import {
   CustomDetailDemographic,
   FabricGarmentType,
   GarmentTypeStepSelection,
+  AiTryOnVerifiedPrivateResultReference,
   AiTryOnWorkflowStateV1,
   FutureMeasurementStateV1,
   FutureShippingStateV1,
@@ -332,13 +333,52 @@ import {
   setGarmentScopedCustomDetailText,
 } from "../utils/garmentScopedCustomDetailInputsState";
 import {
+  AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   createEmptyAiTryOnWorkflowState,
   isFutureCustomDetailsContentReady,
   normalizeAiTryOnWorkflowState,
   reconcileAiTryOnWorkflow,
+  recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
+import { buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
+import {
+  deleteStoredAiTryOnPreviews,
+  fetchAiTryOnAvailability,
+  fetchStoredAiTryOnPreview,
+  saveAiTryOnOrderSelection,
+  releaseAiTryOnBusyJob,
+  type AiTryOnAvailabilityDetails,
+} from "../services/aiTryOnGateway";
+import {
+  AiTryOnOrderPreviewThumbnails,
+  selectAiTryOnOrderPreviews,
+  type AiTryOnOrderPreviewSummary,
+} from "./AiTryOnOrderPreviewThumbnails";
+import { AI_TRY_ON_ORDER_IMAGE_COPY } from "../utils/aiTryOnOrderImageCopy";
+import {
+  AI_TRY_ON_GUEST_IDENTITY_KEY,
+  aiTryOnCredentialsForIdentity,
+  saveAiTryOnSessionToken,
+} from "../services/aiTryOnSessionToken";
+import {
+  createAiTryOnCredentials,
+  type AiTryOnCredentials,
+} from "../services/aiTryOnGateway";
+import { AiTryOnPhotoPanel } from "./AiTryOnPhotoPanel";
+import {
+  aiTryOnBackgroundJobs,
+  useAiTryOnBackgroundJobs,
+} from "../services/aiTryOnBackgroundJobs";
+import {
+  AiTryOnBackLink,
+  AiTryOnBackgroundToasts,
+  AiTryOnGeneratingChip,
+  aiTryOnToastKind,
+} from "./AiTryOnBackgroundToasts";
+import { buildAiTryOnFitHints } from "../utils/aiTryOnFitHints";
+import { buildAiTryOnOrderDetails } from "../utils/aiTryOnOrderDetails";
 import {
   createEmptyFutureMeasurementState,
   getActiveFutureMeasurementEntered,
@@ -1228,6 +1268,13 @@ export default function DesignStudioView({
     useState(0);
   const [futureAiTryOnWorkflow, setFutureAiTryOnWorkflow] =
     useState<AiTryOnWorkflowStateV1>(createEmptyAiTryOnWorkflowState);
+  /** `GET /api/ai-try-on`; "unknown" until the Try-on step first asks. */
+  const [aiTryOnAvailability, setAiTryOnAvailability] = useState<
+    AiTryOnAvailabilityDetails | { status: "unknown" }
+  >({ status: "unknown" });
+  const aiTryOnGatewayAvailable = aiTryOnAvailability.status === "available";
+  /** A Try-on preview is generating; the step hides its skip button. */
+  const [aiTryOnGenerating, setAiTryOnGenerating] = useState(false);
   const [futureMeasurementState, setFutureMeasurementState] =
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
@@ -3637,6 +3684,43 @@ export default function DesignStudioView({
   );
   const isFuturePersonalizedAdditionsNavigationReady =
     isFutureCustomDetailsStageReady && monogramNamesReady;
+  // Tier-1 fit hints come only from the customer's own Measurement step.
+  // They join the fingerprint only once Measurement precedes AI Try-on (#1181).
+  const futureAiTryOnFitHints = useMemo(
+    () =>
+      buildAiTryOnFitHints({
+        measurement: futureMeasurementState,
+        garmentKeys: futureDesignStyleStepProjection.occurrences.map(
+          (occurrence) => occurrence.target.garmentKey,
+        ),
+      }),
+    [futureMeasurementState, futureDesignStyleStepProjection.occurrences],
+  );
+  // Visible order details for the Try-on prompt (ids only; no prices, names or letters).
+  const futureAiTryOnOrderDetails = useMemo(
+    () =>
+      buildAiTryOnOrderDetails({
+        occurrences: authoritativePhysicalOccurrencesForDomain,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        additionalGarmentConstructions:
+          designSelections.additionalGarmentConstructions?.byGarmentKey,
+        garmentScopedCustomDetails: futureScopedCustomDetailsReconciliation?.state,
+        decorativeFeaturesByGarmentKey: designSelections.decorativeFeaturesByGarmentKey,
+        monogramPlacementByGarmentKey: designSelections.monogramPlacementByGarmentKey,
+        fabricAllocations: fabricAllocationState.fabricAllocations,
+        fabrics,
+      }),
+    [
+      authoritativePhysicalOccurrencesForDomain,
+      effectiveJourneyGarmentTypeSelection,
+      designSelections.additionalGarmentConstructions,
+      futureScopedCustomDetailsReconciliation?.state,
+      designSelections.decorativeFeaturesByGarmentKey,
+      designSelections.monogramPlacementByGarmentKey,
+      fabricAllocationState.fabricAllocations,
+      fabrics,
+    ],
+  );
   const futureAiTryOnInputFingerprint = futureScopedCustomDetailsReconciliation
     ? createAiTryOnFingerprintFromOccurrenceAssignments({
         customDetailsReady: isFutureCustomDetailsStageReady,
@@ -3653,6 +3737,10 @@ export default function DesignStudioView({
           garmentScopedCustomDetails:
             futureScopedCustomDetailsReconciliation.state,
           physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+          ...(AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT
+            ? { measurementFitHints: futureAiTryOnFitHints }
+            : {}),
+          orderDetails: futureAiTryOnOrderDetails,
         },
       })
     : null;
@@ -3706,6 +3794,115 @@ export default function DesignStudioView({
   );
   const wearerOrderForPlanRef = useRef(wearerOrderForPlan);
   wearerOrderForPlanRef.current = wearerOrderForPlan;
+  // AI Try-on (Step 5): one target per wearer, each with its own garments,
+  // swatch, order details, fit hints and fingerprint. 5 tries per order.
+  // Step 7: the server issues the session; these are the caller's
+  // credentials for it (guest token and/or Firebase ID token).
+  const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
+    createAiTryOnCredentials(null, async () => null),
+  );
+  const aiTryOnWearerTargets = useMemo(
+    () =>
+      futureScopedCustomDetailsReconciliation
+        ? buildAiTryOnWearerTargets({
+            occurrences: futureDesignStyleStepProjection.occurrences.map((occurrence) => ({
+              garmentKey: occurrence.target.garmentKey,
+              garmentType: occurrence.garmentType,
+              assignment: occurrence.assignment,
+              assignmentImage: occurrence.assignmentImage,
+            })),
+            physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+            wearerOrder: wearerOrderForPlan,
+            measurement: futureMeasurementState,
+            customDetailsReady: isFutureCustomDetailsStageReady,
+            designSourceReady: isFutureDesignSourceReadyForCustomDetails,
+            garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+            additionalGarmentConstructions:
+              designSelections.additionalGarmentConstructions?.byGarmentKey,
+            garmentScopedCustomDetails: futureScopedCustomDetailsReconciliation.state,
+            decorativeFeaturesByGarmentKey: designSelections.decorativeFeaturesByGarmentKey,
+            monogramPlacementByGarmentKey: designSelections.monogramPlacementByGarmentKey,
+            fabricAllocations: fabricAllocationState.fabricAllocations,
+            fabrics,
+          })
+        : [],
+    [
+      futureScopedCustomDetailsReconciliation,
+      futureDesignStyleStepProjection.occurrences,
+      authoritativePhysicalOccurrencesForDomain,
+      wearerOrderForPlan,
+      futureMeasurementState,
+      isFutureCustomDetailsStageReady,
+      isFutureDesignSourceReadyForCustomDetails,
+      effectiveJourneyGarmentTypeSelection,
+      designSelections.additionalGarmentConstructions,
+      designSelections.decorativeFeaturesByGarmentKey,
+      designSelections.monogramPlacementByGarmentKey,
+      fabricAllocationState.fabricAllocations,
+      fabrics,
+    ],
+  );
+  useEffect(() => {
+    if (!guestDraftHydrated || futureStageId !== "try_on") return;
+    let cancelled = false;
+    const credentials = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
+    void fetchAiTryOnAvailability({ credentials }).then((availability) => {
+      if (cancelled) return;
+      if (availability.status === "available") {
+        const signedIn = futureDraftIdentityKey.startsWith("authenticated:");
+        if (signedIn) {
+          // The account now owns the session. If the guest session was
+          // adopted, this guest-only close is a no-op; if the account already
+          // had a session, it deletes the guest's previews instead of leaving
+          // them unreachable until they expire.
+          if (credentials.sessionToken) {
+            void deleteStoredAiTryOnPreviews({
+              credentials: createAiTryOnCredentials(credentials.sessionToken, async () => null),
+              previewId: null,
+              closeSession: true,
+            });
+            saveAiTryOnSessionToken(AI_TRY_ON_GUEST_IDENTITY_KEY, null);
+          }
+          setAiTryOnCredentials(createAiTryOnCredentials(null, credentials.getIdToken));
+        } else {
+          saveAiTryOnSessionToken(futureDraftIdentityKey, availability.sessionToken);
+          setAiTryOnCredentials(
+            createAiTryOnCredentials(availability.sessionToken, credentials.getIdToken),
+          );
+        }
+      }
+      setAiTryOnAvailability(availability);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [guestDraftHydrated, futureStageId, futureDraftIdentityKey]);
+  // Background AI Try-on: requests outlive the step, one per wearer.
+  const aiTryOnJobScope = futureDraftIdentityKey;
+  const aiTryOnJobs = useAiTryOnBackgroundJobs();
+  const aiTryOnScopedJobs = Object.values(aiTryOnJobs).filter(
+    (job) => job.scope === aiTryOnJobScope,
+  );
+  /** Latest values for request callbacks that end after many renders. */
+  const futureAiTryOnInputFingerprintRef = useRef(futureAiTryOnInputFingerprint);
+  futureAiTryOnInputFingerprintRef.current = futureAiTryOnInputFingerprint;
+  const aiTryOnWearerTargetsRef = useRef(aiTryOnWearerTargets);
+  aiTryOnWearerTargetsRef.current = aiTryOnWearerTargets;
+  // After a reload mid-request: look for the stored preview instead of
+  // sending the request again (never a second try).
+  useEffect(() => {
+    if (!guestDraftHydrated) return;
+    const credentials = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
+    aiTryOnBackgroundJobs.resume({
+      scope: futureDraftIdentityKey,
+      listStoredPreviews: async () => {
+        const availability = await fetchAiTryOnAvailability({ credentials });
+        return availability.status === "available" ? availability.storedPreviews : null;
+      },
+      loadStoredPreview: (previewId) => fetchStoredAiTryOnPreview({ credentials, previewId }),
+      giveUpBusy: (wearerId, jobId) => releaseAiTryOnBusyJob({ credentials, jobId, wearerKey: wearerId }),
+    });
+  }, [guestDraftHydrated, futureDraftIdentityKey]);
   /**
    * Latest selected person, written on render and synchronously on select, so
    * handlers that run later in the same event never sync the live form to a
@@ -4056,6 +4253,11 @@ export default function DesignStudioView({
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
     summaryUnlockedByMeasurements;
+  // AI Try-on (Step 7) sits between Measurement and Summary, so Summary also
+  // waits until the try-on is completed or skipped (the existing gate that
+  // used to unlock Measurement).
+  const isFutureAiTryOnFinishedForSummary =
+    isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow);
   const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
     futureSummary.status,
   );
@@ -4192,12 +4394,12 @@ export default function DesignStudioView({
       currentlyEnterable.add("personalized_additions");
     }
     if (isFuturePersonalizedAdditionsNavigationReady) {
-      currentlyEnterable.add("try_on");
-    }
-    if (isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow)) {
       currentlyEnterable.add("measurement");
     }
-    if (isFutureSummaryStageUnlocked) {
+    if (summaryUnlockedByMeasurements) {
+      currentlyEnterable.add("try_on");
+    }
+    if (isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary) {
       currentlyEnterable.add("summary");
     }
     if (isFutureShippingUnlocked) {
@@ -4219,8 +4421,9 @@ export default function DesignStudioView({
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
     isFuturePersonalizedAdditionsNavigationReady,
-    futureAiTryOnWorkflow,
+    summaryUnlockedByMeasurements,
     isFutureSummaryStageUnlocked,
+    isFutureAiTryOnFinishedForSummary,
     isFutureShippingUnlocked,
     isFuturePaymentReviewUnlocked,
   ]);
@@ -5290,15 +5493,19 @@ export default function DesignStudioView({
           (garment) => garment.garmentKey,
         ),
       });
+      const restoredMeasurementsReady =
+        restoredWearerRuntimes.length > 0
+          ? restoredMeasurementsComplete
+          : isFutureSummaryUnlockedByMeasurements(
+              restoredReconciledMeasurementState,
+            );
       const canRestoreSummary =
         restoredFabricCompletion.isComplete &&
         restoredSourceReady &&
         !restoredUploadedSource &&
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion) &&
         isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow) &&
-        (restoredWearerRuntimes.length > 0
-          ? restoredMeasurementsComplete
-          : isFutureSummaryUnlockedByMeasurements(restoredReconciledMeasurementState));
+        restoredMeasurementsReady;
       const restoredShippingResolution = reconcileFutureShippingState({
         state: restoredShippingState,
         garmentCount: restoredMembershipOccurrences.length,
@@ -5310,9 +5517,6 @@ export default function DesignStudioView({
           businessSettings.productionSettings.defaultPickupLocation || "",
       });
       const canRestoreShipping = canRestoreSummary;
-      const restoredMeasurementUnlocked = isFutureMeasurementStageUnlocked(
-        restoredAiTryOnWorkflow,
-      );
       const restoredPersonalizedAdditionsReady =
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion);
       const restoredStep4Ready = isFutureCustomDetailsContentReady(
@@ -5328,17 +5532,22 @@ export default function DesignStudioView({
           ? "shipping"
           : storedDraft?.currentStageId === "summary" && canRestoreSummary
             ? "summary"
-            : storedDraft?.currentStageId === "measurement" &&
+            : storedDraft?.currentStageId === "try_on" &&
                 restoredFabricCompletion.isComplete &&
                 restoredSourceReady &&
-                restoredMeasurementUnlocked
-              ? "measurement"
-              : storedDraft?.currentStageId === "try_on" &&
+                restoredPersonalizedAdditionsReady &&
+                restoredMeasurementsReady
+              ? "try_on"
+              : storedDraft?.currentStageId === "measurement" &&
                   restoredFabricCompletion.isComplete &&
-                  restoredSourceReady &&
-                  restoredPersonalizedAdditionsReady
-                ? "try_on"
-                : storedDraft?.currentStageId === "personalized_additions" &&
+                  restoredSourceReady
+                ? "measurement"
+                : storedDraft?.currentStageId === "try_on" &&
+                    restoredFabricCompletion.isComplete &&
+                    restoredSourceReady &&
+                    restoredPersonalizedAdditionsReady
+                  ? "measurement"
+                  : storedDraft?.currentStageId === "personalized_additions" &&
                     restoredFabricCompletion.isComplete &&
                     restoredSourceReady &&
                     restoredStep4Ready
@@ -6223,10 +6432,10 @@ export default function DesignStudioView({
       reconcileAiTryOnWorkflow({
         state: current,
         currentInputFingerprint: futureAiTryOnInputFingerprint,
-        policy: { gatewayAvailable: false, skipAllowed: true },
+        policy: { gatewayAvailable: aiTryOnGatewayAvailable, skipAllowed: true },
       }),
     );
-  }, [guestDraftHydrated, futureAiTryOnInputFingerprint]);
+  }, [guestDraftHydrated, futureAiTryOnInputFingerprint, aiTryOnGatewayAvailable]);
 
   const coordinatePersistedUploadedSourceCleanup = (
     acknowledgement: NonNullable<
@@ -8050,15 +8259,10 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !isFuturePersonalizedAdditionsNavigationReady &&
+      !summaryUnlockedByMeasurements &&
       !isStageHistoricallyUnlocked("try_on")
     ) {
-      navigateToFutureStage(
-        isFutureStep4CustomDetailsReady
-          ? "personalized_additions"
-          : "custom_details",
-        getValidationNavigationTarget(),
-      );
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
       return;
     }
     const fromStageId = futureStageId;
@@ -8074,10 +8278,15 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow) &&
+      !isFuturePersonalizedAdditionsNavigationReady &&
       !isStageHistoricallyUnlocked("measurement")
     ) {
-      navigateToFutureStage("try_on", getValidationNavigationTarget());
+      navigateToFutureStage(
+        isFutureStep4CustomDetailsReady
+          ? "personalized_additions"
+          : "custom_details",
+        getValidationNavigationTarget(),
+      );
       return;
     }
     navigateToFutureStage("measurement");
@@ -8093,6 +8302,13 @@ export default function DesignStudioView({
       !isStageHistoricallyUnlocked("summary")
     ) {
       navigateToFutureStage("measurement", getValidationNavigationTarget());
+      return;
+    }
+    if (
+      !isFutureAiTryOnFinishedForSummary &&
+      !isStageHistoricallyUnlocked("summary")
+    ) {
+      navigateToFutureStage("try_on", getValidationNavigationTarget());
       return;
     }
     navigateToFutureStage("summary");
@@ -8319,6 +8535,7 @@ export default function DesignStudioView({
         outcome.attempt.orderId,
         linkedSavedOrderIdRef.current,
       );
+      rememberAiTryOnOrderSelection(outcome.attempt.orderId);
       const preparedHandoff = createFutureOrderV2PaymentReviewHandoff(
         outcome.attempt.candidate,
         {
@@ -8877,11 +9094,150 @@ export default function DesignStudioView({
         ? reconcileAiTryOnWorkflow({
             state: transition.state,
             currentInputFingerprint: futureAiTryOnInputFingerprint,
-            policy: { gatewayAvailable: false, skipAllowed: true },
+            policy: { gatewayAvailable: aiTryOnGatewayAvailable, skipAllowed: true },
           })
         : current;
     });
   };
+  /** A wearer's preview completes the order-level Try-on (opaque reference only). */
+  const handleAiTryOnPreviewCreated = ({
+    wearerId,
+    resultReference,
+    inputFingerprint,
+  }: {
+    wearerId: string;
+    resultReference: AiTryOnVerifiedPrivateResultReference;
+    inputFingerprint: string;
+  }) => {
+    // The request may end long after Generate (background): read the
+    // design as it is now, and skip a preview of a design since changed.
+    const target = aiTryOnWearerTargetsRef.current.find((entry) => entry.wearerId === wearerId);
+    if (!target || target.inputFingerprint !== inputFingerprint) return;
+    setFutureAiTryOnWorkflow((current) =>
+      recordAiTryOnPreviewCompletion({
+        state: current,
+        currentInputFingerprint: futureAiTryOnInputFingerprintRef.current,
+        resultReference,
+        jobId: `preview-${Date.now().toString(36)}`,
+      }),
+    );
+  };
+  /** Where "View preview" came from, for the "Back to <step>" link. */
+  const [aiTryOnReturnTo, setAiTryOnReturnTo] = useState<{
+    stage: DesignStudioStageId;
+    scrollY: number;
+  } | null>(null);
+  const openAiTryOnForWearer = (wearerId: string) => {
+    aiTryOnBackgroundJobs.requestFocus(wearerId);
+    if (futureStageId !== "try_on") {
+      setAiTryOnReturnTo({
+        stage: futureStageId,
+        scrollY: typeof window !== "undefined" ? window.scrollY : 0,
+      });
+      navigateToFutureStage("try_on");
+    }
+  };
+  // Summary (Step 8) and Review & Payment (Step 10), before payment: the
+  // wearers' stored previews, read fresh from the server on entering either
+  // step (and again when a background preview finishes), so a preview
+  // deleted on AI Try-on never shows here. Images come from the finished
+  // job in memory when it has one, otherwise from the owner-only route.
+  const [aiTryOnOrderPreviewSummaries, setAiTryOnOrderPreviewSummaries] = useState<
+    AiTryOnOrderPreviewSummary[]
+  >([]);
+  const futurePaymentReviewConfirmed = Boolean(
+    futurePaymentReviewHandoff &&
+      "payment" in futurePaymentReviewHandoff &&
+      (futurePaymentReviewHandoff as { payment?: { status?: string } | null }).payment?.status ===
+        "confirmed",
+  );
+  const aiTryOnFinishedPreviewKey = aiTryOnScopedJobs
+    .filter((job) => job.status === "completed" && job.storedPreviewId)
+    .map((job) => job.storedPreviewId)
+    .sort()
+    .join(",");
+  // The gateway is known to be on (AI Try-on was opened in this visit), or
+  // the draft records a preview (also after a reload straight onto Summary).
+  // Production with try-on off has neither, so it sends no request.
+  const aiTryOnOrderPreviewStageActive =
+    (futureStageId === "summary" || futureStageId === "payment") &&
+    (aiTryOnGatewayAvailable ||
+      futureAiTryOnWorkflow.status === "completed" ||
+      futureAiTryOnWorkflow.status === "stale") &&
+    !futurePaymentReviewConfirmed;
+  useEffect(() => {
+    if (!aiTryOnOrderPreviewStageActive) return;
+    let cancelled = false;
+    void fetchAiTryOnAvailability({ credentials: aiTryOnCredentials }).then((availability) => {
+      if (cancelled) return;
+      setAiTryOnOrderPreviewSummaries(
+        availability.status === "available" ? availability.storedPreviews : [],
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiTryOnOrderPreviewStageActive, futureStageId, aiTryOnCredentials, aiTryOnFinishedPreviewKey]);
+  const aiTryOnOrderPreviewImagesRef = useRef(new Map<string, { mimeType: string; data: string }>());
+  const aiTryOnScopedJobsRef = useRef(aiTryOnScopedJobs);
+  aiTryOnScopedJobsRef.current = aiTryOnScopedJobs;
+  const loadAiTryOnOrderPreviewImage = useCallback(
+    async (previewId: string) => {
+      const cached = aiTryOnOrderPreviewImagesRef.current.get(previewId);
+      if (cached) return cached;
+      const job = aiTryOnScopedJobsRef.current.find(
+        (entry) => entry.storedPreviewId === previewId && entry.preview,
+      );
+      const image =
+        job?.preview ?? (await fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId }));
+      if (image) aiTryOnOrderPreviewImagesRef.current.set(previewId, image);
+      return image;
+    },
+    [aiTryOnCredentials],
+  );
+  const aiTryOnOrderPreviewEntries = aiTryOnOrderPreviewStageActive
+    ? selectAiTryOnOrderPreviews(aiTryOnWearerTargets, aiTryOnOrderPreviewSummaries)
+    : [];
+  const aiTryOnOrderPreviewsNode =
+    aiTryOnOrderPreviewEntries.length > 0 ? (
+      <AiTryOnOrderPreviewThumbnails
+        entries={aiTryOnOrderPreviewEntries}
+        loadImage={loadAiTryOnOrderPreviewImage}
+        onMakeNew={openAiTryOnForWearer}
+        notice={futureStageId === "payment" ? AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice : undefined}
+      />
+    ) : null;
+  // Order prepared: the current previews go with it at payment (PR 2). Out-
+  // of-date previews are never sent. Fire and forget: never blocks payment.
+  function rememberAiTryOnOrderSelection(orderId: string) {
+    const selections = aiTryOnOrderPreviewEntries.flatMap((entry) => {
+      if (entry.kind !== "fresh") return [];
+      const target = aiTryOnWearerTargets.find((item) => item.wearerId === entry.wearerId);
+      return target?.inputFingerprint
+        ? [
+            {
+              wearerKey: entry.wearerId,
+              previewId: entry.previewId,
+              inputFingerprint: target.inputFingerprint,
+              label: entry.label,
+            },
+          ]
+        : [];
+    });
+    if (selections.length === 0) return;
+    void saveAiTryOnOrderSelection({ credentials: aiTryOnCredentials, orderId, selections });
+  }
+  const handleAiTryOnBack = () => {
+    const returnTo = aiTryOnReturnTo;
+    if (!returnTo) return;
+    setAiTryOnReturnTo(null);
+    pendingResumeScrollYRef.current = returnTo.scrollY;
+    navigateToFutureStage(returnTo.stage);
+  };
+  // The link belongs to one trip to AI Try-on.
+  useEffect(() => {
+    if (futureStageId !== "try_on") setAiTryOnReturnTo(null);
+  }, [futureStageId]);
   const handleSkipDormantAiTryOn = () => {
     const transition = transitionAiTryOnWorkflow({
       state: futureAiTryOnWorkflow,
@@ -8890,7 +9246,7 @@ export default function DesignStudioView({
     });
     if (!transition.ok) return;
     setFutureAiTryOnWorkflow(transition.state);
-    navigateToFutureStage("measurement");
+    navigateToFutureStage("summary");
   };
   const handleFutureMeasurementRouteChange = (route: MeasurementMethodId) => {
     if (futureMeasurementHydrationInvalid) return;
@@ -9786,7 +10142,7 @@ export default function DesignStudioView({
         aiTryOnWorkflowState: futureAiTryOnWorkflow,
         shippingState: futureShippingResolution.state,
         normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        aiTryOnPolicy: { gatewayAvailable: false, skipAllowed: true },
+        aiTryOnPolicy: { gatewayAvailable: aiTryOnGatewayAvailable, skipAllowed: true },
         pendingOperations: {
           protectedSourceMutationPending:
             uploadedDesignDeletionInFlightRef.current ||
@@ -10913,11 +11269,11 @@ export default function DesignStudioView({
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
         canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
-        canEnterTryOn={isFuturePersonalizedAdditionsNavigationReady}
-        canEnterMeasurement={isFutureMeasurementStageUnlocked(
-          futureAiTryOnWorkflow,
-        )}
-        canEnterSummary={isFutureSummaryStageUnlocked}
+        canEnterTryOn={summaryUnlockedByMeasurements}
+        canEnterMeasurement={isFuturePersonalizedAdditionsNavigationReady}
+        canEnterSummary={
+          isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary
+        }
         canEnterShipping={isFutureShippingUnlocked}
         canEnterPayment={isFuturePaymentReviewUnlocked}
         onSelectGarmentType={handleStepperJump(() => navigateToFutureStage("garment_type"))}
@@ -10932,6 +11288,18 @@ export default function DesignStudioView({
         onSelectSummary={handleStepperJump(handleOpenDormantSummaryStage)}
         onSelectShipping={handleStepperJump(handleOpenDormantShippingStage)}
         onSelectPayment={handleStepperJump(handleOpenDormantPaymentReviewStage)}
+      />
+      <AiTryOnGeneratingChip
+        jobs={aiTryOnScopedJobs
+          .filter((job) => job.status === "running")
+          .map((job) => ({
+            ...job,
+            wearerName:
+              aiTryOnWearerTargets.length > 1
+                ? aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)?.label ??
+                  job.wearerName
+                : null,
+          }))}
       />
       <div
         data-studio-step-layout={showShellLiveOrderSummary ? "true" : undefined}
@@ -11273,7 +11641,7 @@ export default function DesignStudioView({
           onContinue={
             futureStageId === "custom_details"
               ? handleOpenDormantPersonalizedAdditionsStage
-              : handleOpenDormantAiTryOnStage
+              : handleOpenDormantMeasurementStage
           }
           orderSummary={
             embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
@@ -11281,14 +11649,50 @@ export default function DesignStudioView({
         />
         </div>
       ) : futureStageId === "try_on" ? (
+        <>
+        {aiTryOnReturnTo ? (
+          <AiTryOnBackLink
+            stepName={
+              DESIGN_STUDIO_STEPS.find((step) => step.id === aiTryOnReturnTo.stage)?.label ||
+              "Design Studio"
+            }
+            onClick={handleAiTryOnBack}
+          />
+        ) : null}
         <DormantFutureAiTryOnStep
           workflow={futureAiTryOnWorkflow}
           skipAllowed
-          onBack={() => handleBackDuringSummaryEdit("personalized_additions")}
+          onBack={() => handleBackDuringSummaryEdit("measurement")}
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
-          onContinue={handleOpenDormantMeasurementStage}
+          onContinue={handleOpenDormantSummaryStage}
+          livePanel={
+            aiTryOnAvailability.status === "available" &&
+            futureAiTryOnInputFingerprint &&
+            aiTryOnWearerTargets.length > 0 ? (
+              <AiTryOnPhotoPanel
+                targets={aiTryOnWearerTargets}
+                credentials={aiTryOnCredentials}
+                triesPerOrder={aiTryOnAvailability.triesPerOrder}
+                initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
+                initialAccountTriesRemaining={aiTryOnAvailability.accountTriesRemaining}
+                storedPreviews={aiTryOnAvailability.storedPreviews}
+                loadStoredPreview={(previewId) =>
+                  fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId })
+                }
+                deleteStoredPreview={(previewId) =>
+                  deleteStoredAiTryOnPreviews({ credentials: aiTryOnCredentials, previewId })
+                }
+                onPreviewCreated={handleAiTryOnPreviewCreated}
+                onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
+                onGeneratingChange={setAiTryOnGenerating}
+                jobScope={aiTryOnJobScope}
+              />
+            ) : undefined
+          }
+          generating={aiTryOnGenerating}
         />
+        </>
       ) : futureStageId === "measurement" ? (
         <>
         {showLaterStageRemainingFabricCapacityPrompt ? (
@@ -11484,8 +11888,8 @@ export default function DesignStudioView({
             }
           }}
           onRouteChange={handleFutureMeasurementRouteChange}
-          onBack={() => handleBackDuringSummaryEdit("try_on")}
-          onContinue={handleOpenDormantSummaryStage}
+          onBack={() => handleBackDuringSummaryEdit("personalized_additions")}
+          onContinue={handleOpenDormantAiTryOnStage}
         />
         </>
       ) : futureStageId === "summary" ? (
@@ -11501,10 +11905,11 @@ export default function DesignStudioView({
           />
         ) : null}
         <DormantFutureSummaryStep
+          aiTryOnOrderPreviews={aiTryOnOrderPreviewsNode}
           summary={futureSummary}
           orderContext={customerOrderContextPresentation}
           inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
-          onBack={() => navigateToFutureStage("measurement")}
+          onBack={() => navigateToFutureStage("try_on")}
           onEditGarments={() => {
             beginSummaryEditReturn({ focusStageId: "garment_type" });
             navigateToFutureStage("garment_type");
@@ -11625,6 +12030,7 @@ export default function DesignStudioView({
         futurePaymentReviewHandoff ? (
           <DormantFuturePaymentReviewStep
             result={futurePaymentReviewHandoff}
+            aiTryOnOrderPreviews={aiTryOnOrderPreviewsNode}
             orderContext={customerOrderContextPresentation}
             inboundOrderType={futureOrderIdentity?.orderType ?? ctx.orderType}
             survivorSummary={futureSummary}
@@ -11685,6 +12091,29 @@ export default function DesignStudioView({
           </div>
         ) : null}
       </div>
+      <AiTryOnBackgroundToasts
+        toasts={aiTryOnScopedJobs
+          .filter((job) => job.status !== "running" && job.toast === "open")
+          .map((job) => ({
+            // Names come from the order as it is now (also after a reload).
+            job: {
+              ...job,
+              wearerName:
+                aiTryOnWearerTargets.length > 1
+                  ? aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)?.label ??
+                    job.wearerName
+                  : null,
+            },
+            kind: aiTryOnToastKind(
+              job,
+              aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)
+                ?.inputFingerprint,
+            ),
+          }))}
+        onView={openAiTryOnForWearer}
+        onRetry={openAiTryOnForWearer}
+        onClose={(wearerId) => aiTryOnBackgroundJobs.closeToast(wearerId)}
+      />
       <DesignStudioScrollFabHost
         stageLabel={currentStageLabel}
         topTargetRef={futureStageNavigationTargetRef}

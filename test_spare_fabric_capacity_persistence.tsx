@@ -11,6 +11,7 @@ import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesi
 import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
+import { DormantFutureAiTryOnStep } from "./src/components/DormantFutureAiTryOnStep";
 import { DormantFutureShippingStep } from "./src/components/DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import { FutureRemainingFabricCapacityOfferCard } from "./src/components/FutureRemainingFabricCapacityOffer";
@@ -670,6 +671,10 @@ assert.deepEqual(remountedMeasurementStep.props.plan.profiles, initialSkirtProfi
 assert.equal(remountedMeasurementStep.props.state.calculationStatus, "complete",
   JSON.stringify(remountedMeasurementStep.props.state.diagnostics));
 await act(async () => { remountedMeasurementStep.props.onContinue(); await flush(); });
+// Measurement (Step 6) continues to AI Try-on (Step 7); the draft's try-on is
+// skipped, so AI Try-on continues to Summary.
+const skirtTryOnStep = renderer.root.findByType(DormantFutureAiTryOnStep);
+await act(async () => { skirtTryOnStep.props.onContinue(); await flush(); });
 const skirtSummary = renderer.root.findByType(DormantFutureSummaryStep);
 const expectedSkirtRows = [
   ["base:skirt", "skirt", "Standard Skirt", "skirt_std", 7500],

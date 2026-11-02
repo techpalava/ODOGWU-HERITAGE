@@ -356,7 +356,7 @@ assert.match(collectText(invalidRenderer.root), new RegExp(FUTURE_MEASUREMENT_IN
 assert.equal(invalidRenderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(invalidRenderer.root.findAllByProps({ "data-measurement-form": "sample_cloth" }).length, 0);
 const continueButton = invalidRenderer.root.findAllByType("button").find((button) =>
-  collectText(button).includes("Continue to Summary"),
+  collectText(button).includes("Continue to AI Try-on"),
 );
 assert.equal(continueButton?.props["aria-disabled"], "true");
 assert.equal(invalidRenderer.root.findByProps({ type: "radio", value: "low_risk" }).props.disabled, true);
@@ -379,7 +379,7 @@ const createNodeMock = (element: { props: Record<string, unknown> }) => {
 };
 const findLockedContinue = (target: ReactTestRenderer) =>
   target.root.findAllByType("button").filter((button) =>
-    button.props["aria-label"] === "Continue to Summary",
+    button.props["aria-label"] === "Continue to AI Try-on",
   );
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let cueRenderer!: ReactTestRenderer;

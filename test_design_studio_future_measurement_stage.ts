@@ -173,8 +173,8 @@ assert.match(
   /"aria-describedby": "measurement-risk-selection-notice"/,
 );
 assert.match(measurementSource, /DesignStudioBackButton/);
-assert.match(measurementSource, /backDestination="AI Try-on"/);
-assert.match(measurementSource, /Continue to Summary/);
+assert.match(measurementSource, /backDestination="Personalized Additions"/);
+assert.match(measurementSource, /Continue to AI Try-on/);
 assert.match(measurementSource, /isFutureSummaryUnlockedByMeasurements\(resolvedState\)/);
 assert.equal(
   measurementSource.includes("Summary remains locked until Low Risk measurements are complete. Mid and High Risk calculations are still pending."),
@@ -906,7 +906,7 @@ const renderPickerHarness = ({
   );
   assert.equal(advanceHarness.state.activeGarmentKey, "additional:shirt:1");
   const continueButtons = advanceHarness.renderer.root.findAllByProps({
-    "aria-label": "Continue to Summary",
+    "aria-label": "Continue to AI Try-on",
   });
   assert.ok(continueButtons.length > 0);
   assert.ok(
@@ -1038,7 +1038,7 @@ console.log("PASS: measurement garment picker badges, default, and auto-advance"
   assert.equal(sharedHarness.state.activeGarmentKey, "additional:shirt:1");
   assert.ok(
     sharedHarness.renderer.root
-      .findAllByProps({ "aria-label": "Continue to Summary" })
+      .findAllByProps({ "aria-label": "Continue to AI Try-on" })
       .every((button) => button.props.disabled === true || button.props["aria-disabled"] === "true"),
   );
 }
@@ -1118,7 +1118,7 @@ console.log("PASS: measurement garment picker badges, default, and auto-advance"
   assert.equal(goHarness.state.activeGarmentKey, "additional:shirt:1");
   assert.ok(
     goHarness.renderer.root
-      .findAllByProps({ "aria-label": "Continue to Summary" })
+      .findAllByProps({ "aria-label": "Continue to AI Try-on" })
       .every((button) => button.props.disabled === true || button.props["aria-disabled"] === "true"),
   );
 }

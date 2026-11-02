@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   RefreshCw,
   ShieldCheck,
   SkipForward,
 } from "lucide-react";
+import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
 import {
   DesignStudioStepActions,
   studioContinueNavInteractionClass,
@@ -21,7 +23,25 @@ interface DormantFutureAiTryOnStepProps {
   onRetry: () => void;
   onSkip: () => void;
   onContinue: () => void;
+  /**
+   * The live photo panel (AiTryOnPhotoPanel), passed only when
+   * `GET /api/ai-try-on` reports the gateway available. Without it the step
+   * shows the unavailable state and the skip button.
+   */
+  livePanel?: ReactNode;
+  /**
+   * A preview is generating: the skip button reads "Continue while we make
+   * your preview"; the request carries on in the background.
+   */
+  generating?: boolean;
 }
+
+/** Statuses that still show the status card next to the live panel. */
+const LIVE_STATUS_CARD = new Set<AiTryOnWorkflowStateV1["status"]>([
+  "awaiting_input",
+  "skipped",
+  "stale",
+]);
 
 const STATUS_PRESENTATION: Readonly<
   Record<
@@ -64,8 +84,7 @@ const STATUS_PRESENTATION: Readonly<
   },
   unavailable: {
     title: "AI Try-on is currently unavailable",
-    description:
-      "You can continue with your order without a Try-on preview. AI Try-on will be available when secure private-photo processing is ready.",
+    description: "You can continue with your order without a Try-on preview.",
   },
 };
 
@@ -76,15 +95,19 @@ export const DormantFutureAiTryOnStep = ({
   onRetry,
   onSkip,
   onContinue,
+  livePanel,
+  generating = false,
 }: DormantFutureAiTryOnStepProps) => {
+  const isLive = Boolean(livePanel);
+  const showStatusCard = !isLive || LIVE_STATUS_CARD.has(workflow.status);
   const presentation = STATUS_PRESENTATION[workflow.status];
   const { canRetry, canSkip } = getAiTryOnWorkflowAllowedActions({
     state: workflow,
     skipAllowed,
   });
-  // Personalized Additions is step 5 for every order path. It is not skipped.
-  const previousStageLabel = "Personalized Additions";
-  const nextStageLabel = "Measurement";
+  // Measurement is the step immediately before AI Try-on.
+  const previousStageLabel = "Measurement";
+  const nextStageLabel = "Summary";
 
   return (
     <section
@@ -105,11 +128,11 @@ export const DormantFutureAiTryOnStep = ({
             disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
             locked: !(workflow.status === "completed" || workflow.status === "skipped"),
             ariaLabel: workflow.status === "completed" || workflow.status === "skipped"
-              ? "Continue to Measurement"
-              : "Continue to Measurement is locked",
+              ? "Continue to Summary"
+              : "Continue to Summary is locked",
             label: workflow.status === "completed" || workflow.status === "skipped"
               ? undefined
-              : "Measurement is locked",
+              : "Summary is locked",
           }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
@@ -122,12 +145,14 @@ export const DormantFutureAiTryOnStep = ({
           AI Try-on
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          AI Try-on will let you preview your selected garments, fabrics, and
-          visual details when secure private-photo processing is available.
+          {isLive
+            ? "Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."
+            : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
       </div>
 
       <div className="rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-6">
+        {showStatusCard && (
         <div
           role="status"
           aria-live="polite"
@@ -161,6 +186,9 @@ export const DormantFutureAiTryOnStep = ({
             )}
           </div>
         </div>
+        )}
+
+        {isLive && <div className={showStatusCard ? "mt-5" : ""}>{livePanel}</div>}
 
         <p className="mt-4 text-xs leading-relaxed text-heritage-ink/60">
           AI Try-on is optional. You can continue your order without it.
@@ -186,7 +214,9 @@ export const DormantFutureAiTryOnStep = ({
               className={`inline-flex min-h-11 max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-5 text-center text-xs font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`}
             >
               <SkipForward aria-hidden="true" size={14} className="shrink-0" />
-              <span className="min-w-0 text-balance">Continue without AI Try-on</span>
+              <span className="min-w-0 text-balance">
+                {generating ? AI_TRY_ON_BACKGROUND_COPY.continueWhileGenerating : "Continue without AI Try-on"}
+              </span>
             </button>
           )}
         </div>
@@ -202,11 +232,11 @@ export const DormantFutureAiTryOnStep = ({
           disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
           locked: !(workflow.status === "completed" || workflow.status === "skipped"),
           ariaLabel: workflow.status === "completed" || workflow.status === "skipped"
-            ? "Continue to Measurement"
-            : "Continue to Measurement is locked",
+            ? "Continue to Summary"
+            : "Continue to Summary is locked",
           label: workflow.status === "completed" || workflow.status === "skipped"
             ? undefined
-            : "Measurement is locked",
+            : "Summary is locked",
         }}
       />
     </section>

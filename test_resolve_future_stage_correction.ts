@@ -222,4 +222,50 @@ assert.equal(
   "truly invalid design source still redirects when no inline transaction",
 );
 
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "measurement",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: null,
+  }),
+  null,
+  "Measurement stays mounted when AI Try-on has not been completed or skipped",
+);
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "try_on",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: null,
+  }),
+  "measurement",
+  "AI Try-on waits until Measurement is complete",
+);
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "summary",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: true,
+    inlineAdditionalGarmentFabricTransaction: null,
+  }),
+  "try_on",
+  "Summary still waits until AI Try-on is completed or skipped",
+);
+
 console.log("PASS: future stage correction helper");

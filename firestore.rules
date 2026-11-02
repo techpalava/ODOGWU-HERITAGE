@@ -50,8 +50,8 @@ service cloud.firestore {
           "design_style",
           "custom_details",
           "personalized_additions",
-          "try_on",
           "measurement",
+          "try_on",
           "summary",
           "shipping",
           "payment"
@@ -1011,8 +1011,8 @@ service cloud.firestore {
           "design_style",
           "custom_details",
           "personalized_additions",
-          "try_on",
           "measurement",
+          "try_on",
           "summary",
           "shipping",
           "payment"
@@ -1183,6 +1183,51 @@ service cloud.firestore {
     match /media/{mediaId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // AI Try-on (Steps 6-7): stored previews, per-session counters and the
+    // server-issued sessions are server-only (Admin SDK). No client, admin, staff or workshop access;
+    // owners reach their preview only through /api/ai-try-on.
+    match /aiTryOnPreviews/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnUsage/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnSessions/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnSessionOwners/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Busy-retry jobs (a try held while Gemini is over capacity): server-only.
+    match /aiTryOnJobs/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Shared default-model try-on results: server-only, like the previews.
+    match /aiTryOnModelResults/{document=**} {
+      allow read, write: if false;
+    }
+
+    // AI preview saved with a paid order (60 days) and the pre-payment
+    // choice of previews: server-only. Owners and admins read the image
+    // only through the signed-in order image route.
+    match /aiTryOnOrderSelections/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnOrderImages/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Order confirmation email sent-once claims: server-only.
+    match /orderConfirmationEmails/{document=**} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

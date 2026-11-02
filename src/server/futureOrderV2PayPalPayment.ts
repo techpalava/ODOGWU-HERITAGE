@@ -1,3 +1,5 @@
+import { retireAiTryOnSessionForPaidOrder } from "./aiTryOnPaymentCleanup.js";
+import { sendOrderConfirmationEmail } from "./orderConfirmationEmail.js";
 import type { Firestore } from "firebase-admin/firestore";
 import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
 import {
@@ -62,6 +64,8 @@ export interface FutureOrderV2PayPalPaymentDependencies {
   readCommunityBatch?: (batchId: string) => Promise<unknown | null>;
   /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
   readCatalog?: () => Promise<unknown>;
+  /** Runs after a payment is recorded (AI Try-on preview cleanup, Step 7). Never throws. */
+  onPaymentRecorded?: (input: { ownerUid: string; orderId: string; db: unknown }) => Promise<unknown>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -875,6 +879,22 @@ export const handleFutureOrderV2PayPalCapture = async (
       );
     case "recorded":
     case "already_recorded":
+      try {
+        await (dependencies.onPaymentRecorded ??
+          (async (input: { ownerUid: string; orderId: string; db: unknown }) => {
+            await retireAiTryOnSessionForPaidOrder(
+              { ownerUid: input.ownerUid, orderId: input.orderId },
+              { getDb: () => input.db as Firestore },
+            );
+            // After the AI preview copy, so the email can mention it.
+            await sendOrderConfirmationEmail(
+              { ownerUid: input.ownerUid, orderId: input.orderId },
+              { getDb: () => input.db as Firestore },
+            );
+          }))({ ownerUid: outcome.record.ownerUid, orderId: outcome.record.orderId, db: services.db });
+      } catch {
+        // Never let post-payment cleanup affect the payment response.
+      }
       return setNoStore(res).status(200).json({
         status: outcome.status === "already_recorded" ? "already_recorded" : "recorded",
         record: outcome.record,

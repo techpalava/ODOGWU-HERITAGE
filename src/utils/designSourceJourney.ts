@@ -18,8 +18,8 @@ export type DesignStudioInternalScreenId =
   | "design_style"
   | "custom_details"
   | "personalized_additions"
-  | "try_on"
   | "measurement"
+  | "try_on"
   | "summary"
   | "shipping"
   | "payment";
@@ -57,8 +57,8 @@ export const DESIGN_STUDIO_TEN_STAGE_FOUNDATION = [
     "Personalized Additions",
     "Additions",
   ),
-  defineStage("try_on", 6, "AI Try-on", "AI Try-on"),
-  defineStage("measurement", 7, "Measurement", "Measurement"),
+  defineStage("measurement", 6, "Measurement", "Measurement"),
+  defineStage("try_on", 7, "AI Try-on", "AI Try-on"),
   defineStage("summary", 8, "Summary", "Summary"),
   defineStage("shipping", 9, "Delivery & Pickup", "Delivery"),
   defineStage("payment", 10, "Order Review & Payment", "Review"),

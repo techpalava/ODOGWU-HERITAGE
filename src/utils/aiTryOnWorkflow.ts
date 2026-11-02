@@ -9,6 +9,19 @@ import type {
 } from "../types.js";
 import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
 import type { GarmentScopedCustomDetailsCompletionResult } from "./garmentScopedCustomDetailsDomain.js";
+import {
+  fitHintsFingerprintIdentity,
+  type AiTryOnFitHint,
+} from "./aiTryOnFitHints.js";
+import {
+  AI_TRY_ON_PROMPT_VERSION,
+  type AiTryOnGenerationRequest,
+} from "./aiTryOnGatewayContract.js";
+import { DESIGN_STUDIO_STAGE_IDS } from "./designSourceJourney.js";
+import {
+  orderDetailsFingerprintIdentity,
+  type AiTryOnOrderDetails,
+} from "./aiTryOnOrderDetails.js";
 
 export const AI_TRY_ON_WORKFLOW_SCHEMA_VERSION = 1 as const;
 
@@ -227,7 +240,26 @@ export interface AiTryOnVisualInput {
     ownerBindingId: string;
   } | null;
   personalizedInputRevision?: string | null;
+  /**
+   * Tier-1 measurement fit hints sent to the prompt. Included in the
+   * fingerprint only when non-empty, so orders without measurements keep
+   * their existing fingerprint.
+   */
+  measurementFitHints?: readonly AiTryOnFitHint[] | null;
+  /** Visible order details sent to the prompt; any change marks the result stale. */
+  orderDetails?: AiTryOnOrderDetails | null;
 }
+
+/**
+ * Fit hints may only change the Try-on fingerprint when Measurement comes
+ * before AI Try-on in the journey (PR #1181). While Try-on comes first,
+ * folding later measurements in would turn a finished Try-on stale and lock
+ * Measurement again, so the hints still reach the prompt but not the
+ * fingerprint.
+ */
+export const AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT =
+  DESIGN_STUDIO_STAGE_IDS.indexOf("measurement") <
+  DESIGN_STUDIO_STAGE_IDS.indexOf("try_on");
 
 /** Builds identity only from stable visual semantics, never labels, prices, URLs, or raw text. */
 export const createAiTryOnVisualInputFingerprint = (
@@ -321,6 +353,10 @@ export const createAiTryOnVisualInputFingerprint = (
         .map(([garmentKey, generation]) => ({ garmentKey, generation }))
         .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
 
+  const measurementFitHints = fitHintsFingerprintIdentity(
+    input.measurementFitHints,
+  );
+
   return hashVisualIdentity({
     demographic: input.garmentTypeSelection.demographic,
     garmentTypes: [...input.garmentTypeSelection.garmentTypes].sort(),
@@ -332,6 +368,9 @@ export const createAiTryOnVisualInputFingerprint = (
     occurrenceIdentities,
     detailSelections,
     personalizedInputRevision: input.personalizedInputRevision || null,
+    ...(measurementFitHints ? { measurementFitHints } : {}),
+    promptVersion: AI_TRY_ON_PROMPT_VERSION,
+    orderDetails: orderDetailsFingerprintIdentity(input.orderDetails),
     customerPhotoAssetIdentity:
       privatePhoto &&
       isOpaqueReference(privatePhoto.assetId) &&
@@ -345,7 +384,7 @@ export const createAiTryOnVisualInputFingerprint = (
 };
 
 /**
- * Fingerprint for Step 6 from each garment's occurrence assignment.
+ * Fingerprint for Step 7 from each garment's occurrence assignment.
  * A null result means a garment design is missing or an earlier stage is not ready.
  * The legacy scalar design source is intentionally not an input.
  */
@@ -588,13 +627,27 @@ export type AiTryOnGatewayAvailability =
 
 export type AiTryOnGatewayJobResult =
   | { status: "processing"; jobReference: AiTryOnResumableJobReference }
-  | { status: "completed"; resultReference: AiTryOnVerifiedPrivateResultReference }
+  | {
+      status: "completed";
+      resultReference: AiTryOnVerifiedPrivateResultReference;
+      /**
+       * Inline preview from the server. Kept in memory only: it is never
+       * persisted to the draft (normalize refuses data: URLs) until private
+       * storage lands in Step 6.
+       */
+      preview?: { mimeType: string; data: string };
+      orderTriesRemaining?: number;
+    }
   | { status: "failed"; code: AiTryOnFailureCode; retryable: boolean }
   | { status: "unavailable"; code: "not_configured" };
 
 export interface AiTryOnGateway {
   getAvailability(): Promise<AiTryOnGatewayAvailability>;
-  start(inputFingerprint: string): Promise<AiTryOnGatewayJobResult>;
+  /** `request` carries the photos and fit hints for a real generation. */
+  start(
+    inputFingerprint: string,
+    request?: AiTryOnGenerationRequest,
+  ): Promise<AiTryOnGatewayJobResult>;
   resume(jobReference: AiTryOnResumableJobReference): Promise<AiTryOnGatewayJobResult>;
   cancel?(jobReference: AiTryOnResumableJobReference): Promise<void>;
 }
@@ -604,3 +657,43 @@ export const createUnavailableAiTryOnGateway = (): AiTryOnGateway => ({
   start: async () => ({ status: "unavailable", code: "not_configured" }),
   resume: async () => ({ status: "unavailable", code: "not_configured" }),
 });
+
+/**
+ * Records a wearer's finished preview on the order-level workflow, which
+ * gates Measurement. Generation itself is tracked per wearer in the Try-on
+ * step; the order workflow only ever stores the opaque result reference
+ * (never the image). A stale, failed, unavailable or skipped order workflow
+ * restarts at the current fingerprint, so a fresh preview always completes
+ * it. Returns the unchanged state when the reference is not valid or the
+ * design is not ready.
+ */
+export const recordAiTryOnPreviewCompletion = ({
+  state,
+  currentInputFingerprint,
+  resultReference,
+  jobId,
+}: {
+  state: AiTryOnWorkflowStateV1;
+  currentInputFingerprint: string | null;
+  resultReference: AiTryOnVerifiedPrivateResultReference;
+  jobId: string;
+}): AiTryOnWorkflowStateV1 => {
+  if (!currentInputFingerprint) return state;
+  const ready: AiTryOnWorkflowStateV1 = {
+    schemaVersion: 1,
+    status: "ready",
+    inputFingerprint: currentInputFingerprint,
+  };
+  const started = transitionAiTryOnWorkflow({
+    state: ready,
+    event: { type: "start", jobReference: { kind: "resumable_job", jobId } },
+    skipAllowed: true,
+  });
+  if (!started.ok) return state;
+  const completed = transitionAiTryOnWorkflow({
+    state: started.state,
+    event: { type: "complete", resultReference },
+    skipAllowed: true,
+  });
+  return completed.ok ? completed.state : state;
+};

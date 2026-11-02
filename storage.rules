@@ -144,6 +144,21 @@ service firebase.storage {
       allow read, write: if isAdmin();
     }
 
+    // AI Try-on files now live in the dedicated server-only bucket
+    // (AI_TRY_ON_STORAGE_BUCKET). These deny blocks stay as defence in depth
+    // for the default bucket.
+    // AI Try-on previews (Step 6) are private and server-only: no client,
+    // admin, staff or workshop access. The server serves them to their owner.
+    match /ai-try-on-previews/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Shared default-model try-on results (no personal data) are also
+    // server-only; the server copies one to the customer's own preview.
+    match /ai-try-on-model-results/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     // Any unclassified Storage path is denied by default.
     match /{allPaths=**} {
       allow read, write: if false;

@@ -98,6 +98,7 @@ import { buildProductionManifestCsv } from "../utils/productionManifestCsv";
 import { PersonalizedAdditionContactScript } from "./PersonalizedAdditionContactScript";
 import { workshopDeliveryDateInputValue } from "../utils/customerWorkshopProgress";
 import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
+import { AdminAiTryOnOrderImage } from "./AiTryOnOrderImagePanel";
 
 interface DatabaseViewProps {
   customers: Customer[];
@@ -5950,6 +5951,7 @@ export default function DatabaseView({
                                           )}
                                         </div>
                                       ))}
+                                      {basePayment ? <AdminAiTryOnOrderImage orderId={history.orderId} /> : null}
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 text-xs">

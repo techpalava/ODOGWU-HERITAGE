@@ -1,3 +1,5 @@
+import { retireAiTryOnSessionForPaidOrder } from "./aiTryOnPaymentCleanup.js";
+import { sendOrderConfirmationEmail } from "./orderConfirmationEmail.js";
 import Stripe from "stripe";
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 import { attachCustomDetailCatalogDocumentId } from "../utils/catalogHelpers.js";
@@ -96,6 +98,11 @@ export interface FutureOrderV2PaymentRecordDependencies {
   readCatalog?: (db: unknown) => Promise<unknown>;
   now?: () => Date;
   log?: (message: string) => void;
+  /**
+   * Runs after a payment is recorded (AI Try-on preview cleanup, Step 7).
+   * Must never throw or block for long; failures are only logged.
+   */
+  onPaymentRecorded?: (input: { ownerUid: string; orderId: string; db: unknown }) => Promise<unknown>;
 }
 
 const readCustomDetailCatalog = async (db: unknown): Promise<unknown[]> => {
@@ -494,6 +501,24 @@ export const createFutureOrderV2PaymentRecordHandler = (
   const now = dependencies.now || (() => new Date());
   const log = dependencies.log || ((message: string) => console.info(message));
   const readCatalog = dependencies.readCatalog ?? readCustomDetailCatalog;
+  const onPaymentRecorded = async (record: { ownerUid: string; orderId: string }, db: unknown) => {
+    try {
+      await (dependencies.onPaymentRecorded ??
+        (async (input: { ownerUid: string; orderId: string; db: unknown }) => {
+          await retireAiTryOnSessionForPaidOrder(
+            { ownerUid: input.ownerUid, orderId: input.orderId },
+            { getDb: () => input.db as Firestore },
+          );
+          // After the AI preview copy, so the email can mention it.
+          await sendOrderConfirmationEmail(
+            { ownerUid: input.ownerUid, orderId: input.orderId },
+            { getDb: () => input.db as Firestore },
+          );
+        }))({ ownerUid: record.ownerUid, orderId: record.orderId, db });
+    } catch {
+      // Never let post-payment cleanup affect the payment response.
+    }
+  };
   const readSecret = () =>
     (dependencies.readSecretKey?.() ?? process.env.STRIPE_SECRET_KEY ?? "").trim();
   const readWebhookSecret = () =>
@@ -553,8 +578,9 @@ export const createFutureOrderV2PaymentRecordHandler = (
     }
 
     let outcome: FutureOrderV2PaymentSaveOutcome;
+    let db: unknown;
     try {
-      const db = getServices().db;
+      db = getServices().db;
       outcome = await saveVerifiedFutureOrderV2Payment({
         store: createStore(db),
         orderId,
@@ -571,6 +597,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
       });
     }
     if (outcome.status === "recorded" || outcome.status === "already_recorded") {
+      await onPaymentRecorded(outcome.record, db);
       return reply(200, { received: true, status: outcome.status });
     }
     return reply(200, { received: true, status: "ignored", reason: outcome.status });
@@ -778,6 +805,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
         );
       default:
         log(`future-order-v2-payment-record status=${outcome.status}`);
+        await onPaymentRecorded(outcome.record, services.db);
         return setNoStore(res)
           .status(outcome.status === "recorded" ? 201 : 200)
           .json(outcome);

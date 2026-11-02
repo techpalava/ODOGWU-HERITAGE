@@ -85,8 +85,8 @@ export const resolveFutureStageCorrection = ({
     designSourceReadyForCorrection &&
     (!requiresStep4Completion || customDetailsReady) &&
     (!requiresStep5Completion || personalizedAdditionsReady) &&
-    ((currentStageId !== "measurement" && currentStageId !== "summary") ||
-      measurementUnlocked) &&
+    (currentStageId !== "try_on" || summaryUnlocked) &&
+    (currentStageId !== "summary" || measurementUnlocked) &&
     (currentStageId !== "summary" || summaryUnlocked);
 
   if (canRemainOnCurrentStage) {
@@ -98,6 +98,15 @@ export const resolveFutureStageCorrection = ({
   if (!designSourceReadyForCorrection) return "design_style";
   if (!customDetailsReady) return "custom_details";
   if (!personalizedAdditionsReady) return "personalized_additions";
-  if (!measurementUnlocked) return "try_on";
+  // Measurement now precedes AI Try-on. An unfinished Measurement sends
+  // Try-on and Summary back to Measurement. Summary still waits until
+  // AI Try-on is completed or skipped.
+  if (
+    (currentStageId === "try_on" || currentStageId === "summary") &&
+    !summaryUnlocked
+  ) {
+    return "measurement";
+  }
+  if (currentStageId === "summary" && !measurementUnlocked) return "try_on";
   return "measurement";
 };

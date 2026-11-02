@@ -1068,8 +1068,8 @@ export type DesignStudioStageId =
   | "design_style"
   | "custom_details"
   | "personalized_additions"
-  | "try_on"
   | "measurement"
+  | "try_on"
   | "summary"
   | "shipping"
   | "payment";
