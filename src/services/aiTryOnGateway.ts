@@ -1,0 +1,186 @@
+import type { AiTryOnWorkflowStateV1 } from "../types";
+import {
+  transitionAiTryOnWorkflow,
+  type AiTryOnGateway,
+  type AiTryOnGatewayAvailability,
+  type AiTryOnGatewayJobResult,
+} from "../utils/aiTryOnWorkflow";
+import {
+  AI_TRY_ON_ENDPOINT,
+  type AiTryOnAvailabilityResponse,
+  type AiTryOnErrorResponse,
+  type AiTryOnGenerationRequest,
+  type AiTryOnGenerationSuccess,
+} from "../utils/aiTryOnGatewayContract";
+
+/**
+ * Browser side of the AI Try-on gateway. Talks only to our own
+ * `/api/ai-try-on` route; the Gemini key never leaves the server.
+ *
+ * Generation is synchronous on the server, so `start` resolves straight to
+ * `completed` or `failed`. A job cannot survive a reload, so `resume`
+ * reports an interrupted, retryable failure.
+ */
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const readJson = async (response: Response): Promise<unknown> => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+export const mapAiTryOnHttpResult = (
+  status: number,
+  body: unknown,
+): AiTryOnGatewayJobResult => {
+  if (status === 200 && isRecord(body) && body.status === "completed") {
+    const success = body as unknown as AiTryOnGenerationSuccess;
+    return {
+      status: "completed",
+      resultReference: success.resultReference,
+      ...(isRecord(success.image) &&
+      typeof success.image.data === "string" &&
+      typeof success.image.mimeType === "string"
+        ? { preview: { mimeType: success.image.mimeType, data: success.image.data } }
+        : {}),
+      ...(typeof success.orderTriesRemaining === "number"
+        ? { orderTriesRemaining: success.orderTriesRemaining }
+        : {}),
+    };
+  }
+  const error = (isRecord(body) ? body : {}) as Partial<AiTryOnErrorResponse>;
+  const retryable = error.retryable === true;
+  switch (error.code) {
+    case "NOT_CONFIGURED":
+    case "GLOBAL_LIMIT_REACHED":
+      return { status: "unavailable", code: "not_configured" };
+    case "RATE_LIMITED":
+      return { status: "failed", code: "provider_unavailable", retryable: true };
+    case "ORDER_TRY_LIMIT_REACHED":
+      return { status: "failed", code: "provider_rejected", retryable: false };
+    case "PROVIDER_REJECTED":
+      return { status: "failed", code: "provider_rejected", retryable };
+    case "PROVIDER_FAILED":
+      return { status: "failed", code: "provider_unavailable", retryable };
+    default:
+      return { status: "failed", code: "processing_failed", retryable: false };
+  }
+};
+
+export const createHttpAiTryOnGateway = ({
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+}: { fetchImpl?: FetchLike; endpoint?: string } = {}): AiTryOnGateway => ({
+  async getAvailability(): Promise<AiTryOnGatewayAvailability> {
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      const body = (await readJson(response)) as AiTryOnAvailabilityResponse | null;
+      return response.ok && body?.status === "available"
+        ? { status: "available" }
+        : { status: "unavailable", code: "not_configured" };
+    } catch {
+      return { status: "unavailable", code: "not_configured" };
+    }
+  },
+  async start(inputFingerprint, request) {
+    if (!request || request.inputFingerprint !== inputFingerprint) {
+      return { status: "failed", code: "processing_failed", retryable: false };
+    }
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(request),
+      });
+      return mapAiTryOnHttpResult(response.status, await readJson(response));
+    } catch {
+      return { status: "failed", code: "interrupted", retryable: true };
+    }
+  },
+  async resume() {
+    return { status: "failed", code: "interrupted", retryable: true };
+  },
+});
+
+const createJobId = () =>
+  `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+export interface AiTryOnGenerationRun {
+  state: AiTryOnWorkflowStateV1;
+  preview?: { mimeType: string; data: string };
+  orderTriesRemaining?: number;
+}
+
+/**
+ * Drives one generation through the existing workflow transitions:
+ * ready/failed(retryable) → processing → completed | failed.
+ * `onProcessing` lets the UI show the processing state while Gemini runs.
+ * Returns the unchanged state when the workflow cannot start.
+ */
+export const runAiTryOnGeneration = async ({
+  gateway,
+  state,
+  request,
+  skipAllowed,
+  onProcessing,
+  createJobReferenceId = createJobId,
+}: {
+  gateway: AiTryOnGateway;
+  state: AiTryOnWorkflowStateV1;
+  request: AiTryOnGenerationRequest;
+  skipAllowed: boolean;
+  onProcessing?: (state: AiTryOnWorkflowStateV1) => void;
+  createJobReferenceId?: () => string;
+}): Promise<AiTryOnGenerationRun> => {
+  if (!state.inputFingerprint || request.inputFingerprint !== state.inputFingerprint) {
+    return { state };
+  }
+  const started = transitionAiTryOnWorkflow({
+    state,
+    event: {
+      type: "start",
+      jobReference: { kind: "resumable_job", jobId: createJobReferenceId() },
+    },
+    skipAllowed,
+  });
+  if (!started.ok) return { state };
+  onProcessing?.(started.state);
+
+  const result = await gateway.start(state.inputFingerprint, request);
+  if (result.status === "completed") {
+    const completed = transitionAiTryOnWorkflow({
+      state: started.state,
+      event: { type: "complete", resultReference: result.resultReference },
+      skipAllowed,
+    });
+    if (completed.ok) {
+      return {
+        state: completed.state,
+        ...(result.preview ? { preview: result.preview } : {}),
+        ...(result.orderTriesRemaining !== undefined
+          ? { orderTriesRemaining: result.orderTriesRemaining }
+          : {}),
+      };
+    }
+  }
+  const failure =
+    result.status === "failed"
+      ? { code: result.code, retryable: result.retryable }
+      : { code: "provider_unavailable" as const, retryable: false };
+  const failed = transitionAiTryOnWorkflow({
+    state: started.state,
+    event: { type: "fail", ...failure },
+    skipAllowed,
+  });
+  return { state: failed.ok ? failed.state : started.state };
+};
