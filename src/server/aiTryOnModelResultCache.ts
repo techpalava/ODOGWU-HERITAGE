@@ -24,7 +24,8 @@ import {
  *   order details identity and AI_TRY_ON_MODEL_PROMPT_VERSION. Picture
  *   bytes (not URLs) are hashed, so a rotated download token still hits and
  *   a replaced picture misses. No fit hints, session, account or IP.
- * - Bytes: Storage `ai-try-on-model-results/<key>.webp`, Admin SDK only, no
+ * - Bytes: Storage `ai-try-on-model-results/<key>.webp` in the dedicated
+ *   private bucket (`AI_TRY_ON_STORAGE_BUCKET`), Admin SDK only, no
  *   download token, `customTime` set to the last use.
  * - Record: Firestore `aiTryOnModelResults/<key>` with `lastUsedAt` and
  *   `expiresAt` = last use + 90 days. Both are bumped on every reuse.
