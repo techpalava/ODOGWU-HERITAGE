@@ -78,18 +78,39 @@ interface StorageLike {
 
 type Jobs = Readonly<Record<string, AiTryOnBackgroundJob>>;
 
+const defaultOnPageLeave = (listener: (leaving: boolean) => void) => {
+  if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  window.addEventListener("beforeunload", () => {
+    listener(true);
+    // Another handler may cancel the reload; then this page carries on.
+    setTimeout(() => listener(false), 3000);
+  });
+  window.addEventListener("pagehide", () => listener(true));
+  // Back/forward cache: the same page is shown again.
+  window.addEventListener("pageshow", () => listener(false));
+};
+
 const isSettled = (outcome: AiTryOnPreviewOutcome) => outcome.kind === "completed";
 
 export const createAiTryOnBackgroundJobs = ({
   storage = typeof window !== "undefined" ? window.localStorage : null,
   now = Date.now,
   setTimer = (fn: () => void, ms: number) => setTimeout(fn, ms),
+  onPageLeave = defaultOnPageLeave,
 }: {
   storage?: StorageLike | null;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
+  /** Calls back with true when the page is being left, false if it comes back. */
+  onPageLeave?: (listener: (leaving: boolean) => void) => void;
 } = {}) => {
   let jobs: Jobs = {};
+  // A reload or close aborts the request in the old page, which reports it
+  // as a failure. Ignore that, so the marker survives for the next page.
+  let leaving = false;
+  onPageLeave((next) => {
+    leaving = next;
+  });
   let visibleWearerId: string | null = null;
   const listeners = new Set<() => void>();
   const resuming = new Set<string>();
@@ -141,7 +162,7 @@ export const createAiTryOnBackgroundJobs = ({
 
   const settle = (wearerId: string, patch: Partial<AiTryOnBackgroundJob>) => {
     const job = jobs[wearerId];
-    if (!job) return;
+    if (!job || leaving) return;
     removeMarker(job.scope, wearerId);
     const seenInline = visibleWearerId === wearerId;
     update(wearerId, { ...patch, settledAt: now(), seenInline, toast: seenInline ? "none" : "open" });

@@ -133,6 +133,21 @@ const completed = (remaining = 4): AiTryOnPreviewOutcome => ({
   assert.equal(storage.backing.has(AI_TRY_ON_PENDING_STORAGE_KEY), false);
 }
 
+// ------------------------------------------------------------ store: leaving the page keeps the marker
+{
+  const storage = memoryStorage();
+  let leave!: (leaving: boolean) => void;
+  const jobs = createAiTryOnBackgroundJobs({ storage, onPageLeave: (listener) => { leave = listener; } });
+  const request = deferred<AiTryOnPreviewOutcome>();
+  jobs.start({ wearerId: "w-ada", wearerName: null, inputFingerprint: "fp", scope: "guest", run: () => request.promise });
+  // A reload aborts the request in the old page; that is not a real failure.
+  leave(true);
+  request.resolve({ kind: "failed", orderTriesRemaining: null });
+  await flush();
+  assert.equal(jobs.getSnapshot()["w-ada"].status, "running");
+  assert.equal(storage.backing.has(AI_TRY_ON_PENDING_STORAGE_KEY), true, "marker kept for the next page");
+}
+
 // ------------------------------------------------------------ store: reload resume (never a second request)
 {
   const storage = memoryStorage();
