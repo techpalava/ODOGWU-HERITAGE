@@ -190,6 +190,18 @@ try {
   assert.equal(note.props.id, STEP3_CONTINUE_NOTE_ID);
   assert.equal(note.props.role, "status");
   assert.ok(String(note.props.className).includes(STEP3_CONTINUE_NOTE_BEAM_CLASS));
+  // Phones: full width under Continue. sm and up: sized to its text and
+  // right-aligned with Continue's right edge on the row's own line.
+  assert.match(String(note.props.className), /(^|\s)w-full(\s|$)/);
+  assert.match(String(note.props.className), /sm:w-max/);
+  assert.match(String(note.props.className), /sm:max-w-full/);
+  const noteLine = footer.findByProps({ "data-studio-step-actions-forward-note": "true" });
+  assert.match(String(noteLine.props.className), /(^|\s)basis-full(\s|$)/);
+  assert.match(String(noteLine.props.className), /(^|\s)justify-end(\s|$)/);
+  assert.match(
+    String(footer.findByProps({ "data-studio-step-actions-buttons": "true" }).props.className),
+    /sm:flex-wrap/,
+  );
   assert.equal(
     root.findAll((node) => node.props?.["data-testid"] === "step3-continue-lock-note").length,
     1,

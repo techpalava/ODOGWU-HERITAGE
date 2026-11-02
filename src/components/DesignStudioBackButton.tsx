@@ -181,9 +181,10 @@ export const DesignStudioStepActions = ({
   forward?: DesignStudioForwardButtonProps;
   note?: ReactNode;
   /**
-   * Optional note that sits directly under the forward (Continue) button.
-   * Phones: full width on its own line under Back + Continue. sm and up: in
-   * Continue's own column, the same width as the button.
+   * Optional note that sits directly under the forward (Continue) button, on
+   * its own line of the button row. Phones: full width under Back + Continue,
+   * above Save Order. sm and up: right-aligned with Continue's right edge; the
+   * note's content may size itself (for example w-max) and stretch left.
    */
   forwardNote?: ReactNode;
   className?: string;
@@ -211,7 +212,7 @@ export const DesignStudioStepActions = ({
       <div
         data-studio-step-actions-buttons="true"
         className={`flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap ${
-          forward && forwardNote ? "sm:items-start" : ""
+          forward && forwardNote ? "sm:flex-wrap" : ""
         }`}
       >
         <DesignStudioBackButton
@@ -229,15 +230,15 @@ export const DesignStudioStepActions = ({
         {forward && forwardNote ? (
           <div
             data-studio-step-actions-forward-column="true"
-            className={`flex min-w-0 flex-col gap-2 max-sm:contents sm:flex-1 sm:basis-0 sm:max-w-xs ${forward.className || ""}`}
+            className="contents"
           >
             <DesignStudioForwardButton
               {...forward}
-              className="min-w-0 max-sm:flex-1 max-sm:basis-0 sm:w-full"
+              className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
             />
             <div
               data-studio-step-actions-forward-note="true"
-              className="w-full min-w-0 max-sm:basis-full"
+              className="flex w-full min-w-0 basis-full justify-end"
             >
               {forwardNote}
             </div>

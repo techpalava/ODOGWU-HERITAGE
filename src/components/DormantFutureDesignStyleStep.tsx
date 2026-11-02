@@ -1467,7 +1467,7 @@ export const DormantFutureDesignStyleStep = ({
                 id={STEP3_CONTINUE_NOTE_ID}
                 role="status"
                 data-testid="step3-continue-lock-note"
-                className={`w-full rounded-lg border border-heritage-gold/45 bg-white px-3 py-2 text-xs font-semibold text-amber-800 ${STEP3_CONTINUE_NOTE_BEAM_CLASS}`}
+                className={`w-full rounded-lg border border-heritage-gold/45 bg-white px-3 py-2 sm:w-max sm:max-w-full text-xs font-semibold text-amber-800 ${STEP3_CONTINUE_NOTE_BEAM_CLASS}`}
               >
                 Choose a design reference for {firstIncompleteOccurrence.label} to continue.
               </p>
