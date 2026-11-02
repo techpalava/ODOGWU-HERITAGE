@@ -7,6 +7,7 @@ import {
 } from "../utils/aiTryOnWorkflow";
 import {
   AI_TRY_ON_ENDPOINT,
+  AI_TRY_ON_TRIES_PER_ORDER,
   type AiTryOnAvailabilityResponse,
   type AiTryOnErrorResponse,
   type AiTryOnGenerationRequest,
@@ -183,4 +184,138 @@ export const runAiTryOnGeneration = async ({
     skipAllowed,
   });
   return { state: failed.ok ? failed.state : started.state };
+};
+
+// ------------------------------------------------------------ Step 5 UI
+
+export type AiTryOnAvailabilityDetails =
+  | { status: "available"; triesPerOrder: number; orderTriesRemaining: number | null }
+  | { status: "unavailable" };
+
+/**
+ * `GET /api/ai-try-on?orderKey=…` for the Design Studio step: availability
+ * plus the tries left for this order. Any error reads as unavailable, so the
+ * step falls back to "AI Try-on is currently unavailable".
+ */
+export const fetchAiTryOnAvailability = async ({
+  orderKey,
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+}: {
+  orderKey?: string | null;
+  fetchImpl?: FetchLike;
+  endpoint?: string;
+}): Promise<AiTryOnAvailabilityDetails> => {
+  try {
+    const url = orderKey ? `${endpoint}?orderKey=${encodeURIComponent(orderKey)}` : endpoint;
+    const response = await fetchImpl(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    const body = (await readJson(response)) as Record<string, unknown> | null;
+    if (!response.ok || !isRecord(body) || body.status !== "available") {
+      return { status: "unavailable" };
+    }
+    const triesPerOrder =
+      typeof body.triesPerOrder === "number" && body.triesPerOrder > 0
+        ? Math.floor(body.triesPerOrder)
+        : AI_TRY_ON_TRIES_PER_ORDER;
+    const remaining =
+      typeof body.orderTriesRemaining === "number" && body.orderTriesRemaining >= 0
+        ? Math.min(triesPerOrder, Math.floor(body.orderTriesRemaining))
+        : null;
+    return { status: "available", triesPerOrder, orderTriesRemaining: remaining };
+  } catch {
+    return { status: "unavailable" };
+  }
+};
+
+/**
+ * What the AI Try-on step shows after one generation request. Unlike the
+ * workflow mapping above, this keeps the customer-facing distinctions
+ * (out of previews, too many tries, photo blocked, refunded failure).
+ */
+export type AiTryOnPreviewOutcome =
+  | {
+      kind: "completed";
+      resultReference: AiTryOnGenerationSuccess["resultReference"];
+      preview: { mimeType: string; data: string };
+      orderTriesRemaining: number | null;
+    }
+  | { kind: "order_limit_reached" }
+  | { kind: "rate_limited"; retryAfterSeconds: number | null }
+  | { kind: "photo_blocked"; orderTriesRemaining: number | null }
+  | { kind: "failed"; orderTriesRemaining: number | null }
+  | { kind: "unavailable" };
+
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+export const mapAiTryOnPreviewResponse = (
+  status: number,
+  body: unknown,
+): AiTryOnPreviewOutcome => {
+  if (status === 200 && isRecord(body) && body.status === "completed") {
+    const image = isRecord(body.image) ? body.image : null;
+    const resultReference = isRecord(body.resultReference) ? body.resultReference : null;
+    if (
+      image &&
+      typeof image.data === "string" &&
+      image.data.length > 0 &&
+      typeof image.mimeType === "string" &&
+      IMAGE_MIME_TYPES.has(image.mimeType) &&
+      resultReference &&
+      resultReference.kind === "verified_private_try_on_result"
+    ) {
+      return {
+        kind: "completed",
+        resultReference: resultReference as unknown as AiTryOnGenerationSuccess["resultReference"],
+        preview: { mimeType: image.mimeType, data: image.data },
+        orderTriesRemaining:
+          typeof body.orderTriesRemaining === "number" ? body.orderTriesRemaining : null,
+      };
+    }
+    return { kind: "failed", orderTriesRemaining: null };
+  }
+  const error = (isRecord(body) ? body : {}) as Partial<AiTryOnErrorResponse>;
+  const remaining =
+    typeof error.orderTriesRemaining === "number" ? error.orderTriesRemaining : null;
+  switch (error.code) {
+    case "NOT_CONFIGURED":
+    case "GLOBAL_LIMIT_REACHED":
+      return { kind: "unavailable" };
+    case "ORDER_TRY_LIMIT_REACHED":
+      return { kind: "order_limit_reached" };
+    case "RATE_LIMITED":
+      return {
+        kind: "rate_limited",
+        retryAfterSeconds:
+          typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
+      };
+    case "PROVIDER_REJECTED":
+      return { kind: "photo_blocked", orderTriesRemaining: remaining };
+    default:
+      return { kind: "failed", orderTriesRemaining: remaining };
+  }
+};
+
+export const requestAiTryOnPreview = async ({
+  request,
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+}: {
+  request: AiTryOnGenerationRequest;
+  fetchImpl?: FetchLike;
+  endpoint?: string;
+}): Promise<AiTryOnPreviewOutcome> => {
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(request),
+    });
+    return mapAiTryOnPreviewResponse(response.status, await readJson(response));
+  } catch {
+    return { kind: "failed", orderTriesRemaining: null };
+  }
 };

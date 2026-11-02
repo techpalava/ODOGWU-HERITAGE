@@ -657,3 +657,43 @@ export const createUnavailableAiTryOnGateway = (): AiTryOnGateway => ({
   start: async () => ({ status: "unavailable", code: "not_configured" }),
   resume: async () => ({ status: "unavailable", code: "not_configured" }),
 });
+
+/**
+ * Records a wearer's finished preview on the order-level workflow, which
+ * gates Measurement. Generation itself is tracked per wearer in the Try-on
+ * step; the order workflow only ever stores the opaque result reference
+ * (never the image). A stale, failed, unavailable or skipped order workflow
+ * restarts at the current fingerprint, so a fresh preview always completes
+ * it. Returns the unchanged state when the reference is not valid or the
+ * design is not ready.
+ */
+export const recordAiTryOnPreviewCompletion = ({
+  state,
+  currentInputFingerprint,
+  resultReference,
+  jobId,
+}: {
+  state: AiTryOnWorkflowStateV1;
+  currentInputFingerprint: string | null;
+  resultReference: AiTryOnVerifiedPrivateResultReference;
+  jobId: string;
+}): AiTryOnWorkflowStateV1 => {
+  if (!currentInputFingerprint) return state;
+  const ready: AiTryOnWorkflowStateV1 = {
+    schemaVersion: 1,
+    status: "ready",
+    inputFingerprint: currentInputFingerprint,
+  };
+  const started = transitionAiTryOnWorkflow({
+    state: ready,
+    event: { type: "start", jobReference: { kind: "resumable_job", jobId } },
+    skipAllowed: true,
+  });
+  if (!started.ok) return state;
+  const completed = transitionAiTryOnWorkflow({
+    state: started.state,
+    event: { type: "complete", resultReference },
+    skipAllowed: true,
+  });
+  return completed.ok ? completed.state : state;
+};

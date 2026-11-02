@@ -1,3 +1,4 @@
+import { clearAiTryOnOrderKeys } from "./aiTryOnOrderKey";
 import type {
   CartItem,
   Customer,
@@ -486,6 +487,8 @@ export const GuestOrderSessionService = {
 
   clearFutureDesignDraft: (): void => {
     getDesignStudioDraftRepository()?.clearFutureDraftV1();
+    // The next order starts with its own AI Try-on tries.
+    clearAiTryOnOrderKeys();
   },
 
   getFutureDesignDraftMigrationResult: () =>

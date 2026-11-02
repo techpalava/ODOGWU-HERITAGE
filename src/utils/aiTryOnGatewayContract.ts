@@ -73,7 +73,12 @@ export type AiTryOnErrorCode =
   | "PROVIDER_FAILED";
 
 export type AiTryOnAvailabilityResponse =
-  | { readonly status: "available"; readonly triesPerOrder: number }
+  | {
+      readonly status: "available";
+      readonly triesPerOrder: number;
+      /** Present when GET carried `?orderKey=`. */
+      readonly orderTriesRemaining?: number;
+    }
   | { readonly status: "unavailable"; readonly code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED" };
 
 export interface AiTryOnGenerationSuccess {
@@ -84,7 +89,7 @@ export interface AiTryOnGenerationSuccess {
     readonly assetId: string;
     readonly ownerBindingId: string;
   };
-  /** Returned inline only. Not stored by Step 3. */
+  /** Returned inline only. Private preview storage is Step 6. */
   readonly image: { readonly mimeType: string; readonly data: string };
   readonly orderTriesRemaining: number;
   /** Prompt wording the image was made with. */
@@ -96,6 +101,8 @@ export interface AiTryOnErrorResponse {
   readonly code: AiTryOnErrorCode;
   readonly retryable: boolean;
   readonly retryAfterSeconds?: number;
+  /** Tries left for the order after a refunded (uncounted) failure. */
+  readonly orderTriesRemaining?: number;
 }
 
 /** Locked limits (Xavier). */

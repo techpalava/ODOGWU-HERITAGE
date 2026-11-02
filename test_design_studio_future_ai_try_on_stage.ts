@@ -292,8 +292,22 @@ assert.equal(tryOnSource.includes("workflow.failure.code"), false);
 assert.equal(tryOnSource.includes("jobId"), false);
 assert.equal(tryOnSource.includes("assetId"), false);
 assert.equal(tryOnSource.includes("setTimeout"), false);
+// Step 5 (approved design): the photo picker lives only in the live panel,
+// which the step renders only when GET /api/ai-try-on reports available.
+// The step shell itself still has no input and no photo handling.
 assert.equal(tryOnSource.includes("<input"), false);
 assert.equal(tryOnSource.includes("type=\"file\""), false);
+assert.match(tryOnSource, /livePanel\?: ReactNode/);
+assert.match(tryOnSource, /You can continue with your order without a Try-on preview\./);
+const livePanelSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
+assert.match(livePanelSource, /type="file"/);
+assert.match(livePanelSource, /accept=\{AI_TRY_ON_PHOTO_ACCEPT\}/);
+assert.equal(livePanelSource.includes("type=\"checkbox\""), false, "consent is a notice, not a checkbox");
+// Privacy boundary: no photo or preview data is persisted in workflow state,
+// the draft, or browser storage.
+assert.equal(livePanelSource.includes("assetId"), false);
+assert.equal(livePanelSource.includes("jobId"), false);
+assert.equal(/localStorage|sessionStorage|indexedDB/.test(livePanelSource), false);
 assert.match(stepperSource, /DESIGN_STUDIO_TEN_STAGE_FOUNDATION\.map/);
 assert.match(stepperSource, /canEnterTryOn/);
 assert.match(stepperSource, /canEnterMeasurement/);
@@ -303,7 +317,14 @@ assert.match(
   studioSource,
   /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
 );
-assert.match(studioSource, /gatewayAvailable: false/);
+// Availability comes from GET /api/ai-try-on (Step 5); unknown/unavailable → false.
+assert.match(studioSource, /gatewayAvailable: aiTryOnGatewayAvailable/);
+assert.match(studioSource, /aiTryOnAvailability\.status === "available"/);
+assert.equal(studioSource.includes("gatewayAvailable: true"), false);
+// Skip is hidden while a preview is generating (Xavier, Step 5).
+assert.match(tryOnSource, /\{canSkip && !generating && \(/);
+assert.match(studioSource, /onGeneratingChange=\{setAiTryOnGenerating\}/);
+assert.match(studioSource, /generating=\{aiTryOnGenerating\}/);
 assert.match(legacyCardSource, /Coming Soon/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 
