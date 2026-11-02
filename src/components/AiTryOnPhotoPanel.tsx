@@ -29,6 +29,7 @@ import {
 } from "../utils/aiTryOnPhoto";
 import {
   requestAiTryOnPreview,
+  releaseAiTryOnBusyJob,
   type AiTryOnCredentials,
   type AiTryOnPreviewOutcome,
 } from "../services/aiTryOnGateway";
@@ -133,6 +134,8 @@ type PanelMessage =
   | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
   | { kind: "failed"; left: number }
+  /** Still busy after the retries (try refunded). */
+  | { kind: "busy_failed" }
   | { kind: "photo_blocked" };
 
 const messageText = (message: PanelMessage): string => {
@@ -145,6 +148,8 @@ const messageText = (message: PanelMessage): string => {
       return AI_TRY_ON_MESSAGES.tooManyTries;
     case "failed":
       return AI_TRY_ON_MESSAGES.failed(message.left);
+    case "busy_failed":
+      return AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
     case "photo_blocked":
       return AI_TRY_ON_MESSAGES.photoBlocked;
     case "preview_deleted":
@@ -205,6 +210,8 @@ export interface AiTryOnPhotoPanelProps {
   revokeThumbnailUrl?: (url: string) => void;
   /** Background requests (one per wearer); outlive this panel. */
   jobStore?: AiTryOnBackgroundJobs;
+  /** Busy retries given up: refunds the held try on the server. */
+  releaseBusyJob?: (jobId: string, wearerKey: string) => Promise<unknown>;
   /** Order/identity scope of the jobs this panel shows. */
   jobScope?: string;
 }
@@ -236,6 +243,7 @@ export const AiTryOnPhotoPanel = ({
   createThumbnailUrl = defaultThumbnail,
   revokeThumbnailUrl = defaultRevoke,
   jobStore = aiTryOnBackgroundJobs,
+  releaseBusyJob = (jobId, wearerKey) => releaseAiTryOnBusyJob({ credentials, jobId, wearerKey }),
   jobScope = "default",
 }: AiTryOnPhotoPanelProps) => {
   const idPrefix = useId();
@@ -323,6 +331,7 @@ export const AiTryOnPhotoPanel = ({
     targets.find((entry) => entry.wearerId === selectedWearerId) || targets[0] || null;
   /** This wearer's request is running (other wearers may still be chosen). */
   const generating = jobFor(target?.wearerId)?.status === "running";
+  const busy = generating && Boolean(jobFor(target?.wearerId)?.busy);
 
   // Tell the job store who is on screen: a request that ends while its
   // wearer is shown here reports inline, otherwise with a toast.
@@ -578,6 +587,16 @@ export const AiTryOnPhotoPanel = ({
         show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
         break;
       }
+      case "busy_failed":
+        if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
+        if (typeof outcome.accountTriesRemaining === "number") {
+          setAccountTriesRemaining(outcome.accountTriesRemaining);
+        }
+        show({ kind: "busy_failed" });
+        break;
+      case "busy":
+        // Never settles a job (the store keeps retrying).
+        break;
       case "unavailable":
         onUnavailableRef.current();
         break;
@@ -673,8 +692,8 @@ export const AiTryOnPhotoPanel = ({
       inputFingerprint,
       scope: jobScope,
       modelId: model ? model.id : null,
-      run: async () => {
-        const outcome = await requestPreview(request);
+      run: async (busyJobId) => {
+        const outcome = await requestPreview(busyJobId ? { ...request, busyJobId } : request);
         if (outcome.kind === "completed") {
           onPreviewCreatedRef.current({
             wearerId,
@@ -684,6 +703,7 @@ export const AiTryOnPhotoPanel = ({
         }
         return outcome;
       },
+      giveUpBusy: (jobId) => releaseBusyJob(jobId, wearerId),
     });
   };
 
@@ -949,11 +969,13 @@ export const AiTryOnPhotoPanel = ({
         {generating && (
           <div
             className="flex items-center gap-3 rounded-xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
-            data-ai-try-on-loading
+            data-ai-try-on-loading={busy ? "busy" : ""}
           >
             <Loader2 aria-hidden="true" size={20} className="shrink-0 animate-spin text-heritage-green" />
             <p className="text-sm text-heritage-ink/80">
-              {AI_TRY_ON_BACKGROUND_COPY.panelGenerating(targets.length > 1 ? target.label : null)}
+              {busy
+                ? AI_TRY_ON_BACKGROUND_COPY.panelBusy
+                : AI_TRY_ON_BACKGROUND_COPY.panelGenerating(targets.length > 1 ? target.label : null)}
             </p>
           </div>
         )}

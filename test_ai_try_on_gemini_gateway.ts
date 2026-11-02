@@ -604,7 +604,7 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
 
 // Gemini failure releases the reservation, so only real generations count.
 {
-  const failing = harness({ geminiError: Object.assign(new Error("upstream"), { status: 503 }) });
+  const failing = harness({ geminiError: Object.assign(new Error("upstream"), { status: 500 }) });
   const result = response();
   await handleAiTryOn(post(validBody()), result.res, failing.deps);
   assert.equal(result.state.status, 502);
@@ -949,9 +949,15 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
       assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER - 1, "one try used");
       assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 1, "global counted once");
     } else {
-      assert.equal(result.state.status, 502);
-      assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER, "refunded once, never below or above");
-      assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count ?? 0, 0, "global refunded");
+      // Busy retries (item 1): still over capacity, so the try is held for
+      // the browser's next retry instead of being refunded now.
+      assert.equal(result.state.status, 503);
+      const busy = result.state.body as { code?: string; busyJobId?: string; retryable?: boolean };
+      assert.equal(busy.code, "PROVIDER_BUSY");
+      assert.match(busy.busyJobId ?? "", /^busy-[0-9a-f-]{36}$/);
+      assert.equal(busy.retryable, true);
+      assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER - 1, "try held, counted once");
+      assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 1, "global counted once");
     }
     const logLine = h.logs.find((line) => line.includes('"event":"ai_try_on"') && line.includes("attempts"));
     assert.match(logLine ?? "", /"attempts":2/);

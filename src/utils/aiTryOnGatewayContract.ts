@@ -6,6 +6,8 @@ import type { AiTryOnOrderDetails } from "./aiTryOnOrderDetails.js";
  *
  * `GET  /api/ai-try-on` → availability.
  * `POST /api/ai-try-on` → one server-side Gemini generation.
+ * `DELETE /api/ai-try-on?busyJobId=…&wearerKey=…` → give up a busy job
+ *   (refunds its held try once).
  *
  * On Vercel the path is rewritten onto
  * api/design-studio/transfer-uploaded-design-draft.ts (`?route=ai-try-on`)
@@ -90,6 +92,11 @@ export interface AiTryOnGenerationRequest {
   readonly fitHints?: readonly AiTryOnFitHint[];
   /** Visible order details (ids/enums only); rendered server-side. */
   readonly orderDetails?: AiTryOnOrderDetails | null;
+  /**
+   * Retry of a busy (over-capacity) try: the id from the PROVIDER_BUSY
+   * answer. The held try is reused, so nothing is charged again.
+   */
+  readonly busyJobId?: string;
 }
 
 export type AiTryOnErrorCode =
@@ -108,7 +115,19 @@ export type AiTryOnErrorCode =
   /** Step 7: no open server session for this caller (call `?action=session`). */
   | "SESSION_REQUIRED"
   /** Step 7: a Firebase ID token was sent but could not be verified. */
-  | "AUTH_REQUIRED";
+  | "AUTH_REQUIRED"
+  /**
+   * Gemini is over capacity. With `busyJobId`: the try is held, send the
+   * same request again with that id. Without: the last retry failed too and
+   * the try was refunded.
+   */
+  | "PROVIDER_BUSY"
+  /** A busy retry whose session has closed (order placed or cleared). */
+  | "SESSION_CLOSED"
+  /** A busy retry whose job no longer exists (finished, refunded or another design). */
+  | "BUSY_JOB_GONE"
+  /** A new request while this wearer's busy retry is running. */
+  | "BUSY_JOB_ACTIVE";
 
 /** A stored preview of this session's order (Step 6). */
 export interface AiTryOnStoredPreviewSummary {
@@ -180,6 +199,8 @@ export interface AiTryOnErrorResponse {
   readonly orderTriesRemaining?: number;
   /** Signed-in customers only: account tries left after a refunded failure. */
   readonly accountTriesRemaining?: number;
+  /** PROVIDER_BUSY only: the held job to retry with. */
+  readonly busyJobId?: string;
 }
 
 /** Locked limits (Xavier). */

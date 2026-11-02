@@ -1204,6 +1204,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Busy-retry jobs (a try held while Gemini is over capacity): server-only.
+    match /aiTryOnJobs/{document=**} {
+      allow read, write: if false;
+    }
+
     // Shared default-model try-on results: server-only, like the previews.
     match /aiTryOnModelResults/{document=**} {
       allow read, write: if false;

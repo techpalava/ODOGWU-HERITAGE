@@ -363,7 +363,13 @@ export type AiTryOnPreviewOutcome =
   | { kind: "rate_limited"; retryAfterSeconds: number | null }
   | { kind: "photo_blocked"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
   | { kind: "failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
+  /** Gemini is over capacity: the try is held; send again with `jobId`. */
+  | { kind: "busy"; jobId: string; retryAfterSeconds: number | null }
+  /** Still over capacity after the retries; the try was refunded. */
+  | { kind: "busy_failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
   | { kind: "unavailable" };
+
+const BUSY_JOB_ID_PATTERN = /^busy-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -423,6 +429,14 @@ export const mapAiTryOnPreviewResponse = (
       };
     case "PROVIDER_REJECTED":
       return { kind: "photo_blocked", orderTriesRemaining: remaining, ...account };
+    case "PROVIDER_BUSY":
+      return typeof error.busyJobId === "string" && BUSY_JOB_ID_PATTERN.test(error.busyJobId)
+        ? {
+            kind: "busy",
+            jobId: error.busyJobId,
+            retryAfterSeconds: typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
+          }
+        : { kind: "busy_failed", orderTriesRemaining: remaining, ...account };
     default:
       return { kind: "failed", orderTriesRemaining: remaining, ...account };
   }
@@ -521,6 +535,39 @@ export const deleteStoredAiTryOnPreviews = async ({
       keepalive,
     });
     return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Busy retries given up (time ran out, or a reload found no preview): the
+ * server refunds the held try once. True when a try was refunded.
+ */
+export const releaseAiTryOnBusyJob = async ({
+  credentials,
+  jobId,
+  wearerKey,
+  fetchImpl = (input, init) => fetch(input, init),
+  endpoint = AI_TRY_ON_ENDPOINT,
+}: {
+  credentials?: AiTryOnCredentials;
+  jobId: string;
+  wearerKey: string;
+  fetchImpl?: FetchLike;
+  endpoint?: string;
+}): Promise<boolean> => {
+  try {
+    const response = await fetchImpl(
+      `${endpoint}?busyJobId=${encodeURIComponent(jobId)}&wearerKey=${encodeURIComponent(wearerKey)}`,
+      {
+        method: "DELETE",
+        headers: { Accept: "application/json", ...(await credentialHeaders(credentials)) },
+        keepalive: true,
+      },
+    );
+    const body = (await readJson(response)) as { released?: unknown } | null;
+    return response.ok && body?.released === true;
   } catch {
     return false;
   }

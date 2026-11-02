@@ -17,12 +17,22 @@ import type { AiTryOnStoredPreviewSummary } from "../utils/aiTryOnGatewayContrac
  * reloads or closes mid-request, `resume` asks the server for that
  * wearer's stored preview instead of sending a new request, so a try is
  * never charged twice.
+ *
+ * Busy retries: when the server answers PROVIDER_BUSY (Gemini over
+ * capacity, try held), the same request is sent again with the job id
+ * after about 15, 30, 45, 60 and 60 s (±20%), until 4 minutes after the
+ * start; then the job is given up (the server refunds the try once).
  */
 
 export const AI_TRY_ON_PENDING_STORAGE_KEY = "odogwu_ai_try_on_pending_v1";
 /** Longest a request can run on the server (130 s maxDuration) plus slack. */
 export const AI_TRY_ON_RESUME_WINDOW_MS = 150_000;
 export const AI_TRY_ON_RESUME_POLL_MS = 8_000;
+/** Waits before each busy retry (Xavier: about 15/30/45/60/60 s). */
+export const AI_TRY_ON_BUSY_RETRY_DELAYS_MS = [15_000, 30_000, 45_000, 60_000, 60_000] as const;
+export const AI_TRY_ON_BUSY_RETRY_JITTER = 0.2;
+/** No busy retry starts later than this after the first request. */
+export const AI_TRY_ON_BUSY_GIVE_UP_MS = 240_000;
 /** Server previews are kept 30 days; createdAt = expiresAt - 30 days. */
 const PREVIEW_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** Clock-skew allowance between this device and the server. */
@@ -57,6 +67,8 @@ export interface AiTryOnBackgroundJob {
   readonly toast: "none" | "open" | "closed";
   /** "View preview" asked the panel to scroll to and highlight this preview. */
   readonly focusRequested: boolean;
+  /** Gemini was busy: the request is being retried (chip/panel wording). */
+  readonly busy: boolean;
 }
 
 /**
@@ -68,6 +80,10 @@ export interface AiTryOnPendingMarker {
   inputFingerprint: string;
   scope: string;
   startedAt: number;
+  /** Busy retries: the held job, so a reload can give it up (refund). */
+  busyJobId?: string;
+  /** Start of the latest request (busy retries); defaults to startedAt. */
+  requestAt?: number;
 }
 
 interface StorageLike {
@@ -97,12 +113,14 @@ export const createAiTryOnBackgroundJobs = ({
   now = Date.now,
   setTimer = (fn: () => void, ms: number) => setTimeout(fn, ms),
   onPageLeave = defaultOnPageLeave,
+  random = Math.random,
 }: {
   storage?: StorageLike | null;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   /** Calls back with true when the page is being left, false if it comes back. */
   onPageLeave?: (listener: (leaving: boolean) => void) => void;
+  random?: () => number;
 } = {}) => {
   let jobs: Jobs = {};
   // A reload or close aborts the request in the old page, which reports it
@@ -133,7 +151,9 @@ export const createAiTryOnBackgroundJobs = ({
               typeof entry.wearerId === "string" &&
               typeof entry.inputFingerprint === "string" &&
               typeof entry.scope === "string" &&
-              typeof entry.startedAt === "number",
+              typeof entry.startedAt === "number" &&
+              (entry.busyJobId === undefined || typeof entry.busyJobId === "string") &&
+              (entry.requestAt === undefined || typeof entry.requestAt === "number"),
           )
         : [];
     } catch {
@@ -155,6 +175,13 @@ export const createAiTryOnBackgroundJobs = ({
       ),
       marker,
     ]);
+  const patchMarker = (scope: string, wearerId: string, patch: Partial<AiTryOnPendingMarker>) =>
+    writeMarkers(
+      readMarkers().map((entry) =>
+        entry.scope === scope && entry.wearerId === wearerId ? { ...entry, ...patch } : entry,
+      ),
+    );
+  const sleep = (ms: number) => new Promise<void>((resolve) => void setTimer(resolve, ms));
   const removeMarker = (scope: string, wearerId: string) =>
     writeMarkers(
       readMarkers().filter((entry) => !(entry.scope === scope && entry.wearerId === wearerId)),
@@ -188,13 +215,17 @@ export const createAiTryOnBackgroundJobs = ({
       scope,
       modelId = null,
       run,
+      giveUpBusy = async () => undefined,
     }: {
       wearerId: string;
       wearerName: string | null;
       inputFingerprint: string;
       scope: string;
       modelId?: string | null;
-      run: () => Promise<AiTryOnPreviewOutcome>;
+      /** One request; `busyJobId` is set on a busy retry. */
+      run: (busyJobId: string | null) => Promise<AiTryOnPreviewOutcome>;
+      /** Tells the server the busy retries are over (refund the held try). */
+      giveUpBusy?: (jobId: string) => Promise<unknown>;
     }): boolean {
       if (api.isRunning(wearerId)) return false;
       const startedAt = now();
@@ -218,14 +249,45 @@ export const createAiTryOnBackgroundJobs = ({
           handledByHost: false,
           toast: "none",
           focusRequested: false,
+          busy: false,
         },
       };
       addMarker({ wearerId, inputFingerprint, scope, startedAt });
       emit();
-      void run()
+      const alive = () => jobs[wearerId]?.startedAt === startedAt && !leaving;
+      const request = (busyJobId: string | null) =>
+        run(busyJobId).catch((): AiTryOnPreviewOutcome => ({ kind: "failed", orderTriesRemaining: null }));
+      const loop = async (): Promise<AiTryOnPreviewOutcome | null> => {
+        let busyJobId: string | null = null;
+        let retries = 0;
+        for (;;) {
+          const outcome = await request(busyJobId);
+          if (!alive()) return null;
+          const busyAgain =
+            outcome.kind === "busy" || (busyJobId !== null && outcome.kind === "rate_limited");
+          if (!busyAgain) return outcome;
+          if (outcome.kind === "busy") busyJobId = outcome.jobId;
+          if (!jobs[wearerId]?.busy) update(wearerId, { busy: true });
+          patchMarker(scope, wearerId, { busyJobId: busyJobId! });
+          const base = AI_TRY_ON_BUSY_RETRY_DELAYS_MS[retries];
+          const delay =
+            base === undefined
+              ? Infinity
+              : Math.round(base * (1 - AI_TRY_ON_BUSY_RETRY_JITTER + random() * 2 * AI_TRY_ON_BUSY_RETRY_JITTER));
+          if (now() + delay - startedAt > AI_TRY_ON_BUSY_GIVE_UP_MS) {
+            void giveUpBusy(busyJobId!).catch(() => undefined);
+            return { kind: "busy_failed", orderTriesRemaining: null };
+          }
+          await sleep(delay);
+          if (!alive()) return null;
+          retries += 1;
+          patchMarker(scope, wearerId, { requestAt: now() });
+        }
+      };
+      void loop()
         .catch((): AiTryOnPreviewOutcome => ({ kind: "failed", orderTriesRemaining: null }))
         .then((outcome) => {
-          if (jobs[wearerId]?.startedAt !== startedAt) return;
+          if (!outcome || jobs[wearerId]?.startedAt !== startedAt) return;
           settle(wearerId, {
             status: isSettled(outcome) ? "completed" : "failed",
             outcome,
@@ -245,10 +307,13 @@ export const createAiTryOnBackgroundJobs = ({
       scope,
       listStoredPreviews,
       loadStoredPreview,
+      giveUpBusy = async () => false,
     }: {
       scope: string;
       listStoredPreviews: () => Promise<readonly AiTryOnStoredPreviewSummary[] | null>;
       loadStoredPreview: (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
+      /** Busy job left by the old page: refund its held try. True when refunded. */
+      giveUpBusy?: (wearerId: string, jobId: string) => Promise<boolean>;
     }) {
       const markers = readMarkers();
       // Drop markers far past any possible end (and other scopes' stale ones).
@@ -277,9 +342,13 @@ export const createAiTryOnBackgroundJobs = ({
             handledByHost: false,
             toast: "none",
             focusRequested: false,
+            busy: Boolean(marker.busyJobId),
           },
         };
         emit();
+        // The photo is not kept across a reload, so busy retries cannot go
+        // on: wait for a request that may still be running, then give up.
+        const lastRequestAt = marker.requestAt ?? marker.startedAt;
         const poll = async () => {
           // Discarded (e.g. the order was placed or cleared) while waiting.
           if (jobs[marker.wearerId]?.startedAt !== marker.startedAt) {
@@ -310,9 +379,16 @@ export const createAiTryOnBackgroundJobs = ({
               return;
             }
           }
-          if (now() - marker.startedAt >= AI_TRY_ON_RESUME_WINDOW_MS) {
+          if (now() - lastRequestAt >= AI_TRY_ON_RESUME_WINDOW_MS) {
+            const refunded = marker.busyJobId
+              ? await giveUpBusy(marker.wearerId, marker.busyJobId).catch(() => false)
+              : false;
             resuming.delete(marker.wearerId);
-            settle(marker.wearerId, { status: "failed" });
+            if (jobs[marker.wearerId]?.startedAt !== marker.startedAt) return;
+            settle(marker.wearerId, {
+              status: "failed",
+              ...(refunded ? { outcome: { kind: "busy_failed", orderTriesRemaining: null } as const } : {}),
+            });
             return;
           }
           setTimer(() => void poll(), AI_TRY_ON_RESUME_POLL_MS);

@@ -68,6 +68,8 @@ export type AiTryOnGeminiOutcome =
       /** `rejected`: safety/no-image answer. `failed`: transport or provider error. */
       kind: "rejected" | "failed";
       retryable: boolean;
+      /** Gemini was over capacity (503 / high demand) on the last attempt. */
+      capacity?: boolean;
       /** Short, key-free reason for server logs. */
       reason: string;
     };
@@ -225,8 +227,8 @@ export const runAiTryOnGemini = async ({
     }
   };
   const done = (outcome: AiTryOnGeminiOutcome & { capacity?: boolean }, attempts: number): AiTryOnGeminiOutcome => {
-    const { capacity: _capacity, ...rest } = outcome;
-    return { ...rest, attempts } as AiTryOnGeminiOutcome;
+    const { capacity, ...rest } = outcome;
+    return { ...rest, ...(capacity ? { capacity: true } : {}), attempts } as AiTryOnGeminiOutcome;
   };
   try {
     const first = await attempt();

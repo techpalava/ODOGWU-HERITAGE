@@ -12,7 +12,7 @@ import { AI_TRY_ON_BACKGROUND_COPY as COPY } from "../utils/aiTryOnBackgroundCop
  * the same look (forest green, gold border).
  */
 
-export type AiTryOnToastKind = "ready" | "stale" | "failed" | "resume_failed";
+export type AiTryOnToastKind = "ready" | "stale" | "failed" | "busy_failed" | "resume_failed";
 
 export const aiTryOnToastKind = (
   job: AiTryOnBackgroundJob,
@@ -21,18 +21,26 @@ export const aiTryOnToastKind = (
   if (job.status === "completed") {
     return currentFingerprint && currentFingerprint === job.inputFingerprint ? "ready" : "stale";
   }
+  if (job.outcome?.kind === "busy_failed") return "busy_failed";
   return job.resumed && !job.outcome ? "resume_failed" : "failed";
 };
 
 export const AiTryOnGeneratingChip = ({ jobs }: { jobs: readonly AiTryOnBackgroundJob[] }) => {
   if (!jobs.length) return null;
-  const text = jobs.length === 1 ? COPY.chipOne(jobs[0].wearerName) : COPY.chipMany(jobs.length);
+  // Several wearers keep the count wording, busy or not.
+  const text =
+    jobs.length === 1
+      ? jobs[0].busy
+        ? COPY.chipBusy(jobs[0].wearerName)
+        : COPY.chipOne(jobs[0].wearerName)
+      : COPY.chipMany(jobs.length);
   return (
     <div className="mt-2 flex justify-end">
       <p
         role="status"
         aria-live="polite"
         data-ai-try-on-chip
+        data-ai-try-on-chip-busy={jobs.length === 1 && jobs[0].busy ? "" : undefined}
         className="inline-flex max-w-full items-center gap-2 rounded-full border border-heritage-gold/50 bg-heritage-forest px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
       >
         <Loader2 aria-hidden="true" size={13} className="shrink-0 animate-spin text-heritage-gold" />
@@ -73,7 +81,7 @@ export const AiTryOnBackgroundToasts = ({
               ? COPY.staleTitle(job.wearerName)
               : COPY.failedTitle(job.wearerName);
         const body =
-          kind === "failed" ? COPY.failedBody : kind === "resume_failed" ? COPY.resumeFailedBody : kind === "stale" ? COPY.staleBody : null;
+          kind === "failed" ? COPY.failedBody : kind === "busy_failed" ? COPY.busyFailedBody : kind === "resume_failed" ? COPY.resumeFailedBody : kind === "stale" ? COPY.staleBody : null;
         const action = kind === "ready" ? COPY.readyAction : kind === "stale" ? COPY.staleAction : COPY.retryAction;
         return (
           <div
