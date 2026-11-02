@@ -27,16 +27,20 @@ export type AiTryOnMode = "garment" | "fabric";
  * made with older wording turns stale. v1 was the Step 3 trial wording.
  * v3: garment mode treats the catalogue model as a stand-in and copies only
  * the ordered garment (fabric-mode text unchanged).
+ * v4: fabric mode lets the swatch (image 3) always decide the fabric; the
+ * catalogue colour/category text is no longer sent, and order details
+ * decide style only.
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v3" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v4" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
  * from AI_TRY_ON_PROMPT_VERSION so the photo flow's fingerprints never turn
  * stale because of model-mode wording. Folded into the shared model-result
  * cache key: bump on any model-mode wording change.
+ * v2: same swatch-wins fabric rule as photo prompt v4.
  */
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v1" as const;
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v2" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
