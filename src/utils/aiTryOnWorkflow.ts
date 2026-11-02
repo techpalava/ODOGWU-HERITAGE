@@ -13,8 +13,15 @@ import {
   fitHintsFingerprintIdentity,
   type AiTryOnFitHint,
 } from "./aiTryOnFitHints.js";
-import type { AiTryOnGenerationRequest } from "./aiTryOnGatewayContract.js";
+import {
+  AI_TRY_ON_PROMPT_VERSION,
+  type AiTryOnGenerationRequest,
+} from "./aiTryOnGatewayContract.js";
 import { DESIGN_STUDIO_STAGE_IDS } from "./designSourceJourney.js";
+import {
+  orderDetailsFingerprintIdentity,
+  type AiTryOnOrderDetails,
+} from "./aiTryOnOrderDetails.js";
 
 export const AI_TRY_ON_WORKFLOW_SCHEMA_VERSION = 1 as const;
 
@@ -239,6 +246,8 @@ export interface AiTryOnVisualInput {
    * their existing fingerprint.
    */
   measurementFitHints?: readonly AiTryOnFitHint[] | null;
+  /** Visible order details sent to the prompt; any change marks the result stale. */
+  orderDetails?: AiTryOnOrderDetails | null;
 }
 
 /**
@@ -360,6 +369,8 @@ export const createAiTryOnVisualInputFingerprint = (
     detailSelections,
     personalizedInputRevision: input.personalizedInputRevision || null,
     ...(measurementFitHints ? { measurementFitHints } : {}),
+    promptVersion: AI_TRY_ON_PROMPT_VERSION,
+    orderDetails: orderDetailsFingerprintIdentity(input.orderDetails),
     customerPhotoAssetIdentity:
       privatePhoto &&
       isOpaqueReference(privatePhoto.assetId) &&

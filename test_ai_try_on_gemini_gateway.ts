@@ -275,11 +275,11 @@ assert.equal(normalizeAiTryOnFitHints("178"), null);
 
 const garmentPrompt = buildAiTryOnPrompt({ mode: "garment" });
 const fabricPrompt = buildAiTryOnPrompt({ mode: "fabric" });
-assert.match(garmentPrompt, /second image is the garment design/);
-assert.equal(/swatch|third image/i.test(garmentPrompt), false, "garment mode never mentions a swatch");
-assert.match(fabricPrompt, /third image is a fabric swatch/);
+assert.match(garmentPrompt, /Image 2: the garment\./);
+assert.equal(/swatch|image 3/i.test(garmentPrompt), false, "garment mode never mentions a swatch");
+assert.match(fabricPrompt, /Image 3: the fabric swatch/);
 assert.notEqual(garmentPrompt, fabricPrompt);
-assert.equal(/Fit guidance/.test(garmentPrompt), false, "no hints → no fit block");
+assert.equal(/Fit guide/.test(garmentPrompt), false, "no hints → no fit block");
 const hintedPrompt = buildAiTryOnPrompt({
   mode: "garment",
   fitHints: [
@@ -287,11 +287,11 @@ const hintedPrompt = buildAiTryOnPrompt({
     { id: "sleeve_length_long", valueCm: 63 },
   ],
 });
-assert.match(hintedPrompt, /Fit guidance/);
-assert.match(hintedPrompt, /- Height: 178 cm/);
-assert.match(hintedPrompt, /- Long sleeve length: 63 cm/);
-assert.match(hintedPrompt, /Never write these numbers or any text on the image/);
-assert.match(garmentPrompt, /Do not add text, numbers, measurements/);
+assert.match(hintedPrompt, /Fit guide in cm/);
+assert.match(hintedPrompt, /- Height: 178$/m);
+assert.match(hintedPrompt, /- Long sleeve length: 63$/m);
+assert.match(hintedPrompt, /Never show these numbers/);
+assert.match(garmentPrompt, /No text, labels, numbers/);
 
 // ---------------------------------------------------------------- fingerprint
 
@@ -455,8 +455,8 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
   assert.equal(h.logs.join("\n").includes(jpeg), false, "photos never logged");
   assert.equal(h.calls[0].model, "gemini-2.5-flash-image");
   const promptText = (h.calls[0].contents[0].parts[0] as { text: string }).text;
-  assert.match(promptText, /- Height: 178 cm/);
-  assert.match(promptText, /- Long sleeve length: 63 cm/, "server re-rounds hint values");
+  assert.match(promptText, /- Height: 178$/m);
+  assert.match(promptText, /- Long sleeve length: 63$/m, "server re-rounds hint values");
   assert.equal(h.calls[0].contents[0].parts.length, 3, "garment mode: prompt + person + garment");
   assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 1);
   const orderDocs = [...h.db.docs.keys()].filter((key) => key.startsWith("aiTryOnUsage/order-"));
@@ -473,7 +473,7 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
   );
   assert.equal(fabric.state.status, 200);
   assert.equal(h.calls[1].contents[0].parts.length, 4);
-  assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /third image is a fabric swatch/);
+  assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /Image 3: the fabric swatch/);
 
   // 5 tries per order: tries 3–5 succeed, try 6 is refused before Gemini.
   for (let index = 0; index < 3; index += 1) {

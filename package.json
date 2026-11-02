@@ -13,7 +13,7 @@
     "check:api-esm": "node scripts/check-api-esm.mjs",
     "prebuild": "npm run check:api-esm",
     "test:api-routes": "tsx test_api_routes.ts",
-    "test:ai-try-on": "tsx test_ai_try_on_workflow.ts && tsx test_ai_try_on_occurrence_design_fingerprint.ts && tsx test_ai_try_on_gemini_gateway.ts",
+    "test:ai-try-on": "tsx test_ai_try_on_workflow.ts && tsx test_ai_try_on_occurrence_design_fingerprint.ts && tsx test_ai_try_on_gemini_gateway.ts && tsx test_ai_try_on_prompt.ts",
     "test:shipping": "tsx test_shipping.ts",
     "test:individual-shipping": "tsx test_individual_lagos_to_eindhoven_charge.ts && tsx test_individual_inbound_shipping_display.ts && tsx test_individual_shipping_block.ts",
     "test:design-pricing": "tsx test_design_pricing.ts",

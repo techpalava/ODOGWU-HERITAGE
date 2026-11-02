@@ -2,6 +2,7 @@ import type {
   FutureMeasurementEnteredBagV1,
   FutureMeasurementStateV1,
   FutureMeasurementValueV1,
+  WearerOrderStateV2,
 } from "../types.js";
 
 /**
@@ -174,6 +175,28 @@ export const buildAiTryOnFitHints = ({
     }
   }
   return hints;
+};
+
+/**
+ * Fit hints for one wearer of a multi-wearer order: the person whose photo
+ * is uploaded (Xavier). Uses only that wearer's own measurement record and
+ * the garments assigned to them. Unknown wearer → [] (never borrows another
+ * wearer's values).
+ */
+export const buildAiTryOnFitHintsForWearer = ({
+  wearerOrder,
+  wearerId,
+}: {
+  wearerOrder: WearerOrderStateV2 | null | undefined;
+  wearerId: string;
+}): AiTryOnFitHint[] => {
+  const wearer = wearerOrder?.wearers?.find((entry) => entry.wearerId === wearerId);
+  if (!wearer) return [];
+  const garmentKeys = Object.entries(wearerOrder?.assignmentByGarmentKey || {})
+    .filter(([, assignedWearerId]) => assignedWearerId === wearerId)
+    .map(([garmentKey]) => garmentKey)
+    .sort();
+  return buildAiTryOnFitHints({ measurement: wearer.measurement, garmentKeys });
 };
 
 /**

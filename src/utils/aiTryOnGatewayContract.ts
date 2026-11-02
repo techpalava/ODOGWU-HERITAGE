@@ -1,4 +1,5 @@
 import type { AiTryOnFitHint } from "./aiTryOnFitHints.js";
+import type { AiTryOnOrderDetails } from "./aiTryOnOrderDetails.js";
 
 /**
  * Shared contract for the AI Try-on gateway.
@@ -20,6 +21,23 @@ export const AI_TRY_ON_ENDPOINT = "/api/ai-try-on" as const;
  */
 export type AiTryOnMode = "garment" | "fabric";
 
+/**
+ * Version of the server prompt text (src/server/aiTryOnPrompt.ts).
+ * Bump on any wording change. Folded into the Try-on fingerprint so a result
+ * made with older wording turns stale. v1 was the Step 3 trial wording.
+ */
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v2" as const;
+
+/**
+ * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
+ * swatch image, garment mode otherwise.
+ */
+export const chooseAiTryOnMode = ({
+  hasFabricSwatch,
+}: {
+  hasFabricSwatch: boolean;
+}): AiTryOnMode => (hasFabricSwatch ? "fabric" : "garment");
+
 export type AiTryOnImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
 export interface AiTryOnInlineImage {
@@ -39,6 +57,8 @@ export interface AiTryOnGenerationRequest {
   /** Required in `fabric` mode, refused in `garment` mode. */
   readonly fabricSwatchImage?: AiTryOnInlineImage;
   readonly fitHints?: readonly AiTryOnFitHint[];
+  /** Visible order details (ids/enums only); rendered server-side. */
+  readonly orderDetails?: AiTryOnOrderDetails | null;
 }
 
 export type AiTryOnErrorCode =
@@ -67,6 +87,8 @@ export interface AiTryOnGenerationSuccess {
   /** Returned inline only. Not stored by Step 3. */
   readonly image: { readonly mimeType: string; readonly data: string };
   readonly orderTriesRemaining: number;
+  /** Prompt wording the image was made with. */
+  readonly promptVersion: string;
 }
 
 export interface AiTryOnErrorResponse {
