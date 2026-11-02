@@ -1,5 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { getAdminServices } from "./firebaseAdmin.js";
+import { aiTryOnStorageBucket } from "./aiTryOnStorageBucket.js";
 import {
   createAiTryOnPreviewStore,
   type AiTryOnPreviewBucket,
@@ -59,7 +60,7 @@ export const retireAiTryOnSessionForPaidOrder = async (
       ((database) =>
         createAiTryOnPreviewStore(
           database,
-          getAdminServices().storage.bucket() as unknown as AiTryOnPreviewBucket,
+          aiTryOnStorageBucket() as unknown as AiTryOnPreviewBucket,
         ))
     )(db);
     let deleted = await store.remove(sessionId, null);
