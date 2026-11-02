@@ -54,6 +54,7 @@ import {
   AI_TRY_ON_PROMPT_VERSION,
   AI_TRY_ON_ROUTE,
   AI_TRY_ON_TRIES_PER_ORDER,
+  AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
   type AiTryOnAvailabilityResponse,
   type AiTryOnErrorCode,
   type AiTryOnErrorResponse,
@@ -71,8 +72,9 @@ import {
  * returns 503 without touching Firestore or Gemini, so the Design Studio
  * keeps its existing "AI Try-on is currently unavailable" state.
  *
- * Order of checks on POST: validate → per-IP window → reserve one order try
- * and one global generation (single transaction) → Gemini → release the
+ * Order of checks on POST: validate → per-IP window → reserve one order try,
+ * one global generation and (signed-in only) one of the account's 15 tries
+ * per rolling 30 days (single transaction) → Gemini → release the
  * reservation if no image came back.
  *
  * GET may carry `?orderKey=` to also report the tries left for that order
@@ -164,6 +166,7 @@ const sendError = (
   retryable: boolean,
   retryAfterSeconds?: number,
   orderTriesRemaining?: number,
+  accountTriesRemaining?: number | null,
 ) => {
   setNoStore(res);
   if (retryAfterSeconds) res.setHeader("Retry-After", String(retryAfterSeconds));
@@ -173,6 +176,7 @@ const sendError = (
     retryable,
     ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
     ...(orderTriesRemaining !== undefined ? { orderTriesRemaining } : {}),
+    ...(typeof accountTriesRemaining === "number" ? { accountTriesRemaining } : {}),
   };
   return res.status(status).json(body);
 };
@@ -525,6 +529,9 @@ export async function handleAiTryOn(
         status: "available",
         triesPerOrder: AI_TRY_ON_TRIES_PER_ORDER,
         orderTriesRemaining: await limits.readOrderTriesRemaining(session.sessionId),
+        ...(identity.uid !== null
+          ? { accountTriesRemaining: await limits.readAccountTriesRemaining(identity.uid) }
+          : {}),
         previews,
         sessionToken: session.sessionToken,
       };
@@ -613,11 +620,25 @@ export async function handleAiTryOn(
   const limits = createLimits(db);
   let reservation;
   try {
-    reservation = await limits.reserve(sessionId);
+    // Signed-in customers also use one of the account's 15 tries per 30 days.
+    reservation = await limits.reserve(sessionId, { accountUid: identity.uid });
   } catch {
     return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
   }
   if (reservation.ok === false) {
+    if (reservation.code === "ACCOUNT_TRY_LIMIT_REACHED") {
+      log(JSON.stringify({ event: "ai_try_on", outcome: "account_limit_reached" }));
+      return sendError(
+        res,
+        429,
+        "ACCOUNT_TRY_LIMIT_REACHED",
+        `This account has used all ${AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW} AI Try-on previews for the last 30 days.`,
+        false,
+        undefined,
+        undefined,
+        0,
+      );
+    }
     return reservation.code === "ORDER_TRY_LIMIT_REACHED"
       ? sendError(
           res,
@@ -645,7 +666,7 @@ export async function handleAiTryOn(
 
   if (outcome.ok === false) {
     try {
-      await limits.release(reservation.orderDocId);
+      await limits.release(reservation.orderDocId, reservation.account);
     } catch {
       // A failed release only makes the cap stricter; never block the reply.
     }
@@ -665,6 +686,10 @@ export async function handleAiTryOn(
       AI_TRY_ON_TRIES_PER_ORDER,
       reservation.orderTriesRemaining + 1,
     );
+    const accountTriesRemaining =
+      reservation.accountTriesRemaining === null
+        ? null
+        : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reservation.accountTriesRemaining + 1);
     return outcome.kind === "rejected"
       ? sendError(
           res,
@@ -674,6 +699,7 @@ export async function handleAiTryOn(
           outcome.retryable,
           undefined,
           orderTriesRemaining,
+          accountTriesRemaining,
         )
       : sendError(
           res,
@@ -683,6 +709,7 @@ export async function handleAiTryOn(
           outcome.retryable,
           undefined,
           orderTriesRemaining,
+          accountTriesRemaining,
         );
   }
 
@@ -736,6 +763,9 @@ export async function handleAiTryOn(
     previewStored: Boolean(stored),
     ...(stored ? { previewExpiresAt: stored.expiresAt } : {}),
     orderTriesRemaining: reservation.orderTriesRemaining,
+    ...(reservation.accountTriesRemaining !== null
+      ? { accountTriesRemaining: reservation.accountTriesRemaining }
+      : {}),
     promptVersion: AI_TRY_ON_PROMPT_VERSION,
   };
   setNoStore(res);

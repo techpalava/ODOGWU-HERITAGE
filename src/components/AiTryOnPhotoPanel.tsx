@@ -59,7 +59,7 @@ export const AI_TRY_ON_HOW_WE_USE_BULLETS: ReadonlyArray<{ label: string; text: 
   },
   {
     label: "Fair use:",
-    text: "each order gets 5 previews, shared by everyone on the order. We also limit how many requests one connection can make in an hour. To count these, we store a scrambled code made from your order and your IP address, never the photo itself.",
+    text: "each order gets 5 previews, shared by everyone on the order, and a signed-in account gets up to 15 previews in any 30 days. We also limit how many requests one connection can make in an hour. To count these, we store scrambled codes made from your order, your account and your IP address, never the photo itself.",
   },
   {
     label: "It's optional:",
@@ -86,6 +86,9 @@ export const AI_TRY_ON_PREVIEW_DISCLAIMER =
 export const AI_TRY_ON_MESSAGES = {
   outOfPreviews:
     "You've used all 5 AI Try-on previews for this order. They're shared by everyone on the order. You can still continue without one.",
+  // Pending Xavier's approval (account cap, follow-up to Step 7).
+  accountOutOfPreviews:
+    "You've used all 15 AI Try-on previews on your account in the last 30 days. You can still continue without one.",
   tooManyTries: "That's a lot of tries in a short time. Please wait a while and try again.",
   failed: (left: number) =>
     `We couldn't create a preview this time. This try wasn't counted, so you still have ${left} left. Try again, or use a different photo.`,
@@ -98,6 +101,7 @@ type PanelMessage =
   | { kind: "preview_deleted" }
   | { kind: "delete_failed" }
   | { kind: "out_of_previews" }
+  | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
   | { kind: "failed"; left: number }
   | { kind: "photo_blocked" };
@@ -106,6 +110,8 @@ const messageText = (message: PanelMessage): string => {
   switch (message.kind) {
     case "out_of_previews":
       return AI_TRY_ON_MESSAGES.outOfPreviews;
+    case "account_out_of_previews":
+      return AI_TRY_ON_MESSAGES.accountOutOfPreviews;
     case "too_many_tries":
       return AI_TRY_ON_MESSAGES.tooManyTries;
     case "failed":
@@ -140,6 +146,12 @@ export interface AiTryOnPhotoPanelProps {
   triesPerOrder: number;
   /** From GET; null when the server did not report it. */
   initialTriesRemaining: number | null;
+  /**
+   * Signed-in customers: tries left in the account's rolling 30 days
+   * (15 across all orders). Null for guests. The panel shows the smaller
+   * of this and the order's tries.
+   */
+  initialAccountTriesRemaining?: number | null;
   onPreviewCreated: (event: {
     wearerId: string;
     resultReference: AiTryOnVerifiedPrivateResultReference;
@@ -175,6 +187,7 @@ export const AiTryOnPhotoPanel = ({
   credentials,
   triesPerOrder,
   initialTriesRemaining,
+  initialAccountTriesRemaining = null,
   onPreviewCreated,
   onUnavailable,
   onGeneratingChange,
@@ -199,6 +212,9 @@ export const AiTryOnPhotoPanel = ({
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [triesRemaining, setTriesRemaining] = useState<number | null>(initialTriesRemaining);
+  const [accountTriesRemaining, setAccountTriesRemaining] = useState<number | null>(
+    initialAccountTriesRemaining,
+  );
   const [previews, setPreviews] = useState<Record<string, WearerPreview>>({});
   /** Stored previews by wearer, minus any deleted in this session. */
   const [stored, setStored] = useState<Record<string, AiTryOnStoredPreviewSummary>>(() =>
@@ -206,8 +222,12 @@ export const AiTryOnPhotoPanel = ({
   );
   const [deleting, setDeleting] = useState(false);
   const restoringRef = useRef(new Set<string>());
-  const [message, setMessage] = useState<PanelMessage | null>(
-    initialTriesRemaining === 0 ? { kind: "out_of_previews" } : null,
+  const [message, setMessage] = useState<PanelMessage | null>(() =>
+    initialAccountTriesRemaining === 0
+      ? { kind: "account_out_of_previews" }
+      : initialTriesRemaining === 0
+        ? { kind: "out_of_previews" }
+        : null,
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const onGeneratingChangeRef = useRef(onGeneratingChange);
@@ -222,8 +242,10 @@ export const AiTryOnPhotoPanel = ({
 
   useEffect(() => {
     setTriesRemaining(initialTriesRemaining);
-    if (initialTriesRemaining === 0) setMessage({ kind: "out_of_previews" });
-  }, [initialTriesRemaining]);
+    setAccountTriesRemaining(initialAccountTriesRemaining);
+    if (initialAccountTriesRemaining === 0) setMessage({ kind: "account_out_of_previews" });
+    else if (initialTriesRemaining === 0) setMessage({ kind: "out_of_previews" });
+  }, [initialTriesRemaining, initialAccountTriesRemaining]);
 
   // Keep the selection valid when wearers change.
   useEffect(() => {
@@ -244,7 +266,10 @@ export const AiTryOnPhotoPanel = ({
   const target =
     targets.find((entry) => entry.wearerId === selectedWearerId) || targets[0] || null;
   const showPicker = targets.length > 1;
-  const left = triesRemaining ?? triesPerOrder;
+  // Tries shown = the smaller of the order's and (signed in) the account's.
+  const left = Math.min(triesRemaining ?? triesPerOrder, accountTriesRemaining ?? Infinity);
+  const outOfPreviews: PanelMessage =
+    accountTriesRemaining === 0 ? { kind: "account_out_of_previews" } : { kind: "out_of_previews" };
   const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
   const preview =
     target && target.inputFingerprint
@@ -342,14 +367,14 @@ export const AiTryOnPhotoPanel = ({
     // A photo belongs to one person; never carry it to another wearer.
     clearPhoto();
     setPhotoError(null);
-    setMessage(left === 0 ? { kind: "out_of_previews" } : null);
+    setMessage(left === 0 ? outOfPreviews : null);
     setSelectedWearerId(wearerId);
   };
 
   const handlePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
     if (!file || !target) return;
-    setMessage(left === 0 ? { kind: "out_of_previews" } : null);
+    setMessage(left === 0 ? outOfPreviews : null);
     const invalid = validateAiTryOnPhotoFile(file);
     if (invalid) {
       clearPhoto();
@@ -377,7 +402,7 @@ export const AiTryOnPhotoPanel = ({
   const handleGenerate = async () => {
     if (!target || !target.inputFingerprint || !target.garmentImageUrl || !currentPhoto) return;
     if (left <= 0) {
-      setMessage({ kind: "out_of_previews" });
+      setMessage(outOfPreviews);
       return;
     }
     const wearerId = target.wearerId;
@@ -420,8 +445,11 @@ export const AiTryOnPhotoPanel = ({
             delete next[wearerId];
             return next;
           });
-          const remaining = outcome.orderTriesRemaining ?? Math.max(0, left - 1);
+          const remaining = outcome.orderTriesRemaining ?? Math.max(0, (triesRemaining ?? triesPerOrder) - 1);
           setTriesRemaining(remaining);
+          if (typeof outcome.accountTriesRemaining === "number") {
+            setAccountTriesRemaining(outcome.accountTriesRemaining);
+          }
           // The photo has done its job; drop it from memory.
           clearPhoto();
           onPreviewCreated({ wearerId, resultReference: outcome.resultReference });
@@ -431,17 +459,29 @@ export const AiTryOnPhotoPanel = ({
           setTriesRemaining(0);
           setMessage({ kind: "out_of_previews" });
           break;
+        case "account_limit_reached":
+          setAccountTriesRemaining(0);
+          setMessage({ kind: "account_out_of_previews" });
+          break;
         case "rate_limited":
           setMessage({ kind: "too_many_tries" });
           break;
         case "photo_blocked":
           if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
+          if (typeof outcome.accountTriesRemaining === "number") {
+            setAccountTriesRemaining(outcome.accountTriesRemaining);
+          }
           setMessage({ kind: "photo_blocked" });
           break;
         case "failed": {
-          const remaining = outcome.orderTriesRemaining ?? left;
+          const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
+          const accountRemaining =
+            typeof outcome.accountTriesRemaining === "number"
+              ? outcome.accountTriesRemaining
+              : accountTriesRemaining;
           setTriesRemaining(remaining);
-          setMessage({ kind: "failed", left: remaining });
+          setAccountTriesRemaining(accountRemaining);
+          setMessage({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
           break;
         }
         case "unavailable":

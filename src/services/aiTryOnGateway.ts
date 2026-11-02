@@ -9,6 +9,7 @@ import {
   AI_TRY_ON_ENDPOINT,
   AI_TRY_ON_SESSION_HEADER_NAME,
   AI_TRY_ON_TRIES_PER_ORDER,
+  AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
   type AiTryOnStoredPreviewSummary,
   type AiTryOnAvailabilityResponse,
   type AiTryOnErrorResponse,
@@ -111,6 +112,7 @@ export const mapAiTryOnHttpResult = (
     case "RATE_LIMITED":
       return { status: "failed", code: "provider_unavailable", retryable: true };
     case "ORDER_TRY_LIMIT_REACHED":
+    case "ACCOUNT_TRY_LIMIT_REACHED":
       return { status: "failed", code: "provider_rejected", retryable: false };
     case "PROVIDER_REJECTED":
       return { status: "failed", code: "provider_rejected", retryable };
@@ -240,6 +242,8 @@ export type AiTryOnAvailabilityDetails =
       status: "available";
       triesPerOrder: number;
       orderTriesRemaining: number | null;
+      /** Signed-in customers: tries left in the account's 30 days; null for guests. */
+      accountTriesRemaining: number | null;
       /** Stored previews of this order that are still valid (Step 6). */
       storedPreviews: AiTryOnStoredPreviewSummary[];
       /** Guest session token to keep (Step 7); null for signed-in customers. */
@@ -248,6 +252,17 @@ export type AiTryOnAvailabilityDetails =
   | { status: "unavailable" };
 
 const PREVIEW_ID_PATTERN = /^tryon-[0-9a-f-]{36}$/;
+
+const readAccountTriesRemaining = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, Math.floor(value))
+    : null;
+
+/** Signed-in only: guests' outcomes keep their Step 7 shape. */
+const withAccountTriesRemaining = (value: unknown): { accountTriesRemaining?: number } => {
+  const remaining = readAccountTriesRemaining(value);
+  return remaining === null ? {} : { accountTriesRemaining: remaining };
+};
 
 const parseStoredPreviews = (value: unknown): AiTryOnStoredPreviewSummary[] =>
   Array.isArray(value)
@@ -304,6 +319,7 @@ export const fetchAiTryOnAvailability = async ({
       status: "available",
       triesPerOrder,
       orderTriesRemaining: remaining,
+      accountTriesRemaining: readAccountTriesRemaining(body.accountTriesRemaining),
       storedPreviews: parseStoredPreviews(body.previews),
       sessionToken:
         typeof body.sessionToken === "string" && SESSION_TOKEN_PATTERN.test(body.sessionToken)
@@ -326,13 +342,17 @@ export type AiTryOnPreviewOutcome =
       resultReference: AiTryOnGenerationSuccess["resultReference"];
       preview: { mimeType: string; data: string };
       orderTriesRemaining: number | null;
+      /** Signed-in customers only. */
+      accountTriesRemaining?: number | null;
       /** Set when the server stored the preview privately (Step 6). */
       storedPreviewId?: string | null;
     }
   | { kind: "order_limit_reached" }
+  /** Signed-in account used its 15 tries in the last 30 days. */
+  | { kind: "account_limit_reached" }
   | { kind: "rate_limited"; retryAfterSeconds: number | null }
-  | { kind: "photo_blocked"; orderTriesRemaining: number | null }
-  | { kind: "failed"; orderTriesRemaining: number | null }
+  | { kind: "photo_blocked"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
+  | { kind: "failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
   | { kind: "unavailable" };
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -359,6 +379,7 @@ export const mapAiTryOnPreviewResponse = (
         preview: { mimeType: image.mimeType, data: image.data },
         orderTriesRemaining:
           typeof body.orderTriesRemaining === "number" ? body.orderTriesRemaining : null,
+        ...withAccountTriesRemaining(body.accountTriesRemaining),
         storedPreviewId:
           body.previewStored === true &&
           typeof resultReference.assetId === "string" &&
@@ -372,12 +393,15 @@ export const mapAiTryOnPreviewResponse = (
   const error = (isRecord(body) ? body : {}) as Partial<AiTryOnErrorResponse>;
   const remaining =
     typeof error.orderTriesRemaining === "number" ? error.orderTriesRemaining : null;
+  const account = withAccountTriesRemaining(error.accountTriesRemaining);
   switch (error.code) {
     case "NOT_CONFIGURED":
     case "GLOBAL_LIMIT_REACHED":
       return { kind: "unavailable" };
     case "ORDER_TRY_LIMIT_REACHED":
       return { kind: "order_limit_reached" };
+    case "ACCOUNT_TRY_LIMIT_REACHED":
+      return { kind: "account_limit_reached" };
     case "RATE_LIMITED":
       return {
         kind: "rate_limited",
@@ -385,9 +409,9 @@ export const mapAiTryOnPreviewResponse = (
           typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
       };
     case "PROVIDER_REJECTED":
-      return { kind: "photo_blocked", orderTriesRemaining: remaining };
+      return { kind: "photo_blocked", orderTriesRemaining: remaining, ...account };
     default:
-      return { kind: "failed", orderTriesRemaining: remaining };
+      return { kind: "failed", orderTriesRemaining: remaining, ...account };
   }
 };
 

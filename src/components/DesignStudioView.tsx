@@ -11466,6 +11466,7 @@ export default function DesignStudioView({
                 credentials={aiTryOnCredentials}
                 triesPerOrder={aiTryOnAvailability.triesPerOrder}
                 initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
+                initialAccountTriesRemaining={aiTryOnAvailability.accountTriesRemaining}
                 storedPreviews={aiTryOnAvailability.storedPreviews}
                 loadStoredPreview={(previewId) =>
                   fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId })
