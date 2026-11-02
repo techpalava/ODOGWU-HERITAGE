@@ -1,3 +1,4 @@
+import type { AiTryOnGeminiAspectRatio } from "./aiTryOnImagePrep.js";
 import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract.js";
 
 /**
@@ -30,7 +31,7 @@ export interface AiTryOnGeminiRequest {
     responseModalities: string[];
     abortSignal?: AbortSignal;
     /** Model mode only: keep the studio model's 3:4 full-body frame. */
-    imageConfig?: { aspectRatio: "3:4" };
+    imageConfig?: { aspectRatio: AiTryOnGeminiAspectRatio };
   };
 }
 
@@ -114,10 +115,10 @@ export const runAiTryOnGemini = async ({
   imageLabels?: readonly string[] | null;
   /**
    * Model mode: output aspect ratio. Without it Gemini answers 1:1 and crops
-   * a 3:4 full-body model at the shins (live check, 2 Nov 2026). The photo
-   * flow sends none, so its request is unchanged.
+   * a 3:4 full-body model at the shins (live check, 2 Nov 2026). Since
+   * prompt v6 the photo flow sends the nearest ratio of the customer photo.
    */
-  aspectRatio?: "3:4" | null;
+  aspectRatio?: AiTryOnGeminiAspectRatio | null;
   timeoutMs?: number;
   secret?: string | null;
 }): Promise<AiTryOnGeminiOutcome> => {

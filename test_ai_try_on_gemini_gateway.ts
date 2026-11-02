@@ -794,4 +794,57 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
   assert.deepEqual(flakyRun.state.failure, { code: "interrupted", retryable: true });
 }
 
+// Prompt v6: central swatch crop and the customer photo's aspect ratio.
+{
+  const h = harness();
+  const cropped: string[] = [];
+  h.deps.cropFabricSwatch = async (image) => {
+    cropped.push(image.data);
+    return { mimeType: "image/jpeg", data: Buffer.from("CROPPED").toString("base64") };
+  };
+  const photoRatios: string[] = [];
+  h.deps.readPhotoAspectRatio = async (image) => {
+    photoRatios.push(image.data);
+    return "2:3";
+  };
+  const fabric = response();
+  await handleAiTryOn(
+    post(validBody({ mode: "fabric", fabricSwatchImage: { mimeType: "image/png", data: png } })),
+    fabric.res,
+    h.deps,
+  );
+  assert.equal(fabric.state.status, 200);
+  assert.deepEqual(cropped, [png], "the swatch (and only the swatch) is cropped");
+  assert.deepEqual(photoRatios, [jpeg], "aspect ratio read from the customer photo");
+  const inline = h.calls[0].contents[0].parts.filter((part) => "inlineData" in part) as Array<{ inlineData: { mimeType: string; data: string } }>;
+  assert.equal(inline.length, 3);
+  assert.deepEqual(inline[2].inlineData, { mimeType: "image/jpeg", data: Buffer.from("CROPPED").toString("base64") }, "Gemini gets the cropped swatch");
+  assert.equal(inline[0].inlineData.data, jpeg, "customer photo untouched");
+  assert.equal(inline[1].inlineData.data, png, "garment picture untouched");
+  assert.deepEqual(h.calls[0].config.imageConfig, { aspectRatio: "2:3" }, "photo flow asks for the photo's shape");
+
+  // Garment mode: no swatch to crop, still the photo's shape.
+  const garment = response();
+  await handleAiTryOn(post(validBody()), garment.res, h.deps);
+  assert.equal(garment.state.status, 200);
+  assert.equal(cropped.length, 1, "garment mode crops nothing");
+  assert.deepEqual(h.calls[1].config.imageConfig, { aspectRatio: "2:3" });
+
+  // Undecodable pictures never block a try: the swatch is sent as before and no ratio is requested.
+  const h2 = harness();
+  h2.deps.cropFabricSwatch = async () => { throw new Error("bad swatch"); };
+  h2.deps.readPhotoAspectRatio = async () => { throw new Error("bad photo"); };
+  const fallback = response();
+  await handleAiTryOn(
+    post(validBody({ mode: "fabric", fabricSwatchImage: { mimeType: "image/png", data: png } })),
+    fallback.res,
+    h2.deps,
+  );
+  assert.equal(fallback.state.status, 200);
+  const sentSwatch = (h2.calls[0].contents[0].parts.filter((part) => "inlineData" in part).at(-1) as { inlineData: { data: string } }).inlineData.data;
+  assert.equal(sentSwatch, png);
+  assert.equal(h2.calls[0].config.imageConfig, undefined);
+  assert.ok(h2.logs.some((line) => line.includes("swatch_crop_skipped")));
+}
+
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");

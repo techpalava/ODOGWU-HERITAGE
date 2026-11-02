@@ -32,8 +32,10 @@ export type AiTryOnMode = "garment" | "fabric";
  * decide style only.
  * v5: fabric mode also gets the v3 stand-in line, image labels and identity
  * check, and ignores any text printed on the swatch.
+ * v6: the server sends a central crop of the swatch and asks Gemini for the
+ * customer photo's nearest aspect ratio (request change, same wording).
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v5" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v6" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -42,8 +44,10 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v5" as const;
  * cache key: bump on any model-mode wording change.
  * v2: same swatch-wins fabric rule as photo prompt v4.
  * v3: fabric mode ignores any text printed on the swatch (as photo v5).
+ * v4: the swatch is sent as a central crop (as photo v6). The cache key
+ * hashes the cropped bytes too; the bump makes the change explicit.
  */
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v3" as const;
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v4" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric

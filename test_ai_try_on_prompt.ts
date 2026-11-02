@@ -92,7 +92,7 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v5": createHash("sha256")
+  "tryon-prompt-v6": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -105,7 +105,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v5");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v6");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -416,7 +416,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v5": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v6": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
