@@ -10,6 +10,7 @@ import {
   type GmailTransport,
 } from "./brevoEmail.js";
 import { getAdminServices } from "./firebaseAdmin.js";
+import { FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM } from "../utils/futureOrderV2StripeReturn.js";
 import { readAiTryOnOrderImageRecord } from "./aiTryOnOrderImages.js";
 
 /**
@@ -38,9 +39,14 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-/** My Orders link for one order (the dashboard opens on `?tab=dashboard`). */
+/**
+ * Link to this one order: the existing `?future_order_v2_order_id=<id>` deep
+ * link (also used by the Stripe/Pix returns and the personalised-price
+ * messages) opens My Orders with that order's details open for its
+ * signed-in owner.
+ */
 export const orderConfirmationOrderUrl = (siteUrl: string, orderId: string): string =>
-  `${siteUrl.replace(/\/+$/, "")}/?tab=dashboard&order=${encodeURIComponent(orderId)}`;
+  `${siteUrl.replace(/\/+$/, "")}/?${FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM}=${encodeURIComponent(orderId)}`;
 
 export function renderOrderConfirmationEmail(input: {
   brandName: string;

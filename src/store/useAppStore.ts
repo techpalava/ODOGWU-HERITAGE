@@ -398,8 +398,6 @@ export const useAppStore = create<AppState>((set, get) => {
   activeTab:
     (typeof window !== "undefined" &&
       (legalPageTabFromPath(window.location.pathname) ||
-        // Order confirmation email link: /?tab=dashboard&order=<id> opens My Orders.
-        (new URLSearchParams(window.location.search).get("tab") === "dashboard" ? "dashboard" : null) ||
         (sessionStorage.getItem("asml_active_tab") as any))) ||
     "home",
   setActiveTab: (tab) => {

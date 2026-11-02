@@ -53,7 +53,8 @@ const env = {
 {
   const { subject, html } = renderOrderConfirmationEmail({ brandName: "The Odogwu Heritage", siteUrl: SITE, orderId: ORDER, name: "Ada <b>", hasAiPreview: true });
   assert.equal(subject, COPY.emailSubject(ORDER));
-  assert.ok(html.includes(`href="${SITE}/?tab=dashboard&amp;order=${ORDER}"`), "links to the order in My Orders");
+  assert.ok(html.includes(`href="${SITE}/?future_order_v2_order_id=${ORDER}"`), "links to this one order");
+  assert.equal((html.match(/href="/g) || []).length, 1, "the only link is the order");
   assert.ok(html.includes(COPY.emailViewOrder));
   assert.ok(html.includes("Hello Ada &lt;b&gt;,"), "name escaped");
   for (const line of [COPY.emailIntro(ORDER), COPY.emailNextSteps, COPY.emailSignOff, COPY.emailFooter]) {
@@ -70,7 +71,13 @@ const env = {
   assert.ok(plain.html.includes("Hello,"));
   assert.equal(plain.html.includes("Your AI preview is saved"), false, "no preview line without a saved preview");
   writeFileSync("/tmp/order-confirmation-email-no-preview.html", plain.html);
-  assert.equal(orderConfirmationOrderUrl(`${SITE}/`, "a b"), `${SITE}/?tab=dashboard&order=a%20b`);
+  assert.equal(orderConfirmationOrderUrl(SITE, ORDER), `${SITE}/?future_order_v2_order_id=${ORDER}`);
+  assert.equal(orderConfirmationOrderUrl(`${SITE}//`, "a b&c"), `${SITE}/?future_order_v2_order_id=a%20b%26c`, "trailing slashes, escaping");
+  // The same param the app already reads to open one order's details (App -> dashboard tab, DashboardView -> open order).
+  const app = readFileSync("src/App.tsx", "utf8");
+  assert.match(app, /params\.get\("future_order_v2_order_id"\)[\s\S]{0,200}stashFutureOrderV2OpenOrderId\(orderId\);\s*setActiveTab\("dashboard"\)/);
+  const dashboard = readFileSync("src/components/DashboardView.tsx", "utf8");
+  assert.match(dashboard, /params\.get\("future_order_v2_order_id"\)[\s\S]{0,200}if \(orderId\) setOpenV2OrderId\(orderId\)/);
 }
 
 // ------------------------------------------------------------ send: once, mocked Brevo, Gmail fallback, never throws
@@ -158,7 +165,6 @@ const harness = (environment: Record<string, string> = env) => {
   }
   const rules = readFileSync("firestore.rules", "utf8");
   assert.match(rules, /match \/orderConfirmationEmails\/\{document=\*\*\} \{\s*allow read, write: if false;\s*\}/);
-  assert.match(readFileSync("src/store/useAppStore.ts", "utf8"), /get\("tab"\) === "dashboard" \? "dashboard"/);
 }
 
 console.log("PASS: order confirmation email (template, once, mocked Brevo/Gmail, wiring)");
