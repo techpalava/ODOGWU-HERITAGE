@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import {
+  AI_TRY_ON_ORDER_IMAGE_CLASS,
   AiTryOnOrderPreviewThumbnails,
   selectAiTryOnOrderPreviews,
 } from "./src/components/AiTryOnOrderPreviewThumbnails";
@@ -64,6 +65,12 @@ assert.ok(text.includes(COPY.staleBody));
 const imgs = renderer.root.findAll((node) => node.type === "img");
 assert.equal(imgs.length, 2);
 assert.ok(imgs.every((img) => String(img.props.src).startsWith("data:image/webp;base64,")));
+// Large, not a thumbnail: full column width, 2:3, never cropped, max 560px.
+assert.ok(imgs.every((img) => img.props.className === AI_TRY_ON_ORDER_IMAGE_CLASS));
+for (const token of ["w-full", "aspect-[2/3]", "max-h-[560px]", "object-contain"]) {
+  assert.ok(AI_TRY_ON_ORDER_IMAGE_CLASS.split(" ").includes(token), token);
+}
+assert.equal(AI_TRY_ON_ORDER_IMAGE_CLASS.includes("object-cover"), false);
 const makeNew = renderer.root.findAll((node) => node.type === "button" && [node.props.children].flat().includes(COPY.staleAction));
 assert.equal(makeNew.length, 1);
 await act(async () => { makeNew[0].props.onClick(); });

@@ -55,6 +55,14 @@ export const selectAiTryOnOrderPreviews = (
       : [{ kind: "stale", wearerId: target.wearerId, label: target.label }];
   });
 
+/**
+ * Large preview, shared by Summary, Review & Payment and the order views
+ * after payment: the full width of its column, 2:3 (the try-on output
+ * shape), never cropped, at most 560px tall.
+ */
+export const AI_TRY_ON_ORDER_IMAGE_CLASS =
+  "mx-auto block aspect-[2/3] h-auto max-h-[560px] w-full max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain";
+
 type LoadImage = (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
 
 const Thumbnail = ({
@@ -91,16 +99,16 @@ const Thumbnail = ({
           type="button"
           onClick={() => setEnlarged(true)}
           aria-label={COPY.enlarge(entry.label)}
-          className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          className="block w-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
         >
           <img
             src={src}
             alt={COPY.thumbnailAlt(entry.label)}
-            className="h-32 w-auto max-w-full rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain"
+            className={AI_TRY_ON_ORDER_IMAGE_CLASS}
           />
         </button>
       ) : (
-        <div aria-hidden="true" className="h-32 w-24 animate-pulse rounded-xl bg-heritage-cream/60" />
+        <div aria-hidden="true" className={`${AI_TRY_ON_ORDER_IMAGE_CLASS} animate-pulse bg-heritage-cream/60`} />
       )}
       {enlarged && src ? (
         <div
@@ -155,7 +163,10 @@ export const AiTryOnOrderPreviewThumbnails = ({
     <div className="mt-3 min-w-0 space-y-3" data-ai-try-on-order-previews>
       {fresh.length > 0 ? (
         <>
-          <div className="flex min-w-0 flex-wrap gap-4">
+          <div
+            className={`grid min-w-0 gap-4 ${fresh.length > 1 ? "sm:grid-cols-2" : ""}`}
+            data-ai-try-on-order-preview-count={fresh.length}
+          >
             {fresh.map((entry) => (
               <Thumbnail key={entry.previewId} entry={entry} loadImage={loadImage} />
             ))}
