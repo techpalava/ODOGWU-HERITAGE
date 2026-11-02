@@ -109,6 +109,33 @@ import {
   getGarmentLengthFamilyForSelectionGroup,
 } from "../utils/garmentLengthVariant";
 
+/** First garments kept visible in the main Miscellaneous list before it is expanded. */
+const MAIN_PERSONALIZED_GARMENT_PREVIEW_COUNT = 2;
+const MAIN_PERSONALIZED_GARMENT_LIST_ID =
+  "personalized-additions-main-garment-list";
+
+/**
+ * Garment cards that stay on screen while the main Miscellaneous list is
+ * collapsed: the first preview cards, plus any garment that already has the
+ * Personalized Additional Requirement selected so its textarea and validation
+ * stay visible.
+ */
+const mainPersonalizedGarmentKeysToShow = (
+  garmentKeys: readonly string[],
+  requirementSelected: (garmentKey: string) => boolean,
+): ReadonlySet<string> => {
+  const visible = new Set<string>();
+  garmentKeys.forEach((garmentKey, index) => {
+    if (
+      index < MAIN_PERSONALIZED_GARMENT_PREVIEW_COUNT ||
+      requirementSelected(garmentKey)
+    ) {
+      visible.add(garmentKey);
+    }
+  });
+  return visible;
+};
+
 const formatStepMonogramDetail = (
   selections: DesignSelections,
   garmentKey: string,
@@ -688,6 +715,8 @@ export const DormantFutureCustomDetailsStep = ({
     : "Personalized Additions";
   const stepCounterLabel = formatDesignStudioStepCounter(stage);
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
+  const [mainPersonalizedGarmentsExpanded, setMainPersonalizedGarmentsExpanded] =
+    useState(false);
   const [monogramNameDrafts, setMonogramNameDrafts] = useState<
     Record<string, string>
   >({});
@@ -1499,6 +1528,7 @@ export const DormantFutureCustomDetailsStep = ({
       showGroupHeader = true,
       statusGroup = group,
       className = "",
+      visibleGarmentKeys,
     }: {
       legendTitle?: string;
       showOccurrenceHeading?: boolean;
@@ -1510,6 +1540,8 @@ export const DormantFutureCustomDetailsStep = ({
       /** Group whose occurrences decide the legend status badge (defaults to the rendered group). */
       statusGroup?: FutureCustomDetailsCatalogueGroup;
       className?: string;
+      /** When set, occurrence cards outside this set are not rendered. The group itself, its legend, and data-active-occurrences stay intact. */
+      visibleGarmentKeys?: ReadonlySet<string>;
     } = {},
   ) => {
     const occurrenceHeadingText = (occurrence: FutureCustomDetailsCatalogueOccurrence) =>
@@ -1536,22 +1568,30 @@ export const DormantFutureCustomDetailsStep = ({
         <legend className="sr-only">{legendTitle}</legend>
       )}
       <div className={showGroupHeader ? "mt-2.5 space-y-4" : "space-y-4"}>
-        {group.occurrences.map((occurrence) => (
-          <div
-            key={occurrence.subject.garmentKey}
-            className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-          >
-            {showOccurrenceHeading ? (
-              <h4
-                data-custom-detail-occurrence={occurrence.subject.garmentKey}
-                className={`mb-1.5 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
-              >
-                {occurrenceHeadingText(occurrence)}
-              </h4>
-            ) : null}
-            {renderOptions(group, occurrence)}
-          </div>
-        ))}
+        {group.occurrences.map((occurrence) => {
+          if (
+            visibleGarmentKeys &&
+            !visibleGarmentKeys.has(occurrence.subject.garmentKey)
+          ) {
+            return null;
+          }
+          return (
+            <div
+              key={occurrence.subject.garmentKey}
+              className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              {showOccurrenceHeading ? (
+                <h4
+                  data-custom-detail-occurrence={occurrence.subject.garmentKey}
+                  className={`mb-1.5 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
+                >
+                  {occurrenceHeadingText(occurrence)}
+                </h4>
+              ) : null}
+              {renderOptions(group, occurrence)}
+            </div>
+          );
+        })}
       </div>
     </fieldset>
     );
@@ -1559,9 +1599,27 @@ export const DormantFutureCustomDetailsStep = ({
   const renderGroupFieldsets = (
     groups: readonly FutureCustomDetailsCatalogueGroup[],
     headingMode: "base" | "added",
+    list?: {
+      id?: string;
+      visibleGarmentKeys?: ReadonlySet<string>;
+    },
   ) => (
-    <div className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
-      {groups.map((group) => renderGroupFieldset(group, headingMode))}
+    <div
+      {...(list?.id
+        ? {
+            id: list.id,
+            "data-personalized-additional-garment-list": "main" as const,
+          }
+        : {})}
+      className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2"
+    >
+      {groups.map((group) =>
+        list?.visibleGarmentKeys
+          ? renderGroupFieldset(group, headingMode, "grid", {
+              visibleGarmentKeys: list.visibleGarmentKeys,
+            })
+          : renderGroupFieldset(group, headingMode),
+      )}
     </div>
   );
   const renderMainGarmentSection = ({
@@ -1866,11 +1924,16 @@ export const DormantFutureCustomDetailsStep = ({
     groups,
     headingMode = "base",
     companionGroups = [],
+    collapseGarmentList = false,
+    sectionId,
   }: {
     title: string;
     groups: readonly FutureCustomDetailsCatalogueGroup[];
     headingMode?: "base" | "added";
     companionGroups?: readonly FutureCustomDetailsCatalogueGroup[];
+    /** Main Personalized Additions list only. Added-garment sections leave this off. */
+    collapseGarmentList?: boolean;
+    sectionId?: string;
   }) => {
     const visibleGroups = groups.filter((group) => group.occurrences.length > 0);
     const visibleCompanions = companionGroups.filter((group) => group.occurrences.length > 0);
@@ -1908,9 +1971,44 @@ export const DormantFutureCustomDetailsStep = ({
           ? "Added garment"
           : "Base garment";
     const useCompanionLayout = visibleCompanions.length > 0;
+    const garmentKeysInOrder: string[] = [];
+    const seenGarmentKeys = new Set<string>();
+    if (collapseGarmentList) {
+      visibleGroups.forEach((group) => {
+        group.occurrences.forEach((occurrence) => {
+          const garmentKey = occurrence.subject.garmentKey;
+          if (seenGarmentKeys.has(garmentKey)) return;
+          seenGarmentKeys.add(garmentKey);
+          garmentKeysInOrder.push(garmentKey);
+        });
+      });
+    }
+    const collapsedVisibleKeys = collapseGarmentList
+      ? mainPersonalizedGarmentKeysToShow(garmentKeysInOrder, (garmentKey) =>
+          isSelected(
+            reconciliation.state,
+            garmentKey,
+            PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+            PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+          ),
+        )
+      : null;
+    const hiddenGarmentCount = collapsedVisibleKeys
+      ? garmentKeysInOrder.length - collapsedVisibleKeys.size
+      : 0;
+    const canCollapseGarmentList =
+      collapseGarmentList &&
+      garmentKeysInOrder.length > MAIN_PERSONALIZED_GARMENT_PREVIEW_COUNT &&
+      hiddenGarmentCount > 0;
+    const garmentListExpanded =
+      !canCollapseGarmentList || mainPersonalizedGarmentsExpanded;
 
     return (
-      <section key={title} className={`min-w-0 max-w-full rounded-2xl border border-heritage-gold/35 bg-white p-3 shadow-sm sm:p-4${useCompanionLayout ? " overflow-x-hidden" : ""}`}>
+      <section
+        key={title}
+        {...(sectionId ? { "data-custom-detail-section": sectionId } : {})}
+        className={`min-w-0 max-w-full rounded-2xl border border-heritage-gold/35 bg-white p-3 shadow-sm sm:p-4${useCompanionLayout ? " overflow-x-hidden" : ""}`}
+      >
         <header className="flex min-w-0 flex-col gap-2 border-b border-heritage-gold/35 pb-2.5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h3 className="break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">{title}</h3>
@@ -1933,8 +2031,37 @@ export const DormantFutureCustomDetailsStep = ({
             {renderDressCompanion(visibleCompanions, headingMode)}
           </div>
         ) : (
-          renderGroupFieldsets(visibleGroups, headingMode)
+          renderGroupFieldsets(
+            visibleGroups,
+            headingMode,
+            collapseGarmentList
+              ? {
+                  id: MAIN_PERSONALIZED_GARMENT_LIST_ID,
+                  visibleGarmentKeys: garmentListExpanded
+                    ? undefined
+                    : collapsedVisibleKeys || undefined,
+                }
+              : undefined,
+          )
         )}
+        {canCollapseGarmentList ? (
+          <button
+            type="button"
+            aria-expanded={garmentListExpanded}
+            aria-controls={MAIN_PERSONALIZED_GARMENT_LIST_ID}
+            data-personalized-garment-list-toggle="main"
+            onClick={() =>
+              setMainPersonalizedGarmentsExpanded((current) => !current)
+            }
+            className="mt-4 flex min-h-11 w-full min-w-0 max-w-full items-center justify-center rounded-xl border-2 border-heritage-green/65 bg-white px-3 py-2 text-center text-sm font-bold leading-snug text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          >
+            <span className="min-w-0 whitespace-normal break-words">
+              {garmentListExpanded
+                ? "Show fewer garments"
+                : `Show all garments (${hiddenGarmentCount} more)`}
+            </span>
+          </button>
+        ) : null}
       </section>
     );
   };
@@ -2113,11 +2240,6 @@ export const DormantFutureCustomDetailsStep = ({
 
           </div>
           )}
-
-          {isPersonalizedAdditionsStage && mainPersonalizedGroups.length > 0 && renderCatalogueSection({
-              title: "Miscellaneous - Personalized Additional",
-              groups: mainPersonalizedGroups,
-            })}
 
           {isPersonalizedAdditionsStage && (
           <section data-custom-detail-section="monogram-embroidery" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
@@ -2662,6 +2784,13 @@ export const DormantFutureCustomDetailsStep = ({
             )}
           </section>
           )}
+
+          {isPersonalizedAdditionsStage && mainPersonalizedGroups.length > 0 && renderCatalogueSection({
+            title: "Miscellaneous - Personalized Additional",
+            groups: mainPersonalizedGroups,
+            collapseGarmentList: true,
+            sectionId: "miscellaneous-personalized-additional",
+          })}
         </div>
         </DesignStudioStepMain>
 
