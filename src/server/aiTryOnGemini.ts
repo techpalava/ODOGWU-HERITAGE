@@ -117,12 +117,20 @@ export const isGeminiCapacityError = (error: unknown, status = statusOf(error)):
 };
 
 /**
- * Gemini request limit. The AI Try-on function's maxDuration is 130 s
- * (vercel.json; Hobby with Fluid Compute allows up to 300 s). Outside
- * Gemini the handler spends ~2-2.5 s (session, rate limits, reference
- * fetches, swatch crop, re-encode, Storage/Firestore writes), so 120 s
- * leaves a 10 s margin. History: 50 s, then 55 s; live fabric-mode runs on
- * 2 Nov 2026 took 31-34 s but two timed out at 50 s and 55 s.
+ * Whole try-on request budget, measured from the start of the HTTP request.
+ * The function maxDuration stays 130 s (vercel.json). Gemini used to get
+ * 120 s starting only after setup, so setup plus the refund after a slow
+ * call could run past 130 s: Vercel killed the function, the try was not
+ * refunded, and the customer saw a plain 504. Aborting at 110 s from the
+ * request start leaves about 20 s for that refund and the JSON error.
+ */
+export const AI_TRY_ON_REQUEST_DEADLINE_MS = 110_000;
+
+/**
+ * Default Gemini limit when a caller does not pass a shorter budget.
+ * The try-on route passes the time left under `AI_TRY_ON_REQUEST_DEADLINE_MS`.
+ * History: 50 s, then 55 s; live fabric-mode runs on 2 Nov 2026 took 31-34 s
+ * but two timed out at 50 s and 55 s.
  */
 export const AI_TRY_ON_GEMINI_TIMEOUT_MS = 120_000;
 

@@ -18,6 +18,7 @@ import {
 import { buildAiTryOnPrompt } from "./src/server/aiTryOnPrompt";
 import {
   AI_TRY_ON_GEMINI_MODEL,
+  AI_TRY_ON_REQUEST_DEADLINE_MS,
   readGeminiApiKey,
   AI_TRY_ON_GEMINI_RETRY_MIN_REMAINING_MS,
   AI_TRY_ON_GEMINI_TIMEOUT_MS,
@@ -470,11 +471,18 @@ assert.match(studioSource, /AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT\s*\?\s*\{ measure
     timeoutMs: 5,
   });
   assert.deepEqual(timedOut.ok === false && [timedOut.reason, timedOut.retryable], ["timeout", true]);
-// Default Gemini limit: 120 s, with 10 s spare under the function's 130 s maxDuration.
+// Default Gemini limit: 120 s. The route does not use that whole window:
+// it aborts at 110 s measured from the start of the request, and maxDuration stays 130.
 assert.equal(AI_TRY_ON_GEMINI_TIMEOUT_MS, 120_000);
+assert.equal(AI_TRY_ON_REQUEST_DEADLINE_MS, 110_000);
 assert.ok(
   AI_TRY_ON_GEMINI_TIMEOUT_MS <= JSON.parse(readFileSync("vercel.json", "utf8")).functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration * 1000 - 10_000,
   "at least 10 s left for the rest of the request",
+);
+assert.ok(
+  AI_TRY_ON_REQUEST_DEADLINE_MS <=
+    JSON.parse(readFileSync("vercel.json", "utf8")).functions["api/design-studio/transfer-uploaded-design-draft.ts"].maxDuration * 1000 - 20_000,
+  "110 s from the start of the request leaves 20 s to refund and reply",
 );
 }
 
@@ -962,6 +970,46 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
     const logLine = h.logs.find((line) => line.includes('"event":"ai_try_on"') && line.includes("attempts"));
     assert.match(logLine ?? "", /"attempts":2/);
   }
+}
+
+// Slow Gemini measured from the start of the request: friendly JSON error, try refunded.
+{
+  const h = harness();
+  let clock = 1_000_000;
+  h.deps.now = () => clock;
+  h.deps.consumeIpRateLimit = async () => {
+    clock += AI_TRY_ON_REQUEST_DEADLINE_MS - 80;
+  };
+  let geminiCalls = 0;
+  h.deps.createGenerateContent = () => (request) => {
+    geminiCalls += 1;
+    return new Promise((_, reject) => {
+      const signal = request.config.abortSignal;
+      if (signal?.aborted) {
+        reject(new Error("aborted"));
+        return;
+      }
+      signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+  };
+  const result = response();
+  const started = Date.now();
+  await handleAiTryOn(post(validBody()), result.res, h.deps);
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 2_000, `handler returned in ${elapsed}ms, not after maxDuration`);
+  assert.equal(geminiCalls, 1);
+  assert.notEqual(result.state.status, 504);
+  assert.equal(result.state.status, 502);
+  const body = result.state.body as { error?: string; code?: string; retryable?: boolean; orderTriesRemaining?: number };
+  assert.equal(body.code, "PROVIDER_FAILED");
+  assert.equal(body.error, "AI Try-on could not be completed.");
+  assert.equal(body.retryable, true);
+  assert.equal(body.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER, "the try is refunded");
+  assert.equal(h.db.docs.get("aiTryOnUsage/global")?.count, 0, "global count released");
+  for (const [path, doc] of h.db.docs) {
+    if (path.startsWith("aiTryOnUsage/order-")) assert.equal(doc.count ?? 0, 0, path);
+  }
+  assert.equal(h.previewSaves.length, 0);
 }
 
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");

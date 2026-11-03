@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import { AI_TRY_ON_ORDER_IMAGE_COPY as COPY } from "../utils/aiTryOnOrderImageCopy.js";
 import {
@@ -22,13 +23,25 @@ import { readAiTryOnOrderImageRecord } from "./aiTryOnOrderImages.js";
  * - Off unless ORDER_CONFIRMATION_EMAIL_ENABLED=true (nothing is sent from
  *   previews or tests by accident).
  * - Exactly once per order: `orderConfirmationEmails/<orderId>` (server-only)
- *   is claimed in a transaction before sending; a failed send is marked
- *   failed so the next payment event for that order may retry.
+ *   is claimed in a transaction before sending. A live "sending" claim is
+ *   not taken by a second call (that call waits). A claim left "failed",
+ *   or still "sending" after the attempt deadline, is claimed again so the
+ *   next payment event retries. The sent record is never sent twice.
+ * - Awaited for up to 15s, so the send finishes before the payment function
+ *   returns. If that deadline passes before the message is handed to the
+ *   provider, the claim is marked failed and the next event can retry.
  * - Never blocks or fails a payment; logs carry no address, uid or order id.
  */
 export const ORDER_CONFIRMATION_EMAIL_COLLECTION = "orderConfirmationEmails";
-export const ORDER_CONFIRMATION_EMAIL_TIMEOUT_MS = 4000;
-const SENDING_STALE_MS = 10 * 60 * 1000;
+/** Was 4s, which returned while the send was still running. */
+export const ORDER_CONFIRMATION_EMAIL_TIMEOUT_MS = 15_000;
+/**
+ * A "sending" claim older than one full attempt is stuck (the function
+ * returned or was frozen). The next payment event may take it. A newer
+ * claim is a live send and must not be stolen.
+ */
+export const ORDER_CONFIRMATION_EMAIL_SENDING_STALE_MS = 15_000;
+const EMAIL_CLAIM_POLL_MS = 50;
 
 type Environment = Record<string, string | undefined>;
 
@@ -102,6 +115,8 @@ export interface OrderConfirmationEmailDependencies {
   now?: () => number;
   log?: (line: string) => void;
   timeoutMs?: number;
+  /** Wait while another call holds the send (tests can shorten this). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export type OrderConfirmationEmailResult =
@@ -134,21 +149,51 @@ export const sendOrderConfirmationEmail = async (
   const gmail = readGmailSmtpConfig(environment);
   if (!brevo && !gmail) return report("not_configured");
 
+  const sleep = dependencies.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const budgetMs = dependencies.timeoutMs ?? ORDER_CONFIRMATION_EMAIL_TIMEOUT_MS;
+  let db: Firestore | null = null;
+  let claimId: string | null = null;
+  let phase: "idle" | "claimed" | "sending" | "settled" = "idle";
+  let abandoned = false;
+
   const work = async (): Promise<OrderConfirmationEmailResult> => {
-    const db = (dependencies.getDb ?? (() => getAdminServices().db as Firestore))();
+    db = (dependencies.getDb ?? (() => getAdminServices().db as Firestore))();
     const ref = db.collection(ORDER_CONFIRMATION_EMAIL_COLLECTION).doc(orderId);
-    const claimed = await db.runTransaction(async (tx) => {
-      const existing = await tx.get(ref);
-      const data = existing.exists ? (existing.data() as { status?: string; claimedAt?: number }) : null;
-      if (data?.status === "sent") return false;
-      if (data?.status === "sending" && now() - (data.claimedAt ?? 0) < SENDING_STALE_MS) return false;
-      tx.set(ref, { orderId, status: "sending", claimedAt: now() });
-      return true;
-    });
-    if (!claimed) return report("already_sent");
+    const deadline = now() + budgetMs;
+    while (phase === "idle") {
+      const claimed = await db.runTransaction(async (tx) => {
+        const existing = await tx.get(ref);
+        const data = existing.exists
+          ? (existing.data() as { status?: string; claimedAt?: number })
+          : null;
+        if (data?.status === "sent") return "sent" as const;
+        if (
+          data?.status === "sending" &&
+          now() - (data.claimedAt ?? 0) < ORDER_CONFIRMATION_EMAIL_SENDING_STALE_MS
+        ) {
+          return "busy" as const;
+        }
+        const id = randomUUID();
+        tx.set(ref, { orderId, status: "sending", claimedAt: now(), claimId: id });
+        return id;
+      });
+      if (claimed === "sent") return report("already_sent");
+      if (claimed === "busy") {
+        // Another call is sending. Wait for it to finish or give up, then
+        // retry a failed or stuck claim. Never start a second email.
+        if (now() >= deadline) return report("already_sent");
+        await sleep(Math.min(EMAIL_CLAIM_POLL_MS, Math.max(1, deadline - now())));
+        continue;
+      }
+      claimId = claimed;
+      phase = "claimed";
+    }
+    if (abandoned) return "timeout";
     const recipient = await (dependencies.readRecipient ?? defaultReadRecipient)(ownerUid);
+    if (abandoned) return "timeout";
     if (!recipient.email || !recipient.email.includes("@")) {
-      await ref.set({ orderId, status: "no_recipient", claimedAt: now() });
+      await ref.set({ orderId, status: "no_recipient", claimedAt: now(), claimId });
+      phase = "settled";
       return report("no_recipient");
     }
     let hasAiPreview = false;
@@ -165,6 +210,10 @@ export const sendOrderConfirmationEmail = async (
       hasAiPreview,
     });
     const message = { to: recipient.email, subject: rendered.subject, html: rendered.html };
+    // The provider call is in flight. Refresh the lease so a concurrent
+    // payment event keeps waiting instead of sending a second copy.
+    phase = "sending";
+    await ref.set({ orderId, status: "sending", claimedAt: now(), claimId });
     let provider: "brevo" | "gmail-smtp" | null = null;
     if (brevo) {
       try {
@@ -183,21 +232,55 @@ export const sendOrderConfirmationEmail = async (
       }
     }
     if (!provider) {
-      await ref.set({ orderId, status: "failed", claimedAt: now() });
+      await ref.set({ orderId, status: "failed", claimedAt: now(), claimId });
+      phase = "settled";
       return report("failed");
     }
-    await ref.set({ orderId, status: "sent", provider, sentAt: new Date(now()), claimedAt: now() });
+    await ref.set({ orderId, status: "sent", provider, sentAt: new Date(now()), claimedAt: now(), claimId });
+    phase = "settled";
     return report("sent", { provider, aiPreview: hasAiPreview });
   };
+
+  const workPromise = work().catch((error) =>
+    report("failed", { error: error instanceof Error ? error.name : "unknown" }),
+  );
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timeout = new Promise<OrderConfirmationEmailResult>((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), dependencies.timeoutMs ?? ORDER_CONFIRMATION_EMAIL_TIMEOUT_MS);
+      timer = setTimeout(() => resolve("timeout"), budgetMs);
     });
-    const result = await Promise.race([work(), timeout]);
-    if (result === "timeout") report("timeout");
-    return result;
+    const result = await Promise.race([workPromise, timeout]);
+    if (result !== "timeout") return result;
+    abandoned = true;
+    // `phase` is updated inside `work`. Read it as the full union: control
+    // flow analysis only sees the initial "idle" in this function.
+    const phaseNow = phase as "idle" | "claimed" | "sending" | "settled";
+    // The message is already with the provider: wait for that attempt to
+    // record sent or failed. Returning here would freeze it.
+    if (phaseNow === "sending" || phaseNow === "settled") return await workPromise;
+    if (db && claimId && phaseNow === "claimed") {
+      const ref = db.collection(ORDER_CONFIRMATION_EMAIL_COLLECTION).doc(orderId);
+      try {
+        await db.runTransaction(async (tx) => {
+          const existing = await tx.get(ref);
+          const data = existing.exists
+            ? (existing.data() as { status?: string; claimedAt?: number; claimId?: string })
+            : null;
+          if (data?.status === "sending" && data.claimId === claimId) {
+            tx.set(ref, {
+              orderId,
+              status: "failed",
+              claimedAt: data.claimedAt ?? now(),
+              claimId,
+            });
+          }
+        });
+      } catch {
+        // A stale "sending" claim is still retried once the deadline passes.
+      }
+    }
+    return report("timeout");
   } catch (error) {
     return report("failed", { error: error instanceof Error ? error.name : "unknown" });
   } finally {

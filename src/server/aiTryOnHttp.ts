@@ -36,6 +36,8 @@ import {
   type AiTryOnUsageLimits,
 } from "./aiTryOnUsageLimits.js";
 import {
+  AI_TRY_ON_GEMINI_TIMEOUT_MS,
+  AI_TRY_ON_REQUEST_DEADLINE_MS,
   createGeminiGenerateContent,
   readGeminiApiKey,
   runAiTryOnGemini,
@@ -509,6 +511,9 @@ export async function handleAiTryOn(
   const environment = dependencies.environment ?? process.env;
   const log = dependencies.log ?? ((line: string) => console.info(line));
   const now = dependencies.now ?? Date.now;
+  // Gemini's budget is this deadline minus everything already spent, so a
+  // slow call still ends inside maxDuration and the try can be refunded.
+  const requestStartedAt = now();
   const resolveDb = async () => (dependencies.getDb ? dependencies.getDb() : defaultGetDb());
   const createLimits = dependencies.createUsageLimits ?? ((db: Firestore) => createAiTryOnUsageLimits(db));
   const enabled = isAiTryOnEnabled(environment);
@@ -621,9 +626,11 @@ export async function handleAiTryOn(
         ? "none"
         : record.status === "deleted"
           ? "deleted"
-          : !(expiresAt > now())
-            ? "expired"
-            : "saved";
+          : record.status !== "saved"
+            ? "none"
+            : !(expiresAt > now())
+              ? "expired"
+              : "saved";
       if (orderAction === "order-images") {
         setNoStore(res);
         return res.status(200).json({
@@ -1164,6 +1171,11 @@ export async function handleAiTryOn(
 
   const apiKey = readGeminiApiKey(environment)!;
   const startedAt = now();
+  const requestElapsedMs = Math.max(0, startedAt - requestStartedAt);
+  const geminiTimeoutMs = Math.max(
+    0,
+    Math.min(AI_TRY_ON_GEMINI_TIMEOUT_MS, AI_TRY_ON_REQUEST_DEADLINE_MS - requestElapsedMs),
+  );
   const outcome = await runAiTryOnGemini({
     generateContent: (dependencies.createGenerateContent ?? createGeminiGenerateContent)(apiKey),
     prompt: defaultModel
@@ -1179,6 +1191,7 @@ export async function handleAiTryOn(
       : buildAiTryOnImageLabels(parsed.mode),
     aspectRatio: defaultModel ? "3:4" : photoAspectRatio,
     secret: apiKey,
+    timeoutMs: geminiTimeoutMs,
     ...(dependencies.geminiRetrySleep ? { sleep: dependencies.geminiRetrySleep } : {}),
   });
   const latencyMs = now() - startedAt;
