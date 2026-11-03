@@ -41,8 +41,14 @@ export type AiTryOnMode = "garment" | "fabric";
  * tunic or senator style), copies construction only from image 2, locks
  * fabric mode to the swatch, and replaces clothing the ordered garment
  * covers so a full outfit already in the photo cannot fight the order.
+ * v8: image 2 (the Step 3 design) decides silhouette: cut, length,
+ * neckline, sleeves and shape. Step 1 construction lines for those fields
+ * are not rendered, and order-detail text must not override image 2.
+ * Non-shape extras (pockets, waistband, accessories, a monogram mark,
+ * embroidery, trim) may still be listed. v7 person/pose, type lock, swatch
+ * lock and coverage stay.
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v7" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v8" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -53,8 +59,11 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v7" as const;
  * v3: fabric mode ignores any text printed on the swatch (as photo v5).
  * v4: the swatch is sent as a central crop (as photo v6). The cache key
  * hashes the cropped bytes too; the bump makes the change explicit.
+ * v5: same image-2 silhouette rule as photo prompt v8. Model mode renders
+ * the same order-details block, which used to say order text wins where it
+ * differs from image 2. Swatch lock and studio-model coverage stay.
  */
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v4" as const;
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v5" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
