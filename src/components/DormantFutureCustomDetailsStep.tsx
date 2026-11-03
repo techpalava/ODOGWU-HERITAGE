@@ -2477,6 +2477,9 @@ export const DormantFutureCustomDetailsStep = ({
                                           garmentType={parent.garmentType}
                                           name={shown}
                                           placement={placement ?? DEFAULT_MONOGRAM_PLACEMENT}
+                                          placements={availableMonogramPlacements.map(
+                                            (option) => option.value,
+                                          )}
                                         />
                                       </div>
                                     );

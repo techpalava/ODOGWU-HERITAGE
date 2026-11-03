@@ -1,252 +1,237 @@
-import type { FabricGarmentType, MonogramPlacement } from "../types";
-import { DEFAULT_MONOGRAM_PLACEMENT } from "../utils/decorativePricing";
-
-const DRESS_SILHOUETTE_TYPES = new Set<FabricGarmentType>([
-  "dress",
-  "full_length_gown",
-  "skirt",
-  "long_skirt",
-]);
-
-const SHIRT_PATH =
-  "M28 18c0-7 24-7 24 0l6 3 16 12-8 12-8-6v47H22V39l-8 6-8-12 16-12 6-3z";
-const DRESS_PATH =
-  "M31 15c0-6 18-6 18 0l5 2 13 9-6 10-7-5-1 14c2 14 16 32 18 42H9c2-10 16-28 18-42l-1-14-7 5-6-10 13-9 5-2z";
-
-/** Preferred cap height in viewBox units. Short names use at least this size. */
-export const MONOGRAM_PREVIEW_MIN_FONT = 3.3;
-export const MONOGRAM_PREVIEW_VIEWBOX_WIDTH = 80;
-/** Keep lettering this far inside the sleeve seam, as a fraction of the shirt width. */
-export const MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO = 0.06;
-export const MONOGRAM_PREVIEW_SLEEVE_SEAM_X = { shirt: 58, dress: 54 } as const;
-/** Placket / collar-V tip. Wearer's left is the viewer's right of this line. */
-export const MONOGRAM_PREVIEW_CENTER_X = 40;
-/** Small gap so a full line stays off the placket and on the left chest. */
-const PLAQUET_GAP = 0.8;
+import type {
+  CanonicalPhysicalGarmentType,
+  FabricGarmentType,
+  MonogramPlacement,
+} from "../types";
+import {
+  MONOGRAM_PLACEMENT_OPTIONS,
+  getDefaultMonogramPlacementForGarmentType,
+  getMonogramPlacementLabel,
+  getMonogramPlacementsForGarmentType,
+} from "../utils/decorativePricing";
+import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 
 /**
- * Wearer's left chest is the viewer's right side of the torso.
- * The box starts just right of the placket, just below the collar, and stops
- * one seam-margin short of the sleeve. Coordinates are in the 80×100 viewBox.
+ * Concept C icon plus a separate placement map.
+ * The icon and Step 1 name identify the garment. The map is dots only
+ * for the placements that garment can take. No product photos.
  */
-export const monogramPreviewChestBox = (
-  silhouette: "shirt" | "dress",
-): { x: number; y: number; width: number; height: number } => {
-  const x = MONOGRAM_PREVIEW_CENTER_X + PLAQUET_GAP;
-  const right =
-    MONOGRAM_PREVIEW_SLEEVE_SEAM_X[silhouette] -
-    MONOGRAM_PREVIEW_VIEWBOX_WIDTH * MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO;
-  return silhouette === "dress"
-    ? { x, y: 21, width: right - x, height: 15 }
-    : { x, y: 25, width: right - x, height: 20 };
+export const MONOGRAM_PREVIEW_SILHOUETTES = [
+  "shirt",
+  "long_shirt",
+  "dress",
+  "long_dress",
+  "skirt",
+  "long_skirt",
+  "trouser",
+  "nikka_shorts",
+  "bum_shorts",
+  "agbada",
+] as const;
+
+export type MonogramPreviewSilhouette =
+  (typeof MONOGRAM_PREVIEW_SILHOUETTES)[number];
+
+export const MONOGRAM_PREVIEW_SILHOUETTE_BY_GARMENT_TYPE = {
+  shirt: "shirt",
+  trouser: "trouser",
+  skirt: "skirt",
+  long_skirt: "long_skirt",
+  standard_shorts: "nikka_shorts",
+  bum_shorts: "bum_shorts",
+  dress: "dress",
+  kaftan: "long_shirt",
+  full_length_gown: "long_dress",
+  agbada: "agbada",
+} as const satisfies Record<
+  CanonicalPhysicalGarmentType,
+  MonogramPreviewSilhouette
+>;
+
+/** Simple 64×64 icons. Each shape fills the box so it reads at icon size. */
+const OUTLINES: Record<MonogramPreviewSilhouette, string> = {
+  shirt:
+    "M20 16C22 8 42 8 44 16L52 18L60 28L52 34L46 28V52H18V28L12 34L4 28L12 18Z",
+  long_shirt:
+    "M22 8C24 3 40 3 42 8L48 10L58 16L58 26L48 22V58H16V22L6 26L6 16L16 10Z",
+  dress:
+    "M26 8L24 2H30L32 10H36L38 2H44L42 10L50 20L46 32L56 58H8L18 32L14 20Z",
+  long_dress:
+    "M24 8C26 3 38 3 40 8L46 10L56 16L60 26L50 28L44 18V58H20V18L14 28L4 26L8 16L18 10Z",
+  skirt: "M16 14H48V22L58 56H6L16 22Z",
+  long_skirt: "M26 2H38V8L60 62H4L26 8Z",
+  trouser:
+    "M14 4H50V14C54 20 52 26 48 30L46 60H34L32 34L30 60H18L16 30C12 26 10 20 14 14Z",
+  nikka_shorts: "M12 8H52V18L50 40H36L34 26L30 40H14L12 18Z",
+  bum_shorts: "M4 16H60V26L54 40H40L36 30L32 40H10L4 26Z",
+  agbada:
+    "M24 6C26 2 38 2 40 6L46 8L60 18L64 32L48 26L50 60H14L16 26L0 32L4 18L18 8Z",
 };
+
+type DotPoint = { cx: number; cy: number };
+
+/** Schematic map, 80×72. Wearer's left is the viewer's right. Not a garment body. */
+const MAP_HEIGHT = 72;
+const MAP_DOTS: Record<MonogramPlacement, DotPoint> = {
+  neckline: { cx: 40, cy: 12 },
+  left_chest: { cx: 62, cy: 30 },
+  right_chest: { cx: 18, cy: 30 },
+  upper_back: { cx: 40, cy: 30 },
+  cuff: { cx: 8, cy: 48 },
+  hem: { cx: 40, cy: 58 },
+};
+
+export const MONOGRAM_PREVIEW_FRAME_CLASS =
+  "relative w-24 max-w-full shrink-0";
+
+const PLACEMENT_ORDER = MONOGRAM_PLACEMENT_OPTIONS.map((option) => option.value);
 
 export const monogramPreviewSilhouette = (
   garmentType: FabricGarmentType,
-): "shirt" | "dress" =>
-  DRESS_SILHOUETTE_TYPES.has(garmentType) ? "dress" : "shirt";
+): MonogramPreviewSilhouette =>
+  garmentType === "other"
+    ? "shirt"
+    : MONOGRAM_PREVIEW_SILHOUETTE_BY_GARMENT_TYPE[garmentType];
 
-/**
- * Front-view coordinates for placements other than Left Chest. Left Chest is
- * drawn inside the silhouette as SVG text. Left Chest is the wearer's left,
- * so it sits on the right side of the drawing. Upper Back uses the same
- * outline from behind.
- */
-export const monogramPreviewLetteringPosition = (
+export const monogramPreviewOutline = (
+  garmentType: FabricGarmentType,
+): string => OUTLINES[monogramPreviewSilhouette(garmentType)];
+
+export const monogramPlacementDot = (
+  _garmentType: FabricGarmentType,
   placement: MonogramPlacement,
-  silhouette: "shirt" | "dress",
-): { top: string; left: string; rotate: number } => {
-  switch (placement) {
-    case "right_chest":
-      return { top: "46%", left: "36%", rotate: 0 };
-    case "neckline":
-      return { top: silhouette === "dress" ? "16%" : "18%", left: "50%", rotate: 0 };
-    case "upper_back":
-      return { top: "34%", left: "50%", rotate: 0 };
-    case "cuff":
-      return { top: "36%", left: "14%", rotate: -28 };
-    case "hem":
-      return { top: silhouette === "dress" ? "80%" : "74%", left: "50%", rotate: 0 };
-    case "left_chest":
-    default:
-      return { top: "46%", left: "64%", rotate: 0 };
-  }
-};
-
-const WIDE_LETTER = /[MW]/;
-/** Cinzel wide capitals. Other capitals are narrower, so a mixed name can be larger. */
-const WIDE_ADVANCE = 1.08;
-const TYPICAL_ADVANCE = 0.8;
-const MAX_FONT = 8;
-
-/** Average em width used to size a line so it fills the chest without passing the seam. */
-export const monogramPreviewLineAdvance = (line: string): number => {
-  const chars = Array.from(line);
-  if (chars.length === 0) return TYPICAL_ADVANCE;
-  const wide = chars.filter((char) => WIDE_LETTER.test(char)).length;
-  return (wide * WIDE_ADVANCE + (chars.length - wide) * TYPICAL_ADVANCE) / chars.length;
-};
+): DotPoint => MAP_DOTS[placement];
 
 /**
- * Break only at a space or a hyphen. The hyphen stays on the first piece.
- * A word with neither break is never split.
+ * The name is a caption under the dots, so it does not cover them.
+ * `left` stays centered. `top` is unused by the layout and kept only so
+ * callers can tell placements apart in tests.
  */
-export const monogramPreviewLines = (text: string): string[] => {
-  const chunks = text.match(/[^\s-]+-|[^\s-]+/g);
-  return chunks && chunks.length > 0 ? chunks : [text];
-};
-
-/**
- * Size the left-chest lettering so it stays inside the chest box.
- * One word stays on one line and shrinks to the chest width.
- * Several words wrap only when one line would fall below the preferred size.
- */
-export const monogramPreviewLetteringFit = (
-  text: string,
-  box: { width: number; height: number },
-): { lines: string[]; fontSize: number } => {
-  const usable = Math.max(box.width - 0.35, 4);
-  const fontFor = (line: string, lineCount: number) => {
-    const count = Math.max(Array.from(line).length, 1);
-    const byWidth = usable / (count * monogramPreviewLineAdvance(line));
-    const byHeight = (box.height * 0.9) / (lineCount * 1.12);
-    return Math.min(byWidth, byHeight, MAX_FONT);
+export const monogramPlacementNameAnchor = (
+  garmentType: FabricGarmentType,
+  placement: MonogramPlacement,
+): { top: string; left: string } => {
+  const point = monogramPlacementDot(garmentType, placement);
+  return {
+    top: `${point.cy}`,
+    left: "50%",
   };
-  const chunks = monogramPreviewLines(text);
-  if (chunks.length === 1) {
-    return { lines: chunks, fontSize: fontFor(chunks[0], 1) };
-  }
-  const singleLine = fontFor(text, 1);
-  if (singleLine >= MONOGRAM_PREVIEW_MIN_FONT) {
-    return { lines: [text], fontSize: singleLine };
-  }
-  const longest = chunks.reduce((best, line) =>
-    Array.from(line).length > Array.from(best).length ? line : best,
-  );
-  return { lines: chunks, fontSize: fontFor(longest, chunks.length) };
 };
 
-const clipIdFor = (garmentKey: string) =>
-  `monogram-chest-${garmentKey.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+export const monogramPlacementMapForGarment = (
+  garmentType: FabricGarmentType,
+  placement: MonogramPlacement | undefined,
+  placements?: readonly MonogramPlacement[],
+): { active: MonogramPlacement; dots: MonogramPlacement[] } => {
+  const cuffOffered = Boolean(placements?.includes("cuff"));
+  const catalog = getMonogramPlacementsForGarmentType(garmentType, cuffOffered);
+  const offered =
+    placements && placements.length > 0
+      ? catalog.filter((item) => placements.includes(item))
+      : catalog;
+  const dots = offered.length > 0 ? offered : catalog;
+  const active =
+    placement && dots.includes(placement)
+      ? placement
+      : getDefaultMonogramPlacementForGarmentType(garmentType);
+  const visible = dots.includes(active) ? dots : [...dots, active];
+  return {
+    active,
+    dots: PLACEMENT_ORDER.filter((item) => visible.includes(item)),
+  };
+};
 
 export const MonogramNamePreview = ({
   garmentKey,
   garmentType,
   name,
   placement,
+  placements,
 }: {
   garmentKey: string;
   garmentType: FabricGarmentType;
   name: string;
   placement?: MonogramPlacement;
+  placements?: readonly MonogramPlacement[];
 }) => {
-  const resolvedPlacement = placement ?? DEFAULT_MONOGRAM_PLACEMENT;
   const silhouette = monogramPreviewSilhouette(garmentType);
-  const position = monogramPreviewLetteringPosition(resolvedPlacement, silhouette);
+  const map = monogramPlacementMapForGarment(garmentType, placement, placements);
+  const resolvedPlacement = map.active;
   const shown = name.trim();
   const empty = shown.length === 0;
   const lettering = empty ? "YOUR NAME" : shown;
   const back = resolvedPlacement === "upper_back";
-  const leftChest = resolvedPlacement === "left_chest";
-  const chest = monogramPreviewChestBox(silhouette);
-  const fit = monogramPreviewLetteringFit(lettering, chest);
-  const chestCenterX = chest.x + chest.width / 2;
-  const lineStep = fit.fontSize * 1.15;
-  const firstLineY =
-    chest.y + chest.height / 2 - ((fit.lines.length - 1) * lineStep) / 2;
-  const bodyClipId = `${clipIdFor(garmentKey)}-body`;
-  const chestClipId = `${clipIdFor(garmentKey)}-chest`;
-  const outline = silhouette === "dress" ? DRESS_PATH : SHIRT_PATH;
+  const anchor = monogramPlacementNameAnchor(garmentType, resolvedPlacement);
+  const placementLabel = getMonogramPlacementLabel(resolvedPlacement) ?? "Hem";
+  const garmentLabel = getStep1GarmentDisplayLabel(garmentType);
 
   return (
     <div
       data-monogram-name-preview={garmentKey}
-      data-monogram-preview-placement={resolvedPlacement}
+      data-monogram-preview-kind="icon-placement-map"
+      data-monogram-preview-garment={garmentType}
       data-monogram-preview-silhouette={silhouette}
+      data-monogram-preview-placement={resolvedPlacement}
       data-monogram-preview-view={back ? "back" : "front"}
       data-monogram-preview-text={empty ? "" : shown}
       data-monogram-preview-placeholder={empty ? "true" : "false"}
-      className="relative aspect-[4/5] w-full max-w-full shrink-0 basis-full sm:w-[32rem] sm:max-w-[32rem] sm:basis-[32rem]"
+      className={MONOGRAM_PREVIEW_FRAME_CLASS}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 80 100" className="h-full w-full" aria-hidden="true" overflow="hidden">
-        <defs>
-          <clipPath id={bodyClipId}>
-            <path d={outline} />
-          </clipPath>
-          <clipPath id={chestClipId}>
-            <rect x={chest.x} y={chest.y} width={chest.width} height={chest.height} />
-          </clipPath>
-        </defs>
-        <path
-          d={outline}
-          fill="#F9F6F0"
-          stroke="#0A291B"
-          strokeWidth="1.8"
-          strokeLinejoin="round"
-        />
-        {back ? (
+      <div className="flex flex-col items-center">
+        <svg viewBox="0 0 64 64" className="h-10 w-10 shrink-0" aria-hidden="true">
           <path
-            d={silhouette === "dress" ? "M40 16v72" : "M40 18v64"}
-            fill="none"
+            data-monogram-garment-icon="true"
+            d={OUTLINES[silhouette]}
+            fill="#F9F6F0"
             stroke="#0A291B"
-            strokeWidth="1"
-            strokeDasharray="2 2"
-          />
-        ) : (
-          <path
-            d={silhouette === "dress" ? "M35 14l5 6 5-6" : "M34 16l6 8 6-8"}
-            fill="none"
-            stroke="#0A291B"
-            strokeWidth="1.3"
+            strokeWidth="2.4"
             strokeLinejoin="round"
           />
-        )}
-        {leftChest ? (
-          <g clipPath={`url(#${bodyClipId})`}>
-            <text
-              data-monogram-preview-lettering="true"
-              x={chestCenterX}
-              y={firstLineY}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontFamily='"Cinzel", "Playfair Display", Georgia, serif'
-              fontWeight={700}
-              fontSize={fit.fontSize}
-              fill={empty ? "rgba(10,41,27,0.38)" : "#0A291B"}
-              clipPath={`url(#${chestClipId})`}
-            >
-              {fit.lines.map((line, index) => (
-                <tspan key={`${index}-${line}`} x={chestCenterX} y={firstLineY + index * lineStep}>
-                  {line}
-                </tspan>
-              ))}
-            </text>
-          </g>
-        ) : null}
-      </svg>
-      {leftChest ? null : (
+        </svg>
         <span
-          data-monogram-preview-lettering="true"
-          className={`pointer-events-none absolute max-w-[78%] truncate text-center font-display font-semibold uppercase leading-none tracking-[0.12em] ${
-            empty ? "text-heritage-gold/40" : "text-heritage-gold"
-          }`}
-          style={{
-            top: position.top,
-            left: position.left,
-            transform: `translate(-50%, -50%) rotate(${position.rotate}deg)`,
-            fontSize: lettering.length > 8 ? "0.42rem" : "0.52rem",
-            WebkitTextStroke: empty ? "0px transparent" : "0.35px #0A291B",
-          }}
+          data-monogram-garment-label={garmentType}
+          className="mt-0.5 text-center text-[9px] font-bold leading-tight text-heritage-green"
         >
-          {lettering}
+          {garmentLabel}
         </span>
-      )}
-      {back ? (
-        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 font-sans text-[8px] font-bold uppercase tracking-wider text-heritage-green">
-          Back
-        </span>
-      ) : null}
+      </div>
+      <p
+        data-monogram-placement-label={resolvedPlacement}
+        className="mb-0.5 mt-1.5 text-center text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-green"
+      >
+        {placementLabel}
+      </p>
+      <div data-monogram-placement-map="true" className="relative mx-auto h-12 w-12">
+        <svg viewBox={`0 0 80 ${MAP_HEIGHT}`} className="h-full w-full" aria-hidden="true">
+          {map.dots.map((dot) => {
+            const active = dot === resolvedPlacement;
+            const point = monogramPlacementDot(garmentType, dot);
+            return (
+              <circle
+                key={dot}
+                data-monogram-placement-dot={dot}
+                data-monogram-placement-dot-state={active ? "active" : "available"}
+                cx={point.cx}
+                cy={point.cy}
+                r={active ? 7 : 4.2}
+                fill={active ? "#0A291B" : "none"}
+                stroke="#0A291B"
+                strokeWidth={active ? 0 : 1.8}
+              />
+            );
+          })}
+        </svg>
+      </div>
+      <span
+        data-monogram-preview-lettering="true"
+        data-monogram-preview-lettering-anchor={anchor.left}
+        className={`mt-0.5 block truncate text-center font-display text-[9px] font-semibold uppercase leading-none tracking-[0.08em] ${
+          empty ? "text-heritage-ink/40" : "text-heritage-green"
+        }`}
+      >
+        {lettering}
+      </span>
     </div>
   );
 };

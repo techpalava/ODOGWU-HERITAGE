@@ -481,6 +481,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.match(markup, /aria-expanded="false"/);
   assert.equal(markup.includes("What we keep:"), false, "How we use starts collapsed");
   assert.equal(markup.includes("Who&#x27;s this for?"), false, "no picker for one wearer");
+  assert.equal(markup.includes("Whose measurements?"), false, "no measurement picker for one wearer");
   assert.match(markup, /accept="image\/jpeg,image\/png,image\/webp"/);
   assert.match(markup, /5 tries left/);
   assert.match(markup, /disabled=""[^>]*>.*Generate preview/s, "Generate waits for a photo");
@@ -509,7 +510,9 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   const { renderer, created, requests } = renderPanel({
     targets: [target(), target({ wearerId: "w-obi", label: "Person 2", inputFingerprint: "tryon-v1-fedcba9876543210" })],
   });
-  const chips = renderer.root.findAll((node) => node.type === "button" && node.props.role === "radio");
+  const chips = renderer.root.findAll(
+    (node) => node.type === "button" && node.props["data-wearer-chip"],
+  );
   assert.equal(chips.length, 2, "picker shown for two wearers");
   assert.match(textOf(renderer.root), /Who's this for\?/);
   const howButton = renderer.root.find((node) => node.type === "button" && /How we use your photo/.test(textOf(node)));
@@ -618,6 +621,276 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     "no picker when only one garment can be previewed",
   );
   assert.equal(textOf(onlyOne.renderer.root).includes("Which garment?"), false);
+}
+
+{
+  // "Whose measurements?" is a separate single-select. It only changes the
+  // fit hints Generate sends. One wearer has no row. Empty hints omit the
+  // block. Model mode still sends none.
+  const adaHints = [{ id: "total_height" as const, valueCm: 170 }];
+  const obiHints = [
+    { id: "total_height" as const, valueCm: 188 },
+    { id: "shoulder_length" as const, valueCm: 42 },
+  ];
+  const adaGarments = [
+    {
+      garmentKey: "shirt:1",
+      label: "Shirt",
+      garmentImageUrl: "https://example.test/ada-shirt.jpg",
+      fabricSwatchImageUrl: null,
+      fabricColorHex: null,
+      orderDetails: null,
+    },
+    {
+      garmentKey: "trouser:1",
+      label: "Trouser",
+      garmentImageUrl: "https://example.test/ada-trouser.jpg",
+      fabricSwatchImageUrl: null,
+      fabricColorHex: null,
+      orderDetails: {
+        garments: [{ garmentType: "trouser" as const, optionIds: ["wide-leg"], decorations: [] }],
+      },
+    },
+  ];
+  const ada = target({
+    fitHints: adaHints,
+    garmentImageUrl: adaGarments[0].garmentImageUrl,
+    previewableGarments: adaGarments,
+  });
+  const obi = target({
+    wearerId: "w-obi",
+    label: "Obi",
+    inputFingerprint: "tryon-v1-fedcba9876543210",
+    garmentImageUrl: "https://example.test/obi.jpg",
+    fitHints: obiHints,
+    orderDetails: {
+      garments: [{ garmentType: "shirt" as const, optionIds: ["obi-shirt"], decorations: [] }],
+    },
+  });
+  const wearerChips = (renderer: ReturnType<typeof create>) =>
+    renderer.root.findAll((node) => node.type === "button" && node.props["data-wearer-chip"]);
+  const measurementChips = (renderer: ReturnType<typeof create>) =>
+    renderer.root.findAll(
+      (node) => node.type === "button" && node.props["data-ai-try-on-measurement-wearer"],
+    );
+  const checkedWearer = (
+    renderer: ReturnType<typeof create>,
+    attribute: "data-wearer-chip" | "data-ai-try-on-measurement-wearer",
+  ) =>
+    (attribute === "data-wearer-chip" ? wearerChips(renderer) : measurementChips(renderer)).find(
+      (node) => node.props["aria-checked"] === true,
+    )?.props[attribute];
+
+  const single = renderPanel({ targets: [target({ fitHints: adaHints })] });
+  assert.equal(measurementChips(single.renderer).length, 0, "one wearer has no measurement chips");
+  assert.equal(textOf(single.renderer.root).includes("Whose measurements?"), false);
+  await choosePhoto(single.renderer);
+  await act(async () => {
+    await generateButton(single.renderer).props.onClick();
+  });
+  assert.deepEqual(
+    (single.requests[0] as { fitHints?: unknown }).fitHints,
+    adaHints,
+    "the only wearer's hints are still sent",
+  );
+
+  const { renderer, requests } = renderPanel({
+    targets: [ada, obi],
+    createThumbnailUrl: () => "blob:ada-photo",
+  });
+  assert.equal(measurementChips(renderer).length, 2, "one chip per wearer");
+  const measurementGroup = renderer.root.find(
+    (node) => node.props.role === "radiogroup" && node.props["aria-label"] === "Whose measurements?",
+  );
+  assert.equal(measurementGroup.props["aria-label"], "Whose measurements?");
+  assert.match(textOf(renderer.root), /Whose measurements\?/);
+  assert.match(textOf(renderer.root), /This does not change the photo or the garment/);
+  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-ada");
+  assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-ada", "defaults to Who's this for?");
+  assert.equal(measurementChips(renderer)[0].props.type, "button");
+  assert.equal(measurementChips(renderer)[0].props.role, "radio");
+  assert.match(String(measurementChips(renderer)[1].props.className), /focus-visible:ring-heritage-gold/);
+  assert.equal(
+    wearerChips(renderer)[1].props.className,
+    measurementChips(renderer)[1].props.className,
+    "same chip treatment as Who's this for?",
+  );
+
+  const garmentButtons = () =>
+    renderer.root.findAll((node) => node.type === "button" && node.props["data-ai-try-on-garment"]);
+  act(() => garmentButtons()[1].props.onClick());
+  await choosePhoto(renderer);
+  const thumb = () =>
+    renderer.root.findAll((node) => node.type === "img" && /Photo chosen for/.test(node.props.alt || ""));
+  assert.equal(thumb().length, 1);
+  act(() => {
+    measurementChips(renderer)
+      .find((node) => node.props["data-ai-try-on-measurement-wearer"] === "w-obi")!
+      .props.onClick();
+  });
+  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-ada", "photo wearer stays");
+  assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-obi");
+  assert.equal(garmentButtons()[1].props["aria-checked"], true, "garment choice stays");
+  assert.equal(thumb().length, 1, "photo stays");
+  assert.equal(thumb()[0].props.alt, "Photo chosen for Ada");
+  await act(async () => {
+    await generateButton(renderer).props.onClick();
+  });
+  const sent = requests[0] as {
+    wearerKey: string;
+    inputFingerprint: string;
+    garmentImageUrl: string;
+    fitHints?: Array<{ id: string; valueCm: number }>;
+    orderDetails?: { garments: Array<{ optionIds: string[] }> };
+    defaultModelId?: string;
+  };
+  assert.equal(sent.wearerKey, "w-ada");
+  assert.equal(sent.inputFingerprint, ada.inputFingerprint, "fingerprint stays with the photo wearer");
+  assert.equal(sent.garmentImageUrl, "https://example.test/ada-trouser.jpg");
+  assert.deepEqual(sent.orderDetails?.garments[0].optionIds, ["wide-leg"], "garment details stay");
+  assert.deepEqual(sent.fitHints, obiHints, "Generate uses the measurement wearer's hints");
+  assert.equal(sent.defaultModelId, undefined);
+
+  act(() => wearerChips(renderer)[1].props.onClick());
+  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-obi");
+  assert.equal(
+    checkedWearer(renderer, "data-ai-try-on-measurement-wearer"),
+    "w-obi",
+    "Who's this for? resets measurements to that person",
+  );
+  assert.equal(thumb().length, 0, "the photo still belongs to one person");
+  act(() => wearerChips(renderer)[0].props.onClick());
+  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-ada");
+  assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-ada", "reset again, not the earlier choice");
+  assert.equal(garmentButtons()[1].props["aria-checked"], true, "Ada's garment choice is kept");
+
+  const emptyAda = renderPanel({
+    targets: [
+      target({ fitHints: [] }),
+      target({
+        wearerId: "w-obi",
+        label: "Obi",
+        inputFingerprint: "tryon-v1-fedcba9876543210",
+        fitHints: obiHints,
+      }),
+    ],
+  });
+  await choosePhoto(emptyAda.renderer);
+  await act(async () => {
+    await generateButton(emptyAda.renderer).props.onClick();
+  });
+  assert.equal("fitHints" in (emptyAda.requests[0] as object), false, "empty hints omit the block");
+  await choosePhoto(emptyAda.renderer);
+  act(() => {
+    measurementChips(emptyAda.renderer)
+      .find((node) => node.props["data-ai-try-on-measurement-wearer"] === "w-obi")!
+      .props.onClick();
+  });
+  await act(async () => {
+    await generateButton(emptyAda.renderer).props.onClick();
+  });
+  const withObi = emptyAda.requests[1] as { wearerKey: string; fitHints?: unknown; inputFingerprint: string };
+  assert.equal(withObi.wearerKey, "w-ada");
+  assert.equal(withObi.inputFingerprint, "tryon-v1-0123456789abcdef");
+  assert.deepEqual(withObi.fitHints, obiHints, "hints are sent when that wearer has them");
+
+  act(() => {
+    emptyAda.renderer.root.find((node) => node.props["data-ai-try-on-model-option"]).props.onClick();
+  });
+  act(() => {
+    emptyAda.renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-1-light").props.onClick();
+  });
+  await act(async () => {
+    await generateButton(emptyAda.renderer).props.onClick();
+  });
+  const modeled = emptyAda.requests[2] as { wearerKey: string; defaultModelId?: string };
+  assert.equal(modeled.wearerKey, "w-ada");
+  assert.equal(modeled.defaultModelId, "male-1-light");
+  assert.equal("fitHints" in modeled, false, "model mode sends no customer fit hints");
+  assert.equal(
+    checkedWearer(emptyAda.renderer, "data-ai-try-on-measurement-wearer"),
+    "w-obi",
+    "model mode does not clear the measurement choice",
+  );
+}
+
+{
+  // The measurement choice lives with the photo and wearer in tab memory.
+  const SessionHarness = () => {
+    const [show, setShow] = useState(true);
+    const [photo, setPhoto] = useState<AiTryOnSessionPhoto | null>(null);
+    const [models, setModels] = useState<Record<string, string>>({});
+    const [wearerId, setWearerId] = useState<string | null>(null);
+    const [measurementWearerId, setMeasurementWearerId] = useState<string | null>(null);
+    const jobs = useRef(createAiTryOnBackgroundJobs({ storage: null }));
+    const panel = show
+      ? createElement(AiTryOnPhotoPanel, {
+          targets: [
+            target(),
+            target({ wearerId: "w-obi", label: "Obi", inputFingerprint: "tryon-v1-fedcba9876543210", fitHints: [{ id: "total_height", valueCm: 188 }] }),
+          ],
+          triesPerOrder: 5,
+          initialTriesRemaining: 5,
+          onPreviewCreated: () => undefined,
+          onUnavailable: () => undefined,
+          preparePhoto: async () => fakeImage,
+          createThumbnailUrl: () => "blob:kept-photo",
+          revokeThumbnailUrl: () => undefined,
+          jobStore: jobs.current,
+          sessionPhoto: photo,
+          onSessionPhotoChange: setPhoto,
+          sessionModelIdByWearer: models,
+          onSessionModelIdByWearerChange: setModels,
+          sessionWearerId: wearerId,
+          onSessionWearerIdChange: setWearerId,
+          sessionMeasurementWearerId: measurementWearerId,
+          onSessionMeasurementWearerIdChange: setMeasurementWearerId,
+        })
+      : null;
+    return createElement(
+      "div",
+      null,
+      panel,
+      createElement(
+        "button",
+        { type: "button", "data-toggle-panel": "true", onClick: () => setShow((open) => !open) },
+        "toggle",
+      ),
+    );
+  };
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(SessionHarness));
+  });
+  const toggle = () => renderer.root.find((node) => node.props["data-toggle-panel"] === "true");
+  const measurementChips = () =>
+    renderer.root.findAll(
+      (node) => node.type === "button" && node.props["data-ai-try-on-measurement-wearer"],
+    );
+  const checkedMeasurement = () =>
+    measurementChips().find((node) => node.props["aria-checked"] === true)?.props[
+      "data-ai-try-on-measurement-wearer"
+    ];
+  act(() => {
+    measurementChips()
+      .find((node) => node.props["data-ai-try-on-measurement-wearer"] === "w-obi")!
+      .props.onClick();
+  });
+  assert.equal(checkedMeasurement(), "w-obi");
+  await choosePhoto(renderer);
+  act(() => toggle().props.onClick());
+  assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-panel"]).length, 0);
+  act(() => toggle().props.onClick());
+  assert.equal(checkedMeasurement(), "w-obi", "leaving Try-on keeps Whose measurements?");
+  const wearer = renderer.root
+    .findAll((node) => node.type === "button" && node.props["data-wearer-chip"])
+    .find((node) => node.props["aria-checked"] === true);
+  assert.equal(wearer?.props["data-wearer-chip"], "w-ada", "the photo wearer is unchanged");
+  assert.equal(
+    renderer.root.findAll((node) => node.type === "img" && /Photo chosen for/.test(node.props.alt || "")).length,
+    1,
+    "the photo is still there",
+  );
 }
 
 {
@@ -884,6 +1157,12 @@ for (const [outcome, text] of errorCases) {
   }
   assert.equal(studioSource.includes("personImage"), false, "the request field stays in the panel");
   assert.match(studioSource, /aiTryOnSessionPhoto/, "the prepared photo is held in Design Studio memory");
+  assert.match(studioSource, /aiTryOnSessionMeasurementWearerId/, "the measurement wearer is held in Design Studio memory");
+  assert.match(
+    studioSource,
+    /setAiTryOnSessionMeasurementWearerId\(null\)/,
+    "a new order and sign-out drop the measurement wearer",
+  );
   assert.match(studioSource, /clearAiTryOnSessionMemory\(\)/, "a new order and sign-out drop it");
   assert.equal(studioSource.includes("aiTryOnSessionPhoto:"), false, "the session photo is not a draft field");
   assert.equal(/preview\.data|previews\[/.test(studioSource), false, "previews never reach the draft");

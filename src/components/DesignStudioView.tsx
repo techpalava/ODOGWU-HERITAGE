@@ -3801,12 +3801,16 @@ export default function DesignStudioView({
   const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
     createAiTryOnCredentials(null, async () => null),
   );
-  // Try-on photo and model choice for this tab only. Keyed to one wearer.
-  // Never written to the draft, localStorage or the server. Cleared on a new
-  // order, sign-out, and when the customer switches wearer (photo only).
+  // Try-on photo, model choice, photo wearer and measurement wearer for this
+  // tab only. Never written to the draft, localStorage or the server.
+  // Cleared on a new order and sign-out. Switching the photo wearer drops
+  // the photo and puts measurements back on that person.
   const [aiTryOnSessionPhoto, setAiTryOnSessionPhoto] = useState<AiTryOnSessionPhoto | null>(null);
   const [aiTryOnModelIdByWearer, setAiTryOnModelIdByWearer] = useState<Record<string, string>>({});
   const [aiTryOnSessionWearerId, setAiTryOnSessionWearerId] = useState<string | null>(null);
+  const [aiTryOnSessionMeasurementWearerId, setAiTryOnSessionMeasurementWearerId] = useState<
+    string | null
+  >(null);
   const aiTryOnSessionPhotoRef = useRef(aiTryOnSessionPhoto);
   aiTryOnSessionPhotoRef.current = aiTryOnSessionPhoto;
   const replaceAiTryOnSessionPhoto = useCallback((next: AiTryOnSessionPhoto | null) => {
@@ -3828,6 +3832,7 @@ export default function DesignStudioView({
     });
     setAiTryOnModelIdByWearer({});
     setAiTryOnSessionWearerId(null);
+    setAiTryOnSessionMeasurementWearerId(null);
   }, []);
   useEffect(
     () => () => {
@@ -11733,6 +11738,8 @@ export default function DesignStudioView({
                 onSessionModelIdByWearerChange={setAiTryOnModelIdByWearer}
                 sessionWearerId={aiTryOnSessionWearerId}
                 onSessionWearerIdChange={setAiTryOnSessionWearerId}
+                sessionMeasurementWearerId={aiTryOnSessionMeasurementWearerId}
+                onSessionMeasurementWearerIdChange={setAiTryOnSessionMeasurementWearerId}
               />
             ) : undefined
           }

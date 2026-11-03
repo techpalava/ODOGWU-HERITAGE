@@ -50,9 +50,9 @@ import type {
 } from "../utils/aiTryOnGatewayContract";
 
 /**
- * Step 5 AI Try-on photo panel: wearer picker, garment picker, consent
- * notice, "How we use your photo", photo tips, photo picker, Generate,
- * result and errors.
+ * Step 5 AI Try-on photo panel: wearer picker, measurement picker, garment
+ * picker, consent notice, "How we use your photo", photo tips, photo picker,
+ * Generate, result and errors.
  *
  * Privacy boundary: a prepared photo may be kept by Design Studio for this
  * tab, keyed to one wearer, so leaving Try-on and coming back does not
@@ -233,8 +233,9 @@ export interface AiTryOnPhotoPanelProps {
   jobScope?: string;
   /**
    * Session memory owned by Design Studio. When the change callbacks are
-   * set, the photo, model choice and selected wearer survive this panel
-   * unmounting. Omit them to keep that state inside the panel (tests).
+   * set, the photo, model choice, selected wearer and measurement wearer
+   * survive this panel unmounting. Omit them to keep that state inside the
+   * panel (tests).
    */
   sessionPhoto?: AiTryOnSessionPhoto | null;
   onSessionPhotoChange?: (photo: AiTryOnSessionPhoto | null) => void;
@@ -244,7 +245,20 @@ export interface AiTryOnPhotoPanelProps {
   ) => void;
   sessionWearerId?: string | null;
   onSessionWearerIdChange?: (wearerId: string) => void;
+  /**
+   * Whose measurements Generate sends. Independent of the photo wearer.
+   * Null follows the photo wearer until the customer chooses someone else.
+   */
+  sessionMeasurementWearerId?: string | null;
+  onSessionMeasurementWearerIdChange?: (wearerId: string) => void;
 }
+
+const tryOnChoiceChipClass = (selected: boolean) =>
+  `inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+    selected
+      ? "border-heritage-green bg-heritage-green text-white"
+      : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+  }`;
 
 const defaultThumbnail = (file: File) =>
   typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
@@ -281,6 +295,8 @@ export const AiTryOnPhotoPanel = ({
   onSessionModelIdByWearerChange,
   sessionWearerId = null,
   onSessionWearerIdChange,
+  sessionMeasurementWearerId = null,
+  onSessionMeasurementWearerIdChange,
 }: AiTryOnPhotoPanelProps) => {
   const idPrefix = useId();
   const howWeUseId = `${idPrefix}-how-we-use`;
@@ -374,6 +390,23 @@ export const AiTryOnPhotoPanel = ({
     else setUncontrolledWearerId(wearerId);
   };
 
+  const measurementControlled = onSessionMeasurementWearerIdChange !== undefined;
+  const [uncontrolledMeasurementWearerId, setUncontrolledMeasurementWearerId] =
+    useState<string>(initialWearerId);
+  const storedMeasurementWearerId = measurementControlled
+    ? sessionMeasurementWearerId
+    : uncontrolledMeasurementWearerId;
+  const measurementWearerId =
+    storedMeasurementWearerId &&
+    targets.some((entry) => entry.wearerId === storedMeasurementWearerId)
+      ? storedMeasurementWearerId
+      : selectedWearerId;
+  const commitMeasurementWearerId = (wearerId: string) => {
+    if (!wearerId || wearerId === storedMeasurementWearerId) return;
+    if (onSessionMeasurementWearerIdChange) onSessionMeasurementWearerIdChange(wearerId);
+    else setUncontrolledMeasurementWearerId(wearerId);
+  };
+
   // Keep the selection valid when wearers change.
   useEffect(() => {
     if (!targets.some((target) => target.wearerId === selectedWearerId)) {
@@ -382,6 +415,26 @@ export const AiTryOnPhotoPanel = ({
     // commitWearerId is recreated each render and only writes the fallback id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, selectedWearerId]);
+
+  // Changing "Who's this for?" puts measurements back on that person.
+  // A choice made for the current photo wearer is left alone, including
+  // across unmount, so leaving Try-on does not reset it.
+  const tryOnWearerIdRef = useRef(selectedWearerId);
+  useEffect(() => {
+    const previous = tryOnWearerIdRef.current;
+    tryOnWearerIdRef.current = selectedWearerId;
+    if (!selectedWearerId || previous === selectedWearerId) return;
+    commitMeasurementWearerId(selectedWearerId);
+    // commitMeasurementWearerId only writes the matching wearer id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWearerId]);
+
+  useEffect(() => {
+    if (!storedMeasurementWearerId || !selectedWearerId) return;
+    if (targets.some((entry) => entry.wearerId === storedMeasurementWearerId)) return;
+    commitMeasurementWearerId(selectedWearerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targets, storedMeasurementWearerId, selectedWearerId]);
 
   // Uncontrolled photos are dropped on unmount. A lifted session photo stays
   // with Design Studio until a new order, sign-out or a wearer switch.
@@ -396,6 +449,8 @@ export const AiTryOnPhotoPanel = ({
 
   const target =
     targets.find((entry) => entry.wearerId === selectedWearerId) || targets[0] || null;
+  const measurementTarget =
+    targets.find((entry) => entry.wearerId === measurementWearerId) || target;
   /** This wearer's request is running (other wearers may still be chosen). */
   const generating = jobFor(target?.wearerId)?.status === "running";
   const busy = generating && Boolean(jobFor(target?.wearerId)?.busy);
@@ -550,6 +605,9 @@ export const AiTryOnPhotoPanel = ({
     setPhotoError(null);
     setMessage(left === 0 ? outOfPreviews : null);
     commitWearerId(wearerId);
+    // Measurements follow the photo person again. They do not travel with
+    // the previous person, and this click does not touch the garment choice.
+    commitMeasurementWearerId(wearerId);
     setModelPickerOpen(Boolean(modelByWearer[wearerId]));
   };
 
@@ -764,6 +822,9 @@ export const AiTryOnPhotoPanel = ({
     const fabricMode = Boolean(fabricSwatchImageUrl);
     // Model mode sends no fit hints: they describe the customer, not the
     // model, and would stop a saved model result from being reused.
+    // Photo mode sends the measurement wearer's hints, even when that
+    // person is not the one in the photo. Empty hints omit the block.
+    const photoFitHints = measurementTarget?.fitHints ?? [];
     const request: AiTryOnGenerationRequest = {
       mode: fabricMode ? "fabric" : "garment",
       inputFingerprint,
@@ -771,7 +832,7 @@ export const AiTryOnPhotoPanel = ({
       ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
       garmentImageUrl,
       ...(fabricMode ? { fabricSwatchImageUrl: fabricSwatchImageUrl! } : {}),
-      ...(!model && target.fitHints.length ? { fitHints: target.fitHints } : {}),
+      ...(!model && photoFitHints.length ? { fitHints: photoFitHints } : {}),
       ...(requestOrderDetails ? { orderDetails: requestOrderDetails } : {}),
     };
     // The request belongs to the job store, not this panel: it keeps going
@@ -809,8 +870,7 @@ export const AiTryOnPhotoPanel = ({
             Who's this for?
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            Choose the person in the photo. We'll use only their garments, fabric, details and
-            measurements.
+            Choose the person in the photo. We'll use only their garments, fabric and details.
           </p>
           <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Who's this for?">
             {targets.map((entry) => {
@@ -824,11 +884,7 @@ export const AiTryOnPhotoPanel = ({
                   aria-checked={selected}
                   onClick={() => selectWearer(entry.wearerId)}
                   data-wearer-chip={entry.wearerId}
-                  className={`inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
-                    selected
-                      ? "border-heritage-green bg-heritage-green text-white"
-                      : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
-                  }`}
+                  className={tryOnChoiceChipClass(selected)}
                 >
                   <span className="min-w-0 truncate">{entry.label}</span>
                   {done && (
@@ -841,6 +897,40 @@ export const AiTryOnPhotoPanel = ({
                       <span className="sr-only">(preview ready)</span>
                     </>
                   )}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
+      {showPicker && (
+        <fieldset className="min-w-0" data-ai-try-on-measurement-picker>
+          <legend className="font-serif text-lg font-bold text-heritage-green">
+            Whose measurements?
+          </legend>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+            Choose whose fit measurements to send with a photo preview. This does not change the
+            photo or the garment.
+          </p>
+          <div
+            className="mt-3 flex flex-wrap gap-2"
+            role="radiogroup"
+            aria-label="Whose measurements?"
+          >
+            {targets.map((entry) => {
+              const selected = entry.wearerId === measurementWearerId;
+              return (
+                <button
+                  key={entry.wearerId}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => commitMeasurementWearerId(entry.wearerId)}
+                  data-ai-try-on-measurement-wearer={entry.wearerId}
+                  className={tryOnChoiceChipClass(selected)}
+                >
+                  <span className="min-w-0 truncate">{entry.label}</span>
                 </button>
               );
             })}
