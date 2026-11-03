@@ -366,7 +366,7 @@ import {
   createAiTryOnCredentials,
   type AiTryOnCredentials,
 } from "../services/aiTryOnGateway";
-import { AiTryOnPhotoPanel } from "./AiTryOnPhotoPanel";
+import { AiTryOnPhotoPanel, type AiTryOnSessionPhoto } from "./AiTryOnPhotoPanel";
 import {
   aiTryOnBackgroundJobs,
   useAiTryOnBackgroundJobs,
@@ -3801,6 +3801,43 @@ export default function DesignStudioView({
   const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
     createAiTryOnCredentials(null, async () => null),
   );
+  // Try-on photo and model choice for this tab only. Keyed to one wearer.
+  // Never written to the draft, localStorage or the server. Cleared on a new
+  // order, sign-out, and when the customer switches wearer (photo only).
+  const [aiTryOnSessionPhoto, setAiTryOnSessionPhoto] = useState<AiTryOnSessionPhoto | null>(null);
+  const [aiTryOnModelIdByWearer, setAiTryOnModelIdByWearer] = useState<Record<string, string>>({});
+  const [aiTryOnSessionWearerId, setAiTryOnSessionWearerId] = useState<string | null>(null);
+  const aiTryOnSessionPhotoRef = useRef(aiTryOnSessionPhoto);
+  aiTryOnSessionPhotoRef.current = aiTryOnSessionPhoto;
+  const replaceAiTryOnSessionPhoto = useCallback((next: AiTryOnSessionPhoto | null) => {
+    setAiTryOnSessionPhoto((current) => {
+      if (current?.thumbnailUrl && current.thumbnailUrl !== next?.thumbnailUrl) {
+        if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+          URL.revokeObjectURL(current.thumbnailUrl);
+        }
+      }
+      return next;
+    });
+  }, []);
+  const clearAiTryOnSessionMemory = useCallback(() => {
+    setAiTryOnSessionPhoto((current) => {
+      if (current?.thumbnailUrl && typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(current.thumbnailUrl);
+      }
+      return null;
+    });
+    setAiTryOnModelIdByWearer({});
+    setAiTryOnSessionWearerId(null);
+  }, []);
+  useEffect(
+    () => () => {
+      const url = aiTryOnSessionPhotoRef.current?.thumbnailUrl;
+      if (url && typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(url);
+      }
+    },
+    [],
+  );
   const aiTryOnWearerTargets = useMemo(
     () =>
       futureScopedCustomDetailsReconciliation
@@ -4815,6 +4852,7 @@ export default function DesignStudioView({
     setFutureStageId("garment_type");
     setHighestUnlockedStageIndex(0);
     setFutureAiTryOnWorkflow(createEmptyAiTryOnWorkflowState());
+    clearAiTryOnSessionMemory();
     setFutureMeasurementState(createEmptyFutureMeasurementState());
     setWearerOrder(createEmptyWearerOrder());
     setActiveWearerId(null);
@@ -4848,6 +4886,7 @@ export default function DesignStudioView({
   }, [
     futureDraftIdentityKey,
     clearFutureDesignStyleRuntimeHydration,
+    clearAiTryOnSessionMemory,
   ]);
 
   useEffect(() => {
@@ -8771,6 +8810,7 @@ export default function DesignStudioView({
   const retireCurrentStudioDraft = (
     options: { removeSavedOrderId?: string | null } = {},
   ) => {
+    clearAiTryOnSessionMemory();
     linkedSavedOrderIdRef.current = null;
     const repository =
       futureDraftRepository ??
@@ -11687,6 +11727,12 @@ export default function DesignStudioView({
                 onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
                 onGeneratingChange={setAiTryOnGenerating}
                 jobScope={aiTryOnJobScope}
+                sessionPhoto={aiTryOnSessionPhoto}
+                onSessionPhotoChange={replaceAiTryOnSessionPhoto}
+                sessionModelIdByWearer={aiTryOnModelIdByWearer}
+                onSessionModelIdByWearerChange={setAiTryOnModelIdByWearer}
+                sessionWearerId={aiTryOnSessionWearerId}
+                onSessionWearerIdChange={setAiTryOnSessionWearerId}
               />
             ) : undefined
           }
@@ -12278,6 +12324,7 @@ export default function DesignStudioView({
         setSaveOrderConfirmationOpen(false);
         // The new order must never update the order that was just saved.
         linkedSavedOrderIdRef.current = null;
+        clearAiTryOnSessionMemory();
         onStartFreshIndividualOrder?.();
       }}
     />

@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import type { AiTryOnVerifiedPrivateResultReference } from "../types";
 import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract";
-import type { AiTryOnWearerTarget } from "../utils/aiTryOnWearerTargets";
+import type {
+  AiTryOnPreviewableGarment,
+  AiTryOnWearerTarget,
+} from "../utils/aiTryOnWearerTargets";
 import {
   AI_TRY_ON_DEFAULT_MODELS,
   AI_TRY_ON_MODEL_GROUP_LABELS,
@@ -47,16 +50,29 @@ import type {
 } from "../utils/aiTryOnGatewayContract";
 
 /**
- * Step 5 AI Try-on photo panel: wearer picker, consent notice, "How we use
- * your photo", photo tips, photo picker, Generate, result and errors.
+ * Step 5 AI Try-on photo panel: wearer picker, garment picker, consent
+ * notice, "How we use your photo", photo tips, photo picker, Generate,
+ * result and errors.
  *
- * Privacy boundary: the photo lives only in this component's memory and in
- * the generation request; it is dropped once the preview is made. The
- * preview is shown from memory; the server keeps it privately (Step 6) and
- * this panel restores it after a reload through the owner-only gateway.
- * Nothing here is written to the draft, the order or browser storage; the
- * parent receives only the opaque result reference.
+ * Privacy boundary: a prepared photo may be kept by Design Studio for this
+ * tab, keyed to one wearer, so leaving Try-on and coming back does not
+ * clear it. It is never written to the draft, the order or browser storage.
+ * It is dropped on a full reload, a new order, sign-out, and when the
+ * customer switches wearer. The preview is shown from memory; the server
+ * keeps it privately (Step 6) and this panel restores it after a reload
+ * through the owner-only gateway. The parent receives the prepared photo
+ * only in that session memory, plus the opaque result reference.
  */
+
+/**
+ * Prepared try-on photo held in Design Studio memory for one wearer.
+ * Never persisted.
+ */
+export interface AiTryOnSessionPhoto {
+  readonly wearerId: string;
+  readonly image: AiTryOnInlineImage;
+  readonly thumbnailUrl: string | null;
+}
 
 export const AI_TRY_ON_CONSENT_NOTICE =
   "By uploading a photo, you agree that The Odogwu Heritage can send it to Google's Gemini AI to create a try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed to it.";
@@ -215,6 +231,19 @@ export interface AiTryOnPhotoPanelProps {
   releaseBusyJob?: (jobId: string, wearerKey: string) => Promise<unknown>;
   /** Order/identity scope of the jobs this panel shows. */
   jobScope?: string;
+  /**
+   * Session memory owned by Design Studio. When the change callbacks are
+   * set, the photo, model choice and selected wearer survive this panel
+   * unmounting. Omit them to keep that state inside the panel (tests).
+   */
+  sessionPhoto?: AiTryOnSessionPhoto | null;
+  onSessionPhotoChange?: (photo: AiTryOnSessionPhoto | null) => void;
+  sessionModelIdByWearer?: Readonly<Record<string, string>>;
+  onSessionModelIdByWearerChange?: (
+    update: (current: Record<string, string>) => Record<string, string>,
+  ) => void;
+  sessionWearerId?: string | null;
+  onSessionWearerIdChange?: (wearerId: string) => void;
 }
 
 const defaultThumbnail = (file: File) =>
@@ -246,16 +275,33 @@ export const AiTryOnPhotoPanel = ({
   jobStore = aiTryOnBackgroundJobs,
   releaseBusyJob = (jobId, wearerKey) => releaseAiTryOnBusyJob({ credentials, jobId, wearerKey }),
   jobScope = "default",
+  sessionPhoto = null,
+  onSessionPhotoChange,
+  sessionModelIdByWearer,
+  onSessionModelIdByWearerChange,
+  sessionWearerId = null,
+  onSessionWearerIdChange,
 }: AiTryOnPhotoPanelProps) => {
   const idPrefix = useId();
   const howWeUseId = `${idPrefix}-how-we-use`;
   const photoInputId = `${idPrefix}-photo`;
   const tipsId = `${idPrefix}-tips`;
-  const [selectedWearerId, setSelectedWearerId] = useState<string>(
-    targets[0]?.wearerId || "",
-  );
+  const photoControlled = onSessionPhotoChange !== undefined;
+  const modelControlled = onSessionModelIdByWearerChange !== undefined;
+  const wearerControlled = onSessionWearerIdChange !== undefined;
+  const initialWearerId =
+    sessionWearerId && targets.some((target) => target.wearerId === sessionWearerId)
+      ? sessionWearerId
+      : targets[0]?.wearerId || "";
+  const [uncontrolledWearerId, setUncontrolledWearerId] = useState<string>(initialWearerId);
+  const selectedWearerId = wearerControlled
+    ? sessionWearerId && targets.some((target) => target.wearerId === sessionWearerId)
+      ? sessionWearerId
+      : targets[0]?.wearerId || ""
+    : uncontrolledWearerId;
   const [howWeUseOpen, setHowWeUseOpen] = useState(false);
-  const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
+  const [uncontrolledPhoto, setUncontrolledPhoto] = useState<SelectedPhoto | null>(null);
+  const photo = photoControlled ? sessionPhoto : uncontrolledPhoto;
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [triesRemaining, setTriesRemaining] = useState<number | null>(initialTriesRemaining);
@@ -270,8 +316,19 @@ export const AiTryOnPhotoPanel = ({
   const [deleting, setDeleting] = useState(false);
   const restoringRef = useRef(new Set<string>());
   /** Model mode: the default model chosen for each wearer. */
-  const [modelByWearer, setModelByWearer] = useState<Record<string, string>>({});
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [uncontrolledModelByWearer, setUncontrolledModelByWearer] = useState<Record<string, string>>({});
+  const modelByWearer = modelControlled ? sessionModelIdByWearer || {} : uncontrolledModelByWearer;
+  const updateModelByWearer = (
+    update: (current: Record<string, string>) => Record<string, string>,
+  ) => {
+    if (onSessionModelIdByWearerChange) onSessionModelIdByWearerChange(update);
+    else setUncontrolledModelByWearer(update);
+  };
+  const [modelPickerOpen, setModelPickerOpen] = useState(
+    () => Boolean((sessionModelIdByWearer || {})[initialWearerId]),
+  );
+  /** Which catalogue garment this Generate sends, per wearer. Default is the first pictured. */
+  const [selectedGarmentKeyByWearer, setSelectedGarmentKeyByWearer] = useState<Record<string, string>>({});
   const [modelFilter, setModelFilter] = useState<AiTryOnModelGroup | "all">("all");
   const [message, setMessage] = useState<PanelMessage | null>(() =>
     initialAccountTriesRemaining === 0
@@ -312,20 +369,29 @@ export const AiTryOnPhotoPanel = ({
     else if (initialTriesRemaining === 0) setMessage({ kind: "out_of_previews" });
   }, [initialTriesRemaining, initialAccountTriesRemaining]);
 
+  const commitWearerId = (wearerId: string) => {
+    if (onSessionWearerIdChange) onSessionWearerIdChange(wearerId);
+    else setUncontrolledWearerId(wearerId);
+  };
+
   // Keep the selection valid when wearers change.
   useEffect(() => {
     if (!targets.some((target) => target.wearerId === selectedWearerId)) {
-      setSelectedWearerId(targets[0]?.wearerId || "");
+      commitWearerId(targets[0]?.wearerId || "");
     }
+    // commitWearerId is recreated each render and only writes the fallback id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, selectedWearerId]);
 
-  // Drop the in-memory photo on unmount.
+  // Uncontrolled photos are dropped on unmount. A lifted session photo stays
+  // with Design Studio until a new order, sign-out or a wearer switch.
   useEffect(
     () => () => {
+      if (photoControlled) return;
       const current = photoRef.current;
       if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
     },
-    [revokeThumbnailUrl],
+    [photoControlled, revokeThumbnailUrl],
   );
 
   const target =
@@ -396,7 +462,7 @@ export const AiTryOnPhotoPanel = ({
       // A restored model preview brings back that wearer's model choice.
       const restoredModelId = summary.modelId;
       if (restoredModelId && findAiTryOnDefaultModel(restoredModelId)) {
-        setModelByWearer((current) =>
+        updateModelByWearer((current) =>
           current[wearerId] ? current : { ...current, [wearerId]: restoredModelId },
         );
         setModelPickerOpen(true);
@@ -426,7 +492,7 @@ export const AiTryOnPhotoPanel = ({
         return next;
       });
       // Clearing the preview also clears this wearer's model choice.
-      setModelByWearer((current) => {
+      updateModelByWearer((current) => {
         const next = { ...current };
         delete next[wearerId];
         return next;
@@ -436,7 +502,21 @@ export const AiTryOnPhotoPanel = ({
       setDeleting(false);
     }
   };
-  const missingGarmentImage = Boolean(target && !target.garmentImageUrl);
+  const previewableGarments = target?.previewableGarments ?? [];
+  const selectedPreview: AiTryOnPreviewableGarment | null =
+    previewableGarments.find(
+      (garment) => garment.garmentKey === selectedGarmentKeyByWearer[target?.wearerId || ""],
+    ) ||
+    previewableGarments[0] ||
+    null;
+  const showGarmentPicker = previewableGarments.length > 1;
+  // One Generate sends exactly one catalogue picture and that garment's swatch.
+  const garmentImageUrl = selectedPreview?.garmentImageUrl ?? target?.garmentImageUrl ?? null;
+  const fabricSwatchImageUrl = selectedPreview
+    ? selectedPreview.fabricSwatchImageUrl
+    : target?.fabricSwatchImageUrl ?? null;
+  const requestOrderDetails = selectedPreview ? selectedPreview.orderDetails : target?.orderDetails ?? null;
+  const missingGarmentImage = Boolean(target && !garmentImageUrl);
   const canGenerate =
     Boolean(target?.inputFingerprint) &&
     !missingGarmentImage &&
@@ -445,11 +525,21 @@ export const AiTryOnPhotoPanel = ({
     !preparingPhoto &&
     left > 0;
 
-  const clearPhoto = () => {
-    setPhoto((current) => {
-      if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
-      return null;
+  const commitPhoto = (next: SelectedPhoto | null) => {
+    if (onSessionPhotoChange) {
+      onSessionPhotoChange(next);
+      return;
+    }
+    setUncontrolledPhoto((current) => {
+      if (current?.thumbnailUrl && current.thumbnailUrl !== next?.thumbnailUrl) {
+        revokeThumbnailUrl(current.thumbnailUrl);
+      }
+      return next;
     });
+  };
+
+  const clearPhoto = () => {
+    commitPhoto(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -459,7 +549,7 @@ export const AiTryOnPhotoPanel = ({
     clearPhoto();
     setPhotoError(null);
     setMessage(left === 0 ? outOfPreviews : null);
-    setSelectedWearerId(wearerId);
+    commitWearerId(wearerId);
     setModelPickerOpen(Boolean(modelByWearer[wearerId]));
   };
 
@@ -468,13 +558,13 @@ export const AiTryOnPhotoPanel = ({
     // A wearer uses either a photo or a model, never both.
     clearPhoto();
     setPhotoError(null);
-    setModelByWearer((current) => ({ ...current, [target.wearerId]: modelId }));
+    updateModelByWearer((current) => ({ ...current, [target.wearerId]: modelId }));
   };
 
   const closeModelPicker = () => {
     if (!target || generating) return;
     setModelPickerOpen(false);
-    setModelByWearer((current) => {
+    updateModelByWearer((current) => {
       const next = { ...current };
       delete next[target.wearerId];
       return next;
@@ -497,15 +587,12 @@ export const AiTryOnPhotoPanel = ({
       const image = await preparePhoto(file);
       // A photo replaces this wearer's model choice.
       setModelPickerOpen(false);
-      setModelByWearer((current) => {
+      updateModelByWearer((current) => {
         const next = { ...current };
         delete next[target.wearerId];
         return next;
       });
-      setPhoto((current) => {
-        if (current?.thumbnailUrl) revokeThumbnailUrl(current.thumbnailUrl);
-        return { wearerId: target.wearerId, image, thumbnailUrl: createThumbnailUrl(file) };
-      });
+      commitPhoto({ wearerId: target.wearerId, image, thumbnailUrl: createThumbnailUrl(file) });
     } catch (error) {
       clearPhoto();
       setPhotoError(
@@ -655,7 +742,7 @@ export const AiTryOnPhotoPanel = ({
   }, [highlightResult]);
 
   const handleGenerate = () => {
-    if (!target || !target.inputFingerprint || !target.garmentImageUrl) return;
+    if (!target || !target.inputFingerprint || !garmentImageUrl) return;
     const model = currentPhoto ? null : currentModel;
     if (!currentPhoto && !model) return;
     if (left <= 0) {
@@ -671,8 +758,10 @@ export const AiTryOnPhotoPanel = ({
       return;
     }
     // Step 6: the server loads the catalogue pictures itself, so browser
-    // CORS on the Storage bucket no longer matters.
-    const fabricMode = target.mode === "fabric" && Boolean(target.fabricSwatchImageUrl);
+    // CORS on the Storage bucket no longer matters. Exactly one garment
+    // picture, plus that garment's swatch when it has one. Never every
+    // garment on the order.
+    const fabricMode = Boolean(fabricSwatchImageUrl);
     // Model mode sends no fit hints: they describe the customer, not the
     // model, and would stop a saved model result from being reused.
     const request: AiTryOnGenerationRequest = {
@@ -680,10 +769,10 @@ export const AiTryOnPhotoPanel = ({
       inputFingerprint,
       wearerKey: wearerId,
       ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
-      garmentImageUrl: target.garmentImageUrl,
-      ...(fabricMode ? { fabricSwatchImageUrl: target.fabricSwatchImageUrl! } : {}),
+      garmentImageUrl,
+      ...(fabricMode ? { fabricSwatchImageUrl: fabricSwatchImageUrl! } : {}),
       ...(!model && target.fitHints.length ? { fitHints: target.fitHints } : {}),
-      ...(target.orderDetails ? { orderDetails: target.orderDetails } : {}),
+      ...(requestOrderDetails ? { orderDetails: requestOrderDetails } : {}),
     };
     // The request belongs to the job store, not this panel: it keeps going
     // when the customer moves to another step.
@@ -752,6 +841,58 @@ export const AiTryOnPhotoPanel = ({
                       <span className="sr-only">(preview ready)</span>
                     </>
                   )}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
+      {showGarmentPicker && (
+        <fieldset className="min-w-0" data-ai-try-on-garment-picker>
+          <legend className="font-serif text-lg font-bold text-heritage-green">
+            Which garment?
+          </legend>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+            This preview uses one garment and its fabric. Each preview uses one try.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Which garment?">
+            {previewableGarments.map((garment) => {
+              const selected = garment.garmentKey === selectedPreview?.garmentKey;
+              const swatchClass = "h-7 w-7 shrink-0 rounded-full border border-heritage-gold/40 object-cover";
+              return (
+                <button
+                  key={garment.garmentKey}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() =>
+                    setSelectedGarmentKeyByWearer((current) =>
+                      current[target.wearerId] === garment.garmentKey
+                        ? current
+                        : { ...current, [target.wearerId]: garment.garmentKey },
+                    )
+                  }
+                  data-ai-try-on-garment={garment.garmentKey}
+                  className={`inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border py-1 pl-1 pr-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                    selected
+                      ? "border-heritage-green bg-heritage-green text-white"
+                      : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                  }`}
+                >
+                  {garment.fabricSwatchImageUrl ? (
+                    <img src={garment.fabricSwatchImageUrl} alt="" className={swatchClass} />
+                  ) : garment.fabricColorHex ? (
+                    <span
+                      aria-hidden="true"
+                      data-ai-try-on-garment-swatch="color"
+                      className={`${swatchClass} inline-block`}
+                      style={{ backgroundColor: garment.fabricColorHex }}
+                    />
+                  ) : (
+                    <img src={garment.garmentImageUrl} alt="" className={swatchClass} />
+                  )}
+                  <span className="min-w-0 truncate">{garment.label}</span>
                 </button>
               );
             })}
