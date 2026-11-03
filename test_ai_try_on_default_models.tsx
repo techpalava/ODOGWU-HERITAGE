@@ -111,7 +111,7 @@ const DAY = 24 * 60 * 60 * 1000;
 {
   // v2 / v4: swatch decides the fabric. v3 / v5: swatch text ignored. v4 / v6: swatch cropped, photo aspect ratio.
   assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v4");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v6");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v7");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
