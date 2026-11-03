@@ -614,7 +614,8 @@ assert.deepEqual(
 );
 assert.equal(
   preservedFormerlyIneligibleMonogram.monogramPlacement,
-  DEFAULT_MONOGRAM_PLACEMENT,
+  "hem",
+  "a trouser monogram cannot fall back to Left Chest",
 );
 assert.deepEqual(
   filterDesignSelectionsForDecorativeFeatures(
