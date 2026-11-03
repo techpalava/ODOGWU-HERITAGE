@@ -1,5 +1,5 @@
 import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
-import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -58,9 +58,12 @@ import type {
  * tab, keyed to one wearer, so leaving Try-on and coming back does not
  * clear it. It is never written to the draft, the order or browser storage.
  * It is dropped on a full reload, a new order, sign-out, and when the
- * customer switches wearer. The preview is shown from memory; the server
- * keeps it privately (Step 6) and this panel restores it after a reload
- * through the owner-only gateway. The parent receives the prepared photo
+ * customer switches wearer. The generated preview is also kept in that tab
+ * memory, per wearer, so leaving Try-on does not clear it. A full reload
+ * drops the image bytes. The server keeps the preview privately (Step 6)
+ * and this panel loads it again when that wearer's design fingerprint still
+ * matches. A fingerprint change hides it. Restoring never starts a new
+ * generate. The parent receives the prepared photo and the preview image
  * only in that session memory, plus the opaque result reference.
  */
 
@@ -176,7 +179,12 @@ const messageText = (message: PanelMessage): string => {
   }
 };
 
-interface WearerPreview {
+/**
+ * One wearer's generated preview, held in Design Studio memory for this tab.
+ * The bytes are not written to the draft or browser storage. After a reload
+ * the panel loads the server copy when `inputFingerprint` still matches.
+ */
+export interface AiTryOnSessionPreview {
   inputFingerprint: string;
   mimeType: string;
   data: string;
@@ -185,6 +193,12 @@ interface WearerPreview {
   /** Model mode: the default model shown. */
   modelId: string | null;
 }
+
+type WearerPreview = AiTryOnSessionPreview;
+
+const EMPTY_SESSION_PREVIEWS: Readonly<Record<string, AiTryOnSessionPreview>> = {};
+const loadNoStoredPreview = async (): Promise<{ mimeType: string; data: string } | null> => null;
+const deleteNoStoredPreview = async (): Promise<boolean> => false;
 
 interface SelectedPhoto {
   wearerId: string;
@@ -251,6 +265,15 @@ export interface AiTryOnPhotoPanelProps {
    */
   sessionMeasurementWearerId?: string | null;
   onSessionMeasurementWearerIdChange?: (wearerId: string) => void;
+  /**
+   * Last preview per wearer for this tab. When the change callback is set,
+   * the image survives this panel unmounting. Omit both to keep previews
+   * inside the panel (tests). Never persisted.
+   */
+  sessionPreviews?: Readonly<Record<string, AiTryOnSessionPreview>>;
+  onSessionPreviewsChange?: (
+    update: (current: Record<string, AiTryOnSessionPreview>) => Record<string, AiTryOnSessionPreview>,
+  ) => void;
 }
 
 const tryOnChoiceChipClass = (selected: boolean) =>
@@ -281,8 +304,8 @@ export const AiTryOnPhotoPanel = ({
   onGeneratingChange,
   requestPreview = (request) => requestAiTryOnPreview({ request, credentials }),
   storedPreviews = [],
-  loadStoredPreview = async () => null,
-  deleteStoredPreview = async () => false,
+  loadStoredPreview = loadNoStoredPreview,
+  deleteStoredPreview = deleteNoStoredPreview,
   preparePhoto = (file) => prepareAiTryOnPersonPhoto(file),
   createThumbnailUrl = defaultThumbnail,
   revokeThumbnailUrl = defaultRevoke,
@@ -297,6 +320,8 @@ export const AiTryOnPhotoPanel = ({
   onSessionWearerIdChange,
   sessionMeasurementWearerId = null,
   onSessionMeasurementWearerIdChange,
+  sessionPreviews,
+  onSessionPreviewsChange,
 }: AiTryOnPhotoPanelProps) => {
   const idPrefix = useId();
   const howWeUseId = `${idPrefix}-how-we-use`;
@@ -324,11 +349,31 @@ export const AiTryOnPhotoPanel = ({
   const [accountTriesRemaining, setAccountTriesRemaining] = useState<number | null>(
     initialAccountTriesRemaining,
   );
-  const [previews, setPreviews] = useState<Record<string, WearerPreview>>({});
+  const [uncontrolledPreviews, setUncontrolledPreviews] = useState<Record<string, WearerPreview>>({});
+  const previewsControlled = onSessionPreviewsChange !== undefined;
+  const previews = previewsControlled ? sessionPreviews ?? EMPTY_SESSION_PREVIEWS : uncontrolledPreviews;
+  const onSessionPreviewsChangeRef = useRef(onSessionPreviewsChange);
+  onSessionPreviewsChangeRef.current = onSessionPreviewsChange;
+  const commitPreviews = useCallback(
+    (update: (current: Record<string, WearerPreview>) => Record<string, WearerPreview>) => {
+      const publish = onSessionPreviewsChangeRef.current;
+      if (publish) publish(update);
+      else setUncontrolledPreviews(update);
+    },
+    [],
+  );
   /** Stored previews by wearer, minus any deleted in this session. */
   const [stored, setStored] = useState<Record<string, AiTryOnStoredPreviewSummary>>(() =>
     Object.fromEntries(storedPreviews.map((entry) => [entry.wearerKey, entry])),
   );
+  /** Preview ids the customer deleted; a later session list must not bring them back. */
+  const dismissedPreviewIdsRef = useRef(new Set<string>());
+  const storedPreviewKey = storedPreviews
+    .map(
+      (entry) =>
+        `${entry.wearerKey}\u0000${entry.previewId}\u0000${entry.inputFingerprint}\u0000${entry.modelId ?? ""}`,
+    )
+    .join("\n");
   const [deleting, setDeleting] = useState(false);
   const restoringRef = useRef(new Set<string>());
   /** Model mode: the default model chosen for each wearer. */
@@ -481,8 +526,52 @@ export const AiTryOnPhotoPanel = ({
           stored[entry.wearerId]?.inputFingerprint === entry.inputFingerprint),
     );
 
+  // A session list can arrive after mount (or a later refetch). Adopt it
+  // without bringing back a preview the customer deleted here.
+  useEffect(() => {
+    setStored((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const entry of storedPreviews) {
+        if (dismissedPreviewIdsRef.current.has(entry.previewId)) continue;
+        const existing = next[entry.wearerKey];
+        if (
+          existing &&
+          existing.previewId === entry.previewId &&
+          existing.inputFingerprint === entry.inputFingerprint &&
+          existing.modelId === entry.modelId &&
+          existing.expiresAt === entry.expiresAt
+        ) {
+          continue;
+        }
+        next[entry.wearerKey] = entry;
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+    // storedPreviewKey already describes storedPreviews, so a new array with
+    // the same summaries does not re-apply them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedPreviewKey]);
+
+  // The design moved on: this wearer's kept image is no longer the one to show.
+  useEffect(() => {
+    commitPreviews((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [wearerId, entry] of Object.entries(current)) {
+        const match = targets.find((item) => item.wearerId === wearerId);
+        if (!match?.inputFingerprint || match.inputFingerprint === entry.inputFingerprint) continue;
+        delete next[wearerId];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [targets, commitPreviews]);
+
   // Reload: restore the selected wearer's stored preview while it is valid
-  // for that wearer's current design.
+  // for that wearer's current design. This reads the private server copy.
+  // It does not generate and does not use another try.
   useEffect(() => {
     if (!target?.inputFingerprint) return;
     const summary = stored[target.wearerId];
@@ -491,7 +580,10 @@ export const AiTryOnPhotoPanel = ({
     if (restoringRef.current.has(summary.previewId)) return;
     restoringRef.current.add(summary.previewId);
     const wearerId = target.wearerId;
+    const fingerprint = summary.inputFingerprint;
     void loadStoredPreview(summary.previewId).then((image) => {
+      restoringRef.current.delete(summary.previewId);
+      if (dismissedPreviewIdsRef.current.has(summary.previewId)) return;
       if (!image) {
         setStored((current) => {
           const next = { ...current };
@@ -500,13 +592,13 @@ export const AiTryOnPhotoPanel = ({
         });
         return;
       }
-      setPreviews((current) =>
-        current[wearerId]?.inputFingerprint === summary.inputFingerprint
+      commitPreviews((current) =>
+        current[wearerId]?.inputFingerprint === fingerprint
           ? current
           : {
               ...current,
               [wearerId]: {
-                inputFingerprint: summary.inputFingerprint,
+                inputFingerprint: fingerprint,
                 mimeType: image.mimeType,
                 data: image.data,
                 storedPreviewId: summary.previewId,
@@ -523,7 +615,7 @@ export const AiTryOnPhotoPanel = ({
         setModelPickerOpen(true);
       }
     });
-  }, [target?.wearerId, target?.inputFingerprint, stored, previews, loadStoredPreview]);
+  }, [target?.wearerId, target?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews]);
 
   const handleDeletePreview = async () => {
     if (!target || !preview?.storedPreviewId || deleting) return;
@@ -536,7 +628,9 @@ export const AiTryOnPhotoPanel = ({
         setMessage({ kind: "delete_failed" });
         return;
       }
-      setPreviews((current) => {
+      dismissedPreviewIdsRef.current.add(previewId);
+      jobStore.forget(wearerId);
+      commitPreviews((current) => {
         const next = { ...current };
         delete next[wearerId];
         return next;
@@ -670,7 +764,7 @@ export const AiTryOnPhotoPanel = ({
     const outcome = job.outcome;
     if (job.status === "completed" && job.preview) {
       const preview = job.preview;
-      setPreviews((current) => ({
+      commitPreviews((current) => ({
         ...current,
         [wearerId]: {
           inputFingerprint: job.inputFingerprint,
@@ -758,6 +852,33 @@ export const AiTryOnPhotoPanel = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, jobScope, targets]);
+
+  // Leaving Try-on marks the job applied, which drops the panel's copy of
+  // the image. The job still holds it. Put that image back when the wearer
+  // design still matches, without clearing the photo or charging a try.
+  useEffect(() => {
+    for (const job of Object.values(jobs)) {
+      if (job.scope !== jobScope || job.status !== "completed" || !job.preview) continue;
+      if (job.storedPreviewId && dismissedPreviewIdsRef.current.has(job.storedPreviewId)) continue;
+      const match = targets.find((entry) => entry.wearerId === job.wearerId);
+      if (!match || match.inputFingerprint !== job.inputFingerprint) continue;
+      const image = job.preview;
+      commitPreviews((current) =>
+        current[job.wearerId]?.inputFingerprint === job.inputFingerprint && current[job.wearerId]?.data
+          ? current
+          : {
+              ...current,
+              [job.wearerId]: {
+                inputFingerprint: job.inputFingerprint,
+                mimeType: image.mimeType,
+                data: image.data,
+                storedPreviewId: job.storedPreviewId,
+                modelId: job.modelId,
+              },
+            },
+      );
+    }
+  }, [jobs, jobScope, targets, commitPreviews]);
 
   // "View preview" from a toast: show that wearer, then scroll to and
   // briefly highlight the preview.
