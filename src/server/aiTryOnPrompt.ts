@@ -30,8 +30,35 @@ import {
  */
 export { AI_TRY_ON_MODEL_PROMPT_VERSION, AI_TRY_ON_PROMPT_VERSION };
 
+/**
+ * v7: "keep the person exactly" was read as keeping the outfit already in
+ * the photo. Image 1 supplies identity and pose only.
+ */
 const KEEP_PERSON =
-  "Keep the person exactly as in image 1: identity, face, hair, skin tone, body shape, pose, hands and background.";
+  "From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.";
+
+/**
+ * v7 (live repro wa0086): a Standard Dress order came back as a navy
+ * short-sleeve tunic and trousers (a Long Shirt / senator look). The type
+ * was only a line in the order block, so it lost to the photo's full outfit.
+ * The named type is now mandatory. It must not ban a type the order actually
+ * names: a Long Shirt order stays a Long Shirt.
+ */
+const ORDERED_TYPE =
+  "When the order details name garment types, make those types only, and they win over the clothes in image 1. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
+
+const COPY_ONLY_ORDERED =
+  "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.";
+
+/**
+ * v7: "keep the customer's other clothing" left a full dress in image 1
+ * fighting the order, and fabric mode had no trousers guard, so a dress
+ * order grew a second garment. Replace the region the order covers. Shoes
+ * and anything outside that region stay. A shirt-only order still keeps
+ * trousers the shirt does not cover.
+ */
+const REPLACE_COVERED =
+  "Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.";
 
 const REALISM =
   "Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.";
@@ -74,13 +101,14 @@ const OUTPUT =
  */
 const GARMENT_MODE_LINES: readonly string[] = [
   "Virtual try-on photo edit.",
-  "Image 1: the customer. Image 2: a garment reference photo.",
-  "Edit image 1 so the customer wears the ordered garment from image 2.",
+  "Image 1: the customer, for identity and pose only. Image 2: the ordered garment.",
+  "Edit image 1 so this same customer wears only the ordered garment from image 2.",
   STAND_IN,
   KEEP_PERSON,
-  "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
-  "Replace only the clothing it covers; keep the customer's other clothing and shoes from image 1.",
-  "Copy the garment faithfully: construction, cut, length, neckline, sleeves, colour, pattern, embroidery and trims. Do not redesign it.",
+  ORDERED_TYPE,
+  COPY_ONLY_ORDERED,
+  "From image 2 take only the construction, cut, length, neckline, sleeves, colour, pattern, embroidery and trims. Do not redesign it.",
+  REPLACE_COVERED,
   REALISM,
   GARMENT_IGNORE_NOISE,
   OUTPUT,
@@ -96,13 +124,16 @@ const GARMENT_MODE_LINES: readonly string[] = [
  */
 const FABRIC_MODE_LINES: readonly string[] = [
   "Virtual try-on photo edit with a fabric change.",
-  "Image 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.",
-  "Edit image 1 so the person wears the garment from image 2, made from the fabric in image 3.",
+  "Image 1: the customer, for identity and pose only. Image 2: the ordered garment's construction. Image 3: the fabric swatch.",
+  "Edit image 1 so this same customer wears only the ordered garment from image 2, made only from the fabric in image 3.",
   STAND_IN,
   KEEP_PERSON,
-  "Replace only the clothing the garment covers.",
-  "From image 2 take only the construction: cut, length, neckline, sleeves, seams, embroidery and trim placement. Ignore its original fabric colour and print.",
+  ORDERED_TYPE,
+  COPY_ONLY_ORDERED,
+  REPLACE_COVERED,
+  "From image 2 take only the construction: cut, length, neckline, sleeves, seams, embroidery and trim placement. Do not redesign it. Ignore its original fabric colour and print.",
   FABRIC_FROM_SWATCH,
+  "Do not take any colour, pattern or texture from the clothes in image 1.",
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
   SWATCH_TEXT,
   REALISM,
@@ -206,13 +237,13 @@ export const buildAiTryOnOrderDetailsBlock = ({
 export const buildAiTryOnImageLabels = (mode: AiTryOnMode): readonly string[] =>
   mode === "fabric"
     ? [
-        "Image 1, the customer to edit:",
-        "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
-        "Image 3, fabric swatch, for colour and pattern only:",
+        "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
+        "Image 2, ordered garment construction only. The person wearing it is a stand-in model; do not use them:",
+        "Image 3, fabric swatch, for colour and pattern only. No other image may set the fabric:",
       ]
     : [
-        "Image 1, the customer to edit:",
-        "Image 2, garment reference only. The person wearing it is a stand-in model; do not use them:",
+        "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
+        "Image 2, the ordered garment. The person wearing it is a stand-in model; do not use them:",
       ];
 
 export const buildAiTryOnPrompt = ({
