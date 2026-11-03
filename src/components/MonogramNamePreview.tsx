@@ -6,11 +6,9 @@ import type {
 import { DEFAULT_MONOGRAM_PLACEMENT } from "../utils/decorativePricing";
 
 /**
- * Line art for the Name Monogram preview. Keys are the Step 1 garment ids
- * (`STEP1_GARMENT_REFERENCE_IMAGES` / `CanonicalPhysicalGarmentType`).
- * Sleeve length follows each card's primary photo: Long Shirt and Long Dress
- * use the short-sleeve reference. The paired long-sleeve photo is the other
- * sleeve of the same garment, not a different silhouette.
+ * Vector outlines for the Name Monogram preview. Each path follows the
+ * proportions of that Step 1 garment (sleeve, hem, waist, flare, and leg
+ * opening). The preview stays line art: it does not load the reference photos.
  */
 export const MONOGRAM_PREVIEW_SILHOUETTES = [
   "shirt",
@@ -45,52 +43,57 @@ export const MONOGRAM_PREVIEW_SILHOUETTE_BY_GARMENT_TYPE = {
 >;
 
 const SHIRT_PATH =
-  "M28 18c0-7 24-7 24 0l6 3 16 12-8 12-8-6v47H22V39l-8 6-8-12 16-12 6-3z";
+  "M30 18C32 8 48 8 50 18L56 16L70 30L62 40L54 32V68C52 78 28 78 26 68V32L18 40L10 30L24 16Z";
 
 const OUTLINES: Record<MonogramPreviewSilhouette, string> = {
   shirt: SHIRT_PATH,
+  // Straight long tunic. No waist. Short sleeves sit out from the shoulder.
   long_shirt:
-    "M32 15c0-5 16-5 16 0l4 2 10 8-5 8-7-4v67H30V29l-7 4-5-8 10-8 4-2z",
+    "M33 12C33 7 47 7 47 12L51 14L64 20L66 30L54 28V96H26V28L14 30L16 20L29 14Z",
+  // Straps, a gentle waist, and a short peplum. The waist stays wide enough to read as a bodice.
   dress:
-    "M33 14L31 6H35L37 14H43L45 6H49L47 14C52 22 54 32 52 40C56 50 62 60 66 68H14C18 60 24 50 28 40C26 32 28 22 33 14Z",
+    "M36 12L34 3H38L40 12H44L46 3H50L48 12L53 20L55 32L51 44L58 54L62 64H18L22 54L29 44L25 32L27 20Z",
+  // Short sleeves, round neck, lightly fitted waist, straight floor-length skirt.
   long_dress:
-    "M34 13c0-5 12-5 12 0l4 2 10 8-5 8-6-4c-1 14-2 30-1 69H32c1-39 0-55-1-69l-6 4-5-8 10-8 4-2z",
-  skirt: "M30 26H50V30L64 68H16L30 30Z",
-  long_skirt: "M33 8H47V12L72 96H8L33 12Z",
+    "M35 11C35 6 45 6 45 11L48 13L58 20L62 29L52 32C50 38 48 46 47 52C46 68 47 82 47 97H33C33 82 34 68 33 52C32 46 30 38 28 32L18 29L22 20L32 13Z",
+  skirt:
+    "M26 30H54V36C60 50 66 62 62 70C50 76 30 76 18 70C14 62 20 50 26 36Z",
+  long_skirt:
+    "M35 4H45V9C54 28 70 58 76 88C60 98 20 98 4 88C10 58 26 28 35 9Z",
   trouser:
-    "M26 12H54V18C58 28 56 40 54 48L52 96H42L40 54L38 96H28L26 48C24 40 22 28 26 18Z",
+    "M22 5H58V13C62 22 60 32 58 38L56 98H44L40 46L36 98H24L22 38C20 32 18 22 22 13Z",
   nikka_shorts:
-    "M24 18H56V24C59 34 57 44 54 52L52 74H42L40 50L38 74H28L26 52C23 44 21 34 24 24Z",
+    "M22 12H58V18L56 38L54 58H44L40 40L36 58H26L24 38L22 18Z",
   bum_shorts:
-    "M20 26H60V32C62 38 58 44 54 48L50 56H42L40 46L38 56H30L26 48C22 44 18 38 20 32Z",
+    "M14 22H66V29C68 34 64 38 58 42L56 49H46L42 40H38L34 49H24L22 42C16 38 12 34 14 29Z",
   agbada:
-    "M34 12C34 7 46 7 46 12L52 14L74 40L64 52L50 28L54 96H26L30 28L16 52L6 40L28 14Z",
+    "M36 8C36 4 44 4 44 8L48 10L66 24L76 42L62 38L50 16L54 94H26L30 16L18 38L4 42L14 24L32 10Z",
 };
 
 const FRONT_MARK: Record<MonogramPreviewSilhouette, string> = {
   shirt: "M34 16l6 8 6-8",
-  long_shirt: "M33 16h14M40 17v10",
-  dress: "M37 14h6",
-  long_dress: "M34 14q6 5 12 0",
-  skirt: "M31 28h18",
-  long_skirt: "M34 11h12",
-  trouser: "M27 16h26M40 18v14",
-  nikka_shorts: "M25 22h30M40 24v10",
-  bum_shorts: "M22 30h36M40 32v8",
-  agbada: "M35 13q5 4 10 0",
+  long_shirt: "M34 12h12M40 13v14",
+  dress: "M40 12h4",
+  long_dress: "M36 12q4 4 8 0",
+  skirt: "M27 33h26",
+  long_skirt: "M36 7h8",
+  trouser: "M24 11h32M40 13v16",
+  nikka_shorts: "M22 18h36M40 20v10",
+  bum_shorts: "M16 27h48M40 29v6",
+  agbada: "M37 9q3 3 6 0",
 };
 
 const BACK_MARK: Record<MonogramPreviewSilhouette, string> = {
-  shirt: "M40 18v64",
-  long_shirt: "M40 17v75",
+  shirt: "M40 18v52",
+  long_shirt: "M40 16v76",
   dress: "M40 16v48",
-  long_dress: "M40 15v76",
-  skirt: "M40 30v34",
-  long_skirt: "M40 14v76",
-  trouser: "M40 18v32",
-  nikka_shorts: "M40 24v22",
-  bum_shorts: "M40 32v12",
-  agbada: "M40 15v76",
+  long_dress: "M40 14v78",
+  skirt: "M40 36v30",
+  long_skirt: "M40 12v78",
+  trouser: "M40 14v28",
+  nikka_shorts: "M40 22v18",
+  bum_shorts: "M40 32v10",
+  agbada: "M40 10v80",
 };
 
 /**
@@ -111,14 +114,14 @@ const MARK_BOX: Record<
   Exclude<MonogramPreviewSilhouette, "shirt" | "dress">,
   { x: number; y: number; width: number; height: number }
 > = {
-  long_shirt: { x: 41.2, y: 32, width: 7.2, height: 16 },
-  long_dress: { x: 41.2, y: 30, width: 6.2, height: 14 },
-  skirt: { x: 42, y: 40, width: 10, height: 12 },
-  long_skirt: { x: 42, y: 36, width: 10, height: 16 },
-  trouser: { x: 42, y: 22, width: 10, height: 16 },
-  nikka_shorts: { x: 42.5, y: 28, width: 11, height: 14 },
-  bum_shorts: { x: 43, y: 34, width: 12, height: 10 },
-  agbada: { x: 41.5, y: 30, width: 10, height: 16 },
+  long_shirt: { x: 41.4, y: 34, width: 10, height: 16 },
+  long_dress: { x: 41.2, y: 26, width: 6.5, height: 14 },
+  skirt: { x: 42, y: 42, width: 12, height: 12 },
+  long_skirt: { x: 42, y: 28, width: 10, height: 16 },
+  trouser: { x: 44, y: 18, width: 10, height: 14 },
+  nikka_shorts: { x: 44, y: 24, width: 10, height: 12 },
+  bum_shorts: { x: 46, y: 30, width: 12, height: 8 },
+  agbada: { x: 42, y: 26, width: 8, height: 16 },
 };
 /** Placket / collar-V tip. Wearer's left is the viewer's right of this line. */
 export const MONOGRAM_PREVIEW_CENTER_X = 40;
@@ -184,11 +187,11 @@ const LETTERING: Record<
     hem: at("74%", "50%"),
   },
   long_shirt: {
-    left_chest: at("42%", "62%"),
-    right_chest: at("42%", "38%"),
-    neckline: at("16%", "50%"),
-    upper_back: at("36%", "50%"),
-    cuff: at("30%", "28%", -18),
+    left_chest: at("46%", "60%"),
+    right_chest: at("46%", "40%"),
+    neckline: at("12%", "50%"),
+    upper_back: at("40%", "50%"),
+    cuff: at("28%", "22%"),
     hem: at("90%", "50%"),
   },
   dress: {
@@ -200,59 +203,59 @@ const LETTERING: Record<
     hem: at("62%", "50%"),
   },
   long_dress: {
-    left_chest: at("38%", "60%"),
-    right_chest: at("38%", "40%"),
-    neckline: at("14%", "50%"),
+    left_chest: at("36%", "58%"),
+    right_chest: at("36%", "42%"),
+    neckline: at("12%", "50%"),
     upper_back: at("34%", "50%"),
-    cuff: at("28%", "30%", -16),
+    cuff: at("26%", "28%", -12),
     hem: at("90%", "50%"),
   },
   skirt: {
-    left_chest: at("50%", "62%"),
-    right_chest: at("50%", "38%"),
-    neckline: at("28%", "50%"),
-    upper_back: at("46%", "50%"),
-    cuff: at("52%", "30%"),
-    hem: at("62%", "50%"),
+    left_chest: at("52%", "64%"),
+    right_chest: at("52%", "36%"),
+    neckline: at("32%", "50%"),
+    upper_back: at("50%", "50%"),
+    cuff: at("58%", "28%"),
+    hem: at("66%", "50%"),
   },
   long_skirt: {
-    left_chest: at("40%", "62%"),
-    right_chest: at("40%", "38%"),
-    neckline: at("12%", "50%"),
-    upper_back: at("42%", "50%"),
-    cuff: at("54%", "24%"),
-    hem: at("90%", "50%"),
+    left_chest: at("36%", "62%"),
+    right_chest: at("36%", "38%"),
+    neckline: at("8%", "50%"),
+    upper_back: at("40%", "50%"),
+    cuff: at("60%", "18%"),
+    hem: at("88%", "50%"),
   },
   trouser: {
-    left_chest: at("32%", "64%"),
-    right_chest: at("32%", "36%"),
-    neckline: at("16%", "50%"),
-    upper_back: at("30%", "50%"),
-    cuff: at("88%", "34%"),
+    left_chest: at("28%", "62%"),
+    right_chest: at("28%", "38%"),
+    neckline: at("10%", "50%"),
+    upper_back: at("28%", "50%"),
+    cuff: at("90%", "36%"),
     hem: at("92%", "50%"),
   },
   nikka_shorts: {
-    left_chest: at("38%", "64%"),
-    right_chest: at("38%", "36%"),
-    neckline: at("22%", "50%"),
-    upper_back: at("36%", "50%"),
-    cuff: at("66%", "34%"),
-    hem: at("68%", "50%"),
+    left_chest: at("36%", "66%"),
+    right_chest: at("36%", "34%"),
+    neckline: at("20%", "50%"),
+    upper_back: at("34%", "50%"),
+    cuff: at("56%", "36%"),
+    hem: at("54%", "50%"),
   },
   bum_shorts: {
-    left_chest: at("42%", "66%"),
-    right_chest: at("42%", "34%"),
+    left_chest: at("40%", "68%"),
+    right_chest: at("40%", "32%"),
     neckline: at("30%", "50%"),
     upper_back: at("40%", "50%"),
-    cuff: at("50%", "32%"),
-    hem: at("52%", "50%"),
+    cuff: at("48%", "34%"),
+    hem: at("50%", "50%"),
   },
   agbada: {
-    left_chest: at("38%", "62%"),
-    right_chest: at("38%", "38%"),
-    neckline: at("14%", "50%"),
+    left_chest: at("36%", "60%"),
+    right_chest: at("36%", "40%"),
+    neckline: at("8%", "50%"),
     upper_back: at("36%", "50%"),
-    cuff: at("42%", "14%", -24),
+    cuff: at("36%", "12%", -20),
     hem: at("90%", "50%"),
   },
 };
