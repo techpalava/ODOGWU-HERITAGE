@@ -94,6 +94,7 @@
     "test:measurement-sample-cloth": "tsx test_measurement_sample_cloth.ts && tsx test_measurement_sample_cloth_selection.tsx && node scripts/tsxWithViteProductionFirebase.mjs test_measurement_invalid_draft_hydration.tsx",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
     "test:design-studio-resume-locus": "node scripts/tsxWithViteProductionFirebase.mjs test_design_studio_resume_locus.ts",
+    "test:design-studio-try-on-step-restore": "node scripts/tsxWithViteProductionFirebase.mjs test_design_studio_try_on_step_restore.tsx",
     "test:future-custom-details-stage": "tsx test_design_studio_future_custom_details_stage.ts && tsx test_step5_garment_assign_order.ts && tsx test_personalized_additions_garment_list.tsx",
     "test:future-summary-stage": "tsx test_design_studio_future_summary.ts",
     "test:summary-measurement-group-jump": "tsx test_summary_measurement_group_edit_jump.tsx",
