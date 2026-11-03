@@ -606,6 +606,15 @@ export const FutureOrderV2StripeCard = ({
         amazonPay: "never",
         klarna: "never",
       },
+      // One full-width column and no overflow menu, so Apple Pay and Google Pay
+      // stack instead of hiding the second wallet under Stripe's "See more" arrow.
+      // maxRows stays 0 (unlimited). Stripe rejects overflow "never" when maxRows
+      // is greater than 0.
+      layout: {
+        overflow: "never",
+        maxColumns: 1,
+        maxRows: 0,
+      },
     });
     expressElementsRef.current = elements;
     expressCheckout.mount(mount);
