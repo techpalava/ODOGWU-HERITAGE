@@ -20,7 +20,7 @@ import {
 import {
   createCatalogueAdditionalGarmentSelection,
 } from "./src/utils/additionalGarmentDomain";
-import { isFutureMeasurementStageUnlocked } from "./src/utils/measurementBlueprint";
+import { isOrderAiTryOnFinishedForSummary } from "./src/utils/measurementBlueprint";
 import {
   createCatalogDesignSource,
   createUploadedDesignSource,
@@ -278,7 +278,7 @@ assert.equal(prepared.commit.priceActivatedFabricCode, "FAB-A");
 assert.equal(prepared.commit.aiTryOnWorkflowState.status, "stale");
 assert.equal(prepared.commit.shippingState.quoteReference, null);
 assert.equal(
-  isFutureMeasurementStageUnlocked(prepared.commit.aiTryOnWorkflowState),
+  isOrderAiTryOnFinishedForSummary(prepared.commit.aiTryOnWorkflowState),
   false,
   "a retention lease must not make the stale AI state ready",
 );

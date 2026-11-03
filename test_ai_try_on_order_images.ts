@@ -9,6 +9,7 @@ import { createAiTryOnSessions } from "./src/server/aiTryOnSession";
 import { createAiTryOnPreviewStore, type AiTryOnPreviewBucket } from "./src/server/aiTryOnPreviewStore";
 import {
   AI_TRY_ON_ORDER_IMAGE_COLLECTION,
+  AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS,
   AI_TRY_ON_ORDER_IMAGE_RETENTION_MS,
   AI_TRY_ON_ORDER_SELECTION_COLLECTION,
   aiTryOnOrderImagePath,
@@ -416,6 +417,99 @@ const select = (overrides: Partial<{ wearerKey: string; previewId: string; input
   assert.equal(copied.result, "already_copied");
   const record = await readAiTryOnOrderImageRecord(firestore, ORDER_ID);
   assert.deepEqual(record?.images.map((image) => image.path).sort(), ["kept-ada", "kept-obi"]);
+}
+
+// ------------------------------------------------------------ a fresh copy lock is not stolen; a dead holder's lock is reclaimed
+{
+  const LOCK = AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS;
+  const sessionFiles = (bucket: FakeBucket) =>
+    [...bucket.objects.keys()].filter((key) => !key.startsWith(ORDER_PREFIX));
+
+  // Holder still copying: claimedAt moves with the clock. The waiter must
+  // leave the session previews alone.
+  {
+    const { db, bucket, sessions, store, sessionId } = await setup();
+    const firestore = db.asFirestore();
+    await saveAiTryOnOrderSelection({
+      db: firestore, store, sessionId, uid: UID_A, orderId: ORDER_ID, selections: [select()],
+    });
+    let clock = 1_700_000_000_000;
+    const recordPath = `${AI_TRY_ON_ORDER_IMAGE_COLLECTION}/${ORDER_ID}`;
+    db.docs.set(recordPath, {
+      orderId: ORDER_ID,
+      ownerUid: UID_A,
+      status: "copying",
+      copyClaimId: "live-holder",
+      copyClaimedAt: clock + 1_000,
+    });
+    const before = sessionFiles(bucket).length;
+    const logs: string[] = [];
+    const result = await retireAiTryOnSessionForPaidOrder(
+      { ownerUid: UID_A, orderId: ORDER_ID },
+      {
+        getDb: () => firestore,
+        createStore: () => store,
+        getBucket: () => bucket,
+        log: (line) => logs.push(line),
+        now: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+          const lock = db.docs.get(recordPath);
+          if (lock?.status === "copying" && lock.copyClaimId === "live-holder") {
+            lock.copyClaimedAt = clock;
+          }
+        },
+      },
+    );
+    assert.equal(result, "failed");
+    assert.equal(sessionFiles(bucket).length, before, "a live holder keeps the session previews");
+    assert.equal(await sessions.authorize({ uid: UID_A, token: null }), sessionId, "session stays open");
+    assert.match(logs.join("\n"), /"status":"in_progress"/);
+    assert.match(logs.join("\n"), /"status":"copy_in_progress","previewsKept":true/);
+    assert.equal(orderObjects(bucket).length, 0, "the waiter did not copy over a live holder");
+  }
+
+  // Dead holder: the claim does not move. After the lease the waiter
+  // reclaims, copies, and cleanup deletes the session previews.
+  {
+    const { db, bucket, sessions, store, sessionId } = await setup();
+    const firestore = db.asFirestore();
+    await saveAiTryOnOrderSelection({
+      db: firestore, store, sessionId, uid: UID_A, orderId: ORDER_ID,
+      selections: [select(), select({ wearerKey: "w-obi", previewId: PREVIEW_OBI, label: "Obi" })],
+    });
+    let clock = 1_700_000_000_000;
+    db.docs.set(`${AI_TRY_ON_ORDER_IMAGE_COLLECTION}/${ORDER_ID}`, {
+      orderId: ORDER_ID,
+      ownerUid: UID_A,
+      status: "copying",
+      copyClaimId: "dead-holder",
+      copyClaimedAt: clock + 1_000,
+    });
+    const logs: string[] = [];
+    const result = await retireAiTryOnSessionForPaidOrder(
+      { ownerUid: UID_A, orderId: ORDER_ID },
+      {
+        getDb: () => firestore,
+        createStore: () => store,
+        getBucket: () => bucket,
+        log: (line) => logs.push(line),
+        now: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+      },
+    );
+    assert.equal(result, "deleted");
+    assert.ok(clock - 1_700_000_000_000 >= LOCK, "the waiter waited out the dead holder's lease");
+    assert.equal(sessionFiles(bucket).length, 0, "previews are deleted after the reclaim copy");
+    assert.equal(await sessions.authorize({ uid: UID_A, token: null }), null, "session closed");
+    const record = await readAiTryOnOrderImageRecord(firestore, ORDER_ID);
+    assert.equal(record?.status, "saved");
+    assert.deepEqual(record?.images.map((image) => image.wearerKey).sort(), ["w-ada", "w-obi"]);
+    assert.match(logs.join("\n"), /"status":"copied"/);
+    assert.equal(logs.some((line) => line.includes("copy_in_progress")), false);
+  }
 }
 
 console.log("ai try-on order images: ok");

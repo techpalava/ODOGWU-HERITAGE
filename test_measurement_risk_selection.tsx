@@ -16,7 +16,7 @@ import {
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   MEASUREMENT_RISK_ROUTE_DESCRIPTIONS,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
@@ -320,7 +320,7 @@ assert.equal(collectText(renderer.root).includes("Chest/Bust Circumference"), fa
 const lowFilled = fillDirectRequirements("low_risk");
 assert.equal(isFutureMeasurementSelectedPathInputComplete(lowFilled.state), true);
 assert.equal(isFutureMeasurementStageComplete(lowFilled.state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(lowFilled.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(lowFilled.state), true);
 
 const midIgnoringLow = reconcileFutureMeasurementState({
   state: setFutureMeasurementRoute(lowFilled.state, "medium_risk"),
@@ -354,7 +354,7 @@ assert.equal(
 const midFilled = fillDirectRequirements("medium_risk", lowFilled.state);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(midFilled.state), true);
 assert.equal(isFutureMeasurementStageComplete(midFilled.state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midFilled.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(midFilled.state), true);
 
 const highIgnoringMid = reconcileFutureMeasurementState({
   state: setFutureMeasurementRoute(midFilled.state, "high_risk"),
@@ -375,7 +375,7 @@ assert.equal(
 const highFilled = fillDirectRequirements("high_risk");
 assert.equal(isFutureMeasurementSelectedPathInputComplete(highFilled.state), true);
 assert.equal(isFutureMeasurementStageComplete(highFilled.state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(highFilled.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(highFilled.state), true);
 
 const incompleteActive = reconcileFutureMeasurementState({
   state: createEmptyFutureMeasurementState("low_risk"),
@@ -499,7 +499,7 @@ assert.equal(clearedLow.route, "low_risk");
 assert.equal(isFutureMeasurementEnteredBagEmpty(getActiveFutureMeasurementEntered(clearedLow)), true);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(clearedLow), false);
 assert.equal(isFutureMeasurementStageComplete(clearedLow), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(clearedLow), false);
+assert.equal(isTryOnUnlockedByMeasurements(clearedLow), false);
 
 const lowThenMedium = fillDirectRequirements("medium_risk", hydrated.state);
 assert.equal(lowThenMedium.state.route, "medium_risk");
@@ -522,7 +522,7 @@ assert.deepEqual(
   lowThenMedium.state.enteredByRoute?.low_risk,
 );
 assert.equal(isFutureMeasurementStageComplete(clearedMediumKeepsLow), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(clearedMediumKeepsLow), false);
+assert.equal(isTryOnUnlockedByMeasurements(clearedMediumKeepsLow), false);
 
 const clearAllRenderer = renderHarness(hydrated.state);
 {

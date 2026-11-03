@@ -19,7 +19,7 @@ import {
 import {
   createDormantDesignStudioJourneyState,
 } from "./src/utils/designStudioJourneyMode";
-import { isFutureMeasurementStageUnlocked } from "./src/utils/measurementBlueprint";
+import { isOrderAiTryOnFinishedForSummary } from "./src/utils/measurementBlueprint";
 import type { GarmentTypeStepSelection } from "./src/types";
 
 assert.equal(
@@ -133,7 +133,7 @@ assert.equal(skippedTransition.ok, true);
 const skippedWorkflow = skippedTransition.ok
   ? skippedTransition.state
   : unavailableWorkflow;
-assert.equal(isFutureMeasurementStageUnlocked(skippedWorkflow), true);
+assert.equal(isOrderAiTryOnFinishedForSummary(skippedWorkflow), true);
 assert.deepEqual(
   normalizeAiTryOnWorkflowState(JSON.parse(JSON.stringify(skippedWorkflow))),
   skippedWorkflow,
@@ -171,7 +171,7 @@ const completedTransition = transitionAiTryOnWorkflow({
 });
 assert.equal(completedTransition.ok, true);
 assert.equal(
-  isFutureMeasurementStageUnlocked(
+  isOrderAiTryOnFinishedForSummary(
     completedTransition.ok ? completedTransition.state : processingWorkflow,
   ),
   true,
@@ -199,7 +199,7 @@ assert.equal(
   },
 ].forEach((workflow) => {
   assert.equal(
-    isFutureMeasurementStageUnlocked(workflow),
+    isOrderAiTryOnFinishedForSummary(workflow),
     false,
     `${workflow.status} is not a completed or skipped AI Try-on.`,
   );
@@ -366,10 +366,10 @@ assert.equal(appSource.includes("future_nine_stage"), false);
 // Step order: Measurement (6) -> AI Try-on (7) -> Summary (8). AI Try-on opens
 // only when Measurement is complete; Summary still waits until the try-on is
 // completed or skipped (stepper, Continue and the stage list agree).
-assert.match(studioSource, /canEnterTryOn=\{summaryUnlockedByMeasurements\}/);
+assert.match(studioSource, /canEnterTryOn=\{tryOnUnlockedByMeasurements\}/);
 assert.match(studioSource, /canEnterMeasurement=\{isFuturePersonalizedAdditionsNavigationReady\}/);
-assert.match(studioSource, /isFutureAiTryOnFinishedForSummary =\s+isFutureMeasurementStageUnlocked\(futureAiTryOnWorkflow\)/);
-assert.match(studioSource, /canEnterSummary=\{\s+isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary\s+\}/);
-assert.match(studioSource, /if \(isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary\) \{\s+currentlyEnterable\.add\("summary"\)/);
-assert.match(studioSource, /!isFutureAiTryOnFinishedForSummary &&\s+!isStageHistoricallyUnlocked\("summary"\)\s+\) \{\s+navigateToFutureStage\("try_on", getValidationNavigationTarget\(\)\)/);
+assert.match(studioSource, /orderAiTryOnFinishedForSummary =\s+isOrderAiTryOnFinishedForSummary\(futureAiTryOnWorkflow\)/);
+assert.match(studioSource, /canEnterSummary=\{\s+isFutureSummaryStageUnlocked && orderAiTryOnFinishedForSummary\s+\}/);
+assert.match(studioSource, /if \(isFutureSummaryStageUnlocked && orderAiTryOnFinishedForSummary\) \{\s+currentlyEnterable\.add\("summary"\)/);
+assert.match(studioSource, /!orderAiTryOnFinishedForSummary &&\s+!isStageHistoricallyUnlocked\("summary"\)\s+\) \{\s+navigateToFutureStage\("try_on", getValidationNavigationTarget\(\)\)/);
 console.log("PASS: dormant future AI Try-on stage navigation and truthful UI");

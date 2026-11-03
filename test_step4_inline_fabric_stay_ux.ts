@@ -143,8 +143,8 @@ const fabricB: Fabric = {
         resolveAuthoritativePrimaryFabricCode(state) ===
         activated.priceActivatedFabricCode,
       customDetailsReady: true,
-      measurementUnlocked: false,
-      summaryUnlocked: false,
+      tryOnFinishedForSummary: false,
+      tryOnUnlockedByMeasurements: false,
       inlineAdditionalGarmentFabricTransaction: {
         garmentKey: addition.selection.garmentSpec!.key,
         phase: "committed",

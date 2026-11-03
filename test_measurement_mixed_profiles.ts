@@ -11,7 +11,7 @@ import type {
 import {
   createEmptyFutureMeasurementState,
   getResolvedMeasurementValue,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   planMeasurementRequirements,
   projectActiveFutureMeasurementState,
   projectMeasurementRequirementsForPresentation,
@@ -207,7 +207,7 @@ const trouserOnlyHipState = reconcileFutureMeasurementState({
   }),
   plan: dressFirstPlan,
 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(trouserOnlyHipState), false);
+assert.equal(isTryOnUnlockedByMeasurements(trouserOnlyHipState), false);
 const calculatedTrouserHip =
   trouserOnlyHipState.derived.byGarmentKey["base:trouser"]?.hip_circumference;
 assert.ok(calculatedTrouserHip);

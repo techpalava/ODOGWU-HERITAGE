@@ -20,7 +20,7 @@ import {
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
@@ -287,7 +287,7 @@ const switchedToSample = reconcileFutureMeasurementState({
 assert.equal(switchedToSample.route, "sample_cloth");
 assert.equal(isFutureMeasurementEnteredBagEmpty(getActiveFutureMeasurementEntered(switchedToSample)), true);
 assert.equal(isFutureMeasurementStageComplete(switchedToSample), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(switchedToSample), false);
+assert.equal(isTryOnUnlockedByMeasurements(switchedToSample), false);
 assert.equal(
   isFutureMeasurementEnteredBagEmpty(switchedToSample.enteredByRoute?.low_risk),
   false,
@@ -297,7 +297,7 @@ assert.equal(
 const sampleFilled = fillDirect("sample_cloth", shirtSelection, shirtGarments, switchedToSample, 10);
 assert.equal(sampleFilled.state.route, "sample_cloth");
 assert.equal(isFutureMeasurementStageComplete(sampleFilled.state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(sampleFilled.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(sampleFilled.state), true);
 assert.equal(
   isFutureMeasurementEnteredBagEmpty(sampleFilled.state.enteredByRoute?.low_risk),
   false,
@@ -474,7 +474,7 @@ const clearedChest = reconcileFutureMeasurementState({
   plan: sampleShirtPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(clearedChest), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(clearedChest), false);
+assert.equal(isTryOnUnlockedByMeasurements(clearedChest), false);
 assert.ok(
   countRemainingCustomerRequiredMeasurementUnits({
     plan: sampleShirtPlan,

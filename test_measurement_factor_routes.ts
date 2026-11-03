@@ -16,7 +16,7 @@ import {
   createEmptyFutureMeasurementState,
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   planMeasurementRequirements,
   projectActiveFutureMeasurementState,
   reconcileFutureMeasurementState,
@@ -140,7 +140,7 @@ assert.equal(
 );
 assert.equal(Object.keys(lowShirt.state.derived.shared).length, 0);
 assert.equal(isFutureMeasurementStageComplete(lowShirt.state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(lowShirt.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(lowShirt.state), true);
 
 const missingLow = reconcileFutureMeasurementState({
   state: createEmptyFutureMeasurementState("low_risk", "cm"),
@@ -170,11 +170,11 @@ assert.equal(
 );
 const dressLowFilled = fillRequired("E", "low_risk");
 assert.equal(isFutureMeasurementStageComplete(dressLowFilled.state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(dressLowFilled.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(dressLowFilled.state), true);
 
 const midLongShirtLowFilled = fillRequired("B", "low_risk");
 assert.equal(isFutureMeasurementStageComplete(midLongShirtLowFilled.state), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtLowFilled.state), false);
+assert.equal(isTryOnUnlockedByMeasurements(midLongShirtLowFilled.state), false);
 const midSleeve = midLongShirtLowFilled.plan.requirements.find(
   (requirement) => requirement.measurementId === "sleeve_length_mid",
 );
@@ -192,7 +192,7 @@ const midLongShirtOneSleeve = reconcileFutureMeasurementState({
   plan: midLongShirtLowFilled.plan,
 });
 assert.equal(isFutureMeasurementStageComplete(midLongShirtOneSleeve), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtOneSleeve), true);
+assert.equal(isTryOnUnlockedByMeasurements(midLongShirtOneSleeve), true);
 assert.equal(
   midLongShirtLowFilled.plan.requirements.some(
     (requirement) =>
@@ -248,7 +248,7 @@ for (const profileId of ["B", "F", "H"] as const) {
       plan,
     });
     assert.equal(isFutureMeasurementStageComplete(withSleeve), true);
-    assert.equal(isFutureSummaryUnlockedByMeasurements(withSleeve), true);
+    assert.equal(isTryOnUnlockedByMeasurements(withSleeve), true);
     assert.equal(
       withSleeve.derived.byGarmentKey[PROFILE_FIXTURES[profileId].garmentKey]?.sleeve_length_long,
       undefined,
@@ -333,7 +333,7 @@ for (const profileId of ["A", "E", "I", "L"] as const) {
     assert.equal(derived.calculation?.profileId, chest.profileId);
     assert.equal(derived.calculation?.garmentKey, chest.garmentKey);
   }
-  assert.equal(isFutureSummaryUnlockedByMeasurements(before.state), true);
+  assert.equal(isTryOnUnlockedByMeasurements(before.state), true);
   // Factorless Dress rows (E) are required on Medium Risk; others have none.
   assert.equal(
     requiredIds.includes("under_bust_circumference"),
@@ -352,7 +352,7 @@ assert.equal(isFutureMeasurementSelectedPathInputComplete(pendingMid), false);
 for (const profileId of ["A", "C", "E", "I", "K", "M"] as const) {
   const filled = fillRequired(profileId, "high_risk");
   assert.equal(isFutureMeasurementStageComplete(filled.state), true);
-  assert.equal(isFutureSummaryUnlockedByMeasurements(filled.state), true);
+  assert.equal(isTryOnUnlockedByMeasurements(filled.state), true);
   assert.equal(
     filled.plan.requirements
       .filter((requirement) => requirement.section === "required")
@@ -512,7 +512,7 @@ assert.equal(
   optionalBlank.state.derived.byGarmentKey["dress:1"]?.dress_length_long?.provenance,
   "calculated_average_factor",
 );
-assert.equal(isFutureSummaryUnlockedByMeasurements(optionalBlank.state), true);
+assert.equal(isTryOnUnlockedByMeasurements(optionalBlank.state), true);
 
 // Fred's High-Risk mix: Profile B shirt + Profile K bum shorts.
 // YES, PROVIDE manuals stay customer-entered even when a height factor exists.
@@ -734,7 +734,7 @@ fredAfterChestClear = reconcileFutureMeasurementState({
   state: fredAfterChestClear,
   plan: fredPlan,
 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(fredAfterChestClear), false);
+assert.equal(isTryOnUnlockedByMeasurements(fredAfterChestClear), false);
 
 let fredAfterHeightClear = setFutureMeasurementInput({
   state: fredAfterHeightChange,
@@ -751,7 +751,7 @@ assert.equal(
   undefined,
   "Clearing Height must drop dependent calculated values.",
 );
-assert.equal(isFutureSummaryUnlockedByMeasurements(fredAfterHeightClear), false);
+assert.equal(isTryOnUnlockedByMeasurements(fredAfterHeightClear), false);
 assert.equal(fredAfterHeightClear.calculationStatus, "incomplete");
 
 const shirtTrouserPlan = planMeasurementRequirements({
@@ -804,7 +804,7 @@ nearlyEqual(
   calculateMeasurementFromAverageFactor(180, trouserCalculated.averageFactor!),
 );
 assert.equal(shirtOnly.calculationStatus, "incomplete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(shirtOnly), false);
+assert.equal(isTryOnUnlockedByMeasurements(shirtOnly), false);
 let bothGarments = shirtOnly;
 for (const requirement of shirtTrouserPlan.requirements.filter(
   (item) => item.directInput && item.garmentKey === "base:trouser",
@@ -818,6 +818,6 @@ for (const requirement of shirtTrouserPlan.requirements.filter(
 bothGarments = reconcileFutureMeasurementState({ state: bothGarments, plan: shirtTrouserPlan });
 assert.ok(derivedFor(bothGarments, trouserCalculated));
 assert.equal(bothGarments.calculationStatus, "complete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(bothGarments), true);
+assert.equal(isTryOnUnlockedByMeasurements(bothGarments), true);
 
 console.log("PASS: measurement factor routes, height change, isolation, and summary readiness");

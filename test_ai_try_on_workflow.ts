@@ -14,6 +14,7 @@ import {
   createUnavailableAiTryOnGateway,
   getAiTryOnWorkflowAllowedActions,
   normalizeAiTryOnWorkflowState,
+  restoreAiTryOnWorkflowState,
   reconcileAiTryOnWorkflow,
   transitionAiTryOnWorkflow,
 } from "./src/utils/aiTryOnWorkflow";
@@ -149,15 +150,38 @@ assert.equal(started.ok && started.state.status, "processing");
 assert.equal(
   normalizeAiTryOnWorkflowState(started.ok ? started.state : null)?.status,
   "processing",
-  "A resumable processing job must survive reload normalization.",
+  "In-memory processing survives normalization so a sync generate can finish.",
+);
+const inFlight = {
+  schemaVersion: 1 as const,
+  status: "processing" as const,
+  inputFingerprint: fingerprint,
+};
+assert.equal(
+  normalizeAiTryOnWorkflowState(inFlight)?.status,
+  "processing",
+  "A sync generate does not need a client job id to stay processing.",
+);
+assert.equal(normalizeAiTryOnWorkflowState(inFlight)?.jobReference, undefined);
+assert.equal(
+  restoreAiTryOnWorkflowState(inFlight)?.failure?.code,
+  "interrupted",
+  "Reloading an in-flight generate is interrupted. It is not a server job.",
 );
 assert.equal(
-  normalizeAiTryOnWorkflowState({
-    schemaVersion: 1,
-    status: "processing",
-    inputFingerprint: fingerprint,
+  restoreAiTryOnWorkflowState({
+    ...inFlight,
+    jobReference: { kind: "resumable_job", jobId: "job-local-placeholder" },
   })?.failure?.code,
   "interrupted",
+  "A stored client job id is not resumed after reload.",
+);
+assert.equal(
+  restoreAiTryOnWorkflowState({
+    ...inFlight,
+    jobReference: { kind: "resumable_job", jobId: "job-local-placeholder" },
+  })?.jobReference,
+  undefined,
 );
 
 const invalidCompletion = transitionAiTryOnWorkflow({
