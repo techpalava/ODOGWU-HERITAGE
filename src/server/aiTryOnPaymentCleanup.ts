@@ -17,8 +17,11 @@ import { copyAiTryOnOrderImagesForPaidOrder } from "./aiTryOnOrderImages.js";
  * session ("until you place your order"), on the server, so it works on
  * any device.
  *
- * - Never blocks or fails a payment: everything is caught, and the work is
- *   capped at `timeoutMs`; the caller awaits this AFTER the payment is saved.
+ * - Never blocks or fails a payment: everything is caught. The caller awaits
+ *   this AFTER the payment is saved, for up to 15s, so the order-image copy,
+ *   preview deletion and session close finish before the payment function
+ *   returns. Vercel freezes a function after the response; returning earlier
+ *   used to cut this work off.
  * - Idempotent: a repeat (webhook + browser, or a Stripe retry) finds no
  *   open session and does nothing.
  * - Logs carry no PII: no uid, order id or session id, only counts.
@@ -33,7 +36,8 @@ import { copyAiTryOnOrderImagesForPaidOrder } from "./aiTryOnOrderImages.js";
  *   to the order (60 days, aiTryOnOrderImages.ts). A failed copy never stops
  *   the payment or the cleanup.
  */
-export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 3000;
+/** Bound for the post-payment copy and preview cleanup. Was 3s, which returned while the work was still running. */
+export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 15_000;
 
 export interface AiTryOnPaymentCleanupDependencies {
   getDb?: () => Firestore;
@@ -77,6 +81,12 @@ export const retireAiTryOnSessionForPaidOrder = async (
           ownerUid,
         });
         log(JSON.stringify({ event: "ai_try_on_order_images", status: copied.result, images: copied.images }));
+        if (copied.result === "in_progress") {
+          // Another payment event holds the copy. It deletes the previews
+          // after that copy is confirmed. Deleting them here would remove
+          // files that event is still reading.
+          return "failed";
+        }
       } catch (error) {
         log(
           JSON.stringify({

@@ -312,4 +312,110 @@ const select = (overrides: Partial<{ wearerKey: string; previewId: string; input
   assert.match(AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice, /60 days/);
 }
 
+// ------------------------------------------------------------ concurrent payment events keep every wearer's image
+{
+  const { db, bucket, store, sessionId } = await setup();
+  const firestore = db.asFirestore();
+  await saveAiTryOnOrderSelection({
+    db: firestore,
+    store,
+    sessionId,
+    uid: UID_A,
+    orderId: ORDER_ID,
+    selections: [select(), select({ wearerKey: "w-obi", previewId: PREVIEW_OBI, label: "Obi" })],
+  });
+  let held = false;
+  let releaseCopy!: () => void;
+  let notifyCopy!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseCopy = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    notifyCopy = resolve;
+  });
+  const slowStore = {
+    ...store,
+    async read(orderKey: string, previewId: string) {
+      const image = await store.read(orderKey, previewId);
+      if (previewId === PREVIEW_ADA && !held) {
+        held = true;
+        notifyCopy();
+        await gate;
+      }
+      return image;
+    },
+  };
+  const deps = {
+    getDb: () => firestore,
+    createStore: () => slowStore,
+    getBucket: () => bucket,
+    log: () => undefined,
+  };
+  const sessionFiles = () => [...bucket.objects.keys()].filter((key) => !key.startsWith(ORDER_PREFIX));
+  const first = retireAiTryOnSessionForPaidOrder({ ownerUid: UID_A, orderId: ORDER_ID }, deps);
+  await Promise.race([
+    started,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("copy did not start")), 2000)),
+  ]);
+  const second = retireAiTryOnSessionForPaidOrder({ ownerUid: UID_A, orderId: ORDER_ID }, deps);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.ok(sessionFiles().length >= 2, "the second payment event does not delete previews while the first is still copying");
+  releaseCopy();
+  const results = (await Promise.all([first, second])).sort();
+  assert.deepEqual(results, ["deleted", "deleted"]);
+  const record = await readAiTryOnOrderImageRecord(firestore, ORDER_ID);
+  assert.equal(record?.status, "saved");
+  assert.deepEqual(record?.images.map((image) => image.wearerKey).sort(), ["w-ada", "w-obi"], "both wearers survive the double call");
+  assert.equal(sessionFiles().length, 0, "previews are deleted once the copy is confirmed");
+  assert.equal(orderObjects(bucket).length, 2);
+}
+
+// ------------------------------------------------------------ a partial copy must not replace a fuller record
+{
+  const { db, bucket, store, sessionId } = await setup();
+  const firestore = db.asFirestore();
+  await saveAiTryOnOrderSelection({
+    db: firestore,
+    store,
+    sessionId,
+    uid: UID_A,
+    orderId: ORDER_ID,
+    selections: [select(), select({ wearerKey: "w-obi", previewId: PREVIEW_OBI, label: "Obi" })],
+  });
+  let injected = false;
+  const partialStore = {
+    ...store,
+    async read(orderKey: string, previewId: string) {
+      const image = await store.read(orderKey, previewId);
+      if (previewId === PREVIEW_OBI && !injected) {
+        injected = true;
+        db.docs.set(`${AI_TRY_ON_ORDER_IMAGE_COLLECTION}/${ORDER_ID}`, {
+          orderId: ORDER_ID,
+          ownerUid: UID_A,
+          status: "saved",
+          images: [
+            { wearerKey: "w-ada", label: "Ada", onModel: false, path: "kept-ada", mimeType: "image/webp", bytes: 3 },
+            { wearerKey: "w-obi", label: "Obi", onModel: true, path: "kept-obi", mimeType: "image/webp", bytes: 3 },
+          ],
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        });
+        return null;
+      }
+      return image;
+    },
+  };
+  const copied = await copyAiTryOnOrderImagesForPaidOrder({
+    db: firestore,
+    store: partialStore,
+    bucket,
+    sessionId,
+    orderId: ORDER_ID,
+    ownerUid: UID_A,
+  });
+  assert.equal(copied.result, "already_copied");
+  const record = await readAiTryOnOrderImageRecord(firestore, ORDER_ID);
+  assert.deepEqual(record?.images.map((image) => image.path).sort(), ["kept-ada", "kept-obi"]);
+}
+
 console.log("ai try-on order images: ok");

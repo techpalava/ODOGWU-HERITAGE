@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Firestore } from "firebase-admin/firestore";
 import { AI_TRY_ON_ORDER_IMAGE_RETENTION_DAYS } from "../utils/aiTryOnOrderImageCopy.js";
 import type { AiTryOnPreviewBucket, AiTryOnPreviewStore } from "./aiTryOnPreviewStore.js";
@@ -14,7 +14,10 @@ import type { AiTryOnPreviewBucket, AiTryOnPreviewStore } from "./aiTryOnPreview
  *   the session's previews are deleted) to
  *   `ai-try-on-order-images/<orderId>/<wearer>.<ext>` in the try-on bucket,
  *   and `aiTryOnOrderImages/<orderId>` records them. Idempotent: a repeat
- *   payment event finds the record and copies nothing.
+ *   payment event finds the record and copies nothing. The browser and the
+ *   webhook often copy at the same time; a lock on that record makes one
+ *   of them wait, and a partial copy never replaces a fuller one. Session
+ *   previews are deleted only after the copy is confirmed.
  * - Deleted on request (My Orders, admin, cancellation or refund); the
  *   bucket lifecycle rule (61 days) and the record's `expiresAt` are the
  *   backstops.
@@ -25,6 +28,13 @@ export const AI_TRY_ON_ORDER_IMAGE_COLLECTION = "aiTryOnOrderImages";
 export const AI_TRY_ON_ORDER_IMAGE_STORAGE_PREFIX = "ai-try-on-order-images";
 export const AI_TRY_ON_ORDER_IMAGE_RETENTION_MS = AI_TRY_ON_ORDER_IMAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 export const AI_TRY_ON_ORDER_SELECTION_LIMIT = 20;
+/**
+ * How long one payment event may hold the copy. A second event waits, and
+ * takes over only after this, so a crashed copy can be retried. Matches the
+ * post-payment cleanup bound.
+ */
+export const AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS = 15_000;
+const COPY_LOCK_POLL_MS = 25;
 const ORDERS_COLLECTION = "orders";
 
 const ORDER_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -173,11 +183,35 @@ export const saveAiTryOnOrderSelection = async ({
   return "saved";
 };
 
-export type CopyAiTryOnOrderImagesResult = "copied" | "already_copied" | "no_selection" | "nothing_copied";
+export type CopyAiTryOnOrderImagesResult =
+  | "copied"
+  | "already_copied"
+  | "no_selection"
+  | "nothing_copied"
+  | "in_progress";
+
+type CopyLockDoc = {
+  status?: unknown;
+  images?: unknown;
+  copyClaimId?: unknown;
+  copyClaimedAt?: unknown;
+};
+
+const isFinishedCopy = (data: CopyLockDoc | undefined): boolean =>
+  data?.status === "saved" || data?.status === "deleted";
+
+const imageCount = (data: CopyLockDoc | undefined): number =>
+  Array.isArray(data?.images) ? data.images.length : 0;
 
 /**
  * At payment, before the session's previews are deleted: copies the
- * selected previews into the order's folder and records them. Idempotent.
+ * selected previews into the order's folder and records them.
+ *
+ * The browser payment call and the Stripe webhook often run this together.
+ * One transaction holds `aiTryOnOrderImages/<orderId>` while the files are
+ * copied. The other waits. A saved or deleted record is left as it is, and
+ * a partial image list never replaces a longer one. `in_progress` means
+ * another event still holds the lock: the caller must not delete previews.
  */
 export const copyAiTryOnOrderImagesForPaidOrder = async ({
   db,
@@ -187,6 +221,7 @@ export const copyAiTryOnOrderImagesForPaidOrder = async ({
   orderId,
   ownerUid,
   now = Date.now,
+  sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
 }: {
   db: Firestore;
   store: AiTryOnPreviewStore;
@@ -195,55 +230,130 @@ export const copyAiTryOnOrderImagesForPaidOrder = async ({
   orderId: string;
   ownerUid: string;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<{ result: CopyAiTryOnOrderImagesResult; images: number }> => {
   if (!isAiTryOnOrderId(orderId)) return { result: "no_selection", images: 0 };
   const recordRef = db.collection(AI_TRY_ON_ORDER_IMAGE_COLLECTION).doc(orderId);
-  if ((await recordRef.get()).exists) return { result: "already_copied", images: 0 };
   const selectionRef = db.collection(AI_TRY_ON_ORDER_SELECTION_COLLECTION).doc(orderId);
+  const readLock = async (): Promise<CopyLockDoc | undefined> => {
+    const snap = await recordRef.get();
+    return snap.exists ? (snap.data() as CopyLockDoc) : undefined;
+  };
+  const finished = async () => isFinishedCopy(await readLock());
+  if (await finished()) return { result: "already_copied", images: 0 };
+
   const selectionDoc = await selectionRef.get();
   const selection = selectionDoc.exists
     ? (selectionDoc.data() as { ownerUid?: unknown; selections?: unknown })
     : null;
   if (!selection || selection.ownerUid !== ownerUid || !Array.isArray(selection.selections)) {
+    // The other event may have finished and consumed the selection.
+    if (await finished()) return { result: "already_copied", images: 0 };
     return { result: "no_selection", images: 0 };
   }
-  const images: AiTryOnOrderImage[] = [];
-  for (const entry of selection.selections as AiTryOnOrderSelection[]) {
-    const preview = await store.read(sessionId, entry.previewId);
-    if (!preview || preview.summary.wearerKey !== entry.wearerKey) continue;
-    const bytes = Buffer.from(preview.data, "base64");
-    const path = aiTryOnOrderImagePath(orderId, entry.wearerKey, preview.mimeType);
-    await bucket.file(path).save(bytes, {
-      resumable: false,
-      contentType: preview.mimeType,
-      // No download token: the image is read only through the order route.
-      metadata: { cacheControl: "private, no-store" },
+
+  const deadline = now() + AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS;
+  let claimId: string | null = null;
+  while (!claimId) {
+    const claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(recordRef);
+      const data = snap.exists ? (snap.data() as CopyLockDoc) : undefined;
+      if (isFinishedCopy(data)) return "finished" as const;
+      const claimedAt = typeof data?.copyClaimedAt === "number" ? data.copyClaimedAt : 0;
+      if (
+        data?.status === "copying" &&
+        typeof data.copyClaimId === "string" &&
+        now() - claimedAt < AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS
+      ) {
+        return "busy" as const;
+      }
+      const id = randomUUID();
+      tx.set(recordRef, {
+        orderId,
+        ownerUid,
+        status: "copying",
+        copyClaimId: id,
+        copyClaimedAt: now(),
+      });
+      return id;
     });
-    images.push({
-      wearerKey: entry.wearerKey,
-      label: entry.label,
-      onModel: entry.onModel,
-      path,
-      mimeType: preview.mimeType,
-      bytes: bytes.length,
-    });
+    if (claimed === "finished") return { result: "already_copied", images: 0 };
+    if (claimed === "busy") {
+      if (now() >= deadline) return { result: "in_progress", images: 0 };
+      await sleep(Math.min(COPY_LOCK_POLL_MS, Math.max(1, deadline - now())));
+      continue;
+    }
+    claimId = claimed;
   }
-  if (images.length === 0) {
-    await selectionRef.delete().catch(() => undefined);
-    return { result: "nothing_copied", images: 0 };
-  }
-  const createdAt = new Date(now());
-  const record: AiTryOnOrderImageRecord = {
-    orderId,
-    ownerUid,
-    status: "saved",
-    images,
-    createdAt,
-    expiresAt: new Date(createdAt.getTime() + AI_TRY_ON_ORDER_IMAGE_RETENTION_MS),
+  const heldClaimId = claimId;
+
+  const releaseLock = async () => {
+    await db
+      .runTransaction(async (tx) => {
+        const snap = await tx.get(recordRef);
+        const data = snap.exists ? (snap.data() as CopyLockDoc) : undefined;
+        if (data?.status === "copying" && data.copyClaimId === heldClaimId) tx.delete(recordRef);
+      })
+      .catch(() => undefined);
   };
-  await recordRef.set(record);
-  await selectionRef.delete().catch(() => undefined);
-  return { result: "copied", images: images.length };
+
+  try {
+    const images: AiTryOnOrderImage[] = [];
+    for (const entry of selection.selections as AiTryOnOrderSelection[]) {
+      const preview = await store.read(sessionId, entry.previewId);
+      if (!preview || preview.summary.wearerKey !== entry.wearerKey) continue;
+      const bytes = Buffer.from(preview.data, "base64");
+      const path = aiTryOnOrderImagePath(orderId, entry.wearerKey, preview.mimeType);
+      await bucket.file(path).save(bytes, {
+        resumable: false,
+        contentType: preview.mimeType,
+        // No download token: the image is read only through the order route.
+        metadata: { cacheControl: "private, no-store" },
+      });
+      images.push({
+        wearerKey: entry.wearerKey,
+        label: entry.label,
+        onModel: entry.onModel,
+        path,
+        mimeType: preview.mimeType,
+        bytes: bytes.length,
+      });
+    }
+    if (images.length === 0) {
+      await releaseLock();
+      await selectionRef.delete().catch(() => undefined);
+      return { result: "nothing_copied", images: 0 };
+    }
+    const createdAt = new Date(now());
+    const record: AiTryOnOrderImageRecord = {
+      orderId,
+      ownerUid,
+      status: "saved",
+      images,
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + AI_TRY_ON_ORDER_IMAGE_RETENTION_MS),
+    };
+    const written = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(recordRef);
+      const data = snap.exists ? (snap.data() as CopyLockDoc) : undefined;
+      if (data?.status === "deleted") return "keep" as const;
+      if (data?.status === "saved" && imageCount(data) >= images.length) return "keep" as const;
+      if (data?.status === "copying" && data.copyClaimId !== heldClaimId) {
+        const claimedAt = typeof data.copyClaimedAt === "number" ? data.copyClaimedAt : 0;
+        if (now() - claimedAt < AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS) return "lost" as const;
+      }
+      tx.set(recordRef, record);
+      return "wrote" as const;
+    });
+    if (written === "lost") return { result: "in_progress", images: 0 };
+    await selectionRef.delete().catch(() => undefined);
+    return written === "wrote"
+      ? { result: "copied", images: images.length }
+      : { result: "already_copied", images: 0 };
+  } catch (error) {
+    await releaseLock();
+    throw error;
+  }
 };
 
 /** Reads the record (null when none). Callers check who may see it. */
