@@ -5,15 +5,21 @@ import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import {
   MONOGRAM_PREVIEW_CENTER_X,
+  MONOGRAM_PREVIEW_FRAME_CLASS,
   MONOGRAM_PREVIEW_MIN_FONT,
   MONOGRAM_PREVIEW_SEAM_MARGIN_RATIO,
+  MONOGRAM_PREVIEW_SILHOUETTE_BY_GARMENT_TYPE,
+  MONOGRAM_PREVIEW_SILHOUETTES,
   MONOGRAM_PREVIEW_SLEEVE_SEAM_X,
   MONOGRAM_PREVIEW_VIEWBOX_WIDTH,
+  MonogramNamePreview,
   monogramPreviewChestBox,
   monogramPreviewLetteringFit,
   monogramPreviewLineAdvance,
   monogramPreviewLetteringPosition,
+  monogramPreviewOutline,
   monogramPreviewSilhouette,
+  type MonogramPreviewSilhouette,
 } from "./src/components/MonogramNamePreview";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
@@ -26,13 +32,100 @@ import {
 } from "./src/utils/garmentScopedCustomDetailsDomain";
 import { createEmptyGarmentScopedCustomDetailInputs } from "./src/utils/garmentScopedCustomDetailInputsState";
 import { projectFutureCustomDetailsCatalogue } from "./src/utils/futureCustomDetailsCatalogue";
+import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
-import type { DesignSelections, MonogramPlacement, StyleCategory } from "./src/types";
+import { STEP1_GARMENT_REFERENCE_IMAGES } from "./src/utils/step1GarmentReferenceImages";
+import type {
+  CanonicalPhysicalGarmentType,
+  DesignSelections,
+  FabricGarmentType,
+  MonogramPlacement,
+  StyleCategory,
+} from "./src/types";
 
-assert.equal(monogramPreviewSilhouette("shirt"), "shirt");
-assert.equal(monogramPreviewSilhouette("kaftan"), "shirt");
-assert.equal(monogramPreviewSilhouette("dress"), "dress");
-assert.equal(monogramPreviewSilhouette("full_length_gown"), "dress");
+const EXPECTED_SILHOUETTE: Record<CanonicalPhysicalGarmentType, MonogramPreviewSilhouette> = {
+  shirt: "shirt",
+  trouser: "trouser",
+  skirt: "skirt",
+  long_skirt: "long_skirt",
+  standard_shorts: "nikka_shorts",
+  bum_shorts: "bum_shorts",
+  dress: "dress",
+  kaftan: "long_shirt",
+  full_length_gown: "long_dress",
+  agbada: "agbada",
+};
+
+for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
+  assert.equal(
+    monogramPreviewSilhouette(garmentType),
+    EXPECTED_SILHOUETTE[garmentType],
+    `${garmentType} must use its Step 1 silhouette`,
+  );
+  assert.equal(
+    MONOGRAM_PREVIEW_SILHOUETTE_BY_GARMENT_TYPE[garmentType],
+    EXPECTED_SILHOUETTE[garmentType],
+  );
+  assert.ok(
+    Object.prototype.hasOwnProperty.call(STEP1_GARMENT_REFERENCE_IMAGES, garmentType),
+    `${garmentType} is a Step 1 reference garment`,
+  );
+}
+assert.equal(monogramPreviewSilhouette("agbada"), "agbada");
+assert.equal(monogramPreviewSilhouette("other"), "shirt");
+
+const outlines = MONOGRAM_PREVIEW_SILHOUETTES.map((silhouette) => monogramPreviewOutline(silhouette));
+assert.equal(new Set(outlines).size, MONOGRAM_PREVIEW_SILHOUETTES.length, "each silhouette has its own outline");
+for (const garmentType of [
+  "trouser",
+  "skirt",
+  "long_skirt",
+  "standard_shorts",
+  "bum_shorts",
+  "kaftan",
+  "full_length_gown",
+] as const) {
+  const silhouette = monogramPreviewSilhouette(garmentType);
+  assert.notEqual(silhouette, "shirt", `${garmentType} must not fall back to the shirt outline`);
+  assert.notEqual(silhouette, "dress", `${garmentType} must not fall back to the dress outline`);
+  assert.notEqual(monogramPreviewOutline(silhouette), monogramPreviewOutline("shirt"));
+  assert.notEqual(monogramPreviewOutline(silhouette), monogramPreviewOutline("dress"));
+}
+assert.notEqual(monogramPreviewOutline("long_skirt"), monogramPreviewOutline("skirt"));
+assert.notEqual(monogramPreviewOutline("bum_shorts"), monogramPreviewOutline("nikka_shorts"));
+assert.notEqual(monogramPreviewOutline("nikka_shorts"), monogramPreviewOutline("trouser"));
+
+const hemTop = (silhouette: MonogramPreviewSilhouette) =>
+  Number(monogramPreviewLetteringPosition("hem", silhouette).top.replace("%", ""));
+assert.ok(hemTop("long_shirt") > hemTop("shirt"));
+assert.ok(hemTop("long_dress") > hemTop("dress"));
+assert.ok(hemTop("long_skirt") > hemTop("skirt"));
+assert.ok(hemTop("trouser") > hemTop("nikka_shorts"));
+assert.ok(hemTop("nikka_shorts") > hemTop("bum_shorts"));
+
+for (const garmentType of Object.keys(EXPECTED_SILHOUETTE) as CanonicalPhysicalGarmentType[]) {
+  let previewRenderer: ReturnType<typeof create>;
+  act(() => {
+    previewRenderer = create(
+      createElement(MonogramNamePreview, {
+        garmentKey: `base:${garmentType}`,
+        garmentType: garmentType as FabricGarmentType,
+        name: "",
+      }),
+    );
+  });
+  const node = previewRenderer!.root.findByProps({
+    "data-monogram-name-preview": `base:${garmentType}`,
+  });
+  const silhouette = EXPECTED_SILHOUETTE[garmentType];
+  assert.equal(node.props["data-monogram-preview-silhouette"], silhouette);
+  assert.equal(node.props.className, MONOGRAM_PREVIEW_FRAME_CLASS);
+  assert.equal(node.props.className.includes("w-24"), true);
+  assert.equal(node.props.className.includes("32rem"), false);
+  assert.equal(node.props.className.includes("basis-full"), false);
+  const outline = node.findAllByType("path").find((path) => path.props.fill === "#F9F6F0");
+  assert.equal(outline?.props.d, monogramPreviewOutline(silhouette));
+}
 
 const placements: MonogramPlacement[] = [
   "left_chest",
@@ -249,8 +342,9 @@ assert.ok(Number(lettering(shirt).props.x) > 40);
 assert.ok(Number(lettering(shirt).props.fontSize) > 0);
 assert.equal(lettering(shirt).props.fontWeight, 700);
 assert.equal(lettering(shirt).props.fill, "#0A291B");
-assert.match(String(shirt.props.className), /basis-full/);
-assert.match(String(shirt.props.className), /sm:w-\[32rem\]/);
+assert.equal(shirt.props.className, MONOGRAM_PREVIEW_FRAME_CLASS);
+assert.match(String(shirt.props.className), /(^|\s)w-24(\s|$)/);
+assert.doesNotMatch(String(shirt.props.className), /32rem|basis-full/);
 assert.ok(
   Number(lettering(shirt).props.fontSize) >= 2,
   "ADEBAYO stays large enough to read on the desktop silhouette",
@@ -262,7 +356,7 @@ assert.equal(dress.props["data-monogram-preview-placement"], "hem");
 assert.equal(dress.props["data-monogram-preview-text"], "");
 assert.equal(dress.props["data-monogram-preview-placeholder"], "true");
 assert.equal(lettering(dress).children.join(""), "YOUR NAME");
-assert.equal(lettering(dress).props.style.top, "80%");
+assert.equal(lettering(dress).props.style.top, "62%");
 assert.notEqual(lettering(shirt).props.y, lettering(dress).props.style.top);
 
 assert.equal(
