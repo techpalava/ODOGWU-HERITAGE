@@ -7,7 +7,7 @@
 import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createElement, useState } from "react";
+import { createElement, useRef, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import {
@@ -18,6 +18,7 @@ import {
   AI_TRY_ON_PREVIEW_DISCLAIMER,
   AiTryOnPhotoPanel,
   type AiTryOnPhotoPanelProps,
+  type AiTryOnSessionPhoto,
 } from "./src/components/AiTryOnPhotoPanel";
 import { DormantFutureAiTryOnStep } from "./src/components/DormantFutureAiTryOnStep";
 import {
@@ -141,6 +142,56 @@ const twoWearers: WearerOrderStateV2 = {
   assert.equal(single.fabricSwatchImageUrl, "https://example.test/red.jpg");
   assert.equal(single.orderDetails?.garments.length, 2);
   assert.equal(single.orderDetails?.fabric?.colour, "Red");
+  assert.equal(single.previewableGarments?.length, 2, "both catalogue garments can be chosen");
+  assert.deepEqual(
+    single.previewableGarments?.map((garment) => garment.label),
+    ["Standard Shirt", "Trouser"],
+  );
+  assert.equal(single.previewableGarments?.[0].garmentImageUrl, "https://example.test/style-a.jpg");
+  assert.equal(single.previewableGarments?.[0].fabricSwatchImageUrl, "https://example.test/red.jpg");
+  assert.equal(single.previewableGarments?.[0].orderDetails?.garments.length, 1, "a try describes one garment");
+  assert.equal(single.previewableGarments?.[0].orderDetails?.garments[0].garmentType, "shirt");
+  assert.equal(single.previewableGarments?.[1].garmentImageUrl, "https://example.test/style-b.jpg");
+  assert.equal(single.previewableGarments?.[1].fabricSwatchImageUrl, null, "that fabric has no picture");
+  assert.equal(single.previewableGarments?.[1].orderDetails?.garments.length, 1);
+  assert.equal(single.previewableGarments?.[1].orderDetails?.garments[0].garmentType, "trouser");
+  // The picture URL is not part of the fingerprint. Changing it does not
+  // make an existing preview stale; changing the design does.
+  const relabelledPicture = buildAiTryOnWearerTargets(
+    baseInput({
+      occurrences: [
+        baseInput().occurrences[0],
+        { ...baseInput().occurrences[1], assignmentImage: "https://example.test/style-b-2.jpg" },
+      ],
+    }),
+  );
+  assert.equal(relabelledPicture[0].inputFingerprint, single.inputFingerprint);
+  assert.equal(relabelledPicture[0].previewableGarments?.[1].garmentImageUrl, "https://example.test/style-b-2.jpg");
+  const twoShirts = buildAiTryOnWearerTargets(
+    baseInput({
+      occurrences: [
+        baseInput().occurrences[0],
+        {
+          garmentKey: "shirt:2",
+          garmentType: "shirt",
+          assignment: assignment("shirt:2", "style-b"),
+          assignmentImage: "https://example.test/style-b.jpg",
+        },
+      ],
+      fabricAllocations: [
+        baseInput().fabricAllocations[0],
+        {
+          allocationId: "a2",
+          fabricCode: "F-PLAIN",
+          garmentAssignments: [{ garmentKey: "shirt:2", code: "S2", garmentType: "shirt", fabricUnits: 1 }],
+        },
+      ] as never,
+    }),
+  );
+  assert.deepEqual(
+    twoShirts[0].previewableGarments?.map((garment) => garment.label),
+    ["Standard Shirt", "Standard Shirt 2"],
+  );
 
   const targets = buildAiTryOnWearerTargets(baseInput({ wearerOrder: twoWearers }));
   assert.deepEqual(targets.map((target) => target.label), ["Ada", "Person 2"]);
@@ -149,6 +200,8 @@ const twoWearers: WearerOrderStateV2 = {
   assert.equal(obi.mode, "garment", "no swatch picture → garment mode");
   assert.equal(obi.fabricSwatchImageUrl, null);
   assert.equal(obi.garmentImageUrl, "https://example.test/style-b.jpg");
+  assert.equal(ada.previewableGarments?.length, 1, "picker hidden when a person has one pictured garment");
+  assert.equal(obi.previewableGarments?.length, 1);
   assert.deepEqual(ada.orderDetails?.garments.map((garment) => garment.garmentType), ["shirt"]);
   assert.deepEqual(obi.orderDetails?.garments.map((garment) => garment.garmentType), ["trouser"]);
   assert.notEqual(ada.inputFingerprint, obi.inputFingerprint, "one fingerprint per wearer");
@@ -173,6 +226,7 @@ const twoWearers: WearerOrderStateV2 = {
   );
   assert.equal(uploaded[0].garmentImageUrl, null, "no catalogue picture (uploaded design)");
   assert.equal(uploaded[0].mode, "garment");
+  assert.deepEqual(uploaded[0].previewableGarments, []);
 
   const notReady = buildAiTryOnWearerTargets(baseInput({ customDetailsReady: false }));
   assert.equal(notReady[0].inputFingerprint, null);
@@ -505,6 +559,141 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal((requests[0] as { fabricSwatchImageUrl?: string }).fabricSwatchImageUrl, "https://example.test/red.jpg");
 }
 
+{
+  // Two pictured garments: the customer picks exactly one. Default is the
+  // first pictured. One Generate sends that garment and its swatch only.
+  const [built] = buildAiTryOnWearerTargets(baseInput());
+  const { renderer, requests } = renderPanel({ targets: [built] });
+  const garmentButtons = () =>
+    renderer.root.findAll((node) => node.type === "button" && node.props["data-ai-try-on-garment"]);
+  assert.equal(garmentButtons().length, 2);
+  assert.equal(garmentButtons()[0].props["aria-checked"], true, "first pictured is selected");
+  assert.equal(garmentButtons()[1].props["aria-checked"], false);
+  assert.match(textOf(renderer.root), /Which garment\?/);
+  assert.match(textOf(renderer.root), /This preview uses one garment and its fabric/);
+  await choosePhoto(renderer);
+  await act(async () => {
+    await generateButton(renderer).props.onClick();
+  });
+  const first = requests[0] as {
+    mode: string;
+    garmentImageUrl: string;
+    fabricSwatchImageUrl?: string;
+    inputFingerprint: string;
+    orderDetails: { garments: Array<{ garmentType: string }> };
+  };
+  assert.equal(requests.length, 1, "one Generate is one try");
+  assert.equal(first.mode, "fabric");
+  assert.equal(first.garmentImageUrl, "https://example.test/style-a.jpg");
+  assert.equal(first.fabricSwatchImageUrl, "https://example.test/red.jpg");
+  assert.equal(first.inputFingerprint, built.inputFingerprint, "fingerprint stays the full design");
+  assert.equal(first.orderDetails.garments.length, 1);
+  assert.equal(first.orderDetails.garments[0].garmentType, "shirt");
+  assert.equal(JSON.stringify(first).includes("style-b"), false, "the other garment picture is not sent");
+  assert.equal(JSON.stringify(first).includes("trouser"), false, "the other garment is not described");
+
+  act(() => garmentButtons()[1].props.onClick());
+  assert.equal(garmentButtons()[1].props["aria-checked"], true);
+  await choosePhoto(renderer);
+  await act(async () => {
+    await generateButton(renderer).props.onClick();
+  });
+  const second = requests[1] as typeof first;
+  assert.equal(requests.length, 2, "the next garment is its own try, not a batch");
+  assert.equal(second.mode, "garment", "no swatch picture → garment mode");
+  assert.equal(second.garmentImageUrl, "https://example.test/style-b.jpg");
+  assert.equal(second.fabricSwatchImageUrl, undefined);
+  assert.equal(second.inputFingerprint, built.inputFingerprint, "picking another garment does not stale the design");
+  assert.equal(second.orderDetails.garments.length, 1);
+  assert.equal(second.orderDetails.garments[0].garmentType, "trouser");
+  assert.equal(JSON.stringify(second).includes("style-a"), false);
+  assert.equal(JSON.stringify(second).includes("https://example.test/red.jpg"), false);
+
+  const onlyOne = renderPanel({
+    targets: [{ ...built, previewableGarments: built.previewableGarments?.slice(0, 1) }],
+  });
+  assert.equal(
+    onlyOne.renderer.root.findAll((node) => node.props["data-ai-try-on-garment"]).length,
+    0,
+    "no picker when only one garment can be previewed",
+  );
+  assert.equal(textOf(onlyOne.renderer.root).includes("Which garment?"), false);
+}
+
+{
+  // The prepared photo and model choice live above the panel, so leaving
+  // Try-on and coming back in the same tab keeps them. Switching wearer
+  // still drops the photo.
+  const SessionHarness = () => {
+    const [show, setShow] = useState(true);
+    const [photo, setPhoto] = useState<AiTryOnSessionPhoto | null>(null);
+    const [models, setModels] = useState<Record<string, string>>({});
+    const [wearerId, setWearerId] = useState<string | null>(null);
+    const jobs = useRef(createAiTryOnBackgroundJobs({ storage: null }));
+    const panel = show
+      ? createElement(AiTryOnPhotoPanel, {
+          targets: [
+            target(),
+            target({ wearerId: "w-obi", label: "Person 2", inputFingerprint: "tryon-v1-fedcba9876543210" }),
+          ],
+          triesPerOrder: 5,
+          initialTriesRemaining: 5,
+          onPreviewCreated: () => undefined,
+          onUnavailable: () => undefined,
+          preparePhoto: async () => fakeImage,
+          createThumbnailUrl: () => "blob:kept-photo",
+          revokeThumbnailUrl: () => undefined,
+          jobStore: jobs.current,
+          sessionPhoto: photo,
+          onSessionPhotoChange: setPhoto,
+          sessionModelIdByWearer: models,
+          onSessionModelIdByWearerChange: setModels,
+          sessionWearerId: wearerId,
+          onSessionWearerIdChange: setWearerId,
+        })
+      : null;
+    return createElement(
+      "div",
+      null,
+      panel,
+      createElement("button", { type: "button", "data-toggle-panel": "true", onClick: () => setShow((open) => !open) }, "toggle"),
+    );
+  };
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(SessionHarness));
+  });
+  const toggle = () => renderer.root.find((node) => node.props["data-toggle-panel"] === "true");
+  const thumb = () => renderer.root.findAll((node) => node.type === "img" && /Photo chosen for/.test(node.props.alt || ""));
+  await choosePhoto(renderer);
+  assert.equal(thumb().length, 1);
+  assert.equal(thumb()[0].props.src, "blob:kept-photo");
+  act(() => toggle().props.onClick());
+  assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-panel"]).length, 0, "left Try-on");
+  act(() => toggle().props.onClick());
+  assert.equal(thumb().length, 1, "the photo is still there");
+  assert.equal(generateButton(renderer).props.disabled, false, "Generate does not ask for the photo again");
+
+  const wearerChips = () =>
+    renderer.root.findAll((node) => node.type === "button" && node.props["data-wearer-chip"]);
+  act(() => wearerChips()[1].props.onClick());
+  assert.equal(thumb().length, 0, "a photo belongs to one person");
+  assert.equal(generateButton(renderer).props.disabled, true);
+  act(() => wearerChips()[0].props.onClick());
+  assert.equal(thumb().length, 0, "switching back does not restore the cleared photo");
+
+  const modelOption = renderer.root.find((node) => node.props["data-ai-try-on-model-option"]);
+  act(() => modelOption.props.onClick());
+  const modelButton = renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-1-light");
+  act(() => modelButton.props.onClick());
+  assert.equal(modelButton.props["aria-checked"], true);
+  act(() => toggle().props.onClick());
+  act(() => toggle().props.onClick());
+  const restoredModel = renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-1-light");
+  assert.equal(restoredModel.props["aria-checked"], true, "the model choice survives leaving Try-on");
+  assert.equal(generateButton(renderer).props.disabled, false);
+}
+
 const errorCases: Array<[AiTryOnPreviewOutcome, string]> = [
   [{ kind: "order_limit_reached" }, AI_TRY_ON_MESSAGES.outOfPreviews],
   [{ kind: "rate_limited", retryAfterSeconds: 60 }, AI_TRY_ON_MESSAGES.tooManyTries],
@@ -693,7 +882,10 @@ for (const [outcome, text] of errorCases) {
   for (const forbidden of ["localStorage", "sessionStorage", "indexedDB", "assetId", "saveFutureDesignDraft"]) {
     assert.equal(panelSource.includes(forbidden), false, `panel must not touch ${forbidden}`);
   }
-  assert.equal(studioSource.includes("personImage"), false, "photos never reach DesignStudioView state");
+  assert.equal(studioSource.includes("personImage"), false, "the request field stays in the panel");
+  assert.match(studioSource, /aiTryOnSessionPhoto/, "the prepared photo is held in Design Studio memory");
+  assert.match(studioSource, /clearAiTryOnSessionMemory\(\)/, "a new order and sign-out drop it");
+  assert.equal(studioSource.includes("aiTryOnSessionPhoto:"), false, "the session photo is not a draft field");
   assert.equal(/preview\.data|previews\[/.test(studioSource), false, "previews never reach the draft");
   assert.match(studioSource, /recordAiTryOnPreviewCompletion\(/);
 }

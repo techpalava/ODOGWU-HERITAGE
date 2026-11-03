@@ -25,6 +25,10 @@ import {
   createAiTryOnFingerprintFromOccurrenceAssignments,
   type AiTryOnOccurrenceDesignSource,
 } from "./aiTryOnWorkflow.js";
+import {
+  projectOccurrenceDisplayLabels,
+  projectPersonGarmentLabels,
+} from "./occurrenceDisplayLabel.js";
 import { wearerAssignmentLabel } from "./wearerOrder.js";
 
 /**
@@ -41,17 +45,50 @@ import { wearerAssignmentLabel } from "./wearerOrder.js";
 
 export const AI_TRY_ON_SINGLE_TARGET_ID = "order" as const;
 
+/**
+ * One catalogue garment the customer can send on a single Generate.
+ * The wearer fingerprint stays on the full design; this only picks the
+ * garment picture and that garment's fabric swatch.
+ */
+export interface AiTryOnPreviewableGarment {
+  readonly garmentKey: string;
+  readonly label: string;
+  readonly garmentImageUrl: string;
+  /** This garment's fabric picture. Null when that fabric has no picture. */
+  readonly fabricSwatchImageUrl: string | null;
+  /** Fabric colour chip when there is no swatch picture. */
+  readonly fabricColorHex: string | null;
+  /**
+   * Prompt details for this garment alone. A Generate sends these, never
+   * the wearer's other garments.
+   */
+  readonly orderDetails: AiTryOnOrderDetails | null;
+}
+
 export interface AiTryOnWearerTarget {
   readonly wearerId: string;
   readonly label: string;
   /** null while that wearer's design is not ready. */
   readonly inputFingerprint: string | null;
   readonly mode: AiTryOnMode;
-  /** Catalogue preview of the wearer's garment; null for uploaded designs. */
+  /**
+   * Default catalogue picture: the wearer's first garment with a picture.
+   * The picker may send a different entry from `previewableGarments`.
+   */
   readonly garmentImageUrl: string | null;
-  /** Assigned fabric swatch picture; set only in fabric mode. */
+  /** Swatch for that default garment; set only in fabric mode. */
   readonly fabricSwatchImageUrl: string | null;
+  /**
+   * Catalogue garments this wearer can preview, in occurrence order.
+   * One Generate uses exactly one of these. Empty for uploaded designs.
+   * Omitted only by older callers; the builder always sets it.
+   */
+  readonly previewableGarments?: readonly AiTryOnPreviewableGarment[];
   readonly fitHints: readonly AiTryOnFitHint[];
+  /**
+   * Full design for this wearer. Used for the fingerprint only. A Generate
+   * sends the chosen garment's own `orderDetails`, not this whole list.
+   */
   readonly orderDetails: AiTryOnOrderDetails | null;
 }
 
@@ -80,6 +117,11 @@ export interface BuildAiTryOnWearerTargetsInput
 const httpUrl = (value: unknown): string | null =>
   typeof value === "string" && /^https?:\/\//i.test(value.trim()) ? value.trim() : null;
 
+const fabricColorHex = (value: unknown): string | null =>
+  typeof value === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim())
+    ? value.trim()
+    : null;
+
 const fabricCodeFor = (
   allocations: readonly FabricAllocation[],
   garmentKey: string,
@@ -95,6 +137,7 @@ const buildTarget = ({
   garmentKeys,
   fitHints,
   orderDetailsFor,
+  orderDetailsForOccurrence,
 }: {
   input: BuildAiTryOnWearerTargetsInput;
   wearerId: string;
@@ -102,6 +145,10 @@ const buildTarget = ({
   garmentKeys: ReadonlySet<string>;
   fitHints: readonly AiTryOnFitHint[];
   orderDetailsFor: (swatchFabricCode: string | null) => AiTryOnOrderDetails | null;
+  orderDetailsForOccurrence: (
+    occurrence: AiTryOnTargetOccurrence,
+    swatchFabricCode: string | null,
+  ) => AiTryOnOrderDetails | null;
 }): AiTryOnWearerTarget => {
   const occurrences = input.occurrences.filter((occurrence) =>
     garmentKeys.has(occurrence.garmentKey),
@@ -118,7 +165,43 @@ const buildTarget = ({
     : undefined;
   const fabricSwatchImageUrl = httpUrl(swatchFabric?.image);
   const mode = chooseAiTryOnMode({ hasFabricSwatch: Boolean(fabricSwatchImageUrl) });
+  // Full wearer design, including every garment. The fingerprint uses this.
+  // A Generate does not: it sends one previewable garment's own details.
   const orderDetails = orderDetailsFor(mode === "fabric" ? swatchFabricCode : null);
+  const familyLabels = projectOccurrenceDisplayLabels(
+    occurrences.map((occurrence) => ({
+      garmentKey: occurrence.garmentKey,
+      garmentType: occurrence.garmentType,
+    })),
+  );
+  const personLabels = projectPersonGarmentLabels(
+    occurrences.map((occurrence) => ({
+      garmentKey: occurrence.garmentKey,
+      garmentType: occurrence.garmentType,
+      label: familyLabels.get(occurrence.garmentKey)?.conciseLabel || occurrence.garmentType,
+    })),
+  );
+  const previewableGarments: AiTryOnPreviewableGarment[] = [];
+  for (const occurrence of occurrences) {
+    const imageUrl = httpUrl(occurrence.assignmentImage);
+    if (!imageUrl) continue;
+    const garmentSwatchCode = fabricCodeFor(input.fabricAllocations, occurrence.garmentKey);
+    const garmentFabric = garmentSwatchCode
+      ? input.fabrics.find((fabric) => fabric?.code === garmentSwatchCode)
+      : undefined;
+    const garmentSwatchUrl = httpUrl(garmentFabric?.image);
+    previewableGarments.push({
+      garmentKey: occurrence.garmentKey,
+      label: personLabels.get(occurrence.garmentKey) || occurrence.garmentType,
+      garmentImageUrl: imageUrl,
+      fabricSwatchImageUrl: garmentSwatchUrl,
+      fabricColorHex: fabricColorHex(garmentFabric?.colorHex),
+      orderDetails: orderDetailsForOccurrence(
+        occurrence,
+        garmentSwatchUrl ? garmentSwatchCode : null,
+      ),
+    });
+  }
 
   const fabricAllocations = input.fabricAllocations
     .map((allocation) => ({
@@ -170,6 +253,7 @@ const buildTarget = ({
     mode,
     garmentImageUrl,
     fabricSwatchImageUrl: mode === "fabric" ? fabricSwatchImageUrl : null,
+    previewableGarments,
     fitHints,
     orderDetails,
   };
@@ -192,6 +276,10 @@ export const buildAiTryOnWearerTargets = (
     occurrences: occurrences.map(({ garmentKey, garmentType }) => ({ garmentKey, garmentType })),
     ...(swatchFabricCode ? { swatchFabricCode } : {}),
   });
+  const orderDetailsForOccurrence = (
+    occurrence: AiTryOnTargetOccurrence,
+    swatchFabricCode: string | null,
+  ) => buildAiTryOnOrderDetails(detailsSource([occurrence], swatchFabricCode));
   const wearers = [...(input.wearerOrder?.wearers || [])].sort(
     (left, right) => left.presentationOrder - right.presentationOrder,
   );
@@ -212,6 +300,7 @@ export const buildAiTryOnWearerTargets = (
             }),
         orderDetailsFor: (swatch) =>
           buildAiTryOnOrderDetails(detailsSource(input.occurrences, swatch)),
+        orderDetailsForOccurrence,
       }),
     ];
   }
@@ -238,6 +327,7 @@ export const buildAiTryOnWearerTargets = (
           wearerOrder: input.wearerOrder,
           wearerId: wearer.wearerId,
         }),
+      orderDetailsForOccurrence,
     });
   });
 };
