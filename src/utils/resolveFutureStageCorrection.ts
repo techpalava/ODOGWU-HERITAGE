@@ -22,8 +22,8 @@ export const resolveFutureStageCorrection = ({
   designSourceReady,
   customDetailsReady,
   personalizedAdditionsReady = customDetailsReady,
-  measurementUnlocked,
-  summaryUnlocked,
+  tryOnFinishedForSummary,
+  tryOnUnlockedByMeasurements,
   inlineAdditionalGarmentFabricTransaction,
   additionalGarmentFabricRepairTargeted = false,
 }: {
@@ -33,8 +33,10 @@ export const resolveFutureStageCorrection = ({
   designSourceReady: boolean;
   customDetailsReady: boolean;
   personalizedAdditionsReady?: boolean;
-  measurementUnlocked: boolean;
-  summaryUnlocked: boolean;
+  /** Order-level Try-on is completed or skipped, so Summary may be entered. */
+  tryOnFinishedForSummary: boolean;
+  /** Measurements are complete, so AI Try-on may be entered. */
+  tryOnUnlockedByMeasurements: boolean;
   inlineAdditionalGarmentFabricTransaction: InlineAdditionalGarmentFabricTransactionLike;
   /** A Summary-to-Step-4 repair target owned by an additional garment. */
   additionalGarmentFabricRepairTargeted?: boolean;
@@ -85,9 +87,9 @@ export const resolveFutureStageCorrection = ({
     designSourceReadyForCorrection &&
     (!requiresStep4Completion || customDetailsReady) &&
     (!requiresStep5Completion || personalizedAdditionsReady) &&
-    (currentStageId !== "try_on" || summaryUnlocked) &&
-    (currentStageId !== "summary" || measurementUnlocked) &&
-    (currentStageId !== "summary" || summaryUnlocked);
+    (currentStageId !== "try_on" || tryOnUnlockedByMeasurements) &&
+    (currentStageId !== "summary" || tryOnFinishedForSummary) &&
+    (currentStageId !== "summary" || tryOnUnlockedByMeasurements);
 
   if (canRemainOnCurrentStage) {
     return null;
@@ -98,15 +100,16 @@ export const resolveFutureStageCorrection = ({
   if (!designSourceReadyForCorrection) return "design_style";
   if (!customDetailsReady) return "custom_details";
   if (!personalizedAdditionsReady) return "personalized_additions";
-  // Measurement now precedes AI Try-on. An unfinished Measurement sends
-  // Try-on and Summary back to Measurement. Summary still waits until
-  // AI Try-on is completed or skipped.
+  // Measurement (6) precedes AI Try-on (7). Incomplete measurements send
+  // Try-on and Summary back to Measurement. Summary (8) also waits until
+  // the order-level Try-on workflow is completed or skipped. That flag is
+  // one wearer's preview or an order skip, not a preview for every wearer.
   if (
     (currentStageId === "try_on" || currentStageId === "summary") &&
-    !summaryUnlocked
+    !tryOnUnlockedByMeasurements
   ) {
     return "measurement";
   }
-  if (currentStageId === "summary" && !measurementUnlocked) return "try_on";
+  if (currentStageId === "summary" && !tryOnFinishedForSummary) return "try_on";
   return "measurement";
 };

@@ -23,8 +23,9 @@ import { findAiTryOnDefaultModel } from "../utils/aiTryOnDefaultModels";
  * `/api/ai-try-on` route; the Gemini key never leaves the server.
  *
  * Generation is synchronous on the server, so `start` resolves straight to
- * `completed` or `failed`. A job cannot survive a reload, so `resume`
- * reports an interrupted, retryable failure.
+ * `completed` or `failed` and returns the server result reference. There
+ * is no job id to store. A reload of an in-flight generate is interrupted
+ * by restoreAiTryOnWorkflowState; `resume` is not a recovery path.
  */
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -159,12 +160,11 @@ export const createHttpAiTryOnGateway = ({
     }
   },
   async resume() {
+    // Sync generate has no server job. Callers must not invent an id and
+    // resume it. A page unload is handled when the draft is restored.
     return { status: "failed", code: "interrupted", retryable: true };
   },
 });
-
-const createJobId = () =>
-  `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export interface AiTryOnGenerationRun {
   state: AiTryOnWorkflowStateV1;
@@ -184,24 +184,19 @@ export const runAiTryOnGeneration = async ({
   request,
   skipAllowed,
   onProcessing,
-  createJobReferenceId = createJobId,
 }: {
   gateway: AiTryOnGateway;
   state: AiTryOnWorkflowStateV1;
   request: AiTryOnGenerationRequest;
   skipAllowed: boolean;
   onProcessing?: (state: AiTryOnWorkflowStateV1) => void;
-  createJobReferenceId?: () => string;
 }): Promise<AiTryOnGenerationRun> => {
   if (!state.inputFingerprint || request.inputFingerprint !== state.inputFingerprint) {
     return { state };
   }
   const started = transitionAiTryOnWorkflow({
     state,
-    event: {
-      type: "start",
-      jobReference: { kind: "resumable_job", jobId: createJobReferenceId() },
-    },
+    event: { type: "start" },
     skipAllowed,
   });
   if (!started.ok) return { state };

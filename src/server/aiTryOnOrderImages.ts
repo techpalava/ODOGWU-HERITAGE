@@ -211,7 +211,9 @@ const imageCount = (data: CopyLockDoc | undefined): number =>
  * One transaction holds `aiTryOnOrderImages/<orderId>` while the files are
  * copied. The other waits. A saved or deleted record is left as it is, and
  * a partial image list never replaces a longer one. `in_progress` means
- * another event still holds the lock: the caller must not delete previews.
+ * another event still holds a fresh lock: the caller must not delete
+ * previews. A lock older than the lease is reclaimed so a crashed holder
+ * cannot leave the session previews in place.
  */
 export const copyAiTryOnOrderImagesForPaidOrder = async ({
   db,
@@ -252,10 +254,8 @@ export const copyAiTryOnOrderImagesForPaidOrder = async ({
     return { result: "no_selection", images: 0 };
   }
 
-  const deadline = now() + AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS;
-  let claimId: string | null = null;
-  while (!claimId) {
-    const claimed = await db.runTransaction(async (tx) => {
+  const claimCopy = () =>
+    db.runTransaction(async (tx) => {
       const snap = await tx.get(recordRef);
       const data = snap.exists ? (snap.data() as CopyLockDoc) : undefined;
       if (isFinishedCopy(data)) return "finished" as const;
@@ -277,13 +277,35 @@ export const copyAiTryOnOrderImagesForPaidOrder = async ({
       });
       return id;
     });
+
+  const deadline = now() + AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS;
+  let claimId: string | null = null;
+  while (!claimId) {
+    const claimed = await claimCopy();
     if (claimed === "finished") return { result: "already_copied", images: 0 };
     if (claimed === "busy") {
-      if (now() >= deadline) return { result: "in_progress", images: 0 };
+      if (now() >= deadline) break;
       await sleep(Math.min(COPY_LOCK_POLL_MS, Math.max(1, deadline - now())));
       continue;
     }
     claimId = claimed;
+  }
+  if (!claimId) {
+    // The wait ended while a holder still looked fresh (often by a few
+    // milliseconds). Sleep until that lease is stale, then reclaim once.
+    // A claim that is still fresh means the other request is copying.
+    const pending = await readLock();
+    if (isFinishedCopy(pending)) return { result: "already_copied", images: 0 };
+    const claimedAt = typeof pending?.copyClaimedAt === "number" ? pending.copyClaimedAt : 0;
+    const staleAt = claimedAt + AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS;
+    if (pending?.status === "copying" && now() < staleAt) {
+      await sleep(Math.min(AI_TRY_ON_ORDER_IMAGE_COPY_LOCK_MS, staleAt - now() + 1));
+    }
+    if (await finished()) return { result: "already_copied", images: 0 };
+    const reclaimed = await claimCopy();
+    if (reclaimed === "finished") return { result: "already_copied", images: 0 };
+    if (reclaimed === "busy") return { result: "in_progress", images: 0 };
+    claimId = reclaimed;
   }
   const heldClaimId = claimId;
 

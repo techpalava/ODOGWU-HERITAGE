@@ -10,7 +10,7 @@ import {
   countRemainingCustomerRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
   isFutureMeasurementStageComplete,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
   projectMeasurementGarmentChipStates,
@@ -171,12 +171,12 @@ const incompleteShirt = reconcileFutureMeasurementState({
   plan: shirtLowPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(incompleteShirt), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(incompleteShirt), false);
+assert.equal(isTryOnUnlockedByMeasurements(incompleteShirt), false);
 assertSummaryUnlock(false);
 
 const shirtLowComplete = fillVisibleRequired(shirtLowPlan);
 assert.equal(isFutureMeasurementStageComplete(shirtLowComplete), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(shirtLowComplete), true);
+assert.equal(isTryOnUnlockedByMeasurements(shirtLowComplete), true);
 assertSummaryUnlock(true);
 
 const lastShirtRequired = visibleRequired(shirtLowPlan).at(-1);
@@ -187,7 +187,7 @@ let missingFinal = fillVisibleRequired(
   lastShirtRequired.measurementId,
 );
 assert.equal(isFutureMeasurementStageComplete(missingFinal), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(missingFinal), false);
+assert.equal(isTryOnUnlockedByMeasurements(missingFinal), false);
 missingFinal = reconcileFutureMeasurementState({
   state: setFutureMeasurementInput({
     state: missingFinal,
@@ -197,7 +197,7 @@ missingFinal = reconcileFutureMeasurementState({
   plan: shirtLowPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(missingFinal), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(missingFinal), true);
+assert.equal(isTryOnUnlockedByMeasurements(missingFinal), true);
 
 const clearedRequired = reconcileFutureMeasurementState({
   state: setFutureMeasurementInput({
@@ -208,7 +208,7 @@ const clearedRequired = reconcileFutureMeasurementState({
   plan: shirtLowPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(clearedRequired), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(clearedRequired), false);
+assert.equal(isTryOnUnlockedByMeasurements(clearedRequired), false);
 
 const invalidRequired = reconcileFutureMeasurementState({
   state: setFutureMeasurementInput({
@@ -220,7 +220,7 @@ const invalidRequired = reconcileFutureMeasurementState({
 });
 assert.equal(invalidRequired.calculationStatus, "invalid");
 assert.equal(isFutureMeasurementStageComplete(invalidRequired), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(invalidRequired), false);
+assert.equal(isTryOnUnlockedByMeasurements(invalidRequired), false);
 
 const dressLowPlan = planMeasurementRequirements({
   route: "low_risk",
@@ -251,7 +251,7 @@ assert.deepEqual(
 );
 const dressLowComplete = fillVisibleRequired(dressLowPlan);
 assert.equal(isFutureMeasurementStageComplete(dressLowComplete), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(dressLowComplete), true);
+assert.equal(isTryOnUnlockedByMeasurements(dressLowComplete), true);
 
 const squareNeckDetails: GarmentScopedCustomDetailsStateV1 = {
   schemaVersion: 1,
@@ -302,7 +302,7 @@ assert.equal(
 );
 const sleevelessComplete = fillVisibleRequired(sleevelessDressPlan);
 assert.equal(isFutureMeasurementStageComplete(sleevelessComplete), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(sleevelessComplete), true);
+assert.equal(isTryOnUnlockedByMeasurements(sleevelessComplete), true);
 
 const midLongDressPlan = planMeasurementRequirements({
   route: "low_risk",
@@ -331,7 +331,7 @@ assert.equal(
 );
 const midLongBothEmpty = fillVisibleRequired(midLongDressPlan);
 assert.equal(isFutureMeasurementStageComplete(midLongBothEmpty), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midLongBothEmpty), false);
+assert.equal(isTryOnUnlockedByMeasurements(midLongBothEmpty), false);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({
     plan: midLongDressPlan,
@@ -347,7 +347,7 @@ assert.equal(
 
 const midOnly = fillAlternative(midLongDressPlan, midLongBothEmpty, "sleeve_length_mid", 42);
 assert.equal(isFutureMeasurementStageComplete(midOnly), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midOnly), true);
+assert.equal(isTryOnUnlockedByMeasurements(midOnly), true);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({
     plan: midLongDressPlan,
@@ -365,7 +365,7 @@ assert.equal(isFutureMeasurementStageComplete(clearedMid), false);
 
 const longOnly = fillAlternative(midLongDressPlan, midLongBothEmpty, "sleeve_length_long", 58);
 assert.equal(isFutureMeasurementStageComplete(longOnly), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(longOnly), true);
+assert.equal(isTryOnUnlockedByMeasurements(longOnly), true);
 assert.equal(
   Boolean(longOnly.entered.byGarmentKey["base:dress"]?.sleeve_length_mid),
   false,
@@ -409,7 +409,7 @@ const midLongShirtMidOnly = fillAlternative(
   40,
 );
 assert.equal(isFutureMeasurementStageComplete(midLongShirtMidOnly), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtMidOnly), true);
+assert.equal(isTryOnUnlockedByMeasurements(midLongShirtMidOnly), true);
 
 for (const route of ["medium_risk", "high_risk"] as MeasurementRiskRoute[]) {
   const highOrMidPlan = planMeasurementRequirements({
@@ -423,7 +423,7 @@ for (const route of ["medium_risk", "high_risk"] as MeasurementRiskRoute[]) {
     true,
     `${route} must complete from the visible required matrix`,
   );
-  assert.equal(isFutureSummaryUnlockedByMeasurements(filled), true);
+  assert.equal(isTryOnUnlockedByMeasurements(filled), true);
 }
 
 const midLongHighPlan = planMeasurementRequirements({
@@ -612,7 +612,7 @@ const restored = reconcileFutureMeasurementState({
   plan: shirtLowPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(restored), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(restored), true);
+assert.equal(isTryOnUnlockedByMeasurements(restored), true);
 
 const unresolvedConstructionPlan = planMeasurementRequirements({
   route: "low_risk",
@@ -631,7 +631,7 @@ const unresolvedConstruction = reconcileFutureMeasurementState({
   plan: unresolvedConstructionPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(unresolvedConstruction), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(unresolvedConstruction), false);
+assert.equal(isTryOnUnlockedByMeasurements(unresolvedConstruction), false);
 
 const assignmentBlockedPresentation = projectMeasurementStepProgressPresentation({
   selectedMethod: "low_risk",
@@ -1008,13 +1008,14 @@ assert.equal(
     designSourceReady: true,
     customDetailsReady: true,
     personalizedAdditionsReady: true,
-    measurementUnlocked: true,
-    // Order-wide gate: active wearer may be complete, but Summary stays locked.
-    summaryUnlocked: false,
+    tryOnFinishedForSummary: true,
+    // Order-wide measurements are not complete, so Try-on stays locked and
+    // Summary is sent back to Measurement. Not the active wearer alone.
+    tryOnUnlockedByMeasurements: false,
     inlineAdditionalGarmentFabricTransaction: null,
   }),
   "measurement",
-  "stage correction must use order-wide Summary unlock, not active-wearer-only completeness",
+  "stage correction must use order-wide measurement completion, not active-wearer-only completeness",
 );
 
 assert.equal(
@@ -1025,8 +1026,8 @@ assert.equal(
     designSourceReady: true,
     customDetailsReady: true,
     personalizedAdditionsReady: true,
-    measurementUnlocked: true,
-    summaryUnlocked: true,
+    tryOnFinishedForSummary: true,
+    tryOnUnlockedByMeasurements: true,
     inlineAdditionalGarmentFabricTransaction: null,
   }),
   null,

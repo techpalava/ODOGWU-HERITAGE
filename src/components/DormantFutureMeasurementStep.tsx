@@ -41,7 +41,7 @@ import {
   getSampleClothProductionEquivalentCm,
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
@@ -1078,11 +1078,11 @@ export const DormantFutureMeasurementStep = ({
           .map(getBlockerMessage),
       )]
     : [];
-  const canContinueToSummary =
+  const canContinueToTryOn =
     !hydrationInvalid &&
     (orderMeasurementsComplete !== undefined
       ? orderMeasurementsComplete
-      : isFutureSummaryUnlockedByMeasurements(resolvedState));
+      : isTryOnUnlockedByMeasurements(resolvedState));
   const activeWearerComplete = isFutureMeasurementStageComplete(resolvedState);
   const unassignedLabels = assignmentPendingGarments.map((garment) =>
     formatGarmentLabel(occurrenceLabels, garment.garmentType, garment.garmentKey),
@@ -1111,12 +1111,12 @@ export const DormantFutureMeasurementStep = ({
             )
           : null);
   const showGoToNextGarment =
-    !canContinueToSummary &&
+    !canContinueToTryOn &&
     Boolean(nextIncompleteGarmentKey) &&
     nextIncompleteGarmentKey !== selectedGarmentKey &&
     (selectedChip?.kind === "done" || selectedGarmentPending);
   const showGoToNextWearer =
-    !canContinueToSummary &&
+    !canContinueToTryOn &&
     activeWearerComplete &&
     Boolean(nextIncompleteWearer?.wearerId) &&
     Boolean(onGoToWearer);
@@ -1126,7 +1126,7 @@ export const DormantFutureMeasurementStep = ({
     criticalRiskUnavailable,
     criticalRiskBlockMessage,
     activeWearerComplete,
-    orderComplete: canContinueToSummary,
+    orderComplete: canContinueToTryOn,
     unassignedLabels,
     profilePendingLabels,
     remainingManualInputCount,
@@ -1141,12 +1141,12 @@ export const DormantFutureMeasurementStep = ({
   const routeSaveMessage = progressPresentation.statusMessage;
   const routeStatusLabel = progressPresentation.statusLabel;
   const beamMethodChoices =
-    !canContinueToSummary && !selectedMethod && !hydrationInvalid;
+    !canContinueToTryOn && !selectedMethod && !hydrationInvalid;
   const nextRemainingGarmentKey =
     chipProjection.chips.find((chip) => chip.kind === "remaining")?.garmentKey ?? null;
   const beamNextWearer = showGoToNextWearer;
   const beamNextRemainingGarment =
-    !canContinueToSummary &&
+    !canContinueToTryOn &&
     Boolean(selectedMethod) &&
     !hydrationInvalid &&
     !beamNextWearer &&
@@ -1157,7 +1157,7 @@ export const DormantFutureMeasurementStep = ({
     MEASUREMENT_SAMPLE_CLOTH_METHOD,
     selectedMethod,
     // Never show Complete on the sample chip while the order gate is locked.
-    canContinueToSummary && resolvedState.calculationStatus === "complete"
+    canContinueToTryOn && resolvedState.calculationStatus === "complete"
       ? "complete"
       : resolvedState.calculationStatus === "complete"
         ? "incomplete"
@@ -1173,7 +1173,7 @@ export const DormantFutureMeasurementStep = ({
       data-measurement-risk-selected={selectedRoute || "none"}
       data-measurement-method-selected={selectedMethod || "none"}
       data-critical-risk-supported={criticalRiskSupported ? "true" : "false"}
-      data-measurement-order-complete={canContinueToSummary ? "true" : "false"}
+      data-measurement-order-complete={canContinueToTryOn ? "true" : "false"}
       data-measurement-blocked-by-assignment={
         progressPresentation.blockedByAssignment ? "true" : "false"
       }
@@ -1188,8 +1188,8 @@ export const DormantFutureMeasurementStep = ({
           forward={{
             destination: "AI Try-on",
             onClick: onContinue,
-            disabled: !canContinueToSummary,
-            locked: !canContinueToSummary,
+            disabled: !canContinueToTryOn,
+            locked: !canContinueToTryOn,
             onLockedClick: () =>
               requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
             ariaLabel: "Continue to AI Try-on",
@@ -1327,7 +1327,7 @@ export const DormantFutureMeasurementStep = ({
                 route.id,
                 selectedRoute,
                 // Keep option chips aligned with the order-wide Continue gate.
-                canContinueToSummary && resolvedState.calculationStatus === "complete"
+                canContinueToTryOn && resolvedState.calculationStatus === "complete"
                   ? "complete"
                   : resolvedState.calculationStatus === "complete"
                     ? "incomplete"
@@ -1867,8 +1867,8 @@ export const DormantFutureMeasurementStep = ({
           forward={{
             destination: "AI Try-on",
             onClick: onContinue,
-            disabled: !canContinueToSummary,
-            locked: !canContinueToSummary,
+            disabled: !canContinueToTryOn,
+            locked: !canContinueToTryOn,
             onLockedClick: () =>
               requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
             ariaLabel: "Continue to AI Try-on",

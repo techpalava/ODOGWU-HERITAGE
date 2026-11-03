@@ -13,7 +13,7 @@ import { getFuturePaymentReviewMeasurementGroups } from "./src/utils/designStudi
 import { projectFutureSummaryMeasurementGroups } from "./src/utils/designStudioFutureSummary";
 import {
   createEmptyFutureMeasurementState,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   isSharedPresentationRequirement,
   measurementAudienceNoticeCopy,
   projectActiveFutureMeasurementState,
@@ -202,7 +202,7 @@ for (const [label, types, demographic, kind] of cases) {
     state = reconcileFutureMeasurementState({ state, plan });
     if (route === "critical_risk") {
       assert.equal(state.calculationStatus, "complete", `${where}: Height Only completes`);
-      assert.equal(isFutureSummaryUnlockedByMeasurements(state), true);
+      assert.equal(isTryOnUnlockedByMeasurements(state), true);
     }
     const presented = projectMeasurementRequirementsForPresentation({ requirements: plan.requirements, state });
     uniqueIds(`${where} Step 7 shared`, presented.filter(isSharedPresentationRequirement).map((r) => r.measurementId));

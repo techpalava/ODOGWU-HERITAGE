@@ -44,7 +44,7 @@ import {
   normalizeAiTryOnWorkflowState,
   recordAiTryOnPreviewCompletion,
 } from "./src/utils/aiTryOnWorkflow";
-import { isFutureMeasurementStageUnlocked } from "./src/utils/measurementBlueprint";
+import { isOrderAiTryOnFinishedForSummary } from "./src/utils/measurementBlueprint";
 import { createEmptyFutureMeasurementState } from "./src/utils/measurementBlueprint";
 import {
   AI_TRY_ON_ORDER_USAGE_RETENTION_MS,
@@ -197,11 +197,11 @@ const twoWearers: WearerOrderStateV2 = {
       state,
       currentInputFingerprint: fingerprint,
       resultReference: reference,
-      jobId: "preview-1",
     });
     assert.equal(next.status, "completed", state.status);
     assert.equal(next.inputFingerprint, fingerprint);
-    assert.equal(isFutureMeasurementStageUnlocked(next), true);
+    assert.equal(next.jobReference, undefined, "completion stores the server result, not a job id");
+    assert.equal(isOrderAiTryOnFinishedForSummary(next), true);
     const roundTrip = normalizeAiTryOnWorkflowState(JSON.parse(JSON.stringify(next)));
     assert.deepEqual(roundTrip, next);
     assert.equal(JSON.stringify(next).includes("base64"), false, "no image in workflow state");
@@ -212,10 +212,38 @@ const twoWearers: WearerOrderStateV2 = {
       state: unchanged,
       currentInputFingerprint: fingerprint,
       resultReference: { ...reference, assetId: "data:image/png;base64,AAAA" },
-      jobId: "preview-1",
     }),
     unchanged,
     "an unsafe reference never completes the workflow",
+  );
+
+  // One wearer's preview completes the ORDER workflow and unlocks Summary.
+  // A second wearer is not required and is not stored on this state.
+  const afterAda = recordAiTryOnPreviewCompletion({
+    state: unchanged,
+    currentInputFingerprint: fingerprint,
+    resultReference: reference,
+  });
+  assert.equal(isOrderAiTryOnFinishedForSummary(afterAda), true);
+  assert.equal(afterAda.resultReference?.assetId, reference.assetId);
+  const afterObi = recordAiTryOnPreviewCompletion({
+    state: afterAda,
+    currentInputFingerprint: fingerprint,
+    resultReference: { ...reference, assetId: "tryon-obi" },
+  });
+  assert.equal(afterObi.status, "completed");
+  assert.equal(isOrderAiTryOnFinishedForSummary(afterObi), true);
+  assert.equal(afterObi.resultReference?.assetId, "tryon-obi");
+  assert.equal("wearers" in afterObi, false, "the order workflow is not a per-wearer checklist");
+  const skipped = {
+    schemaVersion: 1 as const,
+    status: "skipped" as const,
+    inputFingerprint: fingerprint,
+  };
+  assert.equal(
+    isOrderAiTryOnFinishedForSummary(skipped),
+    true,
+    "an order-level skip unlocks Summary even when nobody has a preview",
   );
 }
 

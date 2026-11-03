@@ -337,7 +337,7 @@ import {
   createAiTryOnFingerprintFromOccurrenceAssignments,
   createEmptyAiTryOnWorkflowState,
   isFutureCustomDetailsContentReady,
-  normalizeAiTryOnWorkflowState,
+  restoreAiTryOnWorkflowState,
   reconcileAiTryOnWorkflow,
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
@@ -386,8 +386,8 @@ import {
   resolveHydratedMeasurementPhysicalGarments,
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
-  isFutureMeasurementStageUnlocked,
-  isFutureSummaryUnlockedByMeasurements,
+  isOrderAiTryOnFinishedForSummary,
+  isTryOnUnlockedByMeasurements,
   setFutureMeasurementRoute,
   type FutureMeasurementHydrationResult,
 } from "../utils/measurementBlueprint";
@@ -4242,22 +4242,23 @@ export default function DesignStudioView({
     ? getNextOpenCommunityBatch(storeBatches || [], closedCommunityBatchId) ??
       null
     : null;
-  // One order-wide authority for Continue, Journey Stepper, Live Summary, and
-  // stage correction. Do not use active-wearer-only completeness here.
-  const summaryUnlockedByMeasurements =
+  // Order-wide measurement completion. This unlocks AI Try-on. It is also
+  // required for Summary, together with the order-level Try-on workflow
+  // (one preview or a skip — not a preview for every wearer). Do not use
+  // active-wearer-only completeness here.
+  const tryOnUnlockedByMeasurements =
     !futureMeasurementHydrationInvalid &&
     (wearerMeasurementRuntimes.length > 0
       ? wearerMeasurementsComplete
-      : isFutureSummaryUnlockedByMeasurements(reconciledFutureMeasurementState));
+      : isTryOnUnlockedByMeasurements(reconciledFutureMeasurementState));
   const isFutureSummaryStageUnlocked =
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
-    summaryUnlockedByMeasurements;
-  // AI Try-on (Step 7) sits between Measurement and Summary, so Summary also
-  // waits until the try-on is completed or skipped (the existing gate that
-  // used to unlock Measurement).
-  const isFutureAiTryOnFinishedForSummary =
-    isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow);
+    tryOnUnlockedByMeasurements;
+  // Summary (Step 8) waits until the order-level Try-on workflow is
+  // completed or skipped. One wearer's preview or an order skip is enough.
+  const orderAiTryOnFinishedForSummary =
+    isOrderAiTryOnFinishedForSummary(futureAiTryOnWorkflow);
   const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
     futureSummary.status,
   );
@@ -4396,10 +4397,10 @@ export default function DesignStudioView({
     if (isFuturePersonalizedAdditionsNavigationReady) {
       currentlyEnterable.add("measurement");
     }
-    if (summaryUnlockedByMeasurements) {
+    if (tryOnUnlockedByMeasurements) {
       currentlyEnterable.add("try_on");
     }
-    if (isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary) {
+    if (isFutureSummaryStageUnlocked && orderAiTryOnFinishedForSummary) {
       currentlyEnterable.add("summary");
     }
     if (isFutureShippingUnlocked) {
@@ -4421,9 +4422,9 @@ export default function DesignStudioView({
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
     isFuturePersonalizedAdditionsNavigationReady,
-    summaryUnlockedByMeasurements,
+    tryOnUnlockedByMeasurements,
     isFutureSummaryStageUnlocked,
-    isFutureAiTryOnFinishedForSummary,
+    orderAiTryOnFinishedForSummary,
     isFutureShippingUnlocked,
     isFuturePaymentReviewUnlocked,
   ]);
@@ -5387,7 +5388,7 @@ export default function DesignStudioView({
           restoredDesignStyleDraftHydration.validation?.isComplete,
       );
       const restoredAiTryOnWorkflow =
-        normalizeAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
+        restoreAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
         createEmptyAiTryOnWorkflowState();
       const pendingMeasurementValue = storedDraft?.futureMeasurementState;
       const restoredShippingState = normalizeFutureShippingState(
@@ -5496,7 +5497,7 @@ export default function DesignStudioView({
       const restoredMeasurementsReady =
         restoredWearerRuntimes.length > 0
           ? restoredMeasurementsComplete
-          : isFutureSummaryUnlockedByMeasurements(
+          : isTryOnUnlockedByMeasurements(
               restoredReconciledMeasurementState,
             );
       const canRestoreSummary =
@@ -5504,7 +5505,7 @@ export default function DesignStudioView({
         restoredSourceReady &&
         !restoredUploadedSource &&
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion) &&
-        isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow) &&
+        isOrderAiTryOnFinishedForSummary(restoredAiTryOnWorkflow) &&
         restoredMeasurementsReady;
       const restoredShippingResolution = reconcileFutureShippingState({
         state: restoredShippingState,
@@ -6386,8 +6387,8 @@ export default function DesignStudioView({
       designSourceReady: isFutureDesignSourceReadyForCustomDetails,
       customDetailsReady: isFutureStep4CustomDetailsReady,
       personalizedAdditionsReady: isFuturePersonalizedAdditionsNavigationReady,
-      measurementUnlocked: isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow),
-      summaryUnlocked: summaryUnlockedByMeasurements,
+      tryOnFinishedForSummary: isOrderAiTryOnFinishedForSummary(futureAiTryOnWorkflow),
+      tryOnUnlockedByMeasurements: tryOnUnlockedByMeasurements,
       inlineAdditionalGarmentFabricTransaction:
         additionalGarmentFabricTransaction,
       additionalGarmentFabricRepairTargeted:
@@ -6419,7 +6420,7 @@ export default function DesignStudioView({
     isFutureStep4CustomDetailsReady,
     isFuturePersonalizedAdditionsNavigationReady,
     futureAiTryOnWorkflow,
-    summaryUnlockedByMeasurements,
+    tryOnUnlockedByMeasurements,
     additionalGarmentFabricTransaction,
     targetedAdditionalGarmentNeedsFabric,
     futurePhysicalGarmentRemovalAuthoritySignature,
@@ -8259,7 +8260,7 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !summaryUnlockedByMeasurements &&
+      !tryOnUnlockedByMeasurements &&
       !isStageHistoricallyUnlocked("try_on")
     ) {
       navigateToFutureStage("measurement", getValidationNavigationTarget());
@@ -8305,7 +8306,7 @@ export default function DesignStudioView({
       return;
     }
     if (
-      !isFutureAiTryOnFinishedForSummary &&
+      !orderAiTryOnFinishedForSummary &&
       !isStageHistoricallyUnlocked("summary")
     ) {
       navigateToFutureStage("try_on", getValidationNavigationTarget());
@@ -9118,7 +9119,6 @@ export default function DesignStudioView({
         state: current,
         currentInputFingerprint: futureAiTryOnInputFingerprintRef.current,
         resultReference,
-        jobId: `preview-${Date.now().toString(36)}`,
       }),
     );
   };
@@ -11194,7 +11194,7 @@ export default function DesignStudioView({
                   ? futureAiTryOnWorkflow.status === "completed" ||
                     futureAiTryOnWorkflow.status === "skipped"
                   : futureStageId === "measurement"
-                    ? summaryUnlockedByMeasurements
+                    ? tryOnUnlockedByMeasurements
                     : futureStageId === "summary"
                       ? futureSummary.status === "ready"
                       : futureStageId === "shipping"
@@ -11269,10 +11269,10 @@ export default function DesignStudioView({
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
         canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
-        canEnterTryOn={summaryUnlockedByMeasurements}
+        canEnterTryOn={tryOnUnlockedByMeasurements}
         canEnterMeasurement={isFuturePersonalizedAdditionsNavigationReady}
         canEnterSummary={
-          isFutureSummaryStageUnlocked && isFutureAiTryOnFinishedForSummary
+          isFutureSummaryStageUnlocked && orderAiTryOnFinishedForSummary
         }
         canEnterShipping={isFutureShippingUnlocked}
         canEnterPayment={isFuturePaymentReviewUnlocked}
@@ -11831,7 +11831,7 @@ export default function DesignStudioView({
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
           restoredGarmentKey={hydratedMeasurementGarmentKey}
-          orderMeasurementsComplete={summaryUnlockedByMeasurements}
+          orderMeasurementsComplete={tryOnUnlockedByMeasurements}
           physicalGarments={futureMeasurementPhysicalGarments}
           multiPersonAssignmentActive={wearerOrderForPlan.wearers.length > 1}
           unassignedGarments={futureMeasurementPhysicalGarments.filter(

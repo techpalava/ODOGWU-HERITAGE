@@ -8,7 +8,7 @@ import {
   DEFAULT_CUSTOMER_MEASUREMENT_UNIT,
   formatDualUnitMeasurementDisplay,
   inchesToCentimetres,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   isImplausibleCanonicalMeasurement,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
@@ -110,14 +110,14 @@ assert.equal(
 assert.ok(
   Math.abs((plausibleInches.entered.shared.total_height?.valueCm ?? 0) - inchesToCentimetres(69)) < 1e-9,
 );
-assert.equal(isFutureSummaryUnlockedByMeasurements(plausibleInches), plausibleInches.calculationStatus === "complete");
+assert.equal(isTryOnUnlockedByMeasurements(plausibleInches), plausibleInches.calculationStatus === "complete");
 
 const absurdInches = enter("inch", {
   total_height: 175,
   chest_bust_circumference: 100,
 });
 assert.equal(absurdInches.calculationStatus, "invalid");
-assert.equal(isFutureSummaryUnlockedByMeasurements(absurdInches), false);
+assert.equal(isTryOnUnlockedByMeasurements(absurdInches), false);
 for (const measurementId of ["total_height", "chest_bust_circumference"] as const) {
   assert.equal(
     absurdInches.diagnostics.some(

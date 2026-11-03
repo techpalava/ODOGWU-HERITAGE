@@ -36,8 +36,13 @@ import { copyAiTryOnOrderImagesForPaidOrder } from "./aiTryOnOrderImages.js";
  *   to the order (60 days, aiTryOnOrderImages.ts). A failed copy never stops
  *   the payment or the cleanup.
  */
-/** Bound for the post-payment copy and preview cleanup. Was 3s, which returned while the work was still running. */
-export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 15_000;
+/**
+ * Bound for the post-payment copy and preview cleanup. Was 3s, which
+ * returned while the work was still running, then 15s, which matched the
+ * copy lock. 25s lets a waiter outlive a 15s lock and finish a reclaim
+ * before the payment function returns.
+ */
+export const AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS = 25_000;
 
 export interface AiTryOnPaymentCleanupDependencies {
   getDb?: () => Firestore;
@@ -48,6 +53,9 @@ export interface AiTryOnPaymentCleanupDependencies {
   getBucket?: () => AiTryOnPreviewBucket;
   log?: (line: string) => void;
   timeoutMs?: number;
+  /** Test clock for the order-image copy lock. Production uses Date.now. */
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export type AiTryOnPaymentCleanupResult = "deleted" | "no_session" | "failed" | "timeout";
@@ -79,12 +87,20 @@ export const retireAiTryOnSessionForPaidOrder = async (
           sessionId,
           orderId,
           ownerUid,
+          ...(dependencies.now ? { now: dependencies.now } : {}),
+          ...(dependencies.sleep ? { sleep: dependencies.sleep } : {}),
         });
         log(JSON.stringify({ event: "ai_try_on_order_images", status: copied.result, images: copied.images }));
         if (copied.result === "in_progress") {
-          // Another payment event holds the copy. It deletes the previews
-          // after that copy is confirmed. Deleting them here would remove
-          // files that event is still reading.
+          // Another payment event still holds a fresh copy lock. It deletes
+          // the previews after that copy is confirmed. Deleting them here
+          // would remove files that event is still reading. A stale lock is
+          // reclaimed inside the copy before this result is returned.
+          log(JSON.stringify({
+            event: "ai_try_on_payment_cleanup",
+            status: "copy_in_progress",
+            previewsKept: true,
+          }));
           return "failed";
         }
       } catch (error) {

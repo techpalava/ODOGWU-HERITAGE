@@ -63,7 +63,7 @@ const STATUS_PRESENTATION: Readonly<
   },
   processing: {
     title: "Processing",
-    description: "A verified Try-on job is still processing.",
+    description: "Your preview is still being made.",
   },
   completed: {
     title: "Completed",

@@ -12,7 +12,7 @@ import type {
 } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   planMeasurementRequirements,
   projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
@@ -229,7 +229,7 @@ assert.equal(
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "calculated" }).length, 0);
 assert.equal(
-  isFutureSummaryUnlockedByMeasurements(
+  isTryOnUnlockedByMeasurements(
     reconcileFutureMeasurementState({
       state: createEmptyFutureMeasurementState("low_risk", "cm"),
       plan: dressPlan,

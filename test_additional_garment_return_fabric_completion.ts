@@ -89,8 +89,8 @@ assert.equal(
     designSourceReady: true,
     customDetailsReady: true,
     personalizedAdditionsReady: true,
-    measurementUnlocked: false,
-    summaryUnlocked: false,
+    tryOnFinishedForSummary: false,
+    tryOnUnlockedByMeasurements: false,
     inlineAdditionalGarmentFabricTransaction: {
       garmentKey: "additional:shirt:1",
     },
@@ -107,8 +107,8 @@ assert.equal(
     designSourceReady: false,
     customDetailsReady: true,
     personalizedAdditionsReady: true,
-    measurementUnlocked: false,
-    summaryUnlocked: false,
+    tryOnFinishedForSummary: false,
+    tryOnUnlockedByMeasurements: false,
     inlineAdditionalGarmentFabricTransaction: {
       garmentKey: "additional:shirt:1",
       phase: "design_style",
@@ -126,8 +126,8 @@ assert.equal(
     designSourceReady: false,
     customDetailsReady: true,
     personalizedAdditionsReady: true,
-    measurementUnlocked: false,
-    summaryUnlocked: false,
+    tryOnFinishedForSummary: false,
+    tryOnUnlockedByMeasurements: false,
     inlineAdditionalGarmentFabricTransaction: {
       garmentKey: "additional:shirt:1",
       phase: "custom_details_choice",

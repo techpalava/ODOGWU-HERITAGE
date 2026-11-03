@@ -770,11 +770,15 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
     state: ready,
     request: validBody() as never,
     skipAllowed: true,
-    onProcessing: (state) => processingStates.push(state.status),
-    createJobReferenceId: () => "job-1",
+    onProcessing: (state) => {
+      processingStates.push(state.status);
+      assert.equal(state.jobReference, undefined, "sync generate stores no client job id");
+    },
   });
   assert.deepEqual(processingStates, ["processing"]);
   assert.equal(run.state.status, "completed");
+  assert.equal(run.state.jobReference, undefined);
+  assert.equal(run.state.resultReference?.assetId, "tryon-a1", "the completed workflow keeps the server result id");
   assert.equal(run.state.inputFingerprint, FINGERPRINT);
   assert.deepEqual(run.preview, { mimeType: "image/png", data: "R0VO" });
   assert.equal(run.orderTriesRemaining, 4);
