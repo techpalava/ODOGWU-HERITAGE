@@ -4,10 +4,14 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import {
-  MONOGRAM_PLACEMENT_MAP_DOTS,
   MONOGRAM_PREVIEW_FRAME_CLASS,
+  MONOGRAM_PREVIEW_SILHOUETTES,
   MonogramNamePreview,
+  monogramPlacementDot,
   monogramPlacementMapForGarment,
+  monogramPlacementNameAnchor,
+  monogramPreviewOutline,
+  monogramPreviewSilhouette,
 } from "./src/components/MonogramNamePreview";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
@@ -42,14 +46,31 @@ const placements: MonogramPlacement[] = [
   "cuff",
   "hem",
 ];
-const dotKeys = placements.map((placement) => {
-  const dot = MONOGRAM_PLACEMENT_MAP_DOTS[placement];
+const shirtDotKeys = placements.map((placement) => {
+  const dot = monogramPlacementDot("shirt", placement);
   return `${dot.cx}|${dot.cy}`;
 });
-assert.equal(new Set(dotKeys).size, placements.length, "each placement has its own dot");
-assert.ok(MONOGRAM_PLACEMENT_MAP_DOTS.left_chest.cx > MONOGRAM_PLACEMENT_MAP_DOTS.right_chest.cx);
-assert.ok(MONOGRAM_PLACEMENT_MAP_DOTS.neckline.cy < MONOGRAM_PLACEMENT_MAP_DOTS.left_chest.cy);
-assert.ok(MONOGRAM_PLACEMENT_MAP_DOTS.hem.cy > MONOGRAM_PLACEMENT_MAP_DOTS.upper_back.cy);
+assert.equal(new Set(shirtDotKeys).size, placements.length, "each shirt placement has its own dot");
+assert.ok(monogramPlacementDot("shirt", "left_chest").cx > monogramPlacementDot("shirt", "right_chest").cx);
+assert.ok(monogramPlacementDot("shirt", "neckline").cy < monogramPlacementDot("shirt", "left_chest").cy);
+assert.ok(monogramPlacementDot("shirt", "hem").cy > monogramPlacementDot("shirt", "upper_back").cy);
+assert.ok(
+  monogramPlacementDot("trouser", "hem").cy > monogramPlacementDot("shirt", "hem").cy,
+  "trouser hem sits lower than the shirt hem",
+);
+const outlines = MONOGRAM_PREVIEW_SILHOUETTES.map((silhouette) => {
+  const garmentType = silhouette === "long_shirt"
+    ? "kaftan"
+    : silhouette === "long_dress"
+      ? "full_length_gown"
+      : silhouette === "nikka_shorts"
+        ? "standard_shorts"
+        : silhouette;
+  return monogramPreviewOutline(garmentType);
+});
+assert.equal(new Set(outlines).size, MONOGRAM_PREVIEW_SILHOUETTES.length);
+assert.notEqual(monogramPreviewOutline("trouser"), monogramPreviewOutline("shirt"));
+assert.notEqual(monogramPreviewSilhouette("trouser"), monogramPreviewSilhouette("shirt"));
 
 const shirtMap = monogramPlacementMapForGarment("shirt", "left_chest");
 assert.equal(shirtMap.active, "left_chest");
@@ -133,8 +154,12 @@ assert.equal(trouserMap.props["data-monogram-preview-placement"], "hem");
 assert.equal(trouserMap.props.className, MONOGRAM_PREVIEW_FRAME_CLASS);
 assert.match(String(trouserMap.props.className), /(^|\s)w-24(\s|$)/);
 assert.doesNotMatch(String(trouserMap.props.className), /32rem|basis-full/);
-assert.equal(trouserMap.findAllByType("path").length, 0);
-assert.equal(trouserMap.findByProps({ "data-monogram-placement-zone": "true" }).props.strokeDasharray, "3 2");
+assert.equal(trouserMap.findAllByType("rect").length, 0);
+assert.equal(
+  trouserMap.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+  monogramPreviewOutline("trouser"),
+);
+assert.equal(trouserMap.props["data-monogram-preview-silhouette"], "trouser");
 assert.equal(trouserMap.findAllByProps({ "data-monogram-placement-dot": "left_chest" }).length, 0);
 assert.equal(trouserMap.findAllByProps({ "data-monogram-placement-dot": "neckline" }).length, 0);
 assert.equal(dotState(trouserMap, "hem"), "active");
@@ -143,7 +168,11 @@ assert.equal(trouserMap.findByProps({ "data-monogram-placement-label": "hem" }).
 assert.equal(trouserMap.props["data-monogram-preview-placeholder"], "true");
 assert.equal(
   trouserMap.findByProps({ "data-monogram-preview-lettering": "true" }).props.style.top,
-  "84%",
+  monogramPlacementNameAnchor("trouser", "hem").top,
+);
+assert.equal(
+  trouserMap.findByProps({ "data-monogram-placement-dot": "hem" }).props.cy,
+  monogramPlacementDot("trouser", "hem").cy,
 );
 
 const style: StyleCategory = {
@@ -265,6 +294,15 @@ const letteringText = (node: ReactTestInstance) =>
 const shirt = preview("base:shirt");
 const dress = preview("base:dress");
 assert.equal(shirt.props["data-monogram-preview-kind"], "placement-map");
+assert.equal(shirt.props["data-monogram-preview-silhouette"], "shirt");
+assert.equal(
+  shirt.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+  monogramPreviewOutline("shirt"),
+);
+assert.notEqual(
+  shirt.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+  trouserMap.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+);
 assert.equal(shirt.props["data-monogram-preview-placement"], "left_chest");
 assert.equal(shirt.props["data-monogram-preview-text"], "ADEBAYO");
 assert.equal(shirt.props["data-monogram-preview-placeholder"], "false");
@@ -280,7 +318,10 @@ assert.equal(dress.props["data-monogram-preview-placement"], "hem");
 assert.equal(dress.props["data-monogram-preview-text"], "");
 assert.equal(dress.props["data-monogram-preview-placeholder"], "true");
 assert.equal(lettering(dress).children.join(""), "YOUR NAME");
-assert.equal(lettering(dress).props.style.top, "84%");
+assert.equal(
+  lettering(dress).props.style.top,
+  monogramPlacementNameAnchor("dress", "hem").top,
+);
 assert.equal(dotState(dress, "hem"), "active");
 assert.equal(dotState(dress, "left_chest"), "available");
 assert.notEqual(lettering(shirt).props.style.top, lettering(dress).props.style.top);
