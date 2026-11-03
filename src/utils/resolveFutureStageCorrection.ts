@@ -113,3 +113,36 @@ export const resolveFutureStageCorrection = ({
   if (currentStageId === "summary" && !tryOnFinishedForSummary) return "try_on";
   return "measurement";
 };
+
+/**
+ * A saved AI Try-on step that misses an explicit restore gate.
+ * Returns the earliest stage that is actually blocking, so the customer is
+ * not dropped on Step 1 when Fabric or a later step is the real stop.
+ * Null means every Try-on gate passed and the caller should keep Step 7.
+ */
+export const resolveTryOnRestoreFallback = ({
+  garmentTypeComplete,
+  fabricComplete,
+  designSourceReady,
+  customDetailsReady,
+  personalizedAdditionsReady,
+  measurementsReady,
+}: {
+  garmentTypeComplete: boolean;
+  fabricComplete: boolean;
+  designSourceReady: boolean;
+  customDetailsReady: boolean;
+  personalizedAdditionsReady: boolean;
+  measurementsReady: boolean;
+}): DesignStudioStageId | null =>
+  resolveFutureStageCorrection({
+    currentStageId: "try_on",
+    garmentTypeComplete,
+    fabricComplete,
+    designSourceReady,
+    customDetailsReady,
+    personalizedAdditionsReady,
+    tryOnFinishedForSummary: false,
+    tryOnUnlockedByMeasurements: measurementsReady,
+    inlineAdditionalGarmentFabricTransaction: null,
+  });

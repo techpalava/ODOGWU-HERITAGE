@@ -8,7 +8,10 @@ import type {
   GarmentTypeStepSelection,
   GuestDesignDraft,
 } from "../types.js";
-import { DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION } from "./designSourceJourney.js";
+import {
+  DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
+  getDesignStudioStepCounter,
+} from "./designSourceJourney.js";
 import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState.js";
 
 export type GarmentTypeStageBlockerCode =
@@ -236,6 +239,7 @@ export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
     ...draft,
     journeySchemaVersion: DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
     currentStageId,
+    currentStep: getDesignStudioStepCounter(currentStageId).step,
     garmentTypeSelection,
   };
 };
