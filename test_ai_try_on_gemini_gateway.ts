@@ -322,7 +322,7 @@ assert.equal(normalizeAiTryOnFitHints("178"), null);
 
 const garmentPrompt = buildAiTryOnPrompt({ mode: "garment" });
 const fabricPrompt = buildAiTryOnPrompt({ mode: "fabric" });
-assert.match(garmentPrompt, /Image 2: a garment reference photo\./);
+assert.match(garmentPrompt, /Image 2: the ordered garment\./);
 assert.equal(/swatch|image 3/i.test(garmentPrompt), false, "garment mode never mentions a swatch");
 assert.match(fabricPrompt, /Image 3: the fabric swatch/);
 assert.notEqual(garmentPrompt, fabricPrompt);
@@ -560,10 +560,10 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
   // Prompt v5: fabric mode labels each image right before it too.
   assert.deepEqual(
     h.calls[1].contents[0].parts.map((part) => ("text" in part ? part.text.split(",")[0] : "image")),
-    ["Virtual try-on photo edit with a fabric change.\nImage 1: the customer. Image 2: the garment design. Image 3: the fabric swatch.\nEdit image 1 so the person wears the garment from image 2", "Image 1", "image", "Image 2", "image", "Image 3", "image"],
+    ["Virtual try-on photo edit with a fabric change.\nImage 1: the customer", "Image 1", "image", "Image 2", "image", "Image 3", "image"],
     "fabric mode: prompt, label + person, label + garment, label + swatch",
   );
-  assert.match((h.calls[1].contents[0].parts[5] as { text: string }).text, /^Image 3, fabric swatch, for colour and pattern only:$/);
+  assert.match((h.calls[1].contents[0].parts[5] as { text: string }).text, /^Image 3, fabric swatch, for colour and pattern only\. No other image may set the fabric:$/);
   assert.equal(h.calls[1].contents[0].parts.filter((part) => "inlineData" in part).length, 3);
   assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /Image 3: the fabric swatch/);
 

@@ -36,8 +36,13 @@ export type AiTryOnMode = "garment" | "fabric";
  * check, and ignores any text printed on the swatch.
  * v6: the server sends a central crop of the swatch and asks Gemini for the
  * customer photo's nearest aspect ratio (request change, same wording).
+ * v7: photo mode keeps image 1 for identity and pose only, makes the named
+ * garment type mandatory (a Standard Dress must not become a Long Shirt,
+ * tunic or senator style), copies construction only from image 2, locks
+ * fabric mode to the swatch, and replaces clothing the ordered garment
+ * covers so a full outfit already in the photo cannot fight the order.
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v6" as const;
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v7" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
