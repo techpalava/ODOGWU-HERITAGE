@@ -366,7 +366,11 @@ import {
   createAiTryOnCredentials,
   type AiTryOnCredentials,
 } from "../services/aiTryOnGateway";
-import { AiTryOnPhotoPanel, type AiTryOnSessionPhoto } from "./AiTryOnPhotoPanel";
+import {
+  AiTryOnPhotoPanel,
+  type AiTryOnSessionPhoto,
+  type AiTryOnSessionPreview,
+} from "./AiTryOnPhotoPanel";
 import {
   aiTryOnBackgroundJobs,
   useAiTryOnBackgroundJobs,
@@ -3801,16 +3805,21 @@ export default function DesignStudioView({
   const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
     createAiTryOnCredentials(null, async () => null),
   );
-  // Try-on photo, model choice, photo wearer and measurement wearer for this
-  // tab only. Never written to the draft, localStorage or the server.
-  // Cleared on a new order and sign-out. Switching the photo wearer drops
-  // the photo and puts measurements back on that person.
+  // Try-on photo, model choice, photo wearer, measurement wearer and the
+  // last preview image for this tab only. Never written to the draft,
+  // localStorage or the server. Cleared on a new order and sign-out.
+  // Switching the photo wearer drops the photo and puts measurements back
+  // on that person. A reload drops the preview bytes; the panel loads the
+  // private server copy when the design fingerprint still matches.
   const [aiTryOnSessionPhoto, setAiTryOnSessionPhoto] = useState<AiTryOnSessionPhoto | null>(null);
   const [aiTryOnModelIdByWearer, setAiTryOnModelIdByWearer] = useState<Record<string, string>>({});
   const [aiTryOnSessionWearerId, setAiTryOnSessionWearerId] = useState<string | null>(null);
   const [aiTryOnSessionMeasurementWearerId, setAiTryOnSessionMeasurementWearerId] = useState<
     string | null
   >(null);
+  const [aiTryOnSessionPreviews, setAiTryOnSessionPreviews] = useState<
+    Record<string, AiTryOnSessionPreview>
+  >({});
   const aiTryOnSessionPhotoRef = useRef(aiTryOnSessionPhoto);
   aiTryOnSessionPhotoRef.current = aiTryOnSessionPhoto;
   const replaceAiTryOnSessionPhoto = useCallback((next: AiTryOnSessionPhoto | null) => {
@@ -3833,7 +3842,17 @@ export default function DesignStudioView({
     setAiTryOnModelIdByWearer({});
     setAiTryOnSessionWearerId(null);
     setAiTryOnSessionMeasurementWearerId(null);
+    setAiTryOnSessionPreviews({});
   }, []);
+  const loadStoredAiTryOnPreview = useCallback(
+    (previewId: string) => fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId }),
+    [aiTryOnCredentials],
+  );
+  const deleteStoredAiTryOnPreview = useCallback(
+    (previewId: string) =>
+      deleteStoredAiTryOnPreviews({ credentials: aiTryOnCredentials, previewId }),
+    [aiTryOnCredentials],
+  );
   useEffect(
     () => () => {
       const url = aiTryOnSessionPhotoRef.current?.thumbnailUrl;
@@ -11722,12 +11741,8 @@ export default function DesignStudioView({
                 initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
                 initialAccountTriesRemaining={aiTryOnAvailability.accountTriesRemaining}
                 storedPreviews={aiTryOnAvailability.storedPreviews}
-                loadStoredPreview={(previewId) =>
-                  fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId })
-                }
-                deleteStoredPreview={(previewId) =>
-                  deleteStoredAiTryOnPreviews({ credentials: aiTryOnCredentials, previewId })
-                }
+                loadStoredPreview={loadStoredAiTryOnPreview}
+                deleteStoredPreview={deleteStoredAiTryOnPreview}
                 onPreviewCreated={handleAiTryOnPreviewCreated}
                 onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
                 onGeneratingChange={setAiTryOnGenerating}
@@ -11740,6 +11755,8 @@ export default function DesignStudioView({
                 onSessionWearerIdChange={setAiTryOnSessionWearerId}
                 sessionMeasurementWearerId={aiTryOnSessionMeasurementWearerId}
                 onSessionMeasurementWearerIdChange={setAiTryOnSessionMeasurementWearerId}
+                sessionPreviews={aiTryOnSessionPreviews}
+                onSessionPreviewsChange={(update) => setAiTryOnSessionPreviews(update)}
               />
             ) : undefined
           }

@@ -9,7 +9,7 @@ import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJob
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import type { Firestore } from "firebase-admin/firestore";
 import {
@@ -36,6 +36,7 @@ import {
   AiTryOnPhotoPanel,
   AI_TRY_ON_MESSAGES,
   type AiTryOnPhotoPanelProps,
+  type AiTryOnSessionPreview,
 } from "./src/components/AiTryOnPhotoPanel";
 import type { AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
 import type { HttpResponse } from "./src/server/httpTypes";
@@ -598,6 +599,225 @@ const deleteButton = (renderer: ReturnType<typeof create>) =>
   await act(async () => { await generate.props.onClick(); });
   assert.equal(resultImages(renderer).length, 1);
   assert.equal(deleteButton(renderer).length, 0);
+}
+
+{
+  // The session list can arrive after the panel mounts (reload raced the
+  // availability read). The matching preview is loaded once and shown.
+  const loads: string[] = [];
+  let generates = 0;
+  let renderer!: ReturnType<typeof create>;
+  const props = {
+    targets: [target()],
+    triesPerOrder: 5,
+    initialTriesRemaining: 4,
+    onPreviewCreated: () => undefined,
+    onUnavailable: () => undefined,
+    storedPreviews: [] as AiTryOnPhotoPanelProps["storedPreviews"],
+    loadStoredPreview: async (id: string) => {
+      loads.push(id);
+      return { mimeType: "image/png", data: "bGF0ZQ==" };
+    },
+    requestPreview: async () => {
+      generates += 1;
+      return { kind: "unavailable" as const };
+    },
+    jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+  };
+  act(() => {
+    renderer = create(createElement(AiTryOnPhotoPanel, props));
+  });
+  await flush();
+  assert.equal(resultImages(renderer).length, 0);
+  assert.equal(generates, 0);
+  act(() => {
+    renderer.update(
+      createElement(AiTryOnPhotoPanel, {
+        ...props,
+        storedPreviews: [
+          { previewId: STORED_ID, wearerKey: "w-ada", inputFingerprint: FINGERPRINT, expiresAt: "2026-11-30T12:00:00.000Z" },
+        ],
+      }),
+    );
+  });
+  await flush();
+  assert.deepEqual(loads, [STORED_ID], "a late session list still restores the preview");
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,bGF0ZQ==");
+  assert.equal(generates, 0, "restoring a stored preview does not generate again");
+}
+
+{
+  // Tab memory: leaving Try-on and coming back keeps the image. A full
+  // reload is the empty-memory case above, which reads the server copy.
+  const SessionHarness = ({ show }: { show: boolean }) => {
+    const [previews, setPreviews] = useState<Record<string, AiTryOnSessionPreview>>({
+      "w-ada": {
+        inputFingerprint: FINGERPRINT,
+        mimeType: "image/png",
+        data: "c2Vzc2lvbg==",
+        storedPreviewId: STORED_ID,
+        modelId: null,
+      },
+      "w-obi": {
+        inputFingerprint: "tryon-v1-aaaaaaaaaaaaaaaa",
+        mimeType: "image/png",
+        data: "b2Jp",
+        storedPreviewId: "tryon-99999999-2222-4333-8444-555555555555",
+        modelId: null,
+      },
+    });
+    return show
+      ? createElement(AiTryOnPhotoPanel, {
+          targets: [
+            target(),
+            target({ wearerId: "w-obi", label: "Obi", inputFingerprint: "tryon-v1-aaaaaaaaaaaaaaaa" }),
+          ],
+          triesPerOrder: 5,
+          initialTriesRemaining: 4,
+          onPreviewCreated: () => undefined,
+          onUnavailable: () => undefined,
+          storedPreviews: [],
+          loadStoredPreview: async () => {
+            throw new Error("session preview must not be fetched again");
+          },
+          requestPreview: async () => {
+            throw new Error("session preview must not generate");
+          },
+          jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+          sessionPreviews: previews,
+          onSessionPreviewsChange: setPreviews,
+        })
+      : null;
+  };
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(SessionHarness, { show: true }));
+  });
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,c2Vzc2lvbg==");
+  act(() => {
+    renderer.update(createElement(SessionHarness, { show: false }));
+  });
+  assert.equal(resultImages(renderer).length, 0);
+  act(() => {
+    renderer.update(createElement(SessionHarness, { show: true }));
+  });
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,c2Vzc2lvbg==", "leaving Try-on keeps the preview");
+  const chips = renderer.root.findAll((node) => node.type === "button" && node.props["data-wearer-chip"]);
+  act(() => chips[1].props.onClick());
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,b2Jp", "each wearer keeps their own preview");
+}
+
+{
+  // A design change drops the kept preview. It is not shown and not reloaded
+  // for the new fingerprint.
+  const loads: string[] = [];
+  const SessionHarness = () => {
+    const [previews, setPreviews] = useState<Record<string, AiTryOnSessionPreview>>({
+      "w-ada": {
+        inputFingerprint: FINGERPRINT,
+        mimeType: "image/png",
+        data: "c3RhbGU=",
+        storedPreviewId: STORED_ID,
+        modelId: null,
+      },
+    });
+    const [fingerprint, setFingerprint] = useState(FINGERPRINT);
+    return createElement(
+      "div",
+      null,
+      createElement(AiTryOnPhotoPanel, {
+        targets: [target({ inputFingerprint: fingerprint })],
+        triesPerOrder: 5,
+        initialTriesRemaining: 4,
+        onPreviewCreated: () => undefined,
+        onUnavailable: () => undefined,
+        storedPreviews:
+          fingerprint === FINGERPRINT
+            ? [{ previewId: STORED_ID, wearerKey: "w-ada", inputFingerprint: FINGERPRINT, expiresAt: "2026-11-30T12:00:00.000Z" }]
+            : [],
+        loadStoredPreview: async (id: string) => {
+          loads.push(id);
+          return { mimeType: "image/png", data: "bmV3" };
+        },
+        jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+        sessionPreviews: previews,
+        onSessionPreviewsChange: setPreviews,
+      }),
+      createElement("button", {
+        type: "button",
+        "data-change-design": "true",
+        onClick: () => setFingerprint("tryon-v1-fedcba9876543210"),
+      }),
+    );
+  };
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(SessionHarness));
+  });
+  await flush();
+  assert.equal(resultImages(renderer).length, 1);
+  assert.deepEqual(loads, [], "a matching session preview is not fetched");
+  act(() => {
+    renderer.root.find((node) => node.props["data-change-design"] === "true").props.onClick();
+  });
+  await flush();
+  assert.equal(resultImages(renderer).length, 0, "a new fingerprint hides the old preview");
+  assert.deepEqual(loads, []);
+}
+
+{
+  // The finished job already applied its image, then the panel unmounted.
+  // Coming back shows that image and does not generate again.
+  const jobs = createAiTryOnBackgroundJobs({ storage: null });
+  let generates = 0;
+  const base: AiTryOnPhotoPanelProps = {
+    targets: [target()],
+    triesPerOrder: 5,
+    initialTriesRemaining: 4,
+    onPreviewCreated: () => undefined,
+    onUnavailable: () => undefined,
+    storedPreviews: [],
+    preparePhoto: async () => ({ mimeType: "image/jpeg", data: "/9j/4AAQ" }),
+    createThumbnailUrl: () => null,
+    revokeThumbnailUrl: () => undefined,
+    requestPreview: async () => {
+      generates += 1;
+      return {
+        kind: "completed",
+        resultReference: { kind: "verified_private_try_on_result", assetId: STORED_ID, ownerBindingId: "order-x" },
+        preview: { mimeType: "image/png", data: "am9i" },
+        orderTriesRemaining: 3,
+        storedPreviewId: STORED_ID,
+      };
+    },
+    jobStore: jobs,
+  };
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(AiTryOnPhotoPanel, base));
+  });
+  const input = renderer.root.find((node) => node.type === "input" && node.props.type === "file");
+  const file = Object.assign(new Blob([new Uint8Array(20)], { type: "image/jpeg" }), { name: "me.jpg" });
+  await act(async () => {
+    await input.props.onChange({ target: { files: [file] } });
+  });
+  const generate = renderer.root.find((node) => node.type === "button" && /Generate preview/.test(textOf(node)));
+  await act(async () => {
+    await generate.props.onClick();
+  });
+  await flush();
+  assert.equal(generates, 1);
+  assert.equal(resultImages(renderer).length, 1);
+  act(() => {
+    renderer.unmount();
+  });
+  act(() => {
+    renderer = create(createElement(AiTryOnPhotoPanel, base));
+  });
+  await flush();
+  assert.equal(resultImages(renderer).length, 1, "a remount shows the finished preview");
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,am9i");
+  assert.equal(generates, 1, "showing the kept preview does not use another try");
 }
 
 console.log("PASS: AI Try-on Step 6 private preview storage, retention, deletion and server-side references");
