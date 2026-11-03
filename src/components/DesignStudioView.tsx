@@ -313,7 +313,10 @@ import {
   type AdditionalGarmentFabricTransaction,
   type DeferredAdditionalGarmentCustomDetailsPrompt,
 } from "../utils/additionalGarmentFabricPicker";
-import { resolveFutureStageCorrection } from "../utils/resolveFutureStageCorrection";
+import {
+  resolveFutureStageCorrection,
+  resolveTryOnRestoreFallback,
+} from "../utils/resolveFutureStageCorrection";
 import { FutureAdditionalGarmentFabricDialog } from "./FutureAdditionalGarmentFabricDialog";
 import { FutureAdditionalGarmentDesignStyleDialog } from "./FutureAdditionalGarmentDesignStyleDialog";
 import {
@@ -1297,6 +1300,8 @@ export default function DesignStudioView({
     useState(false);
   const [activeWearerId, setActiveWearerId] = useState<string | null>(null);
   const pendingResumeScrollYRef = useRef<number | null>(null);
+  /** Set when a saved draft is applied so refresh scrolls to that step. */
+  const pendingRestoreStageAnchorRef = useRef(false);
   const [hydratedMeasurementGarmentKey, setHydratedMeasurementGarmentKey] =
     useState<string | null>(null);
   const [measurementPersistFlushNonce, setMeasurementPersistFlushNonce] =
@@ -4547,11 +4552,53 @@ export default function DesignStudioView({
   useEffect(() => {
     if (!guestDraftHydrated) return;
     const scrollY = pendingResumeScrollYRef.current;
-    if (scrollY === null) return;
-    pendingResumeScrollYRef.current = null;
-    window.requestAnimationFrame(() => {
-      window.scrollTo({ top: scrollY, behavior: "auto" });
-    });
+    const anchorStage = pendingRestoreStageAnchorRef.current;
+    if (scrollY === null && !anchorStage) return;
+
+    let cancelled = false;
+    const apply = () => {
+      if (cancelled || typeof window === "undefined") return;
+      const stageTarget = futureStageNavigationTargetRef.current;
+      let stageTop: number | null = null;
+      if (
+        anchorStage &&
+        stageTarget &&
+        typeof stageTarget.getBoundingClientRect === "function"
+      ) {
+        // Keep the restored step under the sticky header instead of the
+        // top of the document, where the stepper starts at Step 1.
+        stageTop = Math.max(
+          0,
+          Math.round(
+            stageTarget.getBoundingClientRect().top + window.scrollY - 96,
+          ),
+        );
+      }
+      const top =
+        stageTop == null
+          ? scrollY
+          : typeof scrollY === "number" && scrollY > stageTop
+            ? scrollY
+            : stageTop;
+      if (typeof top === "number") {
+        window.scrollTo({ top, behavior: "auto" });
+      }
+    };
+
+    const frame = window.requestAnimationFrame(apply);
+    // App scrolls the active tab to the top ~150ms after data loads, and
+    // entering Design Studio clears that tab's saved scroll. Re-apply after
+    // that so a refresh stays on the restored step.
+    const timer = window.setTimeout(() => {
+      apply();
+      pendingResumeScrollYRef.current = null;
+      pendingRestoreStageAnchorRef.current = false;
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, [guestDraftHydrated, futureStageId]);
 
   useLayoutEffect(() => {
@@ -4882,6 +4929,7 @@ export default function DesignStudioView({
     setActiveWearerId(null);
     setHydratedMeasurementGarmentKey(null);
     pendingResumeScrollYRef.current = null;
+    pendingRestoreStageAnchorRef.current = false;
     setFutureShippingState(createEmptyFutureShippingState());
     setFutureSelectedStyleId(null);
     setFutureDesignSource(null);
@@ -5623,9 +5671,23 @@ export default function DesignStudioView({
                   : storedDraft?.currentStageId === "design_style" &&
                       restoredFabricCompletion.isComplete
                     ? "design_style"
-                    : futureJourney.currentStageId === "fabric"
-                      ? "fabric"
-                      : "garment_type";
+                    : storedDraft?.currentStageId === "try_on"
+                      ? resolveTryOnRestoreFallback({
+                          garmentTypeComplete:
+                            futureJourney.completion.isComplete,
+                          fabricComplete: restoredFabricCompletion.isComplete,
+                          designSourceReady: restoredSourceReady,
+                          customDetailsReady: restoredStep4Ready,
+                          personalizedAdditionsReady:
+                            restoredPersonalizedAdditionsReady,
+                          measurementsReady: restoredMeasurementsReady,
+                        }) ??
+                        (futureJourney.currentStageId === "fabric"
+                          ? "fabric"
+                          : "garment_type")
+                      : futureJourney.currentStageId === "fabric"
+                        ? "fabric"
+                        : "garment_type";
       setFutureStageId(restoredStageId);
       setFutureAiTryOnWorkflow(restoredAiTryOnWorkflow);
       setWearerOrder(restoredWearerOrder);
@@ -5649,6 +5711,7 @@ export default function DesignStudioView({
         restoredResumeLocus.measurementGarmentKey,
       );
       pendingResumeScrollYRef.current = restoredResumeLocus.scrollY;
+      pendingRestoreStageAnchorRef.current = Boolean(storedDraft);
       setFutureMeasurementState(
         restoredResumeLocus.measurementGarmentKey
           ? {

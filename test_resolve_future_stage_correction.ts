@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
+import {
+  resolveFutureStageCorrection,
+  resolveTryOnRestoreFallback,
+} from "./src/utils/resolveFutureStageCorrection";
 
 assert.equal(
   resolveFutureStageCorrection({
@@ -266,6 +269,31 @@ assert.equal(
   }),
   "try_on",
   "Summary still waits until AI Try-on is completed or skipped",
+);
+
+assert.equal(
+  resolveTryOnRestoreFallback({
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: false,
+    customDetailsReady: false,
+    personalizedAdditionsReady: false,
+    measurementsReady: false,
+  }),
+  "design_style",
+  "a saved AI Try-on step with Fabric done must not fall through to Step 1 when Design Style is the blocker",
+);
+assert.equal(
+  resolveTryOnRestoreFallback({
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementsReady: true,
+  }),
+  null,
+  "a saved AI Try-on step whose gates still pass stays on Step 7",
 );
 
 console.log("PASS: future stage correction helper");
