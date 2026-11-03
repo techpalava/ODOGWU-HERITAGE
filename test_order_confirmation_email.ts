@@ -7,6 +7,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { Firestore } from "firebase-admin/firestore";
 import {
   ORDER_CONFIRMATION_EMAIL_COLLECTION,
+  ORDER_CONFIRMATION_EMAIL_SENDING_STALE_MS,
+  ORDER_CONFIRMATION_EMAIL_TIMEOUT_MS,
   orderConfirmationOrderUrl,
   renderOrderConfirmationEmail,
   sendOrderConfirmationEmail,
@@ -17,6 +19,7 @@ import { AI_TRY_ON_ORDER_IMAGE_COPY as COPY } from "./src/utils/aiTryOnOrderImag
 type Doc = Record<string, unknown>;
 class FakeFirestore {
   readonly docs = new Map<string, Doc>();
+  private lock: Promise<unknown> = Promise.resolve();
   private snap(path: string) {
     const data = this.docs.get(path);
     return { exists: data !== undefined, data: () => (data ? { ...data } : undefined) };
@@ -29,11 +32,15 @@ class FakeFirestore {
       },
     };
   }
-  async runTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
-    return fn({
-      get: async (ref: { path: string }) => this.snap(ref.path),
-      set: (ref: { path: string }, data: Doc) => void this.docs.set(ref.path, { ...data }),
-    });
+  runTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+    const run = this.lock.then(() =>
+      fn({
+        get: async (ref: { path: string }) => this.snap(ref.path),
+        set: (ref: { path: string }, data: Doc) => void this.docs.set(ref.path, { ...data }),
+      }),
+    );
+    this.lock = run.catch(() => undefined);
+    return run;
   }
   asFirestore() {
     return this as unknown as Firestore;
@@ -155,6 +162,116 @@ const harness = (environment: Record<string, string> = env) => {
   const started = Date.now();
   assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: "other" }, { ...h.deps, readRecipient: () => new Promise(() => undefined), timeoutMs: 30 } as never), "timeout");
   assert.ok(Date.now() - started < 1000);
+}
+
+// ------------------------------------------------------------ the send finishes before the function ends; a stuck send retries once
+{
+  assert.equal(ORDER_CONFIRMATION_EMAIL_TIMEOUT_MS, 15_000);
+  assert.equal(ORDER_CONFIRMATION_EMAIL_SENDING_STALE_MS, 15_000);
+  const h = harness();
+  let releaseRecipient!: () => void;
+  const recipientGate = new Promise<{ email: string; name: string }>((resolve) => {
+    releaseRecipient = () => resolve({ email: "ada@example.com", name: "Ada" });
+  });
+  let settled = false;
+  const pending = sendOrderConfirmationEmail(
+    { ownerUid: "uid-ada", orderId: ORDER },
+    { ...h.deps, readRecipient: () => recipientGate } as never,
+  ).then((result) => {
+    settled = true;
+    return result;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(settled, false, "the function stays open while the email is still being prepared");
+  assert.equal(h.brevoCalls.length, 0);
+  releaseRecipient();
+  assert.equal(await pending, "sent");
+  assert.equal(settled, true, "the send has finished when the function ends");
+  assert.equal(h.brevoCalls.length, 1);
+  assert.equal(h.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "sent");
+}
+{
+  // A previous attempt claimed "sending" and then died. The next payment
+  // event sends once, and the one after that does not.
+  const h = harness();
+  h.db.docs.set(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`, {
+    orderId: ORDER,
+    status: "sending",
+    claimedAt: Date.now() - ORDER_CONFIRMATION_EMAIL_SENDING_STALE_MS - 1,
+    claimId: "stuck-claim",
+  });
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "sent");
+  assert.equal(h.brevoCalls.length, 1, "stuck sending is retried");
+  assert.equal(h.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "sent");
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "already_sent");
+  assert.equal(h.brevoCalls.length, 1, "retried exactly once");
+}
+{
+  const h = harness();
+  h.db.docs.set(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`, {
+    orderId: ORDER,
+    status: "failed",
+    claimedAt: Date.now(),
+    claimId: "failed-claim",
+  });
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "sent", "failed is retried");
+  assert.equal(h.brevoCalls.length, 1);
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "already_sent");
+  assert.equal(h.brevoCalls.length, 1);
+}
+{
+  // The attempt timed out before the provider was called, so the claim is
+  // failed and the next confirmation call sends exactly once.
+  const h = harness();
+  assert.equal(
+    await sendOrderConfirmationEmail(
+      { ownerUid: "uid-ada", orderId: ORDER },
+      { ...h.deps, readRecipient: () => new Promise(() => undefined), timeoutMs: 40 } as never,
+    ),
+    "timeout",
+  );
+  assert.equal(h.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "failed");
+  assert.equal(h.brevoCalls.length, 0);
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "sent");
+  assert.equal(h.brevoCalls.length, 1);
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "already_sent");
+  assert.equal(h.brevoCalls.length, 1, "the timed-out sending claim is retried exactly once");
+}
+{
+  // A live send is not stolen, so two overlapping payment events send once.
+  const h = harness();
+  h.db.docs.set(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`, {
+    orderId: ORDER,
+    status: "sending",
+    claimedAt: Date.now(),
+    claimId: "live-claim",
+  });
+  const live = await sendOrderConfirmationEmail(
+    { ownerUid: "uid-ada", orderId: ORDER },
+    { ...h.deps, timeoutMs: 60 } as never,
+  );
+  assert.ok(live === "already_sent" || live === "timeout");
+  assert.equal(h.brevoCalls.length, 0, "a fresh sending claim is not stolen");
+  assert.equal(h.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "sending");
+
+  let releaseSend!: () => void;
+  const sendGate = new Promise<void>((resolve) => {
+    releaseSend = resolve;
+  });
+  const overlapping = harness();
+  overlapping.deps.fetchImpl = (async () => {
+    await sendGate;
+    overlapping.brevoCalls.push({ url: "https://brevo.test/send", body: {} });
+    return new Response(JSON.stringify({ messageId: "m-live" }), { status: 201 });
+  }) as unknown as typeof fetch;
+  const first = sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, overlapping.deps as never);
+  const second = sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, overlapping.deps as never);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  releaseSend();
+  const results = (await Promise.all([first, second])).sort();
+  assert.deepEqual(results, ["already_sent", "sent"]);
+  assert.equal(overlapping.brevoCalls.length, 1, "webhook and browser send one email");
+  assert.equal(overlapping.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "sent");
 }
 
 // ------------------------------------------------------------ wiring: after the AI preview copy, on every payment path; rules

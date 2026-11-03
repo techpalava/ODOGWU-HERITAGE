@@ -26,7 +26,10 @@ import {
   compactAiTryOnPreviewImage,
 } from "./src/server/aiTryOnPreviewImage";
 import { handleAiTryOn, type AiTryOnHttpDependencies } from "./src/server/aiTryOnHttp";
-import { retireAiTryOnSessionForPaidOrder } from "./src/server/aiTryOnPaymentCleanup";
+import {
+  AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS,
+  retireAiTryOnSessionForPaidOrder,
+} from "./src/server/aiTryOnPaymentCleanup";
 import {
   createFutureOrderV2PaymentRecordHandler,
   type FutureOrderV2PaymentRecordStore,
@@ -492,6 +495,38 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
   assert.equal(hung, "timeout");
   assert.ok(Date.now() - started < 1000);
   assert.equal(await retireAiTryOnSessionForPaidOrder({ ownerUid: UID_A }, { getDb: () => { throw new Error("no db"); }, log: () => undefined }), "failed");
+
+  // The old 3s cap returned while the copy was still running. The payment
+  // function now waits for that work (up to 15s) before it ends.
+  assert.equal(AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS, 15_000);
+  const waitingDb = new FakeFirestore();
+  let releaseCleanup!: () => void;
+  const cleanupGate = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  let cleanupSettled = false;
+  const cleanupPending = retireAiTryOnSessionForPaidOrder(
+    { ownerUid: UID_A },
+    {
+      getDb: () => waitingDb.asFirestore(),
+      createSessions: () =>
+        ({
+          findOpenForUid: () => cleanupGate.then(() => null),
+          close: async () => undefined,
+          authorize: async () => null,
+          resolve: async () => ({ sessionId: "session", sessionToken: null, created: false }),
+        }) as never,
+      log: () => undefined,
+    },
+  ).then((result) => {
+    cleanupSettled = true;
+    return result;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(cleanupSettled, false, "cleanup does not finish before its work");
+  releaseCleanup();
+  assert.equal(await cleanupPending, "no_session");
+  assert.equal(cleanupSettled, true, "the work has finished when the function ends");
 }
 
 // ------------------------------------------------------------ payment paths call the cleanup, and it can't break them
