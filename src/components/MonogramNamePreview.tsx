@@ -9,11 +9,12 @@ import {
   getMonogramPlacementLabel,
   getMonogramPlacementsForGarmentType,
 } from "../utils/decorativePricing";
+import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 
 /**
- * Placement map drawn on a vector outline of the Step 1 garment.
- * The outline is line art, not a product photo. Dots are only the
- * placements that garment can take.
+ * Concept C icon plus a separate placement map.
+ * The icon and Step 1 name identify the garment. The map is dots only
+ * for the placements that garment can take. No product photos.
  */
 export const MONOGRAM_PREVIEW_SILHOUETTES = [
   "shirt",
@@ -70,71 +71,17 @@ const OUTLINES: Record<MonogramPreviewSilhouette, string> = {
     "M36 8C36 4 44 4 44 8L48 10L66 24L76 42L62 38L50 16L54 94H26L30 16L18 38L4 42L14 24L32 10Z",
 };
 
-const FRONT_MARK: Record<MonogramPreviewSilhouette, string> = {
-  shirt: "M34 16l6 8 6-8",
-  long_shirt: "M34 12h12M40 13v14",
-  dress: "M40 12h4",
-  long_dress: "M36 12q4 4 8 0",
-  skirt: "M27 33h26",
-  long_skirt: "M36 7h8",
-  trouser: "M24 11h32M40 13v16",
-  nikka_shorts: "M22 18h36M40 20v10",
-  bum_shorts: "M16 27h48M40 29v6",
-  agbada: "M37 9q3 3 6 0",
-};
-
 type DotPoint = { cx: number; cy: number };
 
-/** Dots sit on that garment, not on a shared box. Wearer's left is the viewer's right. */
-const DOTS: Record<
-  MonogramPreviewSilhouette,
-  Partial<Record<MonogramPlacement, DotPoint>>
-> = {
-  shirt: {
-    neckline: { cx: 40, cy: 14 },
-    left_chest: { cx: 48, cy: 34 },
-    right_chest: { cx: 32, cy: 36 },
-    upper_back: { cx: 40, cy: 42 },
-    cuff: { cx: 16, cy: 34 },
-    hem: { cx: 40, cy: 70 },
-  },
-  long_shirt: {
-    neckline: { cx: 40, cy: 14 },
-    left_chest: { cx: 48, cy: 36 },
-    right_chest: { cx: 32, cy: 36 },
-    upper_back: { cx: 40, cy: 44 },
-    cuff: { cx: 18, cy: 26 },
-    hem: { cx: 40, cy: 90 },
-  },
-  dress: {
-    neckline: { cx: 42, cy: 14 },
-    left_chest: { cx: 48, cy: 28 },
-    right_chest: { cx: 34, cy: 28 },
-    upper_back: { cx: 40, cy: 34 },
-    cuff: { cx: 26, cy: 24 },
-    hem: { cx: 40, cy: 58 },
-  },
-  long_dress: {
-    neckline: { cx: 40, cy: 12 },
-    left_chest: { cx: 46, cy: 28 },
-    right_chest: { cx: 34, cy: 28 },
-    upper_back: { cx: 40, cy: 36 },
-    cuff: { cx: 20, cy: 26 },
-    hem: { cx: 40, cy: 90 },
-  },
-  skirt: { hem: { cx: 40, cy: 68 } },
-  long_skirt: { hem: { cx: 40, cy: 84 } },
-  trouser: { hem: { cx: 50, cy: 90 } },
-  nikka_shorts: { hem: { cx: 49, cy: 52 } },
-  bum_shorts: { hem: { cx: 51, cy: 45 } },
-  agbada: {
-    neckline: { cx: 40, cy: 12 },
-    left_chest: { cx: 46, cy: 30 },
-    right_chest: { cx: 34, cy: 30 },
-    upper_back: { cx: 40, cy: 42 },
-    cuff: { cx: 16, cy: 34 },
-    hem: { cx: 40, cy: 86 },
-  },
+/** Schematic map, 80×64. Wearer's left is the viewer's right. Not a garment body. */
+const MAP_HEIGHT = 64;
+const MAP_DOTS: Record<MonogramPlacement, DotPoint> = {
+  neckline: { cx: 40, cy: 10 },
+  left_chest: { cx: 56, cy: 22 },
+  right_chest: { cx: 24, cy: 22 },
+  upper_back: { cx: 40, cy: 32 },
+  cuff: { cx: 12, cy: 26 },
+  hem: { cx: 40, cy: 52 },
 };
 
 export const MONOGRAM_PREVIEW_FRAME_CLASS =
@@ -154,22 +101,19 @@ export const monogramPreviewOutline = (
 ): string => OUTLINES[monogramPreviewSilhouette(garmentType)];
 
 export const monogramPlacementDot = (
-  garmentType: FabricGarmentType,
+  _garmentType: FabricGarmentType,
   placement: MonogramPlacement,
-): DotPoint => {
-  const silhouette = monogramPreviewSilhouette(garmentType);
-  return DOTS[silhouette][placement] ?? DOTS[silhouette].hem ?? { cx: 40, cy: 70 };
-};
+): DotPoint => MAP_DOTS[placement];
 
-/** Name sits just off the active dot so it stays on the garment. */
+/** Name sits just off the active dot inside the placement map. */
 export const monogramPlacementNameAnchor = (
   garmentType: FabricGarmentType,
   placement: MonogramPlacement,
 ): { top: string; left: string } => {
   const point = monogramPlacementDot(garmentType, placement);
   const left = `${Math.round((point.cx / 80) * 100)}%`;
-  const shifted = placement === "hem" ? point.cy - 8 : point.cy + 14;
-  const top = Math.min(88, Math.max(14, shifted));
+  const shifted = placement === "hem" ? point.cy - 10 : point.cy + 12;
+  const top = Math.min(92, Math.max(8, (shifted / MAP_HEIGHT) * 100));
   return { top: `${Math.round(top)}%`, left };
 };
 
@@ -217,12 +161,13 @@ export const MonogramNamePreview = ({
   const lettering = empty ? "YOUR NAME" : shown;
   const back = resolvedPlacement === "upper_back";
   const anchor = monogramPlacementNameAnchor(garmentType, resolvedPlacement);
-  const label = getMonogramPlacementLabel(resolvedPlacement) ?? "Hem";
+  const placementLabel = getMonogramPlacementLabel(resolvedPlacement) ?? "Hem";
+  const garmentLabel = getStep1GarmentDisplayLabel(garmentType);
 
   return (
     <div
       data-monogram-name-preview={garmentKey}
-      data-monogram-preview-kind="placement-map"
+      data-monogram-preview-kind="icon-placement-map"
       data-monogram-preview-garment={garmentType}
       data-monogram-preview-silhouette={silhouette}
       data-monogram-preview-placement={resolvedPlacement}
@@ -232,29 +177,39 @@ export const MonogramNamePreview = ({
       className={MONOGRAM_PREVIEW_FRAME_CLASS}
       aria-hidden="true"
     >
-      <p
-        data-monogram-placement-label={resolvedPlacement}
-        className="mb-1 text-center text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-green"
-      >
-        {label}
-      </p>
-      <div className="relative aspect-[4/5] w-full">
-        <svg viewBox="0 0 80 100" className="h-full w-full" aria-hidden="true">
+      <div className="flex items-center gap-1">
+        <svg
+          viewBox="0 0 80 100"
+          className="h-9 w-7 shrink-0"
+          aria-hidden="true"
+        >
           <path
-            data-monogram-placement-zone="true"
+            data-monogram-garment-icon="true"
             d={OUTLINES[silhouette]}
             fill="#F9F6F0"
             stroke="#0A291B"
-            strokeWidth="1.6"
+            strokeWidth="3"
             strokeLinejoin="round"
           />
-          <path
-            d={FRONT_MARK[silhouette]}
-            fill="none"
-            stroke="#0A291B"
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
+        </svg>
+        <span
+          data-monogram-garment-label={garmentType}
+          className="min-w-0 text-[9px] font-bold leading-tight text-heritage-green"
+        >
+          {garmentLabel}
+        </span>
+      </div>
+      <p
+        data-monogram-placement-label={resolvedPlacement}
+        className="mb-0.5 mt-1 text-center text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-green"
+      >
+        {placementLabel}
+      </p>
+      <div
+        data-monogram-placement-map="true"
+        className="relative h-14 w-full"
+      >
+        <svg viewBox={`0 0 80 ${MAP_HEIGHT}`} className="h-full w-full" aria-hidden="true">
           {map.dots.map((dot) => {
             const active = dot === resolvedPlacement;
             const point = monogramPlacementDot(garmentType, dot);
@@ -265,24 +220,24 @@ export const MonogramNamePreview = ({
                 data-monogram-placement-dot-state={active ? "active" : "available"}
                 cx={point.cx}
                 cy={point.cy}
-                r={active ? 3.6 : 2.6}
-                fill={active ? "#0A291B" : "#F9F6F0"}
+                r={active ? 4.2 : 3}
+                fill={active ? "#0A291B" : "none"}
                 stroke="#0A291B"
-                strokeWidth="1.3"
+                strokeWidth="1.4"
               />
             );
           })}
         </svg>
         <span
           data-monogram-preview-lettering="true"
-          className={`pointer-events-none absolute max-w-[88%] truncate text-center font-display font-semibold uppercase leading-none tracking-[0.08em] ${
+          className={`pointer-events-none absolute max-w-[92%] truncate text-center font-display font-semibold uppercase leading-none tracking-[0.08em] ${
             empty ? "text-heritage-ink/40" : "text-heritage-green"
           }`}
           style={{
             top: anchor.top,
             left: anchor.left,
             transform: "translate(-50%, -50%)",
-            fontSize: lettering.length > 8 ? "0.42rem" : "0.5rem",
+            fontSize: lettering.length > 8 ? "0.4rem" : "0.48rem",
           }}
         >
           {lettering}

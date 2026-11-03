@@ -54,9 +54,10 @@ assert.equal(new Set(shirtDotKeys).size, placements.length, "each shirt placemen
 assert.ok(monogramPlacementDot("shirt", "left_chest").cx > monogramPlacementDot("shirt", "right_chest").cx);
 assert.ok(monogramPlacementDot("shirt", "neckline").cy < monogramPlacementDot("shirt", "left_chest").cy);
 assert.ok(monogramPlacementDot("shirt", "hem").cy > monogramPlacementDot("shirt", "upper_back").cy);
-assert.ok(
-  monogramPlacementDot("trouser", "hem").cy > monogramPlacementDot("shirt", "hem").cy,
-  "trouser hem sits lower than the shirt hem",
+assert.equal(
+  monogramPlacementDot("trouser", "hem").cy,
+  monogramPlacementDot("shirt", "hem").cy,
+  "the placement map uses one hem position; the icon identifies the garment",
 );
 const outlines = MONOGRAM_PREVIEW_SILHOUETTES.map((silhouette) => {
   const garmentType = silhouette === "long_shirt"
@@ -149,16 +150,21 @@ act(() => {
 const trouserMap = mapRenderer!.root.findByProps({
   "data-monogram-name-preview": "base:trouser",
 });
-assert.equal(trouserMap.props["data-monogram-preview-kind"], "placement-map");
+assert.equal(trouserMap.props["data-monogram-preview-kind"], "icon-placement-map");
 assert.equal(trouserMap.props["data-monogram-preview-placement"], "hem");
 assert.equal(trouserMap.props.className, MONOGRAM_PREVIEW_FRAME_CLASS);
 assert.match(String(trouserMap.props.className), /(^|\s)w-24(\s|$)/);
 assert.doesNotMatch(String(trouserMap.props.className), /32rem|basis-full/);
 assert.equal(trouserMap.findAllByType("rect").length, 0);
 assert.equal(
-  trouserMap.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+  trouserMap.findByProps({ "data-monogram-garment-icon": "true" }).props.d,
   monogramPreviewOutline("trouser"),
 );
+assert.equal(
+  trouserMap.findByProps({ "data-monogram-garment-label": "trouser" }).children.join(""),
+  "Trouser",
+);
+assert.equal(trouserMap.findByProps({ "data-monogram-placement-map": "true" }).findAllByType("path").length, 0);
 assert.equal(trouserMap.props["data-monogram-preview-silhouette"], "trouser");
 assert.equal(trouserMap.findAllByProps({ "data-monogram-placement-dot": "left_chest" }).length, 0);
 assert.equal(trouserMap.findAllByProps({ "data-monogram-placement-dot": "neckline" }).length, 0);
@@ -293,15 +299,19 @@ const letteringText = (node: ReactTestInstance) =>
 
 const shirt = preview("base:shirt");
 const dress = preview("base:dress");
-assert.equal(shirt.props["data-monogram-preview-kind"], "placement-map");
+assert.equal(shirt.props["data-monogram-preview-kind"], "icon-placement-map");
 assert.equal(shirt.props["data-monogram-preview-silhouette"], "shirt");
 assert.equal(
-  shirt.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+  shirt.findByProps({ "data-monogram-garment-icon": "true" }).props.d,
   monogramPreviewOutline("shirt"),
 );
+assert.equal(
+  shirt.findByProps({ "data-monogram-garment-label": "shirt" }).children.join(""),
+  "Standard Shirt",
+);
 assert.notEqual(
-  shirt.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
-  trouserMap.findByProps({ "data-monogram-placement-zone": "true" }).props.d,
+  shirt.findByProps({ "data-monogram-garment-icon": "true" }).props.d,
+  trouserMap.findByProps({ "data-monogram-garment-icon": "true" }).props.d,
 );
 assert.equal(shirt.props["data-monogram-preview-placement"], "left_chest");
 assert.equal(shirt.props["data-monogram-preview-text"], "ADEBAYO");
@@ -313,7 +323,7 @@ assert.equal(shirt.props.className, MONOGRAM_PREVIEW_FRAME_CLASS);
 assert.match(String(shirt.props.className), /(^|\s)w-24(\s|$)/);
 assert.doesNotMatch(String(shirt.props.className), /32rem|basis-full/);
 
-assert.equal(dress.props["data-monogram-preview-kind"], "placement-map");
+assert.equal(dress.props["data-monogram-preview-kind"], "icon-placement-map");
 assert.equal(dress.props["data-monogram-preview-placement"], "hem");
 assert.equal(dress.props["data-monogram-preview-text"], "");
 assert.equal(dress.props["data-monogram-preview-placeholder"], "true");
