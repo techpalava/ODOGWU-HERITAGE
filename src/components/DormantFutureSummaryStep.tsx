@@ -1161,29 +1161,35 @@ export const DormantFutureSummaryStep = ({
         headingRef={registerJumpTarget("design-style")}
       >
         {(summary.designStyleOccurrences || []).length > 0 ? (
-          <div className="space-y-4">
-            {(summary.designStyleOccurrences || []).map((occurrence) => (
-          <div key={occurrence.garmentKey} className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
-            <div className="aspect-[4/5] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/35">
-              <SummaryDesignPreview
-                imageUrl={occurrence.image}
-                reportCode={occurrence.sourceKind === "uploaded" ? null : occurrence.name}
-                alt={
-                  occurrence.sourceKind === "uploaded"
-                    ? `Uploaded design preview for ${occurrence.occurrenceLabel}`
-                    : `${occurrence.name} design for ${occurrence.occurrenceLabel}`
-                }
-              />
+          <div className="@container min-w-0">
+            <div className="grid min-w-0 grid-cols-1 gap-3 @md:grid-cols-2 @2xl:grid-cols-3">
+              {(summary.designStyleOccurrences || []).map((occurrence) => (
+                <div
+                  key={occurrence.garmentKey}
+                  data-summary-design-style-card={occurrence.garmentKey}
+                  className="flex min-w-0 items-start gap-3 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-3"
+                >
+                  <div className="aspect-[4/5] w-16 shrink-0 overflow-hidden rounded-lg bg-heritage-cream/35">
+                    <SummaryDesignPreview
+                      imageUrl={occurrence.image}
+                      reportCode={occurrence.sourceKind === "uploaded" ? null : occurrence.name}
+                      alt={
+                        occurrence.sourceKind === "uploaded"
+                          ? `Uploaded design preview for ${occurrence.occurrenceLabel}`
+                          : `${occurrence.name} design for ${occurrence.occurrenceLabel}`
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="break-words text-sm font-bold leading-snug text-heritage-green">
+                      {occurrence.occurrenceLabel}: {occurrence.name}
+                    </h4>
+                    {occurrence.detail ? <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/70">{occurrence.detail}</p> : null}
+                    {occurrence.status !== "selected" ? <p className="mt-1 text-xs capitalize text-heritage-ink/55">{occurrence.status.replaceAll("_", " ")}</p> : null}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="min-w-0">
-              <h4 className="break-words font-bold text-heritage-green">
-                {occurrence.occurrenceLabel}: {occurrence.name}
-              </h4>
-              {occurrence.detail ? <p className="mt-1 break-words text-sm text-heritage-ink/70">{occurrence.detail}</p> : null}
-              {occurrence.status !== "selected" ? <p className="mt-1 text-xs capitalize text-heritage-ink/55">{occurrence.status.replaceAll("_", " ")}</p> : null}
-            </div>
-          </div>
-            ))}
           </div>
         ) : (
           <p className="text-sm text-heritage-ink/65">Design Style needs review.</p>
