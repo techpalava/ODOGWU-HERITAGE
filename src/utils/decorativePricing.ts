@@ -1,19 +1,25 @@
 import type {
+  CanonicalPhysicalGarmentType,
   CustomDetailGarmentContext,
+  CustomDetailGarmentGroup,
   CustomDetailOption,
   DecorativeFeature,
   DesignSelections,
+  FabricGarmentType,
   MonogramPlacement,
   StyleCategory,
 } from "../types.js";
 import { validateMonogramText } from "./monogramText.js";
 import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig.js";
+import { CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT } from "../config/CustomDetailPhysicalComponentConfig.js";
 import {
   calculateCustomDetailsPrice,
   getCustomDetailsBreakdown,
   getSelectedCustomDetailOptionIds,
   getSupportedCustomDetailGroupResolution,
 } from "./catalogHelpers.js";
+import { isCanonicalPhysicalGarmentType } from "./garmentConstructionPricing.js";
+import { getOriginalGarmentTypeFromKey } from "./garmentLengthVariant.js";
 import { PRICING_CURRENCY_SYMBOL } from "./money.js";
 
 export const DECORATIVE_FEATURE_OPTIONS: readonly DecorativeFeature[] = [
@@ -72,6 +78,102 @@ export const MONOGRAM_PLACEMENT_OPTIONS: readonly MonogramPlacementOption[] = [
   { value: "upper_back", label: "Upper Back" },
   { value: "hem", label: "Hem" },
 ];
+
+const UPPER_BODY_MONOGRAM_GROUPS = new Set<CustomDetailGarmentGroup>([
+  "shirt",
+  "dress",
+  "neck",
+]);
+const LOWER_BODY_MONOGRAM_GROUPS = new Set<CustomDetailGarmentGroup>([
+  "trousers",
+  "skirt",
+  "standard_shorts",
+  "bum_shorts",
+]);
+/** Placements that sit on a torso. Hem is shared; cuff is a sleeve, added separately. */
+const UPPER_BODY_MONOGRAM_PLACEMENTS = [
+  "left_chest",
+  "right_chest",
+  "neckline",
+  "upper_back",
+  "hem",
+] as const satisfies readonly MonogramPlacement[];
+/** The catalogue has no waist or pocket monogram. Hem is the lower-body placement. */
+const LOWER_BODY_MONOGRAM_PLACEMENTS = [
+  "hem",
+] as const satisfies readonly MonogramPlacement[];
+
+const monogramGroupsForGarmentType = (
+  garmentType: FabricGarmentType | null | undefined,
+): readonly CustomDetailGarmentGroup[] | null => {
+  if (!garmentType || !isCanonicalPhysicalGarmentType(garmentType)) return null;
+  return CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT[garmentType].flatMap(
+    (component) => component.garmentGroups,
+  );
+};
+
+const isLowerBodyOnlyMonogramGroup = (
+  groups: readonly string[],
+): boolean =>
+  groups.some((group) =>
+    LOWER_BODY_MONOGRAM_GROUPS.has(group as CustomDetailGarmentGroup),
+  ) &&
+  !groups.some((group) =>
+    UPPER_BODY_MONOGRAM_GROUPS.has(group as CustomDetailGarmentGroup),
+  );
+
+const canonicalGarmentTypeFromContext = (
+  garment?: CustomDetailGarmentContext | null,
+): CanonicalPhysicalGarmentType | null => {
+  const token = garment?.type;
+  return token && isCanonicalPhysicalGarmentType(token as FabricGarmentType)
+    ? (token as CanonicalPhysicalGarmentType)
+    : null;
+};
+
+const monogramGroupsForContext = (
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): readonly string[] => {
+  const fromType = monogramGroupsForGarmentType(
+    canonicalGarmentTypeFromContext(garment),
+  );
+  if (fromType) return fromType;
+  return getSupportedCustomDetailGroupResolution(style || null, garment).groups;
+};
+
+/** Step 1 garment groups decide the placements. Lower-body garments get Hem only. */
+export const getDefaultMonogramPlacementForGarmentType = (
+  garmentType: FabricGarmentType | null | undefined,
+): MonogramPlacement => {
+  const groups = monogramGroupsForGarmentType(garmentType);
+  return groups && isLowerBodyOnlyMonogramGroup(groups)
+    ? "hem"
+    : DEFAULT_MONOGRAM_PLACEMENT;
+};
+
+export const getMonogramPlacementsForGarmentType = (
+  garmentType: FabricGarmentType | null | undefined,
+  cuffEligible = false,
+): MonogramPlacement[] => {
+  const groups = monogramGroupsForGarmentType(garmentType);
+  if (groups && isLowerBodyOnlyMonogramGroup(groups)) {
+    return [...LOWER_BODY_MONOGRAM_PLACEMENTS];
+  }
+  const placements: MonogramPlacement[] = [...UPPER_BODY_MONOGRAM_PLACEMENTS];
+  if (cuffEligible) placements.splice(2, 0, "cuff");
+  return placements;
+};
+
+export const resolveMonogramPlacementForGarmentType = (
+  garmentType: FabricGarmentType | null | undefined,
+  placement: MonogramPlacement | null | undefined,
+  cuffEligible = false,
+): MonogramPlacement => {
+  const allowed = getMonogramPlacementsForGarmentType(garmentType, cuffEligible);
+  if (placement && allowed.includes(placement)) return placement;
+  return getDefaultMonogramPlacementForGarmentType(garmentType);
+};
 
 const CUFF_ELIGIBLE_CONSTRUCTION_OPTION_IDS = new Set([
   "shirt_std_midlong",
@@ -172,13 +274,10 @@ export const getApplicableDecorativeFeatures = (
 export const getCustomerSelectableDecorativeFeatures = (): DecorativeFeature[] =>
   [...DECORATIVE_FEATURE_OPTIONS];
 
-export const isMonogramCuffEligible = (
+const constructionAllowsMonogramCuff = (
   selections: DesignSelections,
   style?: StyleCategory | null,
-  garment?: CustomDetailGarmentContext | null,
 ): boolean => {
-  if (!isNameMonogramApplicable(style, garment)) return false;
-
   const selectedOptionIds = getSelectedCustomDetailOptionIds(selections);
   const selectedConstructionIds = selectedOptionIds.filter((optionId) =>
     UPPER_BODY_CONSTRUCTION_OPTION_IDS.has(optionId),
@@ -188,8 +287,16 @@ export const isMonogramCuffEligible = (
       CUFF_ELIGIBLE_CONSTRUCTION_OPTION_IDS.has(optionId),
     );
   }
-
   return style?.monogramCuffEligible === true;
+};
+
+export const isMonogramCuffEligible = (
+  selections: DesignSelections,
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): boolean => {
+  if (!isNameMonogramApplicable(style, garment)) return false;
+  return constructionAllowsMonogramCuff(selections, style);
 };
 
 export const getAvailableMonogramPlacements = (
@@ -197,11 +304,44 @@ export const getAvailableMonogramPlacements = (
   style?: StyleCategory | null,
   garment?: CustomDetailGarmentContext | null,
 ): MonogramPlacementOption[] => {
+  const groups = monogramGroupsForContext(style, garment);
+  const lowerOnly = groups.length > 0 && isLowerBodyOnlyMonogramGroup(groups);
+  const upper = groups.some((group) =>
+    UPPER_BODY_MONOGRAM_GROUPS.has(group as CustomDetailGarmentGroup),
+  );
+  if (lowerOnly || upper || canonicalGarmentTypeFromContext(garment)) {
+    const cuffEligible =
+      upper && constructionAllowsMonogramCuff(selections, style);
+    const allowed = new Set(
+      lowerOnly
+        ? LOWER_BODY_MONOGRAM_PLACEMENTS
+        : getMonogramPlacementsForGarmentType(
+            canonicalGarmentTypeFromContext(garment) ?? "shirt",
+            cuffEligible,
+          ),
+    );
+    if (!lowerOnly && cuffEligible) allowed.add("cuff");
+    return MONOGRAM_PLACEMENT_OPTIONS.filter((option) =>
+      allowed.has(option.value),
+    );
+  }
   if (!isNameMonogramApplicable(style, garment)) return [];
   const cuffEligible = isMonogramCuffEligible(selections, style, garment);
   return MONOGRAM_PLACEMENT_OPTIONS.filter(
     (option) => option.value !== "cuff" || cuffEligible,
   );
+};
+
+const defaultMonogramPlacementForContext = (
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): MonogramPlacement => {
+  const canonical = canonicalGarmentTypeFromContext(garment);
+  if (canonical) return getDefaultMonogramPlacementForGarmentType(canonical);
+  const groups = monogramGroupsForContext(style, garment);
+  return isLowerBodyOnlyMonogramGroup(groups)
+    ? "hem"
+    : DEFAULT_MONOGRAM_PLACEMENT;
 };
 
 export const getMonogramPlacementLabel = (
@@ -387,7 +527,7 @@ export const filterDesignSelectionsForDecorativeFeatures = (
     monogramPlacement: nameMonogramSelected
       ? placementIsValid
         ? selections.monogramPlacement
-        : DEFAULT_MONOGRAM_PLACEMENT
+        : defaultMonogramPlacementForContext(style, garment)
       : undefined,
     monogramText: nameMonogramSelected ? selections.monogramText : undefined,
   };
@@ -479,10 +619,14 @@ export const getMonogramPlacementForGarment = (
   garmentKey: string,
 ): MonogramPlacement | undefined => {
   if (!selections) return undefined;
-  if (hasGarmentScopedDecorativeFeatureSelections(selections)) {
-    return selections.monogramPlacementByGarmentKey?.[garmentKey];
-  }
-  return selections.monogramPlacement;
+  const stored = hasGarmentScopedDecorativeFeatureSelections(selections)
+    ? selections.monogramPlacementByGarmentKey?.[garmentKey]
+    : selections.monogramPlacement;
+  if (!stored) return undefined;
+  return resolveMonogramPlacementForGarmentType(
+    getOriginalGarmentTypeFromKey(garmentKey),
+    stored,
+  );
 };
 
 export const getMonogramTextForGarment = (
@@ -660,7 +804,10 @@ export const setDecorativeFeaturesForGarment = (
       delete monogramPlacementByGarmentKey[garmentKey];
       delete monogramTextByGarmentKey[garmentKey];
     } else if (!monogramPlacementByGarmentKey[garmentKey]) {
-      monogramPlacementByGarmentKey[garmentKey] = DEFAULT_MONOGRAM_PLACEMENT;
+      monogramPlacementByGarmentKey[garmentKey] =
+        getDefaultMonogramPlacementForGarmentType(
+          getOriginalGarmentTypeFromKey(garmentKey),
+        );
     }
   }
   return {
@@ -825,7 +972,10 @@ export const setMonogramTextForGarment = (
     ...(selections.monogramPlacementByGarmentKey || {}),
   };
   if (!monogramPlacementByGarmentKey[garmentKey]) {
-    monogramPlacementByGarmentKey[garmentKey] = DEFAULT_MONOGRAM_PLACEMENT;
+    monogramPlacementByGarmentKey[garmentKey] =
+      getDefaultMonogramPlacementForGarmentType(
+        getOriginalGarmentTypeFromKey(garmentKey),
+      );
   }
   const monogramTextByGarmentKey = {
     ...(selections.monogramTextByGarmentKey || {}),
