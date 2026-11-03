@@ -11,7 +11,7 @@ import type {
 } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
@@ -128,7 +128,7 @@ for (const route of ["medium_risk", "high_risk"] as const) {
     assert.equal(sleeveless!.section, "required");
     const missing = fill(route, plan, ["sleeve_length_sleeveless"]);
     assert.equal(missing.calculationStatus, "incomplete");
-    assert.equal(isFutureSummaryUnlockedByMeasurements(missing), false);
+    assert.equal(isTryOnUnlockedByMeasurements(missing), false);
     assert.ok(
       missing.diagnostics.some(
         (diagnostic) =>
@@ -164,9 +164,9 @@ console.log("PASS: sleeveless sleeve length is required and gates Medium/High");
   ]);
   for (const measurementId of required) {
     const state = fill("medium_risk", plan, [measurementId]);
-    assert.equal(isFutureSummaryUnlockedByMeasurements(state), false, `${measurementId} gates Continue`);
+    assert.equal(isTryOnUnlockedByMeasurements(state), false, `${measurementId} gates Continue`);
   }
-  assert.equal(isFutureSummaryUnlockedByMeasurements(fill("medium_risk", plan)), true);
+  assert.equal(isTryOnUnlockedByMeasurements(fill("medium_risk", plan)), true);
 
   const roundNeck = planMeasurementRequirements({
     route: "medium_risk",
@@ -211,12 +211,12 @@ console.log("PASS: factorless dress rows gate completion; square neck follows th
     state: setFutureMeasurementInput({ state, requirement: sleeveless[0]!, displayValue: 5 }),
     plan,
   });
-  assert.equal(isFutureSummaryUnlockedByMeasurements(state), false, "one occurrence is not enough");
+  assert.equal(isTryOnUnlockedByMeasurements(state), false, "one occurrence is not enough");
   state = reconcileFutureMeasurementState({
     state: setFutureMeasurementInput({ state, requirement: sleeveless[1]!, displayValue: 5 }),
     plan,
   });
-  assert.equal(isFutureSummaryUnlockedByMeasurements(state), true);
+  assert.equal(isTryOnUnlockedByMeasurements(state), true);
 }
 console.log("PASS: factorless garment rows are required per garment occurrence");
 

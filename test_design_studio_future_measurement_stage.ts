@@ -175,7 +175,7 @@ assert.match(
 assert.match(measurementSource, /DesignStudioBackButton/);
 assert.match(measurementSource, /backDestination="Personalized Additions"/);
 assert.match(measurementSource, /Continue to AI Try-on/);
-assert.match(measurementSource, /isFutureSummaryUnlockedByMeasurements\(resolvedState\)/);
+assert.match(measurementSource, /isTryOnUnlockedByMeasurements\(resolvedState\)/);
 assert.equal(
   measurementSource.includes("Summary remains locked until Low Risk measurements are complete. Mid and High Risk calculations are still pending."),
   false,

@@ -11,7 +11,7 @@ import type {
 import {
   createEmptyFutureMeasurementState,
   getResolvedMeasurementValue,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   isValidHeightForEstimates,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
@@ -114,7 +114,7 @@ for (const route of ["medium_risk", "high_risk"] as const) {
   }
   // Completion still needs every required measurement.
   assert.equal(state.calculationStatus, "incomplete");
-  assert.equal(isFutureSummaryUnlockedByMeasurements(state), false);
+  assert.equal(isTryOnUnlockedByMeasurements(state), false);
   // Required manual fields are never auto-filled.
   for (const requirement of plan.requirements.filter((item) => item.directInput)) {
     if (requirement.measurementId === "total_height") continue;

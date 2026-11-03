@@ -12,7 +12,7 @@ import type {
 import {
   countRemainingCustomerRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
   projectMeasurementRequirementsForPresentation,
@@ -203,7 +203,7 @@ assert.equal(
   3,
 );
 highState = fillHighManual(highState, { total_height: 180 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+assert.equal(isTryOnUnlockedByMeasurements(highState), false);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: highPlan, state: highState }),
   2,
@@ -221,14 +221,14 @@ assert.equal(
 assert.equal(highState.derived.byGarmentKey["base:shirt"]?.chest_bust_circumference, undefined);
 
 highState = fillHighManual(highState, { chest_bust_circumference: 90 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+assert.equal(isTryOnUnlockedByMeasurements(highState), false);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: highPlan, state: highState }),
   1,
 );
 
 highState = fillHighManual(highState, { belly_circumference: 80 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), true);
+assert.equal(isTryOnUnlockedByMeasurements(highState), true);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: highPlan, state: highState }),
   0,
@@ -273,11 +273,11 @@ highState = setFutureMeasurementInput({
 highState = reconcileFutureMeasurementState({ state: highState, plan: highPlan });
 assert.equal(highState.entered.shared.total_height, undefined);
 assert.equal(highState.derived.byGarmentKey["base:shirt"]?.head_circumference, undefined);
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+assert.equal(isTryOnUnlockedByMeasurements(highState), false);
 
 highState = fillHighManual(highState, { total_height: 180, chest_bust_circumference: 90, belly_circumference: 80 });
 highState = fillHighManual(highState, { chest_bust_circumference: null });
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+assert.equal(isTryOnUnlockedByMeasurements(highState), false);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: highPlan, state: highState }),
   1,
@@ -289,7 +289,7 @@ highState = setFutureMeasurementInput({
   displayValue: 0,
 });
 highState = reconcileFutureMeasurementState({ state: highState, plan: highPlan });
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+assert.equal(isTryOnUnlockedByMeasurements(highState), false);
 
 const dressHighPlan = planMeasurementRequirements({
   route: "high_risk",
@@ -328,7 +328,7 @@ dressHighState = reconcileFutureMeasurementState({
   state: dressHighState,
   plan: dressHighPlan,
 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(dressHighState), false);
+assert.equal(isTryOnUnlockedByMeasurements(dressHighState), false);
 dressHighState = setFutureMeasurementInput({
   state: dressHighState,
   requirement: dressChest,
@@ -344,7 +344,7 @@ dressHighState = reconcileFutureMeasurementState({
   plan: dressHighPlan,
 });
 // The factorless Dress rows are now required too.
-assert.equal(isFutureSummaryUnlockedByMeasurements(dressHighState), false);
+assert.equal(isTryOnUnlockedByMeasurements(dressHighState), false);
 for (const [measurementId, value] of [
   ["under_bust_circumference", 78],
   ["hip_circumference", 100],
@@ -362,7 +362,7 @@ dressHighState = reconcileFutureMeasurementState({
   state: dressHighState,
   plan: dressHighPlan,
 });
-assert.equal(isFutureSummaryUnlockedByMeasurements(dressHighState), true);
+assert.equal(isTryOnUnlockedByMeasurements(dressHighState), true);
 for (const measurementId of [
   "hip_circumference",
   "under_bust_circumference",

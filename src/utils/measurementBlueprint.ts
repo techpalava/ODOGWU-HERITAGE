@@ -2457,10 +2457,13 @@ export const reconcileFutureMeasurementState = ({
 };
 
 /**
- * AI Try-on is completed or skipped.
- * Measurement is not gated on this. The following step (Summary) still is.
+ * Order-level AI Try-on gate for Summary.
+ * True when this order's Try-on workflow is completed or skipped.
+ * One wearer's successful preview, or a skip for the order, is enough.
+ * This is not "every wearer has a preview": other wearers may still
+ * generate within the shared try limit. Measurement is not gated on this.
  */
-export const isFutureMeasurementStageUnlocked = (
+export const isOrderAiTryOnFinishedForSummary = (
   workflow: AiTryOnWorkflowStateV1,
 ): boolean => workflow.status === "completed" || workflow.status === "skipped";
 
@@ -2481,7 +2484,12 @@ export const isFutureMeasurementStageComplete = (
       state?.calculationStatus === "complete",
   );
 
-export const isFutureSummaryUnlockedByMeasurements = (
+/**
+ * This measurement state is complete, so AI Try-on may be entered.
+ * Summary still waits for the order-level Try-on workflow as well
+ * (completed or skipped). Completeness here does not unlock Summary alone.
+ */
+export const isTryOnUnlockedByMeasurements = (
   state: FutureMeasurementStateV1 | null | undefined,
 ): boolean =>
   Boolean(

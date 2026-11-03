@@ -497,8 +497,9 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
   assert.equal(await retireAiTryOnSessionForPaidOrder({ ownerUid: UID_A }, { getDb: () => { throw new Error("no db"); }, log: () => undefined }), "failed");
 
   // The old 3s cap returned while the copy was still running. The payment
-  // function now waits for that work (up to 15s) before it ends.
-  assert.equal(AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS, 15_000);
+  // function waits long enough for a 15s copy lock to go stale and for the
+  // waiter to reclaim and finish (up to 25s) before it ends.
+  assert.equal(AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS, 25_000);
   const waitingDb = new FakeFirestore();
   let releaseCleanup!: () => void;
   const cleanupGate = new Promise<void>((resolve) => {

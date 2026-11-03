@@ -16,7 +16,7 @@ import {
   createEmptyFutureMeasurementState,
   isCriticalRiskCompleteSetCalculable,
   isCriticalRiskSupportedForSelection,
-  isFutureSummaryUnlockedByMeasurements,
+  isTryOnUnlockedByMeasurements,
   isSelectedMeasurementRiskRoute,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
@@ -374,7 +374,7 @@ assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: supportedPlan, state }),
   1,
 );
-assert.equal(isFutureSummaryUnlockedByMeasurements(state), false);
+assert.equal(isTryOnUnlockedByMeasurements(state), false);
 assert.equal(state.calculationStatus, "incomplete");
 
 state = setFutureMeasurementInput({
@@ -383,7 +383,7 @@ state = setFutureMeasurementInput({
   displayValue: 0,
 });
 state = reconcileFutureMeasurementState({ state, plan: supportedPlan });
-assert.equal(isFutureSummaryUnlockedByMeasurements(state), false);
+assert.equal(isTryOnUnlockedByMeasurements(state), false);
 
 state = setFutureMeasurementInput({
   state,
@@ -392,7 +392,7 @@ state = setFutureMeasurementInput({
 });
 state = reconcileFutureMeasurementState({ state, plan: supportedPlan });
 assert.equal(state.calculationStatus, "complete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(state), true);
+assert.equal(isTryOnUnlockedByMeasurements(state), true);
 assert.equal(
   countRemainingCustomerRequiredMeasurementUnits({ plan: supportedPlan, state }),
   0,
@@ -427,7 +427,7 @@ state = setFutureMeasurementInput({
 state = reconcileFutureMeasurementState({ state, plan: supportedPlan });
 assert.equal(state.entered.shared.total_height, undefined);
 assert.equal(state.derived.byGarmentKey["base:shirt"]?.chest_bust_circumference, undefined);
-assert.equal(isFutureSummaryUnlockedByMeasurements(state), false);
+assert.equal(isTryOnUnlockedByMeasurements(state), false);
 
 const restored = reconcileFutureMeasurementState({
   state: normalizeFutureMeasurementState(JSON.parse(JSON.stringify(
@@ -550,7 +550,7 @@ trouserCriticalState = reconcileFutureMeasurementState({
   plan: trouserCriticalPlan,
 });
 assert.equal(trouserCriticalState.calculationStatus, "complete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(trouserCriticalState), true);
+assert.equal(isTryOnUnlockedByMeasurements(trouserCriticalState), true);
 
 const midLongShirtCriticalPlan = planCritical(shirtB, [garment("base:shirt", "shirt")]);
 assert.equal(midLongShirtCriticalPlan.criticalRiskSupported, true);
@@ -580,7 +580,7 @@ midLongShirtCriticalState = reconcileFutureMeasurementState({
   plan: midLongShirtCriticalPlan,
 });
 assert.equal(midLongShirtCriticalState.calculationStatus, "complete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtCriticalState), true);
+assert.equal(isTryOnUnlockedByMeasurements(midLongShirtCriticalState), true);
 assert.ok(
   midLongShirtCriticalState.derived.byGarmentKey["base:shirt"]?.sleeve_length_long,
 );
@@ -681,7 +681,7 @@ for (const [label, details] of [
     "complete",
     `Dress Critical completes with height alone when ${label} is selected`,
   );
-  assert.equal(isFutureSummaryUnlockedByMeasurements(dressSquareState), true);
+  assert.equal(isTryOnUnlockedByMeasurements(dressSquareState), true);
 }
 
 // Xavier (2026-10-20): "for measurements with no average factors, make those
@@ -746,7 +746,7 @@ for (const [label, garmentType, optionId] of [
   });
   sleevelessState = reconcileFutureMeasurementState({ state: sleevelessState, plan: sleevelessPlan });
   assert.equal(sleevelessState.calculationStatus, "incomplete", `${label}: height alone is not enough`);
-  assert.equal(isFutureSummaryUnlockedByMeasurements(sleevelessState), false);
+  assert.equal(isTryOnUnlockedByMeasurements(sleevelessState), false);
   assert.equal(
     countRemainingCustomerRequiredMeasurementUnits({ plan: sleevelessPlan, state: sleevelessState }),
     1,
@@ -759,7 +759,7 @@ for (const [label, garmentType, optionId] of [
   });
   sleevelessState = reconcileFutureMeasurementState({ state: sleevelessState, plan: sleevelessPlan });
   assert.equal(sleevelessState.calculationStatus, "complete", `${label}: height plus sleeveless completes`);
-  assert.equal(isFutureSummaryUnlockedByMeasurements(sleevelessState), true);
+  assert.equal(isTryOnUnlockedByMeasurements(sleevelessState), true);
   assert.equal(
     sleevelessState.derived.byGarmentKey[garmentKey]?.sleeve_length_sleeveless,
     undefined,
@@ -783,7 +783,7 @@ let unsupportedState = reconcileFutureMeasurementState({
   plan: unsupportedPlan,
 });
 assert.equal(unsupportedState.calculationStatus, "incomplete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(unsupportedState), false);
+assert.equal(isTryOnUnlockedByMeasurements(unsupportedState), false);
 
 const staleCritical = normalizeFutureMeasurementState({
   schemaVersion: 1,
@@ -822,7 +822,7 @@ const restoredUnsupported = reconcileFutureMeasurementState({
 });
 assert.equal(restoredUnsupported.route, "critical_risk");
 assert.equal(restoredUnsupported.calculationStatus, "incomplete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(restoredUnsupported), false);
+assert.equal(isTryOnUnlockedByMeasurements(restoredUnsupported), false);
 
 const lowDraft = planMeasurementRequirements({
   route: "low_risk",

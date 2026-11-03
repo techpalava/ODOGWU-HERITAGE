@@ -23,8 +23,8 @@ import {
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
-  isFutureMeasurementStageUnlocked,
-  isFutureSummaryUnlockedByMeasurements,
+  isOrderAiTryOnFinishedForSummary,
+  isTryOnUnlockedByMeasurements,
   isSelectedMeasurementRiskRoute,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_ROUTE_STAFF_LABELS,
@@ -243,7 +243,7 @@ const assertUnresolvedKaftanConstruction = (optionId: string) => {
     plan,
   });
   assert.equal(reconciled.calculationStatus, "incomplete");
-  assert.equal(isFutureSummaryUnlockedByMeasurements(reconciled), false);
+  assert.equal(isTryOnUnlockedByMeasurements(reconciled), false);
   if (optionId === "shirt_std_short") {
     const profileAPlan = planMeasurementRequirements({
       route: "low_risk",
@@ -274,7 +274,7 @@ const assertUnresolvedKaftanConstruction = (optionId: string) => {
       plan,
     });
     assert.equal(blockedWithProfileAValues.calculationStatus, "incomplete");
-    assert.equal(isFutureSummaryUnlockedByMeasurements(blockedWithProfileAValues), false);
+    assert.equal(isTryOnUnlockedByMeasurements(blockedWithProfileAValues), false);
   }
 };
 assertUnresolvedKaftanConstruction("shirt_std_short");
@@ -578,7 +578,7 @@ assert.equal(
   "complete",
   "A fully entered Profile D Kaftan must clear measurement setup pending.",
 );
-assert.equal(isFutureSummaryUnlockedByMeasurements(completeKaftanState), true);
+assert.equal(isTryOnUnlockedByMeasurements(completeKaftanState), true);
 for (const route of ["medium_risk", "high_risk"] as const) {
   const kaftanPlan = planMeasurementRequirements({
     route,
@@ -595,14 +595,14 @@ for (const route of ["medium_risk", "high_risk"] as const) {
   }
   kaftanState = reconcileFutureMeasurementState({ state: kaftanState, plan: kaftanPlan });
   assert.equal(kaftanState.calculationStatus, "complete", `Profile D ${route} completes normally.`);
-  assert.equal(isFutureSummaryUnlockedByMeasurements(kaftanState), true);
+  assert.equal(isTryOnUnlockedByMeasurements(kaftanState), true);
 }
 const incompleteKaftanState = reconcileFutureMeasurementState({
   state: createEmptyFutureMeasurementState("low_risk", "cm"),
   plan: kaftanMidlongPlan,
 });
 assert.equal(incompleteKaftanState.calculationStatus, "incomplete");
-assert.equal(isFutureSummaryUnlockedByMeasurements(incompleteKaftanState), false);
+assert.equal(isTryOnUnlockedByMeasurements(incompleteKaftanState), false);
 
 const invalidState = setFutureMeasurementInput({
   state: createEmptyFutureMeasurementState("medium_risk"),
@@ -711,7 +711,7 @@ assert.equal(
   "Measurement stays open when AI Try-on has not been completed or skipped.",
 );
 assert.equal(
-  isFutureMeasurementStageUnlocked({ schemaVersion: 1, status: "completed", inputFingerprint: "x", resultReference: { kind: "verified_private_try_on_result", assetId: "a", ownerBindingId: "u" } }),
+  isOrderAiTryOnFinishedForSummary({ schemaVersion: 1, status: "completed", inputFingerprint: "x", resultReference: { kind: "verified_private_try_on_result", assetId: "a", ownerBindingId: "u" } }),
   true,
 );
 assert.equal(MEASUREMENT_FORMULA_VERSION, "height-average-factor-v1");
@@ -750,17 +750,17 @@ const unresolvedReconciled = reconcileFutureMeasurementState({
 assert.equal(unresolvedReconciled.calculationStatus, "incomplete");
 assert.equal(isFutureMeasurementSelectedPathInputComplete(unresolvedReconciled), false);
 assert.equal(isFutureMeasurementStageComplete(unresolvedReconciled), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(unresolvedReconciled), false);
+assert.equal(isTryOnUnlockedByMeasurements(unresolvedReconciled), false);
 
 assert.equal(isFutureMeasurementSelectedPathInputComplete(state), true);
 assert.equal(isFutureMeasurementStageComplete(state), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(state), true);
+assert.equal(isTryOnUnlockedByMeasurements(state), true);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(mediumState), true);
 assert.equal(isFutureMeasurementStageComplete(mediumState), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(mediumState), true);
+assert.equal(isTryOnUnlockedByMeasurements(mediumState), true);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(highState), true);
 assert.equal(isFutureMeasurementStageComplete(highState), true);
-assert.equal(isFutureSummaryUnlockedByMeasurements(highState), true);
+assert.equal(isTryOnUnlockedByMeasurements(highState), true);
 
 const lowOnlyField = lowPlan.requirements.find(
   (requirement) =>
@@ -1174,7 +1174,7 @@ assert.equal(
     0,
   );
   assert.equal(isFutureMeasurementStageComplete(highState), true);
-  assert.equal(isFutureSummaryUnlockedByMeasurements(highState), true);
+  assert.equal(isTryOnUnlockedByMeasurements(highState), true);
   highState = reconcileFutureMeasurementState({
     state: setFutureMeasurementInput({
       state: highState,
@@ -1185,7 +1185,7 @@ assert.equal(
   });
   assert.equal(highState.calculationStatus, "incomplete");
   assert.equal(isFutureMeasurementStageComplete(highState), false);
-  assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+  assert.equal(isTryOnUnlockedByMeasurements(highState), false);
   assert.equal(
     countRemainingCustomerRequiredMeasurementUnits({
       plan: shirtTrouserHighPlan,

@@ -114,14 +114,9 @@ export const normalizeAiTryOnWorkflowState = (
   );
   const failure = normalizeFailure(value.failure);
 
-  if (value.status === "processing" && !jobReference) {
-    return {
-      schemaVersion: 1,
-      status: "failed",
-      inputFingerprint,
-      failure: { code: "interrupted", retryable: true },
-    };
-  }
+  // `processing` may omit a job reference. Generation is synchronous, so a
+  // client id is not a server job. Draft reload uses
+  // restoreAiTryOnWorkflowState, which marks an in-flight generate interrupted.
   if (value.status === "completed" && (!inputFingerprint || !resultReference)) {
     return null;
   }
@@ -134,6 +129,26 @@ export const normalizeAiTryOnWorkflowState = (
     ...(jobReference ? { jobReference } : {}),
     ...(resultReference ? { resultReference } : {}),
     ...(failure ? { failure } : {}),
+  };
+};
+
+/**
+ * Draft or reload of a Try-on workflow.
+ * A `processing` state was an in-flight synchronous generate. The server
+ * does not keep a job the client can resume, including when an older client
+ * stored a local `job-…` id. Reloading marks that attempt interrupted and
+ * retryable. It does not mean a preview was saved.
+ */
+export const restoreAiTryOnWorkflowState = (
+  value: unknown,
+): AiTryOnWorkflowStateV1 | null => {
+  const normalized = normalizeAiTryOnWorkflowState(value);
+  if (!normalized || normalized.status !== "processing") return normalized;
+  return {
+    schemaVersion: 1,
+    status: "failed",
+    inputFingerprint: normalized.inputFingerprint,
+    failure: { code: "interrupted", retryable: true },
   };
 };
 
@@ -471,7 +486,15 @@ export const reconcileAiTryOnWorkflow = ({
 };
 
 export type AiTryOnWorkflowEvent =
-  | { type: "start"; jobReference: AiTryOnResumableJobReference }
+  | {
+      type: "start";
+      /**
+       * Optional. The synchronous generate API does not issue a job id.
+       * Omit this for an in-flight request. A stored id is not resumed
+       * after reload (see restoreAiTryOnWorkflowState).
+       */
+      jobReference?: AiTryOnResumableJobReference;
+    }
   | { type: "complete"; resultReference: AiTryOnVerifiedPrivateResultReference }
   | { type: "fail"; code: unknown; retryable: boolean }
   | { type: "retry" }
@@ -552,8 +575,10 @@ export const transitionAiTryOnWorkflow = ({
     ) {
       return { ok: false, error: { code: "invalid_transition" } };
     }
-    const jobReference = normalizeJobReference(event.jobReference);
-    if (!jobReference) {
+    const jobReference = event.jobReference
+      ? normalizeJobReference(event.jobReference)
+      : null;
+    if (event.jobReference && !jobReference) {
       return { ok: false, error: { code: "invalid_job_reference" } };
     }
     return {
@@ -562,7 +587,7 @@ export const transitionAiTryOnWorkflow = ({
         schemaVersion: 1,
         status: "processing",
         inputFingerprint: current.inputFingerprint,
-        jobReference,
+        ...(jobReference ? { jobReference } : {}),
       },
     };
   }
@@ -659,24 +684,23 @@ export const createUnavailableAiTryOnGateway = (): AiTryOnGateway => ({
 });
 
 /**
- * Records a wearer's finished preview on the order-level workflow, which
- * gates Measurement. Generation itself is tracked per wearer in the Try-on
- * step; the order workflow only ever stores the opaque result reference
- * (never the image). A stale, failed, unavailable or skipped order workflow
- * restarts at the current fingerprint, so a fresh preview always completes
- * it. Returns the unchanged state when the reference is not valid or the
- * design is not ready.
+ * Records one wearer's finished preview on the order-level Try-on workflow.
+ * That order-level status unlocks Summary. It does not mean every wearer
+ * has a preview: other wearers may still generate within the shared try
+ * limit. The workflow stores only the server result reference (never the
+ * image, and never a client-invented job id). A stale, failed, unavailable
+ * or skipped order workflow restarts at the current fingerprint, so a fresh
+ * preview always completes it. Returns the unchanged state when the
+ * reference is not valid or the design is not ready.
  */
 export const recordAiTryOnPreviewCompletion = ({
   state,
   currentInputFingerprint,
   resultReference,
-  jobId,
 }: {
   state: AiTryOnWorkflowStateV1;
   currentInputFingerprint: string | null;
   resultReference: AiTryOnVerifiedPrivateResultReference;
-  jobId: string;
 }): AiTryOnWorkflowStateV1 => {
   if (!currentInputFingerprint) return state;
   const ready: AiTryOnWorkflowStateV1 = {
@@ -686,7 +710,7 @@ export const recordAiTryOnPreviewCompletion = ({
   };
   const started = transitionAiTryOnWorkflow({
     state: ready,
-    event: { type: "start", jobReference: { kind: "resumable_job", jobId } },
+    event: { type: "start" },
     skipAllowed: true,
   });
   if (!started.ok) return state;

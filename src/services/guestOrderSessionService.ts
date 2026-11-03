@@ -19,7 +19,7 @@ import { reconcileGuestDesignDraftDesignSource } from "../utils/designSourceStat
 import { reconcileGuestDesignDraftGarmentTypeSelection } from "../utils/garmentTypeStepState";
 import { normalizeGarmentScopedCustomDetailsState } from "../utils/garmentScopedCustomDetailsState";
 import { normalizeGarmentScopedCustomDetailInputs } from "../utils/garmentScopedCustomDetailInputsState";
-import { normalizeAiTryOnWorkflowState } from "../utils/aiTryOnWorkflow";
+import { restoreAiTryOnWorkflowState } from "../utils/aiTryOnWorkflow";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "../utils/designSourceJourney";
 import {
   classifyFutureMeasurementHydration,
@@ -99,7 +99,7 @@ export const normalizeGuestDesignDraft = (
     reconcileGuestDesignDraftDesignSource(activeDraftMigration.draft);
   const garmentTypeReconciledDraft =
     reconcileGuestDesignDraftGarmentTypeSelection(sourceReconciledDraft);
-  const normalizedAiTryOnWorkflow = normalizeAiTryOnWorkflowState(
+  const normalizedAiTryOnWorkflow = restoreAiTryOnWorkflowState(
     garmentTypeReconciledDraft.aiTryOnWorkflow,
   );
   const normalizedWearerOrder = normalizeWearerOrderState(
