@@ -48,40 +48,37 @@ export const MONOGRAM_PREVIEW_SILHOUETTE_BY_GARMENT_TYPE = {
   MonogramPreviewSilhouette
 >;
 
+/** Simple 64×64 icons. Each shape fills the box so it reads at icon size. */
 const OUTLINES: Record<MonogramPreviewSilhouette, string> = {
   shirt:
-    "M30 18C32 8 48 8 50 18L56 16L70 30L62 40L54 32V68C52 78 28 78 26 68V32L18 40L10 30L24 16Z",
+    "M20 16C22 8 42 8 44 16L52 18L60 28L52 34L46 28V52H18V28L12 34L4 28L12 18Z",
   long_shirt:
-    "M33 12C33 7 47 7 47 12L51 14L64 20L66 30L54 28V96H26V28L14 30L16 20L29 14Z",
+    "M22 8C24 3 40 3 42 8L48 10L58 16L58 26L48 22V58H16V22L6 26L6 16L16 10Z",
   dress:
-    "M36 12L34 3H38L40 12H44L46 3H50L48 12L53 20L55 32L51 44L58 54L62 64H18L22 54L29 44L25 32L27 20Z",
+    "M26 8L24 2H30L32 10H36L38 2H44L42 10L50 20L46 32L56 58H8L18 32L14 20Z",
   long_dress:
-    "M35 11C35 6 45 6 45 11L48 13L58 20L62 29L52 32C50 38 48 46 47 52C46 68 47 82 47 97H33C33 82 34 68 33 52C32 46 30 38 28 32L18 29L22 20L32 13Z",
-  skirt:
-    "M26 30H54V36C60 50 66 62 62 70C50 76 30 76 18 70C14 62 20 50 26 36Z",
-  long_skirt:
-    "M35 4H45V9C54 28 70 58 76 88C60 98 20 98 4 88C10 58 26 28 35 9Z",
+    "M24 8C26 3 38 3 40 8L46 10L56 16L60 26L50 28L44 18V58H20V18L14 28L4 26L8 16L18 10Z",
+  skirt: "M16 14H48V22L58 56H6L16 22Z",
+  long_skirt: "M26 2H38V8L60 62H4L26 8Z",
   trouser:
-    "M22 5H58V13C62 22 60 32 58 38L56 98H44L40 46L36 98H24L22 38C20 32 18 22 22 13Z",
-  nikka_shorts:
-    "M22 12H58V18L56 38L54 58H44L40 40L36 58H26L24 38L22 18Z",
-  bum_shorts:
-    "M14 22H66V29C68 34 64 38 58 42L56 49H46L42 40H38L34 49H24L22 42C16 38 12 34 14 29Z",
+    "M14 4H50V14C54 20 52 26 48 30L46 60H34L32 34L30 60H18L16 30C12 26 10 20 14 14Z",
+  nikka_shorts: "M12 8H52V18L50 40H36L34 26L30 40H14L12 18Z",
+  bum_shorts: "M4 16H60V26L54 40H40L36 30L32 40H10L4 26Z",
   agbada:
-    "M36 8C36 4 44 4 44 8L48 10L66 24L76 42L62 38L50 16L54 94H26L30 16L18 38L4 42L14 24L32 10Z",
+    "M24 6C26 2 38 2 40 6L46 8L60 18L64 32L48 26L50 60H14L16 26L0 32L4 18L18 8Z",
 };
 
 type DotPoint = { cx: number; cy: number };
 
-/** Schematic map, 80×64. Wearer's left is the viewer's right. Not a garment body. */
-const MAP_HEIGHT = 64;
+/** Schematic map, 80×72. Wearer's left is the viewer's right. Not a garment body. */
+const MAP_HEIGHT = 72;
 const MAP_DOTS: Record<MonogramPlacement, DotPoint> = {
-  neckline: { cx: 40, cy: 10 },
-  left_chest: { cx: 56, cy: 22 },
-  right_chest: { cx: 24, cy: 22 },
-  upper_back: { cx: 40, cy: 32 },
-  cuff: { cx: 12, cy: 26 },
-  hem: { cx: 40, cy: 52 },
+  neckline: { cx: 40, cy: 12 },
+  left_chest: { cx: 62, cy: 30 },
+  right_chest: { cx: 18, cy: 30 },
+  upper_back: { cx: 40, cy: 30 },
+  cuff: { cx: 8, cy: 48 },
+  hem: { cx: 40, cy: 58 },
 };
 
 export const MONOGRAM_PREVIEW_FRAME_CLASS =
@@ -105,16 +102,20 @@ export const monogramPlacementDot = (
   placement: MonogramPlacement,
 ): DotPoint => MAP_DOTS[placement];
 
-/** Name sits just off the active dot inside the placement map. */
+/**
+ * The name is a caption under the dots, so it does not cover them.
+ * `left` stays centered. `top` is unused by the layout and kept only so
+ * callers can tell placements apart in tests.
+ */
 export const monogramPlacementNameAnchor = (
   garmentType: FabricGarmentType,
   placement: MonogramPlacement,
 ): { top: string; left: string } => {
   const point = monogramPlacementDot(garmentType, placement);
-  const left = `${Math.round((point.cx / 80) * 100)}%`;
-  const shifted = placement === "hem" ? point.cy - 10 : point.cy + 12;
-  const top = Math.min(92, Math.max(8, (shifted / MAP_HEIGHT) * 100));
-  return { top: `${Math.round(top)}%`, left };
+  return {
+    top: `${point.cy}`,
+    left: "50%",
+  };
 };
 
 export const monogramPlacementMapForGarment = (
@@ -177,38 +178,31 @@ export const MonogramNamePreview = ({
       className={MONOGRAM_PREVIEW_FRAME_CLASS}
       aria-hidden="true"
     >
-      <div className="flex items-center gap-1">
-        <svg
-          viewBox="0 0 80 100"
-          className="h-9 w-7 shrink-0"
-          aria-hidden="true"
-        >
+      <div className="flex flex-col items-center">
+        <svg viewBox="0 0 64 64" className="h-10 w-10 shrink-0" aria-hidden="true">
           <path
             data-monogram-garment-icon="true"
             d={OUTLINES[silhouette]}
             fill="#F9F6F0"
             stroke="#0A291B"
-            strokeWidth="3"
+            strokeWidth="2.4"
             strokeLinejoin="round"
           />
         </svg>
         <span
           data-monogram-garment-label={garmentType}
-          className="min-w-0 text-[9px] font-bold leading-tight text-heritage-green"
+          className="mt-0.5 text-center text-[9px] font-bold leading-tight text-heritage-green"
         >
           {garmentLabel}
         </span>
       </div>
       <p
         data-monogram-placement-label={resolvedPlacement}
-        className="mb-0.5 mt-1 text-center text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-green"
+        className="mb-0.5 mt-1.5 text-center text-[9px] font-bold uppercase leading-none tracking-wide text-heritage-green"
       >
         {placementLabel}
       </p>
-      <div
-        data-monogram-placement-map="true"
-        className="relative h-14 w-full"
-      >
+      <div data-monogram-placement-map="true" className="relative mx-auto h-12 w-12">
         <svg viewBox={`0 0 80 ${MAP_HEIGHT}`} className="h-full w-full" aria-hidden="true">
           {map.dots.map((dot) => {
             const active = dot === resolvedPlacement;
@@ -220,29 +214,24 @@ export const MonogramNamePreview = ({
                 data-monogram-placement-dot-state={active ? "active" : "available"}
                 cx={point.cx}
                 cy={point.cy}
-                r={active ? 4.2 : 3}
+                r={active ? 7 : 4.2}
                 fill={active ? "#0A291B" : "none"}
                 stroke="#0A291B"
-                strokeWidth="1.4"
+                strokeWidth={active ? 0 : 1.8}
               />
             );
           })}
         </svg>
-        <span
-          data-monogram-preview-lettering="true"
-          className={`pointer-events-none absolute max-w-[92%] truncate text-center font-display font-semibold uppercase leading-none tracking-[0.08em] ${
-            empty ? "text-heritage-ink/40" : "text-heritage-green"
-          }`}
-          style={{
-            top: anchor.top,
-            left: anchor.left,
-            transform: "translate(-50%, -50%)",
-            fontSize: lettering.length > 8 ? "0.4rem" : "0.48rem",
-          }}
-        >
-          {lettering}
-        </span>
       </div>
+      <span
+        data-monogram-preview-lettering="true"
+        data-monogram-preview-lettering-anchor={anchor.left}
+        className={`mt-0.5 block truncate text-center font-display text-[9px] font-semibold uppercase leading-none tracking-[0.08em] ${
+          empty ? "text-heritage-ink/40" : "text-heritage-green"
+        }`}
+      >
+        {lettering}
+      </span>
     </div>
   );
 };

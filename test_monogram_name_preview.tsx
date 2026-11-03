@@ -173,9 +173,12 @@ assert.equal(trouserMap.findByProps({ "data-monogram-placement-dot": "hem" }).pr
 assert.equal(trouserMap.findByProps({ "data-monogram-placement-label": "hem" }).children.join(""), "Hem");
 assert.equal(trouserMap.props["data-monogram-preview-placeholder"], "true");
 assert.equal(
-  trouserMap.findByProps({ "data-monogram-preview-lettering": "true" }).props.style.top,
-  monogramPlacementNameAnchor("trouser", "hem").top,
+  trouserMap.findByProps({ "data-monogram-preview-lettering": "true" }).props[
+    "data-monogram-preview-lettering-anchor"
+  ],
+  "50%",
 );
+assert.equal(trouserMap.findByProps({ "data-monogram-preview-lettering": "true" }).props.style, undefined);
 assert.equal(
   trouserMap.findByProps({ "data-monogram-placement-dot": "hem" }).props.cy,
   monogramPlacementDot("trouser", "hem").cy,
@@ -329,12 +332,15 @@ assert.equal(dress.props["data-monogram-preview-text"], "");
 assert.equal(dress.props["data-monogram-preview-placeholder"], "true");
 assert.equal(lettering(dress).children.join(""), "YOUR NAME");
 assert.equal(
-  lettering(dress).props.style.top,
-  monogramPlacementNameAnchor("dress", "hem").top,
+  lettering(dress).props["data-monogram-preview-lettering-anchor"],
+  monogramPlacementNameAnchor("dress", "hem").left,
 );
 assert.equal(dotState(dress, "hem"), "active");
 assert.equal(dotState(dress, "left_chest"), "available");
-assert.notEqual(lettering(shirt).props.style.top, lettering(dress).props.style.top);
+assert.notEqual(
+  monogramPlacementNameAnchor("shirt", "left_chest").top,
+  monogramPlacementNameAnchor("dress", "hem").top,
+);
 
 assert.equal(
   renderer.root.findAll(
@@ -366,7 +372,10 @@ assert.equal(preview("base:shirt").props["data-monogram-preview-placement"], "up
 assert.equal(preview("base:shirt").props["data-monogram-preview-view"], "back");
 assert.equal(dotState(preview("base:shirt"), "upper_back"), "active");
 assert.equal(dotState(preview("base:shirt"), "left_chest"), "available");
-assert.equal(lettering(preview("base:shirt")).props.style.left, "50%");
+assert.equal(
+  lettering(preview("base:shirt")).props["data-monogram-preview-lettering-anchor"],
+  "50%",
+);
 
 const dressInput = renderer.root.findByProps({ "data-monogram-name-input": "base:dress" });
 act(() => {
