@@ -10,6 +10,7 @@ import { createAiTryOnSessions, type AiTryOnSessions } from "./aiTryOnSession.js
 import { createAiTryOnUsageLimits } from "./aiTryOnUsageLimits.js";
 import { createAiTryOnBusyJobs, type AiTryOnBusyJobs } from "./aiTryOnBusyJobs.js";
 import { copyAiTryOnOrderImagesForPaidOrder } from "./aiTryOnOrderImages.js";
+import { keepAliveAfterResponse, type KeepAliveAfterResponse } from "./keepAliveAfterResponse.js";
 
 /**
  * Step 7: when an order's payment is recorded, delete every stored AI
@@ -32,6 +33,9 @@ import { copyAiTryOnOrderImagesForPaidOrder } from "./aiTryOnOrderImages.js";
  *   removes any saved after the close itself.
  * - A try still held for a busy retry is refunded once (its retries now
  *   get 409 SESSION_CLOSED).
+ * - If the bound expires first, the unfinished work is handed to Vercel
+ *   `waitUntil` (keepAliveAfterResponse.ts) so it still completes after the
+ *   payment response instead of being frozen half-way.
  * - With the order id, the previews chosen for that order are first copied
  *   to the order (60 days, aiTryOnOrderImages.ts). A failed copy never stops
  *   the payment or the cleanup.
@@ -56,6 +60,11 @@ export interface AiTryOnPaymentCleanupDependencies {
   /** Test clock for the order-image copy lock. Production uses Date.now. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Keeps work that is still running when the bound expires alive after
+   * the payment response (Vercel `waitUntil`). Tests pass a spy.
+   */
+  keepAlive?: KeepAliveAfterResponse;
 }
 
 export type AiTryOnPaymentCleanupResult = "deleted" | "no_session" | "failed" | "timeout";
@@ -138,9 +147,23 @@ export const retireAiTryOnSessionForPaidOrder = async (
         dependencies.timeoutMs ?? AI_TRY_ON_PAYMENT_CLEANUP_TIMEOUT_MS,
       );
     });
-    const result = await Promise.race([work(), timeout]);
+    const workPromise = work();
+    const result = await Promise.race([workPromise, timeout]);
     if (result === "timeout") {
-      log(JSON.stringify({ event: "ai_try_on_payment_cleanup", status: "timeout" }));
+      // The copy, preview deletion or session close is still running. Keep
+      // it alive after the response instead of letting Vercel freeze it.
+      (dependencies.keepAlive ?? keepAliveAfterResponse)(
+        workPromise.catch((error) => {
+          log(
+            JSON.stringify({
+              event: "ai_try_on_payment_cleanup",
+              status: "failed_after_timeout",
+              error: error instanceof Error ? error.name : "unknown",
+            }),
+          );
+        }),
+      );
+      log(JSON.stringify({ event: "ai_try_on_payment_cleanup", status: "timeout", keptAlive: true }));
     }
     return result;
   } catch (error) {

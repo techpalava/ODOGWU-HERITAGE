@@ -13,6 +13,7 @@ import {
 import { getAdminServices } from "./firebaseAdmin.js";
 import { FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM } from "../utils/futureOrderV2StripeReturn.js";
 import { readAiTryOnOrderImageRecord } from "./aiTryOnOrderImages.js";
+import { keepAliveAfterResponse, type KeepAliveAfterResponse } from "./keepAliveAfterResponse.js";
 
 /**
  * Order confirmation email (PR 5), sent once after a V2 order's payment is
@@ -29,7 +30,10 @@ import { readAiTryOnOrderImageRecord } from "./aiTryOnOrderImages.js";
  *   next payment event retries. The sent record is never sent twice.
  * - Awaited for up to 15s, so the send finishes before the payment function
  *   returns. If that deadline passes before the message is handed to the
- *   provider, the claim is marked failed and the next event can retry.
+ *   provider, the claim is marked failed and the next event can retry; the
+ *   abandoned attempt re-checks ownership in a transaction before it sends,
+ *   so it can never send alongside that retry. Leftover work is handed to
+ *   Vercel `waitUntil` so it is not frozen mid-write.
  * - Never blocks or fails a payment; logs carry no address, uid or order id.
  */
 export const ORDER_CONFIRMATION_EMAIL_COLLECTION = "orderConfirmationEmails";
@@ -117,6 +121,11 @@ export interface OrderConfirmationEmailDependencies {
   timeoutMs?: number;
   /** Wait while another call holds the send (tests can shorten this). */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Keeps an attempt that is still running when the budget expires alive
+   * after the payment response (Vercel `waitUntil`). Tests pass a spy.
+   */
+  keepAlive?: KeepAliveAfterResponse;
 }
 
 export type OrderConfirmationEmailResult =
@@ -202,6 +211,10 @@ export const sendOrderConfirmationEmail = async (
     } catch {
       // The email still goes out, without the AI preview line.
     }
+    // The budget may have expired during the read above. The timeout path
+    // then releases this claim as "failed" for the next event; sending now
+    // could race that event's retry and email the customer twice.
+    if (abandoned) return "timeout";
     const rendered = renderOrderConfirmationEmail({
       brandName: (brevo ?? gmail)!.fromName || DEFAULT_AUTH_EMAIL_FROM_NAME,
       siteUrl: (brevo ?? gmail)!.siteUrl,
@@ -212,8 +225,20 @@ export const sendOrderConfirmationEmail = async (
     const message = { to: recipient.email, subject: rendered.subject, html: rendered.html };
     // The provider call is in flight. Refresh the lease so a concurrent
     // payment event keeps waiting instead of sending a second copy.
+    // Only while this call still owns the claim: if it was released or
+    // taken over meanwhile, another event owns the send and this one stops.
+    const stillOwned = await db.runTransaction(async (tx) => {
+      const current = await tx.get(ref);
+      const data = current.exists ? (current.data() as { status?: string; claimId?: string }) : null;
+      if (abandoned || data?.status !== "sending" || data.claimId !== claimId) return false;
+      tx.set(ref, { orderId, status: "sending", claimedAt: now(), claimId });
+      return true;
+    });
+    if (!stillOwned) {
+      phase = "settled";
+      return report("already_sent", { claimLost: true });
+    }
     phase = "sending";
-    await ref.set({ orderId, status: "sending", claimedAt: now(), claimId });
     let provider: "brevo" | "gmail-smtp" | null = null;
     if (brevo) {
       try {
@@ -280,6 +305,10 @@ export const sendOrderConfirmationEmail = async (
         // A stale "sending" claim is still retried once the deadline passes.
       }
     }
+    // Whatever is still running (a claim poll, the recipient read) stops at
+    // its next `abandoned` check; keep it alive so it ends cleanly instead
+    // of being frozen mid-write.
+    (dependencies.keepAlive ?? keepAliveAfterResponse)(workPromise);
     return report("timeout");
   } catch (error) {
     return report("failed", { error: error instanceof Error ? error.name : "unknown" });
