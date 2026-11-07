@@ -8401,7 +8401,11 @@ export default function DesignStudioView({
   const handleOpenDormantMeasurementStage = () => {
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
     if (returnStage) {
+      const fromStageId = futureStageId;
       navigateToFutureStage(returnStage);
+      if (fromStageId === "personalized_additions") {
+        promptOrderFeedbackAfterSuccessfulContinue(fromStageId, returnStage);
+      }
       return;
     }
     if (
@@ -8416,7 +8420,11 @@ export default function DesignStudioView({
       );
       return;
     }
+    const fromStageId = futureStageId;
     navigateToFutureStage("measurement");
+    if (fromStageId === "personalized_additions") {
+      promptOrderFeedbackAfterSuccessfulContinue(fromStageId, "measurement");
+    }
   };
   const handleOpenDormantSummaryStage = () => {
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
