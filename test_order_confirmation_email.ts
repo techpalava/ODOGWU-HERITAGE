@@ -274,6 +274,81 @@ const harness = (environment: Record<string, string> = env) => {
   assert.equal(overlapping.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "sent");
 }
 
+// ------------------------------------------------------------ an attempt abandoned at the deadline never sends next to the retry; its tail is kept alive
+{
+  // Attempt A claims, then stalls reading the AI preview record past its
+  // budget. Its claim is released as "failed", the next payment event (B)
+  // retries and sends. When A's read finally returns, A must not send too.
+  const h = harness();
+  const kept: Promise<unknown>[] = [];
+  let releaseRecord!: () => void;
+  const recordGate = new Promise<void>((resolve) => {
+    releaseRecord = resolve;
+  });
+  const fake = h.db.asFirestore() as unknown as FakeFirestore;
+  const slowRecordDb = {
+    runTransaction: fake.runTransaction.bind(fake),
+    collection: (name: string) => {
+      const inner = fake.collection(name);
+      if (name !== AI_TRY_ON_ORDER_IMAGE_COLLECTION) return inner;
+      return {
+        doc: (id: string) => {
+          const ref = inner.doc(id);
+          return { ...ref, get: async () => { await recordGate; return ref.get(); } };
+        },
+      };
+    },
+  } as unknown as Firestore;
+  const a = await sendOrderConfirmationEmail(
+    { ownerUid: "uid-ada", orderId: ORDER },
+    { ...h.deps, getDb: () => slowRecordDb, timeoutMs: 40, keepAlive: (work: Promise<unknown>) => void kept.push(work) } as never,
+  );
+  assert.equal(a, "timeout");
+  assert.equal(kept.length, 1, "the unfinished attempt is handed to waitUntil");
+  assert.equal(h.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "failed");
+  assert.equal(await sendOrderConfirmationEmail({ ownerUid: "uid-ada", orderId: ORDER }, h.deps as never), "sent");
+  assert.equal(h.brevoCalls.length, 1);
+  releaseRecord();
+  await Promise.all(kept);
+  assert.equal(h.brevoCalls.length, 1, "the abandoned attempt does not send a second email");
+  assert.equal(h.db.docs.get(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`)!.status, "sent");
+}
+{
+  // Claim taken over while preparing (no timeout): the old owner stops.
+  const h = harness();
+  let releaseRecipient!: () => void;
+  const gate = new Promise<{ email: string; name: string }>((resolve) => {
+    releaseRecipient = () => resolve({ email: "ada@example.com", name: "Ada" });
+  });
+  const pending = sendOrderConfirmationEmail(
+    { ownerUid: "uid-ada", orderId: ORDER },
+    { ...h.deps, readRecipient: () => gate } as never,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  h.db.docs.set(`${ORDER_CONFIRMATION_EMAIL_COLLECTION}/${ORDER}`, {
+    orderId: ORDER,
+    status: "sent",
+    claimedAt: Date.now(),
+    claimId: "other-event",
+  });
+  releaseRecipient();
+  assert.equal(await pending, "already_sent");
+  assert.equal(h.brevoCalls.length, 0, "a call that lost its claim never reaches the provider");
+}
+{
+  // A normal send finishes inside the budget and needs no keep-alive.
+  const h = harness();
+  const kept: Promise<unknown>[] = [];
+  assert.equal(
+    await sendOrderConfirmationEmail(
+      { ownerUid: "uid-ada", orderId: ORDER },
+      { ...h.deps, keepAlive: (work: Promise<unknown>) => void kept.push(work) } as never,
+    ),
+    "sent",
+  );
+  assert.equal(kept.length, 0);
+}
+
 // ------------------------------------------------------------ wiring: after the AI preview copy, on every payment path; rules
 {
   for (const file of ["src/server/futureOrderV2PaymentRecord.ts", "src/server/futureOrderV2PayPalPayment.ts"]) {

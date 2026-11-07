@@ -167,6 +167,7 @@
     "@google/genai": "^2.4.0",
     "@stripe/stripe-js": "^9.17.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@vercel/functions": "^3.11.0",
     "@vitejs/plugin-react": "^5.0.4",
     "color-namer": "^1.4.0",
     "dotenv": "^17.2.3",
