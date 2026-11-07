@@ -3,6 +3,7 @@
  * payment, and compact preview storage. All mocked: no Gemini, Firebase,
  * Stripe or PayPal calls. (sharp runs locally on generated pixels.)
  */
+import { keepAliveAfterResponse } from "./src/server/keepAliveAfterResponse";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
@@ -528,6 +529,62 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
   releaseCleanup();
   assert.equal(await cleanupPending, "no_session");
   assert.equal(cleanupSettled, true, "the work has finished when the function ends");
+
+  // Past the bound, the unfinished copy/cleanup is handed to Vercel
+  // waitUntil, so it still completes after the payment response.
+  const tailDb = new FakeFirestore();
+  const tailBucket = new FakeBucket();
+  const tailSessions = createAiTryOnSessions(tailDb.asFirestore());
+  const tailStore = createAiTryOnPreviewStore(tailDb.asFirestore(), tailBucket);
+  const { sessionId: tailSession } = await tailSessions.resolve({ uid: UID_A, token: null });
+  await tailStore.save({ orderKey: tailSession, wearerKey: "w-ada", previewId: `tryon-${"6".repeat(8)}-6666-4666-8666-${"6".repeat(12)}`, inputFingerprint: FINGERPRINT, image: { mimeType: "image/webp", data: "UklGRg==" } });
+  let releaseFind!: () => void;
+  const findGate = new Promise<void>((resolve) => {
+    releaseFind = resolve;
+  });
+  const kept: Promise<unknown>[] = [];
+  const tailLogs: string[] = [];
+  const tail = await retireAiTryOnSessionForPaidOrder(
+    { ownerUid: UID_A },
+    {
+      getDb: () => tailDb.asFirestore(),
+      createSessions: () => ({ ...tailSessions, findOpenForUid: (uid: string) => findGate.then(() => tailSessions.findOpenForUid(uid)) }),
+      createStore: () => tailStore,
+      timeoutMs: 20,
+      keepAlive: (work: Promise<unknown>) => void kept.push(work),
+      log: (line: string) => tailLogs.push(line),
+    },
+  );
+  assert.equal(tail, "timeout");
+  assert.equal(kept.length, 1, "the unfinished cleanup is kept alive after the response");
+  assert.match(tailLogs.join("\n"), /"status":"timeout","keptAlive":true/);
+  assert.equal(tailBucket.objects.size, 1, "not finished yet when the bound returns");
+  releaseFind();
+  await Promise.all(kept);
+  assert.equal(tailBucket.objects.size, 0, "the kept-alive cleanup deletes the previews");
+  assert.equal(await tailSessions.authorize({ uid: UID_A, token: null }), null, "and closes the session");
+
+  // A cleanup that finishes inside the bound needs no keep-alive.
+  const quickKept: Promise<unknown>[] = [];
+  assert.equal(
+    await retireAiTryOnSessionForPaidOrder({ ownerUid: UID_B }, { getDb: () => tailDb.asFirestore(), keepAlive: (work: Promise<unknown>) => void quickKept.push(work), log: () => undefined }),
+    "no_session",
+  );
+  assert.equal(quickKept.length, 0);
+
+  // The default keep-alive is Vercel's waitUntil: a no-op without a request
+  // context (local server, tests), and handed to the platform on Vercel.
+  keepAliveAfterResponse(Promise.reject(new Error("swallowed")));
+  const contextKey = Symbol.for("@vercel/request-context");
+  const handed: Promise<unknown>[] = [];
+  (globalThis as Record<symbol, unknown>)[contextKey] = { get: () => ({ waitUntil: (p: Promise<unknown>) => void handed.push(p) }) };
+  try {
+    keepAliveAfterResponse(Promise.reject(new Error("swallowed")));
+    assert.equal(handed.length, 1, "handed to Vercel waitUntil");
+    await handed[0];
+  } finally {
+    delete (globalThis as Record<symbol, unknown>)[contextKey];
+  }
 }
 
 // ------------------------------------------------------------ payment paths call the cleanup, and it can't break them
