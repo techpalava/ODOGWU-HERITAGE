@@ -1364,6 +1364,12 @@ class FakeFirestore {
   assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-model-option"]).length, 0);
   assert.equal(renderer.root.findAll((node) => node.type === "input" && node.props.type === "file").length, 0, "replacement must reuse Step 3, not introduce a new upload/storage flow");
   assert.match(textOf(renderer.root), /person in your uploaded picture, not you/);
+  // Deep check M2: the uploaded picture goes to Gemini, so the photo-mode
+  // consent notice (same wording) shows in the uploaded-design box.
+  const designBox = renderer.root.find((node) => node.props["data-ai-try-on-uploaded-design"]);
+  const designConsent = designBox.findAll((node) => node.props["data-ai-try-on-consent"]);
+  assert.equal(designConsent.length, 1, "consent notice shown before generating from an uploaded design");
+  assert.ok(textOf(designConsent[0]).startsWith(AI_TRY_ON_CONSENT_NOTICE), "same wording as photo mode");
   await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-upload-another-design"]).props.onClick(); });
   assert.deepEqual(replacements, [uploadedOccurrence.garmentKey]);
   await act(async () => { use().props.onClick(); await new Promise((resolve) => setTimeout(resolve, 0)); });
