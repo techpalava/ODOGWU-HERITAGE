@@ -64,7 +64,7 @@ const completed = (remaining = 4): AiTryOnPreviewOutcome => ({
   assert.equal(AI_TRY_ON_BACKGROUND_COPY.readyTitle(null), "Your preview is ready");
   assert.equal(AI_TRY_ON_BACKGROUND_COPY.readyTitle("Obi"), "Obi's preview is ready");
   assert.equal(AI_TRY_ON_BACKGROUND_COPY.failedTitle(null), "We couldn't create your preview");
-  assert.equal(AI_TRY_ON_BACKGROUND_COPY.failedBody, "This try wasn't counted.");
+  assert.match(AI_TRY_ON_BACKGROUND_COPY.failedBody, /couldn’t confirm whether a try was used/);
   assert.equal(AI_TRY_ON_BACKGROUND_COPY.backTo("Measurement"), "Back to Measurement");
 }
 
@@ -120,9 +120,13 @@ const completed = (remaining = 4): AiTryOnPreviewOutcome => ({
   jobs.closeToast("w-obi");
   assert.equal(jobs.getSnapshot()["w-obi"].toast, "closed");
   // A thrown request is a failure, never a hang.
+  jobs.setVisibleWearer("w-chi");
   jobs.start({ wearerId: "w-chi", wearerName: null, inputFingerprint: "fp", scope: "guest", run: async () => { throw new Error("network"); } });
   await flush();
   assert.equal(jobs.getSnapshot()["w-chi"].status, "failed");
+  assert.equal(jobs.getSnapshot()["w-chi"].toast, "open", "inline failure has a persistent notice");
+  jobs.setVisibleWearer(null);
+  assert.equal(jobs.getSnapshot()["w-chi"].toast, "open", "leaving Step 7 must not lose the failure notice");
   // Discard (order placed or cleared): a late result never shows up.
   const late = deferred<AiTryOnPreviewOutcome>();
   jobs.start({ wearerId: "w-late", wearerName: null, inputFingerprint: "fp", scope: "guest", run: () => late.promise });
@@ -203,6 +207,7 @@ const completed = (remaining = 4): AiTryOnPreviewOutcome => ({
   const timers2: Array<() => void> = [];
   storage2.setItem(AI_TRY_ON_PENDING_STORAGE_KEY, JSON.stringify([{ wearerId: "w-ada", inputFingerprint: "fp", scope: "guest", startedAt: clock2 }]));
   const jobs2 = createAiTryOnBackgroundJobs({ storage: storage2, now: () => clock2, setTimer: (fn) => timers2.push(fn) });
+  jobs2.setVisibleWearer("w-ada");
   jobs2.resume({ scope: "guest", listStoredPreviews: async () => [], loadStoredPreview: async () => null });
   await flush();
   clock2 += AI_TRY_ON_RESUME_WINDOW_MS;
@@ -210,6 +215,8 @@ const completed = (remaining = 4): AiTryOnPreviewOutcome => ({
   await flush();
   const failedJob = jobs2.getSnapshot()["w-ada"];
   assert.equal(failedJob.status, "failed");
+  assert.equal(failedJob.outcome, null, "no server response after reload");
+  assert.equal(failedJob.toast, "open", "regression: resumed inline failure must not disappear silently");
   assert.equal(aiTryOnToastKind(failedJob, "fp"), "resume_failed");
   assert.equal(storage2.backing.has(AI_TRY_ON_PENDING_STORAGE_KEY), false);
 }
@@ -319,7 +326,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(jobStore.getSnapshot()["w-ada"].toast, "open");
   assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-message"]).length, 0);
   await act(async () => { pendings.get("w-obi")!.resolve(completed(2)); await flush(); });
-  assert.equal(jobStore.getSnapshot()["w-obi"].toast, "none", "Obi's showed inline");
+  assert.equal(jobStore.getSnapshot()["w-obi"].toast, "none", "success still shows inline without an extra toast");
   assert.match(textOf(renderer.root), /2 tries left/);
   act(() => renderer.unmount());
 }
@@ -367,7 +374,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.match(text, /Your preview is ready/);
   assert.match(text, /View preview/);
   assert.match(text, /We couldn't create Obi's preview/);
-  assert.match(text, /This try wasn't counted\./);
+  assert.match(text, /couldn’t confirm whether a try was used/);
   assert.match(text, /Try again/);
   const thumb = renderer.root.findAll((node) => node.type === "img");
   assert.equal(thumb.length, 1, "thumbnail on the ready toast");
@@ -378,6 +385,12 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   act(() => close[0].props.onClick());
   assert.deepEqual([views, retries, closes], [["w-ada"], ["w-obi"], ["w-ada"]]);
 
+  const refunded = renderToStaticMarkup(createElement(AiTryOnBackgroundToasts, {
+    toasts: [{ job: { ...base, status: "failed", preview: null, outcome: { kind: "failed", orderTriesRemaining: 4, tryRefunded: true } }, kind: "failed" }],
+    onView() {}, onRetry() {}, onClose() {},
+  }));
+  assert.match(refunded, /This try was refunded and wasn’t counted/);
+  assert.doesNotMatch(refunded, /couldn’t confirm/);
   const chip = renderToStaticMarkup(createElement(AiTryOnGeneratingChip, { jobs: [{ ...base, status: "running", wearerName: "Ada" }] }));
   assert.match(chip, /Making Ada&#x27;s preview…/);
   assert.match(chip, /role="status"/);
