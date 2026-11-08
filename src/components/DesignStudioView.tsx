@@ -3810,6 +3810,12 @@ export default function DesignStudioView({
   const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
     createAiTryOnCredentials(null, async () => null),
   );
+  /**
+   * Summary can be the first step after a reload. The owner session token
+   * (guest) or ID token (signed in) has to be read before that step asks
+   * for saved previews, or the request looks like a new empty session.
+   */
+  const [aiTryOnOwnerCredentialsReady, setAiTryOnOwnerCredentialsReady] = useState(false);
   // Try-on photo, model choice, photo wearer, measurement wearer and the
   // last preview image for this tab only. Never written to the draft,
   // localStorage or the server. Cleared on a new order and sign-out.
@@ -9303,7 +9309,13 @@ export default function DesignStudioView({
       futureAiTryOnWorkflow.status === "stale") &&
     !futurePaymentReviewConfirmed;
   useEffect(() => {
-    if (!aiTryOnOrderPreviewStageActive) return;
+    if (!guestDraftHydrated) return;
+    if (futureDraftIdentity.status !== "guest" && futureDraftIdentity.status !== "authenticated") return;
+    setAiTryOnCredentials(aiTryOnCredentialsForIdentity(futureDraftIdentityKey));
+    setAiTryOnOwnerCredentialsReady(true);
+  }, [guestDraftHydrated, futureDraftIdentity.status, futureDraftIdentityKey]);
+  useEffect(() => {
+    if (!aiTryOnOrderPreviewStageActive || !aiTryOnOwnerCredentialsReady) return;
     let cancelled = false;
     void fetchAiTryOnAvailability({ credentials: aiTryOnCredentials }).then((availability) => {
       if (cancelled) return;
@@ -9314,7 +9326,7 @@ export default function DesignStudioView({
     return () => {
       cancelled = true;
     };
-  }, [aiTryOnOrderPreviewStageActive, futureStageId, aiTryOnCredentials, aiTryOnFinishedPreviewKey]);
+  }, [aiTryOnOrderPreviewStageActive, aiTryOnOwnerCredentialsReady, futureStageId, aiTryOnCredentials, aiTryOnFinishedPreviewKey]);
   const aiTryOnOrderPreviewImagesRef = useRef(new Map<string, { mimeType: string; data: string }>());
   const aiTryOnScopedJobsRef = useRef(aiTryOnScopedJobs);
   aiTryOnScopedJobsRef.current = aiTryOnScopedJobs;
@@ -9342,6 +9354,7 @@ export default function DesignStudioView({
         loadImage={loadAiTryOnOrderPreviewImage}
         onMakeNew={openAiTryOnForWearer}
         notice={futureStageId === "payment" ? AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice : undefined}
+        fullCardWidth={futureStageId === "summary"}
       />
     ) : null;
   // Order prepared: the current previews go with it at payment (PR 2). Out-

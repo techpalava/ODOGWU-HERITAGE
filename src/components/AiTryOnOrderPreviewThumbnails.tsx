@@ -63,14 +63,24 @@ export const selectAiTryOnOrderPreviews = (
 export const AI_TRY_ON_ORDER_IMAGE_CLASS =
   "mx-auto block aspect-[2/3] h-auto max-h-[560px] w-full max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain";
 
+/**
+ * Summary only. The shared class caps height at 560px, which letterboxes a
+ * portrait try-on photo inside a wide card. Summary uses the photo's own
+ * shape, full card width, and does not crop it.
+ */
+export const AI_TRY_ON_SUMMARY_IMAGE_CLASS =
+  "mx-auto block h-auto w-full max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain";
+
 export type AiTryOnOrderLoadImage = (previewId: string) => Promise<{ mimeType: string; data: string } | null>;
 
 export const AiTryOnOrderPreviewImage = ({
   entry,
   loadImage,
+  imageClassName = AI_TRY_ON_ORDER_IMAGE_CLASS,
 }: {
   entry: Extract<AiTryOnOrderPreviewEntry, { kind: "fresh" }>;
   loadImage: AiTryOnOrderLoadImage;
+  imageClassName?: string;
 }) => {
   const [image, setImage] = useState<{ mimeType: string; data: string } | null | "loading">("loading");
   const [enlarged, setEnlarged] = useState(false);
@@ -104,11 +114,11 @@ export const AiTryOnOrderPreviewImage = ({
           <img
             src={src}
             alt={COPY.thumbnailAlt(entry.label)}
-            className={AI_TRY_ON_ORDER_IMAGE_CLASS}
+            className={imageClassName}
           />
         </button>
       ) : (
-        <div aria-hidden="true" className={`${AI_TRY_ON_ORDER_IMAGE_CLASS} animate-pulse bg-heritage-cream/60`} />
+        <div aria-hidden="true" className={`${imageClassName} animate-pulse bg-heritage-cream/60`} />
       )}
       {enlarged && src ? (
         <div
@@ -150,12 +160,18 @@ export const AiTryOnOrderPreviewThumbnails = ({
   loadImage,
   onMakeNew,
   notice,
+  fullCardWidth = false,
 }: {
   entries: readonly AiTryOnOrderPreviewEntry[];
   loadImage: AiTryOnOrderLoadImage;
   onMakeNew: (wearerId: string) => void;
   /** Shown under the fresh previews (Review & Payment: what happens at payment). */
   notice?: string;
+  /**
+   * Summary stacks every saved photo at the full width of the AI Try-on card.
+   * Review keeps the two-column wrap.
+   */
+  fullCardWidth?: boolean;
 }) => {
   if (entries.length === 0) return null;
   const fresh = entries.filter(
@@ -167,11 +183,16 @@ export const AiTryOnOrderPreviewThumbnails = ({
       {fresh.length > 0 ? (
         <>
           <div
-            className={`grid min-w-0 gap-4 ${fresh.length > 1 ? "sm:grid-cols-2" : ""}`}
+            className={`grid min-w-0 gap-4 ${!fullCardWidth && fresh.length > 1 ? "sm:grid-cols-2" : ""}`}
             data-ai-try-on-order-preview-count={fresh.length}
           >
             {fresh.map((entry) => (
-              <AiTryOnOrderPreviewImage key={entry.previewId} entry={entry} loadImage={loadImage} />
+              <AiTryOnOrderPreviewImage
+                key={entry.previewId}
+                entry={entry}
+                loadImage={loadImage}
+                imageClassName={fullCardWidth ? AI_TRY_ON_SUMMARY_IMAGE_CLASS : AI_TRY_ON_ORDER_IMAGE_CLASS}
+              />
             ))}
           </div>
           <p className="text-xs leading-relaxed text-heritage-ink/60">{AI_TRY_ON_PREVIEW_DISCLAIMER}</p>
