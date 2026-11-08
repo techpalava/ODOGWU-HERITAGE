@@ -1,3 +1,4 @@
+import { handleAiTryOnAdminUsage } from "./aiTryOnAdminUsage.js";
 import type { CanonicalPhysicalGarmentType } from "../types.js";
 import { aiTryOnOutfitPart } from "../utils/aiTryOnWearerTargets.js";
 import { CANONICAL_PHYSICAL_GARMENT_TYPES } from "../utils/garmentConstructionPricing.js";
@@ -595,6 +596,13 @@ async function handleAiTryOnRequest(
   const requestStartedAt = now();
   const resolveDb = async () => (dependencies.getDb ? dependencies.getDb() : defaultGetDb());
   const createLimits = dependencies.createUsageLimits ?? ((db: Firestore) => createAiTryOnUsageLimits(db));
+  if (readQueryParam(req, "action") === "admin-usage") {
+    return handleAiTryOnAdminUsage(req, res, {
+      verifyIdToken: dependencies.verifyIdToken ?? defaultVerifyIdToken,
+      getDb: resolveDb,
+      now,
+    });
+  }
   if (readQueryParam(req, "action") === "admin-reset") {
     return handleAiTryOnAdminReset(req, res, {
       verifyIdToken: dependencies.verifyIdToken ?? defaultVerifyIdToken,
@@ -1065,10 +1073,10 @@ async function handleAiTryOnRequest(
     );
   }
   /** Settles a claimed job that ends here for another reason (refund once). */
-  const refundClaim = async () => {
+  const refundClaim = async (reason?: "timeout" | "other") => {
     if (!claim) return false;
     try {
-      const refunded = await jobs.refund(claim);
+      const refunded = await jobs.refund(claim, reason);
       if (refunded) log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "other_failure" }));
       return refunded;
     } catch {
@@ -1391,8 +1399,10 @@ async function handleAiTryOnRequest(
       }
       // The job could not be held: fail as before (refund below).
     }
+    // Usage page: a call that ran past the time limit counts as a timeout.
+    const refundReason = outcome.reason === "timeout" ? "timeout" : "other";
     if (claim) {
-      const tryRefunded = await refundClaim();
+      const tryRefunded = await refundClaim(refundReason);
       logFailure("ended");
       const left = await readTriesLeft();
       return outcome.kind === "rejected"
@@ -1402,7 +1412,7 @@ async function handleAiTryOnRequest(
     const reserved = reservation as Extract<NonNullable<typeof reservation>, { ok: true }>;
     let tryRefunded = false;
     try {
-      await limits.release(reserved.orderDocId, reserved.account, reserved.orderResetGeneration);
+      await limits.release(reserved.orderDocId, reserved.account, reserved.orderResetGeneration, refundReason);
       tryRefunded = true;
     } catch {
       // A failed release only makes the cap stricter; never block the reply.

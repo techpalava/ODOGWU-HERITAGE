@@ -25,6 +25,12 @@ import {
  *   policy deletes it once it no longer limits anything. The uid is hashed.
  *   Guests have no account counter.
  * - Per-IP fixed window: reuses `consumeAuthRateLimit` (`authRateLimits`).
+ * - `aiTryOnUsage/day-YYYY-MM-DD` (Lagos day, UTC+1): counts only, for the
+ *   admin usage page: `started` (tries reserved), `failed` (tries refunded
+ *   with no preview made) and `timedOut` (refunds after the time limit; also
+ *   counted in `failed`). Written in the same transactions as the counters
+ *   above; `expiresAt` is about 400 days later, so the same TTL policy
+ *   removes it. No customer data.
  *
  * A try is reserved in one transaction before Gemini is called, so concurrent
  * requests can never overshoot either cap. If Gemini returns no image the
@@ -104,19 +110,33 @@ const readLiveAccountUses = (data: unknown, nowMs: number, windowMs: number): nu
     .sort((a, b) => a - b);
 };
 
+/** Days are cut at Lagos time (Africa/Lagos is UTC+1 all year, no DST). */
+export const AI_TRY_ON_USAGE_DAY_OFFSET_MS = 60 * 60 * 1000;
+export const AI_TRY_ON_DAILY_USAGE_RETENTION_MS = 400 * 24 * 60 * 60 * 1000;
+export const aiTryOnUsageDay = (ms: number): string =>
+  new Date(ms + AI_TRY_ON_USAGE_DAY_OFFSET_MS).toISOString().slice(0, 10);
+export const aiTryOnUsageDayDocId = (ms: number): string => `day-${aiTryOnUsageDay(ms)}`;
+/** Why a try was refunded; only "timeout" is counted separately. */
+export type AiTryOnRefundReason = "timeout" | "other";
+
+const readTally = (data: unknown, field: "started" | "failed" | "timedOut"): number => {
+  const value = (data as Record<string, unknown> | undefined)?.[field];
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+};
+
 export interface AiTryOnUsageLimits {
   readGlobalCount(): Promise<number>;
   readOrderTriesRemaining(orderKey: string): Promise<number>;
   /** Signed-in accounts only. */
   readAccountTriesRemaining(uid: string): Promise<number>;
   reserve(orderKey: string, options?: { accountUid?: string | null }): Promise<AiTryOnReservation>;
-  release(orderDocId: string, account?: AiTryOnAccountReservation | null, orderResetGeneration?: number): Promise<void>;
+  release(orderDocId: string, account?: AiTryOnAccountReservation | null, orderResetGeneration?: number, reason?: AiTryOnRefundReason): Promise<void>;
   /**
    * Releases a try held by `guard` (a busy job holding `orderDocId` and
    * `account`) exactly once: only while the guard exists and `accept`s its
    * data, deleting it in the same transaction. True when released.
    */
-  releaseHeld(guard: DocumentReference, accept: (data: Record<string, unknown>) => boolean): Promise<boolean>;
+  releaseHeld(guard: DocumentReference, accept: (data: Record<string, unknown>) => boolean, reason?: AiTryOnRefundReason): Promise<boolean>;
 }
 
 export const createAiTryOnUsageLimits = (
@@ -143,17 +163,30 @@ export const createAiTryOnUsageLimits = (
     orderDocId: string,
     account: AiTryOnAccountReservation | null,
     orderResetGeneration = 0,
+    reason: AiTryOnRefundReason = "other",
   ) => {
     const orderRef = collection().doc(orderDocId);
     const global = globalRef();
     const accountRef = account ? collection().doc(account.docId) : null;
-    const [globalSnapshot, orderSnapshot, accountSnapshot] = await Promise.all([
+    const dayRef = collection().doc(aiTryOnUsageDayDocId(now()));
+    const [globalSnapshot, orderSnapshot, accountSnapshot, daySnapshot] = await Promise.all([
       transaction.get(global),
       transaction.get(orderRef),
       accountRef ? transaction.get(accountRef) : Promise.resolve(null),
+      transaction.get(dayRef),
     ]);
     return () => {
       const at = new Date(now());
+      // Usage page: a refunded try is a failure (no preview made).
+      const day = daySnapshot.exists ? daySnapshot.data() : undefined;
+      transaction.set(dayRef, {
+        kind: "day",
+        day: aiTryOnUsageDay(at.getTime()),
+        failed: readTally(day, "failed") + 1,
+        ...(reason === "timeout" ? { timedOut: readTally(day, "timedOut") + 1 } : {}),
+        updatedAt: at,
+        expiresAt: new Date(at.getTime() + AI_TRY_ON_DAILY_USAGE_RETENTION_MS),
+      }, { merge: true });
       const globalCount = globalSnapshot.exists ? readCount(globalSnapshot.data()) : 0;
       const orderCount = orderSnapshot.exists ? readLiveOrderCount(orderSnapshot.data(), at.getTime()) : 0;
       if (globalCount > 0) {
@@ -204,11 +237,13 @@ export const createAiTryOnUsageLimits = (
       const accountUid = reserveOptions.accountUid || null;
       const accountDocId = accountUid ? aiTryOnAccountUsageDocId(accountUid) : null;
       const accountRef = accountDocId ? collection().doc(accountDocId) : null;
+      const dayRef = collection().doc(aiTryOnUsageDayDocId(now()));
       return db.runTransaction(async (transaction) => {
-        const [globalSnapshot, orderSnapshot, accountSnapshot] = await Promise.all([
+        const [globalSnapshot, orderSnapshot, accountSnapshot, daySnapshot] = await Promise.all([
           transaction.get(global),
           transaction.get(orderRef),
           accountRef ? transaction.get(accountRef) : Promise.resolve(null),
+          transaction.get(dayRef),
         ]);
         const globalCount = globalSnapshot.exists ? readCount(globalSnapshot.data()) : 0;
         const nowMs = now();
@@ -232,6 +267,14 @@ export const createAiTryOnUsageLimits = (
         const at = new Date(nowMs);
         const orderResetGeneration = orderSnapshot.data()?.resetGeneration ?? 0;
         transaction.set(global, { count: globalCount + 1, cap: globalCap, updatedAt: at }, { merge: true });
+        // Usage page: one more try started today (Lagos day).
+        transaction.set(dayRef, {
+          kind: "day",
+          day: aiTryOnUsageDay(nowMs),
+          started: readTally(daySnapshot.exists ? daySnapshot.data() : undefined, "started") + 1,
+          updatedAt: at,
+          expiresAt: new Date(nowMs + AI_TRY_ON_DAILY_USAGE_RETENTION_MS),
+        }, { merge: true });
         transaction.set(
           orderRef,
           {
@@ -272,19 +315,19 @@ export const createAiTryOnUsageLimits = (
         } as const;
       });
     },
-    async release(orderDocId, account = null, orderResetGeneration = 0) {
+    async release(orderDocId, account = null, orderResetGeneration = 0, reason = "other") {
       await db.runTransaction(async (transaction) => {
-        const apply = await readRelease(transaction, orderDocId, account, orderResetGeneration);
+        const apply = await readRelease(transaction, orderDocId, account, orderResetGeneration, reason);
         apply();
       });
     },
-    async releaseHeld(guard, accept) {
+    async releaseHeld(guard, accept, reason = "other") {
       return db.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(guard);
         const data = snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
         if (!data || !accept(data) || typeof data.orderDocId !== "string") return false;
         const account = (data.account ?? null) as AiTryOnAccountReservation | null;
-        const apply = await readRelease(transaction, data.orderDocId, account, typeof data.orderResetGeneration === "number" ? data.orderResetGeneration : 0);
+        const apply = await readRelease(transaction, data.orderDocId, account, typeof data.orderResetGeneration === "number" ? data.orderResetGeneration : 0, reason);
         apply();
         transaction.delete(guard);
         return true;
