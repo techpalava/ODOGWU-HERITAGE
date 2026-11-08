@@ -1,3 +1,4 @@
+import type { CanonicalPhysicalGarmentType } from "../types.js";
 import type { AiTryOnFitHint } from "./aiTryOnFitHints.js";
 import type { AiTryOnOrderDetails } from "./aiTryOnOrderDetails.js";
 
@@ -85,7 +86,18 @@ export interface AiTryOnInlineImage {
   readonly data: string;
 }
 
-export interface AiTryOnGenerationRequest {
+export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v1" as const;
+
+export interface AiTryOnOutfitGarmentRequest {
+  readonly garmentKey: string;
+  readonly garmentType: CanonicalPhysicalGarmentType;
+  readonly garmentImageUrl: string;
+  readonly fabricSwatchImageUrl?: string;
+  readonly orderDetails?: AiTryOnOrderDetails | null;
+}
+
+interface AiTryOnSingleGenerationRequest {
+  readonly outfitGarments?: never;
   readonly mode: AiTryOnMode;
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
   readonly inputFingerprint: string;
@@ -114,6 +126,18 @@ export interface AiTryOnGenerationRequest {
    */
   readonly busyJobId?: string;
 }
+
+/** Combined requests carry per-garment references only; single-photo fields cannot leak in. */
+type AiTryOnOutfitGenerationRequest = Omit<AiTryOnSingleGenerationRequest, "mode" | "outfitGarments"> & {
+  readonly mode: "garment";
+  readonly outfitGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmentRequest];
+  readonly garmentImage?: never;
+  readonly garmentImageUrl?: never;
+  readonly fabricSwatchImage?: never;
+  readonly fabricSwatchImageUrl?: never;
+  readonly orderDetails?: never;
+};
+export type AiTryOnGenerationRequest = AiTryOnSingleGenerationRequest | AiTryOnOutfitGenerationRequest;
 
 export type AiTryOnErrorCode =
   | "METHOD_NOT_ALLOWED"

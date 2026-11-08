@@ -19,10 +19,12 @@ import {
   type AiTryOnOrderDetails,
   type AiTryOnOrderDetailsSource,
 } from "./aiTryOnOrderDetails.js";
-import { chooseAiTryOnMode, type AiTryOnMode } from "./aiTryOnGatewayContract.js";
+import { chooseAiTryOnMode, type AiTryOnMode, type AiTryOnOutfitGarmentRequest } from "./aiTryOnGatewayContract.js";
 import {
   AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT,
   aiTryOnGarmentPreviewKey,
+  aiTryOnOutfitPreviewKey,
+  aiTryOnOutfitFingerprint,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   type AiTryOnOccurrenceDesignSource,
 } from "./aiTryOnWorkflow.js";
@@ -53,6 +55,8 @@ export const AI_TRY_ON_SINGLE_TARGET_ID = "order" as const;
  */
 export interface AiTryOnPreviewableGarment {
   readonly garmentKey: string;
+  readonly garmentType?: CanonicalPhysicalGarmentType;
+  readonly sourceKind?: "catalog" | "uploaded";
   readonly label: string;
   readonly garmentImageUrl: string;
   /** This garment's fabric picture. Null when that fabric has no picture. */
@@ -67,6 +71,7 @@ export interface AiTryOnPreviewableGarment {
 }
 
 export interface AiTryOnWearerTarget {
+  readonly previewKind?: "outfit";
   readonly wearerId: string;
   readonly label: string;
   /** null while that wearer's design is not ready. */
@@ -193,6 +198,8 @@ const buildTarget = ({
     const garmentSwatchUrl = httpUrl(garmentFabric?.image);
     previewableGarments.push({
       garmentKey: occurrence.garmentKey,
+      garmentType: occurrence.garmentType,
+      sourceKind: occurrence.assignment?.sourceKind === "catalog" ? "catalog" : occurrence.assignment?.sourceKind === "uploaded" ? "uploaded" : undefined,
       label: personLabels.get(occurrence.garmentKey) || occurrence.garmentType,
       garmentImageUrl: imageUrl,
       fabricSwatchImageUrl: garmentSwatchUrl,
@@ -349,3 +356,36 @@ export const aiTryOnPreviewTargets = (targets: readonly AiTryOnWearerTarget[]) =
       previewableGarments: [garment],
     }));
   });
+
+export const aiTryOnOutfitPart = (garmentType: string | undefined): "top" | "bottom" | null => {
+  if (garmentType === "shirt" || garmentType === "kaftan") return "top";
+  if (["trouser", "skirt", "long_skirt", "standard_shorts", "bum_shorts"].includes(garmentType || "")) return "bottom";
+  return null;
+};
+export interface AiTryOnOutfitChoice extends AiTryOnPreviewableGarment {
+  readonly garmentType: CanonicalPhysicalGarmentType;
+  readonly garmentImageUrl: string;
+}
+export const aiTryOnOutfitChoices = (target: AiTryOnWearerTarget) => {
+  const garments: AiTryOnOutfitChoice[] = (target.previewableGarments ?? []).flatMap((garment) => {
+    const type = garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;
+    return garment.sourceKind === "catalog" && garment.garmentImageUrl && type ? [{ ...garment, garmentType: type, garmentImageUrl: garment.garmentImageUrl }] : [];
+  });
+  return {
+    tops: garments.filter((garment) => aiTryOnOutfitPart(garment.garmentType) === "top"),
+    bottoms: garments.filter((garment) => aiTryOnOutfitPart(garment.garmentType) === "bottom"),
+  };
+};
+export const buildAiTryOnOutfitRequestGarment = (garment: AiTryOnOutfitChoice): AiTryOnOutfitGarmentRequest => ({
+  garmentKey: garment.garmentKey, garmentType: garment.garmentType, garmentImageUrl: garment.garmentImageUrl,
+  ...(garment.fabricSwatchImageUrl ? { fabricSwatchImageUrl: garment.fabricSwatchImageUrl } : {}),
+  ...(garment.orderDetails ? { orderDetails: garment.orderDetails } : {}),
+});
+export const aiTryOnOutfitTarget = (target: AiTryOnWearerTarget): AiTryOnWearerTarget | null => {
+  const { tops, bottoms } = aiTryOnOutfitChoices(target);
+  return tops.length && bottoms.length ? { ...target, wearerId: aiTryOnOutfitPreviewKey(target.wearerId), inputFingerprint: aiTryOnOutfitFingerprint(target.inputFingerprint), label: `${target.label} — Combined outfit`, previewKind: "outfit", previewableGarments: [] } : null;
+};
+export const aiTryOnOrderPreviewTargets = (targets: readonly AiTryOnWearerTarget[]): AiTryOnWearerTarget[] => targets.flatMap((target) => {
+  const outfit = aiTryOnOutfitTarget(target);
+  return [...aiTryOnPreviewTargets([target]), ...(outfit ? [outfit] : [])];
+});

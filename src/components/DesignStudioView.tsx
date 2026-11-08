@@ -345,7 +345,7 @@ import {
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
-import { aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
+import { aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
 import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
