@@ -22,6 +22,7 @@ import {
 import { chooseAiTryOnMode, type AiTryOnMode } from "./aiTryOnGatewayContract.js";
 import {
   AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT,
+  aiTryOnGarmentPreviewKey,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   type AiTryOnOccurrenceDesignSource,
 } from "./aiTryOnWorkflow.js";
@@ -331,3 +332,20 @@ export const buildAiTryOnWearerTargets = (
     });
   });
 };
+
+/** Storage/job identity is a wearer plus a garment, not the whole wearer. */
+export const aiTryOnPreviewTargets = (targets: readonly AiTryOnWearerTarget[]) =>
+  targets.flatMap((target) => {
+    const garments = target.previewableGarments ?? [];
+    if (garments.length <= 1) return [target];
+    return garments.map((garment) => ({
+      ...target,
+      wearerId: aiTryOnGarmentPreviewKey(target.wearerId, garment.garmentKey),
+      label: `${target.label} — ${garment.label}`,
+      mode: chooseAiTryOnMode({ hasFabricSwatch: Boolean(garment.fabricSwatchImageUrl) }),
+      garmentImageUrl: garment.garmentImageUrl,
+      fabricSwatchImageUrl: garment.fabricSwatchImageUrl,
+      orderDetails: garment.orderDetails,
+      previewableGarments: [garment],
+    }));
+  });

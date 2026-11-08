@@ -721,3 +721,7 @@ export const recordAiTryOnPreviewCompletion = ({
   });
   return completed.ok ? completed.state : state;
 };
+
+/** Bounded opaque key accepted by the existing private preview endpoints. */
+export const aiTryOnGarmentPreviewKey = (wearerId: string, garmentKey: string): string =>
+  `garment-${hashVisualIdentity([wearerId, garmentKey])}`;

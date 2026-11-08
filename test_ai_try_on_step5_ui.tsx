@@ -1,3 +1,4 @@
+import { aiTryOnPreviewTargets } from "./src/utils/aiTryOnWearerTargets";
 /**
  * Step 5 AI Try-on UI: wearer targets, availability and preview mapping,
  * client photo checks, order key, order-level completion, the photo panel
@@ -744,7 +745,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     orderDetails?: { garments: Array<{ optionIds: string[] }> };
     defaultModelId?: string;
   };
-  assert.equal(sent.wearerKey, "w-ada");
+  assert.equal(sent.wearerKey, aiTryOnPreviewTargets([ada])[1].wearerId);
   assert.equal(sent.inputFingerprint, ada.inputFingerprint, "fingerprint stays with the photo wearer");
   assert.equal(sent.garmentImageUrl, "https://example.test/ada-trouser.jpg");
   assert.deepEqual(sent.orderDetails?.garments[0].optionIds, ["wide-leg"], "garment details stay");
