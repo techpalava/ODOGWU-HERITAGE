@@ -332,7 +332,7 @@ const select = (overrides: Partial<{ wearerKey: string; previewId: string; input
   const view = readFileSync("src/components/DesignStudioView.tsx", "utf8");
   assert.match(view, /notice=\{futureStageId === "payment" \? AI_TRY_ON_ORDER_IMAGE_COPY\.savedWithOrderNotice : undefined\}/);
   assert.match(view, /rememberAiTryOnOrderSelection\(outcome\.attempt\.orderId\)/);
-  assert.match(view, /if \(entry\.kind !== "fresh"\) return \[\];/, "out-of-date previews are never sent");
+  assert.match(view, /if \(entry\.kind !== "fresh" \|\| !entry\.inputFingerprint\) return \[\];/, "out-of-date previews are never sent");
   assert.match(AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice, /60 days/);
 }
 
