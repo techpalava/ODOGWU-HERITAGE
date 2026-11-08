@@ -133,8 +133,9 @@ export default function HomepageCommunityShowcase({
                 <p className="text-xs font-semibold text-heritage-gold font-sans break-words">
                   Group {group.number} · {group.name}
                 </p>
+                {/* Below sm (phones) the counts stack. From sm up they stay one line. */}
                 <p className="text-xs text-white/70 font-sans mt-1 break-words">
-                  {group.people} people · {group.outfits} outfits
+                  <span className="block sm:inline">{group.people} people</span><span className="hidden sm:inline"> · </span><span className="block sm:inline">{group.outfits} outfits</span>
                 </p>
               </div>
             ))}

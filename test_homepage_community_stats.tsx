@@ -149,6 +149,19 @@ try {
       index === 3,
       `only group card 3 starts the centred tablet second row`,
     );
+
+    const group = COMMUNITY_GROUPS[index];
+    assert.match(collectText(card), new RegExp(`Group ${group.number} · ${group.name}`));
+    const countSpans = card.findAll(
+      (node) => node.type === "span" && typeof node.props.className === "string",
+    );
+    assert.equal(countSpans.length, 3, `group card ${index} splits people, separator, and outfits`);
+    assert.equal(collectText(countSpans[0]), `${group.people} people`);
+    assert.match(String(countSpans[0].props.className), /^block sm:inline$/);
+    assert.equal(collectText(countSpans[1]), " · ");
+    assert.match(String(countSpans[1].props.className), /^hidden sm:inline$/);
+    assert.equal(collectText(countSpans[2]), `${group.outfits} outfits`);
+    assert.match(String(countSpans[2].props.className), /^block sm:inline$/);
   });
 
   const chips = root.findAll(
