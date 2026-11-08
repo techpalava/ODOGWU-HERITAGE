@@ -1,3 +1,5 @@
+import { aiTryOnPreviewTargets } from "./src/utils/aiTryOnWearerTargets";
+import { selectAiTryOnOrderPreviews } from "./src/components/AiTryOnOrderPreviewThumbnails";
 /**
  * AI Try-on Step 6: private preview storage, retention, delete on request,
  * server-side reference pictures, no workshop/admin exposure, and restore
@@ -821,3 +823,57 @@ const deleteButton = (renderer: ReturnType<typeof create>) =>
 }
 
 console.log("PASS: AI Try-on Step 6 private preview storage, retention, deletion and server-side references");
+
+// One wearer, two garments: independent results, reload, deletion and Summary.
+{
+  const multi = target({ previewableGarments: [
+    { garmentKey: "base:shirt", label: "Standard Shirt", garmentImageUrl: "https://example.test/shirt.jpg", fabricSwatchImageUrl: null, fabricColorHex: null, orderDetails: null },
+    { garmentKey: "base:trouser", label: "Trouser", garmentImageUrl: "https://example.test/trouser.jpg", fabricSwatchImageUrl: null, fabricColorHex: null, orderDetails: null },
+  ] });
+  const expanded = aiTryOnPreviewTargets([multi]);
+  assert.equal(new Set(expanded.map((entry) => entry.wearerId)).size, 2);
+  assert.deepEqual(aiTryOnPreviewTargets([multi]), expanded, "keys deterministic");
+  const saved: Array<NonNullable<AiTryOnPhotoPanelProps["storedPreviews"]>[number]> = [];
+  let serial = 0;
+  const { renderer } = renderPanel({ targets: [multi], storedPreviews: [], requestPreview: async (request) => {
+    const id = `tryon-${++serial}`;
+    saved.push({ previewId: id, wearerKey: request.wearerKey, inputFingerprint: request.inputFingerprint, expiresAt: "2026-11-30T12:00:00.000Z", modelId: "male-plus" });
+    return { kind: "completed", resultReference: { kind: "verified_private_try_on_result", assetId: id, ownerBindingId: "owner" }, preview: { mimeType: "image/png", data: `result${serial}` }, storedPreviewId: id, orderTriesRemaining: 5 - serial };
+  } });
+  const buttons = () => renderer.root.findAll((node) => node.type === "button");
+  const modelButton = () => buttons().find((node) => node.props["data-ai-try-on-model"] === "male-plus");
+  // Open the actual model picker rather than uploading a customer photo.
+  const picker = buttons().find((node) => /Try it on a model|Choose a model/.test(textOf(node)));
+  assert.ok(picker);
+  await act(async () => { picker.props.onClick(); });
+  assert.ok(modelButton());
+  await act(async () => { modelButton()!.props.onClick(); });
+  const generateButton = () => buttons().find((node) => /Generate preview|Make a new preview/.test(textOf(node)))!;
+  await act(async () => { generateButton().props.onClick(); });
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,result1");
+  const garment = (key: string) => buttons().find((node) => node.props["data-ai-try-on-garment"] === key)!;
+  await act(async () => { garment("base:trouser").props.onClick(); });
+  assert.equal(resultImages(renderer).length, 0, "shirt is not shown as the trouser result");
+  await act(async () => { generateButton().props.onClick(); });
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,result2");
+  await act(async () => { garment("base:shirt").props.onClick(); });
+  assert.equal(resultImages(renderer)[0].props.src, "data:image/png;base64,result1", "shirt survives trouser generation");
+  const entries = selectAiTryOnOrderPreviews(expanded, saved);
+  assert.equal(entries.filter((entry) => entry.kind === "fresh").length, 2, "Summary and Review retain both selections");
+  assert.deepEqual(saved.map((entry) => entry.wearerKey), expanded.map((entry) => entry.wearerId));
+  act(() => renderer.unmount());
+  const restored = renderPanel({ targets: [multi], storedPreviews: saved });
+  await flush();
+  assert.equal(resultImages(restored.renderer).length, 1, "shirt restored after reload");
+  const trouser = restored.renderer.root.find((node) => node.props["data-ai-try-on-garment"] === "base:trouser");
+  act(() => trouser.props.onClick());
+  await flush();
+  assert.equal(resultImages(restored.renderer).length, 1, "trouser restored after reload without a try");
+  await act(async () => { await deleteButton(restored.renderer)[0].props.onClick(); });
+  const shirt = restored.renderer.root.find((node) => node.props["data-ai-try-on-garment"] === "base:shirt");
+  act(() => shirt.props.onClick());
+  await flush();
+  assert.equal(resultImages(restored.renderer).length, 1, "deleting trouser leaves shirt intact");
+  act(() => restored.renderer.unmount());
+}
+console.log("PASS: multi-garment previews survive switch, generation, reload, deletion and Summary selection");

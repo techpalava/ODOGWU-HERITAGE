@@ -1,3 +1,4 @@
+import { aiTryOnGarmentPreviewKey } from "./src/utils/aiTryOnWorkflow";
 /**
  * AI Try-on PR 2: the AI preview saved with a paid order. All mocked: no
  * Gemini, Firebase, Stripe or PayPal calls, no real payment.
@@ -513,3 +514,28 @@ const select = (overrides: Partial<{ wearerKey: string; previewId: string; input
 }
 
 console.log("ai try-on order images: ok");
+
+// Both garments of one wearer survive fixed-path storage and payment copy.
+{
+  const { db, bucket, store, sessionId } = await setup();
+  await store.remove(sessionId, null);
+  const selections = ["base:shirt", "base:trouser"].map((garmentKey, index) => ({
+    wearerKey: aiTryOnGarmentPreviewKey("w-ada", garmentKey),
+    previewId: index === 0 ? PREVIEW_ADA : PREVIEW_OBI,
+    inputFingerprint: FINGERPRINT,
+    label: index === 0 ? "Ada — Standard Shirt" : "Ada — Trouser",
+  }));
+  for (const selection of selections) {
+    await store.save({ orderKey: sessionId, ...selection, image: { mimeType: "image/webp", data: Buffer.from(selection.label).toString("base64") } });
+  }
+  // Replacing the shirt overwrites only that garment's file, not trousers.
+  await store.save({ orderKey: sessionId, ...selections[0], image: { mimeType: "image/webp", data: Buffer.from("new-shirt").toString("base64") } });
+  assert.equal(bucket.objects.size, 2, "one compressed file per garment, no older copy");
+  assert.equal((await store.list(sessionId)).length, 2);
+  assert.equal(await saveAiTryOnOrderSelection({ db: db.asFirestore(), store, sessionId, uid: UID_A, orderId: ORDER_ID, selections }), "saved");
+  await copyAiTryOnOrderImagesForPaidOrder({ db: db.asFirestore(), store, bucket, sessionId, orderId: ORDER_ID, ownerUid: UID_A });
+  assert.equal(orderObjects(bucket).length, 2);
+  const record = await readAiTryOnOrderImageRecord(db.asFirestore(), ORDER_ID);
+  assert.deepEqual(record?.images.map((entry) => entry.label), selections.map((entry) => entry.label), "confirmation and My Orders receive both garments");
+}
+console.log("PASS: both garment previews stored and copied to paid order without extra versions");
