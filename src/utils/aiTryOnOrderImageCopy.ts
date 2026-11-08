@@ -22,6 +22,9 @@ export const AI_TRY_ON_ORDER_IMAGE_COPY = {
   thumbnailAlt: (name: string) => `AI try-on preview for ${name}`,
   enlarge: (name: string) => `See the AI preview for ${name} larger`,
   closeEnlarged: "Close",
+  /** Summary / Review: the stored preview image could not be loaded. */
+  loadFailed: (name: string) => `We couldn't load the AI preview for ${name}.`,
+  retryLoad: "Try again",
   /** A stored preview was made for an earlier version of the design. */
   staleTitle: (name: string) => `${name}: your design changed after this preview`,
   staleBody:

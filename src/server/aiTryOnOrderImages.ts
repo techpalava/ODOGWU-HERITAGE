@@ -124,8 +124,9 @@ export type SaveAiTryOnOrderSelectionResult =
 
 /**
  * Records which of the caller's previews go with the order. The order must
- * belong to the caller; every preview must be in the caller's session with
- * the same design fingerprint.
+ * belong to the caller; only previews in the caller's session with the same
+ * design fingerprint are kept. A missing one (replaced by a newer preview,
+ * expired or deleted) is skipped; the list is refused only when none is left.
  */
 export const saveAiTryOnOrderSelection = async ({
   db,
@@ -164,7 +165,8 @@ export const saveAiTryOnOrderSelection = async ({
         entry.wearerKey === selection.wearerKey &&
         entry.inputFingerprint === selection.inputFingerprint,
     );
-    if (!preview) return "preview_not_found";
+    // Replaced, expired or out of date: skip only this one (deep check M3).
+    if (!preview) continue;
     accepted.push({
       wearerKey: selection.wearerKey,
       previewId: selection.previewId,
@@ -172,6 +174,7 @@ export const saveAiTryOnOrderSelection = async ({
       onModel: Boolean(preview.modelId),
     });
   }
+  if (accepted.length === 0) return "preview_not_found";
   await selectionRef.set({
     orderId,
     ownerUid: uid,
