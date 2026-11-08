@@ -1080,7 +1080,7 @@ export const AiTryOnPhotoPanel = ({
             Which garment?
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            This preview uses one garment and its fabric. Each preview uses one try.
+            This preview uses one garment and its fabric. Each preview uses one try from this order’s {triesPerOrder} tries, shared across all garments and wearers.
           </p>
           <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Which garment?">
             {previewableGarments.map((garment) => {
@@ -1330,6 +1330,9 @@ export const AiTryOnPhotoPanel = ({
             <span>{preview ? "Make a new preview" : "Generate preview"}</span>
             <span className="font-medium normal-case tracking-normal text-white/80">· {triesLabel}</span>
           </button>
+          <p className="text-xs leading-relaxed text-heritage-ink/70" data-ai-try-on-order-tries-note>
+            {triesPerOrder} tries per order, shared across all garments and wearers—not {triesPerOrder} per garment. Account limits also apply.
+          </p>
         </div>
       </div>
 
