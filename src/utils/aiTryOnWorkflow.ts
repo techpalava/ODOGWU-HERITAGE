@@ -131,6 +131,9 @@ export const normalizeAiTryOnWorkflowState = (
     ...(jobReference ? { jobReference } : {}),
     ...(resultReference ? { resultReference } : {}),
     ...(failure ? { failure } : {}),
+    ...(value.status === "skipped" && value.skipOrigin === "continued_while_generating"
+      ? { skipOrigin: "continued_while_generating" as const }
+      : {}),
   };
 };
 
@@ -433,7 +436,8 @@ export const isFutureCustomDetailsContentReady = (
   completion?.status === "complete" || completion?.status === "pricing_pending";
 
 export interface AiTryOnReconciliationPolicy {
-  gatewayAvailable: boolean;
+  /** "unknown" while `POST /api/ai-try-on?action=session` has not answered. */
+  gatewayAvailable: boolean | "unknown";
   skipAllowed: boolean;
 }
 
@@ -523,7 +527,9 @@ export const reconcileAiTryOnWorkflow = ({
   }
   return {
     schemaVersion: 1,
-    status: policy.gatewayAvailable ? "ready" : "unavailable",
+    // "unknown": the availability check has not answered yet. That is not
+    // the server saying try-on is off, so never record "unavailable" then.
+    status: policy.gatewayAvailable === false ? "unavailable" : "ready",
     inputFingerprint: currentInputFingerprint,
   };
 };
@@ -541,7 +547,7 @@ export type AiTryOnWorkflowEvent =
   | { type: "complete"; resultReference: AiTryOnVerifiedPrivateResultReference }
   | { type: "fail"; code: unknown; retryable: boolean }
   | { type: "retry" }
-  | { type: "skip" };
+  | { type: "skip"; whileGenerating?: boolean };
 
 export type AiTryOnTransitionResult =
   | { ok: true; state: AiTryOnWorkflowStateV1 }
@@ -573,7 +579,10 @@ export const getAiTryOnWorkflowAllowedActions = ({
       current.status === "failed" && Boolean(current.failure?.retryable),
     canSkip:
       skipAllowed &&
-      !["processing", "completed", "skipped"].includes(current.status),
+      !["processing", "completed", "skipped"].includes(current.status) ||
+      (skipAllowed &&
+        current.status === "skipped" &&
+        current.skipOrigin === "continued_while_generating"),
   };
 };
 
@@ -605,6 +614,7 @@ export const transitionAiTryOnWorkflow = ({
         schemaVersion: 1,
         status: "skipped",
         inputFingerprint: current.inputFingerprint,
+        ...(event.whileGenerating ? { skipOrigin: "continued_while_generating" as const } : {}),
         ...(current.resultReference
           ? { resultReference: current.resultReference }
           : {}),

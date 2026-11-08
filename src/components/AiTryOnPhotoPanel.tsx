@@ -90,6 +90,15 @@ export interface AiTryOnSessionPhoto {
 export const AI_TRY_ON_CONSENT_NOTICE =
   "By uploading a photo, you agree that The Odogwu Heritage can send it to Google's Gemini AI to create a try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed to it.";
 
+/**
+ * How the photo is used and kept (wording approved by Xavier, card t88s783).
+ * NOTE: the server today never stores the uploaded photo at all; the
+ * generated previews are deleted at payment, and the copy saved with a paid
+ * order is deleted 60 days after payment, not when the order is completed.
+ */
+export const AI_TRY_ON_RETENTION_NOTICE =
+  "We use your photo only to make the try-on preview for this order. Photos are kept with the order until it's completed, then deleted.";
+
 export const AI_TRY_ON_HOW_WE_USE_BULLETS: ReadonlyArray<{ label: string; text: string }> = [
   {
     label: "What we send:",
@@ -1074,6 +1083,9 @@ export const AiTryOnPhotoPanel = ({
             className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
           />
         </button>
+      </p>
+      <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70" data-ai-try-on-retention>
+        {AI_TRY_ON_RETENTION_NOTICE}
       </p>
       {howWeUseOpen && (
         <ul

@@ -34,7 +34,21 @@ interface DormantFutureAiTryOnStepProps {
    * your preview"; the request carries on in the background.
    */
   generating?: boolean;
+  /**
+   * What the server reported: "checking" while the availability request or
+   * the design inputs are still loading (no status card then), "unavailable"
+   * only when the server truly reported try-on off or capped.
+   */
+  availability?: "checking" | "available" | "unavailable";
+  /** Step names still incomplete, e.g. ["Custom Details"]. */
+  missingInputs?: readonly string[];
 }
+
+/** "A", "A and B", "A, B and C". */
+const joinStepNames = (names: readonly string[]): string =>
+  names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
 /** Statuses that still show the status card next to the live panel. */
 const LIVE_STATUS_CARD = new Set<AiTryOnWorkflowStateV1["status"]>([
@@ -97,10 +111,29 @@ export const DormantFutureAiTryOnStep = ({
   onContinue,
   livePanel,
   generating = false,
+  availability,
+  missingInputs,
 }: DormantFutureAiTryOnStepProps) => {
   const isLive = Boolean(livePanel);
-  const showStatusCard = !isLive || LIVE_STATUS_CARD.has(workflow.status);
-  const presentation = STATUS_PRESENTATION[workflow.status];
+  // One honest status: "unavailable" only when the server said so, nothing
+  // while still checking, and a skip only when the customer chose it.
+  const continuedWhileGenerating =
+    workflow.status === "skipped" && workflow.skipOrigin === "continued_while_generating";
+  const statusHidden =
+    availability === "checking" ||
+    continuedWhileGenerating ||
+    (workflow.status === "unavailable" && availability === "available") ||
+    (workflow.status === "awaiting_input" && missingInputs !== undefined && missingInputs.length === 0);
+  const showStatusCard =
+    !statusHidden && (!isLive || LIVE_STATUS_CARD.has(workflow.status));
+  const basePresentation = STATUS_PRESENTATION[workflow.status];
+  const presentation =
+    workflow.status === "awaiting_input" && missingInputs && missingInputs.length > 0
+      ? {
+          ...basePresentation,
+          description: `Finish ${joinStepNames(missingInputs)} before using AI Try-on.`,
+        }
+      : basePresentation;
   const { canRetry, canSkip } = getAiTryOnWorkflowAllowedActions({
     state: workflow,
     skipAllowed,
@@ -145,7 +178,7 @@ export const DormantFutureAiTryOnStep = ({
           AI Try-on
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          {isLive
+          {isLive || availability === "available" || availability === "checking"
             ? "Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."
             : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
