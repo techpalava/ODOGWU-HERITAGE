@@ -1028,6 +1028,40 @@ export const AiTryOnPhotoPanel = ({
 
   const triesLabel = `${left} ${left === 1 ? "try" : "tries"} left`;
 
+  const consentNotice = (
+    <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
+      <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
+        {AI_TRY_ON_CONSENT_NOTICE}{" "}
+        <button
+          type="button"
+          aria-expanded={howWeUseOpen}
+          aria-controls={howWeUseId}
+          onClick={() => setHowWeUseOpen((open) => !open)}
+          className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+        >
+          How we use your photo
+          <ChevronDown
+            aria-hidden="true"
+            size={14}
+            className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+      </p>
+      {howWeUseOpen && (
+        <ul
+          id={howWeUseId}
+          className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
+        >
+          {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
+            <li key={bullet.label}>
+              <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
+              {bullet.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
   return (
     <div className="space-y-5" data-ai-try-on-panel="live">
       {showPicker && (
@@ -1179,44 +1213,16 @@ export const AiTryOnPhotoPanel = ({
           <h3 className="font-serif text-lg font-bold text-heritage-green">Your uploaded design</h3>
           {uploadedDesign.previewUrl ? <img src={uploadedDesign.previewUrl} alt="Your uploaded design photograph" className="max-h-80 w-full rounded-xl object-contain" /> : <p role="status">Your uploaded design photo is not available. Return to Step 3 to upload it again.</p>}
           <p className="text-sm leading-relaxed text-heritage-ink/80">This shows the person in your uploaded picture, not you. Only the garment’s fabric will change to your chosen swatch.</p>
+          {/* Deep check M2: the uploaded picture also goes to Gemini, so the
+              same consent notice as photo mode shows before generating. */}
+          {consentNotice}
           <button type="button" data-ai-try-on-upload-another-design disabled={Boolean(wearerGenerating) || !onUploadAnotherDesign} onClick={() => onUploadAnotherDesign?.(uploadedDesign.garmentKey)} className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green/30 bg-white px-4 text-sm font-semibold text-heritage-green disabled:opacity-50">Upload another design</button>
           {!fabricSwatchImageUrl && <p role="status" className="text-sm text-heritage-ink/80">Choose a fabric with a swatch image in Step 2 to use this design.</p>}
         </section>
       )}
       {!uploadedDesign && !currentModel && (
         <>
-        <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
-          <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
-            {AI_TRY_ON_CONSENT_NOTICE}{" "}
-            <button
-              type="button"
-              aria-expanded={howWeUseOpen}
-              aria-controls={howWeUseId}
-              onClick={() => setHowWeUseOpen((open) => !open)}
-              className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
-            >
-              How we use your photo
-              <ChevronDown
-                aria-hidden="true"
-                size={14}
-                className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-          </p>
-          {howWeUseOpen && (
-            <ul
-              id={howWeUseId}
-              className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
-            >
-              {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
-                <li key={bullet.label}>
-                  <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
-                  {bullet.text}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {consentNotice}
 
         <div>
           <h3 id={tipsId} className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">
