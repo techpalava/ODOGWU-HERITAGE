@@ -1126,7 +1126,7 @@ service cloud.firestore {
     // src/utils/siteFeedback.ts.
     function hasValidSiteFeedbackCreate(data, feedbackId) {
       return data.keys().hasAll(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt"])
-        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt", "nationality", "photoPath", "photoContentType", "photoSizeBytes"])
+        && data.keys().hasOnly(["schemaVersion", "status", "type", "message", "email", "page", "tab", "studioStep", "userAgent", "viewport", "uid", "createdAt", "nationality", "photoPath", "photoContentType", "photoSizeBytes", "selectedSteps"])
         && data.schemaVersion in [1, 2]
         && data.status == "new"
         && data.type in ["bug", "idea", "other"]
@@ -1148,7 +1148,32 @@ service cloud.firestore {
           || (request.auth != null && data.uid == request.auth.uid))
         && (!("nationality" in data) || data.nationality == null
           || (data.nationality is string && data.nationality.matches("^[A-Z]{2}$")))
+        && hasValidSiteFeedbackSteps(data)
         && hasValidSiteFeedbackPhoto(data, feedbackId);
+    }
+
+    // Optional step ids (v2). Absent or null keeps older clients valid.
+    // Values must be the customer-facing Design Studio stage ids, once each.
+    function hasValidSiteFeedbackSteps(data) {
+      return !("selectedSteps" in data)
+        || data.selectedSteps == null
+        || (
+          data.selectedSteps is list
+          && data.selectedSteps.size() <= 10
+          && data.selectedSteps.size() == data.selectedSteps.toSet().size()
+          && data.selectedSteps.hasOnly([
+            "garment_type",
+            "fabric",
+            "design_style",
+            "custom_details",
+            "personalized_additions",
+            "measurement",
+            "try_on",
+            "summary",
+            "shipping",
+            "payment"
+          ])
+        );
     }
 
     // Optional photo (v2): all four photo fields null/absent, or a photo the
