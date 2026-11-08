@@ -1392,22 +1392,12 @@ export async function handleAiTryOn(
         );
   }
 
-  // A preview was made: a held busy try is now used.
-  if (claim) {
-    try {
-      await jobs.complete(claim);
-    } catch {
-      // Left running: its lease lapses and an expiry sweep would refund it.
-    }
-  }
-  const triesAfter =
-    reservation && reservation.ok
-      ? { order: reservation.orderTriesRemaining, account: reservation.accountTriesRemaining }
-      : await readTriesLeft();
-
   const previewId = (dependencies.createAssetId ?? createAiTryOnPreviewId)();
   // Step 7: one compact WebP is both stored and returned. If re-encoding
-  // fails, the original is returned but not stored.
+  // fails, the original is returned but not stored, and the try goes back
+  // (refunded the same way as a failed generation: only a confirmed release
+  // counts), because a preview that can't be kept never reaches Summary or
+  // the order.
   let preview: { mimeType: string; data: string } = outcome.image;
   let compacted = false;
   try {
@@ -1417,6 +1407,39 @@ export async function handleAiTryOn(
   } catch {
     log(JSON.stringify({ event: "ai_try_on", outcome: "compact_failed" }));
   }
+
+  let tryRefunded = false;
+  if (!compacted) {
+    if (claim) {
+      tryRefunded = await refundClaim();
+    } else if (reservation && reservation.ok) {
+      try {
+        await limits.release(reservation.orderDocId, reservation.account, reservation.orderResetGeneration);
+        tryRefunded = true;
+      } catch {
+        // A failed release only makes the cap stricter; never block the reply.
+      }
+    }
+    log(JSON.stringify({ event: "ai_try_on", outcome: "compact_failed_refund", tryRefunded }));
+  } else if (claim) {
+    // A preview was made and kept: a held busy try is now used.
+    try {
+      await jobs.complete(claim);
+    } catch {
+      // Left running: its lease lapses and an expiry sweep would refund it.
+    }
+  }
+  const triesAfter =
+    reservation && reservation.ok
+      ? {
+          order: Math.min(AI_TRY_ON_TRIES_PER_ORDER, reservation.orderTriesRemaining + (tryRefunded ? 1 : 0)),
+          account:
+            reservation.accountTriesRemaining === null
+              ? null
+              : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reservation.accountTriesRemaining + (tryRefunded ? 1 : 0)),
+        }
+      : await readTriesLeft();
+
   let stored: { expiresAt: string } | null = null;
   if (compacted) {
     stored = await saveWearerPreview(previewId, preview);
