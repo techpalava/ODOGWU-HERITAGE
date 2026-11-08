@@ -561,3 +561,35 @@ console.log("ai try-on order images: ok");
   assert.deepEqual(record?.images.map((entry) => entry.label), selections.map((entry) => entry.label), "confirmation and My Orders receive both garments");
 }
 console.log("PASS: both garment previews stored and copied to paid order without extra versions");
+
+// ------------------------------------------------------------ L4: order-image routes check revoked tokens
+{
+  const { db, bucket } = await setup();
+  const checks: boolean[] = [];
+  const deps: AiTryOnHttpDependencies = {
+    environment: {},
+    getDb: () => db.asFirestore(),
+    verifyIdToken: async (token, checkRevoked) => {
+      checks.push(checkRevoked === true);
+      if (token === "id-token-revoked" && checkRevoked === true) throw new Error("auth/id-token-revoked");
+      if (token === "id-token-ada" || token === "id-token-revoked") return { uid: UID_A, firebase: { sign_in_provider: "password" } };
+      throw new Error("bad");
+    },
+    getOrderImageBucket: () => bucket as never,
+    log: () => undefined,
+  };
+  const route = async (method: string, action: string, token: string) => {
+    const state: { status: number } = { status: 200 };
+    const res: HttpResponse = { status(code) { state.status = code; return res; }, setHeader() { return res; }, json(body) { return body; } };
+    await handleAiTryOn({ method, query: { action, orderId: ORDER_ID }, headers: { authorization: `Bearer ${token}` } } as never, res, deps);
+    return state.status;
+  };
+  for (const [method, action] of [["GET", "order-images"], ["DELETE", "order-images"], ["GET", "order-image"]] as const) {
+    checks.length = 0;
+    assert.equal(await route(method, action, "id-token-revoked"), 401, `${method} ${action}: revoked token refused`);
+    assert.deepEqual(checks, [true], `${method} ${action} checks revocation`);
+    assert.notEqual(await route(method, action, "id-token-ada"), 401, `${method} ${action}: valid token still works`);
+  }
+  console.log("PASS: order-image routes check revoked tokens (L4)");
+}
+

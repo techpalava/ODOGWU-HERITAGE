@@ -8,7 +8,7 @@ import {
   aiTryOnTargetHasDesign,
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
-import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
+import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
   CheckCircle2,
@@ -553,6 +553,13 @@ export const AiTryOnPhotoPanel = ({
     ? aiTryOnOutfitTarget(target, selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null)
     : null;
   const previewTarget = outfitMode ? outfitTarget : singlePreviewTarget;
+  // Deep check L3: a preview stored under the wearer's own key before it had
+  // 2+ garments. It can't be tied to a garment: out of date for the wearer.
+  const legacyWearerPreview = Boolean(
+    target && (target.previewableGarments?.length ?? 0) > 1 &&
+      (stored[target.wearerId] || previews[target.wearerId]),
+  );
+  const garmentPickerRef = useRef<HTMLFieldSetElement | null>(null);
   const previewKey = previewTarget?.wearerId ?? "";
   const measurementTarget =
     targets.find((entry) => entry.wearerId === measurementWearerId) || target;
@@ -1177,8 +1184,26 @@ export const AiTryOnPhotoPanel = ({
         </>}
       </fieldset>}
 
+      {legacyWearerPreview && target && (
+        <div className="rounded-xl border border-heritage-gold/35 bg-heritage-gold/8 p-3" data-ai-try-on-legacy-preview-stale={target.wearerId}>
+          <p className="text-xs font-bold text-heritage-green">{AI_TRY_ON_ORDER_IMAGE_COPY.staleTitle(target.label)}</p>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">{AI_TRY_ON_ORDER_IMAGE_COPY.staleBody}</p>
+          <button
+            type="button"
+            data-ai-try-on-legacy-make-new
+            onClick={() => {
+              const picker = garmentPickerRef.current;
+              picker?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+              (picker?.querySelector?.("button") as HTMLButtonElement | null)?.focus?.();
+            }}
+            className="mt-2 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold uppercase tracking-wide text-heritage-green hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+          >
+            {AI_TRY_ON_ORDER_IMAGE_COPY.staleAction}
+          </button>
+        </div>
+      )}
       {showGarmentPicker && (
-        <fieldset className="min-w-0" data-ai-try-on-garment-picker>
+        <fieldset ref={garmentPickerRef} className="min-w-0" data-ai-try-on-garment-picker>
           <legend className="font-serif text-lg font-bold text-heritage-green">
             Which garment?
           </legend>
