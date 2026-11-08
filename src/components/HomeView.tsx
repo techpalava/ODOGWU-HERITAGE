@@ -279,25 +279,71 @@ export default function HomeView({
               <span className="text-heritage-gold italic">Custom Made</span> for
               You.
             </h1>
-            {/* Desktop Hero Description */}
-            <p className="hidden sm:block text-sm text-heritage-beige max-w-xl leading-relaxed font-sans">
-              Welcome to {businessSettings.applicationSettings.communityName}.
-              We empower people to express their identity and tell their unique
-              stories through the timeless beauty of Nigerian traditional
-              fabrics. By connecting skilled artisans in Nigeria with
-              communities across the Netherlands and beyond, we celebrate
-              Nigeria's rich, colourful, and diverse cultural heritage through
-              authentic, custom-made garments crafted with exceptional care and
-              craftsmanship.
+            {/* Hero Description */}
+            <p className="text-xs sm:text-sm text-heritage-beige max-w-xl leading-relaxed font-sans">
+              Welcome to {businessSettings.applicationSettings.communityName}. We
+              celebrate and promote the rich, colourful and dynamic traditional
+              cultures of Nigeria and its extensions through authentic,
+              custom-made clothing. By connecting skilled artisans in Nigeria
+              with communities across the Netherlands and beyond, we empower
+              people to express their identity and tell their unique stories
+              through timeless Nigerian fabrics. Each garment is crafted with
+              exceptional care and craftsmanship in Nigeria and shipped to the
+              Netherlands.
             </p>
 
-            {/* Mobile Hero Description (Summarized) */}
-            <p className="block sm:hidden text-xs text-heritage-beige/95 max-w-md leading-relaxed font-sans">
-              Welcome to {businessSettings.applicationSettings.communityName}.
-              We connect skilled artisans in Nigeria with Netherlands
-              communities, delivering exquisite, custom-made garments that
-              celebrate Nigeria's rich and diverse cultural heritage.
-            </p>
+            {/* Vision, Mission & Core Values */}
+            <div className="space-y-4 max-w-xl border-l-2 border-heritage-gold/40 pl-4 sm:pl-5">
+              <div className="space-y-1">
+                <h2 className="text-[11px] sm:text-xs font-sans font-bold uppercase tracking-widest text-heritage-gold">
+                  The Vision
+                </h2>
+                <p className="text-xs sm:text-sm text-heritage-beige/95 leading-relaxed font-sans">
+                  To enrich global cultures—starting with the Netherlands—by
+                  weaving the warmth, colour, and joy of Nigerian heritage into
+                  everyday life, while building bridges through cross-cultural
+                  collaboration worldwide.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-[11px] sm:text-xs font-sans font-bold uppercase tracking-widest text-heritage-gold">
+                  Our Mission
+                </h2>
+                <p className="text-xs sm:text-sm text-heritage-beige/95 leading-relaxed font-sans">
+                  To empower local tailors in Nigeria and beyond by creating
+                  sustainable economic opportunities, while inspiring
+                  individuals to tell their unique stories through custom-made,
+                  vibrant traditional attire.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <h2 className="text-[11px] sm:text-xs font-sans font-bold uppercase tracking-widest text-heritage-gold">
+                  Core Values
+                </h2>
+                <ul className="space-y-1.5 text-xs sm:text-sm text-heritage-beige/95 leading-relaxed font-sans">
+                  <li>
+                    <strong className="font-semibold text-white">Cultural Inclusion:</strong>{" "}
+                    Fostering mutual respect, appreciation, and unity across
+                    diverse cultures.
+                  </li>
+                  <li>
+                    <strong className="font-semibold text-white">Authenticity:</strong>{" "}
+                    Celebrating genuine craftsmanship and heritage through
+                    custom Nigerian tailoring.
+                  </li>
+                  <li>
+                    <strong className="font-semibold text-white">Empowerment:</strong>{" "}
+                    Supporting and uplifting artisans by creating meaningful
+                    livelihoods.
+                  </li>
+                  <li>
+                    <strong className="font-semibold text-white">Self-Expression:</strong>{" "}
+                    Encouraging everyone to wear their identity proudly with
+                    bold prints and stories.
+                  </li>
+                </ul>
+              </div>
+            </div>
 
             <div className="pt-4 sm:pt-6">
               <button
