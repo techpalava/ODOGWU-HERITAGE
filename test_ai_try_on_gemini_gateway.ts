@@ -1082,3 +1082,13 @@ for (const stall of ["fetch", "credentials", "body"]) {
 }
 
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");
+
+// Deep check L5: uploaded-design mode fetches its private blob: URL; the CSP
+// (report-only today) must allow it so enforcing CSP never breaks it.
+{
+  const raw = readFileSync("vercel.json", "utf8");
+  const connect = raw.match(/connect-src ([^;]*);/)?.[1] ?? "";
+  assert.ok(connect.split(" ").includes("blob:"), "connect-src lists blob:");
+  assert.ok(connect.split(" ").includes("'self'"));
+  console.log("PASS: CSP connect-src allows blob: (L5)");
+}

@@ -15,6 +15,7 @@ import {
   getAiTryOnWorkflowAllowedActions,
   normalizeAiTryOnWorkflowState,
   restoreAiTryOnWorkflowState,
+  isAiTryOnInputFingerprintPending,
   reconcileAiTryOnWorkflow,
   transitionAiTryOnWorkflow,
 } from "./src/utils/aiTryOnWorkflow";
@@ -339,5 +340,84 @@ assert.equal(
     : null,
   "completed",
 );
+
+const finished = completed.ok ? completed.state : empty;
+const keptWhileOwnerLoads = reconcileAiTryOnWorkflow({
+  state: finished,
+  currentInputFingerprint: null,
+  inputFingerprintPending: true,
+  policy: { gatewayAvailable: true, skipAllowed: true },
+});
+assert.equal(keptWhileOwnerLoads.status, "completed", "a finished try-on stays finished while the uploaded owner is still loading");
+assert.equal(
+  reconcileAiTryOnWorkflow({
+    state: skipped.ok ? skipped.state : empty,
+    currentInputFingerprint: null,
+    inputFingerprintPending: true,
+    policy: { gatewayAvailable: true, skipAllowed: false },
+  }).status,
+  "skipped",
+  "a skipped try-on stays skipped while the uploaded source is still loading",
+);
+assert.equal(
+  reconcileAiTryOnWorkflow({
+    state: finished,
+    currentInputFingerprint: null,
+    inputFingerprintPending: false,
+    policy: { gatewayAvailable: true, skipAllowed: true },
+  }).status,
+  "awaiting_input",
+  "a removed or unresolved design must not keep a finished try-on",
+);
+assert.equal(
+  reconcileAiTryOnWorkflow({
+    state: finished,
+    currentInputFingerprint: fingerprintFor({ fabricCode: "FABRIC-CHANGED" }),
+    inputFingerprintPending: false,
+    policy: { gatewayAvailable: true, skipAllowed: true },
+  }).status,
+  "stale",
+  "a resolved design that differs from the saved preview is stale",
+);
+assert.equal(
+  reconcileAiTryOnWorkflow({
+    state: empty,
+    currentInputFingerprint: null,
+    inputFingerprintPending: true,
+    policy: { gatewayAvailable: true, skipAllowed: true },
+  }).status,
+  "awaiting_input",
+  "pending loading must not invent a finished try-on",
+);
+assert.equal(
+  normalizeAiTryOnWorkflowState({
+    schemaVersion: 1,
+    status: "completed",
+    inputFingerprint: null,
+    resultReference,
+  }),
+  null,
+);
+assert.equal(isAiTryOnInputFingerprintPending({
+  authResolved: false,
+  uploadOperationInFlight: false,
+  designStyleHydrated: false,
+  hasUploadedAssignment: true,
+  uploadedSourceAccess: [{ proved: false, failed: false }],
+}), true);
+assert.equal(isAiTryOnInputFingerprintPending({
+  authResolved: true,
+  uploadOperationInFlight: false,
+  designStyleHydrated: true,
+  hasUploadedAssignment: false,
+  uploadedSourceAccess: [{ proved: false, failed: true }],
+}), false, "a failed or removed upload is not still loading");
+assert.equal(isAiTryOnInputFingerprintPending({
+  authResolved: true,
+  uploadOperationInFlight: false,
+  designStyleHydrated: true,
+  hasUploadedAssignment: false,
+  uploadedSourceAccess: [],
+}), false, "a catalog order with no upload is not pending");
 
 console.log("PASS: provider-neutral AI Try-on workflow and privacy boundary");
