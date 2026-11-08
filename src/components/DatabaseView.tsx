@@ -1,3 +1,4 @@
+import { AdminAiTryOnReset } from "./AdminAiTryOnReset";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 /**
  * @license
@@ -6712,6 +6713,7 @@ export default function DatabaseView({
 
             {activeTab === "settings" && (
               <div className="space-y-6 text-left">
+                <AdminAiTryOnReset key={currentUser?.email || "signed-out"} />
                 {/* Settings Sub-Tab Navigation */}
                 <div className="flex border-b border-heritage-gold/25 gap-2 pb-1">
                   <button

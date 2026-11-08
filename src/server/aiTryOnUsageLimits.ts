@@ -55,12 +55,14 @@ export const aiTryOnAccountUsageDocId = (uid: string): string =>
 export interface AiTryOnAccountReservation {
   docId: string;
   reservedAtMs: number;
+  resetGeneration?: number;
 }
 
 export type AiTryOnReservation =
   | {
       ok: true;
       orderDocId: string;
+      orderResetGeneration: number;
       orderTriesRemaining: number;
       /** Null for guests. */
       account: AiTryOnAccountReservation | null;
@@ -108,7 +110,7 @@ export interface AiTryOnUsageLimits {
   /** Signed-in accounts only. */
   readAccountTriesRemaining(uid: string): Promise<number>;
   reserve(orderKey: string, options?: { accountUid?: string | null }): Promise<AiTryOnReservation>;
-  release(orderDocId: string, account?: AiTryOnAccountReservation | null): Promise<void>;
+  release(orderDocId: string, account?: AiTryOnAccountReservation | null, orderResetGeneration?: number): Promise<void>;
   /**
    * Releases a try held by `guard` (a busy job holding `orderDocId` and
    * `account`) exactly once: only while the guard exists and `accept`s its
@@ -140,6 +142,7 @@ export const createAiTryOnUsageLimits = (
     transaction: Transaction,
     orderDocId: string,
     account: AiTryOnAccountReservation | null,
+    orderResetGeneration = 0,
   ) => {
     const orderRef = collection().doc(orderDocId);
     const global = globalRef();
@@ -156,16 +159,20 @@ export const createAiTryOnUsageLimits = (
       if (globalCount > 0) {
         transaction.set(global, { count: globalCount - 1, updatedAt: at }, { merge: true });
       }
-      if (orderCount > 0) {
+      // A delayed refund must not consume a try reserved after an admin reset.
+      const currentGeneration = accountSnapshot?.data()?.resetGeneration ?? 0;
+      const sameGeneration = !account || currentGeneration === (account.resetGeneration ?? 0);
+      if (orderCount > 0 && (orderSnapshot.data()?.resetGeneration ?? 0) === orderResetGeneration) {
         transaction.set(orderRef, { count: orderCount - 1, updatedAt: at }, { merge: true });
       }
-      if (account && accountRef && accountSnapshot && accountSnapshot.exists) {
+      if (account && accountRef && accountSnapshot && accountSnapshot.exists && sameGeneration) {
         const uses = readLiveAccountUses(accountSnapshot.data(), at.getTime(), windowMs);
         const index = uses.indexOf(account.reservedAtMs);
         if (index >= 0) {
           uses.splice(index, 1);
           transaction.set(accountRef, {
             kind: "account",
+            ...(currentGeneration ? { resetGeneration: currentGeneration } : {}),
             uses,
             updatedAt: at,
             expiresAt: new Date((uses.length ? uses[uses.length - 1]! : at.getTime()) + windowMs),
@@ -223,6 +230,7 @@ export const createAiTryOnUsageLimits = (
           return { ok: false, code: "ORDER_TRY_LIMIT_REACHED" } as const;
         }
         const at = new Date(nowMs);
+        const orderResetGeneration = orderSnapshot.data()?.resetGeneration ?? 0;
         transaction.set(global, { count: globalCount + 1, cap: globalCap, updatedAt: at }, { merge: true });
         transaction.set(
           orderRef,
@@ -241,18 +249,21 @@ export const createAiTryOnUsageLimits = (
         let account: AiTryOnAccountReservation | null = null;
         if (accountRef && accountDocId) {
           const uses = [...accountUses, nowMs];
-          // Minimal record: only the window's use times and the TTL field.
+          const resetGeneration = accountSnapshot?.data()?.resetGeneration ?? 0;
+          // Keep the reset generation only after this account has been reset.
           transaction.set(accountRef, {
             kind: "account",
+            ...(resetGeneration ? { resetGeneration } : {}),
             uses,
             updatedAt: at,
             expiresAt: new Date(nowMs + windowMs),
           });
-          account = { docId: accountDocId, reservedAtMs: nowMs };
+          account = { docId: accountDocId, reservedAtMs: nowMs, resetGeneration };
         }
         return {
           ok: true,
           orderDocId,
+          orderResetGeneration,
           orderTriesRemaining: Math.max(0, triesPerOrder - (orderCount + 1)),
           account,
           accountTriesRemaining: account
@@ -261,9 +272,9 @@ export const createAiTryOnUsageLimits = (
         } as const;
       });
     },
-    async release(orderDocId, account = null) {
+    async release(orderDocId, account = null, orderResetGeneration = 0) {
       await db.runTransaction(async (transaction) => {
-        const apply = await readRelease(transaction, orderDocId, account);
+        const apply = await readRelease(transaction, orderDocId, account, orderResetGeneration);
         apply();
       });
     },
@@ -273,7 +284,7 @@ export const createAiTryOnUsageLimits = (
         const data = snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
         if (!data || !accept(data) || typeof data.orderDocId !== "string") return false;
         const account = (data.account ?? null) as AiTryOnAccountReservation | null;
-        const apply = await readRelease(transaction, data.orderDocId, account);
+        const apply = await readRelease(transaction, data.orderDocId, account, typeof data.orderResetGeneration === "number" ? data.orderResetGeneration : 0);
         apply();
         transaction.delete(guard);
         return true;
