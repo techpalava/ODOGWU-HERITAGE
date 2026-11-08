@@ -75,6 +75,19 @@ export interface AiTryOnPreviewableGarment {
    * the wearer's other garments.
    */
   readonly orderDetails: AiTryOnOrderDetails | null;
+  /**
+   * This garment alone (its source, fabric and details, plus the wearer's
+   * fit hints). A change to another garment leaves it unchanged (M1).
+   */
+  readonly inputFingerprint?: string | null;
+}
+
+/** One top-and-bottom pair the outfit can be made from. */
+export interface AiTryOnOutfitPair {
+  readonly top: string;
+  readonly bottom: string;
+  readonly label: string;
+  readonly inputFingerprint: string;
 }
 
 export interface AiTryOnWearerTarget {
@@ -104,6 +117,8 @@ export interface AiTryOnWearerTarget {
    * sends the chosen garment's own `orderDetails`, not this whole list.
    */
   readonly orderDetails: AiTryOnOrderDetails | null;
+  /** Outfit slot only: every current pair; a preview of any one is current. */
+  readonly outfitPairs?: readonly AiTryOnOutfitPair[];
 }
 
 export interface AiTryOnTargetOccurrence {
@@ -239,31 +254,51 @@ const buildTarget = ({
     ),
   } as GarmentScopedCustomDetailsStateV1;
 
-  const inputFingerprint =
-    occurrences.length === 0
-      ? null
-      : createAiTryOnFingerprintFromOccurrenceAssignments({
-          customDetailsReady: input.customDetailsReady,
-          designSourceReady: input.designSourceReady,
-          occurrences: occurrences.map((occurrence) => ({
-            garmentKey: occurrence.garmentKey,
-            assignment: occurrence.assignment,
-          })),
-          visualInput: {
-            garmentTypeSelection: input.garmentTypeSelection,
-            fabricAllocations,
-            garmentScopedCustomDetails,
-            ...(input.physicalOccurrences
-              ? {
-                  physicalOccurrences: input.physicalOccurrences.filter((occurrence) =>
-                    garmentKeys.has(occurrence.garmentKey),
-                  ),
-                }
-              : {}),
-            ...(AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT ? { measurementFitHints: fitHints } : {}),
-            orderDetails,
-          },
-        });
+  const fingerprintFor = (
+    keys: ReadonlySet<string>,
+    details: AiTryOnOrderDetails | null,
+  ): string | null => {
+    const scoped = occurrences.filter((occurrence) => keys.has(occurrence.garmentKey));
+    if (scoped.length === 0) return null;
+    return createAiTryOnFingerprintFromOccurrenceAssignments({
+      customDetailsReady: input.customDetailsReady,
+      designSourceReady: input.designSourceReady,
+      occurrences: scoped.map((occurrence) => ({
+        garmentKey: occurrence.garmentKey,
+        assignment: occurrence.assignment,
+      })),
+      visualInput: {
+        garmentTypeSelection: input.garmentTypeSelection,
+        fabricAllocations: fabricAllocations
+          .map((allocation) => ({
+            ...allocation,
+            garmentAssignments: allocation.garmentAssignments.filter((entry) => keys.has(entry.garmentKey)),
+          }))
+          .filter((allocation) => allocation.garmentAssignments.length > 0),
+        garmentScopedCustomDetails: {
+          ...garmentScopedCustomDetails,
+          selectionsByGarmentKey: Object.fromEntries(
+            Object.entries(garmentScopedCustomDetails.selectionsByGarmentKey || {}).filter(([garmentKey]) => keys.has(garmentKey)),
+          ),
+        } as GarmentScopedCustomDetailsStateV1,
+        ...(input.physicalOccurrences
+          ? {
+              physicalOccurrences: input.physicalOccurrences.filter((occurrence) =>
+                keys.has(occurrence.garmentKey),
+              ),
+            }
+          : {}),
+        ...(AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT ? { measurementFitHints: fitHints } : {}),
+        orderDetails: details,
+      },
+    });
+  };
+  const inputFingerprint = fingerprintFor(garmentKeys, orderDetails);
+  // Deep check M1: each garment's preview depends on that garment only.
+  const garmentsWithFingerprints = previewableGarments.map((garment) => ({
+    ...garment,
+    inputFingerprint: fingerprintFor(new Set([garment.garmentKey]), garment.orderDetails),
+  }));
 
   return {
     wearerId,
@@ -273,7 +308,7 @@ const buildTarget = ({
     garmentImageUrl: previewableGarments.length ? previewableGarments[0].garmentImageUrl : garmentImageUrl,
     ...(previewableGarments[0]?.uploadedDesign ? { uploadedDesign: previewableGarments[0].uploadedDesign } : {}),
     fabricSwatchImageUrl: previewableGarments.length ? previewableGarments[0].fabricSwatchImageUrl : (mode === "fabric" ? fabricSwatchImageUrl : null),
-    previewableGarments,
+    previewableGarments: garmentsWithFingerprints,
     fitHints,
     orderDetails,
   };
@@ -361,6 +396,7 @@ export const aiTryOnPreviewTargets = (targets: readonly AiTryOnWearerTarget[]) =
       ...target,
       wearerId: aiTryOnGarmentPreviewKey(target.wearerId, garment.garmentKey),
       label: `${target.label} — ${garment.label}`,
+      inputFingerprint: garment.inputFingerprint === undefined ? target.inputFingerprint : garment.inputFingerprint,
       mode: chooseAiTryOnMode({ hasFabricSwatch: Boolean(garment.fabricSwatchImageUrl) }),
       garmentImageUrl: garment.garmentImageUrl,
       uploadedDesign: garment.uploadedDesign,
@@ -382,7 +418,9 @@ export interface AiTryOnOutfitChoice extends AiTryOnPreviewableGarment {
 export const aiTryOnOutfitChoices = (target: AiTryOnWearerTarget) => {
   const garments: AiTryOnOutfitChoice[] = (target.previewableGarments ?? []).flatMap((garment) => {
     const type = garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;
-    return garment.sourceKind === "catalog" && garment.garmentImageUrl && type ? [{ ...garment, garmentType: type, garmentImageUrl: garment.garmentImageUrl }] : [];
+    // Older callers without per-garment fingerprints fall back to the wearer's.
+    const inputFingerprint = garment.inputFingerprint === undefined ? target.inputFingerprint : garment.inputFingerprint;
+    return garment.sourceKind === "catalog" && garment.garmentImageUrl && type ? [{ ...garment, inputFingerprint, garmentType: type, garmentImageUrl: garment.garmentImageUrl }] : [];
   });
   return {
     tops: garments.filter((garment) => aiTryOnOutfitPart(garment.garmentType) === "top"),
@@ -394,10 +432,37 @@ export const buildAiTryOnOutfitRequestGarment = (garment: AiTryOnOutfitChoice): 
   ...(garment.fabricSwatchImageUrl ? { fabricSwatchImageUrl: garment.fabricSwatchImageUrl } : {}),
   ...(garment.orderDetails ? { orderDetails: garment.orderDetails } : {}),
 });
-export const aiTryOnOutfitTarget = (target: AiTryOnWearerTarget): AiTryOnWearerTarget | null => {
+const outfitPairLabel = (top: AiTryOnOutfitChoice, bottom: AiTryOnOutfitChoice) => `${top.label} + ${bottom.label}`;
+/**
+ * The outfit slot. With a pair: that pair's own fingerprint and names. With
+ * none: no single fingerprint, but every current pair, so a stored outfit
+ * preview is current only when it was made from one of them.
+ */
+export const aiTryOnOutfitTarget = (
+  target: AiTryOnWearerTarget,
+  pair?: { top: AiTryOnOutfitChoice; bottom: AiTryOnOutfitChoice } | null,
+): AiTryOnWearerTarget | null => {
   const { tops, bottoms } = aiTryOnOutfitChoices(target);
-  return tops.length && bottoms.length ? { ...target, wearerId: aiTryOnOutfitPreviewKey(target.wearerId), inputFingerprint: aiTryOnOutfitFingerprint(target.inputFingerprint), label: `${target.label} — Combined outfit`, previewKind: "outfit", previewableGarments: [] } : null;
+  if (!tops.length || !bottoms.length) return null;
+  const base = { ...target, wearerId: aiTryOnOutfitPreviewKey(target.wearerId), previewKind: "outfit" as const, previewableGarments: [] };
+  if (pair) {
+    return { ...base, inputFingerprint: aiTryOnOutfitFingerprint(pair.top, pair.bottom), label: `${target.label} — Combined outfit (${outfitPairLabel(pair.top, pair.bottom)})` };
+  }
+  const outfitPairs = tops.flatMap((top) => bottoms.flatMap((bottom) => {
+    const fingerprint = aiTryOnOutfitFingerprint(top, bottom);
+    return fingerprint ? [{ top: top.garmentKey, bottom: bottom.garmentKey, label: outfitPairLabel(top, bottom), inputFingerprint: fingerprint }] : [];
+  }));
+  return { ...base, inputFingerprint: null, outfitPairs, label: `${target.label} — Combined outfit` };
 };
+/** The pair a stored outfit preview was made from, while still current. */
+export const aiTryOnOutfitPairFor = (target: AiTryOnWearerTarget, fingerprint: string | null | undefined) =>
+  fingerprint ? target.outfitPairs?.find((pair) => pair.inputFingerprint === fingerprint) ?? null : null;
+/** A preview made with `fingerprint` still shows this target's current design. */
+export const aiTryOnPreviewFingerprintIsCurrent = (target: AiTryOnWearerTarget, fingerprint: string | null | undefined): boolean =>
+  Boolean(fingerprint) && (target.inputFingerprint === fingerprint || Boolean(aiTryOnOutfitPairFor(target, fingerprint)));
+/** The target can judge a preview at all (design ready). */
+export const aiTryOnTargetHasDesign = (target: AiTryOnWearerTarget): boolean =>
+  Boolean(target.inputFingerprint || target.outfitPairs?.length);
 export const aiTryOnOrderPreviewTargets = (targets: readonly AiTryOnWearerTarget[]): AiTryOnWearerTarget[] => targets.flatMap((target) => {
   const outfit = aiTryOnOutfitTarget(target);
   return [...aiTryOnPreviewTargets([target]), ...(outfit ? [outfit] : [])];

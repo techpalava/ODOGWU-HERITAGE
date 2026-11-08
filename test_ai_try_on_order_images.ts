@@ -154,6 +154,28 @@ const select = (overrides: Partial<{ wearerKey: string; previewId: string; input
   assert.equal(db.docs.has(`${AI_TRY_ON_ORDER_SELECTION_COLLECTION}/${ORDER_ID}`), false);
 }
 
+// ------------------------------------------------------------ selection: one missing preview skips only that one (deep check M3)
+{
+  const { db, store, sessionId } = await setup();
+  const base = { db: db.asFirestore(), store, sessionId, orderId: ORDER_ID, uid: UID_A };
+  const GONE = "tryon-33333333-3333-4333-8333-333333333333";
+  assert.equal(
+    await saveAiTryOnOrderSelection({ ...base, selections: [select(), select({ wearerKey: "w-obi", previewId: GONE, label: "Obi" })] }),
+    "saved",
+    "a replaced/expired preview does not reject the others",
+  );
+  assert.deepEqual(db.docs.get(`${AI_TRY_ON_ORDER_SELECTION_COLLECTION}/${ORDER_ID}`)!.selections, [
+    { wearerKey: "w-ada", previewId: PREVIEW_ADA, label: "Ada", onModel: false },
+  ]);
+  assert.equal(
+    await saveAiTryOnOrderSelection({ ...base, selections: [select({ inputFingerprint: OTHER_FINGERPRINT }), select({ wearerKey: "w-obi", previewId: PREVIEW_OBI, label: "Obi" })] }),
+    "saved",
+    "an out-of-date entry is skipped, the current one kept",
+  );
+  assert.deepEqual((db.docs.get(`${AI_TRY_ON_ORDER_SELECTION_COLLECTION}/${ORDER_ID}`)!.selections as Array<{ wearerKey: string }>).map((entry) => entry.wearerKey), ["w-obi"], "latest selection replaces the earlier one");
+  assert.equal(await saveAiTryOnOrderSelection({ ...base, selections: [select({ previewId: GONE })] }), "preview_not_found", "nothing valid: still refused");
+}
+
 // ------------------------------------------------------------ payment: copy BEFORE the session previews are deleted; idempotent; 60 days
 {
   const { db, bucket, sessions, store, sessionId } = await setup();
@@ -310,7 +332,7 @@ const select = (overrides: Partial<{ wearerKey: string; previewId: string; input
   const view = readFileSync("src/components/DesignStudioView.tsx", "utf8");
   assert.match(view, /notice=\{futureStageId === "payment" \? AI_TRY_ON_ORDER_IMAGE_COPY\.savedWithOrderNotice : undefined\}/);
   assert.match(view, /rememberAiTryOnOrderSelection\(outcome\.attempt\.orderId\)/);
-  assert.match(view, /if \(entry\.kind !== "fresh"\) return \[\];/, "out-of-date previews are never sent");
+  assert.match(view, /if \(entry\.kind !== "fresh" \|\| !entry\.inputFingerprint\) return \[\];/, "out-of-date previews are never sent");
   assert.match(AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice, /60 days/);
 }
 

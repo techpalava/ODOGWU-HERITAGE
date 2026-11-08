@@ -345,7 +345,11 @@ import {
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
-import { aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
+import {
+  aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets,
+  aiTryOnPreviewFingerprintIsCurrent,
+  buildAiTryOnWearerTargets,
+} from "../utils/aiTryOnWearerTargets";
 import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
@@ -8672,7 +8676,7 @@ export default function DesignStudioView({
         outcome.attempt.orderId,
         linkedSavedOrderIdRef.current,
       );
-      rememberAiTryOnOrderSelection(outcome.attempt.orderId);
+      void rememberAiTryOnOrderSelection(outcome.attempt.orderId);
       const preparedHandoff = createFutureOrderV2PaymentReviewHandoff(
         outcome.attempt.candidate,
         {
@@ -8953,6 +8957,10 @@ export default function DesignStudioView({
         current?.preparation.status === "prepared"
           ? current
           : await handlePrepareFutureOrderV2();
+      // A reused prepared order still carries the latest previews (M3).
+      if (prepared && prepared === current && current.preparation.status === "prepared") {
+        await rememberAiTryOnOrderSelection(current.preparation.orderId).catch(() => undefined);
+      }
       if (prepared) await handleExecuteFutureOrderV2Payment(prepared);
     } finally {
       futureOrderV2PayInFlightRef.current = false;
@@ -9250,7 +9258,7 @@ export default function DesignStudioView({
     // The request may end long after Generate (background): read the
     // design as it is now, and skip a preview of a design since changed.
     const target = aiTryOnPreviewTargets(aiTryOnWearerTargetsRef.current).find((entry) => entry.wearerId === wearerId);
-    if (!target || target.inputFingerprint !== inputFingerprint) return;
+    if (!target || !aiTryOnPreviewFingerprintIsCurrent(target, inputFingerprint)) return;
     setFutureAiTryOnWorkflow((current) =>
       recordAiTryOnPreviewCompletion({
         state: current,
@@ -9279,6 +9287,8 @@ export default function DesignStudioView({
   // step (and again when a background preview finishes), so a preview
   // deleted on AI Try-on never shows here. Images come from the finished
   // job in memory when it has one, otherwise from the owner-only route.
+  /** The stored-preview list has been read from the server in this visit. */
+  const aiTryOnOrderPreviewSummariesLoadedRef = useRef(false);
   const [aiTryOnOrderPreviewSummaries, setAiTryOnOrderPreviewSummaries] = useState<
     AiTryOnOrderPreviewSummary[]
   >([]);
@@ -9296,20 +9306,34 @@ export default function DesignStudioView({
   // The gateway is known to be on (AI Try-on was opened in this visit), or
   // the draft records a preview (also after a reload straight onto Summary).
   // Production with try-on off has neither, so it sends no request.
+  // A guest's saved session token also counts (deep check L2): after a
+  // reload straight onto Summary the gateway is unknown, and the workflow
+  // may say "skipped" even though previews were made and stored.
+  // Restore the guest's saved token (local only, no request) when the visit
+  // starts on Summary or Review instead of passing through AI Try-on.
+  useEffect(() => {
+    if (!guestDraftHydrated) return;
+    if (futureStageId !== "summary" && futureStageId !== "payment") return;
+    if (aiTryOnCredentials.sessionToken || futureDraftIdentityKey.startsWith("authenticated:")) return;
+    const stored = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
+    if (stored.sessionToken) setAiTryOnCredentials(stored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestDraftHydrated, futureStageId, futureDraftIdentityKey]);
   const aiTryOnOrderPreviewStageActive =
     (futureStageId === "summary" || futureStageId === "payment") &&
     (aiTryOnGatewayAvailable ||
       futureAiTryOnWorkflow.status === "completed" ||
-      futureAiTryOnWorkflow.status === "stale") &&
+      futureAiTryOnWorkflow.status === "stale" ||
+      Boolean(aiTryOnCredentials.sessionToken)) &&
     !futurePaymentReviewConfirmed;
   useEffect(() => {
     if (!aiTryOnOrderPreviewStageActive) return;
     let cancelled = false;
     void fetchAiTryOnAvailability({ credentials: aiTryOnCredentials }).then((availability) => {
       if (cancelled) return;
-      setAiTryOnOrderPreviewSummaries(
-        availability.status === "available" ? availability.storedPreviews : [],
-      );
+      aiTryOnOrderPreviewSummariesLoadedRef.current = true;
+      // Also when generation is off or capped: stored previews stay listed.
+      setAiTryOnOrderPreviewSummaries(availability.storedPreviews ?? []);
     });
     return () => {
       cancelled = true;
@@ -9346,24 +9370,55 @@ export default function DesignStudioView({
     ) : null;
   // Order prepared: the current previews go with it at payment (PR 2). Out-
   // of-date previews are never sent. Fire and forget: never blocks payment.
-  function rememberAiTryOnOrderSelection(orderId: string) {
-    const selections = aiTryOnOrderPreviewEntries.flatMap((entry) => {
-      if (entry.kind !== "fresh") return [];
-      const target = aiTryOnPreviewTargets(aiTryOnWearerTargets).find((item) => item.wearerId === entry.wearerId);
-      return target?.inputFingerprint
-        ? [
-            {
-              wearerKey: entry.wearerId,
-              previewId: entry.previewId,
-              inputFingerprint: target.inputFingerprint,
-              label: entry.label,
-            },
-          ]
-        : [];
+  function buildAiTryOnOrderSelections() {
+    return aiTryOnOrderPreviewEntries.flatMap((entry) => {
+      if (entry.kind !== "fresh" || !entry.inputFingerprint) return [];
+      return [
+        {
+          wearerKey: entry.wearerId,
+          previewId: entry.previewId,
+          inputFingerprint: entry.inputFingerprint,
+          label: entry.label,
+        },
+      ];
     });
-    if (selections.length === 0) return;
-    void saveAiTryOnOrderSelection({ credentials: aiTryOnCredentials, orderId, selections });
   }
+  async function rememberAiTryOnOrderSelection(orderId: string) {
+    const selections = buildAiTryOnOrderSelections();
+    if (selections.length === 0) return;
+    const key = `${orderId}|${JSON.stringify(selections)}`;
+    if (lastAiTryOnOrderSelectionRef.current === key) return;
+    lastAiTryOnOrderSelectionRef.current = key;
+    await saveAiTryOnOrderSelection({ credentials: aiTryOnCredentials, orderId, selections });
+  }
+  // Deep check M3: the previews that go with the order are the latest ones.
+  // While an order is prepared and not yet paid, a changed list (a new
+  // preview made after preparing, one deleted or gone out of date) is sent
+  // again. An empty list is sent only once the server list has been read,
+  // so a reload never clears a valid selection before it loads.
+  const lastAiTryOnOrderSelectionRef = useRef<string | null>(null);
+  const preparedAiTryOnOrderId =
+    futurePaymentReviewHandoff?.preparation.status === "prepared" && !futurePaymentReviewConfirmed
+      ? futurePaymentReviewHandoff.preparation.orderId
+      : null;
+  const latestAiTryOnOrderSelections = aiTryOnOrderPreviewStageActive ? buildAiTryOnOrderSelections() : null;
+  const latestAiTryOnOrderSelectionKey =
+    preparedAiTryOnOrderId && latestAiTryOnOrderSelections
+      ? `${preparedAiTryOnOrderId}|${JSON.stringify(latestAiTryOnOrderSelections)}`
+      : null;
+  useEffect(() => {
+    if (!preparedAiTryOnOrderId || !latestAiTryOnOrderSelections || !latestAiTryOnOrderSelectionKey) return;
+    if (lastAiTryOnOrderSelectionRef.current === latestAiTryOnOrderSelectionKey) return;
+    if (latestAiTryOnOrderSelections.length === 0 && !aiTryOnOrderPreviewSummariesLoadedRef.current) return;
+    if (latestAiTryOnOrderSelections.length === 0 && lastAiTryOnOrderSelectionRef.current === null) return;
+    lastAiTryOnOrderSelectionRef.current = latestAiTryOnOrderSelectionKey;
+    void saveAiTryOnOrderSelection({
+      credentials: aiTryOnCredentials,
+      orderId: preparedAiTryOnOrderId,
+      selections: latestAiTryOnOrderSelections,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestAiTryOnOrderSelectionKey]);
   const handleAiTryOnBack = () => {
     const returnTo = aiTryOnReturnTo;
     if (!returnTo) return;
@@ -12253,11 +12308,15 @@ export default function DesignStudioView({
                     job.wearerName
                   : null,
             },
-            kind: aiTryOnToastKind(
-              job,
-              aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId)
-                ?.inputFingerprint,
-            ),
+            kind: (() => {
+              const current = aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId);
+              return aiTryOnToastKind(
+                job,
+                current && aiTryOnPreviewFingerprintIsCurrent(current, job.inputFingerprint)
+                  ? job.inputFingerprint
+                  : current?.inputFingerprint,
+              );
+            })(),
           }))}
         onView={openAiTryOnForWearer}
         onRetry={openAiTryOnForWearer}

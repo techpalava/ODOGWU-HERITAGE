@@ -245,7 +245,14 @@ export type AiTryOnAvailabilityDetails =
       /** Guest session token to keep (Step 7); null for signed-in customers. */
       sessionToken: string | null;
     }
-  | { status: "unavailable" };
+  | {
+      status: "unavailable";
+      /**
+       * Previews already stored for this order, listed even when generation
+       * is off or capped (Summary, Review and the paid order keep them).
+       */
+      storedPreviews?: AiTryOnStoredPreviewSummary[];
+    };
 
 const PREVIEW_ID_PATTERN = /^tryon-[0-9a-f-]{36}$/;
 
@@ -307,7 +314,8 @@ export const fetchAiTryOnAvailability = async ({
     });
     const body = (await readJson(response)) as Record<string, unknown> | null;
     if (!response.ok || !isRecord(body) || body.status !== "available") {
-      return { status: "unavailable" };
+      const stored = response.ok && isRecord(body) ? parseStoredPreviews(body.previews) : [];
+      return stored.length ? { status: "unavailable", storedPreviews: stored } : { status: "unavailable" };
     }
     const triesPerOrder =
       typeof body.triesPerOrder === "number" && body.triesPerOrder > 0
@@ -362,7 +370,9 @@ export type AiTryOnPreviewOutcome =
   | { kind: "busy"; jobId: string; retryAfterSeconds: number | null }
   /** Still over capacity after the retries; refund may be unconfirmed. */
   | { kind: "busy_failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number; tryRefunded?: boolean }
-  | { kind: "unavailable" };
+  | { kind: "unavailable" }
+  /** Another tab or device is making this preview; no try was used. */
+  | { kind: "in_progress" };
 
 const BUSY_JOB_ID_PATTERN = /^busy-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -423,6 +433,8 @@ export const mapAiTryOnPreviewResponse = (
         retryAfterSeconds:
           typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
       };
+    case "BUSY_JOB_ACTIVE":
+      return { kind: "in_progress" };
     case "PROVIDER_REJECTED":
       return { kind: "photo_blocked", orderTriesRemaining: remaining, ...account, ...refund };
     case "PROVIDER_BUSY":

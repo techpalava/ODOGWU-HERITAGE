@@ -43,6 +43,15 @@ export const aiTryOnBusyJobDocId = (sessionId: string, wearerKey: string): strin
 
 export const createAiTryOnBusyJobId = () => `busy-${randomUUID()}`;
 
+/**
+ * Deep check M5: one generation at a time per session and wearer, across
+ * tabs and devices. `aiTryOnJobs/{run-<sha256(session, wearer)>}` holds only
+ * a random lease id and its end time while a new request runs (deleted when
+ * it ends; `expiresAt` lets the TTL policy remove one left by a crash).
+ */
+export const aiTryOnRunLeaseDocId = (sessionId: string, wearerKey: string): string =>
+  `run-${createHash("sha256").update(`ai-try-on-run\u0000${sessionId}\u0000${wearerKey}`).digest("hex").slice(0, 40)}`;
+
 interface StoredJob {
   jobId: string;
   orderDocId: string;
@@ -228,6 +237,35 @@ export const createAiTryOnBusyJobs = (
       if (!isIdle(job, now())) return false;
       await refund(jobDocId, (current) => current.jobId === job.jobId && isIdle(current, now()));
       return true;
+    },
+
+    /**
+     * Starts a new (not busy-retry) request for this wearer. Returns the
+     * lease id, or null while another request for the wearer is running.
+     */
+    async acquireRun({ sessionId, wearerKey }: { sessionId: string; wearerKey: string }): Promise<string | null> {
+      const docRef = ref(aiTryOnRunLeaseDocId(sessionId, wearerKey));
+      const leaseId = randomUUID();
+      return db.runTransaction(async (transaction) => {
+        const data = (await transaction.get(docRef)).data() as { leaseUntil?: unknown } | undefined;
+        const at = now();
+        if (data && typeof data.leaseUntil === "number" && data.leaseUntil > at) return null;
+        transaction.set(docRef, {
+          leaseId,
+          leaseUntil: at + AI_TRY_ON_BUSY_LEASE_MS,
+          expiresAt: new Date(at + AI_TRY_ON_BUSY_LEASE_MS),
+        });
+        return leaseId;
+      });
+    },
+
+    /** The request ended: drop its lease (only if it is still the holder). */
+    async releaseRun({ sessionId, wearerKey, leaseId }: { sessionId: string; wearerKey: string; leaseId: string }) {
+      const docRef = ref(aiTryOnRunLeaseDocId(sessionId, wearerKey));
+      await db.runTransaction(async (transaction) => {
+        const data = (await transaction.get(docRef)).data() as { leaseId?: unknown } | undefined;
+        if (data?.leaseId === leaseId) transaction.delete(docRef);
+      });
     },
 
     /**

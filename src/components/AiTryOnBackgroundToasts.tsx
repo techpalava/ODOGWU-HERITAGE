@@ -81,7 +81,7 @@ export const AiTryOnBackgroundToasts = ({
               ? COPY.staleTitle(job.wearerName)
               : COPY.failedTitle(job.wearerName);
         const body =
-          job.outcome && "tryRefunded" in job.outcome && job.outcome.tryRefunded === true ? COPY.refundedBody : kind === "failed" ? COPY.failedBody : kind === "busy_failed" ? COPY.busyFailedBody : kind === "resume_failed" ? COPY.resumeFailedBody : kind === "stale" ? COPY.staleBody : null;
+          job.outcome?.kind === "in_progress" ? COPY.inProgressBody : job.outcome && "tryRefunded" in job.outcome && job.outcome.tryRefunded === true ? COPY.refundedBody : kind === "failed" ? COPY.failedBody : kind === "busy_failed" ? COPY.busyFailedBody : kind === "resume_failed" ? COPY.resumeFailedBody : kind === "stale" ? COPY.staleBody : null;
         const action = kind === "ready" ? COPY.readyAction : kind === "stale" ? COPY.staleAction : COPY.retryAction;
         return (
           <div

@@ -1,8 +1,8 @@
 import type { Firestore } from "firebase-admin/firestore";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { AI_TRY_ON_SESSION_COLLECTION, hashAiTryOnUid } from "./aiTryOnSession.js";
-import { AI_TRY_ON_USAGE_COLLECTION, aiTryOnAccountUsageDocId, hashAiTryOnOrderKey } from "./aiTryOnUsageLimits.js";
-import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, AI_TRY_ON_ACCOUNT_WINDOW_MS, AI_TRY_ON_TRIES_PER_ORDER } from "../utils/aiTryOnGatewayContract.js";
+import { AI_TRY_ON_GLOBAL_USAGE_DOC, AI_TRY_ON_USAGE_COLLECTION, aiTryOnAccountUsageDocId, hashAiTryOnOrderKey } from "./aiTryOnUsageLimits.js";
+import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, AI_TRY_ON_ACCOUNT_WINDOW_MS, AI_TRY_ON_GLOBAL_GENERATION_CAP, AI_TRY_ON_TRIES_PER_ORDER } from "../utils/aiTryOnGatewayContract.js";
 import { getCanonicalEmail } from "../security/authIdentity.js";
 
 // Deliberately narrower than the general admin allowlist; never sent to the browser.
@@ -73,7 +73,19 @@ export const handleAiTryOnAdminReset = async (
     return res.status(401).json({ code: "AUTH_REQUIRED" });
   }
   const eligible = canResetOwnAiTryOn(identity);
-  if (req.method === "GET") return res.status(200).json({ eligible });
+  if (req.method === "GET") {
+    if (!eligible) return res.status(200).json({ eligible });
+    // Read-only: the lifetime preview count against the unchanged cap, for
+    // the System Settings warning at 80% and 95%. Omitted if unreadable.
+    let globalUsage: { count: number; cap: number } | undefined;
+    try {
+      const count = (await (await dependencies.getDb()).collection(AI_TRY_ON_USAGE_COLLECTION).doc(AI_TRY_ON_GLOBAL_USAGE_DOC).get()).data()?.count;
+      globalUsage = { count: typeof count === "number" ? count : 0, cap: AI_TRY_ON_GLOBAL_GENERATION_CAP };
+    } catch {
+      globalUsage = undefined;
+    }
+    return res.status(200).json(globalUsage ? { eligible, globalUsage } : { eligible });
+  }
   if (!eligible) return res.status(403).json({ code: "ADMIN_RESET_FORBIDDEN" });
   try {
     const ordersReset = await resetOwnAiTryOnCounters(await dependencies.getDb(), identity.uid, dependencies.now);
