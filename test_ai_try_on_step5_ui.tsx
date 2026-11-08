@@ -1427,3 +1427,32 @@ console.log("PASS: AI Try-on Step 5 UI, consent, privacy policy and 90-day order
   assert.equal(aiTryOnPreviewFingerprintIsCurrent(aiTryOnOutfitTarget(after)!, pairOf(before, "shirt:1")), false);
   console.log("PASS: AI Try-on per-garment and per-pair freshness (M1)");
 }
+
+// Deep check L3: a wearer that went from 1 to 2 previewable garments keeps
+// its old wearer-key preview visible as one out-of-date entry (no garment).
+{
+  const { aiTryOnOrderPreviewTargets } = await import("./src/utils/aiTryOnWearerTargets");
+  const { selectAiTryOnOrderPreviews } = await import("./src/components/AiTryOnOrderPreviewThumbnails");
+  const [two] = buildAiTryOnWearerTargets(baseInput());
+  assert.equal(two.previewableGarments?.length, 2);
+  const legacy = { previewId: "tryon-legacy", wearerKey: two.wearerId, inputFingerprint: "tryon-v1-0123456789abcdef", expiresAt: "2026-12-31T00:00:00Z" };
+  const entries = selectAiTryOnOrderPreviews(aiTryOnOrderPreviewTargets([two]) as never, [legacy]);
+  assert.deepEqual(entries, [{ kind: "stale", wearerId: two.wearerId, label: two.label }], "one out-of-date entry under the wearer's name");
+  // Even a matching fingerprint never makes it current: it can't be tied to a garment.
+  assert.equal(selectAiTryOnOrderPreviews(aiTryOnOrderPreviewTargets([two]) as never, [{ ...legacy, inputFingerprint: two.inputFingerprint! }])[0].kind, "stale");
+  // One garment: unchanged, the wearer key is the live slot.
+  const [one] = buildAiTryOnWearerTargets(baseInput({ occurrences: baseInput().occurrences.slice(0, 1) }));
+  assert.equal(aiTryOnOrderPreviewTargets([one]).length, 1);
+  assert.equal(selectAiTryOnOrderPreviews(aiTryOnOrderPreviewTargets([one]) as never, [{ ...legacy, wearerKey: one.wearerId, inputFingerprint: one.inputFingerprint! }])[0].kind, "fresh");
+  // Panel: the same out-of-date card with "Make a new preview".
+  const withLegacy = renderPanel({ targets: [two], storedPreviews: [legacy] as never });
+  const card = withLegacy.renderer.root.findAll((node) => node.props["data-ai-try-on-legacy-preview-stale"] === two.wearerId);
+  assert.equal(card.length, 1, "panel shows the old preview as out of date");
+  assert.match(textOf(card[0]), /your design changed after this preview/);
+  assert.match(textOf(card[0]), /Make a new preview/);
+  act(() => withLegacy.renderer.unmount());
+  const single = renderPanel({ targets: [one], storedPreviews: [{ ...legacy, wearerKey: one.wearerId }] as never });
+  assert.equal(single.renderer.root.findAll((node) => node.props["data-ai-try-on-legacy-preview-stale"] !== undefined).length, 0);
+  act(() => single.renderer.unmount());
+  console.log("PASS: AI Try-on legacy wearer-key preview shown as out of date (L3)");
+}
