@@ -1,7 +1,6 @@
 # Living project state
 
 Updated: 2026-11-08. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
-Remaining work before launch is in `docs/PRE_LAUNCH_CHECKLIST.md`.
 This file is committed on `main` and `production`. Update it after each release.
 
 ## What the product is
