@@ -281,10 +281,15 @@ export default function HomeView({
             </h1>
             {/* Hero Description */}
             <p className="text-xs sm:text-sm text-heritage-beige max-w-xl leading-relaxed font-sans">
-              Welcome to {businessSettings.applicationSettings.communityName}.
-              We promote the rich, colourful, and dynamic traditional cultures
-              of Nigeria, and its extensions, through clothing that is
-              custom-made in Nigeria and shipped to the Netherlands.
+              Welcome to {businessSettings.applicationSettings.communityName}. We
+              celebrate and promote the rich, colourful and dynamic traditional
+              cultures of Nigeria and its extensions through authentic,
+              custom-made clothing. By connecting skilled artisans in Nigeria
+              with communities across the Netherlands and beyond, we empower
+              people to express their identity and tell their unique stories
+              through timeless Nigerian fabrics. Each garment is crafted with
+              exceptional care and craftsmanship in Nigeria and shipped to the
+              Netherlands.
             </p>
 
             {/* Vision, Mission & Core Values */}
