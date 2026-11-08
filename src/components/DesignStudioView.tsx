@@ -9307,9 +9307,8 @@ export default function DesignStudioView({
     let cancelled = false;
     void fetchAiTryOnAvailability({ credentials: aiTryOnCredentials }).then((availability) => {
       if (cancelled) return;
-      setAiTryOnOrderPreviewSummaries(
-        availability.status === "available" ? availability.storedPreviews : [],
-      );
+      // Also when generation is off or capped: stored previews stay listed.
+      setAiTryOnOrderPreviewSummaries(availability.storedPreviews ?? []);
     });
     return () => {
       cancelled = true;

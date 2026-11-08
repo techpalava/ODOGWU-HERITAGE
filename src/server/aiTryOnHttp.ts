@@ -859,12 +859,31 @@ export async function handleAiTryOn(
       const body: AiTryOnAvailabilityResponse = { status: "unavailable", code };
       return res.status(200).json(body);
     };
-    if (!enabled) return unavailable("NOT_CONFIGURED");
+    // Generation off or capped: the caller's already-stored previews are
+    // still listed (never minting a session), so Summary, Review & Payment
+    // and the paid order keep them. Best effort: any error lists none.
+    const unavailableWithStoredPreviews = async (code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED") => {
+      if (!isSessionRequest) return unavailable(code);
+      let previews: StoredPreviewList = [];
+      try {
+        const identity = await readIdentity();
+        if (identity !== "auth_failed") {
+          const db = await resolveDb();
+          const sessionId = await createSessions(db).authorize(identity);
+          if (sessionId) previews = await createStore(db).list(sessionId);
+        }
+      } catch {
+        previews = [];
+      }
+      const body: AiTryOnAvailabilityResponse = { status: "unavailable", code, ...(previews.length ? { previews } : {}) };
+      return res.status(200).json(body);
+    };
+    if (!enabled) return unavailableWithStoredPreviews("NOT_CONFIGURED");
     try {
       const db = await resolveDb();
       const limits = createLimits(db);
       const count = await limits.readGlobalCount();
-      if (count >= AI_TRY_ON_GLOBAL_GENERATION_CAP) return unavailable("GLOBAL_LIMIT_REACHED");
+      if (count >= AI_TRY_ON_GLOBAL_GENERATION_CAP) return unavailableWithStoredPreviews("GLOBAL_LIMIT_REACHED");
       if (!isSessionRequest) {
         const body: AiTryOnAvailabilityResponse = {
           status: "available",

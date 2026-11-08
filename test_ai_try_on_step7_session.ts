@@ -822,4 +822,34 @@ for (const mode of ["webhook", "browser"] as const) {
   void sessionId;
 }
 
+{
+  // Deep check H1: generation off or capped still lists the caller's stored
+  // previews (Summary, Review and the paid order keep them), never mints.
+  const h = httpHarness();
+  const token = ((await session(h)).body as { sessionToken: string }).sessionToken;
+  const made = await generate(h, { "x-ai-try-on-session": token });
+  assert.equal(made.status, 200);
+  const enabledEnv = h.deps.environment;
+  h.deps.environment = { ...enabledEnv, AI_TRY_ON_ENABLED: "false" };
+  const off = (await session(h, { "x-ai-try-on-session": token })).body as { status: string; code: string; previews?: { wearerKey: string }[] };
+  assert.equal(off.status, "unavailable");
+  assert.equal(off.code, "NOT_CONFIGURED");
+  assert.deepEqual(off.previews?.map((entry) => entry.wearerKey), ["w-ada"], "stored preview listed while off");
+  const mintsBefore = h.counters.guestMints;
+  const stranger = (await session(h)).body as { status: string; previews?: unknown; sessionToken?: unknown };
+  assert.equal(stranger.status, "unavailable");
+  assert.equal(stranger.previews, undefined, "no session: nothing listed");
+  assert.equal(stranger.sessionToken, undefined);
+  assert.equal(h.counters.guestMints, mintsBefore, "no guest session minted while off");
+  const plainGet = (await call(h, "GET", "/api/ai-try-on")).body as { previews?: unknown };
+  assert.equal(plainGet.previews, undefined, "plain availability GET never lists");
+
+  h.deps.environment = enabledEnv;
+  h.db.docs.set("aiTryOnUsage/global", { count: 1000 } as never);
+  const capped = (await session(h, { "x-ai-try-on-session": token })).body as { status: string; code: string; previews?: { wearerKey: string }[] };
+  assert.equal(capped.code, "GLOBAL_LIMIT_REACHED");
+  assert.deepEqual(capped.previews?.map((entry) => entry.wearerKey), ["w-ada"], "stored preview listed while capped");
+  assert.equal((await generate(h, { "x-ai-try-on-session": token })).status, 503, "generation itself stays capped");
+}
+
 console.log("PASS: AI Try-on Step 7 server sessions, payment cleanup and compact previews");
