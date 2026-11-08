@@ -5,6 +5,7 @@ import {
   HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID,
   resolveFooterBatchLink,
 } from "../utils/footerBatchLink";
+import { customerFacingPickupLocationLabel } from "../utils/designStudioFutureShipping";
 
 import {
   Phone,
@@ -226,10 +227,13 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
                   size={14}
                   className="text-heritage-gold mt-0.5 shrink-0"
                 />
-                <span className="leading-relaxed text-center sm:text-left">
-                  {businessSettings?.productionSettings
-                    ?.defaultPickupLocation ||
-                    businessSettings.productionSettings.defaultPickupLocation}
+                <span
+                  className="leading-relaxed text-center sm:text-left"
+                  data-footer-pickup-location
+                >
+                  {customerFacingPickupLocationLabel(
+                    businessSettings?.productionSettings?.defaultPickupLocation,
+                  )}
                 </span>
               </li>
               <li className="flex flex-col sm:flex-row items-center sm:items-start gap-1.5 sm:gap-3">
