@@ -1,4 +1,5 @@
 import React, { ErrorInfo, ReactNode } from "react";
+import { retryFailedLazyViews } from "../utils/lazyView";
 
 interface Props {
   children?: ReactNode;
@@ -39,7 +40,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
               We encountered an unexpected error displaying this component.
             </p>
             <button
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={() => {
+                // Drop only the rejected section chunk, then render it again.
+                retryFailedLazyViews();
+                this.setState({ hasError: false, error: null });
+              }}
               className="bg-heritage-green text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-opacity-90 transition-all"
             >
               Try Again
