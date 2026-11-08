@@ -17,6 +17,15 @@ import {
 } from "./src/utils/aiTryOnOrderImageCopy";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+// Minimal document for the enlarged view's Escape handling (deep check L1).
+const keyListeners = new Set<(event: { key: string; preventDefault: () => void }) => void>();
+Object.assign(globalThis, {
+  document: {
+    addEventListener: (type: string, listener: (event: { key: string; preventDefault: () => void }) => void) => { if (type === "keydown") keyListeners.add(listener); },
+    removeEventListener: (type: string, listener: (event: { key: string; preventDefault: () => void }) => void) => { if (type === "keydown") keyListeners.delete(listener); },
+  },
+});
+const pressKey = (key: string) => { let prevented = false; for (const listener of [...keyListeners]) listener({ key, preventDefault: () => { prevented = true; } }); return prevented; };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 assert.equal(AI_TRY_ON_ORDER_IMAGE_COPY_STATUS, "APPROVED", "wording approved by Xavier (2 Nov 2026)");
@@ -97,13 +106,49 @@ await act(async () => {
 });
 assert.ok(!JSON.stringify(staleOnly.toJSON()).includes(COPY.savedWithOrderNotice), "no notice when nothing will be saved");
 
-// 3. An image that can't load is left out (no broken picture).
+// 3. An image that can't load shows a message and "Try again" (deep check
+// M4), never a broken picture; a retry that works shows the image.
 let failing!: ReturnType<typeof create>;
+let loadCalls = 0;
+let loadWorks = false;
+const flakyLoad = async () => { loadCalls += 1; if (!loadWorks) return null; return { mimeType: "image/webp", data: "UklGRg==" }; };
+const rejectingLoad = async () => { throw new Error("network"); };
 await act(async () => {
-  failing = create(createElement(AiTryOnOrderPreviewThumbnails, { entries: entries.slice(0, 1), loadImage: async () => null, onMakeNew: () => {} }));
+  failing = create(createElement(AiTryOnOrderPreviewThumbnails, { entries: entries.slice(0, 1), loadImage: flakyLoad, onMakeNew: () => {} }));
   await flush();
 });
 assert.equal(failing.root.findAll((node) => node.type === "img").length, 0);
+const errorBox = failing.root.findAll((node) => node.props["data-ai-try-on-order-preview-error"] !== undefined && node.type === "div");
+assert.equal(errorBox.length, 1, "a visible message replaces the missing picture");
+assert.equal(errorBox[0].props.role, "status");
+assert.ok(JSON.stringify(failing.toJSON()).includes(COPY.loadFailed(entries[0].label)));
+const retry = failing.root.findAll((node) => node.props["data-ai-try-on-order-preview-retry"] !== undefined && node.type === "button");
+assert.equal(retry.length, 1);
+loadWorks = true;
+await act(async () => { retry[0].props.onClick(); await flush(); });
+assert.equal(loadCalls, 2, "Try again loads the image again");
+assert.equal(failing.root.findAll((node) => node.type === "img").length, 1, "the image shows after a successful retry");
+await act(async () => {
+  failing.update(createElement(AiTryOnOrderPreviewThumbnails, { entries: entries.slice(2, 3), loadImage: rejectingLoad, onMakeNew: () => {} }));
+  await flush();
+});
+assert.equal(failing.root.findAll((node) => node.props["data-ai-try-on-order-preview-error"] !== undefined && node.type === "div").length, 1, "a thrown load error is shown too, not left loading");
+
+// 3b. Enlarged view: Escape closes it; Tab stays inside (deep check L1).
+await act(async () => {
+  failing.update(createElement(AiTryOnOrderPreviewThumbnails, { entries: entries.slice(0, 1), loadImage: async () => ({ mimeType: "image/webp", data: "UklGRg==" }), onMakeNew: () => {} }));
+  await flush();
+});
+const openButton = failing.root.findAll((node) => node.type === "button" && node.props["aria-label"] === COPY.enlarge(entries[0].label));
+await act(async () => { openButton[0].props.onClick(); });
+const isOpen = () => failing.root.findAll((node) => node.props["data-ai-try-on-order-preview-enlarged"] !== undefined && node.type === "div").length;
+assert.equal(isOpen(), 1);
+assert.equal(keyListeners.size, 1, "Escape listener only while open");
+assert.equal(pressKey("Tab"), true, "Tab is kept inside the dialog");
+assert.equal(isOpen(), 1);
+await act(async () => { assert.equal(pressKey("Escape"), true); });
+assert.equal(isOpen(), 0, "Escape closes the enlarged preview");
+assert.equal(keyListeners.size, 0, "listener removed on close");
 
 // 4. Nothing to show renders nothing.
 await act(async () => {

@@ -386,7 +386,9 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
 }
 
 {
-  // Re-encoding failure: the preview is returned but nothing is stored.
+  // Re-encoding failure: the preview is returned but nothing is stored,
+  // and the try goes back (a preview that can't be kept never reaches
+  // Summary or the order).
   const h = httpHarness();
   h.deps.compactPreviewImage = async () => { throw new Error("sharp unavailable"); };
   const token = ((await session(h)).body as { sessionToken: string }).sessionToken;
@@ -394,6 +396,31 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
   assert.equal(made.status, 200);
   assert.equal((made.body as { previewStored: boolean }).previewStored, false);
   assert.equal(h.bucket.objects.size, 0);
+  assert.equal((made.body as { orderTriesRemaining: number }).orderTriesRemaining, 5, "the try is refunded");
+  const after = (await session(h, { "x-ai-try-on-session": token })).body as { orderTriesRemaining: number };
+  assert.equal(after.orderTriesRemaining, 5, "the server counter is back to 5");
+  const global = [...h.db.docs.entries()].find(([key]) => key === "aiTryOnUsage/global")?.[1] as { count?: number } | undefined;
+  assert.equal(global?.count ?? 0, 0, "the global generation count is released too");
+}
+
+{
+  // Signed-in: the account's 15-try window gets its try back as well.
+  const h = httpHarness();
+  h.deps.compactPreviewImage = async () => { throw new Error("sharp unavailable"); };
+  const auth = { authorization: "Bearer id-token-ada" };
+  await session(h, auth);
+  const made = await generate(h, auth);
+  assert.equal(made.status, 200);
+  const body = made.body as { orderTriesRemaining: number; accountTriesRemaining: number };
+  assert.equal(body.orderTriesRemaining, 5);
+  assert.equal(body.accountTriesRemaining, 15);
+  const after = (await session(h, auth)).body as { orderTriesRemaining: number; accountTriesRemaining: number };
+  assert.deepEqual([after.orderTriesRemaining, after.accountTriesRemaining], [5, 15]);
+
+  // A preview that is compacted normally still uses its try.
+  h.deps.compactPreviewImage = async () => ({ mimeType: "image/webp", data: Buffer.from("RIFF0000WEBPVP8 compact").toString("base64"), bytes: 23, width: 683, height: 1024 });
+  const kept = await generate(h, auth);
+  assert.equal((kept.body as { orderTriesRemaining: number }).orderTriesRemaining, 4);
 }
 
 // ------------------------------------------------------------ no orphans on failed writes
@@ -793,6 +820,36 @@ for (const mode of ["webhook", "browser"] as const) {
   assert.equal(bucket.objects.size, 0, "nothing outlives the order");
   assert.equal(await sessions.authorize({ uid: UID_A, token: null }), null);
   void sessionId;
+}
+
+{
+  // Deep check H1: generation off or capped still lists the caller's stored
+  // previews (Summary, Review and the paid order keep them), never mints.
+  const h = httpHarness();
+  const token = ((await session(h)).body as { sessionToken: string }).sessionToken;
+  const made = await generate(h, { "x-ai-try-on-session": token });
+  assert.equal(made.status, 200);
+  const enabledEnv = h.deps.environment;
+  h.deps.environment = { ...enabledEnv, AI_TRY_ON_ENABLED: "false" };
+  const off = (await session(h, { "x-ai-try-on-session": token })).body as { status: string; code: string; previews?: { wearerKey: string }[] };
+  assert.equal(off.status, "unavailable");
+  assert.equal(off.code, "NOT_CONFIGURED");
+  assert.deepEqual(off.previews?.map((entry) => entry.wearerKey), ["w-ada"], "stored preview listed while off");
+  const mintsBefore = h.counters.guestMints;
+  const stranger = (await session(h)).body as { status: string; previews?: unknown; sessionToken?: unknown };
+  assert.equal(stranger.status, "unavailable");
+  assert.equal(stranger.previews, undefined, "no session: nothing listed");
+  assert.equal(stranger.sessionToken, undefined);
+  assert.equal(h.counters.guestMints, mintsBefore, "no guest session minted while off");
+  const plainGet = (await call(h, "GET", "/api/ai-try-on")).body as { previews?: unknown };
+  assert.equal(plainGet.previews, undefined, "plain availability GET never lists");
+
+  h.deps.environment = enabledEnv;
+  h.db.docs.set("aiTryOnUsage/global", { count: 1000 } as never);
+  const capped = (await session(h, { "x-ai-try-on-session": token })).body as { status: string; code: string; previews?: { wearerKey: string }[] };
+  assert.equal(capped.code, "GLOBAL_LIMIT_REACHED");
+  assert.deepEqual(capped.previews?.map((entry) => entry.wearerKey), ["w-ada"], "stored preview listed while capped");
+  assert.equal((await generate(h, { "x-ai-try-on-session": token })).status, 503, "generation itself stays capped");
 }
 
 console.log("PASS: AI Try-on Step 7 server sessions, payment cleanup and compact previews");
