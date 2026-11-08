@@ -41,9 +41,9 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment.
 Edit image 1 so this same customer wears only the ordered garment from image 2.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in image 1. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
-From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. Image 2 decides that silhouette; order-detail text never changes it. The named garment type still comes from the order details. Do not redesign it.
+From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
 Ignore everything that is not the person or the garment: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
@@ -55,10 +55,10 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment'
 Edit image 1 so this same customer wears only the ordered garment from image 2, made only from the fabric in image 3.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in image 1. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
-From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. Image 2 decides that silhouette; order-detail text never changes it. The named garment type still comes from the order details. Do not redesign it. Ignore its original fabric colour and print.
+From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
 From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
 Do not take any colour, pattern or texture from the clothes in image 1.
 Use only what is in image 3. Do not invent or add prints, motifs or colours.
@@ -96,7 +96,7 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v8": createHash("sha256")
+  "tryon-prompt-v9": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -109,7 +109,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v8");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v9");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -132,12 +132,12 @@ assert.equal(
 );
 assert.deepEqual(buildAiTryOnImageLabels("garment"), [
   "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
-  "Image 2, the design-style garment. Copy its cut, length, neckline, sleeves and shape; order text does not change them. The person wearing it is a stand-in model; do not use them:",
+  "Image 2, the design-style garment. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. The person wearing it is a stand-in model; do not use them:",
 ]);
 // v5: fabric mode labels each image too (live retest returned the stand-in model).
 assert.deepEqual(buildAiTryOnImageLabels("fabric"), [
   "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
-  "Image 2, design-style construction only. Copy its cut, length, neckline, sleeves and shape; order text does not change them. The person wearing it is a stand-in model; do not use them:",
+  "Image 2, design-style construction only. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. The person wearing it is a stand-in model; do not use them:",
   "Image 3, fabric swatch, for colour and pattern only. No other image may set the fabric:",
 ]);
 assert.match(FABRIC_SNAPSHOT, /person in image 2 is only a stand-in model/);
@@ -148,13 +148,13 @@ assert.match(FABRIC_SNAPSHOT.split("\n").at(-1)!, /^Check: .*customer's from ima
 assert.match(FABRIC_SNAPSHOT, /Do not invent or add prints/);
 assert.match(FABRIC_SNAPSHOT, /Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt\./);
 assert.match(FABRIC_SNAPSHOT, /Do not take any colour, pattern or texture from the clothes in image 1\./);
-assert.match(FABRIC_SNAPSHOT, /Do not redesign it\. Ignore its original fabric colour and print\./);
+assert.match(FABRIC_SNAPSHOT, /Keep all other design details\. Ignore its original fabric colour and print\./);
 for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
   assert.match(prompt, /identity, face, hair, skin tone, body shape, pose/);
   assert.match(prompt, /for identity and pose only/);
   assert.match(prompt, /Their clothes are not part of what you keep/);
   assert.match(prompt, /never return image 2/);
-  assert.match(prompt, /make those types only, and they win over the clothes in image 1/);
+  assert.match(prompt, /make those types only, and they win over the clothes in both images/);
   assert.match(prompt, /A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style/);
   assert.match(prompt, /Do not turn any other named type into a different one/);
   assert.match(prompt, /Replace every garment in image 1 that the ordered garment covers/);
@@ -166,9 +166,9 @@ for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
 }
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
-// v8 states that image 2's silhouette wins over order text. Caps sit just above the live counts (392 / 521).
-assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 410, "garment prompt stays short");
-assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 540, "fabric prompt stays short");
+// v9 adds explicit construction priority while keeping the prompt bounded.
+assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 490, "garment prompt stays short");
+assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 620, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
   8,
@@ -293,8 +293,10 @@ for (const id of ["L5", "skirt_additional_lining", "skirt_additional_net", "dres
 }
 assert.equal(AI_TRY_ON_VISIBLE_OPTIONS.get("dress_additional_head_wrap")?.field, "Accessories");
 
-const ORDER_BLOCK_GARMENT = `Order details. Keep the named garment type. Image 2 decides cut, length, neckline, sleeves and shape; nothing in these lines overrides that silhouette. Other lines are non-shape extras only. Never write any of it on the image:
+const ORDER_BLOCK_GARMENT = `Order details. Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details. Never write any of it on the image:
 Garment 1: Standard Shirt
+- Length and sleeves: Standard Length Shirt, Short Sleeve
+- Neckline and collar: Vertical Collar, Round Neck
 - Pockets: With 1 Chest Pocket
 - Embroidery: as on the garment in image 2
 - Monogram: one small embroidered mark on the left chest, with no letters or readable text
@@ -302,10 +304,10 @@ Garment 2: Trouser
 - Pockets: Regular Side Waist Pockets
 - Waistband: With Belt Holder`;
 // v4: fabric colour/category text never reaches the prompt (image 3 wins).
-// v8: length, sleeves and neckline text no longer reach it either (image 2 wins).
+// v9: explicit length, sleeves and neckline choices reach the prompt.
 const ORDER_BLOCK_FABRIC = ORDER_BLOCK_GARMENT.replace(
-  "Order details. Keep the named garment type. Image 2 decides cut, length, neckline, sleeves and shape; nothing in these lines overrides that silhouette. Other lines are non-shape extras only. Never write any of it on the image:\n",
-  "Order details. Keep the named garment type. Image 2 decides cut, length, neckline, sleeves and shape; nothing in these lines overrides that silhouette. Other lines are non-shape extras only. They never change the fabric from image 3. Never write any of it on the image:\nFabric: exactly as in image 3\n",
+  "Order details. Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details. Never write any of it on the image:\n",
+  "Order details. Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details. They never change the fabric from image 3. Never write any of it on the image:\nFabric: exactly as in image 3\n",
 );
 {
   const fabricPrompt = buildAiTryOnPrompt({ mode: "fabric", orderDetails: { ...built!, fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } });
@@ -314,12 +316,12 @@ const ORDER_BLOCK_FABRIC = ORDER_BLOCK_GARMENT.replace(
   }
   assert.match(fabricPrompt, /Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
   assert.match(fabricPrompt, /colour, pattern, motif scale, texture and sheen/);
-  assert.match(fabricPrompt, /Image 2 decides cut, length, neckline, sleeves and shape; nothing in these lines overrides that silhouette\./);
+  assert.match(fabricPrompt, /Explicit choices below override both photos/);
   assert.match(fabricPrompt, /They never change the fabric from image 3\./);
   assert.equal(fabricPrompt.includes("where they differ from image 2, follow these"), false);
   assert.equal(fabricPrompt.includes("for the garment style only"), false);
-  assert.equal(fabricPrompt.includes("Standard Length Shirt, Short Sleeve"), false, "step 1 sleeve text does not reach the prompt");
-  assert.equal(fabricPrompt.includes("Vertical Collar, Round Neck"), false, "step 1 neckline text does not reach the prompt");
+  assert.equal(fabricPrompt.includes("Standard Length Shirt, Short Sleeve"), true, "chosen sleeves reach the prompt");
+  assert.equal(fabricPrompt.includes("Vertical Collar, Round Neck"), true, "chosen neckline reaches the prompt");
   assert.match(fabricPrompt, /Pockets: With 1 Chest Pocket/);
   assert.match(fabricPrompt, /Monogram: one small embroidered mark on the left chest/);
 }
@@ -347,10 +349,11 @@ const many: AiTryOnOrderDetails = {
   })),
 };
 const capped = buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: many });
-assert.equal(capped.split("\n").length, AI_TRY_ON_ORDER_DETAILS_MAX_LINES);
-assert.equal(capped.includes("Short Sleeve"), false, "silhouette lines are omitted before the cap");
-assert.equal(capped.includes("Vertical Collar"), false);
-assert.equal(capped.includes("Above Knee"), false);
+assert.ok(capped.split("\n").length <= AI_TRY_ON_ORDER_DETAILS_MAX_LINES);
+assert.equal((capped.match(/Garment \d:/g) || []).length, 4, "every garment keeps its choices");
+assert.equal(capped.includes("Short Sleeve"), true, "chosen silhouette fields survive the cap");
+assert.equal(capped.includes("Vertical Collar"), true);
+assert.equal(capped.includes("Above Knee"), true);
 {
   const shapeOnly = buildAiTryOnOrderDetailsBlock({
     mode: "garment",
@@ -367,8 +370,7 @@ assert.equal(capped.includes("Above Knee"), false);
   assert.match(shapeOnly, /Garment: Standard Dress/);
   assert.match(shapeOnly, /Trimming: decorative trim as on the garment in image 2/);
   assert.match(shapeOnly, /Monogram: one small embroidered mark on the neckline, with no letters or readable text/);
-  for (const banned of [
-    "where they differ from image 2, follow these",
+  for (const chosen of [
     "Length and sleeves",
     "Neckline and collar",
     "\n- Length:",
@@ -376,7 +378,7 @@ assert.equal(capped.includes("Above Knee"), false);
     "No Collar, V-Shaped Neck",
     "Long Length",
   ]) {
-    assert.equal(shapeOnly.includes(banned), false, `shape text leaked: ${banned}`);
+    assert.equal(shapeOnly.includes(chosen), true, `chosen shape missing: ${chosen}`);
   }
 }
 
@@ -479,7 +481,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v8": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v9": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),

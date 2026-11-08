@@ -110,9 +110,9 @@ const DAY = 24 * 60 * 60 * 1000;
 // ------------------------------------------------------------ model-mode prompt
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
-  // v5: image 2's silhouette wins over order-detail text (same conflict as photo v8).
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v5");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v8");
+  // v6: explicit order choices win over either reference photo.
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v6");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v9");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -132,8 +132,8 @@ const DAY = 24 * 60 * 60 * 1000;
       orderDetails: { garments: [{ garmentType: "shirt", optionIds: [], decorations: [] }], fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } as never,
     });
     assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen\. Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
-    assert.match(fabricPrompt, /Image 2 decides that silhouette; order-detail text never changes it\./);
-    assert.match(fabricPrompt, /Order details\. Keep the named garment type\. Image 2 decides cut, length, neckline, sleeves and shape; nothing in these lines overrides that silhouette\..*They never change the fabric from image 3\./);
+    assert.match(fabricPrompt, /The named garment type and explicitly chosen order details win over image 2/);
+    assert.match(fabricPrompt, /Order details\. Keep the named garment type\. Explicit choices below override both photos.*They never change the fabric from image 3\./);
     assert.equal(fabricPrompt.includes("where they differ from image 2, follow these"), false);
     assert.equal(fabricPrompt.includes("for the garment style only"), false);
     assert.match(fabricPrompt, /\nFabric: exactly as in image 3\n/);
@@ -151,12 +151,27 @@ const DAY = 24 * 60 * 60 * 1000;
   };
   const garmentPrompt = buildAiTryOnModelPrompt({ mode: "garment", orderDetails: details });
   assert.match(garmentPrompt, /Order details\. Keep the named garment type\./);
-  assert.match(garmentPrompt, /Copy the silhouette from image 2/);
+  assert.match(garmentPrompt, /Use image 2 only for details the order does not specify/);
   assert.equal(garmentPrompt.includes("where they differ from image 2, follow these"), false);
-  assert.equal(garmentPrompt.includes("Long Length Shirt, Mid-Long Sleeve"), false, "step 1 length and sleeves do not beat image 2");
-  assert.equal(garmentPrompt.includes("Vertical Collar, Round Neck"), false, "step 1 neckline does not beat image 2");
+  assert.equal(garmentPrompt.includes("Long Length Shirt, Mid-Long Sleeve"), true, "chosen length and sleeves reach the prompt");
+  assert.equal(garmentPrompt.includes("Vertical Collar, Round Neck"), true, "chosen neckline reaches the prompt");
   assert.match(garmentPrompt, /Embroidery: as on the garment in image 2/);
   assert.match(garmentPrompt, /keep the studio model's other clothing and shoes from image 1/);
+}
+
+// All four variants retain explicit collar choices and ban shirt-to-polo swaps.
+for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+  for (const mode of ["garment", "fabric"] as const) {
+    const prompt = builder({ mode, orderDetails: { garments: [{ garmentType: "shirt", optionIds: ["neck_vert_round", "shirt_std_short"], decorations: [] }] } });
+    assert.match(prompt, /Garment: Standard Shirt/);
+    assert.match(prompt, /button-front shirt with a shirt hem, never a polo, tunic or Long Shirt/);
+    assert.match(prompt, /Use a shirt collar unless the order explicitly chooses another neckline or collar/);
+    assert.match(prompt, /Neckline and collar: Vertical Collar, Round Neck/);
+    assert.match(prompt, /Length and sleeves: Standard Length Shirt, Short Sleeve/);
+    assert.match(prompt, /Explicit choices below override both photos/);
+    assert.match(prompt, /tuck in or out/);
+    assert.equal(prompt.includes("order-detail text never changes it"), false);
+  }
 }
 
 // ------------------------------------------------------------ fingerprint (cache key)
