@@ -50,7 +50,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     COPY.panelBusy,
     "Lots of people are making previews right now. We'll keep trying for a few minutes; you can carry on and we'll let you know.",
   );
-  assert.equal(COPY.busyFailedBody, "It's still too busy. This try wasn't counted. Please try again in a little while.");
+  assert.match(COPY.busyFailedBody, /couldn’t confirm whether a try was used/);
   assert.equal(COPY.failedTitle(null), "We couldn't create your preview", "title unchanged");
 }
 
@@ -305,7 +305,7 @@ const harness = () => {
   assert.equal(last.body.orderTriesRemaining, 4, "refunded: only Obi's preview counts");
   assert.equal(h.db.count("global"), 1);
   assert.equal(h.db.jobs().length, 0);
-  assert.deepEqual(mapAiTryOnPreviewResponse(last.status, last.body), { kind: "busy_failed", orderTriesRemaining: 4 });
+  assert.deepEqual(mapAiTryOnPreviewResponse(last.status, last.body), { kind: "busy_failed", orderTriesRemaining: 4, tryRefunded: true });
   // Later attempts and give-ups change nothing.
   h.advance(20_000);
   assert.equal((await h.generate(auth, { busyJobId: jobId })).status, 410);
@@ -632,7 +632,7 @@ const textOf = (node: ReactTestInstance): string =>
   );
   assert.match(toast, /data-ai-try-on-toast="busy_failed"/);
   assert.match(toast, /We couldn&#x27;t create your preview/);
-  assert.match(toast, /It&#x27;s still too busy. This try wasn&#x27;t counted. Please try again in a little while./);
+  assert.match(toast, /couldn’t confirm whether a try was used/);
   assert.match(toast, /Try again/);
 }
 {

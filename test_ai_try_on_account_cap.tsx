@@ -267,7 +267,7 @@ type SessionBody = { status: string; orderTriesRemaining: number; accountTriesRe
   const failedBody = failed.body as { orderTriesRemaining: number; accountTriesRemaining: number };
   assert.equal(failedBody.orderTriesRemaining, 5);
   assert.equal(failedBody.accountTriesRemaining, 15);
-  assert.deepEqual(mapAiTryOnPreviewResponse(failed.status, failed.body), { kind: "failed", orderTriesRemaining: 5, accountTriesRemaining: 15 });
+  assert.deepEqual(mapAiTryOnPreviewResponse(failed.status, failed.body), { kind: "failed", orderTriesRemaining: 5, accountTriesRemaining: 15, tryRefunded: true });
   const after = (await call(h, "POST", "/api/ai-try-on?action=session", auth)).body as SessionBody;
   assert.equal(after.accountTriesRemaining, 15);
 }

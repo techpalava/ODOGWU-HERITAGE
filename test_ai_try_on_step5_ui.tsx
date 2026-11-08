@@ -972,13 +972,14 @@ const errorCases: Array<[AiTryOnPreviewOutcome, string]> = [
   [{ kind: "order_limit_reached" }, AI_TRY_ON_MESSAGES.outOfPreviews],
   [{ kind: "rate_limited", retryAfterSeconds: 60 }, AI_TRY_ON_MESSAGES.tooManyTries],
   [{ kind: "failed", orderTriesRemaining: 3 }, AI_TRY_ON_MESSAGES.failed(3)],
-  [{ kind: "photo_blocked", orderTriesRemaining: 3 }, AI_TRY_ON_MESSAGES.photoBlocked],
+  [{ kind: "photo_blocked", orderTriesRemaining: 3 }, `${AI_TRY_ON_MESSAGES.photoBlocked} ${AI_TRY_ON_MESSAGES.failed(3)}`],
+  [{ kind: "failed", orderTriesRemaining: 3, tryRefunded: true }, AI_TRY_ON_MESSAGES.failed(3, true)],
 ];
 assert.equal(
   AI_TRY_ON_MESSAGES.failed(3),
-  "We couldn't create a preview this time. This try wasn't counted, so you still have 3 left. Try again, or use a different photo.",
+  "Your preview didn’t finish. We couldn’t confirm whether a try was used. Check AI Try-on for your latest tries remaining.",
 );
-assert.equal(AI_TRY_ON_MESSAGES.photoBlocked, "We couldn't use this photo. This try wasn't counted. Please try a different photo.");
+assert.equal(AI_TRY_ON_MESSAGES.photoBlocked, "We couldn't use this photo. Please try a different photo.");
 assert.equal(AI_TRY_ON_MESSAGES.tooManyTries, "That's a lot of tries in a short time. Please wait a while and try again.");
 assert.equal(
   AI_TRY_ON_MESSAGES.outOfPreviews,
@@ -1022,7 +1023,7 @@ for (const [outcome, text] of errorCases) {
   await act(async () => {
     await generateButton(cors.renderer).props.onClick();
   });
-  assert.match(textOf(cors.renderer.root), /so you still have 5 left/);
+  assert.match(textOf(cors.renderer.root), /couldn’t confirm whether a try was used/);
 
   const uploadedDesign = renderPanel({ targets: [target({ garmentImageUrl: null })] });
   assert.match(textOf(uploadedDesign.renderer.root), /isn't available for uploaded designs yet/);
