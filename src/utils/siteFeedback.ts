@@ -3,6 +3,10 @@ import {
   STEP8_FAKE_COUNTRY_CODE_SENTINELS,
   formatStep8CountryLabel,
 } from "../config/Step8AdditionalDeliveryConfig.js";
+import {
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION,
+} from "./designSourceJourney.js";
+import type { DesignStudioStageId } from "../types.js";
 
 /**
  * Site feedback: pure helpers shared by the floating Feedback button, its
@@ -12,7 +16,10 @@ import {
 
 export const SITE_FEEDBACK_COLLECTION = "site_feedback";
 
-/** v2 adds the optional nationality and photo fields. The rules accept 1 and 2. */
+/**
+ * v2 adds the optional nationality, photo, and selected-step fields.
+ * The rules accept 1 and 2. Older clients omit `selectedSteps`.
+ */
 export const SITE_FEEDBACK_SCHEMA_VERSION = 2 as const;
 
 /** Storage prefix for feedback photos: site-feedback/{authUid}/{feedbackId}/photo.{ext}. */
@@ -103,12 +110,57 @@ export const SITE_FEEDBACK_REQUIRED_KEYS = [
   "createdAt",
 ] as const;
 
-/** v2 fields. Optional for the rules so the v1 form keeps working. */
+/**
+ * Customer-facing Design Studio steps, in the current journey order.
+ * Labels match the stepper: "Step N: {title}". Ids are what we persist.
+ */
+export const SITE_FEEDBACK_STEP_OPTIONS: readonly {
+  id: DesignStudioStageId;
+  label: string;
+}[] = Object.freeze(
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map((stage) => ({
+    id: stage.id,
+    label: `Step ${stage.position}: ${stage.title}`,
+  })),
+);
+
+export const SITE_FEEDBACK_STEP_IDS: readonly DesignStudioStageId[] =
+  SITE_FEEDBACK_STEP_OPTIONS.map((step) => step.id);
+
+const SITE_FEEDBACK_STEP_ID_SET = new Set<string>(SITE_FEEDBACK_STEP_IDS);
+
+export function isSiteFeedbackStepId(value: unknown): value is DesignStudioStageId {
+  return typeof value === "string" && SITE_FEEDBACK_STEP_ID_SET.has(value);
+}
+
+/** Readable name for a persisted step id. Unknown ids stay visible as stored. */
+export function siteFeedbackStepLabel(id: string): string {
+  return SITE_FEEDBACK_STEP_OPTIONS.find((step) => step.id === id)?.label ?? id;
+}
+
+/**
+ * Readable names for a stored selection, in the current customer-facing order.
+ * Known steps come first; any unrecognized id is appended unchanged.
+ */
+export function siteFeedbackSelectedStepLabels(
+  ids: readonly string[] | null | undefined,
+): string[] {
+  if (!ids || ids.length === 0) return [];
+  const selected = new Set(ids);
+  const known = SITE_FEEDBACK_STEP_OPTIONS.filter((step) => selected.has(step.id)).map(
+    (step) => step.label,
+  );
+  const unknown = ids.filter((id) => !SITE_FEEDBACK_STEP_ID_SET.has(id));
+  return [...known, ...unknown];
+}
+
+/** v2 fields. Optional for the rules so the v1 form and older v2 clients keep working. */
 export const SITE_FEEDBACK_OPTIONAL_KEYS = [
   "nationality",
   "photoPath",
   "photoContentType",
   "photoSizeBytes",
+  "selectedSteps",
 ] as const;
 
 /** Every field a client create may carry (`hasOnly` in firestore.rules). */
@@ -133,6 +185,11 @@ export interface SiteFeedbackInput {
   email?: string;
   /** ISO country code, or empty for "Prefer not to say". */
   nationality?: string;
+  /**
+   * Design Studio step ids this one message is about.
+   * Omitted or empty means the customer left every box unticked.
+   */
+  selectedSteps?: readonly string[] | null;
 }
 
 export type SiteFeedbackValidation =
@@ -143,9 +200,15 @@ export type SiteFeedbackValidation =
         message: string;
         email: string | null;
         nationality?: string | null;
+        /** Present only when at least one allowed step was chosen. Canonical order. */
+        selectedSteps?: DesignStudioStageId[];
       };
     }
-  | { ok: false; field: "type" | "message" | "email" | "nationality"; error: string };
+  | {
+      ok: false;
+      field: "type" | "message" | "email" | "nationality" | "steps";
+      error: string;
+    };
 
 export function isSiteFeedbackType(value: unknown): value is SiteFeedbackType {
   return (
@@ -198,6 +261,10 @@ export function validateSiteFeedback(
       error: "Choose a country from the list, or Prefer not to say.",
     };
   }
+  const steps = validateSiteFeedbackSteps(input.selectedSteps);
+  if (steps.ok === false) {
+    return { ok: false, field: "steps", error: steps.error };
+  }
   return {
     ok: true,
     value: {
@@ -205,8 +272,36 @@ export function validateSiteFeedback(
       message,
       email: email || null,
       ...(nationality ? { nationality } : {}),
+      ...(steps.selectedSteps ? { selectedSteps: steps.selectedSteps } : {}),
     },
   };
+}
+
+/**
+ * Optional multi-select. Empty, null, and omitted are valid and mean "none".
+ * Unknown ids, non-arrays, and duplicates are rejected. A valid set is
+ * returned in the current customer-facing step order, not click order.
+ */
+export function validateSiteFeedbackSteps(
+  value: unknown,
+): { ok: true; selectedSteps: DesignStudioStageId[] | null } | { ok: false; error: string } {
+  if (value == null) return { ok: true, selectedSteps: null };
+  if (!Array.isArray(value)) {
+    return { ok: false, error: "Choose steps from the list, or leave them unticked." };
+  }
+  if (value.length === 0) return { ok: true, selectedSteps: null };
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !isSiteFeedbackStepId(item) || seen.has(item)) {
+      return {
+        ok: false,
+        error: "Choose steps from the list, or leave them unticked.",
+      };
+    }
+    seen.add(item);
+  }
+  const selectedSteps = SITE_FEEDBACK_STEP_IDS.filter((id) => seen.has(id));
+  return { ok: true, selectedSteps: selectedSteps.length > 0 ? selectedSteps : null };
 }
 
 /** Checks the photo as picked, before the on-device shrink. */
@@ -278,6 +373,7 @@ export function buildSiteFeedbackCreatePayload<TTimestamp>(
     photoPath: photo?.path ?? null,
     photoContentType: photo?.contentType ?? null,
     photoSizeBytes: photo?.sizeBytes ?? null,
+    selectedSteps: value.selectedSteps ?? null,
   };
 }
 

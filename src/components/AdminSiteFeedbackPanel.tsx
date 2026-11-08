@@ -4,6 +4,7 @@ import {
   SITE_FEEDBACK_TYPE_LABELS,
   isSiteFeedbackType,
   siteFeedbackNationalityLabel,
+  siteFeedbackSelectedStepLabels,
 } from "../utils/siteFeedback";
 
 /** One `site_feedback` document, as the admin list shows it. */
@@ -17,6 +18,8 @@ export interface SiteFeedbackAdminEntry {
   page: string;
   tab: string;
   studioStep: string | null;
+  /** Persisted Design Studio step ids, or null when the customer ticked none (including older documents). */
+  selectedSteps: string[] | null;
   viewport: string;
   userAgent: string;
   uid: string | null;
@@ -28,6 +31,11 @@ export interface SiteFeedbackAdminEntry {
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 const strOrNull = (value: unknown): string | null =>
   typeof value === "string" && value ? value : null;
+const selectedStepsOrNull = (value: unknown): string[] | null => {
+  if (!Array.isArray(value)) return null;
+  const ids = value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  return ids.length > 0 ? ids : null;
+};
 
 /** Parses a raw Firestore document defensively (v1 and v2 documents). */
 export function toSiteFeedbackAdminEntry(
@@ -45,6 +53,7 @@ export function toSiteFeedbackAdminEntry(
     page: str(data.page),
     tab: str(data.tab),
     studioStep: strOrNull(data.studioStep),
+    selectedSteps: selectedStepsOrNull(data.selectedSteps),
     viewport: str(data.viewport),
     userAgent: str(data.userAgent),
     uid: strOrNull(data.uid),
@@ -152,6 +161,7 @@ export function SiteFeedbackAdminList({
             ? SITE_FEEDBACK_TYPE_LABELS[entry.type]
             : entry.type || "—";
           const nationalityLabel = siteFeedbackNationalityLabel(entry.nationality);
+          const stepLabels = siteFeedbackSelectedStepLabels(entry.selectedSteps);
           return (
             <li
               key={entry.id}
@@ -177,6 +187,15 @@ export function SiteFeedbackAdminList({
                   </a>
                 )}
               </div>
+              {stepLabels.length > 0 && (
+                <p
+                  className="mt-2 text-xs leading-relaxed text-heritage-green"
+                  data-site-feedback-admin-steps="true"
+                >
+                  <span className="font-semibold">Steps: </span>
+                  {stepLabels.join(", ")}
+                </p>
+              )}
               <div className="mt-3 flex gap-4">
                 <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-heritage-ink">
                   {entry.message}
