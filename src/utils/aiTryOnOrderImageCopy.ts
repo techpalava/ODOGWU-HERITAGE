@@ -30,6 +30,9 @@ export const AI_TRY_ON_ORDER_IMAGE_COPY = {
   staleBody:
     "We won't save an out-of-date preview with your order. You can make a new one on AI Try-on. It's optional.",
   staleAction: "Make a new preview",
+  /** Same card inside the AI Try-on panel (legacy wearer preview, L3). */
+  staleBodyInPanel:
+    "We won't save an out-of-date preview with your order. Choose a garment below to make a new preview. It's optional.",
 
   // --- Before payment: what happens to the preview at payment (shown once PR 2 lands) ---
   savedWithOrderNotice:

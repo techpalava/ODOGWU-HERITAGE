@@ -1450,9 +1450,13 @@ console.log("PASS: AI Try-on Step 5 UI, consent, privacy policy and 90-day order
   assert.equal(card.length, 1, "panel shows the old preview as out of date");
   assert.match(textOf(card[0]), /your design changed after this preview/);
   assert.match(textOf(card[0]), /Make a new preview/);
+  assert.match(textOf(card[0]), /Choose a garment below to make a new preview\./, "panel wording (Xavier)");
+  assert.doesNotMatch(textOf(card[0]), /You can make a new one on AI Try-on/);
   act(() => withLegacy.renderer.unmount());
   const single = renderPanel({ targets: [one], storedPreviews: [{ ...legacy, wearerKey: one.wearerId }] as never });
   assert.equal(single.renderer.root.findAll((node) => node.props["data-ai-try-on-legacy-preview-stale"] !== undefined).length, 0);
   act(() => single.renderer.unmount());
+  const { AI_TRY_ON_ORDER_IMAGE_COPY } = await import("./src/utils/aiTryOnOrderImageCopy");
+  assert.match(AI_TRY_ON_ORDER_IMAGE_COPY.staleBody, /You can make a new one on AI Try-on/, "Summary and Review copy unchanged");
   console.log("PASS: AI Try-on legacy wearer-key preview shown as out of date (L3)");
 }

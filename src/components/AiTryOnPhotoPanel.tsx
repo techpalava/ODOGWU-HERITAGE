@@ -1187,7 +1187,7 @@ export const AiTryOnPhotoPanel = ({
       {legacyWearerPreview && target && (
         <div className="rounded-xl border border-heritage-gold/35 bg-heritage-gold/8 p-3" data-ai-try-on-legacy-preview-stale={target.wearerId}>
           <p className="text-xs font-bold text-heritage-green">{AI_TRY_ON_ORDER_IMAGE_COPY.staleTitle(target.label)}</p>
-          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">{AI_TRY_ON_ORDER_IMAGE_COPY.staleBody}</p>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">{AI_TRY_ON_ORDER_IMAGE_COPY.staleBodyInPanel}</p>
           <button
             type="button"
             data-ai-try-on-legacy-make-new
