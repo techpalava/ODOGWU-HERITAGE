@@ -140,9 +140,11 @@ export const AI_TRY_ON_MESSAGES = {
   accountOutOfPreviews:
     "You've used all 15 AI Try-on previews on your account in the last 30 days. You can still continue without one.",
   tooManyTries: "That's a lot of tries in a short time. Please wait a while and try again.",
-  failed: (left: number) =>
-    `We couldn't create a preview this time. This try wasn't counted, so you still have ${left} left. Try again, or use a different photo.`,
-  photoBlocked: "We couldn't use this photo. This try wasn't counted. Please try a different photo.",
+  failed: (left: number, tryRefunded = false) =>
+    tryRefunded
+      ? `${AI_TRY_ON_BACKGROUND_COPY.refundedBody} You have ${left} left.`
+      : AI_TRY_ON_BACKGROUND_COPY.failedBody,
+  photoBlocked: "We couldn't use this photo. Please try a different photo.",
   previewDeleted: "Your preview was deleted.",
   deleteFailed: "We couldn't delete your preview. Please try again.",
 } as const;
@@ -154,10 +156,10 @@ type PanelMessage =
   | { kind: "out_of_previews" }
   | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
-  | { kind: "failed"; left: number }
-  /** Still busy after the retries (try refunded). */
-  | { kind: "busy_failed" }
-  | { kind: "photo_blocked" };
+  | { kind: "failed"; left: number; tryRefunded?: boolean }
+  /** Still busy after the retries. */
+  | { kind: "busy_failed"; tryRefunded?: boolean }
+  | { kind: "photo_blocked"; tryRefunded?: boolean };
 
 const messageText = (message: PanelMessage): string => {
   switch (message.kind) {
@@ -168,11 +170,11 @@ const messageText = (message: PanelMessage): string => {
     case "too_many_tries":
       return AI_TRY_ON_MESSAGES.tooManyTries;
     case "failed":
-      return AI_TRY_ON_MESSAGES.failed(message.left);
+      return AI_TRY_ON_MESSAGES.failed(message.left, message.tryRefunded);
     case "busy_failed":
-      return AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
+      return message.tryRefunded ? AI_TRY_ON_BACKGROUND_COPY.refundedBody : AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
     case "photo_blocked":
-      return AI_TRY_ON_MESSAGES.photoBlocked;
+      return `${AI_TRY_ON_MESSAGES.photoBlocked} ${message.tryRefunded ? AI_TRY_ON_BACKGROUND_COPY.refundedBody : AI_TRY_ON_BACKGROUND_COPY.failedBody}`;
     case "preview_deleted":
       return AI_TRY_ON_MESSAGES.previewDeleted;
     case "delete_failed":
@@ -825,7 +827,7 @@ export const AiTryOnPhotoPanel = ({
         if (typeof outcome.accountTriesRemaining === "number") {
           setAccountTriesRemaining(outcome.accountTriesRemaining);
         }
-        show({ kind: "photo_blocked" });
+        show({ kind: "photo_blocked", tryRefunded: outcome.tryRefunded });
         break;
       case "failed": {
         const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
@@ -835,7 +837,7 @@ export const AiTryOnPhotoPanel = ({
             : accountTriesRemaining;
         setTriesRemaining(remaining);
         setAccountTriesRemaining(accountRemaining);
-        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
+        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity), tryRefunded: outcome.tryRefunded });
         break;
       }
       case "busy_failed":
@@ -843,7 +845,7 @@ export const AiTryOnPhotoPanel = ({
         if (typeof outcome.accountTriesRemaining === "number") {
           setAccountTriesRemaining(outcome.accountTriesRemaining);
         }
-        show({ kind: "busy_failed" });
+        show({ kind: "busy_failed", tryRefunded: outcome.tryRefunded });
         break;
       case "busy":
         // Never settles a job (the store keeps retrying).
