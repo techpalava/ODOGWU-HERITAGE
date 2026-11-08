@@ -123,6 +123,7 @@ class FakeFirestore {
   assert.equal((await call("xavier", "POST")).status, 405, "read-only");
   const before = JSON.stringify([...db.docs]);
   const fred = await call("fred");
+  assert.equal(JSON.stringify([...db.docs]), before, "reading writes nothing");
   assert.equal(fred.status, 200);
   assert.equal(fred.revoked, true, "revoked sessions refused");
   assert.equal(fred.body.view, "general");
@@ -136,8 +137,14 @@ class FakeFirestore {
   assert.equal(cost.perTryUsd, 0.064);
   assert.equal(cost.allTimeUsd, 9.6, "all-time cost from the lifetime counter (includes earlier tries)");
   assert.equal(cost.thisMonthUsd, 0.26, "4 tries used this month");
-  assert.deepEqual(cost.reminders, [{ amountUsd: 10, level: "critical" }]);
-  assert.equal(JSON.stringify([...db.docs]), before, "reading writes nothing");
+  assert.deepEqual(cost.reminders, [], "reminders use this month ($0.26), not all time ($9.60)");
+  db.docs.set("aiTryOnUsage/day-2026-11-02", { kind: "day", day: "2026-11-02", started: 150, failed: 0 });
+  db.docs.set("aiTryOnUsage/day-2026-10-30", { kind: "day", day: "2026-10-30", started: 900, failed: 0 });
+  const busy = (await call("xavier")).body.cost as typeof cost;
+  assert.equal(busy.thisMonthUsd, 9.86, "154 tries this Lagos month");
+  assert.deepEqual(busy.reminders, [{ amountUsd: 10, level: "critical" }], "October tries do not count toward this month");
+  db.docs.delete("aiTryOnUsage/day-2026-11-02");
+  db.docs.delete("aiTryOnUsage/day-2026-10-30");
   const source = readFileSync("src/server/aiTryOnAdminUsage.ts", "utf8");
   assert.match(source, /const FULL_VIEW_EMAILS = new Set\(\["techpalavabox@gmail\.com"\]/, "only Xavier's account sees cost");
   const http = readFileSync("src/server/aiTryOnHttp.ts", "utf8");

@@ -67,8 +67,8 @@ export function AdminAiTryOnUsage({ readUsage = readAiTryOnAdminUsage }: { readU
             <p key={reminder.amountUsd} role={reminder.level === "warning" ? "status" : "alert"} data-admin-ai-try-on-usage-cost-reminder={`${reminder.amountUsd}-${reminder.level}`}
               className={`rounded-lg border p-2 text-xs font-semibold ${reminder.level === "warning" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-red-300 bg-red-50 text-red-800"}`}>
               {reminder.level === "reached"
-                ? `The estimated cost has reached $${reminder.amountUsd}.`
-                : `The estimated cost is near $${reminder.amountUsd} (${usd(cost.allTimeUsd)} so far).`}
+                ? `This month's estimated cost has reached $${reminder.amountUsd}.`
+                : `This month's estimated cost is near $${reminder.amountUsd} (${usd(cost.thisMonthUsd)} so far).`}
             </p>
           ))}
           <a href={BILLING_URL} target="_blank" rel="noopener noreferrer" data-admin-ai-try-on-usage-top-up

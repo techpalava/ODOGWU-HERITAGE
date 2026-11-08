@@ -138,7 +138,8 @@ export const handleAiTryOnAdminUsage = async (
         perTryUsd: AI_TRY_ON_COST_PER_TRY_USD,
         allTimeUsd,
         thisMonthUsd: roundUsd((summary.months[0]?.used ?? 0) * AI_TRY_ON_COST_PER_TRY_USD),
-        reminders: aiTryOnCostReminders(allTimeUsd),
+        // Reminders follow this Lagos month's estimated spend, not all time.
+        reminders: aiTryOnCostReminders(roundUsd((summary.months[0]?.used ?? 0) * AI_TRY_ON_COST_PER_TRY_USD)),
       },
     });
   } catch {
