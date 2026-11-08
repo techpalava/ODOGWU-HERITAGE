@@ -125,7 +125,7 @@ export const AI_TRY_ON_PREVIEW_DISCLAIMER =
  * No consent notice: no personal photo is involved.
  */
 export const AI_TRY_ON_MODEL_COPY = {
-  option: "No photo? Try it on a model",
+  option: "Choose a model",
   heading: "Choose a model",
   intro: "See the design on one of our AI-generated models instead of a photo of you.",
   filterAll: "All",
@@ -1193,31 +1193,45 @@ export const AiTryOnPhotoPanel = ({
             disabled={generating || preparingPhoto || missingGarmentImage}
             onChange={handlePhotoChange}
           />
-          <label
-            htmlFor={photoInputId}
-            className={`inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-heritage-green/40 bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green hover:border-heritage-green sm:w-auto ${
-              generating || preparingPhoto || missingGarmentImage ? "pointer-events-none opacity-60" : ""
-            }`}
-          >
-            {preparingPhoto ? (
-              <Loader2 aria-hidden="true" size={15} className="animate-spin" />
-            ) : (
-              <ImagePlus aria-hidden="true" size={15} />
-            )}
-            {currentPhoto ? "Change photo" : "Choose a photo"}
-          </label>
-          {!modelPickerOpen && (
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2" data-ai-try-on-source-cards>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={generating || preparingPhoto || missingGarmentImage}
+              aria-pressed={Boolean(currentPhoto) && !currentModel}
+              data-ai-try-on-photo-option
+              className={`flex min-h-28 min-w-0 items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                currentPhoto && !currentModel
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 bg-white hover:border-heritage-gold/45"
+              }`}
+            >
+              {preparingPhoto ? <Loader2 aria-hidden="true" size={22} className="shrink-0 animate-spin text-heritage-green" /> : <ImagePlus aria-hidden="true" size={22} className="shrink-0 text-heritage-green" />}
+              <span className="min-w-0">
+                <span className="block font-serif text-lg font-bold text-heritage-green">Upload a photo</span>
+                <span className="mt-1 block text-sm leading-relaxed text-heritage-ink/70">{currentPhoto ? "Change your photo to try another." : "See the design on a photo of you."}</span>
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setModelPickerOpen(true)}
               disabled={generating || missingGarmentImage}
+              aria-pressed={Boolean(currentModel)}
+              aria-expanded={modelPickerOpen}
               data-ai-try-on-model-option
-              className="inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+              className={`flex min-h-28 min-w-0 items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                currentModel || modelPickerOpen
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 bg-white hover:border-heritage-gold/45"
+              }`}
             >
-              <UserRound aria-hidden="true" size={15} />
-              {AI_TRY_ON_MODEL_COPY.option}
+              <UserRound aria-hidden="true" size={22} className="shrink-0 text-heritage-green" />
+              <span className="min-w-0">
+                <span className="block font-serif text-lg font-bold text-heritage-green">{AI_TRY_ON_MODEL_COPY.option}</span>
+                <span className="mt-1 block text-sm leading-relaxed text-heritage-ink/70">See the design on one of our studio models.</span>
+              </span>
             </button>
-          )}
+          </div>
           {modelPickerOpen && (
             <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker>
               <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
