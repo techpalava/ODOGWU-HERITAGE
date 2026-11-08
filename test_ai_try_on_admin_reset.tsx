@@ -9,6 +9,8 @@ import { createAiTryOnUsageLimits, aiTryOnAccountUsageDocId, hashAiTryOnOrderKey
 import { createAiTryOnBusyJobs } from "./src/server/aiTryOnBusyJobs";
 import { AdminAiTryOnReset } from "./src/components/AdminAiTryOnReset";
 import type { HttpResponse } from "./src/server/httpTypes";
+import { aiTryOnGlobalCapWarning } from "./src/services/aiTryOnAdminReset";
+import { readFileSync } from "node:fs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 type Doc = Record<string, unknown>;
@@ -95,7 +97,7 @@ for (const input of [
   assert.deepEqual([...db.docs], before, "rejected callers cause no writes");
 }
 assert.deepEqual((await call({ method: "GET", admin: false })).body, { eligible: false });
-assert.deepEqual((await call({ method: "GET" })).body, { eligible: true });
+assert.deepEqual((await call({ method: "GET" })).body, { eligible: true, globalUsage: { count: globalBefore, cap: 1000 } }, "reset admins also read the lifetime count");
 assert.equal((await call({ method: "DELETE" })).status, 405);
 const reset = await call();
 assert.equal(reset.status, 200);
@@ -138,7 +140,7 @@ assert.equal(await limits.readAccountTriesRemaining("xavier"), 10);
 for (const allowed of [false, true]) {
   let resets = 0;
   let renderer!: ReturnType<typeof create>;
-  await act(async () => { renderer = create(createElement(AdminAiTryOnReset, { readEligibility: async () => allowed, reset: async () => { resets++; return true; } })); });
+  await act(async () => { renderer = create(createElement(AdminAiTryOnReset, { readStatus: async () => ({ eligible: allowed, globalUsage: null }), reset: async () => { resets++; return true; } })); });
   const buttons = () => renderer.root.findAllByType("button");
   if (!allowed) assert.equal(buttons().length, 0);
   else {
@@ -152,3 +154,29 @@ for (const allowed of [false, true]) {
   act(() => renderer.unmount());
 }
 console.log("PASS: admin self-reset authorization, own-only scope, finite limits, stale-refund safety and capability-gated UI");
+
+// Lifetime cap warning in System Settings (read-only; cap unchanged).
+{
+  assert.equal(aiTryOnGlobalCapWarning(null), null);
+  assert.equal(aiTryOnGlobalCapWarning({ count: 799, cap: 1000 }), null, "nothing below 80%");
+  assert.equal(aiTryOnGlobalCapWarning({ count: 800, cap: 1000 })?.level, "warning");
+  assert.equal(aiTryOnGlobalCapWarning({ count: 949, cap: 1000 })?.level, "warning");
+  assert.equal(aiTryOnGlobalCapWarning({ count: 950, cap: 1000 })?.level, "critical");
+  assert.equal(aiTryOnGlobalCapWarning({ count: 1000, cap: 1000 })?.level, "reached");
+  assert.match(aiTryOnGlobalCapWarning({ count: 812, cap: 1000 })!.text, /used 812 of its 1000 previews \(81%\)/);
+  const markup = async (globalUsage: { count: number; cap: number } | null, eligible = true) => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(createElement(AdminAiTryOnReset, { readStatus: async () => ({ eligible, globalUsage }), reset: async () => true })); });
+    const found = renderer.root.findAll((node) => typeof node.props["data-admin-ai-try-on-cap-warning"] === "string").map((node) => node.props["data-admin-ai-try-on-cap-warning"] as string);
+    act(() => renderer.unmount());
+    return found;
+  };
+  assert.deepEqual(await markup({ count: 500, cap: 1000 }), []);
+  assert.deepEqual(await markup({ count: 850, cap: 1000 }), ["warning"]);
+  assert.deepEqual(await markup({ count: 960, cap: 1000 }), ["critical"]);
+  assert.deepEqual(await markup({ count: 960, cap: 1000 }, false), [], "never shown to anyone else");
+  const settings = readFileSync("src/components/DatabaseView.tsx", "utf8");
+  assert.match(settings, /<AdminAiTryOnReset key=/, "shown in Admin > System Settings");
+}
+console.log("PASS: AI Try-on lifetime cap warning (80% / 95%)");
+

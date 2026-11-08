@@ -3,6 +3,9 @@ import {
   aiTryOnOrderPreviewTargets,
   aiTryOnOutfitTarget,
   aiTryOnOutfitChoices,
+  aiTryOnOutfitPairFor,
+  aiTryOnPreviewFingerprintIsCurrent,
+  aiTryOnTargetHasDesign,
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
@@ -162,6 +165,7 @@ type PanelMessage =
   | { kind: "out_of_previews" }
   | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
+  | { kind: "in_progress" }
   | { kind: "failed"; left: number; tryRefunded?: boolean }
   /** Still busy after the retries. */
   | { kind: "busy_failed"; tryRefunded?: boolean }
@@ -175,6 +179,8 @@ const messageText = (message: PanelMessage): string => {
       return AI_TRY_ON_MESSAGES.accountOutOfPreviews;
     case "too_many_tries":
       return AI_TRY_ON_MESSAGES.tooManyTries;
+    case "in_progress":
+      return AI_TRY_ON_BACKGROUND_COPY.inProgressBody;
     case "failed":
       return AI_TRY_ON_MESSAGES.failed(message.left, message.tryRefunded);
     case "busy_failed":
@@ -529,12 +535,23 @@ export const AiTryOnPhotoPanel = ({
       ? entry.previewableGarments?.[0]?.garmentKey === selectedPreview?.garmentKey
       : entry.wearerId === target.wearerId,
   ) ?? target : null;
-  const outfitTarget = target ? aiTryOnOutfitTarget(target) : null;
+  const outfitSlot = target ? aiTryOnOutfitTarget(target) : null;
   const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
-  const outfitMode = Boolean(outfitTarget && outfitModeByWearer[target?.wearerId || ""]);
-  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ?? {};
+  const outfitMode = Boolean(outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
+  // Until the customer picks, the pair is the one the current outfit
+  // preview was made from (if any), so that preview is shown as current.
+  const outfitShownPair = outfitSlot
+    ? aiTryOnOutfitPairFor(outfitSlot, previews[outfitSlot.wearerId]?.inputFingerprint) ??
+      aiTryOnOutfitPairFor(outfitSlot, stored[outfitSlot.wearerId]?.inputFingerprint)
+    : null;
+  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ??
+    (outfitShownPair ? { top: outfitShownPair.top, bottom: outfitShownPair.bottom } : {});
   const selectedTop = outfitChoices.tops.find((entry) => entry.garmentKey === outfitSelection.top);
   const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
+  // Deep check M1: the outfit's fingerprint is the chosen pair's.
+  const outfitTarget = target && outfitSlot
+    ? aiTryOnOutfitTarget(target, selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null)
+    : null;
   const previewTarget = outfitMode ? outfitTarget : singlePreviewTarget;
   const previewKey = previewTarget?.wearerId ?? "";
   const measurementTarget =
@@ -564,9 +581,9 @@ export const AiTryOnPhotoPanel = ({
         : null
       : null;
   const hasPreview = (entry: AiTryOnWearerTarget) =>
-    aiTryOnOrderPreviewTargets([entry]).some((item) => Boolean(item.inputFingerprint &&
-      (previews[item.wearerId]?.inputFingerprint === item.inputFingerprint ||
-       stored[item.wearerId]?.inputFingerprint === item.inputFingerprint)));
+    aiTryOnOrderPreviewTargets([entry]).some((item) =>
+      aiTryOnPreviewFingerprintIsCurrent(item, previews[item.wearerId]?.inputFingerprint) ||
+      aiTryOnPreviewFingerprintIsCurrent(item, stored[item.wearerId]?.inputFingerprint));
 
   // A session list can arrive after mount (or a later refetch). Adopt it
   // without bringing back a preview the customer deleted here.
@@ -603,7 +620,7 @@ export const AiTryOnPhotoPanel = ({
       const next = { ...current };
       for (const [wearerId, entry] of Object.entries(current)) {
         const match = previewTargets.find((item) => item.wearerId === wearerId);
-        if (!match?.inputFingerprint || match.inputFingerprint === entry.inputFingerprint) continue;
+        if (!match || !aiTryOnTargetHasDesign(match) || aiTryOnPreviewFingerprintIsCurrent(match, entry.inputFingerprint)) continue;
         delete next[wearerId];
         changed = true;
       }
@@ -851,6 +868,10 @@ export const AiTryOnPhotoPanel = ({
       case "rate_limited":
         show({ kind: "too_many_tries" });
         break;
+      case "in_progress":
+        // Blocked before any charge: tries left are unchanged.
+        show({ kind: "in_progress" });
+        break;
       case "photo_blocked":
         if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
         if (typeof outcome.accountTriesRemaining === "number") {
@@ -903,7 +924,7 @@ export const AiTryOnPhotoPanel = ({
       if (job.scope !== jobScope || job.status !== "completed" || !job.preview) continue;
       if (job.storedPreviewId && dismissedPreviewIdsRef.current.has(job.storedPreviewId)) continue;
       const match = previewTargets.find((entry) => entry.wearerId === job.wearerId);
-      if (!match || match.inputFingerprint !== job.inputFingerprint) continue;
+      if (!match || !aiTryOnPreviewFingerprintIsCurrent(match, job.inputFingerprint)) continue;
       const image = job.preview;
       commitPreviews((current) =>
         current[job.wearerId]?.inputFingerprint === job.inputFingerprint && current[job.wearerId]?.data
@@ -1028,6 +1049,40 @@ export const AiTryOnPhotoPanel = ({
 
   const triesLabel = `${left} ${left === 1 ? "try" : "tries"} left`;
 
+  const consentNotice = (
+    <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
+      <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
+        {AI_TRY_ON_CONSENT_NOTICE}{" "}
+        <button
+          type="button"
+          aria-expanded={howWeUseOpen}
+          aria-controls={howWeUseId}
+          onClick={() => setHowWeUseOpen((open) => !open)}
+          className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+        >
+          How we use your photo
+          <ChevronDown
+            aria-hidden="true"
+            size={14}
+            className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+      </p>
+      {howWeUseOpen && (
+        <ul
+          id={howWeUseId}
+          className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
+        >
+          {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
+            <li key={bullet.label}>
+              <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
+              {bullet.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
   return (
     <div className="space-y-5" data-ai-try-on-panel="live">
       {showPicker && (
@@ -1104,7 +1159,7 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
-      {outfitTarget && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
+      {outfitSlot && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
         <legend className="px-1 font-serif text-lg font-bold text-heritage-green">What would you like to preview?</legend>
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-pressed={!outfitMode} onClick={() => setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: false }))} className={tryOnChoiceChipClass(!outfitMode)} data-ai-try-on-single-mode>One garment</button>
@@ -1114,7 +1169,7 @@ export const AiTryOnPhotoPanel = ({
           <p className="text-sm leading-relaxed text-heritage-ink/75">Choose exactly one top and one bottom for this wearer, using the same photo or studio model. Only your chosen garments are included. One combined picture uses 1 try from this order’s shared tries. Your individual previews stay saved separately.</p>
           {(["top", "bottom"] as const).map((part) => <label key={part} className="block text-sm font-semibold text-heritage-green">
             Choose a {part}
-            <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => { const key = event.target.value; setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...current[target.wearerId], [part]: key } })); }} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
+            <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => { const key = event.target.value; setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...outfitSelection, [part]: key } })); }} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
               <option value="">Select a {part}</option>
               {(part === "top" ? outfitChoices.tops : outfitChoices.bottoms).map((garment) => <option key={garment.garmentKey} value={garment.garmentKey}>{garment.label}</option>)}
             </select>
@@ -1179,44 +1234,16 @@ export const AiTryOnPhotoPanel = ({
           <h3 className="font-serif text-lg font-bold text-heritage-green">Your uploaded design</h3>
           {uploadedDesign.previewUrl ? <img src={uploadedDesign.previewUrl} alt="Your uploaded design photograph" className="max-h-80 w-full rounded-xl object-contain" /> : <p role="status">Your uploaded design photo is not available. Return to Step 3 to upload it again.</p>}
           <p className="text-sm leading-relaxed text-heritage-ink/80">This shows the person in your uploaded picture, not you. Only the garment’s fabric will change to your chosen swatch.</p>
+          {/* Deep check M2: the uploaded picture also goes to Gemini, so the
+              same consent notice as photo mode shows before generating. */}
+          {consentNotice}
           <button type="button" data-ai-try-on-upload-another-design disabled={Boolean(wearerGenerating) || !onUploadAnotherDesign} onClick={() => onUploadAnotherDesign?.(uploadedDesign.garmentKey)} className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green/30 bg-white px-4 text-sm font-semibold text-heritage-green disabled:opacity-50">Upload another design</button>
           {!fabricSwatchImageUrl && <p role="status" className="text-sm text-heritage-ink/80">Choose a fabric with a swatch image in Step 2 to use this design.</p>}
         </section>
       )}
       {!uploadedDesign && !currentModel && (
         <>
-        <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
-          <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
-            {AI_TRY_ON_CONSENT_NOTICE}{" "}
-            <button
-              type="button"
-              aria-expanded={howWeUseOpen}
-              aria-controls={howWeUseId}
-              onClick={() => setHowWeUseOpen((open) => !open)}
-              className="inline-flex items-center gap-1 font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
-            >
-              How we use your photo
-              <ChevronDown
-                aria-hidden="true"
-                size={14}
-                className={`transition-transform ${howWeUseOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-          </p>
-          {howWeUseOpen && (
-            <ul
-              id={howWeUseId}
-              className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-heritage-ink/75"
-            >
-              {AI_TRY_ON_HOW_WE_USE_BULLETS.map((bullet) => (
-                <li key={bullet.label}>
-                  <strong className="font-semibold text-heritage-green">{bullet.label}</strong>{" "}
-                  {bullet.text}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {consentNotice}
 
         <div>
           <h3 id={tipsId} className="text-xs font-bold uppercase tracking-[0.14em] text-heritage-gold">

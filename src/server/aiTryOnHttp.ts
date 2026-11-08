@@ -571,6 +571,22 @@ export async function handleAiTryOn(
   res: HttpResponse,
   dependencies: AiTryOnHttpDependencies = {},
 ) {
+  // Deep check M5: the per-wearer run lease taken below is always released,
+  // whichever way the request ends.
+  const ending: { release: (() => Promise<void>) | null } = { release: null };
+  try {
+    return await handleAiTryOnRequest(req, res, dependencies, ending);
+  } finally {
+    if (ending.release) await ending.release().catch(() => undefined);
+  }
+}
+
+async function handleAiTryOnRequest(
+  req: RequestWithRoute,
+  res: HttpResponse,
+  dependencies: AiTryOnHttpDependencies,
+  ending: { release: (() => Promise<void>) | null },
+) {
   const environment = dependencies.environment ?? process.env;
   const log = dependencies.log ?? ((line: string) => console.info(line));
   const now = dependencies.now ?? Date.now;
@@ -859,12 +875,31 @@ export async function handleAiTryOn(
       const body: AiTryOnAvailabilityResponse = { status: "unavailable", code };
       return res.status(200).json(body);
     };
-    if (!enabled) return unavailable("NOT_CONFIGURED");
+    // Generation off or capped: the caller's already-stored previews are
+    // still listed (never minting a session), so Summary, Review & Payment
+    // and the paid order keep them. Best effort: any error lists none.
+    const unavailableWithStoredPreviews = async (code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED") => {
+      if (!isSessionRequest) return unavailable(code);
+      let previews: StoredPreviewList = [];
+      try {
+        const identity = await readIdentity();
+        if (identity !== "auth_failed") {
+          const db = await resolveDb();
+          const sessionId = await createSessions(db).authorize(identity);
+          if (sessionId) previews = await createStore(db).list(sessionId);
+        }
+      } catch {
+        previews = [];
+      }
+      const body: AiTryOnAvailabilityResponse = { status: "unavailable", code, ...(previews.length ? { previews } : {}) };
+      return res.status(200).json(body);
+    };
+    if (!enabled) return unavailableWithStoredPreviews("NOT_CONFIGURED");
     try {
       const db = await resolveDb();
       const limits = createLimits(db);
       const count = await limits.readGlobalCount();
-      if (count >= AI_TRY_ON_GLOBAL_GENERATION_CAP) return unavailable("GLOBAL_LIMIT_REACHED");
+      if (count >= AI_TRY_ON_GLOBAL_GENERATION_CAP) return unavailableWithStoredPreviews("GLOBAL_LIMIT_REACHED");
       if (!isSessionRequest) {
         const body: AiTryOnAvailabilityResponse = {
           status: "available",
@@ -986,6 +1021,20 @@ export async function handleAiTryOn(
     if (!free) {
       return sendError(res, 409, "BUSY_JOB_ACTIVE", "A preview is already being made for this person.", false);
     }
+    // Another tab or device may be making this preview right now: block
+    // before anything is charged, so the blocked attempt uses no try.
+    let leaseId: string | null;
+    try {
+      leaseId = await jobs.acquireRun({ sessionId, wearerKey: parsed.wearerKey });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+    }
+    if (!leaseId) {
+      return sendError(res, 409, "BUSY_JOB_ACTIVE", "A preview is already being made for this person.", false);
+    }
+    const runSessionId = sessionId;
+    const runWearerKey = parsed.wearerKey;
+    ending.release = () => jobs.releaseRun({ sessionId: runSessionId, wearerKey: runWearerKey, leaseId: leaseId! });
   }
 
   /** Tries left now (after a refund or a held try); informative only. */
@@ -1392,22 +1441,12 @@ export async function handleAiTryOn(
         );
   }
 
-  // A preview was made: a held busy try is now used.
-  if (claim) {
-    try {
-      await jobs.complete(claim);
-    } catch {
-      // Left running: its lease lapses and an expiry sweep would refund it.
-    }
-  }
-  const triesAfter =
-    reservation && reservation.ok
-      ? { order: reservation.orderTriesRemaining, account: reservation.accountTriesRemaining }
-      : await readTriesLeft();
-
   const previewId = (dependencies.createAssetId ?? createAiTryOnPreviewId)();
   // Step 7: one compact WebP is both stored and returned. If re-encoding
-  // fails, the original is returned but not stored.
+  // fails, the original is returned but not stored, and the try goes back
+  // (refunded the same way as a failed generation: only a confirmed release
+  // counts), because a preview that can't be kept never reaches Summary or
+  // the order.
   let preview: { mimeType: string; data: string } = outcome.image;
   let compacted = false;
   try {
@@ -1417,6 +1456,39 @@ export async function handleAiTryOn(
   } catch {
     log(JSON.stringify({ event: "ai_try_on", outcome: "compact_failed" }));
   }
+
+  let tryRefunded = false;
+  if (!compacted) {
+    if (claim) {
+      tryRefunded = await refundClaim();
+    } else if (reservation && reservation.ok) {
+      try {
+        await limits.release(reservation.orderDocId, reservation.account, reservation.orderResetGeneration);
+        tryRefunded = true;
+      } catch {
+        // A failed release only makes the cap stricter; never block the reply.
+      }
+    }
+    log(JSON.stringify({ event: "ai_try_on", outcome: "compact_failed_refund", tryRefunded }));
+  } else if (claim) {
+    // A preview was made and kept: a held busy try is now used.
+    try {
+      await jobs.complete(claim);
+    } catch {
+      // Left running: its lease lapses and an expiry sweep would refund it.
+    }
+  }
+  const triesAfter =
+    reservation && reservation.ok
+      ? {
+          order: Math.min(AI_TRY_ON_TRIES_PER_ORDER, reservation.orderTriesRemaining + (tryRefunded ? 1 : 0)),
+          account:
+            reservation.accountTriesRemaining === null
+              ? null
+              : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reservation.accountTriesRemaining + (tryRefunded ? 1 : 0)),
+        }
+      : await readTriesLeft();
+
   let stored: { expiresAt: string } | null = null;
   if (compacted) {
     stored = await saveWearerPreview(previewId, preview);

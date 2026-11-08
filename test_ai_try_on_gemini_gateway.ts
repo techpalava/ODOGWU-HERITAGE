@@ -86,6 +86,7 @@ class FakeFirestore {
         const previous = options?.merge ? this.docs.get(ref.path) || {} : {};
         this.docs.set(ref.path, { ...previous, ...data });
       },
+      delete: (ref: { path: string }) => void this.docs.delete(ref.path),
     };
     const run = this.lock.then(() => fn(tx));
     this.lock = run.catch(() => undefined);
