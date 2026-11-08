@@ -1,3 +1,4 @@
+import { aiTryOnGarmentPreviewKey } from "./src/utils/aiTryOnWorkflow";
 import { aiTryOnPreviewTargets } from "./src/utils/aiTryOnWearerTargets";
 /**
  * Step 5 AI Try-on UI: wearer targets, availability and preview mapping,
@@ -1316,4 +1317,60 @@ class FakeFirestore {
   assert.equal((post.state.body as { orderTriesRemaining?: number }).orderTriesRemaining, 4, "refunded: still 4 left");
 }
 
+
+// Uploaded-design mode: per-garment target, own input identity and no customer/model inputs.
+{
+  const input = baseInput();
+  const uploadedOccurrence = { ...input.occurrences[0], assignmentImage: null,
+    uploadedDesignPreviewUrl: "blob:existing-private-design",
+    assignment: { garmentKey: input.occurrences[0].garmentKey, sourceKind: "uploaded" as const, sourceKey: "uploaded:private-1", uploadedSourceRef: "private-1" },
+  };
+  const [built] = buildAiTryOnWearerTargets({ ...input, occurrences: [uploadedOccurrence, input.occurrences[1]] });
+  assert.equal(built.previewableGarments?.length, 2, "uploaded and catalogue garments both stay selectable");
+  assert.equal(built.previewableGarments?.[0].uploadedDesign?.previewUrl, "blob:existing-private-design");
+  const renamedBlob = buildAiTryOnWearerTargets({ ...input, occurrences: [{ ...uploadedOccurrence, uploadedDesignPreviewUrl: "blob:restored-same-design" }, input.occurrences[1]] });
+  assert.equal(renamedBlob[0].inputFingerprint, built.inputFingerprint, "restoring the same private image must not stale the preview");
+  const replaced = buildAiTryOnWearerTargets({ ...input, occurrences: [{ ...uploadedOccurrence, assignment: { ...uploadedOccurrence.assignment, sourceKey: "uploaded:private-2", uploadedSourceRef: "private-2" } }, input.occurrences[1]] });
+  assert.notEqual(replaced[0].inputFingerprint, built.inputFingerprint, "replacing the Step 3 design stales the old preview");
+  const studio = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+  const targetsMemo = studio.slice(studio.indexOf("const aiTryOnWearerTargets = useMemo("), studio.indexOf("// Background AI Try-on:"));
+  assert.match(targetsMemo, /uploadedDesignPreviewUrl: futureDesignStylePreviewByOccurrenceToken/);
+  assert.match(targetsMemo, /futureDesignStyleStepProjection\.occurrences,\s+futureDesignStylePreviewByOccurrenceToken,/, "restored upload URL must invalidate the targets memo");
+  assert.match(studio, /onUploadAnotherDesign=\{[\s\S]*?setFutureActiveDesignStyleOccurrence\(occurrence\.target\);\s+navigateToFutureStage\("design_style"\);/, "replacement reuses the existing targeted Step 3 uploader");
+  const reads: string[] = [];
+  const replacements: string[] = [];
+  const photoUpdates: unknown[] = [];
+  const { renderer, requests } = renderPanel({
+    targets: [{ ...built, wearerId: "w-ada" }],
+    sessionPhoto: { wearerId: "w-ada", image: { mimeType: "image/jpeg", data: "CUSTOMER_PHOTO_MUST_NOT_BE_SENT" }, thumbnailUrl: null },
+    onSessionPhotoChange: (next) => photoUpdates.push(next),
+    sessionModelIdByWearer: { "w-ada": "male-plus" },
+    loadUploadedDesign: async (url) => { reads.push(url); return fakeImage; },
+    onUploadAnotherDesign: (key) => replacements.push(key),
+  });
+  const use = () => renderer.root.find((node) => node.type === "button" && /^Use this design/.test(textOf(node)));
+  assert.equal(use().props.disabled, false, "no new customer photo or model needed");
+  assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-model-option"]).length, 0);
+  assert.equal(renderer.root.findAll((node) => node.type === "input" && node.props.type === "file").length, 0, "replacement must reuse Step 3, not introduce a new upload/storage flow");
+  assert.match(textOf(renderer.root), /person in your uploaded picture, not you/);
+  await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-upload-another-design"]).props.onClick(); });
+  assert.deepEqual(replacements, [uploadedOccurrence.garmentKey]);
+  await act(async () => { use().props.onClick(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.deepEqual(reads, ["blob:existing-private-design"]);
+  assert.deepEqual(requests, [{ mode: "fabric", inputFingerprint: built.inputFingerprint, wearerKey: aiTryOnGarmentPreviewKey("w-ada", uploadedOccurrence.garmentKey), uploadedDesignImage: fakeImage, uploadedGarmentType: "shirt", fabricSwatchImageUrl: "https://example.test/red.jpg" }]);
+  assert.equal(photoUpdates.length, 0, "unused customer photo for other garments must not be cleared");
+  assert.match(textOf(renderer.root), /on your uploaded design/);
+  assert.match(textOf(renderer.root), /4 tries left/);
+  // Switching to catalogue garment restores its ordinary photo/model controls.
+  await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-garment"] === input.occurrences[1].garmentKey).props.onClick(); });
+  assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-uploaded-design"]).length, 0);
+  assert.equal(renderer.root.findAll((node) => node.type === "input" && node.props.type === "file").length, 1);
+  await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-garment"] === input.occurrences[0].garmentKey).props.onClick(); });
+  assert.match(textOf(renderer.root), /on your uploaded design/, "per-garment preview stays after switching away and back");
+  act(() => renderer.unmount());
+  const noSwatch = renderPanel({ targets: [target({ garmentImageUrl: "blob:design", uploadedDesign: { garmentKey: "base:shirt", garmentType: "shirt", previewUrl: "blob:design" }, fabricSwatchImageUrl: null })] });
+  assert.equal(noSwatch.renderer.root.find((node) => node.type === "button" && /^Use this design/.test(textOf(node))).props.disabled, true);
+  assert.match(textOf(noSwatch.renderer.root), /Choose a fabric with a swatch image/);
+  act(() => noSwatch.renderer.unmount());
+}
 console.log("PASS: AI Try-on Step 5 UI, consent, privacy policy and 90-day order counters");

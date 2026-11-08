@@ -1,3 +1,4 @@
+import type { CanonicalPhysicalGarmentType } from "../types.js";
 import type { AiTryOnFitHint } from "./aiTryOnFitHints.js";
 import type { AiTryOnOrderDetails } from "./aiTryOnOrderDetails.js";
 
@@ -85,7 +86,11 @@ export interface AiTryOnInlineImage {
   readonly data: string;
 }
 
-export interface AiTryOnGenerationRequest {
+export const AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION = "tryon-uploaded-design-prompt-v1" as const;
+
+export interface AiTryOnPhotoGenerationRequest {
+  readonly uploadedDesignImage?: never;
+  readonly uploadedGarmentType?: never;
   readonly mode: AiTryOnMode;
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
   readonly inputFingerprint: string;
@@ -205,6 +210,21 @@ export interface AiTryOnGenerationSuccess {
    */
   readonly cacheHit?: boolean;
 }
+
+/** Uploaded Step 3 photo is the base; no customer photo, studio model or catalogue garment. */
+export type AiTryOnGenerationRequest = AiTryOnPhotoGenerationRequest | (
+  Omit<AiTryOnPhotoGenerationRequest, "mode" | "uploadedDesignImage" | "uploadedGarmentType" | "personImage" | "defaultModelId" | "garmentImage" | "garmentImageUrl" | "fitHints" | "orderDetails"> & {
+    readonly mode: "fabric";
+    readonly uploadedDesignImage: AiTryOnInlineImage;
+    readonly uploadedGarmentType: CanonicalPhysicalGarmentType;
+    readonly personImage?: never;
+    readonly defaultModelId?: never;
+    readonly garmentImage?: never;
+    readonly garmentImageUrl?: never;
+    readonly fitHints?: never;
+    readonly orderDetails?: never;
+  }
+);
 
 export interface AiTryOnErrorResponse {
   readonly error: string;
