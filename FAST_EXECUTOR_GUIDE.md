@@ -8,7 +8,8 @@ CURSOR EDITION — UPDATED REUSABLE STANDARD
 ==================================================
 
 1. Read LIVING_PROJECT_STATE.md: product, journey, what is live, locks,
-   known baseline failures, and the active worktree.
+   known baseline failures, and the active worktree. Pre-launch tasks:
+   docs/PRE_LAUNCH_CHECKLIST.md.
 2. Confirm where you are, using the worktree as the working directory:
    git rev-parse --show-toplevel
    git branch --show-current
