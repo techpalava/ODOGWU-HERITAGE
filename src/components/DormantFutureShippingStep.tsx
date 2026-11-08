@@ -41,6 +41,7 @@ import {
   resolveIndividualInboundShippingDisplay,
 } from "../utils/individualInboundShippingDisplay";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import { projectShippingDisplayEstimate } from "../utils/shippingDisplayEstimate";
 
 interface DormantFutureShippingStepProps {
   state: FutureShippingStateV1;
@@ -246,6 +247,15 @@ export const DormantFutureShippingStep = ({
     orderType,
     physicalGarmentCount: garmentCount,
     fulfilmentMethod: state.fulfilmentMethod,
+  });
+  const displayEstimate = projectShippingDisplayEstimate({
+    orderType,
+    garmentCount,
+    selectedDesignPrice,
+    fulfilmentMethod: state.fulfilmentMethod,
+    countryCode: address.countryCode,
+    city: address.city,
+    destinationSelectionMode: state.destinationSelectionMode,
   });
   const displayedTotalCents =
     resolution.projectedTotalCents === null
@@ -916,7 +926,7 @@ export const DormantFutureShippingStep = ({
             {isDelivery && (
             <div className="min-w-0 sm:col-span-2">
               <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
-                Shipping
+                Delivery from Eindhoven
               </dt>
               <dd className="mt-1 text-heritage-green" data-delivery-shipping-line="true">
                 {resolution.quoteRequired ? (
@@ -979,6 +989,11 @@ export const DormantFutureShippingStep = ({
               {selectedDesignPrice === null ? "Pending" : money(selectedDesignPrice)}
             </dd>
           </div>
+          {selectedDesignPrice !== null ? (
+            <p className="text-xs leading-relaxed text-white/70">
+              Included once. This is the order subtotal, not a shipping charge.
+            </p>
+          ) : null}
           {inboundShipping ? (
             <>
             <div
@@ -995,26 +1010,59 @@ export const DormantFutureShippingStep = ({
               data-shipping-lagos-note="true"
               className="text-xs leading-relaxed text-white/70"
             >
-              {formatIndividualShippingNote(inboundShipping)}
+              {formatIndividualShippingNote(inboundShipping)} Included once. This is the Lagos → Eindhoven leg, and pickup keeps it.
             </p>
             </>
           ) : null}
           <p className="text-xs leading-relaxed text-white/70">
             {constructionNote}
           </p>
-          {isDelivery && (
-          <div className="border-t border-white/15 pt-3">
+          <div
+            className="border-t border-white/15 pt-3"
+            data-shipping-onward-status={displayEstimate.onwardStatus}
+            data-shipping-onward-cents={displayEstimate.onwardAmountCents ?? undefined}
+          >
             <div className="flex min-w-0 flex-wrap justify-between gap-2">
-              <dt className="min-w-0 break-words text-white/80">Shipping</dt>
-              <dd className="shrink-0 font-mono font-medium text-white">
-                {resolution.quoteRequired
-                  ? "Quote required"
-                  : resolution.postEindhovenAdjustmentCents === null
-                    ? "Pending"
-                    : moneyFromCents(resolution.postEindhovenAdjustmentCents)}
+              <dt className="min-w-0 break-words text-white/80">{displayEstimate.onwardLabel}</dt>
+              <dd className="shrink-0 text-right font-mono font-medium text-white">
+                {displayEstimate.onwardValueLabel}
               </dd>
             </div>
+            <p className="mt-1 text-xs leading-relaxed text-white/70">
+              {displayEstimate.onwardExplanation}
+            </p>
           </div>
+          {displayEstimate.allInEstimateCents !== null && displayedTotalCents === null ? (
+            <div className="border-t border-white/15 pt-3">
+              <div className="flex min-w-0 flex-wrap justify-between gap-2">
+                <dt className="min-w-0 break-words text-white/80">Estimated total</dt>
+                <dd
+                  data-shipping-estimate-cents={displayEstimate.allInEstimateCents}
+                  data-shipping-estimate-role="all-in"
+                  className="shrink-0 font-mono font-medium text-white"
+                >
+                  {moneyFromCents(displayEstimate.allInEstimateCents)}
+                </dd>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-white/70">
+                {displayEstimate.allInExplanation} The payable total below still waits for complete delivery details.
+              </p>
+            </div>
+          ) : (
+            <p
+              data-shipping-estimate-role={
+                displayedTotalCents !== null &&
+                displayEstimate.allInEstimateCents === displayedTotalCents
+                  ? "included-in-payable"
+                  : "incomplete"
+              }
+              className="text-xs leading-relaxed text-white/70"
+            >
+              {displayedTotalCents !== null &&
+              displayEstimate.allInEstimateCents === displayedTotalCents
+                ? "The payable total below includes each amount above once."
+                : "An all-in estimate is shown only when the order subtotal and delivery from Eindhoven are both known."}
+            </p>
           )}
           <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t-2 border-white/35 pt-3 text-base">
             <dt className="font-bold uppercase tracking-wide">

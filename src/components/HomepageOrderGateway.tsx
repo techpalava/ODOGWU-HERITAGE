@@ -21,6 +21,7 @@ import {
   getHomepageProvisionalJoinBatchView,
   type HomepageJoinBatchCacheEntry,
 } from "../utils/homepageJoinBatchCache";
+import { formatIndividualHomepageBlockRate } from "../utils/shippingDisplayEstimate";
 
 export const getJoinCurrentBatchButtonLabel = (
   batchName: string | null | undefined,
@@ -142,8 +143,6 @@ const orderCardBodyClassName =
 const chipListClassName = "mt-4 flex flex-wrap gap-2";
 const chipClassName =
   "rounded-xl border border-heritage-green/15 bg-heritage-cream px-3 py-1 text-[13px] font-semibold leading-snug text-heritage-green";
-const chipWarnClassName =
-  "rounded-xl border border-heritage-bronze/30 bg-[#f6ede2] px-3 py-1 text-[13px] font-semibold leading-snug text-heritage-bronze";
 const iconWellClassName =
   "flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-heritage-green text-heritage-gold shadow-inner ring-4 ring-heritage-gold/20";
 const iconWellMutedClassName =
@@ -377,7 +376,7 @@ export default function HomepageOrderGateway({
           </p>
           <ul className={chipListClassName}>
             <li className={chipClassName}>Independent order</li>
-            <li className={chipWarnClassName}>Higher direct shipping cost</li>
+            <li className={chipClassName}>{formatIndividualHomepageBlockRate()}</li>
           </ul>
 
           <div className={ctaSpacerClassName} />
