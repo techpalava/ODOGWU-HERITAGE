@@ -571,6 +571,22 @@ export async function handleAiTryOn(
   res: HttpResponse,
   dependencies: AiTryOnHttpDependencies = {},
 ) {
+  // Deep check M5: the per-wearer run lease taken below is always released,
+  // whichever way the request ends.
+  const ending: { release: (() => Promise<void>) | null } = { release: null };
+  try {
+    return await handleAiTryOnRequest(req, res, dependencies, ending);
+  } finally {
+    if (ending.release) await ending.release().catch(() => undefined);
+  }
+}
+
+async function handleAiTryOnRequest(
+  req: RequestWithRoute,
+  res: HttpResponse,
+  dependencies: AiTryOnHttpDependencies,
+  ending: { release: (() => Promise<void>) | null },
+) {
   const environment = dependencies.environment ?? process.env;
   const log = dependencies.log ?? ((line: string) => console.info(line));
   const now = dependencies.now ?? Date.now;
@@ -986,6 +1002,20 @@ export async function handleAiTryOn(
     if (!free) {
       return sendError(res, 409, "BUSY_JOB_ACTIVE", "A preview is already being made for this person.", false);
     }
+    // Another tab or device may be making this preview right now: block
+    // before anything is charged, so the blocked attempt uses no try.
+    let leaseId: string | null;
+    try {
+      leaseId = await jobs.acquireRun({ sessionId, wearerKey: parsed.wearerKey });
+    } catch {
+      return sendError(res, 503, "PROVIDER_FAILED", "AI Try-on is temporarily unavailable.", true);
+    }
+    if (!leaseId) {
+      return sendError(res, 409, "BUSY_JOB_ACTIVE", "A preview is already being made for this person.", false);
+    }
+    const runSessionId = sessionId;
+    const runWearerKey = parsed.wearerKey;
+    ending.release = () => jobs.releaseRun({ sessionId: runSessionId, wearerKey: runWearerKey, leaseId: leaseId! });
   }
 
   /** Tries left now (after a refund or a held try); informative only. */

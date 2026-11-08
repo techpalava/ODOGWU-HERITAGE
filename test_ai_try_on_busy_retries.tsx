@@ -371,6 +371,33 @@ const harness = () => {
   release();
   assert.equal((await running).status, 503);
 
+  // Deep check M5: a second new Generate for the same wearer (another tab or
+  // device) is blocked while the first runs, before any try is used.
+  {
+    const triesBefore = (await h.session(auth)).orderTriesRemaining;
+    const globalBefore = h.db.count("global");
+    let finish!: () => void;
+    h.setGemini(() => new Promise<never>((_, reject) => { finish = () => reject(highDemand()); }));
+    h.advance(20_000);
+    const first = h.generate(auth, { wearerKey: "w-zed" });
+    await new Promise((done) => setTimeout(done, 20));
+    const second = await h.generate(auth, { wearerKey: "w-zed" });
+    assert.equal(second.status, 409, "second tab blocked");
+    assert.equal(second.body.code, "BUSY_JOB_ACTIVE");
+    assert.equal(mapAiTryOnPreviewResponse(second.status, second.body).kind, "in_progress");
+    assert.equal(h.db.count("global"), globalBefore + 1, "blocked attempt uses no global count");
+    finish();
+    await new Promise((done) => setTimeout(done, 20));
+    finish();
+    await first;
+    assert.equal(h.db.jobs().filter(([path]) => path.includes("/run-")).length, 0, "run lease released when the request ends");
+    const after = (await h.session(auth)).orderTriesRemaining;
+    assert.ok(after >= triesBefore - 1, "at most the first request's try is used");
+    // A different wearer is never blocked by it; the same wearer is free again.
+    h.setGemini("ok");
+    assert.equal((await h.generate(auth, { wearerKey: "w-zed" })).status, 200, "free again after the first ended");
+  }
+
   // Light per-IP limit on retries.
   h.setGemini("busy");
   h.advance(20_000);
@@ -634,6 +661,14 @@ const textOf = (node: ReactTestInstance): string =>
   assert.match(toast, /We couldn&#x27;t create your preview/);
   assert.match(toast, /couldn’t confirm whether a try was used/);
   assert.match(toast, /Try again/);
+  // M5: blocked by another tab/device: says so and that no try was used.
+  const elsewhere = { ...base, status: "failed" as const, settledAt: 2, toast: "open" as const, outcome: { kind: "in_progress" as const } };
+  const elsewhereToast = renderToStaticMarkup(
+    createElement(AiTryOnBackgroundToasts, { toasts: [{ job: elsewhere, kind: aiTryOnToastKind(elsewhere, "fp") }], onView: () => undefined, onRetry: () => undefined, onClose: () => undefined }),
+  );
+  assert.ok(elsewhereToast.includes("another tab or on another device"));
+  assert.ok(elsewhereToast.includes("No try was used."));
+  assert.ok(!elsewhereToast.includes("couldn’t confirm whether a try was used"));
 }
 {
   const target: AiTryOnWearerTarget = {

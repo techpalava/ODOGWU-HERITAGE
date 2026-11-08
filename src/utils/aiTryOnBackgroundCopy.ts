@@ -34,6 +34,8 @@ export const AI_TRY_ON_BACKGROUND_COPY = {
   /** Toast: the page reloaded mid-request and no preview turned up. */
   resumeFailedBody: "Your preview didn’t finish after the page reloaded. We couldn’t confirm whether a try was used. Check AI Try-on for your latest tries remaining.",
   refundedBody: "Your preview didn’t finish. This try was refunded and wasn’t counted.",
+  /** Another tab or device is already making this preview (deep check M5). */
+  inProgressBody: "A preview for this person is already being made in another tab or on another device. Please wait for it to finish. No try was used.",
   retryAction: "Try again",
   /** Toast: ready, but the design changed while it was being made. */
   staleTitle: (name: string | null) => `${capitalise(aiTryOnPossessive(name))} preview no longer matches your design`,
