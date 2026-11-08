@@ -117,6 +117,12 @@ export interface AiTryOnWearerTarget {
    * sends the chosen garment's own `orderDetails`, not this whole list.
    */
   readonly orderDetails: AiTryOnOrderDetails | null;
+  /**
+   * Deep check L3: the wearer's own key from when it had one previewable
+   * garment. A preview stored there can't be tied to a garment, so it is
+   * only ever shown as out of date for the wearer.
+   */
+  readonly legacyWearerSlot?: true;
   /** Outfit slot only: every current pair; a preview of any one is current. */
   readonly outfitPairs?: readonly AiTryOnOutfitPair[];
 }
@@ -463,7 +469,13 @@ export const aiTryOnPreviewFingerprintIsCurrent = (target: AiTryOnWearerTarget, 
 /** The target can judge a preview at all (design ready). */
 export const aiTryOnTargetHasDesign = (target: AiTryOnWearerTarget): boolean =>
   Boolean(target.inputFingerprint || target.outfitPairs?.length);
+/** A wearer with 2+ previewable garments: its older wearer-key slot (L3). */
+export const aiTryOnLegacyWearerSlot = (target: AiTryOnWearerTarget): AiTryOnWearerTarget | null =>
+  (target.previewableGarments?.length ?? 0) > 1
+    ? { ...target, inputFingerprint: null, legacyWearerSlot: true, previewableGarments: [] }
+    : null;
 export const aiTryOnOrderPreviewTargets = (targets: readonly AiTryOnWearerTarget[]): AiTryOnWearerTarget[] => targets.flatMap((target) => {
   const outfit = aiTryOnOutfitTarget(target);
-  return [...aiTryOnPreviewTargets([target]), ...(outfit ? [outfit] : [])];
+  const legacy = aiTryOnLegacyWearerSlot(target);
+  return [...aiTryOnPreviewTargets([target]), ...(outfit ? [outfit] : []), ...(legacy ? [legacy] : [])];
 });
