@@ -637,7 +637,12 @@ assert.equal(
 );
 assert.equal((joinMarkup.match(/<li[^>]*>Shared shipping<\/li>/g) || []).length, 2);
 assert.match(joinMarkup, /<li[^>]*>Independent order<\/li>/);
-assert.match(joinMarkup, /<li[^>]*>Higher direct shipping cost<\/li>/);
+assert.match(
+  joinMarkup,
+  /<li[^>]*>Lagos → Eindhoven €131\.25 per 10 garments \(under 5 kg\)<\/li>/,
+);
+assert.equal((joinMarkup.match(/15\.09/g) || []).length, 0, "batch chips stay amount-free");
+assert.equal((joinMarkup.match(/Shared shipping/g) || []).length, 2);
 assert.doesNotMatch(joinMarkup, /garments total \| Shared/, "Meta is chips, not a pipe-joined line");
 assert.match(joinMarkup, /Choose how you order/);
 for (const [id, label] of [
