@@ -437,20 +437,59 @@ export interface AiTryOnReconciliationPolicy {
   skipAllowed: boolean;
 }
 
+/**
+ * A null fingerprint is not one situation.
+ * Pending means the uploaded owner or private photo is still loading, so a
+ * finished try-on must stay finished until the design fingerprint resolves.
+ * A resolved null means the design is missing or was removed: the finished
+ * try-on is not kept. A different resolved fingerprint still marks it stale.
+ */
+export const isAiTryOnInputFingerprintPending = ({
+  authResolved,
+  uploadOperationInFlight,
+  designStyleHydrated,
+  hasUploadedAssignment,
+  uploadedSourceAccess,
+}: {
+  authResolved: boolean;
+  uploadOperationInFlight: boolean;
+  designStyleHydrated: boolean;
+  hasUploadedAssignment: boolean;
+  uploadedSourceAccess: readonly { proved: boolean; failed: boolean }[];
+}): boolean => {
+  if (uploadOperationInFlight) return true;
+  const hasUploadedSource = uploadedSourceAccess.length > 0 || hasUploadedAssignment;
+  if (!authResolved && hasUploadedSource) return true;
+  const accessUnresolved = uploadedSourceAccess.some(
+    (source) => !source.proved && !source.failed,
+  );
+  if (!accessUnresolved) return false;
+  return hasUploadedAssignment || !designStyleHydrated;
+};
+
 export const reconcileAiTryOnWorkflow = ({
   state,
   currentInputFingerprint,
   policy,
+  inputFingerprintPending = false,
 }: {
   state: AiTryOnWorkflowStateV1 | null | undefined;
   currentInputFingerprint: string | null;
   policy: AiTryOnReconciliationPolicy;
+  /** True only while uploaded owner or source access is still loading. */
+  inputFingerprintPending?: boolean;
 }): AiTryOnWorkflowStateV1 => {
   const normalized =
     normalizeAiTryOnWorkflowState(state) || createEmptyAiTryOnWorkflowState();
 
   if (normalized.status === "skipped" && policy.skipAllowed) return normalized;
   if (!currentInputFingerprint) {
+    if (
+      inputFingerprintPending &&
+      (normalized.status === "completed" || normalized.status === "skipped")
+    ) {
+      return normalized;
+    }
     return {
       schemaVersion: 1,
       status: "awaiting_input",
