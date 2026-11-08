@@ -1284,7 +1284,10 @@ export default function DesignStudioView({
   const [aiTryOnAvailability, setAiTryOnAvailability] = useState<
     AiTryOnAvailabilityDetails | { status: "unknown" }
   >({ status: "unknown" });
-  const aiTryOnGatewayAvailable = aiTryOnAvailability.status === "available";
+  const aiTryOnGatewayAvailable: boolean | "unknown" =
+    aiTryOnAvailability.status === "unknown"
+      ? "unknown"
+      : aiTryOnAvailability.status === "available";
   /** A Try-on preview is generating; the step hides its skip button. */
   const [aiTryOnGenerating, setAiTryOnGenerating] = useState(false);
   const [futureMeasurementState, setFutureMeasurementState] =
@@ -9379,7 +9382,7 @@ export default function DesignStudioView({
   }, [guestDraftHydrated, futureStageId, futureDraftIdentityKey]);
   const aiTryOnOrderPreviewStageActive =
     (futureStageId === "summary" || futureStageId === "payment") &&
-    (aiTryOnGatewayAvailable ||
+    (aiTryOnGatewayAvailable === true ||
       futureAiTryOnWorkflow.status === "completed" ||
       futureAiTryOnWorkflow.status === "stale" ||
       Boolean(aiTryOnCredentials.sessionToken)) &&
@@ -9498,7 +9501,7 @@ export default function DesignStudioView({
   const handleSkipDormantAiTryOn = () => {
     const transition = transitionAiTryOnWorkflow({
       state: futureAiTryOnWorkflow,
-      event: { type: "skip" },
+      event: { type: "skip", whileGenerating: aiTryOnGenerating },
       skipAllowed: true,
     });
     if (!transition.ok) return;
@@ -11923,6 +11926,17 @@ export default function DesignStudioView({
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
           onContinue={handleOpenDormantSummaryStage}
+          availability={
+            aiTryOnAvailability.status === "unknown" || aiTryOnInputFingerprintPending
+              ? "checking"
+              : aiTryOnAvailability.status
+          }
+          missingInputs={[
+            ...(!isFutureDesignSourceReadyForCustomDetails ? ["Design Style"] : []),
+            ...(!futureScopedCustomDetailsReconciliation || !isFutureCustomDetailsStageReady
+              ? ["Custom Details"]
+              : []),
+          ]}
           livePanel={
             aiTryOnAvailability.status === "available" &&
             futureAiTryOnInputFingerprint &&

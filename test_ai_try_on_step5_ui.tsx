@@ -484,7 +484,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   );
   assert.equal(
     AI_TRY_ON_CONSENT_NOTICE,
-    "By uploading a photo, you agree that The Odogwu Heritage can send it to Google's Gemini AI to create a try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed to it.",
+    "By uploading a photo, you agree that we can send it to Google's Gemini AI, which uses it only to make your try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed. We don't keep your photo once the preview is made. We keep the preview privately for up to 30 days and, if you order, with your order until 60 days after payment, then delete it. You can ask us to delete it sooner. Google keeps the photo and preview for up to 55 days to check for misuse, then deletes them.",
   );
   assert.ok(markup.includes(AI_TRY_ON_CONSENT_NOTICE.replace(/'/g, "&#x27;")));
   assert.equal(markup.includes('type="checkbox"'), false, "consent is a notice, not a checkbox");
