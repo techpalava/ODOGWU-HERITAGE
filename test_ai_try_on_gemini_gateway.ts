@@ -49,6 +49,8 @@ import {
   createHttpAiTryOnGateway,
   mapAiTryOnHttpResult,
   runAiTryOnGeneration,
+  requestAiTryOnPreview,
+  mapAiTryOnPreviewResponse,
 } from "./src/services/aiTryOnGateway";
 import { DESIGN_STUDIO_STAGE_IDS } from "./src/utils/designSourceJourney";
 import type { FutureMeasurementStateV1, GarmentTypeStepSelection } from "./src/types";
@@ -1005,7 +1007,8 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
   assert.equal(geminiCalls, 1);
   assert.notEqual(result.state.status, 504);
   assert.equal(result.state.status, 502);
-  const body = result.state.body as { error?: string; code?: string; retryable?: boolean; orderTriesRemaining?: number };
+  const body = result.state.body as { error?: string; code?: string; retryable?: boolean; orderTriesRemaining?: number; tryRefunded?: boolean };
+  assert.equal(body.tryRefunded, true);
   assert.equal(body.code, "PROVIDER_FAILED");
   assert.equal(body.error, "AI Try-on could not be completed.");
   assert.equal(body.retryable, true);
@@ -1041,6 +1044,40 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
   assert.match(parts.map((part) => "text" in part ? part.text : "").join("\n"), /Keep the garment in image 1 exactly/);
   assert.equal((result.state.body as { orderTriesRemaining: number }).orderTriesRemaining, 4, "same one-try policy");
   assert.equal(h.previewSaves.length, 1, "one existing private preview storage write");
+}
+
+// A lost connection/auth lookup/response body cannot keep the browser spinning forever.
+for (const stall of ["fetch", "credentials", "body"]) {
+  let calls = 0;
+  let signal: AbortSignal | null | undefined;
+  const started = Date.now();
+  const result = await requestAiTryOnPreview({
+    request: { mode: "garment", inputFingerprint: FINGERPRINT, personImage: { mimeType: "image/jpeg", data: jpeg }, garmentImage: { mimeType: "image/png", data: png }, wearerKey: "order" },
+    timeoutMs: 5,
+    credentials: { sessionToken: null, getIdToken: () => stall === "credentials" ? new Promise(() => {}) : Promise.resolve(null) },
+    fetchImpl: async (_input, init) => {
+      calls += 1;
+      signal = init?.signal;
+      if (stall === "fetch") return new Promise(() => {});
+      return { status: 200, json: () => new Promise(() => {}) } as Response;
+    },
+  });
+  assert.deepEqual(result, { kind: "failed", orderTriesRemaining: null });
+  assert.ok(Date.now() - started < 1_000, `${stall} timeout settles without waiting for the network`);
+  assert.equal(calls, stall === "credentials" ? 0 : 1, "never resubmit a timed-out try");
+  if (signal) assert.equal(signal.aborted, true);
+}
+{
+  // A refund storage failure is not evidence that a try was returned.
+  const h = harness({ geminiError: new Error("mock failure") });
+  h.deps.createUsageLimits = (db) => ({ ...createAiTryOnUsageLimits(db), release: async () => { throw new Error("mock storage failure"); } });
+  const result = response();
+  await handleAiTryOn(post(validBody()), result.res, h.deps);
+  assert.equal(result.state.status, 502);
+  const body = result.state.body as { orderTriesRemaining?: number; tryRefunded?: boolean };
+  assert.equal(body.tryRefunded, undefined, "must not promise a refund when release failed");
+  assert.equal(body.orderTriesRemaining, 4, "must not invent a returned try");
+  assert.deepEqual(mapAiTryOnPreviewResponse(result.state.status, body), { kind: "failed", orderTriesRemaining: 4 });
 }
 
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");

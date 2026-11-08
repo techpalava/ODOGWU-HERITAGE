@@ -192,7 +192,7 @@ export const createAiTryOnBackgroundJobs = ({
     if (!job || leaving) return;
     removeMarker(job.scope, wearerId);
     const seenInline = visibleWearerId === wearerId;
-    update(wearerId, { ...patch, settledAt: now(), seenInline, toast: seenInline ? "none" : "open" });
+    update(wearerId, { ...patch, settledAt: now(), seenInline, toast: seenInline && patch.status !== "failed" ? "none" : "open" });
   };
 
   const api = {
@@ -387,7 +387,7 @@ export const createAiTryOnBackgroundJobs = ({
             if (jobs[marker.wearerId]?.startedAt !== marker.startedAt) return;
             settle(marker.wearerId, {
               status: "failed",
-              ...(refunded ? { outcome: { kind: "busy_failed", orderTriesRemaining: null } as const } : {}),
+              ...(refunded ? { outcome: { kind: "busy_failed", orderTriesRemaining: null, tryRefunded: true } as const } : {}),
             });
             return;
           }

@@ -356,12 +356,12 @@ export type AiTryOnPreviewOutcome =
   /** Signed-in account used its 15 tries in the last 30 days. */
   | { kind: "account_limit_reached" }
   | { kind: "rate_limited"; retryAfterSeconds: number | null }
-  | { kind: "photo_blocked"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
-  | { kind: "failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
+  | { kind: "photo_blocked"; orderTriesRemaining: number | null; accountTriesRemaining?: number; tryRefunded?: boolean }
+  | { kind: "failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number; tryRefunded?: boolean }
   /** Gemini is over capacity: the try is held; send again with `jobId`. */
   | { kind: "busy"; jobId: string; retryAfterSeconds: number | null }
-  /** Still over capacity after the retries; the try was refunded. */
-  | { kind: "busy_failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number }
+  /** Still over capacity after the retries; refund may be unconfirmed. */
+  | { kind: "busy_failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number; tryRefunded?: boolean }
   | { kind: "unavailable" };
 
 const BUSY_JOB_ID_PATTERN = /^busy-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -408,6 +408,7 @@ export const mapAiTryOnPreviewResponse = (
   const remaining =
     typeof error.orderTriesRemaining === "number" ? error.orderTriesRemaining : null;
   const account = withAccountTriesRemaining(error.accountTriesRemaining);
+  const refund = error.tryRefunded === true ? { tryRefunded: true } : {};
   switch (error.code) {
     case "NOT_CONFIGURED":
     case "GLOBAL_LIMIT_REACHED":
@@ -423,7 +424,7 @@ export const mapAiTryOnPreviewResponse = (
           typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
       };
     case "PROVIDER_REJECTED":
-      return { kind: "photo_blocked", orderTriesRemaining: remaining, ...account };
+      return { kind: "photo_blocked", orderTriesRemaining: remaining, ...account, ...refund };
     case "PROVIDER_BUSY":
       return typeof error.busyJobId === "string" && BUSY_JOB_ID_PATTERN.test(error.busyJobId)
         ? {
@@ -431,36 +432,55 @@ export const mapAiTryOnPreviewResponse = (
             jobId: error.busyJobId,
             retryAfterSeconds: typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
           }
-        : { kind: "busy_failed", orderTriesRemaining: remaining, ...account };
+        : { kind: "busy_failed", orderTriesRemaining: remaining, ...account, ...refund };
     default:
-      return { kind: "failed", orderTriesRemaining: remaining, ...account };
+      return { kind: "failed", orderTriesRemaining: remaining, ...account, ...refund };
   }
 };
+
+/** Beyond the server's 130-second route budget; no automatic re-submit. */
+export const AI_TRY_ON_PREVIEW_TIMEOUT_MS = 150_000;
 
 export const requestAiTryOnPreview = async ({
   request,
   credentials,
   fetchImpl = (input, init) => fetch(input, init),
   endpoint = AI_TRY_ON_ENDPOINT,
+  timeoutMs = AI_TRY_ON_PREVIEW_TIMEOUT_MS,
 }: {
   request: AiTryOnGenerationRequest;
   credentials?: AiTryOnCredentials;
   fetchImpl?: FetchLike;
   endpoint?: string;
+  timeoutMs?: number;
 }): Promise<AiTryOnPreviewOutcome> => {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<AiTryOnPreviewOutcome>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve({ kind: "failed", orderTriesRemaining: null });
+    }, timeoutMs);
+  });
   try {
-    const response = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(await credentialHeaders(credentials)),
-      },
-      body: JSON.stringify(request),
-    });
-    return mapAiTryOnPreviewResponse(response.status, await readJson(response));
+    return await Promise.race([
+      (async () => {
+        const headers = await credentialHeaders(credentials);
+        if (controller.signal.aborted) return { kind: "failed", orderTriesRemaining: null } as const;
+        const response = await fetchImpl(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", ...headers },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+        return mapAiTryOnPreviewResponse(response.status, await readJson(response));
+      })(),
+      timeout,
+    ]);
   } catch {
     return { kind: "failed", orderTriesRemaining: null };
+  } finally {
+    clearTimeout(timer);
   }
 };
 
