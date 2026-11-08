@@ -342,6 +342,7 @@ import {
   isFutureCustomDetailsContentReady,
   restoreAiTryOnWorkflowState,
   reconcileAiTryOnWorkflow,
+  isAiTryOnInputFingerprintPending,
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
@@ -2171,13 +2172,15 @@ export default function DesignStudioView({
     ],
   );
   // Live, autosave, and hydrate share one parsed uploaded-source collection.
-  // Confirmation is computed (owner + identity + access proof), never persisted.
+  // The saved confirmation is the same key Fabric approval already required.
+  // A failed private-photo proof still drops the source.
   const futureOccurrenceUploadedDesignStyleAuthority = useMemo(
     () =>
       buildUploadedDesignStyleAuthorityFromSources({
         sources: Object.values(futureUploadedDesignSourcesByUploadedSourceRef),
         accessProvedSourceKeys: futureUploadedDesignAccessProvedBySourceKey,
         failedSourceKeys: futureUploadedDesignRestoreFailedBySourceKey,
+        confirmedDesignSourceKey: futureConfirmedDesignSourceKey,
         expectedOwnerUid:
           firebaseDraftAuth.user?.uid || auth.currentUser?.uid || null,
         ownershipTransferPending: false,
@@ -2188,6 +2191,7 @@ export default function DesignStudioView({
       futureUploadedDesignSourcesByUploadedSourceRef,
       futureUploadedDesignAccessProvedBySourceKey,
       futureUploadedDesignRestoreFailedBySourceKey,
+      futureConfirmedDesignSourceKey,
       firebaseDraftAuth.user?.uid,
       authoritativePhysicalOccurrencesForDomain,
     ],
@@ -3814,6 +3818,12 @@ export default function DesignStudioView({
   const [aiTryOnCredentials, setAiTryOnCredentials] = useState<AiTryOnCredentials>(() =>
     createAiTryOnCredentials(null, async () => null),
   );
+  /**
+   * Summary can be the first step after a reload. The owner session token
+   * (guest) or ID token (signed in) has to be read before that step asks
+   * for saved previews, or the request looks like a new empty session.
+   */
+  const [aiTryOnOwnerCredentialsReady, setAiTryOnOwnerCredentialsReady] = useState(false);
   // Try-on photo, model choice, photo wearer, measurement wearer and the
   // last preview image for this tab only. Never written to the draft,
   // localStorage or the server. Cleared on a new order and sign-out.
@@ -5405,6 +5415,7 @@ export default function DesignStudioView({
           ),
           accessProvedSourceKeys: {},
           failedSourceKeys: {},
+          confirmedDesignSourceKey: storedDraft?.confirmedDesignSourceKey,
           expectedOwnerUid:
             firebaseDraftAuth.user?.uid || auth.currentUser?.uid || null,
           ownershipTransferPending: Boolean(
@@ -5620,7 +5631,6 @@ export default function DesignStudioView({
       const canRestoreSummary =
         restoredFabricCompletion.isComplete &&
         restoredSourceReady &&
-        !restoredUploadedSource &&
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion) &&
         isOrderAiTryOnFinishedForSummary(restoredAiTryOnWorkflow) &&
         restoredMeasurementsReady;
@@ -6559,16 +6569,32 @@ export default function DesignStudioView({
     futureDraftIdentityKey,
   ]);
 
+  const aiTryOnInputFingerprintPending = isAiTryOnInputFingerprintPending({
+    authResolved: firebaseDraftAuth.resolved,
+    uploadOperationInFlight: isUploadingDesign || isReplacingDesign || isRemovingDesign,
+    designStyleHydrated: Boolean(currentFutureDesignStyleDraftHydration),
+    hasUploadedAssignment: futureDesignStyleStepProjection.occurrences.some(
+      (occurrence) => occurrence.assignment?.sourceKind === "uploaded",
+    ),
+    uploadedSourceAccess: [
+      ...(activeUploadedDesignSource ? [activeUploadedDesignSource] : []),
+      ...Object.values(futureUploadedDesignSourcesByUploadedSourceRef),
+    ].map((source) => ({
+      proved: futureUploadedDesignAccessProvedBySourceKey[source.sourceKey] === true,
+      failed: futureUploadedDesignRestoreFailedBySourceKey[source.sourceKey] === true,
+    })),
+  });
   useEffect(() => {
     if (!guestDraftHydrated) return;
     setFutureAiTryOnWorkflow((current) =>
       reconcileAiTryOnWorkflow({
         state: current,
         currentInputFingerprint: futureAiTryOnInputFingerprint,
+        inputFingerprintPending: aiTryOnInputFingerprintPending,
         policy: { gatewayAvailable: aiTryOnGatewayAvailable, skipAllowed: true },
       }),
     );
-  }, [guestDraftHydrated, futureAiTryOnInputFingerprint, aiTryOnGatewayAvailable]);
+  }, [guestDraftHydrated, futureAiTryOnInputFingerprint, aiTryOnGatewayAvailable, aiTryOnInputFingerprintPending]);
 
   const coordinatePersistedUploadedSourceCleanup = (
     acknowledgement: NonNullable<
@@ -8294,15 +8320,41 @@ export default function DesignStudioView({
   };
   const handleOpenDormantDesignStyleStage = () => {
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
-    if (returnStage) {
-      navigateToFutureStage(returnStage);
-      return;
-    }
     if (
+      !returnStage &&
       !futureFabricStageCompletion.isComplete &&
       !isStageHistoricallyUnlocked("design_style")
     ) {
       navigateToFutureStage("fabric", getValidationNavigationTarget());
+      return;
+    }
+    // Fabric approval activates uploaded pricing only after the existing
+    // confirmation check has already accepted this upload. An unconfirmed or
+    // incomplete upload keeps the price inactive.
+    if (
+      activeUploadedDesignSource &&
+      futureFabricStageCompletion.isComplete &&
+      futurePrimaryFabricCode
+    ) {
+      const pricingReadiness = evaluateAuthoritativeUploadedDesignReadiness({
+        uploadInput: {
+          uploadReference: activeUploadedDesignSource.uploadReference,
+          fabricCapacityComposition:
+            activeUploadedDesignSource.fabricCapacityComposition,
+          demographic: activeUploadedDesignSource.demographic,
+        },
+        step1GarmentTypes: garmentTypeSelection.garmentTypes,
+        designSource: activeUploadedDesignSource,
+        confirmedDesignSourceKey: futureConfirmedDesignSourceKey,
+        selectedFabricCode: futurePrimaryFabricCode,
+        priceActivatedFabricCode: futurePrimaryFabricCode,
+      });
+      if (pricingReadiness.isPricingEligible) {
+        setFuturePriceActivatedFabricCode(futurePrimaryFabricCode);
+      }
+    }
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
       return;
     }
     navigateToFutureStage("design_style");
@@ -8344,7 +8396,6 @@ export default function DesignStudioView({
     handleRemoveUploadedDesign,
     handleSelectFutureStyle,
     handleRetryUploadedDesignDeletion,
-    handleContinueWithUploadedDesign,
   ];
   const handleOpenDormantCustomDetailsStage = (
     target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
@@ -8352,6 +8403,13 @@ export default function DesignStudioView({
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
     if (returnStage) {
       navigateToFutureStage(returnStage);
+      return;
+    }
+    if (
+      activeUploadedDesignSource &&
+      futureConfirmedDesignSourceKey !== activeUploadedDesignSource.sourceKey
+    ) {
+      handleContinueWithUploadedDesign();
       return;
     }
     if (
@@ -9327,7 +9385,13 @@ export default function DesignStudioView({
       Boolean(aiTryOnCredentials.sessionToken)) &&
     !futurePaymentReviewConfirmed;
   useEffect(() => {
-    if (!aiTryOnOrderPreviewStageActive) return;
+    if (!guestDraftHydrated) return;
+    if (futureDraftIdentity.status !== "guest" && futureDraftIdentity.status !== "authenticated") return;
+    setAiTryOnCredentials(aiTryOnCredentialsForIdentity(futureDraftIdentityKey));
+    setAiTryOnOwnerCredentialsReady(true);
+  }, [guestDraftHydrated, futureDraftIdentity.status, futureDraftIdentityKey]);
+  useEffect(() => {
+    if (!aiTryOnOrderPreviewStageActive || !aiTryOnOwnerCredentialsReady) return;
     let cancelled = false;
     void fetchAiTryOnAvailability({ credentials: aiTryOnCredentials }).then((availability) => {
       if (cancelled) return;
@@ -9338,7 +9402,7 @@ export default function DesignStudioView({
     return () => {
       cancelled = true;
     };
-  }, [aiTryOnOrderPreviewStageActive, futureStageId, aiTryOnCredentials, aiTryOnFinishedPreviewKey]);
+  }, [aiTryOnOrderPreviewStageActive, aiTryOnOwnerCredentialsReady, futureStageId, aiTryOnCredentials, aiTryOnFinishedPreviewKey]);
   const aiTryOnOrderPreviewImagesRef = useRef(new Map<string, { mimeType: string; data: string }>());
   const aiTryOnScopedJobsRef = useRef(aiTryOnScopedJobs);
   aiTryOnScopedJobsRef.current = aiTryOnScopedJobs;
@@ -9366,6 +9430,7 @@ export default function DesignStudioView({
         loadImage={loadAiTryOnOrderPreviewImage}
         onMakeNew={openAiTryOnForWearer}
         notice={futureStageId === "payment" ? AI_TRY_ON_ORDER_IMAGE_COPY.savedWithOrderNotice : undefined}
+        fullCardWidth={futureStageId === "summary"}
       />
     ) : null;
   // Order prepared: the current previews go with it at payment (PR 2). Out-
