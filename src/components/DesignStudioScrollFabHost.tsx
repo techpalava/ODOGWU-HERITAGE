@@ -9,7 +9,7 @@ import {
 } from "../utils/designStudioScrollFabs";
 
 const SCROLL_FAB_CLASS_NAME =
-  "fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-4 z-40 inline-flex size-11 items-center justify-center rounded-full border border-heritage-gold/40 bg-white text-heritage-green shadow-md transition hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:right-6";
+  "fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-4 right-auto z-40 inline-flex size-11 items-center justify-center rounded-full border border-heritage-gold/40 bg-white text-heritage-green shadow-md transition hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:left-auto sm:right-6";
 
 export function shouldShowDesignStudioGoToBottom(args: {
   scrollBelowFortyPercent: boolean;
