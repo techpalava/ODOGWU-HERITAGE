@@ -86,6 +86,8 @@ export interface AiTryOnInlineImage {
   readonly data: string;
 }
 
+export const AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION = "tryon-uploaded-design-prompt-v1" as const;
+
 export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v1" as const;
 
 export interface AiTryOnOutfitGarmentRequest {
@@ -96,7 +98,9 @@ export interface AiTryOnOutfitGarmentRequest {
   readonly orderDetails?: AiTryOnOrderDetails | null;
 }
 
-interface AiTryOnSingleGenerationRequest {
+export interface AiTryOnPhotoGenerationRequest {
+  readonly uploadedDesignImage?: never;
+  readonly uploadedGarmentType?: never;
   readonly outfitGarments?: never;
   readonly mode: AiTryOnMode;
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
@@ -128,7 +132,7 @@ interface AiTryOnSingleGenerationRequest {
 }
 
 /** Combined requests carry per-garment references only; single-photo fields cannot leak in. */
-type AiTryOnOutfitGenerationRequest = Omit<AiTryOnSingleGenerationRequest, "mode" | "outfitGarments"> & {
+type AiTryOnOutfitGenerationRequest = Omit<AiTryOnPhotoGenerationRequest, "mode" | "outfitGarments"> & {
   readonly mode: "garment";
   readonly outfitGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmentRequest];
   readonly garmentImage?: never;
@@ -137,7 +141,7 @@ type AiTryOnOutfitGenerationRequest = Omit<AiTryOnSingleGenerationRequest, "mode
   readonly fabricSwatchImageUrl?: never;
   readonly orderDetails?: never;
 };
-export type AiTryOnGenerationRequest = AiTryOnSingleGenerationRequest | AiTryOnOutfitGenerationRequest;
+
 
 export type AiTryOnErrorCode =
   | "METHOD_NOT_ALLOWED"
@@ -230,6 +234,21 @@ export interface AiTryOnGenerationSuccess {
   readonly cacheHit?: boolean;
 }
 
+/** Uploaded Step 3 photo is the base; no customer photo, studio model or catalogue garment. */
+type AiTryOnUploadedDesignGenerationRequest = (
+  Omit<AiTryOnPhotoGenerationRequest, "mode" | "uploadedDesignImage" | "uploadedGarmentType" | "personImage" | "defaultModelId" | "garmentImage" | "garmentImageUrl" | "fitHints" | "orderDetails"> & {
+    readonly mode: "fabric";
+    readonly uploadedDesignImage: AiTryOnInlineImage;
+    readonly uploadedGarmentType: CanonicalPhysicalGarmentType;
+    readonly personImage?: never;
+    readonly defaultModelId?: never;
+    readonly garmentImage?: never;
+    readonly garmentImageUrl?: never;
+    readonly fitHints?: never;
+    readonly orderDetails?: never;
+  }
+);
+
 export interface AiTryOnErrorResponse {
   readonly error: string;
   readonly code: AiTryOnErrorCode;
@@ -255,3 +274,5 @@ export const AI_TRY_ON_ACCOUNT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /** Each decoded image stays small enough for Vercel's 4.5 MB request body. */
 export const AI_TRY_ON_MAX_IMAGE_BYTES = 1_400_000;
 export const AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES = 3_000_000;
+
+export type AiTryOnGenerationRequest = AiTryOnPhotoGenerationRequest | AiTryOnOutfitGenerationRequest | AiTryOnUploadedDesignGenerationRequest;

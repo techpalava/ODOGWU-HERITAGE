@@ -31,6 +31,7 @@ import {
   handleAiTryOn,
   isAiTryOnEnabled,
   isAiTryOnRequest,
+  parseAiTryOnGenerationRequest,
   type AiTryOnHttpDependencies,
 } from "./src/server/aiTryOnHttp";
 import {
@@ -1017,6 +1018,32 @@ assert.deepEqual(mapAiTryOnHttpResult(500, "garbage"), { status: "failed", code:
     if (path.startsWith("aiTryOnUsage/order-")) assert.equal(doc.count ?? 0, 0, path);
   }
   assert.equal(h.previewSaves.length, 0);
+}
+
+// Uploaded design is an exclusive, private two-image fabric edit, using the existing try reservation.
+{
+  const { personImage, garmentImage } = validBody();
+  const body = { mode: "fabric", inputFingerprint: FINGERPRINT, wearerKey: "order", uploadedDesignImage: personImage, uploadedGarmentType: "shirt", fabricSwatchImage: garmentImage };
+  assert.equal(parseAiTryOnGenerationRequest(body).ok, true);
+  for (const extra of [
+    { personImage }, { defaultModelId: "male-plus" }, { garmentImage }, { garmentImageUrl: "https://example.test/design.jpg" }, { fitHints: [] }, { orderDetails: null }, { mode: "garment" }, { fabricSwatchImage: undefined }, { uploadedGarmentType: undefined }, { uploadedGarmentType: "untrusted user text" },
+  ]) assert.equal(parseAiTryOnGenerationRequest({ ...body, ...extra }).ok, false, JSON.stringify(extra));
+  const h = harness();
+  const cropped = { mimeType: "image/png" as const, data: "Q1JPUEZFRA==" };
+  let cropInput;
+  h.deps.cropFabricSwatch = async (image) => { cropInput = image; return cropped; };
+  const result = response();
+  await handleAiTryOn(post({ ...body, orderKey: "draft-abc12345" }), result.res, h.deps);
+  assert.equal(result.state.status, 200);
+  assert.equal(h.calls.length, 1, "one provider request (mocked)");
+  const parts = h.calls[0].contents[0].parts;
+  const images = parts.flatMap((part) => "inlineData" in part ? [part.inlineData] : []);
+  assert.deepEqual(images, [personImage, cropped], "uploaded base first, cropped fabric second; no person/model/catalogue extra image");
+  assert.deepEqual(cropInput, garmentImage);
+  assert.match(parts.map((part) => "text" in part ? part.text : "").join("\n"), /tryon-uploaded-design-prompt-v1/);
+  assert.match(parts.map((part) => "text" in part ? part.text : "").join("\n"), /Keep the garment in image 1 exactly/);
+  assert.equal((result.state.body as { orderTriesRemaining: number }).orderTriesRemaining, 4, "same one-try policy");
+  assert.equal(h.previewSaves.length, 1, "one existing private preview storage write");
 }
 
 // A lost connection/auth lookup/response body cannot keep the browser spinning forever.

@@ -128,4 +128,25 @@ for (const list of [[garments[0]], [garment("dress", "dress")], [garments[3], ga
   assert.equal(data("data-ai-try-on-outfit-controls").length, 0);
   await act(async () => { panel.unmount(); });
 }
+// Integration: a separate uploaded design never supplies the combined base or disables a valid pair.
+const uploadedTarget = { ...target, previewableGarments: [...garments, {
+  ...garment("private-design", "shirt", "uploaded"), garmentImageUrl: null,
+  uploadedDesign: { garmentKey: "private-design", garmentType: "shirt" as const, previewUrl: null },
+}] };
+await act(async () => { panel = create(createElement(AiTryOnPhotoPanel, { ...props, targets: [uploadedTarget], jobStore: createAiTryOnBackgroundJobs({ storage: null }) })); });
+await click(data("data-ai-try-on-garment", "private-design")[0]);
+assert.equal(data("data-ai-try-on-uploaded-design").length, 1);
+assert.equal(data("data-ai-try-on-source-cards").length, 0);
+await click(data("data-ai-try-on-outfit-mode")[0]);
+assert.equal(data("data-ai-try-on-uploaded-design").length, 0);
+assert.equal(data("data-ai-try-on-source-cards").length, 1);
+for (const [part, value] of [["top", "shirt-first"], ["bottom", "trouser"]]) {
+  await act(async () => { data("data-ai-try-on-outfit-choice", part)[0].props.onChange({ target: { value } }); });
+}
+await choosePhoto();
+assert.equal(generate().props.disabled, false);
+await click(generate());
+assert.equal(requests[4].outfitGarments?.length, 2);
+assert.equal(requests[4].uploadedDesignImage, undefined);
+await act(async () => { panel.unmount(); });
 console.log("Combined outfit: snapshots, explicit choices, slot isolation, downstream selection and reload passed");

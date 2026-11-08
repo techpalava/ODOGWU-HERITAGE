@@ -1,3 +1,4 @@
+import type { CanonicalPhysicalGarmentType } from "../types.js";
 import { aiTryOnOutfitPart } from "../utils/aiTryOnWearerTargets.js";
 import { CANONICAL_PHYSICAL_GARMENT_TYPES } from "../utils/garmentConstructionPricing.js";
 import { handleAiTryOnAdminReset } from "./aiTryOnAdminReset.js";
@@ -51,6 +52,8 @@ import {
   buildAiTryOnModelImageLabels,
   buildAiTryOnModelPrompt,
   buildAiTryOnPrompt,
+  buildAiTryOnUploadedDesignPrompt,
+  buildAiTryOnUploadedDesignImageLabels,
   buildAiTryOnOutfitPrompt,
   buildAiTryOnOutfitImageLabels,
 } from "./aiTryOnPrompt.js";
@@ -99,6 +102,7 @@ import {
 import {
   AI_TRY_ON_GLOBAL_GENERATION_CAP,
   AI_TRY_ON_MAX_IMAGE_BYTES,
+  AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION,
   AI_TRY_ON_OUTFIT_PROMPT_VERSION,
   type AiTryOnOutfitGarmentRequest,
   AI_TRY_ON_MODEL_PROMPT_VERSION,
@@ -273,6 +277,8 @@ const ALLOWED_KEYS = new Set([
   "outfitGarments",
   "mode",
   "inputFingerprint",
+  "uploadedDesignImage",
+  "uploadedGarmentType",
   "personImage",
   "defaultModelId",
   "garmentImage",
@@ -340,6 +346,7 @@ type ParsedRequest =
       wearerKey: string;
       /** Exactly one of personImage (photo flow) and defaultModel (model mode). */
       personImage: AiTryOnInlineImage | null;
+      uploadedDesign: { image: AiTryOnInlineImage; garmentType: CanonicalPhysicalGarmentType } | null;
       defaultModel: AiTryOnDefaultModel | null;
       garment: AiTryOnReferenceSource | null;
       outfitGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmentRequest] | null;
@@ -397,8 +404,23 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
   }
   let totalBytes = 0;
   let personImage: AiTryOnInlineImage | null = null;
+  let uploadedDesignImage: AiTryOnInlineImage | null = null;
+  let uploadedGarmentType: CanonicalPhysicalGarmentType | null = null;
+  if (parsedBody.uploadedDesignImage === undefined && parsedBody.uploadedGarmentType !== undefined) return invalid("Uploaded garment type requires an uploaded design.");
   let defaultModel: AiTryOnDefaultModel | null = null;
-  if (parsedBody.defaultModelId !== undefined) {
+  if (parsedBody.uploadedDesignImage !== undefined) {
+    if (mode !== "fabric") return invalid("Uploaded-design preview needs the chosen fabric swatch.");
+    const uploadedType = CANONICAL_PHYSICAL_GARMENT_TYPES.find((value) => value === parsedBody.uploadedGarmentType);
+    if (!uploadedType) return invalid("A valid uploaded garment type is required.");
+    uploadedGarmentType = uploadedType;
+    if (["personImage", "defaultModelId", "garmentImage", "garmentImageUrl", "fitHints", "orderDetails"].some((key) => parsedBody[key] !== undefined)) {
+      return invalid("Uploaded-design preview uses only the uploaded design and chosen fabric, not a customer photo, model or garment details.");
+    }
+    const uploaded = parseImage(parsedBody.uploadedDesignImage);
+    if (uploaded.ok === false) return uploaded.tooLarge ? tooLarge : invalid("Images must be JPEG, PNG, or WebP.");
+    uploadedDesignImage = uploaded.image;
+    totalBytes += uploaded.bytes;
+  } else if (parsedBody.defaultModelId !== undefined) {
     // Model mode: no customer photo, catalogue pictures only (so the shared
     // cache never holds customer content) and no fit hints (they describe
     // the customer, not the model, and would break reuse).
@@ -459,7 +481,7 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
     const bottom = parseOutfitGarment(parsedBody.outfitGarments[1], "bottom");
     if (!top || !bottom || top.garmentKey === bottom.garmentKey) return invalid("Choose one distinct catalogue top and one bottom.");
     outfitGarments = [top, bottom];
-  } else {
+  } else if (!uploadedDesignImage) {
     const parsedGarment = parseReference(parsedBody.garmentImage, parsedBody.garmentImageUrl);
     if ("ok" in parsedGarment) return parsedGarment;
     garment = parsedGarment;
@@ -485,6 +507,7 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
     inputFingerprint,
     wearerKey,
     personImage,
+    uploadedDesign: uploadedDesignImage && uploadedGarmentType ? { image: uploadedDesignImage, garmentType: uploadedGarmentType } : null,
     defaultModel,
     garment,
     outfitGarments,
@@ -1043,7 +1066,7 @@ export async function handleAiTryOn(
     images = [
       defaultModel
         ? await (dependencies.loadDefaultModelImage ?? loadAiTryOnDefaultModelImage)(defaultModel)
-        : parsed.personImage!,
+        : parsed.uploadedDesign?.image ?? parsed.personImage!,
       ...(parsed.garment ? [await resolveReference(parsed.garment)] : []),
       ...(parsed.fabric ? [await resolveReference(parsed.fabric)] : []),
     ];
@@ -1077,9 +1100,10 @@ export async function handleAiTryOn(
   // v6: drop the swatch's edges (printed codes, selvedge text) and match
   // the output shape to the customer photo. Neither step may block a try:
   // an undecodable picture falls back to what was sent before v6.
-  if (!parsed.outfitGarments && images[2]) {
+  const fabricImageIndex = parsed.uploadedDesign ? 1 : 2;
+  if (!parsed.outfitGarments && images[fabricImageIndex]) {
     try {
-      images[2] = await (dependencies.cropFabricSwatch ?? cropAiTryOnFabricSwatch)(images[2]);
+      images[fabricImageIndex] = await (dependencies.cropFabricSwatch ?? cropAiTryOnFabricSwatch)(images[fabricImageIndex]);
     } catch {
       log(JSON.stringify({ event: "ai_try_on", outcome: "swatch_crop_skipped", mode: parsed.mode }));
     }
@@ -1093,7 +1117,7 @@ export async function handleAiTryOn(
     }
   }
 
-  const promptVersion = parsed.outfitGarments ? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
+  const promptVersion = parsed.uploadedDesign ? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed.outfitGarments ? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
   const saveWearerPreview = async (previewId: string, image: { mimeType: string; data: string }) => {
     let saved: Awaited<ReturnType<AiTryOnPreviewStore["save"]>> | null;
     try {
@@ -1237,7 +1261,8 @@ export async function handleAiTryOn(
   );
   const outcome = await runAiTryOnGemini({
     generateContent: (dependencies.createGenerateContent ?? createGeminiGenerateContent)(apiKey),
-    prompt: parsed.outfitGarments ? buildAiTryOnOutfitPrompt({ garments: parsed.outfitGarments, onModel: Boolean(defaultModel), fitHints: parsed.fitHints }) : defaultModel
+    prompt: parsed.uploadedDesign ? buildAiTryOnUploadedDesignPrompt(parsed.uploadedDesign.garmentType) : parsed.outfitGarments ? buildAiTryOnOutfitPrompt({ garments: parsed.outfitGarments, onModel: Boolean(defaultModel), fitHints: parsed.fitHints }) : defaultModel
+
       ? buildAiTryOnModelPrompt({ mode: parsed.mode, orderDetails: parsed.orderDetails })
       : buildAiTryOnPrompt({
           mode: parsed.mode,
@@ -1245,7 +1270,8 @@ export async function handleAiTryOn(
           orderDetails: parsed.orderDetails,
         }),
     images,
-    imageLabels: parsed.outfitGarments ? buildAiTryOnOutfitImageLabels(parsed.outfitGarments, Boolean(defaultModel)) : defaultModel
+    imageLabels: parsed.uploadedDesign ? buildAiTryOnUploadedDesignImageLabels() : parsed.outfitGarments ? buildAiTryOnOutfitImageLabels(parsed.outfitGarments, Boolean(defaultModel)) : defaultModel
+
       ? buildAiTryOnModelImageLabels(parsed.mode)
       : buildAiTryOnImageLabels(parsed.mode),
     aspectRatio: defaultModel ? "3:4" : photoAspectRatio,
