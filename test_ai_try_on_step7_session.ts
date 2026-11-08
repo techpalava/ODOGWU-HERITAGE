@@ -386,7 +386,9 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
 }
 
 {
-  // Re-encoding failure: the preview is returned but nothing is stored.
+  // Re-encoding failure: the preview is returned but nothing is stored,
+  // and the try goes back (a preview that can't be kept never reaches
+  // Summary or the order).
   const h = httpHarness();
   h.deps.compactPreviewImage = async () => { throw new Error("sharp unavailable"); };
   const token = ((await session(h)).body as { sessionToken: string }).sessionToken;
@@ -394,6 +396,31 @@ const generate = (h: ReturnType<typeof httpHarness>, headers: Record<string, str
   assert.equal(made.status, 200);
   assert.equal((made.body as { previewStored: boolean }).previewStored, false);
   assert.equal(h.bucket.objects.size, 0);
+  assert.equal((made.body as { orderTriesRemaining: number }).orderTriesRemaining, 5, "the try is refunded");
+  const after = (await session(h, { "x-ai-try-on-session": token })).body as { orderTriesRemaining: number };
+  assert.equal(after.orderTriesRemaining, 5, "the server counter is back to 5");
+  const global = [...h.db.docs.entries()].find(([key]) => key === "aiTryOnUsage/global")?.[1] as { count?: number } | undefined;
+  assert.equal(global?.count ?? 0, 0, "the global generation count is released too");
+}
+
+{
+  // Signed-in: the account's 15-try window gets its try back as well.
+  const h = httpHarness();
+  h.deps.compactPreviewImage = async () => { throw new Error("sharp unavailable"); };
+  const auth = { authorization: "Bearer id-token-ada" };
+  await session(h, auth);
+  const made = await generate(h, auth);
+  assert.equal(made.status, 200);
+  const body = made.body as { orderTriesRemaining: number; accountTriesRemaining: number };
+  assert.equal(body.orderTriesRemaining, 5);
+  assert.equal(body.accountTriesRemaining, 15);
+  const after = (await session(h, auth)).body as { orderTriesRemaining: number; accountTriesRemaining: number };
+  assert.deepEqual([after.orderTriesRemaining, after.accountTriesRemaining], [5, 15]);
+
+  // A preview that is compacted normally still uses its try.
+  h.deps.compactPreviewImage = async () => ({ mimeType: "image/webp", data: Buffer.from("RIFF0000WEBPVP8 compact").toString("base64"), bytes: 23, width: 683, height: 1024 });
+  const kept = await generate(h, auth);
+  assert.equal((kept.body as { orderTriesRemaining: number }).orderTriesRemaining, 4);
 }
 
 // ------------------------------------------------------------ no orphans on failed writes
