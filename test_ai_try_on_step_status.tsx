@@ -9,7 +9,7 @@ import {
   reconcileAiTryOnWorkflow,
   transitionAiTryOnWorkflow,
 } from "./src/utils/aiTryOnWorkflow";
-import { AI_TRY_ON_RETENTION_NOTICE } from "./src/components/AiTryOnPhotoPanel";
+import { AI_TRY_ON_CONSENT_NOTICE } from "./src/components/AiTryOnPhotoPanel";
 import type { AiTryOnWorkflowStateV1 } from "./src/types";
 
 const fp = "tryon-v1-0123456789abcdef";
@@ -64,9 +64,9 @@ assert.ok(failedHtml.includes("AI Try-on could not be completed") && failedHtml.
 assert.ok(!render(ready).includes("could not be completed"));
 
 // 5. Retention line wording.
-assert.equal(AI_TRY_ON_RETENTION_NOTICE, "We use your photo only to make your try-on preview and don't store it. Your preview is kept with your order and deleted 60 days after payment. Previews for unpaid orders are deleted after 30 days.");
-const studioSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
-assert.ok(studioSource.includes("{AI_TRY_ON_RETENTION_NOTICE}"), "retention line rendered");
+assert.equal(AI_TRY_ON_CONSENT_NOTICE, "By uploading a photo, you agree that we can send it to Google's Gemini AI, which uses it only to make your try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed. We don't keep your photo once the preview is made. We keep the preview privately for up to 30 days and, if you order, with your order until 60 days after payment, then delete it. You can ask us to delete it sooner. Google keeps the photo and preview for up to 55 days to check for misuse, then deletes them.");
+const panelSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
+assert.ok(!panelSource.includes("AI_TRY_ON_RETENTION_NOTICE"), "retention merged into the consent, not repeated");
 const summarySource = readFileSync("src/utils/designStudioFutureSummary.ts", "utf8");
 assert.match(summarySource, /skipOrigin === "continued_while_generating"\) \{\s+return \{ status: "skipped", label: "No preview yet" \}/);
 console.log("AI Try-on step status tests passed");
