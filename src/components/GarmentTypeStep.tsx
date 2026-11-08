@@ -27,6 +27,7 @@ import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   STEP_1_SELECTABLE_GARMENT_TYPES,
   getStep1GarmentDisplayLabel,
+  getStep1GarmentPlainDescription,
   getStep1SelectableGarmentTypes,
   type GarmentConstructionPricingResolution,
   resolveGarmentConstructionPricing,
@@ -550,6 +551,9 @@ export const GarmentTypeStep = ({
                 ? getStep1GarmentSecondaryReferenceImage(dualImageGarmentType)
                 : null;
               const referenceAlt = getStep1GarmentReferenceAlt(category.label);
+              const plainDescription = getStep1GarmentPlainDescription(
+                category.garmentType,
+              );
               return (
                 <article
                   key={category.garmentType}
@@ -614,6 +618,14 @@ export const GarmentTypeStep = ({
                         </p>
                       )}
                     </div>
+                    {plainDescription ? (
+                      <p
+                        data-testid={`step1-garment-description-${category.garmentType}`}
+                        className="mt-1 break-words text-[11px] leading-snug text-heritage-ink/65"
+                      >
+                        {plainDescription}
+                      </p>
+                    ) : null}
                     <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
                       {category.fabricCapacityUsage}
                     </p>
@@ -777,19 +789,30 @@ export const GarmentTypeStep = ({
               </p>
             ) : (
               presentation.constructionPricing.map((pricing) => {
+                  const garmentType = pricing.garmentType as Exclude<
+                    FabricGarmentType,
+                    "other"
+                  >;
+                  const plainDescription =
+                    getStep1GarmentPlainDescription(garmentType);
                   return (
                     <div
                       key={pricing.garmentType}
-                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70"
+                      className="flex min-w-0 items-start justify-between gap-3 text-heritage-ink/70"
                     >
-                      <span className="min-w-0 break-words">
-                        {getGarmentTypeStepLabel(
-                          pricing.garmentType as Exclude<
-                            FabricGarmentType,
-                            "other"
-                          >,
-                        )}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words">
+                          {getGarmentTypeStepLabel(garmentType)}
+                        </p>
+                        {plainDescription ? (
+                          <p
+                            data-testid={`step1-summary-description-${garmentType}`}
+                            className="mt-0.5 break-words text-[11px] leading-snug text-heritage-ink/60"
+                          >
+                            {plainDescription}
+                          </p>
+                        ) : null}
+                      </div>
                       {pricing?.status === "resolved" ? (
                         <span className="shrink-0 font-mono font-bold text-heritage-green">
                           {formatGarmentTypeStepEuro(pricing.totalPrice)}

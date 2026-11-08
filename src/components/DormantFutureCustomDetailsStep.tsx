@@ -45,6 +45,7 @@ import {
 } from "../utils/step1GarmentReferenceImages";
 import {
   getStep1GarmentDisplayLabel,
+  getStep1GarmentPlainDescription,
   orderByCustomerSelectableGarmentType,
   orderByStep1GarmentDisplayOrder,
 } from "../utils/garmentConstructionPricing";
@@ -2125,6 +2126,9 @@ export const DormantFutureCustomDetailsStep = ({
         >
           {garmentFabricContexts.map((context) => {
             const garmentLabel = getCustomDetailsGarmentLabel(context.garmentType);
+            const plainDescription = getStep1GarmentPlainDescription(
+              context.garmentType,
+            );
             const referenceImage = isStep1GarmentReferenceType(context.garmentType)
               ? getStep1GarmentReferenceImage(context.garmentType)
               : null;
@@ -2195,6 +2199,14 @@ export const DormantFutureCustomDetailsStep = ({
                     ) : null}
                   </div>
                   <p className="break-words font-bold text-heritage-green">{garmentLabel}</p>
+                  {plainDescription ? (
+                    <p
+                      data-testid={`garment-context-plain-description-${context.garmentKey}`}
+                      className="mt-0.5 break-words text-[11px] leading-snug text-heritage-ink/70"
+                    >
+                      {plainDescription}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-heritage-ink/60">Assigned Fabric</p>
                   <p className="break-words font-semibold text-heritage-ink">
                     {assigned?.fabric?.name || assigned?.fabricCode || "Not assigned"}

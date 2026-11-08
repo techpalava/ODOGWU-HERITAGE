@@ -4,6 +4,7 @@ import {
   getStyleBaseFabricCapacityComposition,
 } from "../config/StyleFabricCapacityConfig.js";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
+import { customerCatalogueLabel } from "./customerCatalogueLabel.js";
 import { getGarmentTypeStepLabel } from "../components/GarmentTypeStep.js";
 import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState.js";
 import type {
@@ -140,11 +141,11 @@ export const getFutureDesignStyleCompositionLabel = (
     return composition.garmentTypes.map(getFabricGarmentLabel).join(" + ");
   }
 
-  return (
-    style.garmentComposition?.trim() ||
-    style.outfitType?.trim() ||
-    "Garment details to be confirmed"
-  );
+  const stored =
+    style.garmentComposition?.trim() || style.outfitType?.trim() || "";
+  return stored
+    ? customerCatalogueLabel(stored)
+    : "Garment details to be confirmed";
 };
 
 const isValidPhysicalGarmentSpec = (

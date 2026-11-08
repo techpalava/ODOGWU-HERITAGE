@@ -22,6 +22,7 @@ import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 import { createJoinRenderedBatchAction } from "../utils/homepageCurrentBatchAction";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import { HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID } from "../utils/footerBatchLink";
+import { customerCatalogueLabel } from "../utils/customerCatalogueLabel";
 import { getHomepageHeroPrimaryActionLabel } from "../utils/homepageOrderGateway";
 import {
   readHomepageJoinBatchCache,
@@ -789,7 +790,7 @@ export default function HomeView({
                     : "bg-heritage-cream/30 text-heritage-green border border-heritage-gold/20 hover:bg-heritage-gold/20"
                 }`}
               >
-                {String(category).replace(/_/g, " ")}
+                {customerCatalogueLabel(String(category))}
               </button>
             ))}
           </div>
@@ -840,7 +841,7 @@ export default function HomeView({
                       )}
                       {style.outfitType && (
                         <span className="px-2 py-1 bg-heritage-gold/90 text-heritage-forest backdrop-blur-md rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border border-white/20">
-                          {style.outfitType}
+                          {customerCatalogueLabel(style.outfitType)}
                         </span>
                       )}
                     </div>
