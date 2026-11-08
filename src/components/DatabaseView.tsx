@@ -1,5 +1,6 @@
 import { AdminAiTryOnReset } from "./AdminAiTryOnReset";
 import { AdminAiTryOnUsage } from "./AdminAiTryOnUsage";
+import { AI_TRY_ON_ADMIN_TAB_STORAGE_KEY } from "../services/aiTryOnAdminUsage";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 /**
  * @license
@@ -250,9 +251,17 @@ export default function DatabaseView({
     { value: "Lace", label: "Lace" },
   ]);
 
-  const [activeTab, setActiveTab] = useState<TabType>(
-    initialTab || "documentation",
-  );
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (initialTab) return initialTab;
+    if (typeof window === "undefined") return "documentation";
+    try {
+      if (window.sessionStorage.getItem(AI_TRY_ON_ADMIN_TAB_STORAGE_KEY) !== "settings") return "documentation";
+      window.sessionStorage.removeItem(AI_TRY_ON_ADMIN_TAB_STORAGE_KEY);
+      return "settings";
+    } catch {
+      return "documentation";
+    }
+  });
 
   useEffect(() => {
     if (!initialTab) {
