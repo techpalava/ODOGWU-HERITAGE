@@ -12,7 +12,9 @@ import {
  * AI Try-on usage limits, kept in the existing Firestore database through
  * the Admin SDK (client rules deny `aiTryOnUsage` through the catch-all rule).
  *
- * - `aiTryOnUsage/global`: lifetime count of generations, capped at 1000.
+ * - `aiTryOnUsage/global`: lifetime count of generations. The base cap is
+ *   1,000. `purchasedTries` is added only by a verified Stripe test top-up
+ *   (1,000 per paid Checkout Session) and is never written by the browser.
  * - `aiTryOnUsage/order-<sha256>`: tries for one order, capped at 5. The
  *   order key is hashed so no raw draft id is stored. Each order counter
  *   carries `expiresAt` (90 days after its first try); a Firestore TTL
@@ -86,6 +88,27 @@ const readCount = (data: unknown): number => {
     : 0;
 };
 
+/** Paid top-ups cannot raise the cap without bound if a document is corrupt. */
+export const AI_TRY_ON_MAX_PURCHASED_TRIES = 1_000_000;
+
+/** Extra tries bought with Stripe. Missing or unusable values count as zero. */
+export const readPurchasedTries = (data: unknown): number => {
+  const value = (data as { purchasedTries?: unknown } | undefined)?.purchasedTries;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(AI_TRY_ON_MAX_PURCHASED_TRIES, Math.floor(value));
+};
+
+/** Base cap plus paid top-ups. The browser cannot change either part. */
+export const aiTryOnEffectiveGlobalCap = (
+  purchasedTries: number,
+  baseCap: number = AI_TRY_ON_GLOBAL_GENERATION_CAP,
+): number => {
+  const base = typeof baseCap === "number" && Number.isFinite(baseCap) && baseCap > 0
+    ? Math.floor(baseCap)
+    : AI_TRY_ON_GLOBAL_GENERATION_CAP;
+  return base + readPurchasedTries({ purchasedTries });
+};
+
 /** Firestore Timestamp (Admin SDK) or Date (tests) → epoch ms. */
 const readMillis = (value: unknown): number | null => {
   if (value instanceof Date) return value.getTime();
@@ -126,6 +149,8 @@ const readTally = (data: unknown, field: "started" | "failed" | "timedOut"): num
 
 export interface AiTryOnUsageLimits {
   readGlobalCount(): Promise<number>;
+  /** Used tries, paid extra tries, and the cap those two imply. */
+  readGlobalCapacity(): Promise<{ count: number; purchasedTries: number; cap: number }>;
   readOrderTriesRemaining(orderKey: string): Promise<number>;
   /** Signed-in accounts only. */
   readAccountTriesRemaining(uid: string): Promise<number>;
@@ -220,6 +245,13 @@ export const createAiTryOnUsageLimits = (
       const snapshot = await globalRef().get();
       return snapshot.exists ? readCount(snapshot.data()) : 0;
     },
+    async readGlobalCapacity() {
+      const snapshot = await globalRef().get();
+      const data = snapshot.exists ? snapshot.data() : undefined;
+      const count = data ? readCount(data) : 0;
+      const purchasedTries = readPurchasedTries(data);
+      return { count, purchasedTries, cap: aiTryOnEffectiveGlobalCap(purchasedTries, globalCap) };
+    },
     async readOrderTriesRemaining(orderKey) {
       const snapshot = await collection().doc(`order-${hashAiTryOnOrderKey(orderKey)}`).get();
       const count = snapshot.exists ? readLiveOrderCount(snapshot.data(), now()) : 0;
@@ -245,7 +277,9 @@ export const createAiTryOnUsageLimits = (
           accountRef ? transaction.get(accountRef) : Promise.resolve(null),
           transaction.get(dayRef),
         ]);
-        const globalCount = globalSnapshot.exists ? readCount(globalSnapshot.data()) : 0;
+        const globalData = globalSnapshot.exists ? globalSnapshot.data() : undefined;
+        const globalCount = globalData ? readCount(globalData) : 0;
+        const effectiveCap = aiTryOnEffectiveGlobalCap(readPurchasedTries(globalData), globalCap);
         const nowMs = now();
         const orderCount = orderSnapshot.exists
           ? readLiveOrderCount(orderSnapshot.data(), nowMs)
@@ -254,7 +288,7 @@ export const createAiTryOnUsageLimits = (
           accountSnapshot && accountSnapshot.exists
             ? readLiveAccountUses(accountSnapshot.data(), nowMs, windowMs)
             : [];
-        if (globalCount >= globalCap) {
+        if (globalCount >= effectiveCap) {
           return { ok: false, code: "GLOBAL_LIMIT_REACHED" } as const;
         }
         // The account cap is checked first: a fresh order would not help.
@@ -266,7 +300,7 @@ export const createAiTryOnUsageLimits = (
         }
         const at = new Date(nowMs);
         const orderResetGeneration = orderSnapshot.data()?.resetGeneration ?? 0;
-        transaction.set(global, { count: globalCount + 1, cap: globalCap, updatedAt: at }, { merge: true });
+        transaction.set(global, { count: globalCount + 1, cap: effectiveCap, updatedAt: at }, { merge: true });
         // Usage page: one more try started today (Lagos day).
         transaction.set(dayRef, {
           kind: "day",

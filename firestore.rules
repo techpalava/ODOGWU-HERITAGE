@@ -1221,6 +1221,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Paid capacity top-ups and the Stripe event ids already credited.
+    // Server-only: a client cannot read the history or raise the cap.
+    match /aiTryOnTopUps/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiTryOnTopUpEvents/{document=**} {
+      allow read, write: if false;
+    }
+
     match /aiTryOnSessions/{document=**} {
       allow read, write: if false;
     }

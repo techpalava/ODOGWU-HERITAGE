@@ -1,7 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
-import { AI_TRY_ON_GLOBAL_USAGE_DOC, AI_TRY_ON_USAGE_COLLECTION, aiTryOnUsageDay } from "./aiTryOnUsageLimits.js";
-import { AI_TRY_ON_GLOBAL_GENERATION_CAP } from "../utils/aiTryOnGatewayContract.js";
+import { AI_TRY_ON_GLOBAL_USAGE_DOC, AI_TRY_ON_USAGE_COLLECTION, aiTryOnEffectiveGlobalCap, aiTryOnUsageDay, readPurchasedTries } from "./aiTryOnUsageLimits.js";
+import { readAiTryOnTopUpHistory, type AiTryOnTopUpHistoryRow } from "./aiTryOnTopUp.js";
 import { getCanonicalEmail } from "../security/authIdentity.js";
 import type { AiTryOnResetIdentity } from "./aiTryOnAdminReset.js";
 
@@ -119,14 +119,16 @@ export const handleAiTryOnAdminUsage = async (
       usage.doc(AI_TRY_ON_GLOBAL_USAGE_DOC).get(),
       usage.where("kind", "==", "day").get(),
     ]);
-    const allTime = tally(global.data()?.count);
+    const globalData = global.data();
+    const allTime = tally(globalData?.count);
     const nowMs = (dependencies.now ?? Date.now)();
     const summary = summariseAiTryOnUsageDays(dayDocs.docs.map((doc) => doc.data() as Record<string, unknown>), nowMs);
     const body = {
       ...summary,
-      allTime: { tries: allTime, cap: AI_TRY_ON_GLOBAL_GENERATION_CAP },
+      allTime: { tries: allTime, cap: aiTryOnEffectiveGlobalCap(readPurchasedTries(globalData)) },
     };
     if (!canSeeAiTryOnCost(identity)) return res.status(200).json({ view: "general", ...body });
+    const topUps: AiTryOnTopUpHistoryRow[] = await readAiTryOnTopUpHistory(db);
     // All-time tries come from the existing lifetime counter, so the cost
     // includes tries made before the daily counts existed.
     const allTimeUsd = roundUsd(allTime * AI_TRY_ON_COST_PER_TRY_USD);
@@ -141,6 +143,7 @@ export const handleAiTryOnAdminUsage = async (
         // Reminders follow this Lagos month's estimated spend, not all time.
         reminders: aiTryOnCostReminders(roundUsd((summary.months[0]?.used ?? 0) * AI_TRY_ON_COST_PER_TRY_USD)),
       },
+      topUps,
     });
   } catch {
     return res.status(503).json({ code: "USAGE_UNAVAILABLE" });
