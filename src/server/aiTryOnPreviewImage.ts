@@ -26,13 +26,10 @@ export type CompactAiTryOnPreviewImage = (image: {
   data: string;
 }) => Promise<CompactAiTryOnPreview>;
 
-type SharpModule = typeof import("sharp");
+type SharpModule = typeof import("sharp").default;
 let sharpModule: Promise<SharpModule> | null = null;
 const loadSharp = () => {
-  sharpModule ??= import("sharp").then(
-    (module) =>
-      (module as unknown as { default?: SharpModule }).default ?? (module as unknown as SharpModule),
-  );
+  sharpModule ??= import("sharp").then((module) => module.default);
   return sharpModule;
 };
 
