@@ -46,6 +46,7 @@ export const createAiTryOnBusyJobId = () => `busy-${randomUUID()}`;
 interface StoredJob {
   jobId: string;
   orderDocId: string;
+  orderResetGeneration?: number;
   inputFingerprint: string;
   account: AiTryOnAccountReservation | null;
   requests: number;
@@ -67,6 +68,7 @@ const readJob = (data: unknown): (StoredJob & { expiresAtMs: number }) | null =>
   return {
     jobId: job.jobId,
     orderDocId: job.orderDocId,
+    orderResetGeneration: job.orderResetGeneration ?? 0,
     inputFingerprint: typeof job.inputFingerprint === "string" ? job.inputFingerprint : "",
     account: job.account ?? null,
     requests: typeof job.requests === "number" ? job.requests : AI_TRY_ON_BUSY_MAX_REQUESTS,
@@ -112,12 +114,14 @@ export const createAiTryOnBusyJobs = (
       wearerKey,
       inputFingerprint,
       orderDocId,
+      orderResetGeneration = 0,
       account,
     }: {
       sessionId: string;
       wearerKey: string;
       inputFingerprint: string;
       orderDocId: string;
+      orderResetGeneration?: number;
       account: AiTryOnAccountReservation | null;
     }): Promise<{ jobId: string } | null> {
       const docRef = ref(aiTryOnBusyJobDocId(sessionId, wearerKey));
@@ -129,6 +133,7 @@ export const createAiTryOnBusyJobs = (
         const job: StoredJob = {
           jobId,
           orderDocId,
+          ...(orderResetGeneration ? { orderResetGeneration } : {}),
           inputFingerprint,
           account,
           requests: 1,

@@ -1,3 +1,4 @@
+import { handleAiTryOnAdminReset } from "./aiTryOnAdminReset.js";
 import {
   deleteAiTryOnOrderImages,
   isAiTryOnOrderId,
@@ -212,7 +213,8 @@ export interface AiTryOnHttpDependencies {
   /** Verifies a Firebase ID token (Step 7). */
   verifyIdToken?: (
     token: string,
-  ) => Promise<{ uid: string; admin?: unknown; firebase?: { sign_in_provider?: unknown } }>;
+    checkRevoked?: boolean,
+  ) => Promise<{ uid: string; admin?: unknown; email?: unknown; email_verified?: unknown; firebase?: { sign_in_provider?: unknown } }>;
   /** The try-on bucket, for the images saved with paid orders (PR 3). */
   getOrderImageBucket?: () => AiTryOnPreviewBucket;
   /** Consumes one new-guest-session slot for this IP (Step 7). */
@@ -496,7 +498,7 @@ const readOrderImageExpiry = (value: unknown): number => {
   return value instanceof Date ? value.getTime() : NaN;
 };
 
-const defaultVerifyIdToken = (token: string) => getAdminServices().auth.verifyIdToken(token);
+const defaultVerifyIdToken = (token: string, checkRevoked = false) => getAdminServices().auth.verifyIdToken(token, checkRevoked);
 
 const defaultLoadReferenceImage = (url: string) =>
   loadAiTryOnReferenceImageOnServer(url, {
@@ -516,6 +518,13 @@ export async function handleAiTryOn(
   const requestStartedAt = now();
   const resolveDb = async () => (dependencies.getDb ? dependencies.getDb() : defaultGetDb());
   const createLimits = dependencies.createUsageLimits ?? ((db: Firestore) => createAiTryOnUsageLimits(db));
+  if (readQueryParam(req, "action") === "admin-reset") {
+    return handleAiTryOnAdminReset(req, res, {
+      verifyIdToken: dependencies.verifyIdToken ?? defaultVerifyIdToken,
+      getDb: resolveDb,
+      now,
+    });
+  }
   const enabled = isAiTryOnEnabled(environment);
 
   const createStore = dependencies.createPreviewStore ?? defaultPreviewStore;
@@ -1224,6 +1233,7 @@ export async function handleAiTryOn(
             wearerKey: parsed.wearerKey,
             inputFingerprint: parsed.inputFingerprint,
             orderDocId: reservation.orderDocId,
+            orderResetGeneration: reservation.orderResetGeneration,
             account: reservation.account,
           });
         }
@@ -1265,7 +1275,7 @@ export async function handleAiTryOn(
     }
     const reserved = reservation as Extract<NonNullable<typeof reservation>, { ok: true }>;
     try {
-      await limits.release(reserved.orderDocId, reserved.account);
+      await limits.release(reserved.orderDocId, reserved.account, reserved.orderResetGeneration);
     } catch {
       // A failed release only makes the cap stricter; never block the reply.
     }
