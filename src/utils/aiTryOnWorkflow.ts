@@ -731,5 +731,19 @@ export const aiTryOnGarmentPreviewKey = (wearerId: string, garmentKey: string): 
   `garment-${hashVisualIdentity([wearerId, garmentKey])}`;
 
 export const aiTryOnOutfitPreviewKey = (wearerId: string): string => aiTryOnGarmentPreviewKey(wearerId, "__combined_outfit__");
-/** Latest outfit slot: design changes invalidate it; pending chooser changes do not relabel an older result. */
-export const aiTryOnOutfitFingerprint = (fingerprint: string | null): string | null => fingerprint ? hashVisualIdentity({ fingerprint, outfitPromptVersion: AI_TRY_ON_OUTFIT_PROMPT_VERSION }) : null;
+/**
+ * Outfit slot (deep check M1): the chosen top and bottom, each by its own
+ * garment fingerprint. Changing another garment, or choosing a different
+ * pair, makes an older outfit result out of date.
+ */
+export const aiTryOnOutfitFingerprint = (
+  top: { garmentKey: string; inputFingerprint?: string | null },
+  bottom: { garmentKey: string; inputFingerprint?: string | null },
+): string | null =>
+  top.inputFingerprint && bottom.inputFingerprint
+    ? hashVisualIdentity({
+        top: [top.garmentKey, top.inputFingerprint],
+        bottom: [bottom.garmentKey, bottom.inputFingerprint],
+        outfitPromptVersion: AI_TRY_ON_OUTFIT_PROMPT_VERSION,
+      })
+    : null;

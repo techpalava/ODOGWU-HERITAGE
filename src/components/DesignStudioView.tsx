@@ -345,7 +345,11 @@ import {
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
-import { aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
+import {
+  aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets,
+  aiTryOnPreviewFingerprintIsCurrent,
+  buildAiTryOnWearerTargets,
+} from "../utils/aiTryOnWearerTargets";
 import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
@@ -9250,7 +9254,7 @@ export default function DesignStudioView({
     // The request may end long after Generate (background): read the
     // design as it is now, and skip a preview of a design since changed.
     const target = aiTryOnPreviewTargets(aiTryOnWearerTargetsRef.current).find((entry) => entry.wearerId === wearerId);
-    if (!target || target.inputFingerprint !== inputFingerprint) return;
+    if (!target || !aiTryOnPreviewFingerprintIsCurrent(target, inputFingerprint)) return;
     setFutureAiTryOnWorkflow((current) =>
       recordAiTryOnPreviewCompletion({
         state: current,
@@ -9348,18 +9352,15 @@ export default function DesignStudioView({
   // of-date previews are never sent. Fire and forget: never blocks payment.
   function rememberAiTryOnOrderSelection(orderId: string) {
     const selections = aiTryOnOrderPreviewEntries.flatMap((entry) => {
-      if (entry.kind !== "fresh") return [];
-      const target = aiTryOnPreviewTargets(aiTryOnWearerTargets).find((item) => item.wearerId === entry.wearerId);
-      return target?.inputFingerprint
-        ? [
-            {
-              wearerKey: entry.wearerId,
-              previewId: entry.previewId,
-              inputFingerprint: target.inputFingerprint,
-              label: entry.label,
-            },
-          ]
-        : [];
+      if (entry.kind !== "fresh" || !entry.inputFingerprint) return [];
+      return [
+        {
+          wearerKey: entry.wearerId,
+          previewId: entry.previewId,
+          inputFingerprint: entry.inputFingerprint,
+          label: entry.label,
+        },
+      ];
     });
     if (selections.length === 0) return;
     void saveAiTryOnOrderSelection({ credentials: aiTryOnCredentials, orderId, selections });
@@ -12253,11 +12254,15 @@ export default function DesignStudioView({
                     job.wearerName
                   : null,
             },
-            kind: aiTryOnToastKind(
-              job,
-              aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId)
-                ?.inputFingerprint,
-            ),
+            kind: (() => {
+              const current = aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId);
+              return aiTryOnToastKind(
+                job,
+                current && aiTryOnPreviewFingerprintIsCurrent(current, job.inputFingerprint)
+                  ? job.inputFingerprint
+                  : current?.inputFingerprint,
+              );
+            })(),
           }))}
         onView={openAiTryOnForWearer}
         onRetry={openAiTryOnForWearer}

@@ -7,8 +7,10 @@ import { AI_TRY_ON_PREVIEW_DISCLAIMER } from "./AiTryOnPhotoPanel";
 export interface AiTryOnOrderPreviewTarget {
   readonly wearerId: string;
   readonly label: string;
-  /** The wearer's current design; a preview of another design is out of date. */
-  readonly inputFingerprint: string;
+  /** The current design; a preview of another design is out of date. */
+  readonly inputFingerprint: string | null;
+  /** Outfit slot: any current top-and-bottom pair (deep check M1). */
+  readonly outfitPairs?: readonly { label: string; inputFingerprint: string }[];
 }
 
 /** A stored preview summary, as `POST /api/ai-try-on?action=session` lists it. */
@@ -26,6 +28,8 @@ export type AiTryOnOrderPreviewEntry =
       label: string;
       previewId: string;
       onModel: boolean;
+      /** The design the preview was made from (Summary only; saved with the order). */
+      inputFingerprint?: string;
     }
   | { kind: "stale"; wearerId: string; label: string };
 
@@ -42,14 +46,17 @@ export const selectAiTryOnOrderPreviews = (
   targets.flatMap((target): AiTryOnOrderPreviewEntry[] => {
     const preview = previews.find((entry) => entry.wearerKey === target.wearerId);
     if (!preview) return [];
-    return preview.inputFingerprint === target.inputFingerprint
+    const pair = target.outfitPairs?.find((entry) => entry.inputFingerprint === preview.inputFingerprint);
+    return preview.inputFingerprint === target.inputFingerprint || pair
       ? [
           {
             kind: "fresh",
             wearerId: target.wearerId,
-            label: target.label,
+            // The outfit names the pair it shows.
+            label: pair ? `${target.label} (${pair.label})` : target.label,
             previewId: preview.previewId,
             onModel: Boolean(preview.modelId),
+            inputFingerprint: preview.inputFingerprint,
           },
         ]
       : [{ kind: "stale", wearerId: target.wearerId, label: target.label }];

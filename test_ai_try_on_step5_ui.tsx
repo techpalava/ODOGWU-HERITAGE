@@ -591,7 +591,8 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(first.mode, "fabric");
   assert.equal(first.garmentImageUrl, "https://example.test/style-a.jpg");
   assert.equal(first.fabricSwatchImageUrl, "https://example.test/red.jpg");
-  assert.equal(first.inputFingerprint, built.inputFingerprint, "fingerprint stays the full design");
+  assert.equal(first.inputFingerprint, built.previewableGarments?.[0]?.inputFingerprint, "fingerprint is this garment's own (deep check M1)");
+  assert.notEqual(first.inputFingerprint, built.inputFingerprint);
   assert.equal(first.orderDetails.garments.length, 1);
   assert.equal(first.orderDetails.garments[0].garmentType, "shirt");
   assert.equal(JSON.stringify(first).includes("style-b"), false, "the other garment picture is not sent");
@@ -608,7 +609,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(second.mode, "garment", "no swatch picture → garment mode");
   assert.equal(second.garmentImageUrl, "https://example.test/style-b.jpg");
   assert.equal(second.fabricSwatchImageUrl, undefined);
-  assert.equal(second.inputFingerprint, built.inputFingerprint, "picking another garment does not stale the design");
+  assert.equal(second.inputFingerprint, built.previewableGarments?.[1]?.inputFingerprint, "each garment has its own fingerprint (M1)");
   assert.equal(second.orderDetails.garments.length, 1);
   assert.equal(second.orderDetails.garments[0].garmentType, "trouser");
   assert.equal(JSON.stringify(second).includes("style-a"), false);
@@ -1358,7 +1359,7 @@ class FakeFirestore {
   assert.deepEqual(replacements, [uploadedOccurrence.garmentKey]);
   await act(async () => { use().props.onClick(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.deepEqual(reads, ["blob:existing-private-design"]);
-  assert.deepEqual(requests, [{ mode: "fabric", inputFingerprint: built.inputFingerprint, wearerKey: aiTryOnGarmentPreviewKey("w-ada", uploadedOccurrence.garmentKey), uploadedDesignImage: fakeImage, uploadedGarmentType: "shirt", fabricSwatchImageUrl: "https://example.test/red.jpg" }]);
+  assert.deepEqual(requests, [{ mode: "fabric", inputFingerprint: built.previewableGarments?.[0]?.inputFingerprint, wearerKey: aiTryOnGarmentPreviewKey("w-ada", uploadedOccurrence.garmentKey), uploadedDesignImage: fakeImage, uploadedGarmentType: "shirt", fabricSwatchImageUrl: "https://example.test/red.jpg" }]);
   assert.equal(photoUpdates.length, 0, "unused customer photo for other garments must not be cleared");
   assert.match(textOf(renderer.root), /on your uploaded design/);
   assert.match(textOf(renderer.root), /4 tries left/);
@@ -1375,3 +1376,38 @@ class FakeFirestore {
   act(() => noSwatch.renderer.unmount());
 }
 console.log("PASS: AI Try-on Step 5 UI, consent, privacy policy and 90-day order counters");
+
+// Deep check M1: a change to one garment makes only that garment's preview
+// (and an outfit that includes it) out of date; the outfit uses the chosen pair.
+{
+  const { aiTryOnOutfitTarget, aiTryOnOutfitChoices, aiTryOnPreviewFingerprintIsCurrent } = await import("./src/utils/aiTryOnWearerTargets");
+  const three = (trouserFabric: string, extraShirtStyle = "style-c") => baseInput({
+    occurrences: [
+      ...baseInput().occurrences,
+      { garmentKey: "shirt:2", garmentType: "shirt", assignment: assignment("shirt:2", extraShirtStyle), assignmentImage: "https://example.test/style-c.jpg" },
+    ],
+    fabricAllocations: [
+      ...(baseInput().fabricAllocations as never[]).slice(0, 1),
+      { allocationId: "a2", fabricCode: trouserFabric, garmentAssignments: [{ garmentKey: "trouser:1", code: "T", garmentType: "trouser", fabricUnits: 1 }] },
+    ] as never,
+  });
+  const before = buildAiTryOnWearerTargets(three("F-PLAIN"))[0];
+  const after = buildAiTryOnWearerTargets(three("F-RED"))[0];
+  const byKey = (target: AiTryOnWearerTarget) => Object.fromEntries(aiTryOnPreviewTargets([target]).map((entry) => [entry.previewableGarments?.[0]?.garmentKey, entry.inputFingerprint]));
+  assert.equal(byKey(after)["shirt:1"], byKey(before)["shirt:1"], "changing the trousers keeps the shirt preview current");
+  assert.equal(byKey(after)["shirt:2"], byKey(before)["shirt:2"]);
+  assert.notEqual(byKey(after)["trouser:1"], byKey(before)["trouser:1"], "the changed garment's preview goes out of date");
+  const pairOf = (target: AiTryOnWearerTarget, top: string) => {
+    const { tops, bottoms } = aiTryOnOutfitChoices(target);
+    return aiTryOnOutfitTarget(target, { top: tops.find((g) => g.garmentKey === top)!, bottom: bottoms[0] })!.inputFingerprint;
+  };
+  assert.notEqual(pairOf(before, "shirt:1"), pairOf(before, "shirt:2"), "a different chosen top is a different outfit");
+  assert.notEqual(pairOf(after, "shirt:1"), pairOf(before, "shirt:1"), "outfit including the changed trousers goes out of date");
+  const otherShirt = buildAiTryOnWearerTargets(three("F-PLAIN", "style-d"))[0];
+  assert.equal(pairOf(otherShirt, "shirt:1"), pairOf(before, "shirt:1"), "an outfit without the changed garment stays current");
+  assert.notEqual(pairOf(otherShirt, "shirt:2"), pairOf(before, "shirt:2"));
+  const slot = aiTryOnOutfitTarget(before)!;
+  assert.equal(aiTryOnPreviewFingerprintIsCurrent(slot, pairOf(before, "shirt:2")), true, "Summary accepts any current pair");
+  assert.equal(aiTryOnPreviewFingerprintIsCurrent(aiTryOnOutfitTarget(after)!, pairOf(before, "shirt:1")), false);
+  console.log("PASS: AI Try-on per-garment and per-pair freshness (M1)");
+}

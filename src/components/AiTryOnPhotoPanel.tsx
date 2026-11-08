@@ -3,6 +3,9 @@ import {
   aiTryOnOrderPreviewTargets,
   aiTryOnOutfitTarget,
   aiTryOnOutfitChoices,
+  aiTryOnOutfitPairFor,
+  aiTryOnPreviewFingerprintIsCurrent,
+  aiTryOnTargetHasDesign,
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
@@ -529,12 +532,23 @@ export const AiTryOnPhotoPanel = ({
       ? entry.previewableGarments?.[0]?.garmentKey === selectedPreview?.garmentKey
       : entry.wearerId === target.wearerId,
   ) ?? target : null;
-  const outfitTarget = target ? aiTryOnOutfitTarget(target) : null;
+  const outfitSlot = target ? aiTryOnOutfitTarget(target) : null;
   const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
-  const outfitMode = Boolean(outfitTarget && outfitModeByWearer[target?.wearerId || ""]);
-  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ?? {};
+  const outfitMode = Boolean(outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
+  // Until the customer picks, the pair is the one the current outfit
+  // preview was made from (if any), so that preview is shown as current.
+  const outfitShownPair = outfitSlot
+    ? aiTryOnOutfitPairFor(outfitSlot, previews[outfitSlot.wearerId]?.inputFingerprint) ??
+      aiTryOnOutfitPairFor(outfitSlot, stored[outfitSlot.wearerId]?.inputFingerprint)
+    : null;
+  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ??
+    (outfitShownPair ? { top: outfitShownPair.top, bottom: outfitShownPair.bottom } : {});
   const selectedTop = outfitChoices.tops.find((entry) => entry.garmentKey === outfitSelection.top);
   const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
+  // Deep check M1: the outfit's fingerprint is the chosen pair's.
+  const outfitTarget = target && outfitSlot
+    ? aiTryOnOutfitTarget(target, selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null)
+    : null;
   const previewTarget = outfitMode ? outfitTarget : singlePreviewTarget;
   const previewKey = previewTarget?.wearerId ?? "";
   const measurementTarget =
@@ -564,9 +578,9 @@ export const AiTryOnPhotoPanel = ({
         : null
       : null;
   const hasPreview = (entry: AiTryOnWearerTarget) =>
-    aiTryOnOrderPreviewTargets([entry]).some((item) => Boolean(item.inputFingerprint &&
-      (previews[item.wearerId]?.inputFingerprint === item.inputFingerprint ||
-       stored[item.wearerId]?.inputFingerprint === item.inputFingerprint)));
+    aiTryOnOrderPreviewTargets([entry]).some((item) =>
+      aiTryOnPreviewFingerprintIsCurrent(item, previews[item.wearerId]?.inputFingerprint) ||
+      aiTryOnPreviewFingerprintIsCurrent(item, stored[item.wearerId]?.inputFingerprint));
 
   // A session list can arrive after mount (or a later refetch). Adopt it
   // without bringing back a preview the customer deleted here.
@@ -603,7 +617,7 @@ export const AiTryOnPhotoPanel = ({
       const next = { ...current };
       for (const [wearerId, entry] of Object.entries(current)) {
         const match = previewTargets.find((item) => item.wearerId === wearerId);
-        if (!match?.inputFingerprint || match.inputFingerprint === entry.inputFingerprint) continue;
+        if (!match || !aiTryOnTargetHasDesign(match) || aiTryOnPreviewFingerprintIsCurrent(match, entry.inputFingerprint)) continue;
         delete next[wearerId];
         changed = true;
       }
@@ -903,7 +917,7 @@ export const AiTryOnPhotoPanel = ({
       if (job.scope !== jobScope || job.status !== "completed" || !job.preview) continue;
       if (job.storedPreviewId && dismissedPreviewIdsRef.current.has(job.storedPreviewId)) continue;
       const match = previewTargets.find((entry) => entry.wearerId === job.wearerId);
-      if (!match || match.inputFingerprint !== job.inputFingerprint) continue;
+      if (!match || !aiTryOnPreviewFingerprintIsCurrent(match, job.inputFingerprint)) continue;
       const image = job.preview;
       commitPreviews((current) =>
         current[job.wearerId]?.inputFingerprint === job.inputFingerprint && current[job.wearerId]?.data
@@ -1104,7 +1118,7 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
-      {outfitTarget && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
+      {outfitSlot && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
         <legend className="px-1 font-serif text-lg font-bold text-heritage-green">What would you like to preview?</legend>
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-pressed={!outfitMode} onClick={() => setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: false }))} className={tryOnChoiceChipClass(!outfitMode)} data-ai-try-on-single-mode>One garment</button>
@@ -1114,7 +1128,7 @@ export const AiTryOnPhotoPanel = ({
           <p className="text-sm leading-relaxed text-heritage-ink/75">Choose exactly one top and one bottom for this wearer, using the same photo or studio model. Only your chosen garments are included. One combined picture uses 1 try from this order’s shared tries. Your individual previews stay saved separately.</p>
           {(["top", "bottom"] as const).map((part) => <label key={part} className="block text-sm font-semibold text-heritage-green">
             Choose a {part}
-            <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => { const key = event.target.value; setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...current[target.wearerId], [part]: key } })); }} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
+            <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => { const key = event.target.value; setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...outfitSelection, [part]: key } })); }} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
               <option value="">Select a {part}</option>
               {(part === "top" ? outfitChoices.tops : outfitChoices.bottoms).map((garment) => <option key={garment.garmentKey} value={garment.garmentKey}>{garment.label}</option>)}
             </select>

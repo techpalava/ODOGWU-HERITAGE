@@ -37,9 +37,9 @@ const previews = [
 // 1. Selection: wearer order, fresh vs out of date, model label, none skipped.
 const entries = selectAiTryOnOrderPreviews(targets, previews);
 assert.deepEqual(entries, [
-  { kind: "fresh", wearerId: "w-me", label: "For me", previewId: "tryon-me", onModel: false },
+  { kind: "fresh", wearerId: "w-me", label: "For me", previewId: "tryon-me", onModel: false, inputFingerprint: "fp-me" },
   { kind: "stale", wearerId: "w-ada", label: "Ada" },
-  { kind: "fresh", wearerId: "w-obi", label: "Obi", previewId: "tryon-obi", onModel: true },
+  { kind: "fresh", wearerId: "w-obi", label: "Obi", previewId: "tryon-obi", onModel: true, inputFingerprint: "fp-obi" },
 ]);
 assert.deepEqual(selectAiTryOnOrderPreviews(targets, []), []);
 
