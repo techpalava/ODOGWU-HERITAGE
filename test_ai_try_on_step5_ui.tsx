@@ -328,6 +328,15 @@ const twoWearers: WearerOrderStateV2 = {
     }),
     { status: "unavailable" },
   );
+  // Deep check H1: off or capped still carries the stored previews.
+  const storedWhileCapped = { previewId: "tryon-0b5e7a2c-1111-4a2b-8c3d-4e5f60718293", wearerKey: "order", inputFingerprint: "tryon-v1-0123456789abcdef", expiresAt: "2026-12-01T00:00:00.000Z" };
+  assert.deepEqual(
+    await fetchAiTryOnAvailability({
+      credentials,
+      fetchImpl: async () => new Response(JSON.stringify({ status: "unavailable", code: "GLOBAL_LIMIT_REACHED", previews: [storedWhileCapped, { previewId: "bad" }] })),
+    }),
+    { status: "unavailable", storedPreviews: [storedWhileCapped] },
+  );
   assert.deepEqual(
     await fetchAiTryOnAvailability({ credentials, fetchImpl: async () => new Response("<html>404</html>", { status: 404 }) }),
     { status: "unavailable" },
