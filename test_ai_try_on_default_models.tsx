@@ -724,10 +724,17 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   // The option sits next to the photo picker; the picker opens on demand.
   const option = byData(renderer, "data-ai-try-on-model-option");
   assert.equal(option.length, 1);
-  assert.equal(textOf(option[0]), AI_TRY_ON_MODEL_COPY.option);
+  assert.ok(textOf(option[0]).startsWith(AI_TRY_ON_MODEL_COPY.option));
+  const photoOption = byData(renderer, "data-ai-try-on-photo-option")[0];
+  assert.match(textOf(photoOption), /^Upload a photo/);
+  assert.equal(photoOption.type, "button");
+  assert.equal(photoOption.props["aria-pressed"], false);
+  assert.equal(option[0].props["aria-pressed"], false);
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0);
   assert.equal(hasConsent(renderer), true);
   await click(option[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model-option").length, 1, "both source cards remain available");
+  assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-expanded"], true);
   const picker = byData(renderer, "data-ai-try-on-model-picker")[0];
   assert.match(textOf(picker), new RegExp(AI_TRY_ON_MODEL_COPY.heading));
   assert.equal(byData(renderer, "data-ai-try-on-model").length, 10, "all ten models");
@@ -744,6 +751,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.equal(generateButton(renderer).props.disabled, true, "nothing chosen yet");
   await click(byData(renderer, "data-ai-try-on-model", "female-plus")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-pressed"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], false);
   assert.equal(hasConsent(renderer), false, "model mode needs no consent notice");
   assert.equal(generateButton(renderer).props.disabled, false, "no photo needed");
   await click(generateButton(renderer));
@@ -770,6 +779,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   await choosePhoto(renderer);
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0, "a photo replaces the model");
   assert.equal(hasConsent(renderer), true);
+  assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-pressed"], false);
   await click(generateButton(renderer));
   assert.equal(requests[0].defaultModelId, undefined);
   assert.ok(requests[0].personImage, "photo flow unchanged");
@@ -817,7 +828,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   );
   assert.ok(live.includes("Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."));
   assert.deepEqual(AI_TRY_ON_MODEL_COPY, {
-    option: "No photo? Try it on a model",
+    option: "Choose a model",
     heading: "Choose a model",
     intro: "See the design on one of our AI-generated models instead of a photo of you.",
     filterAll: "All",

@@ -131,7 +131,7 @@ export const AI_TRY_ON_PREVIEW_DISCLAIMER =
  * No consent notice: no personal photo is involved.
  */
 export const AI_TRY_ON_MODEL_COPY = {
-  option: "No photo? Try it on a model",
+  option: "Choose a model",
   heading: "Choose a model",
   intro: "See the design on one of our AI-generated models instead of a photo of you.",
   filterAll: "All",
@@ -146,9 +146,11 @@ export const AI_TRY_ON_MESSAGES = {
   accountOutOfPreviews:
     "You've used all 15 AI Try-on previews on your account in the last 30 days. You can still continue without one.",
   tooManyTries: "That's a lot of tries in a short time. Please wait a while and try again.",
-  failed: (left: number) =>
-    `We couldn't create a preview this time. This try wasn't counted, so you still have ${left} left. Try again, or use a different photo.`,
-  photoBlocked: "We couldn't use this photo. This try wasn't counted. Please try a different photo.",
+  failed: (left: number, tryRefunded = false) =>
+    tryRefunded
+      ? `${AI_TRY_ON_BACKGROUND_COPY.refundedBody} You have ${left} left.`
+      : AI_TRY_ON_BACKGROUND_COPY.failedBody,
+  photoBlocked: "We couldn't use this photo. Please try a different photo.",
   previewDeleted: "Your preview was deleted.",
   deleteFailed: "We couldn't delete your preview. Please try again.",
 } as const;
@@ -160,10 +162,10 @@ type PanelMessage =
   | { kind: "out_of_previews" }
   | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
-  | { kind: "failed"; left: number }
-  /** Still busy after the retries (try refunded). */
-  | { kind: "busy_failed" }
-  | { kind: "photo_blocked" };
+  | { kind: "failed"; left: number; tryRefunded?: boolean }
+  /** Still busy after the retries. */
+  | { kind: "busy_failed"; tryRefunded?: boolean }
+  | { kind: "photo_blocked"; tryRefunded?: boolean };
 
 const messageText = (message: PanelMessage): string => {
   switch (message.kind) {
@@ -174,11 +176,11 @@ const messageText = (message: PanelMessage): string => {
     case "too_many_tries":
       return AI_TRY_ON_MESSAGES.tooManyTries;
     case "failed":
-      return AI_TRY_ON_MESSAGES.failed(message.left);
+      return AI_TRY_ON_MESSAGES.failed(message.left, message.tryRefunded);
     case "busy_failed":
-      return AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
+      return message.tryRefunded ? AI_TRY_ON_BACKGROUND_COPY.refundedBody : AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
     case "photo_blocked":
-      return AI_TRY_ON_MESSAGES.photoBlocked;
+      return `${AI_TRY_ON_MESSAGES.photoBlocked} ${message.tryRefunded ? AI_TRY_ON_BACKGROUND_COPY.refundedBody : AI_TRY_ON_BACKGROUND_COPY.failedBody}`;
     case "preview_deleted":
       return AI_TRY_ON_MESSAGES.previewDeleted;
     case "delete_failed":
@@ -841,7 +843,7 @@ export const AiTryOnPhotoPanel = ({
         if (typeof outcome.accountTriesRemaining === "number") {
           setAccountTriesRemaining(outcome.accountTriesRemaining);
         }
-        show({ kind: "photo_blocked" });
+        show({ kind: "photo_blocked", tryRefunded: outcome.tryRefunded });
         break;
       case "failed": {
         const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
@@ -851,7 +853,7 @@ export const AiTryOnPhotoPanel = ({
             : accountTriesRemaining;
         setTriesRemaining(remaining);
         setAccountTriesRemaining(accountRemaining);
-        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
+        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity), tryRefunded: outcome.tryRefunded });
         break;
       }
       case "busy_failed":
@@ -859,7 +861,7 @@ export const AiTryOnPhotoPanel = ({
         if (typeof outcome.accountTriesRemaining === "number") {
           setAccountTriesRemaining(outcome.accountTriesRemaining);
         }
-        show({ kind: "busy_failed" });
+        show({ kind: "busy_failed", tryRefunded: outcome.tryRefunded });
         break;
       case "busy":
         // Never settles a job (the store keeps retrying).
@@ -1124,7 +1126,7 @@ export const AiTryOnPhotoPanel = ({
             Which garment?
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            This preview uses one garment and its fabric. Each preview uses one try.
+            This preview uses one garment and its fabric. Each preview uses one try from this order’s {triesPerOrder} tries, shared across all garments and wearers.
           </p>
           <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Which garment?">
             {previewableGarments.map((garment) => {
@@ -1237,31 +1239,45 @@ export const AiTryOnPhotoPanel = ({
             disabled={generating || preparingPhoto || missingGarmentImage}
             onChange={handlePhotoChange}
           />
-          <label
-            htmlFor={photoInputId}
-            className={`inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-heritage-green/40 bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green hover:border-heritage-green sm:w-auto ${
-              generating || preparingPhoto || missingGarmentImage ? "pointer-events-none opacity-60" : ""
-            }`}
-          >
-            {preparingPhoto ? (
-              <Loader2 aria-hidden="true" size={15} className="animate-spin" />
-            ) : (
-              <ImagePlus aria-hidden="true" size={15} />
-            )}
-            {currentPhoto ? "Change photo" : "Choose a photo"}
-          </label>
-          {!modelPickerOpen && (
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2" data-ai-try-on-source-cards>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={generating || preparingPhoto || missingGarmentImage}
+              aria-pressed={Boolean(currentPhoto) && !currentModel}
+              data-ai-try-on-photo-option
+              className={`flex min-h-28 min-w-0 items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                currentPhoto && !currentModel
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 bg-white hover:border-heritage-gold/45"
+              }`}
+            >
+              {preparingPhoto ? <Loader2 aria-hidden="true" size={22} className="shrink-0 animate-spin text-heritage-green" /> : <ImagePlus aria-hidden="true" size={22} className="shrink-0 text-heritage-green" />}
+              <span className="min-w-0">
+                <span className="block font-serif text-lg font-bold text-heritage-green">Upload a photo</span>
+                <span className="mt-1 block text-sm leading-relaxed text-heritage-ink/70">{currentPhoto ? "Change your photo to try another." : "See the design on a photo of you."}</span>
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setModelPickerOpen(true)}
               disabled={generating || missingGarmentImage}
+              aria-pressed={Boolean(currentModel)}
+              aria-expanded={modelPickerOpen}
               data-ai-try-on-model-option
-              className="inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+              className={`flex min-h-28 min-w-0 items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                currentModel || modelPickerOpen
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 bg-white hover:border-heritage-gold/45"
+              }`}
             >
-              <UserRound aria-hidden="true" size={15} />
-              {AI_TRY_ON_MODEL_COPY.option}
+              <UserRound aria-hidden="true" size={22} className="shrink-0 text-heritage-green" />
+              <span className="min-w-0">
+                <span className="block font-serif text-lg font-bold text-heritage-green">{AI_TRY_ON_MODEL_COPY.option}</span>
+                <span className="mt-1 block text-sm leading-relaxed text-heritage-ink/70">See the design on one of our studio models.</span>
+              </span>
             </button>
-          )}
+          </div>
           {modelPickerOpen && (
             <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker>
               <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
@@ -1374,6 +1390,9 @@ export const AiTryOnPhotoPanel = ({
             <span>{outfitMode ? "Generate combined outfit" : preview ? "Make a new preview" : "Generate preview"}</span>
             <span className="font-medium normal-case tracking-normal text-white/80">· {triesLabel}</span>
           </button>
+          <p className="text-xs leading-relaxed text-heritage-ink/70" data-ai-try-on-order-tries-note>
+            {triesPerOrder} tries per order, shared across all garments and wearers—not {triesPerOrder} per garment. Account limits also apply.
+          </p>
         </div>
       </div>
 

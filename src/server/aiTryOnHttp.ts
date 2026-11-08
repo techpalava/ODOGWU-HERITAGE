@@ -250,6 +250,7 @@ const sendError = (
   retryAfterSeconds?: number,
   orderTriesRemaining?: number,
   accountTriesRemaining?: number | null,
+  tryRefunded = false,
 ) => {
   setNoStore(res);
   if (retryAfterSeconds) res.setHeader("Retry-After", String(retryAfterSeconds));
@@ -260,6 +261,7 @@ const sendError = (
     ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
     ...(orderTriesRemaining !== undefined ? { orderTriesRemaining } : {}),
     ...(typeof accountTriesRemaining === "number" ? { accountTriesRemaining } : {}),
+    ...(tryRefunded ? { tryRefunded: true } : {}),
   };
   return res.status(status).json(body);
 };
@@ -948,7 +950,7 @@ export async function handleAiTryOn(
     }
     if (claimed.kind === "exhausted") {
       log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "exhausted" }));
-      return sendBusyFinal();
+      return sendBusyFinal(claimed.refunded);
     }
     claim = claimed;
   } else {
@@ -964,18 +966,18 @@ export async function handleAiTryOn(
   }
 
   /** Tries left now (after a refund or a held try); informative only. */
-  async function readTriesLeft(): Promise<{ order: number; account: number | null }> {
+  async function readTriesLeft(): Promise<{ order: number | undefined; account: number | null }> {
     try {
       return {
         order: await limits.readOrderTriesRemaining(sessionId!),
         account: identity !== "auth_failed" && identity.uid !== null ? await limits.readAccountTriesRemaining(identity.uid) : null,
       };
     } catch {
-      return { order: AI_TRY_ON_TRIES_PER_ORDER, account: null };
+      return { order: undefined, account: null };
     }
   }
-  /** The busy try ended without a preview and was refunded. */
-  async function sendBusyFinal() {
+  /** The busy try ended without a preview; report only confirmed refunds. */
+  async function sendBusyFinal(tryRefunded = false) {
     const left = await readTriesLeft();
     return sendError(
       res,
@@ -986,15 +988,19 @@ export async function handleAiTryOn(
       undefined,
       left.order,
       left.account,
+      tryRefunded,
     );
   }
   /** Settles a claimed job that ends here for another reason (refund once). */
   const refundClaim = async () => {
-    if (!claim) return;
+    if (!claim) return false;
     try {
-      if (await jobs.refund(claim)) log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "other_failure" }));
+      const refunded = await jobs.refund(claim);
+      if (refunded) log(JSON.stringify({ event: "ai_try_on", outcome: "busy_refunded", reason: "other_failure" }));
+      return refunded;
     } catch {
       // The job expires and the next session call refunds it.
+      return false;
     }
   };
 
@@ -1305,34 +1311,36 @@ export async function handleAiTryOn(
         // Out of retries (refunded once here), or already refunded elsewhere.
         logFailure("gave_up");
         if (next === "gone") log(JSON.stringify({ event: "ai_try_on", outcome: "busy_job_gone" }));
-        return sendBusyFinal();
+        return sendBusyFinal(next === "refunded");
       }
       // The job could not be held: fail as before (refund below).
     }
     if (claim) {
-      await refundClaim();
+      const tryRefunded = await refundClaim();
       logFailure("ended");
       const left = await readTriesLeft();
       return outcome.kind === "rejected"
-        ? sendError(res, 422, "PROVIDER_REJECTED", "AI Try-on could not create a preview from these photos.", outcome.retryable, undefined, left.order, left.account)
-        : sendError(res, 502, "PROVIDER_FAILED", "AI Try-on could not be completed.", outcome.retryable, undefined, left.order, left.account);
+        ? sendError(res, 422, "PROVIDER_REJECTED", "AI Try-on could not create a preview from these photos.", outcome.retryable, undefined, left.order, left.account, tryRefunded)
+        : sendError(res, 502, "PROVIDER_FAILED", "AI Try-on could not be completed.", outcome.retryable, undefined, left.order, left.account, tryRefunded);
     }
     const reserved = reservation as Extract<NonNullable<typeof reservation>, { ok: true }>;
+    let tryRefunded = false;
     try {
       await limits.release(reserved.orderDocId, reserved.account, reserved.orderResetGeneration);
+      tryRefunded = true;
     } catch {
       // A failed release only makes the cap stricter; never block the reply.
     }
     logFailure(null);
-    // The reservation was released, so this try was not counted.
+    // Only a confirmed release can be described as a refund.
     const orderTriesRemaining = Math.min(
       AI_TRY_ON_TRIES_PER_ORDER,
-      reserved.orderTriesRemaining + 1,
+      reserved.orderTriesRemaining + (tryRefunded ? 1 : 0),
     );
     const accountTriesRemaining =
       reserved.accountTriesRemaining === null
         ? null
-        : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reserved.accountTriesRemaining + 1);
+        : Math.min(AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, reserved.accountTriesRemaining + (tryRefunded ? 1 : 0));
     return outcome.kind === "rejected"
       ? sendError(
           res,
@@ -1343,6 +1351,7 @@ export async function handleAiTryOn(
           undefined,
           orderTriesRemaining,
           accountTriesRemaining,
+          tryRefunded,
         )
       : sendError(
           res,
@@ -1353,6 +1362,7 @@ export async function handleAiTryOn(
           undefined,
           orderTriesRemaining,
           accountTriesRemaining,
+          tryRefunded,
         );
   }
 

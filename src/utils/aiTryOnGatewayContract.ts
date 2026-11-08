@@ -235,9 +235,11 @@ export interface AiTryOnErrorResponse {
   readonly code: AiTryOnErrorCode;
   readonly retryable: boolean;
   readonly retryAfterSeconds?: number;
-  /** Tries left for the order after a refunded (uncounted) failure. */
+  /** True only when the server confirmed the failed try was refunded. */
+  readonly tryRefunded?: boolean;
+  /** Latest known order balance after a failure. */
   readonly orderTriesRemaining?: number;
-  /** Signed-in customers only: account tries left after a refunded failure. */
+  /** Signed-in customers only: latest known account tries left after a failure. */
   readonly accountTriesRemaining?: number;
   /** PROVIDER_BUSY only: the held job to retry with. */
   readonly busyJobId?: string;
