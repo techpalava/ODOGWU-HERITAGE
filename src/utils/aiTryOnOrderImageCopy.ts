@@ -30,7 +30,7 @@ export const AI_TRY_ON_ORDER_IMAGE_COPY = {
 
   // --- Before payment: what happens to the preview at payment (shown once PR 2 lands) ---
   savedWithOrderNotice:
-    "When you pay, we save one AI preview per person with your order for 60 days, so you, our team and our tailors can see what you chose.",
+    "When you pay, we save one AI preview per garment and the latest combined outfit preview per person with your order for 60 days, so you, our team and our tailors can see what you chose.",
 
   // --- After payment: confirmation, My Orders ---
   orderImageSectionTitle: "Your AI preview",
@@ -79,10 +79,10 @@ export const AI_TRY_ON_ORDER_IMAGE_COPY = {
 export const AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY = {
   /** Privacy policy, data retention list. */
   retentionLine:
-    "AI Try-on: we delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it sooner if you ask. When you place your order, we keep one preview per person on the order with that order for up to 60 days, so you, our team and our tailors can see what you chose, and then delete it. We also delete it if the order is cancelled or refunded, or when you delete it in My Orders. Google keeps the photo and preview for up to 55 days to detect misuse.",
+    "AI Try-on: we delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it sooner if you ask. When you place your order, we keep one preview per garment and the latest combined outfit preview per person with that order for up to 60 days, so you, our team and our tailors can see what you chose, and then delete it. We also delete it if the order is cancelled or refunded, or when you delete it in My Orders. Google keeps the photo and preview for up to 55 days to detect misuse.",
   /** Privacy policy, AI Try-on section: replaces "never shared with our workshop". */
   sectionKeepLine:
-    "We delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it earlier if you ask. If you place your order, we keep one preview per person with that order for up to 60 days after payment, and delete it earlier if the order is cancelled or refunded or you delete it in My Orders. Your photo is never shared with our workshop. The preview saved with your order is visible to our team and tailors, for reference only.",
+    "We delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it earlier if you ask. If you place your order, we keep one preview per garment and the latest combined outfit preview per person with that order for up to 60 days after payment, and delete it earlier if the order is cancelled or refunded or you delete it in My Orders. Your photo is never shared with our workshop. The preview saved with your order is visible to our team and tailors, for reference only.",
   /** Privacy policy, AI Try-on section: legal basis addition. */
   consentLine:
     "Your consent also covers keeping the preview with your order. You can withdraw it at any time by deleting the AI preview in My Orders.",
@@ -90,5 +90,5 @@ export const AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY = {
   brevoProcessorLine: "Brevo: sends our sign-in code emails and order confirmation emails.",
   /** Short notice on the AI Try-on step (the "How we use your photo" list). */
   panelNotice:
-    "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
+    "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per garment and the latest combined outfit preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
 } as const;

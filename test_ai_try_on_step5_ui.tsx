@@ -499,7 +499,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(
     AI_TRY_ON_HOW_WE_USE_BULLETS[2].text,
     // Approved wording (PR 4, Xavier 2 Nov 2026).
-    "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
+    "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per garment and the latest combined outfit preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
   );
   assert.equal(
     AI_TRY_ON_PREVIEW_DISCLAIMER,
@@ -1183,13 +1183,13 @@ for (const [outcome, text] of errorCases) {
   assert.equal(
     section!.paragraphs![1],
     // Approved wording (PR 4): the order image (60 days), then the consent addition.
-    "We delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it earlier if you ask. If you place your order, we keep one preview per person with that order for up to 60 days after payment, and delete it earlier if the order is cancelled or refunded or you delete it in My Orders. Your photo is never shared with our workshop. The preview saved with your order is visible to our team and tailors, for reference only. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. Your consent also covers keeping the preview with your order. You can withdraw it at any time by deleting the AI preview in My Orders. To limit use, we count previews per order (5 per order, kept for 90 days), per signed-in account (15 in any 30 days, kept for 30 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
+    "We delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it earlier if you ask. If you place your order, we keep one preview per garment and the latest combined outfit preview per person with that order for up to 60 days after payment, and delete it earlier if the order is cancelled or refunded or you delete it in My Orders. Your photo is never shared with our workshop. The preview saved with your order is visible to our team and tailors, for reference only. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. Your consent also covers keeping the preview with your order. You can withdraw it at any time by deleting the AI preview in My Orders. To limit use, we count previews per order (5 per order, kept for 90 days), per signed-in account (15 in any 30 days, kept for 30 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
   );
   const all = JSON.stringify(PRIVACY_POLICY);
   assert.match(all, /Google \(Gemini API\): creates AI Try-on previews/);
   assert.match(all, /Google may process and briefly store your photo and preview in any country/);
   assert.match(all, /AI Try-on: we delete your photo as soon as the preview is created[^"]*55 days/);
-  assert.match(all, /When you place your order, we keep one preview per person on the order with that order for up to 60 days/);
+  assert.match(all, /When you place your order, we keep one preview per garment and the latest combined outfit preview per person with that order for up to 60 days/);
   assert.match(all, /Brevo: sends our sign-in code emails and order confirmation emails\. If Brevo is unavailable/);
   assert.equal(all.includes("Try-on photos and previews are never shared with our workshop"), false, "old wording gone");
   assert.match(all, /\[TRANSFER SAFEGUARDS\]/, "placeholder stays until the Google DPA is accepted");

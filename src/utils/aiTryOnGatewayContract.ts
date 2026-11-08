@@ -88,9 +88,20 @@ export interface AiTryOnInlineImage {
 
 export const AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION = "tryon-uploaded-design-prompt-v1" as const;
 
+export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v1" as const;
+
+export interface AiTryOnOutfitGarmentRequest {
+  readonly garmentKey: string;
+  readonly garmentType: CanonicalPhysicalGarmentType;
+  readonly garmentImageUrl: string;
+  readonly fabricSwatchImageUrl?: string;
+  readonly orderDetails?: AiTryOnOrderDetails | null;
+}
+
 export interface AiTryOnPhotoGenerationRequest {
   readonly uploadedDesignImage?: never;
   readonly uploadedGarmentType?: never;
+  readonly outfitGarments?: never;
   readonly mode: AiTryOnMode;
   /** Workflow fingerprint (`tryon-v1-…`) this generation belongs to. */
   readonly inputFingerprint: string;
@@ -119,6 +130,18 @@ export interface AiTryOnPhotoGenerationRequest {
    */
   readonly busyJobId?: string;
 }
+
+/** Combined requests carry per-garment references only; single-photo fields cannot leak in. */
+type AiTryOnOutfitGenerationRequest = Omit<AiTryOnPhotoGenerationRequest, "mode" | "outfitGarments"> & {
+  readonly mode: "garment";
+  readonly outfitGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmentRequest];
+  readonly garmentImage?: never;
+  readonly garmentImageUrl?: never;
+  readonly fabricSwatchImage?: never;
+  readonly fabricSwatchImageUrl?: never;
+  readonly orderDetails?: never;
+};
+
 
 export type AiTryOnErrorCode =
   | "METHOD_NOT_ALLOWED"
@@ -212,7 +235,7 @@ export interface AiTryOnGenerationSuccess {
 }
 
 /** Uploaded Step 3 photo is the base; no customer photo, studio model or catalogue garment. */
-export type AiTryOnGenerationRequest = AiTryOnPhotoGenerationRequest | (
+type AiTryOnUploadedDesignGenerationRequest = (
   Omit<AiTryOnPhotoGenerationRequest, "mode" | "uploadedDesignImage" | "uploadedGarmentType" | "personImage" | "defaultModelId" | "garmentImage" | "garmentImageUrl" | "fitHints" | "orderDetails"> & {
     readonly mode: "fabric";
     readonly uploadedDesignImage: AiTryOnInlineImage;
@@ -251,3 +274,5 @@ export const AI_TRY_ON_ACCOUNT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /** Each decoded image stays small enough for Vercel's 4.5 MB request body. */
 export const AI_TRY_ON_MAX_IMAGE_BYTES = 1_400_000;
 export const AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES = 3_000_000;
+
+export type AiTryOnGenerationRequest = AiTryOnPhotoGenerationRequest | AiTryOnOutfitGenerationRequest | AiTryOnUploadedDesignGenerationRequest;
