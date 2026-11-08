@@ -1,4 +1,5 @@
 import { handleAiTryOnAdminUsage } from "./aiTryOnAdminUsage.js";
+import { handleAiTryOnAdminTopUp, type AiTryOnAdminTopUpDependencies } from "./aiTryOnTopUp.js";
 import type { CanonicalPhysicalGarmentType } from "../types.js";
 import { aiTryOnOutfitPart } from "../utils/aiTryOnWearerTargets.js";
 import { CANONICAL_PHYSICAL_GARMENT_TYPES } from "../utils/garmentConstructionPricing.js";
@@ -101,7 +102,6 @@ import {
   type AiTryOnOrderDetails,
 } from "../utils/aiTryOnOrderDetails.js";
 import {
-  AI_TRY_ON_GLOBAL_GENERATION_CAP,
   AI_TRY_ON_MAX_IMAGE_BYTES,
   AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION,
   AI_TRY_ON_OUTFIT_PROMPT_VERSION,
@@ -221,6 +221,8 @@ export interface AiTryOnHttpDependencies {
     db: Firestore,
     options: { allowNewGuestSession: () => Promise<void> },
   ) => AiTryOnSessions;
+  /** Stripe test Checkout for a 1,000-try top-up. Tests inject the Stripe client. */
+  aiTryOnTopUp?: AiTryOnAdminTopUpDependencies;
   /** Verifies a Firebase ID token (Step 7). */
   verifyIdToken?: (
     token: string,
@@ -603,6 +605,13 @@ async function handleAiTryOnRequest(
       now,
     });
   }
+  if (readQueryParam(req, "action") === "admin-top-up") {
+    return handleAiTryOnAdminTopUp(req, res, {
+      ...dependencies.aiTryOnTopUp,
+      verifyIdToken: dependencies.verifyIdToken ?? defaultVerifyIdToken,
+      environment,
+    });
+  }
   if (readQueryParam(req, "action") === "admin-reset") {
     return handleAiTryOnAdminReset(req, res, {
       verifyIdToken: dependencies.verifyIdToken ?? defaultVerifyIdToken,
@@ -907,8 +916,8 @@ async function handleAiTryOnRequest(
     try {
       const db = await resolveDb();
       const limits = createLimits(db);
-      const count = await limits.readGlobalCount();
-      if (count >= AI_TRY_ON_GLOBAL_GENERATION_CAP) return unavailableWithStoredPreviews("GLOBAL_LIMIT_REACHED");
+      const capacity = await limits.readGlobalCapacity();
+      if (capacity.count >= capacity.cap) return unavailableWithStoredPreviews("GLOBAL_LIMIT_REACHED");
       if (!isSessionRequest) {
         const body: AiTryOnAvailabilityResponse = {
           status: "available",

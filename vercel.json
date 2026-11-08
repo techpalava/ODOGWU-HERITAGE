@@ -53,6 +53,10 @@
     {
       "source": "/api/ai-try-on",
       "destination": "/api/design-studio/transfer-uploaded-design-draft?route=ai-try-on"
+    },
+    {
+      "source": "/api/ai-try-on/top-up-webhook",
+      "destination": "/api/future-order-v2/record-payment?route=ai-try-on-top-up"
     }
   ],
   "headers": [

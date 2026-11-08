@@ -30,6 +30,7 @@ import {
   handleFutureOrderV2PaymentRecord,
   httpRequestFromRawBody,
 } from "./src/server/futureOrderV2PaymentRecord";
+import { handleAiTryOnTopUpWebhook } from "./src/server/aiTryOnTopUp";
 import { handleHealth } from "./src/server/appVersion";
 import { handleClientImageError } from "./src/server/clientImageErrorLog";
 import { handleAiTryOn } from "./src/server/aiTryOnHttp";
@@ -70,6 +71,24 @@ app.post(
   (req, res) => {
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     return handleFutureOrderV2PaymentRecord(
+      httpRequestFromRawBody({
+        method: req.method,
+        headers: req.headers,
+        rawBody,
+      }),
+      res,
+    );
+  },
+);
+
+// Same raw-body rule. Vercel rewrites this path onto record-payment; Express
+// serves it here. A parsed JSON body would break Stripe signature checks.
+app.post(
+  "/api/ai-try-on/top-up-webhook",
+  express.raw({ type: () => true, limit: "1mb" }),
+  (req, res) => {
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    return handleAiTryOnTopUpWebhook(
       httpRequestFromRawBody({
         method: req.method,
         headers: req.headers,

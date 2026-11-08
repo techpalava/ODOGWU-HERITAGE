@@ -25,6 +25,11 @@ class FakeFirestore {
       where: (field: string, _op: string, value: unknown) => ({
         get: async () => ({ docs: [...this.docs].filter(([path, data]) => path.startsWith(`${name}/`) && data[field] === value).map(([, data]) => ({ data: () => ({ ...data }) })) }),
       }),
+      get: async () => ({
+        docs: [...this.docs]
+          .filter(([path]) => path.startsWith(`${name}/`) && !path.slice(name.length + 1).includes("/"))
+          .map(([path, data]) => ({ id: path.slice(name.length + 1), data: () => ({ ...data }) })),
+      }),
     };
   }
   async runTransaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
@@ -181,9 +186,11 @@ class FakeFirestore {
   assert.match(full.json, /estimate/);
   assert.match(full.json, /\$64 per 1,000 tries/);
   assert.equal(full.links.length, 1);
-  assert.equal(full.links[0].props.href, "https://console.cloud.google.com/billing");
-  assert.equal(full.links[0].props.target, "_blank");
-  assert.match(full.links[0].props.rel, /noopener/);
+  assert.equal(full.links[0].props.type, "button");
+  assert.match(full.json, /Top up 1,000 tries \(\$64\)/);
+  assert.equal(full.json.includes("console.cloud.google.com"), false);
+  assert.match(full.json, /Top-up history/);
+  assert.match(full.json, /No top-ups yet/);
   // A general response never shows cost even if a cost field slipped in.
   assert.doesNotMatch((await render({ ...base, cost: full.links.length ? { estimate: true, perTryUsd: 0.064, allTimeUsd: 1, thisMonthUsd: 1, reminders: [] } : undefined })).json, /\$/);
 }

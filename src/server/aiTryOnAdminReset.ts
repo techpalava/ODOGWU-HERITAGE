@@ -1,8 +1,8 @@
 import type { Firestore } from "firebase-admin/firestore";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { AI_TRY_ON_SESSION_COLLECTION, hashAiTryOnUid } from "./aiTryOnSession.js";
-import { AI_TRY_ON_GLOBAL_USAGE_DOC, AI_TRY_ON_USAGE_COLLECTION, aiTryOnAccountUsageDocId, hashAiTryOnOrderKey } from "./aiTryOnUsageLimits.js";
-import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, AI_TRY_ON_ACCOUNT_WINDOW_MS, AI_TRY_ON_GLOBAL_GENERATION_CAP, AI_TRY_ON_TRIES_PER_ORDER } from "../utils/aiTryOnGatewayContract.js";
+import { AI_TRY_ON_GLOBAL_USAGE_DOC, AI_TRY_ON_USAGE_COLLECTION, aiTryOnAccountUsageDocId, aiTryOnEffectiveGlobalCap, hashAiTryOnOrderKey, readPurchasedTries } from "./aiTryOnUsageLimits.js";
+import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, AI_TRY_ON_ACCOUNT_WINDOW_MS, AI_TRY_ON_TRIES_PER_ORDER } from "../utils/aiTryOnGatewayContract.js";
 import { getCanonicalEmail } from "../security/authIdentity.js";
 
 // Deliberately narrower than the general admin allowlist; never sent to the browser.
@@ -79,8 +79,9 @@ export const handleAiTryOnAdminReset = async (
     // the System Settings warning at 80% and 95%. Omitted if unreadable.
     let globalUsage: { count: number; cap: number } | undefined;
     try {
-      const count = (await (await dependencies.getDb()).collection(AI_TRY_ON_USAGE_COLLECTION).doc(AI_TRY_ON_GLOBAL_USAGE_DOC).get()).data()?.count;
-      globalUsage = { count: typeof count === "number" ? count : 0, cap: AI_TRY_ON_GLOBAL_GENERATION_CAP };
+      const data = (await (await dependencies.getDb()).collection(AI_TRY_ON_USAGE_COLLECTION).doc(AI_TRY_ON_GLOBAL_USAGE_DOC).get()).data();
+      const count = data?.count;
+      globalUsage = { count: typeof count === "number" ? count : 0, cap: aiTryOnEffectiveGlobalCap(readPurchasedTries(data)) };
     } catch {
       globalUsage = undefined;
     }

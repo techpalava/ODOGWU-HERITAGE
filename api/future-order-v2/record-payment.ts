@@ -1,6 +1,10 @@
 import type { IncomingMessage } from "node:http";
 import type { HttpRequest, HttpResponse } from "../../src/server/httpTypes.js";
 import {
+  handleAiTryOnTopUpWebhook,
+  isAiTryOnTopUpWebhookRequest,
+} from "../../src/server/aiTryOnTopUp.js";
+import {
   handleFutureOrderV2PaymentRecord,
   httpRequestFromRawBody,
   readRawHttpBody,
@@ -25,13 +29,12 @@ const sendJson = (res: HttpResponse, status: number, body: Record<string, unknow
   return res.status(status).json(body);
 };
 
-export default async function handler(
+const deliver = async (
   req: HttpRequest & Partial<IncomingMessage>,
   res: HttpResponse,
-) {
-  if (!isUnreadNodeRequest(req)) {
-    return handleFutureOrderV2PaymentRecord(req, res);
-  }
+  handle: (request: HttpRequest, response: HttpResponse) => unknown,
+) => {
+  if (!isUnreadNodeRequest(req)) return handle(req, res);
   let rawBody: Buffer;
   try {
     rawBody = await readRawHttpBody(req);
@@ -47,7 +50,7 @@ export default async function handler(
       code: "INVALID_STRIPE_SIGNATURE",
     });
   }
-  return handleFutureOrderV2PaymentRecord(
+  return handle(
     httpRequestFromRawBody({
       method: req.method,
       headers: req.headers,
@@ -55,4 +58,16 @@ export default async function handler(
     }),
     res,
   );
+};
+
+export default async function handler(
+  req: HttpRequest & Partial<IncomingMessage> & { query?: unknown; url?: string },
+  res: HttpResponse,
+) {
+  // Hobby keeps this on the existing raw-body function. The route marker
+  // distinguishes an AI Try-on top-up from a Future Order payment.
+  if (isAiTryOnTopUpWebhookRequest(req)) {
+    return deliver(req, res, handleAiTryOnTopUpWebhook);
+  }
+  return deliver(req, res, handleFutureOrderV2PaymentRecord);
 }
