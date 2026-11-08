@@ -161,7 +161,7 @@ assert.equal(renderer.toJSON(), null);
 const studio = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.match(studio, /<DormantFutureSummaryStep\s+aiTryOnOrderPreviews=\{aiTryOnOrderPreviewsNode\}/);
 assert.match(studio, /<DormantFuturePaymentReviewStep\s+result=\{futurePaymentReviewHandoff\}\s+aiTryOnOrderPreviews=\{aiTryOnOrderPreviewsNode\}/);
-assert.match(studio, /\(futureStageId === "summary" \|\| futureStageId === "payment"\) &&\s+\(aiTryOnGatewayAvailable \|\|\s+futureAiTryOnWorkflow\.status === "completed" \|\|\s+futureAiTryOnWorkflow\.status === "stale" \|\|\s+Boolean\(aiTryOnCredentials\.sessionToken\)\) &&\s+!futurePaymentReviewConfirmed/, "a guest's saved session lists previews after a reload onto Summary (L2)");
+assert.match(studio, /\(futureStageId === "summary" \|\| futureStageId === "payment"\) &&\s+\(aiTryOnGatewayAvailable === true \|\|\s+futureAiTryOnWorkflow\.status === "completed" \|\|\s+futureAiTryOnWorkflow\.status === "stale" \|\|\s+Boolean\(aiTryOnCredentials\.sessionToken\)\) &&\s+!futurePaymentReviewConfirmed/, "a guest's saved session lists previews after a reload onto Summary (L2)");
 // M3: a prepared, unpaid order is re-sent the latest previews; the pay path
 // waits for that before paying; an empty list never clears before loading.
 assert.match(studio, /if \(latestAiTryOnOrderSelections\.length === 0 && !aiTryOnOrderPreviewSummariesLoadedRef\.current\) return;/);

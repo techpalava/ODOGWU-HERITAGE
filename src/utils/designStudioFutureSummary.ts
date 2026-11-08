@@ -306,6 +306,11 @@ const getAiTryOnSummary = (
     return { status: "completed", label: "Completed" };
   }
   if (workflow.status === "skipped") {
+    // Passed with "Continue while we make your preview": not a chosen skip.
+    // A finished preview turns the workflow "completed" ("Completed").
+    if (workflow.skipOrigin === "continued_while_generating") {
+      return { status: "skipped", label: "No preview yet" };
+    }
     return { status: "skipped", label: "Skipped by choice" };
   }
   if (workflow.status === "unavailable") {

@@ -534,6 +534,12 @@ export interface AiTryOnWorkflowStateV1 {
   jobReference?: AiTryOnResumableJobReference;
   resultReference?: AiTryOnVerifiedPrivateResultReference;
   failure?: AiTryOnWorkflowFailure;
+  /**
+   * Set only when the step was passed with "Continue while we make your
+   * preview" (a preview was still generating). The customer did NOT choose
+   * to go without AI Try-on, so the step never says they did.
+   */
+  skipOrigin?: "continued_while_generating";
 }
 
 export interface IndividualShippingSnapshot {
