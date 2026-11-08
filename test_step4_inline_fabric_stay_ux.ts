@@ -301,6 +301,9 @@ const fabricB: Fabric = {
   assert.equal(btn.props.type, "button");
   assert.match(String(btn.props.className || ""), /bottom-\[calc\(5\.5rem/);
   assert.match(String(btn.props.className || ""), /size-11/);
+  assert.match(String(btn.props.className || ""), /(?<!sm:)left-4/);
+  assert.match(String(btn.props.className || ""), /sm:left-auto/);
+  assert.match(String(btn.props.className || ""), /sm:right-6/);
   act(() => {
     btn.props.onClick();
   });
@@ -555,6 +558,9 @@ const fabricB: Fabric = {
   assert.equal(bottomBtn.props.type, "button");
   assert.match(String(bottomBtn.props.className || ""), /bottom-\[calc\(5\.5rem/);
   assert.match(String(bottomBtn.props.className || ""), /size-11/);
+  assert.match(String(bottomBtn.props.className || ""), /(?<!sm:)left-4/);
+  assert.match(String(bottomBtn.props.className || ""), /sm:left-auto/);
+  assert.match(String(bottomBtn.props.className || ""), /sm:right-6/);
   act(() => {
     bottomBtn.props.onClick();
   });
