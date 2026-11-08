@@ -28,6 +28,10 @@ interface FooterProps {
   onJoinCommunityBatch?: (batch: Batch) => void;
 }
 
+/** Compare brand lines the way the footer paints them: case and extra spaces do not count. */
+const normalizeFooterBrandLine = (value: string) =>
+  value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+
 const scrollToHomeOrderGateway = (attempt = 0) => {
   const target = document.getElementById(HOMEPAGE_ORDER_GATEWAY_ANCHOR_ID);
   if (target) {
@@ -64,6 +68,19 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const communityName =
+    businessSettings?.applicationSettings?.communityName ||
+    "The Odogwu Heritage";
+  const tagline =
+    businessSettings?.applicationSettings?.tagline ||
+    "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)";
+  // The gold heading is the community name. The italic line is a slogan, and
+  // it currently stores the same words, so printing both repeats the name.
+  // A tagline that actually says something else still sits under the name.
+  const taglineRepeatsCommunityName =
+    normalizeFooterBrandLine(tagline) ===
+    normalizeFooterBrandLine(communityName);
 
   const batchLink = resolveFooterBatchLink({ hasLoadedBatches, joinBatch });
   const handleBatchLink = (e: React.MouseEvent) => {
@@ -107,24 +124,21 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
               <img
                 loading="lazy"
                 src={odogwuLogo}
-                alt={
-                  businessSettings?.applicationSettings?.communityName ||
-                  "The Odogwu Heritage"
-                }
+                alt={communityName}
                 className="w-14 h-14 rounded-full border border-heritage-gold/30 object-cover bg-heritage-forest shadow-sm shrink-0"
                 referrerPolicy="no-referrer"
               />
               <div className="flex flex-col">
                 <span className="text-base font-extrabold tracking-widest text-heritage-gold uppercase font-display break-words">
-                  {businessSettings?.applicationSettings?.communityName ||
-                    "The Odogwu Heritage"}
+                  {communityName}
                 </span>
               </div>
             </div>
-            <p className="text-base xl:text-lg font-bold text-heritage-beige/90 leading-snug font-serif italic break-words">
-              {businessSettings?.applicationSettings?.tagline ||
-                "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
-            </p>
+            {!taglineRepeatsCommunityName && (
+              <p className="text-base xl:text-lg font-bold text-heritage-beige/90 leading-snug font-serif italic break-words">
+                {tagline}
+              </p>
+            )}
             <p className="text-xs text-heritage-beige/60 leading-relaxed">
               {businessSettings?.applicationSettings?.description ||
                 "Connecting cultures through authentic Nigerian traditional clothing, handcrafted in Nigeria and delivered to our multicultural community in the Netherlands."}
@@ -322,9 +336,7 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
         {/* Footer Bottom Bar */}
         <div className="pt-8 border-t border-heritage-gold/20 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] sm:text-xs text-heritage-beige/50">
           <div className="order-3 md:order-1 text-center md:text-left text-xs sm:text-sm font-extrabold tracking-wide break-words">
-            © {new Date().getFullYear()}{" "}
-            {businessSettings?.applicationSettings?.communityName ||
-              "The Odogwu Heritage"}
+            © {new Date().getFullYear()} {communityName}
           </div>
           <div className="order-1 md:order-2 text-center text-heritage-gold/80 font-serif italic tracking-wide">
             Authentically Crafted in Nigeria • Delivered Across the Netherlands
