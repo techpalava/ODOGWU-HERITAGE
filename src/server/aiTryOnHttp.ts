@@ -673,7 +673,8 @@ async function handleAiTryOnRequest(
     if (!bearer) return authFailed();
     let viewer: { uid: string; admin: boolean };
     try {
-      const verified = await (dependencies.verifyIdToken ?? defaultVerifyIdToken)(bearer);
+      // Deep check L4: a revoked session can't read or delete order images.
+      const verified = await (dependencies.verifyIdToken ?? defaultVerifyIdToken)(bearer, true);
       const provider = verified.firebase?.sign_in_provider;
       if (typeof provider !== "string" || !provider || provider === "anonymous" || !verified.uid) {
         return authFailed();
