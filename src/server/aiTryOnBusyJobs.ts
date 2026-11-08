@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { DocumentReference, Firestore } from "firebase-admin/firestore";
 import type { AuthRateLimitRule } from "./authRateLimit.js";
-import { hashAiTryOnOrderKey, type AiTryOnAccountReservation, type AiTryOnUsageLimits } from "./aiTryOnUsageLimits.js";
+import { hashAiTryOnOrderKey, type AiTryOnAccountReservation, type AiTryOnRefundReason, type AiTryOnUsageLimits } from "./aiTryOnUsageLimits.js";
 
 /**
  * "Busy" retries (Xavier, item 1): when Gemini is still over capacity after
@@ -107,14 +107,14 @@ export const createAiTryOnBusyJobs = (
 ) => {
   const ref = (docId: string) => db.collection(AI_TRY_ON_JOB_COLLECTION).doc(docId) as unknown as DocumentReference;
   /** Refunds the job's try and deletes it, once, if `accept` still holds. */
-  const refund = (docId: string, accept: (job: NonNullable<ReturnType<typeof readJob>>) => boolean) =>
+  const refund = (docId: string, accept: (job: NonNullable<ReturnType<typeof readJob>>) => boolean, reason?: AiTryOnRefundReason) =>
     limits.releaseHeld(ref(docId), (data) => {
       const job = readJob(data);
       return job !== null && accept(job);
-    });
+    }, reason);
 
-  const refundClaim = (claim: { jobDocId: string; jobId: string }) =>
-    refund(claim.jobDocId, (job) => job.jobId === claim.jobId);
+  const refundClaim = (claim: { jobDocId: string; jobId: string }, reason?: AiTryOnRefundReason) =>
+    refund(claim.jobDocId, (job) => job.jobId === claim.jobId, reason);
 
   return {
     /** First request hit capacity: hold its reserved try. False if one exists. */
