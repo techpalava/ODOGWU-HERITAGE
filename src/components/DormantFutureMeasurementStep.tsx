@@ -15,10 +15,7 @@ import type {
 } from "../types";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
-import {
-  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
-  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
-} from "../utils/designStudioFutureShipping";
+import { FUTURE_PICKUP_ATELIER_WHATSAPP_URL } from "../utils/designStudioFutureShipping";
 import {
   clearActiveFutureMeasurementEntered,
   collectRequiredAlternativeGroups,
@@ -1478,23 +1475,26 @@ export const DormantFutureMeasurementStep = ({
           data-measurement-onsite-info="true"
           className="mt-4 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
         >
-          <p className="break-words text-sm leading-relaxed font-medium text-heritage-ink/80">
-            Reach out to the contact to arrange a measurement
+          <p
+            data-measurement-onsite-instruction="true"
+            className="break-words text-sm leading-relaxed font-medium text-heritage-ink/80"
+          >
+            Contact us on WhatsApp within 3 days of placing your order to arrange your measurement appointment. Our team will confirm the time and location.
           </p>
           <p
             data-measurement-onsite-booking-window="true"
             className="mt-1 break-words text-sm leading-relaxed font-medium text-heritage-ink/80"
           >
-            Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
+            So we can keep your tailoring slot and deliver on time.
           </p>
           <a
             href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-            className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
+            data-measurement-onsite-whatsapp="true"
+            className="mt-3 inline-flex min-h-11 w-full max-w-full items-center justify-center break-words rounded-xl bg-heritage-green px-4 py-2.5 text-center text-sm font-bold leading-snug text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
           >
-            {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
+            Arrange measurements on WhatsApp
           </a>
         </div>
       </section>
