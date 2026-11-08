@@ -50,6 +50,8 @@ Object.defineProperty(globalThis, "document", {
   configurable: true,
   value: {
     documentElement: { scrollHeight: 1200 },
+    addEventListener() {},
+    removeEventListener() {},
     createElement: (tag: string) => {
       if (tag !== "canvas") return { style: {} };
       return {

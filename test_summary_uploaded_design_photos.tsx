@@ -59,6 +59,8 @@ Object.defineProperty(globalThis, "document", {
   configurable: true,
   value: {
     documentElement: { scrollHeight: 2400 },
+    addEventListener() {},
+    removeEventListener() {},
     createElement: (tag: string) => tag === "canvas"
       ? { width: 0, height: 0, getContext: () => ({ fillStyle: "", fillRect() {}, drawImage() {} }), toBlob: (callback: (blob: Blob | null) => void) => callback(new Blob([jpegBytes], { type: "image/jpeg" })) }
       : { style: {} },
