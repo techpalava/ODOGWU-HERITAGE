@@ -203,6 +203,12 @@ export type AiTryOnAvailabilityResponse =
   | {
       readonly status: "unavailable";
       readonly code: "NOT_CONFIGURED" | "GLOBAL_LIMIT_REACHED" | "RATE_LIMITED" | "AUTH_REQUIRED";
+      /**
+       * `POST ?action=session` only: the caller's already-stored previews,
+       * listed even when generation is off or capped, so Summary, Review and
+       * the paid order keep them. Never mints a session.
+       */
+      readonly previews?: readonly AiTryOnStoredPreviewSummary[];
     };
 
 /** Step 7: header carrying a guest's server-issued session token. */

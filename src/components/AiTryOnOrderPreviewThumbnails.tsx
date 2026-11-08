@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { AI_TRY_ON_ORDER_IMAGE_COPY as COPY } from "../utils/aiTryOnOrderImageCopy";
 import { AI_TRY_ON_PREVIEW_DISCLAIMER } from "./AiTryOnPhotoPanel";
@@ -80,19 +80,67 @@ export const AiTryOnOrderPreviewImage = ({
   loadImage: AiTryOnOrderLoadImage;
 }) => {
   const [image, setImage] = useState<{ mimeType: string; data: string } | null | "loading">("loading");
+  const [attempt, setAttempt] = useState(0);
   const [enlarged, setEnlarged] = useState(false);
+  const openButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     let cancelled = false;
     setImage("loading");
-    void loadImage(entry.previewId).then((loaded) => {
-      if (!cancelled) setImage(loaded);
-    });
+    void loadImage(entry.previewId)
+      .catch(() => null)
+      .then((loaded) => {
+        if (!cancelled) setImage(loaded);
+      });
     return () => {
       cancelled = true;
     };
-  }, [entry.previewId, loadImage]);
+  }, [entry.previewId, loadImage, attempt]);
+  // Enlarged view: focus moves to Close, Escape closes it, and focus goes
+  // back to the thumbnail that opened it.
+  useEffect(() => {
+    if (!enlarged || typeof document === "undefined") return;
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setEnlarged(false);
+      } else if (event.key === "Tab") {
+        // Close is the only control: keep focus inside the dialog.
+        event.preventDefault();
+        closeButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      openButtonRef.current?.focus();
+    };
+  }, [enlarged]);
   const caption = entry.onModel ? COPY.thumbnailLabelOnModel(entry.label) : COPY.thumbnailLabel(entry.label);
-  if (image === null) return null;
+  if (image === null) {
+    return (
+      <figure className="min-w-0 space-y-2" data-ai-try-on-order-preview={entry.wearerId}>
+        <figcaption className="text-xs font-bold text-heritage-green">{caption}</figcaption>
+        <div
+          role="status"
+          className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-3"
+          data-ai-try-on-order-preview-error
+        >
+          <p className="text-xs leading-relaxed text-heritage-ink/75">{COPY.loadFailed(entry.label)}</p>
+          <button
+            type="button"
+            onClick={() => setAttempt((value) => value + 1)}
+            className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-xl border border-heritage-green/30 px-3 text-xs font-bold uppercase tracking-wide text-heritage-green hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            data-ai-try-on-order-preview-retry
+          >
+            <RefreshCw aria-hidden="true" size={14} />
+            {COPY.retryLoad}
+          </button>
+        </div>
+      </figure>
+    );
+  }
   const src = image === "loading" ? null : `data:${image.mimeType};base64,${image.data}`;
   return (
     <figure
@@ -103,6 +151,7 @@ export const AiTryOnOrderPreviewImage = ({
       <figcaption className="text-xs font-bold text-heritage-green">{caption}</figcaption>
       {src ? (
         <button
+          ref={openButtonRef}
           type="button"
           onClick={() => setEnlarged(true)}
           aria-label={COPY.enlarge(entry.label)}
@@ -128,6 +177,7 @@ export const AiTryOnOrderPreviewImage = ({
         >
           <div className="relative max-h-full max-w-lg" onClick={(event) => event.stopPropagation()}>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={() => setEnlarged(false)}
               className="absolute right-2 top-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/90 text-heritage-green"
