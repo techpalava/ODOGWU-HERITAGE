@@ -48,7 +48,8 @@ export type AiTryOnMode = "garment" | "fabric";
  * embroidery, trim) may still be listed. v7 person/pose, type lock, swatch
  * lock and coverage stay.
  */
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v8" as const;
+// v9: explicit order construction wins over reference photos.
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v9" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -63,7 +64,8 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v8" as const;
  * the same order-details block, which used to say order text wins where it
  * differs from image 2. Swatch lock and studio-model coverage stay.
  */
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v5" as const;
+// v6: share photo v9 construction priority and Standard Shirt type lock.
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v6" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric

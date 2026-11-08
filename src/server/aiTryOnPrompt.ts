@@ -45,7 +45,7 @@ const KEEP_PERSON =
  * names: a Long Shirt order stays a Long Shirt.
  */
 const ORDERED_TYPE =
-  "When the order details name garment types, make those types only, and they win over the clothes in image 1. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
+  "When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
 
 const COPY_ONLY_ORDERED =
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.";
@@ -73,8 +73,7 @@ const FABRIC_IGNORE_NOISE = `Ignore everything that is not the person, the garme
  * and category as text ("Brown (#724137), Lace") and told Gemini to follow
  * order details over the pictures, so a royal-blue wax print came back
  * brown. The swatch picture now always decides the fabric, and the fabric's
- * text labels no longer reach the prompt. v8: image 2 decides silhouette;
- * order details no longer override it. The swatch still decides the fabric.
+ * text labels no longer reach the prompt. The swatch always decides fabric.
  */
 const FABRIC_FROM_SWATCH =
   "From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.";
@@ -108,7 +107,7 @@ const GARMENT_MODE_LINES: readonly string[] = [
   KEEP_PERSON,
   ORDERED_TYPE,
   COPY_ONLY_ORDERED,
-  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. Image 2 decides that silhouette; order-detail text never changes it. The named garment type still comes from the order details. Do not redesign it.",
+  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.",
   REPLACE_COVERED,
   REALISM,
   GARMENT_IGNORE_NOISE,
@@ -132,7 +131,7 @@ const FABRIC_MODE_LINES: readonly string[] = [
   ORDERED_TYPE,
   COPY_ONLY_ORDERED,
   REPLACE_COVERED,
-  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. Image 2 decides that silhouette; order-detail text never changes it. The named garment type still comes from the order details. Do not redesign it. Ignore its original fabric colour and print.",
+  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.",
   FABRIC_FROM_SWATCH,
   "Do not take any colour, pattern or texture from the clothes in image 1.",
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
@@ -166,22 +165,10 @@ export const buildAiTryOnFitBlock = (
 };
 
 /** Hard cap on the order-details block, header included. */
-export const AI_TRY_ON_ORDER_DETAILS_MAX_LINES = 18;
-
-/**
- * Step 1 fields that describe silhouette. Image 2 (the Step 3 design) decides
- * these. The ids stay on the order payload and in the Try-on fingerprint;
- * they are not rendered, because a length, sleeve or neckline line used to
- * be told to win where it differed from image 2.
- */
-const SILHOUETTE_ORDER_FIELDS = new Set<string>([
-  "Length and sleeves",
-  "Length",
-  "Neckline and collar",
-]);
+export const AI_TRY_ON_ORDER_DETAILS_MAX_LINES = 50;
 
 const ORDER_DETAILS_SILHOUETTE_RULE =
-  "Keep the named garment type. Image 2 decides cut, length, neckline, sleeves and shape; nothing in these lines overrides that silhouette. Other lines are non-shape extras only.";
+  "Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details.";
 
 const FIELD_RANK = new Map<string, number>(
   AI_TRY_ON_ORDER_FIELD_ORDER.map((field, index) => [field, index]),
@@ -191,10 +178,8 @@ const FIELD_RANK = new Map<string, number>(
  * Compact order-details block, rendered only from validated ids. The fabric
  * line appears in fabric mode only (garment mode copies image 2's fabric)
  * and only points at image 3: no colour or category text (v4).
- * Silhouette fields (length, sleeves, neckline) are omitted (v8): image 2
- * decides cut and shape. Pockets, waistband, accessories, embroidery, trim
- * and a monogram mark may still be listed, and they must not override that
- * silhouette. Monograms are described as a mark; the customer's letters
+ * Explicit construction and custom-detail choices take precedence over
+ * the reference photos. Monograms are described as a mark; the customer's letters
  * never reach the prompt. Empty details → no block at all.
  */
 export const buildAiTryOnOrderDetailsBlock = ({
@@ -225,7 +210,6 @@ export const buildAiTryOnOrderDetailsBlock = ({
     [...byField.entries()]
       .sort(([left], [right]) => (FIELD_RANK.get(left) ?? 99) - (FIELD_RANK.get(right) ?? 99))
       .forEach(([field, labels]) => {
-        if (SILHOUETTE_ORDER_FIELDS.has(field)) return;
         lines.push(`- ${field}: ${labels.join("; ")}`);
       });
     if (garment.decorations.includes("embroidery")) {
@@ -260,12 +244,12 @@ export const buildAiTryOnImageLabels = (mode: AiTryOnMode): readonly string[] =>
   mode === "fabric"
     ? [
         "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
-        "Image 2, design-style construction only. Copy its cut, length, neckline, sleeves and shape; order text does not change them. The person wearing it is a stand-in model; do not use them:",
+        "Image 2, design-style construction only. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. The person wearing it is a stand-in model; do not use them:",
         "Image 3, fabric swatch, for colour and pattern only. No other image may set the fabric:",
       ]
     : [
         "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
-        "Image 2, the design-style garment. Copy its cut, length, neckline, sleeves and shape; order text does not change them. The person wearing it is a stand-in model; do not use them:",
+        "Image 2, the design-style garment. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. The person wearing it is a stand-in model; do not use them:",
       ];
 
 export const buildAiTryOnPrompt = ({
@@ -295,9 +279,8 @@ export const buildAiTryOnPrompt = ({
  * the v3 garment-mode protections: the person in the garment reference is a
  * stand-in who must never replace our studio model, only the ordered
  * garment is copied, the studio model keeps their other clothing and shoes,
- * and the prompt ends with an identity check. v5 uses the same image-2
- * silhouette rule as photo v8: order-detail text does not change cut,
- * length, neckline, sleeves or shape. Every image gets a label.
+ * and the prompt ends with an identity check. Explicit order choices win
+ * over the reference silhouette. Every image gets a label.
  * No fit block: fit hints describe the customer, not the model. Versioned
  * by AI_TRY_ON_MODEL_PROMPT_VERSION (pinned in test_ai_try_on_default_models).
  */
@@ -316,9 +299,10 @@ const MODEL_GARMENT_MODE_LINES: readonly string[] = [
   "Edit image 1 so the studio model wears the ordered garment from image 2.",
   MODEL_STAND_IN,
   KEEP_MODEL,
+  ORDERED_TYPE,
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
   "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
-  "Copy the silhouette from image 2: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. Image 2 decides that silhouette; order-detail text never changes it. The named garment type still comes from the order details. Do not redesign it.",
+  "Copy the silhouette from image 2: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.",
   REALISM,
   `Ignore everything that is not the studio model or the garment: ${NOISE}`,
   MODEL_OUTPUT,
@@ -331,9 +315,10 @@ const MODEL_FABRIC_MODE_LINES: readonly string[] = [
   "Edit image 1 so the studio model wears the ordered garment from image 2, made from the fabric in image 3.",
   MODEL_STAND_IN,
   KEEP_MODEL,
+  ORDERED_TYPE,
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
   "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
-  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. Image 2 decides that silhouette; order-detail text never changes it. The named garment type still comes from the order details. Ignore its original fabric colour and print.",
+  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Ignore its original fabric colour and print.",
   FABRIC_FROM_SWATCH,
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
   SWATCH_TEXT,
@@ -347,12 +332,12 @@ export const buildAiTryOnModelImageLabels = (mode: AiTryOnMode): readonly string
   mode === "fabric"
     ? [
         "Image 1, the studio model to dress:",
-        "Image 2, garment design reference only. Copy its cut, length, neckline, sleeves and shape; order text does not change them. Any person wearing it is a stand-in; do not use them:",
+        "Image 2, garment design reference only. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. Any person wearing it is a stand-in; do not use them:",
         "Image 3, fabric swatch for the garment:",
       ]
     : [
         "Image 1, the studio model to dress:",
-        "Image 2, garment reference only. Copy its cut, length, neckline, sleeves and shape; order text does not change them. Any person wearing it is a stand-in; do not use them:",
+        "Image 2, garment reference only. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. Any person wearing it is a stand-in; do not use them:",
       ];
 
 export const buildAiTryOnModelPrompt = ({
