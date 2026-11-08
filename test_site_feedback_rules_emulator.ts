@@ -23,8 +23,19 @@ const v2 = (photo: Parameters<typeof buildSiteFeedbackCreatePayload>[3] = null, 
   ...extra,
 });
 const v1 = () => {
-  const { nationality: _n, photoPath: _p, photoContentType: _c, photoSizeBytes: _s, ...rest } = v2();
+  const {
+    nationality: _n,
+    photoPath: _p,
+    photoContentType: _c,
+    photoSizeBytes: _s,
+    selectedSteps: _steps,
+    ...rest
+  } = v2();
   return { ...rest, schemaVersion: 1 };
+};
+const legacyV2 = () => {
+  const { selectedSteps: _steps, ...rest } = v2();
+  return rest;
 };
 
 const guest = env.unauthenticatedContext();
@@ -71,6 +82,87 @@ await step(13, () => assertFails(getDoc(doc(anon.firestore(), "site_feedback/wit
 await step(14, () => assertFails(updateDoc(doc(anon.firestore(), "site_feedback/withphoto"), { status: "new" })));
 const adminRead = (await step(15, () => assertSucceeds(getDoc(doc(admin.firestore(), "site_feedback/withphoto"))))) as any;
 assert.equal(adminRead.data()?.nationality, "NG");
+
+// Older v2 clients omit selectedSteps. Guests may still create.
+await step(25, () => assertSucceeds(setDoc(doc(guest.firestore(), "site_feedback/legacyv2"), legacyV2())));
+// Several allowed ids, any order, one shared document.
+await step(26, () =>
+  assertSucceeds(
+    setDoc(doc(guest.firestore(), "site_feedback/steps"), v2(null, { selectedSteps: ["payment", "garment_type"] })),
+  ),
+);
+const stepsRead = (await step(27, () =>
+  assertSucceeds(getDoc(doc(admin.firestore(), "site_feedback/steps"))),
+)) as { data(): { selectedSteps?: unknown } };
+assert.deepEqual(stepsRead.data().selectedSteps, ["payment", "garment_type"]);
+await step(28, () => assertFails(getDoc(doc(guest.firestore(), "site_feedback/steps"))));
+// Unknown id, duplicate, non-list, and more than the ten steps are rejected.
+await step(29, () =>
+  assertFails(setDoc(doc(guest.firestore(), "site_feedback/badstep"), v2(null, { selectedSteps: ["payment", "checkout"] }))),
+);
+await step(30, () =>
+  assertFails(setDoc(doc(guest.firestore(), "site_feedback/dupstep"), v2(null, { selectedSteps: ["fabric", "fabric"] }))),
+);
+await step(31, () =>
+  assertFails(setDoc(doc(guest.firestore(), "site_feedback/strstep"), v2(null, { selectedSteps: "fabric" }))),
+);
+await step(32, () =>
+  assertFails(
+    setDoc(
+      doc(guest.firestore(), "site_feedback/toomanysteps"),
+      v2(null, {
+        selectedSteps: [
+          "garment_type",
+          "fabric",
+          "design_style",
+          "custom_details",
+          "personalized_additions",
+          "measurement",
+          "try_on",
+          "summary",
+          "shipping",
+          "payment",
+          "payment",
+        ],
+      }),
+    ),
+  ),
+);
+// Empty list and the full allowed set are optional, not mandatory.
+await step(33, () =>
+  assertSucceeds(setDoc(doc(guest.firestore(), "site_feedback/emptysteps"), v2(null, { selectedSteps: [] }))),
+);
+await step(34, () =>
+  assertSucceeds(
+    setDoc(
+      doc(guest.firestore(), "site_feedback/allsteps"),
+      v2(null, {
+        selectedSteps: [
+          "garment_type",
+          "fabric",
+          "design_style",
+          "custom_details",
+          "personalized_additions",
+          "measurement",
+          "try_on",
+          "summary",
+          "shipping",
+          "payment",
+        ],
+      }),
+    ),
+  ),
+);
+// Signed-in customers can attach their own uid and a step selection.
+const customer = env.authenticatedContext("cust-1", { firebase: { sign_in_provider: "password" } });
+await step(35, () =>
+  assertSucceeds(
+    setDoc(
+      doc(customer.firestore(), "site_feedback/signedin"),
+      v2(null, { selectedSteps: ["summary"], uid: "cust-1" }),
+    ),
+  ),
+);
 
 // --- Storage ---------------------------------------------------------------------
 const meta = { contentType: "image/png" };

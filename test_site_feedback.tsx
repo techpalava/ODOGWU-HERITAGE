@@ -7,9 +7,13 @@ import {
   SITE_FEEDBACK_NATIONALITY_OPTIONS,
   SITE_FEEDBACK_OPTIONAL_KEYS,
   SITE_FEEDBACK_REQUIRED_KEYS,
+  SITE_FEEDBACK_STEP_IDS,
+  SITE_FEEDBACK_STEP_OPTIONS,
   buildSiteFeedbackPhotoPath,
   siteFeedbackNationalityLabel,
+  siteFeedbackSelectedStepLabels,
   validateSiteFeedbackPhoto,
+  validateSiteFeedbackSteps,
   SITE_FEEDBACK_RATE_LIMIT,
   buildSiteFeedbackCreatePayload,
   readSiteFeedbackSends,
@@ -64,6 +68,7 @@ assert.equal(payload.userAgent.length, SITE_FEEDBACK_LIMITS.userAgentMax);
 assert.equal(payload.status, "new");
 assert.equal(payload.schemaVersion, 2);
 assert.equal(payload.nationality, null);
+assert.equal(payload.selectedSteps, null);
 assert.equal(payload.photoPath, null);
 assert.equal(payload.photoContentType, null);
 assert.equal(payload.photoSizeBytes, null);
@@ -107,7 +112,66 @@ const withPhoto = buildSiteFeedbackCreatePayload(good.value, { page: "/", tab: "
 assert.equal(withPhoto.photoPath, "site-feedback/u/d/photo.png");
 assert.equal(withPhoto.photoContentType, "image/png");
 assert.equal(withPhoto.photoSizeBytes, 1234);
+assert.equal(withPhoto.selectedSteps, null);
 assert.deepEqual(Object.keys(withPhoto).sort(), [...SITE_FEEDBACK_CREATE_KEYS].sort());
+
+// --- optional steps (ids persisted, names stay customer-facing) ------------
+assert.deepEqual(
+  SITE_FEEDBACK_STEP_OPTIONS.map((step) => step.label),
+  [
+    "Step 1: Garment Type",
+    "Step 2: Fabric",
+    "Step 3: Design Style",
+    "Step 4: Custom Details",
+    "Step 5: Personalized Additions",
+    "Step 6: Measurement",
+    "Step 7: AI Try-on",
+    "Step 8: Summary",
+    "Step 9: Delivery & Pickup",
+    "Step 10: Order Review & Payment",
+  ],
+);
+assert.deepEqual(validateSiteFeedbackSteps(undefined), { ok: true, selectedSteps: null });
+assert.deepEqual(validateSiteFeedbackSteps(null), { ok: true, selectedSteps: null });
+assert.deepEqual(validateSiteFeedbackSteps([]), { ok: true, selectedSteps: null });
+assert.equal(validateSiteFeedbackSteps("fabric").ok, false);
+assert.equal(validateSiteFeedbackSteps(["not_a_step"]).ok, false);
+assert.equal(validateSiteFeedbackSteps(["fabric", "fabric"]).ok, false);
+assert.equal(validateSiteFeedbackSteps(["fabric", 2]).ok, false);
+const orderedSteps = validateSiteFeedback({
+  type: "idea",
+  message: "Hello there",
+  selectedSteps: ["payment", "garment_type", "fabric"],
+});
+assert.deepEqual(orderedSteps, {
+  ok: true,
+  value: {
+    type: "idea",
+    message: "Hello there",
+    email: null,
+    selectedSteps: ["garment_type", "fabric", "payment"],
+  },
+});
+const noneSelected = validateSiteFeedback({ type: "bug", message: "Button broke", selectedSteps: [] });
+assert.equal(noneSelected.ok, true);
+if (noneSelected.ok) assert.equal("selectedSteps" in noneSelected.value, false);
+assert.ok(orderedSteps.ok);
+const stepsPayload = buildSiteFeedbackCreatePayload(
+  orderedSteps.value,
+  { page: "/design", tab: "design", studioStep: "fabric", userAgent: "UA", viewport: "390x844", uid: null },
+  "T",
+);
+assert.equal(stepsPayload.message, "Hello there");
+assert.deepEqual(stepsPayload.selectedSteps, ["garment_type", "fabric", "payment"]);
+assert.deepEqual(
+  siteFeedbackSelectedStepLabels(stepsPayload.selectedSteps),
+  ["Step 1: Garment Type", "Step 2: Fabric", "Step 10: Order Review & Payment"],
+);
+assert.deepEqual(siteFeedbackSelectedStepLabels(null), []);
+assert.deepEqual(siteFeedbackSelectedStepLabels(["summary", "retired_step"]), [
+  "Step 8: Summary",
+  "retired_step",
+]);
 
 const { fitSiteFeedbackPhoto } = await import("./src/utils/siteFeedbackPhoto");
 assert.deepEqual(fitSiteFeedbackPhoto(800, 600), { width: 800, height: 600 });
@@ -134,6 +198,19 @@ assert.deepEqual(
   hasOnly[1].split(",").map((key) => key.trim().replace(/"/g, "")).filter(Boolean).sort(),
   [...SITE_FEEDBACK_CREATE_KEYS].sort(),
 );
+const stepsRule = rules.match(/function hasValidSiteFeedbackSteps\(data\) \{([\s\S]*?)\n    \}/);
+assert.ok(stepsRule, "selectedSteps rule exists");
+const stepsAllow = stepsRule[1].match(/hasOnly\(\[([\s\S]*?)\]\)/);
+assert.ok(stepsAllow, "selectedSteps rule lists allowed ids");
+assert.deepEqual(
+  listOf(stepsAllow[1]),
+  [...SITE_FEEDBACK_STEP_IDS].sort(),
+  "rules allow exactly the current customer-facing step ids",
+);
+assert.match(stepsRule[1], /!\("selectedSteps" in data\)/);
+assert.match(stepsRule[1], /data\.selectedSteps == null/);
+assert.match(stepsRule[1], /data\.selectedSteps\.size\(\) == data\.selectedSteps\.toSet\(\)\.size\(\)/);
+assert.match(rules, /hasValidSiteFeedbackSteps\(data\)/);
 const feedbackMatch = rules.match(/match \/site_feedback\/\{feedbackId\} \{([\s\S]*?)\n    \}/);
 assert.ok(feedbackMatch, "site_feedback rules block exists");
 assert.match(feedbackMatch[1], /allow create: if hasValidSiteFeedbackCreate\(request\.resource\.data, feedbackId\);/);
@@ -379,6 +456,8 @@ try {
   assert.equal(dialogs.length, 1, "a single feedback panel");
   assert.match(text(dialogs[0]), /Send feedback/);
   assert.ok(dialogs[0].findByType("form"));
+  assert.ok(dialogs[0].findByProps({ "data-site-feedback-steps": "true" }), "header Feedback opens the same step list");
+  assert.equal(dialogs[0].findAllByType("textarea").length, 1);
   assert.equal(root.findByProps({ "data-site-feedback-tab": "true" }).props["aria-expanded"], true);
 
   // Closing works as before.
@@ -419,11 +498,116 @@ try {
     const dialog = orderTree!.root.find((n) => n.props?.role === "dialog" && n.type === "div");
     const maybeLater = dialog.findByProps({ "data-site-feedback-maybe-later": "true" });
     assert.equal(text(maybeLater).trim(), "Maybe later");
+    assert.ok(dialog.findByProps({ "data-site-feedback-steps": "true" }), "step prompt uses the same optional step list");
+    assert.equal(dialog.findAllByType("textarea").length, 1);
     await act(async () => maybeLater.props.onClick());
     assert.equal(orderTree!.root.findAll((n) => n.props?.role === "dialog").length, 0);
   } finally {
     act(() => orderTree?.unmount());
     useAppStore.setState(original, true);
+  }
+}
+
+// --- select, deselect, one shared comment -----------------------------------
+{
+  const stepSubmits: Array<{
+    value: { message?: string; selectedSteps?: string[] };
+    photo: File | null;
+    tab: string;
+  }> = [];
+  let stepTree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  const clearSends = () => {
+    try {
+      globalThis.localStorage?.removeItem(SITE_FEEDBACK_RATE_LIMIT.storageKey);
+    } catch {
+      // No storage in this runner: the rate limit is a no-op.
+    }
+  };
+  try {
+    clearSends();
+    useAppStore.setState({
+      activeTab: "design",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      stepTree = create(
+        <SiteFeedbackButton
+          submit={async (value, context, photo) => {
+            stepSubmits.push({ value, photo, tab: context.tab });
+            return "doc-steps";
+          }}
+        />,
+      );
+    });
+    await act(async () => stepTree!.root.findByProps({ "data-site-feedback-tab": "true" }).props.onClick());
+    const dialog = () => stepTree!.root.find((n) => n.props?.role === "dialog" && n.type === "div");
+    const boxes = () =>
+      dialog().findAll(
+        (node) =>
+          node.type === "input" &&
+          node.props.type === "checkbox" &&
+          typeof node.props["data-site-feedback-step"] === "string",
+      );
+    assert.equal(dialog().findAllByType("textarea").length, 1, "one shared comment field");
+    assert.deepEqual(
+      boxes().map((box) => box.props["data-site-feedback-step"]),
+      [...SITE_FEEDBACK_STEP_IDS],
+    );
+    assert.deepEqual(
+      boxes().map((box) => text(box.parent as ReactTestInstance).replace(/\s+/g, " ").trim()),
+      SITE_FEEDBACK_STEP_OPTIONS.map((step) => step.label),
+    );
+    assert.ok(boxes().every((box) => box.props.checked === false));
+
+    await act(async () =>
+      dialog().findByType("textarea").props.onChange({ target: { value: "General note about the site." } }),
+    );
+    await act(async () => dialog().findByType("form").props.onSubmit({ preventDefault() {} }));
+    assert.equal(stepSubmits.length, 1);
+    assert.equal(stepSubmits[0].value.message, "General note about the site.");
+    assert.equal(stepSubmits[0].tab, "design");
+    assert.equal(stepSubmits[0].value.selectedSteps, undefined, "unticked steps are not required");
+    assert.equal(stepSubmits[0].photo, null);
+
+    await act(async () => stepTree!.root.findByProps({ "aria-label": "Close feedback" }).props.onClick());
+    await act(async () => stepTree!.root.findByProps({ "data-site-feedback-tab": "true" }).props.onClick());
+    assert.ok(boxes().every((box) => box.props.checked === false), "a sent form clears the ticks");
+
+    const clickStep = async (id: string) => {
+      const box = boxes().find((node) => node.props["data-site-feedback-step"] === id);
+      assert.ok(box, id);
+      await act(async () => box.props.onChange());
+    };
+    await clickStep("payment");
+    await clickStep("fabric");
+    await clickStep("garment_type");
+    assert.equal(boxes().find((box) => box.props["data-site-feedback-step"] === "payment")?.props.checked, true);
+    await clickStep("payment");
+    assert.equal(boxes().find((box) => box.props["data-site-feedback-step"] === "payment")?.props.checked, false);
+    assert.equal(boxes().find((box) => box.props["data-site-feedback-step"] === "fabric")?.props.checked, true);
+    assert.equal(boxes().find((box) => box.props["data-site-feedback-step"] === "garment_type")?.props.checked, true);
+
+    clearSends();
+    await act(async () =>
+      dialog().findByType("textarea").props.onChange({ target: { value: "Fabric and garment type were confusing." } }),
+    );
+    await act(async () => dialog().findByType("form").props.onSubmit({ preventDefault() {} }));
+    assert.equal(stepSubmits.length, 2);
+    assert.equal(stepSubmits[1].value.message, "Fabric and garment type were confusing.");
+    assert.deepEqual(stepSubmits[1].value.selectedSteps, ["garment_type", "fabric"]);
+    assert.equal(dialog().findAllByType("textarea").length, 0);
+    assert.equal(stepSubmits[1].photo, null);
+  } finally {
+    act(() => stepTree?.unmount());
+    useAppStore.setState(original, true);
+    clearSends();
   }
 }
 

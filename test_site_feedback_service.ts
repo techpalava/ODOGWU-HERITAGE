@@ -42,6 +42,7 @@ const makeDeps = (calls: string[], signedInUid: string | null = null) => {
   assert.deepEqual(calls, ["write:fb1"]);
   assert.equal(written[0].photoPath, null);
   assert.equal(written[0].nationality, null);
+  assert.equal(written[0].selectedSteps, null);
   assert.equal(written[0].uid, null, "guests keep uid null");
   assert.equal(written[0].schemaVersion, 2);
   assert.deepEqual(
@@ -63,6 +64,28 @@ const makeDeps = (calls: string[], signedInUid: string | null = null) => {
   assert.equal(written[0].photoSizeBytes, 321);
   assert.equal(written[0].nationality, "NG");
   assert.equal(written[0].uid, null, "anonymous upload identity is not recorded as a signed-in uid");
+}
+
+// Selected steps are stored on the same document as the one comment.
+{
+  const calls: string[] = [];
+  const { deps, written } = makeDeps(calls);
+  await submitSiteFeedback(
+    {
+      type: "idea",
+      message: "Fabric and garment type were confusing.",
+      email: null,
+      selectedSteps: ["garment_type", "fabric"],
+    },
+    context,
+    null,
+    deps,
+  );
+  assert.deepEqual(calls, ["write:fb1"]);
+  assert.equal(written[0].message, "Fabric and garment type were confusing.");
+  assert.deepEqual(written[0].selectedSteps, ["garment_type", "fabric"]);
+  assert.equal(written[0].photoPath, null);
+  assert.equal(written[0].uid, null);
 }
 
 // Signed-in user: uid recorded.

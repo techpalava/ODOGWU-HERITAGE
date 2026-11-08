@@ -5,6 +5,7 @@ import {
   SITE_FEEDBACK_LIMITS,
   SITE_FEEDBACK_NATIONALITY_OPTIONS,
   SITE_FEEDBACK_PHOTO_TYPES,
+  SITE_FEEDBACK_STEP_OPTIONS,
   SITE_FEEDBACK_TYPES,
   SITE_FEEDBACK_TYPE_LABELS,
   readSiteFeedbackSends,
@@ -123,6 +124,7 @@ export function SiteFeedbackButton({
   const [email, setEmail] = useState("");
   const [honeypot, setHoneypot] = useState("");
   const [nationality, setNationality] = useState("");
+  const [selectedSteps, setSelectedSteps] = useState<string[]>([]);
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<{
@@ -230,6 +232,7 @@ export function SiteFeedbackButton({
     if (sent) {
       setMessage("");
       setType("idea");
+      setSelectedSteps([]);
       setPhoto(null);
       setSent(false);
     }
@@ -301,7 +304,13 @@ export function SiteFeedbackButton({
     event.preventDefault();
     if (sending) return;
     setSubmitError(null);
-    const validation = validateSiteFeedback({ type, message, email, nationality });
+    const validation = validateSiteFeedback({
+      type,
+      message,
+      email,
+      nationality,
+      selectedSteps,
+    });
     if (validation.ok === false) {
       // tsconfig is not strict, so narrow explicitly.
       const failure = validation as Extract<SiteFeedbackValidation, { ok: false }>;
@@ -363,6 +372,13 @@ export function SiteFeedbackButton({
     } finally {
       setSending(false);
     }
+  };
+
+  const toggleStep = (id: string) => {
+    setSelectedSteps((current) =>
+      current.includes(id) ? current.filter((stepId) => stepId !== id) : [...current, id],
+    );
+    if (fieldError?.field === "steps") setFieldError(null);
   };
 
   const hidden = isCartOpen || isMobileMenuOpen || open;
@@ -488,6 +504,47 @@ export function SiteFeedbackButton({
                       </label>
                     ))}
                   </div>
+                </fieldset>
+
+                <fieldset data-site-feedback-steps="true">
+                  <legend className="mb-1.5 text-xs font-bold uppercase tracking-wider text-heritage-green">
+                    Steps <span className="font-normal normal-case tracking-normal text-heritage-ink/55">(optional)</span>
+                  </legend>
+                  <p id={`${ids}-steps-hint`} className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
+                    Tick any steps this is about. The message below covers every step you tick.
+                  </p>
+                  <div
+                    className="grid grid-cols-1 gap-1.5"
+                    role="group"
+                    aria-describedby={`${ids}-steps-hint`}
+                  >
+                    {SITE_FEEDBACK_STEP_OPTIONS.map((step) => (
+                      <label
+                        key={step.id}
+                        className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2 text-sm transition focus-within:ring-2 focus-within:ring-heritage-gold ${
+                          selectedSteps.includes(step.id)
+                            ? "border-heritage-green bg-heritage-green/5 text-heritage-green"
+                            : "border-heritage-gold/40 bg-white text-heritage-ink hover:bg-heritage-gold/10"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          name={`${ids}-steps`}
+                          value={step.id}
+                          checked={selectedSteps.includes(step.id)}
+                          data-site-feedback-step={step.id}
+                          onChange={() => toggleStep(step.id)}
+                          className="h-4 w-4 shrink-0 accent-heritage-green"
+                        />
+                        {step.label}
+                      </label>
+                    ))}
+                  </div>
+                  {errorFor("steps") && (
+                    <p className="mt-1 text-xs text-red-700" role="alert" data-site-feedback-steps-error="true">
+                      {errorFor("steps")}
+                    </p>
+                  )}
                 </fieldset>
 
                 <div>
