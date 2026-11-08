@@ -402,7 +402,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
 {
   const studio = readFileSync("src/components/DesignStudioView.tsx", "utf8");
   assert.match(studio, /futureAiTryOnInputFingerprintRef\.current/, "completion reads the design as it is now");
-  assert.match(studio, /target\.inputFingerprint !== inputFingerprint\) return;/, "stale previews never complete the step");
+  assert.match(studio, /!aiTryOnPreviewFingerprintIsCurrent\(target, inputFingerprint\)\) return;/, "stale previews never complete the step");
   assert.match(studio, /aiTryOnBackgroundJobs\.resume\(/);
   assert.match(studio, /<AiTryOnBackgroundToasts/);
   assert.match(studio, /<AiTryOnGeneratingChip/);
