@@ -1229,6 +1229,7 @@ class FakeFirestore {
         const previous = options?.merge ? this.docs.get(ref.path) || {} : {};
         this.docs.set(ref.path, { ...previous, ...data });
       },
+      delete: (ref: { path: string }) => void this.docs.delete(ref.path),
     });
   }
   asFirestore() {

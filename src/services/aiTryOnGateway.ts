@@ -370,7 +370,9 @@ export type AiTryOnPreviewOutcome =
   | { kind: "busy"; jobId: string; retryAfterSeconds: number | null }
   /** Still over capacity after the retries; refund may be unconfirmed. */
   | { kind: "busy_failed"; orderTriesRemaining: number | null; accountTriesRemaining?: number; tryRefunded?: boolean }
-  | { kind: "unavailable" };
+  | { kind: "unavailable" }
+  /** Another tab or device is making this preview; no try was used. */
+  | { kind: "in_progress" };
 
 const BUSY_JOB_ID_PATTERN = /^busy-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -431,6 +433,8 @@ export const mapAiTryOnPreviewResponse = (
         retryAfterSeconds:
           typeof error.retryAfterSeconds === "number" ? error.retryAfterSeconds : null,
       };
+    case "BUSY_JOB_ACTIVE":
+      return { kind: "in_progress" };
     case "PROVIDER_REJECTED":
       return { kind: "photo_blocked", orderTriesRemaining: remaining, ...account, ...refund };
     case "PROVIDER_BUSY":

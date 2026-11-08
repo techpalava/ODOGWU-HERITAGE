@@ -165,6 +165,7 @@ type PanelMessage =
   | { kind: "out_of_previews" }
   | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
+  | { kind: "in_progress" }
   | { kind: "failed"; left: number; tryRefunded?: boolean }
   /** Still busy after the retries. */
   | { kind: "busy_failed"; tryRefunded?: boolean }
@@ -178,6 +179,8 @@ const messageText = (message: PanelMessage): string => {
       return AI_TRY_ON_MESSAGES.accountOutOfPreviews;
     case "too_many_tries":
       return AI_TRY_ON_MESSAGES.tooManyTries;
+    case "in_progress":
+      return AI_TRY_ON_BACKGROUND_COPY.inProgressBody;
     case "failed":
       return AI_TRY_ON_MESSAGES.failed(message.left, message.tryRefunded);
     case "busy_failed":
@@ -864,6 +867,10 @@ export const AiTryOnPhotoPanel = ({
         break;
       case "rate_limited":
         show({ kind: "too_many_tries" });
+        break;
+      case "in_progress":
+        // Blocked before any charge: tries left are unchanged.
+        show({ kind: "in_progress" });
         break;
       case "photo_blocked":
         if (outcome.orderTriesRemaining !== null) setTriesRemaining(outcome.orderTriesRemaining);
