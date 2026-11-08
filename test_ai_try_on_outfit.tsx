@@ -102,7 +102,7 @@ await click(data("data-ai-try-on-outfit-mode")[0]);
 assert.equal(panel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:"))[0].props.src, outfitSrc, "outfit survives switching");
 const entries = selectAiTryOnOrderPreviews(aiTryOnOrderPreviewTargets([target]), [...saved.values()]);
 assert.equal(entries.length, 3, "Summary/Review/payment transfer have two individuals plus outfit");
-assert.ok(entries.some((entry) => entry.label === "Ada — Combined outfit"));
+assert.ok(entries.some((entry) => entry.label === "Ada — Combined outfit (shirt-chosen + trouser)"), "the outfit names its pair (M1)");
 await act(async () => { panel.unmount(); });
 // Reload reads the one stored outfit slot without generation or another try.
 await act(async () => { panel = create(createElement(AiTryOnPhotoPanel, { ...props, storedPreviews: [...saved.values()].map((entry) => ({ ...entry, expiresAt: "2026-12-01T00:00:00Z" })), loadStoredPreview: async (id) => ({ mimeType: "image/webp", data: Buffer.from(id).toString("base64") }), jobStore: createAiTryOnBackgroundJobs({ storage: null }) })); });
