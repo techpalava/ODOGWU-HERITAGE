@@ -14,6 +14,7 @@ import {
   type AiTryOnFitHint,
 } from "./aiTryOnFitHints.js";
 import {
+  AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
   type AiTryOnGenerationRequest,
 } from "./aiTryOnGatewayContract.js";
@@ -385,6 +386,8 @@ export const createAiTryOnVisualInputFingerprint = (
     personalizedInputRevision: input.personalizedInputRevision || null,
     ...(measurementFitHints ? { measurementFitHints } : {}),
     promptVersion: AI_TRY_ON_PROMPT_VERSION,
+    ...(garmentDesigns?.some((design) => design.sourceKind === "uploaded")
+      ? { uploadedDesignPromptVersion: AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION } : {}),
     orderDetails: orderDetailsFingerprintIdentity(input.orderDetails),
     customerPhotoAssetIdentity:
       privatePhoto &&
