@@ -1,3 +1,4 @@
+import { aiTryOnPreviewTargets } from "../utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -404,7 +405,8 @@ export const AiTryOnPhotoPanel = ({
     const job = wearerId ? jobs[wearerId] : undefined;
     return job && job.scope === jobScope ? job : null;
   };
-  const anyGenerating = targets.some((entry) => jobFor(entry.wearerId)?.status === "running");
+  const previewTargets = aiTryOnPreviewTargets(targets);
+  const anyGenerating = previewTargets.some((entry) => jobFor(entry.wearerId)?.status === "running");
   const onGeneratingChangeRef = useRef(onGeneratingChange);
   onGeneratingChangeRef.current = onGeneratingChange;
   const onPreviewCreatedRef = useRef(onPreviewCreated);
@@ -494,17 +496,31 @@ export const AiTryOnPhotoPanel = ({
 
   const target =
     targets.find((entry) => entry.wearerId === selectedWearerId) || targets[0] || null;
+  const previewableGarments = target?.previewableGarments ?? [];
+  const selectedPreview: AiTryOnPreviewableGarment | null =
+    previewableGarments.find(
+      (garment) => garment.garmentKey === selectedGarmentKeyByWearer[target?.wearerId || ""],
+    ) ||
+    previewableGarments[0] ||
+    null;
+  const previewTarget = target ? aiTryOnPreviewTargets([target]).find((entry) =>
+    target.previewableGarments && target.previewableGarments.length > 1
+      ? entry.previewableGarments?.[0]?.garmentKey === selectedPreview?.garmentKey
+      : entry.wearerId === target.wearerId,
+  ) ?? target : null;
+  const previewKey = previewTarget?.wearerId ?? "";
   const measurementTarget =
     targets.find((entry) => entry.wearerId === measurementWearerId) || target;
   /** This wearer's request is running (other wearers may still be chosen). */
-  const generating = jobFor(target?.wearerId)?.status === "running";
-  const busy = generating && Boolean(jobFor(target?.wearerId)?.busy);
+  const generating = jobFor(previewKey)?.status === "running";
+  const wearerGenerating = target && aiTryOnPreviewTargets([target]).some((entry) => jobFor(entry.wearerId)?.status === "running");
+  const busy = generating && Boolean(jobFor(previewKey)?.busy);
 
   // Tell the job store who is on screen: a request that ends while its
   // wearer is shown here reports inline, otherwise with a toast.
   useEffect(() => {
-    jobStore.setVisibleWearer(target?.wearerId ?? null);
-  }, [jobStore, target?.wearerId]);
+    jobStore.setVisibleWearer(previewKey || null);
+  }, [jobStore, previewKey]);
   useEffect(() => () => jobStore.setVisibleWearer(null), [jobStore]);
   const showPicker = targets.length > 1;
   // Tries shown = the smaller of the order's and (signed in) the account's.
@@ -515,16 +531,14 @@ export const AiTryOnPhotoPanel = ({
   const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
   const preview =
     target && target.inputFingerprint
-      ? previews[target.wearerId]?.inputFingerprint === target.inputFingerprint
-        ? previews[target.wearerId]
+      ? previews[previewKey]?.inputFingerprint === target.inputFingerprint
+        ? previews[previewKey]
         : null
       : null;
   const hasPreview = (entry: AiTryOnWearerTarget) =>
-    Boolean(
-      entry.inputFingerprint &&
-        (previews[entry.wearerId]?.inputFingerprint === entry.inputFingerprint ||
-          stored[entry.wearerId]?.inputFingerprint === entry.inputFingerprint),
-    );
+    aiTryOnPreviewTargets([entry]).some((item) => Boolean(item.inputFingerprint &&
+      (previews[item.wearerId]?.inputFingerprint === item.inputFingerprint ||
+       stored[item.wearerId]?.inputFingerprint === item.inputFingerprint)));
 
   // A session list can arrive after mount (or a later refetch). Adopt it
   // without bringing back a preview the customer deleted here.
@@ -560,7 +574,7 @@ export const AiTryOnPhotoPanel = ({
       let changed = false;
       const next = { ...current };
       for (const [wearerId, entry] of Object.entries(current)) {
-        const match = targets.find((item) => item.wearerId === wearerId);
+        const match = previewTargets.find((item) => item.wearerId === wearerId);
         if (!match?.inputFingerprint || match.inputFingerprint === entry.inputFingerprint) continue;
         delete next[wearerId];
         changed = true;
@@ -574,12 +588,12 @@ export const AiTryOnPhotoPanel = ({
   // It does not generate and does not use another try.
   useEffect(() => {
     if (!target?.inputFingerprint) return;
-    const summary = stored[target.wearerId];
+    const summary = stored[previewKey];
     if (!summary || summary.inputFingerprint !== target.inputFingerprint) return;
-    if (previews[target.wearerId]?.inputFingerprint === target.inputFingerprint) return;
+    if (previews[previewKey]?.inputFingerprint === target.inputFingerprint) return;
     if (restoringRef.current.has(summary.previewId)) return;
     restoringRef.current.add(summary.previewId);
-    const wearerId = target.wearerId;
+    const wearerId = previewKey;
     const fingerprint = summary.inputFingerprint;
     void loadStoredPreview(summary.previewId).then((image) => {
       restoringRef.current.delete(summary.previewId);
@@ -610,16 +624,16 @@ export const AiTryOnPhotoPanel = ({
       const restoredModelId = summary.modelId;
       if (restoredModelId && findAiTryOnDefaultModel(restoredModelId)) {
         updateModelByWearer((current) =>
-          current[wearerId] ? current : { ...current, [wearerId]: restoredModelId },
+          current[target.wearerId] ? current : { ...current, [target.wearerId]: restoredModelId },
         );
         setModelPickerOpen(true);
       }
     });
-  }, [target?.wearerId, target?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews]);
+  }, [previewKey, target?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews]);
 
   const handleDeletePreview = async () => {
     if (!target || !preview?.storedPreviewId || deleting) return;
-    const wearerId = target.wearerId;
+    const wearerId = previewKey;
     const previewId = preview.storedPreviewId;
     setDeleting(true);
     try {
@@ -640,24 +654,18 @@ export const AiTryOnPhotoPanel = ({
         delete next[wearerId];
         return next;
       });
-      // Clearing the preview also clears this wearer's model choice.
-      updateModelByWearer((current) => {
-        const next = { ...current };
-        delete next[wearerId];
-        return next;
-      });
+      if (previewableGarments.length <= 1) {
+        updateModelByWearer((current) => {
+          const next = { ...current };
+          delete next[target.wearerId];
+          return next;
+        });
+      }
       setMessage({ kind: "preview_deleted" });
     } finally {
       setDeleting(false);
     }
   };
-  const previewableGarments = target?.previewableGarments ?? [];
-  const selectedPreview: AiTryOnPreviewableGarment | null =
-    previewableGarments.find(
-      (garment) => garment.garmentKey === selectedGarmentKeyByWearer[target?.wearerId || ""],
-    ) ||
-    previewableGarments[0] ||
-    null;
   const showGarmentPicker = previewableGarments.length > 1;
   // One Generate sends exactly one catalogue picture and that garment's swatch.
   const garmentImageUrl = selectedPreview?.garmentImageUrl ?? target?.garmentImageUrl ?? null;
@@ -670,7 +678,7 @@ export const AiTryOnPhotoPanel = ({
     Boolean(target?.inputFingerprint) &&
     !missingGarmentImage &&
     Boolean(currentPhoto || currentModel) &&
-    !generating &&
+    !wearerGenerating &&
     !preparingPhoto &&
     left > 0;
 
@@ -781,7 +789,10 @@ export const AiTryOnPhotoPanel = ({
         return next;
       });
       // The photo has done its job; drop it from memory.
-      if (photoRef.current?.wearerId === wearerId) clearPhoto();
+      const owner = targets.find((entry) =>
+        aiTryOnPreviewTargets([entry]).some((item) => item.wearerId === wearerId),
+      );
+      if (owner && photoRef.current?.wearerId === owner.wearerId) clearPhoto();
       if (live && outcome?.kind === "completed") {
         setTriesRemaining(
           (current) => outcome.orderTriesRemaining ?? Math.max(0, (current ?? triesPerOrder) - 1),
@@ -846,7 +857,7 @@ export const AiTryOnPhotoPanel = ({
   useEffect(() => {
     for (const job of Object.values(jobs)) {
       if (job.scope !== jobScope || job.status === "running" || job.appliedByPanel) continue;
-      if (!targets.some((entry) => entry.wearerId === job.wearerId)) continue;
+      if (!previewTargets.some((entry) => entry.wearerId === job.wearerId)) continue;
       jobStore.markAppliedByPanel(job.wearerId);
       applyJob(job);
     }
@@ -860,7 +871,7 @@ export const AiTryOnPhotoPanel = ({
     for (const job of Object.values(jobs)) {
       if (job.scope !== jobScope || job.status !== "completed" || !job.preview) continue;
       if (job.storedPreviewId && dismissedPreviewIdsRef.current.has(job.storedPreviewId)) continue;
-      const match = targets.find((entry) => entry.wearerId === job.wearerId);
+      const match = previewTargets.find((entry) => entry.wearerId === job.wearerId);
       if (!match || match.inputFingerprint !== job.inputFingerprint) continue;
       const image = job.preview;
       commitPreviews((current) =>
@@ -883,12 +894,16 @@ export const AiTryOnPhotoPanel = ({
   // "View preview" from a toast: show that wearer, then scroll to and
   // briefly highlight the preview.
   const focusJob = Object.values(jobs).find(
-    (job) => job.scope === jobScope && job.focusRequested && targets.some((entry) => entry.wearerId === job.wearerId),
+    (job) => job.scope === jobScope && job.focusRequested && previewTargets.some((entry) => entry.wearerId === job.wearerId),
   );
   useEffect(() => {
     if (!focusJob) return;
-    if (focusJob.wearerId !== target?.wearerId) {
-      selectWearer(focusJob.wearerId);
+    if (focusJob.wearerId !== previewKey) {
+      const owner = targets.find((entry) => aiTryOnPreviewTargets([entry]).some((item) => item.wearerId === focusJob.wearerId));
+      if (!owner) return;
+      if (owner.wearerId !== target?.wearerId) selectWearer(owner.wearerId);
+      const garment = previewTargets.find((entry) => entry.wearerId === focusJob.wearerId)?.previewableGarments?.[0];
+      if (garment) setSelectedGarmentKeyByWearer((current) => ({ ...current, [owner.wearerId]: garment.garmentKey }));
       return;
     }
     // "Try again" (or a preview that no longer matches): show the wearer only.
@@ -907,7 +922,7 @@ export const AiTryOnPhotoPanel = ({
       setHighlightResult(true);
     }, 150);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusJob?.wearerId, focusJob?.focusRequested, target?.wearerId, preview]);
+  }, [focusJob?.wearerId, focusJob?.focusRequested, previewKey, preview]);
   useEffect(
     () => () => {
       if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
@@ -928,8 +943,8 @@ export const AiTryOnPhotoPanel = ({
       setMessage(outOfPreviews);
       return;
     }
-    if (jobStore.isRunning(target.wearerId)) return;
-    const wearerId = target.wearerId;
+    if (aiTryOnPreviewTargets([target]).some((entry) => jobStore.isRunning(entry.wearerId))) return;
+    const wearerId = previewKey;
     const inputFingerprint = target.inputFingerprint;
     setMessage(null);
     if (currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
@@ -960,7 +975,7 @@ export const AiTryOnPhotoPanel = ({
     // when the customer moves to another step.
     jobStore.start({
       wearerId,
-      wearerName: targets.length > 1 ? target.label : null,
+      wearerName: previewTargets.length > 1 ? previewTarget?.label ?? target.label : null,
       inputFingerprint,
       scope: jobScope,
       modelId: model ? model.id : null,

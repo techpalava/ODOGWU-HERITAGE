@@ -345,7 +345,7 @@ import {
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
-import { buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
+import { aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
 import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
@@ -9247,7 +9247,7 @@ export default function DesignStudioView({
   }) => {
     // The request may end long after Generate (background): read the
     // design as it is now, and skip a preview of a design since changed.
-    const target = aiTryOnWearerTargetsRef.current.find((entry) => entry.wearerId === wearerId);
+    const target = aiTryOnPreviewTargets(aiTryOnWearerTargetsRef.current).find((entry) => entry.wearerId === wearerId);
     if (!target || target.inputFingerprint !== inputFingerprint) return;
     setFutureAiTryOnWorkflow((current) =>
       recordAiTryOnPreviewCompletion({
@@ -9331,7 +9331,7 @@ export default function DesignStudioView({
     [aiTryOnCredentials],
   );
   const aiTryOnOrderPreviewEntries = aiTryOnOrderPreviewStageActive
-    ? selectAiTryOnOrderPreviews(aiTryOnWearerTargets, aiTryOnOrderPreviewSummaries)
+    ? selectAiTryOnOrderPreviews(aiTryOnPreviewTargets(aiTryOnWearerTargets), aiTryOnOrderPreviewSummaries)
     : [];
   const aiTryOnOrderPreviewsNode =
     aiTryOnOrderPreviewEntries.length > 0 ? (
@@ -9347,7 +9347,7 @@ export default function DesignStudioView({
   function rememberAiTryOnOrderSelection(orderId: string) {
     const selections = aiTryOnOrderPreviewEntries.flatMap((entry) => {
       if (entry.kind !== "fresh") return [];
-      const target = aiTryOnWearerTargets.find((item) => item.wearerId === entry.wearerId);
+      const target = aiTryOnPreviewTargets(aiTryOnWearerTargets).find((item) => item.wearerId === entry.wearerId);
       return target?.inputFingerprint
         ? [
             {
@@ -11430,8 +11430,8 @@ export default function DesignStudioView({
           .map((job) => ({
             ...job,
             wearerName:
-              aiTryOnWearerTargets.length > 1
-                ? aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)?.label ??
+              aiTryOnPreviewTargets(aiTryOnWearerTargets).length > 1
+                ? aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId)?.label ??
                   job.wearerName
                 : null,
           }))}
@@ -12240,14 +12240,14 @@ export default function DesignStudioView({
             job: {
               ...job,
               wearerName:
-                aiTryOnWearerTargets.length > 1
-                  ? aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)?.label ??
+                aiTryOnPreviewTargets(aiTryOnWearerTargets).length > 1
+                  ? aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId)?.label ??
                     job.wearerName
                   : null,
             },
             kind: aiTryOnToastKind(
               job,
-              aiTryOnWearerTargets.find((entry) => entry.wearerId === job.wearerId)
+              aiTryOnPreviewTargets(aiTryOnWearerTargets).find((entry) => entry.wearerId === job.wearerId)
                 ?.inputFingerprint,
             ),
           }))}
