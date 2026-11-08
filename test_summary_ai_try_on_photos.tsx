@@ -628,11 +628,7 @@ if (staleDraft && stored.size > 0) {
 }
 results.push({ label: "genuine fingerprint change", stale });
 results.push({
-  untested: [
-    "Uploaded-design mode was not mounted. Generate needs the private Step 3 photo URL, which this draft fixture does not restore.",
-    "Two wearers with two garments each was not mounted. A four-garment measurement plan did not complete, and one fabric allocation held only two garments.",
-    "Signed-in refresh was not mounted with a Firebase user. The same identity helper supplies that customer's ID token.",
-  ],
+  coveredElsewhere: "Uploaded design, signed-in refresh, two wearers with two garments, and the separate outfit orders are in test_summary_uploaded_design_photos.tsx. This file keeps the original catalog cases.",
 });
 console.log(JSON.stringify(results, null, 2));
 

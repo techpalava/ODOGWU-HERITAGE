@@ -342,6 +342,7 @@ import {
   isFutureCustomDetailsContentReady,
   restoreAiTryOnWorkflowState,
   reconcileAiTryOnWorkflow,
+  isAiTryOnInputFingerprintPending,
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
@@ -2167,13 +2168,15 @@ export default function DesignStudioView({
     ],
   );
   // Live, autosave, and hydrate share one parsed uploaded-source collection.
-  // Confirmation is computed (owner + identity + access proof), never persisted.
+  // The saved confirmation is the same key Fabric approval already required.
+  // A failed private-photo proof still drops the source.
   const futureOccurrenceUploadedDesignStyleAuthority = useMemo(
     () =>
       buildUploadedDesignStyleAuthorityFromSources({
         sources: Object.values(futureUploadedDesignSourcesByUploadedSourceRef),
         accessProvedSourceKeys: futureUploadedDesignAccessProvedBySourceKey,
         failedSourceKeys: futureUploadedDesignRestoreFailedBySourceKey,
+        confirmedDesignSourceKey: futureConfirmedDesignSourceKey,
         expectedOwnerUid:
           firebaseDraftAuth.user?.uid || auth.currentUser?.uid || null,
         ownershipTransferPending: false,
@@ -2184,6 +2187,7 @@ export default function DesignStudioView({
       futureUploadedDesignSourcesByUploadedSourceRef,
       futureUploadedDesignAccessProvedBySourceKey,
       futureUploadedDesignRestoreFailedBySourceKey,
+      futureConfirmedDesignSourceKey,
       firebaseDraftAuth.user?.uid,
       authoritativePhysicalOccurrencesForDomain,
     ],
@@ -5407,6 +5411,7 @@ export default function DesignStudioView({
           ),
           accessProvedSourceKeys: {},
           failedSourceKeys: {},
+          confirmedDesignSourceKey: storedDraft?.confirmedDesignSourceKey,
           expectedOwnerUid:
             firebaseDraftAuth.user?.uid || auth.currentUser?.uid || null,
           ownershipTransferPending: Boolean(
@@ -5622,7 +5627,6 @@ export default function DesignStudioView({
       const canRestoreSummary =
         restoredFabricCompletion.isComplete &&
         restoredSourceReady &&
-        !restoredUploadedSource &&
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion) &&
         isOrderAiTryOnFinishedForSummary(restoredAiTryOnWorkflow) &&
         restoredMeasurementsReady;
@@ -6561,16 +6565,32 @@ export default function DesignStudioView({
     futureDraftIdentityKey,
   ]);
 
+  const aiTryOnInputFingerprintPending = isAiTryOnInputFingerprintPending({
+    authResolved: firebaseDraftAuth.resolved,
+    uploadOperationInFlight: isUploadingDesign || isReplacingDesign || isRemovingDesign,
+    designStyleHydrated: Boolean(currentFutureDesignStyleDraftHydration),
+    hasUploadedAssignment: futureDesignStyleStepProjection.occurrences.some(
+      (occurrence) => occurrence.assignment?.sourceKind === "uploaded",
+    ),
+    uploadedSourceAccess: [
+      ...(activeUploadedDesignSource ? [activeUploadedDesignSource] : []),
+      ...Object.values(futureUploadedDesignSourcesByUploadedSourceRef),
+    ].map((source) => ({
+      proved: futureUploadedDesignAccessProvedBySourceKey[source.sourceKey] === true,
+      failed: futureUploadedDesignRestoreFailedBySourceKey[source.sourceKey] === true,
+    })),
+  });
   useEffect(() => {
     if (!guestDraftHydrated) return;
     setFutureAiTryOnWorkflow((current) =>
       reconcileAiTryOnWorkflow({
         state: current,
         currentInputFingerprint: futureAiTryOnInputFingerprint,
+        inputFingerprintPending: aiTryOnInputFingerprintPending,
         policy: { gatewayAvailable: aiTryOnGatewayAvailable, skipAllowed: true },
       }),
     );
-  }, [guestDraftHydrated, futureAiTryOnInputFingerprint, aiTryOnGatewayAvailable]);
+  }, [guestDraftHydrated, futureAiTryOnInputFingerprint, aiTryOnGatewayAvailable, aiTryOnInputFingerprintPending]);
 
   const coordinatePersistedUploadedSourceCleanup = (
     acknowledgement: NonNullable<
@@ -8296,15 +8316,41 @@ export default function DesignStudioView({
   };
   const handleOpenDormantDesignStyleStage = () => {
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
-    if (returnStage) {
-      navigateToFutureStage(returnStage);
-      return;
-    }
     if (
+      !returnStage &&
       !futureFabricStageCompletion.isComplete &&
       !isStageHistoricallyUnlocked("design_style")
     ) {
       navigateToFutureStage("fabric", getValidationNavigationTarget());
+      return;
+    }
+    // Fabric approval activates uploaded pricing only after the existing
+    // confirmation check has already accepted this upload. An unconfirmed or
+    // incomplete upload keeps the price inactive.
+    if (
+      activeUploadedDesignSource &&
+      futureFabricStageCompletion.isComplete &&
+      futurePrimaryFabricCode
+    ) {
+      const pricingReadiness = evaluateAuthoritativeUploadedDesignReadiness({
+        uploadInput: {
+          uploadReference: activeUploadedDesignSource.uploadReference,
+          fabricCapacityComposition:
+            activeUploadedDesignSource.fabricCapacityComposition,
+          demographic: activeUploadedDesignSource.demographic,
+        },
+        step1GarmentTypes: garmentTypeSelection.garmentTypes,
+        designSource: activeUploadedDesignSource,
+        confirmedDesignSourceKey: futureConfirmedDesignSourceKey,
+        selectedFabricCode: futurePrimaryFabricCode,
+        priceActivatedFabricCode: futurePrimaryFabricCode,
+      });
+      if (pricingReadiness.isPricingEligible) {
+        setFuturePriceActivatedFabricCode(futurePrimaryFabricCode);
+      }
+    }
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
       return;
     }
     navigateToFutureStage("design_style");
@@ -8346,7 +8392,6 @@ export default function DesignStudioView({
     handleRemoveUploadedDesign,
     handleSelectFutureStyle,
     handleRetryUploadedDesignDeletion,
-    handleContinueWithUploadedDesign,
   ];
   const handleOpenDormantCustomDetailsStage = (
     target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
@@ -8354,6 +8399,13 @@ export default function DesignStudioView({
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
     if (returnStage) {
       navigateToFutureStage(returnStage);
+      return;
+    }
+    if (
+      activeUploadedDesignSource &&
+      futureConfirmedDesignSourceKey !== activeUploadedDesignSource.sourceKey
+    ) {
+      handleContinueWithUploadedDesign();
       return;
     }
     if (
