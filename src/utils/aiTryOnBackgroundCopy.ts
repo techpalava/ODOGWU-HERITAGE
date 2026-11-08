@@ -1,6 +1,6 @@
 /**
  * Customer-facing wording for background AI Try-on (Phase B).
- * PENDING XAVIER'S APPROVAL: every string here is a draft.
+ * Failure notices distinguish confirmed refunds from unknown network outcomes.
  */
 
 /** "your" for the sole wearer or "You"; otherwise "Ada's". */
@@ -26,13 +26,14 @@ export const AI_TRY_ON_BACKGROUND_COPY = {
   /** Toast: ready. */
   readyTitle: (name: string | null) => `${capitalise(aiTryOnPossessive(name))} preview is ready`,
   readyAction: "View preview",
-  /** Toast: failed (live request; no try was used). */
+  /** Toast: failed; the response may have been lost. */
   failedTitle: (name: string | null) => `We couldn't create ${aiTryOnPossessive(name)} preview`,
-  failedBody: "This try wasn't counted.",
-  /** Toast and panel: still busy after the retries; the try was refunded (approved, option A). */
-  busyFailedBody: "It's still too busy. This try wasn't counted. Please try again in a little while.",
+  failedBody: "Your preview didn’t finish. We couldn’t confirm whether a try was used. Check AI Try-on for your latest tries remaining.",
+  /** Busy retries ended; refund confirmation may not have reached the browser. */
+  busyFailedBody: "It’s still too busy and your preview didn’t finish. We couldn’t confirm whether a try was used. Check AI Try-on for your latest tries remaining.",
   /** Toast: the page reloaded mid-request and no preview turned up. */
-  resumeFailedBody: "The page reloaded before it finished. Check AI Try-on for how many tries you have left.",
+  resumeFailedBody: "Your preview didn’t finish after the page reloaded. We couldn’t confirm whether a try was used. Check AI Try-on for your latest tries remaining.",
+  refundedBody: "Your preview didn’t finish. This try was refunded and wasn’t counted.",
   retryAction: "Try again",
   /** Toast: ready, but the design changed while it was being made. */
   staleTitle: (name: string | null) => `${capitalise(aiTryOnPossessive(name))} preview no longer matches your design`,

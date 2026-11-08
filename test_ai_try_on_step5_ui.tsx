@@ -1,3 +1,4 @@
+import { aiTryOnGarmentPreviewKey } from "./src/utils/aiTryOnWorkflow";
 import { aiTryOnPreviewTargets } from "./src/utils/aiTryOnWearerTargets";
 /**
  * Step 5 AI Try-on UI: wearer targets, availability and preview mapping,
@@ -498,7 +499,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(
     AI_TRY_ON_HOW_WE_USE_BULLETS[2].text,
     // Approved wording (PR 4, Xavier 2 Nov 2026).
-    "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
+    "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per garment and the latest combined outfit preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
   );
   assert.equal(
     AI_TRY_ON_PREVIEW_DISCLAIMER,
@@ -972,13 +973,14 @@ const errorCases: Array<[AiTryOnPreviewOutcome, string]> = [
   [{ kind: "order_limit_reached" }, AI_TRY_ON_MESSAGES.outOfPreviews],
   [{ kind: "rate_limited", retryAfterSeconds: 60 }, AI_TRY_ON_MESSAGES.tooManyTries],
   [{ kind: "failed", orderTriesRemaining: 3 }, AI_TRY_ON_MESSAGES.failed(3)],
-  [{ kind: "photo_blocked", orderTriesRemaining: 3 }, AI_TRY_ON_MESSAGES.photoBlocked],
+  [{ kind: "photo_blocked", orderTriesRemaining: 3 }, `${AI_TRY_ON_MESSAGES.photoBlocked} ${AI_TRY_ON_MESSAGES.failed(3)}`],
+  [{ kind: "failed", orderTriesRemaining: 3, tryRefunded: true }, AI_TRY_ON_MESSAGES.failed(3, true)],
 ];
 assert.equal(
   AI_TRY_ON_MESSAGES.failed(3),
-  "We couldn't create a preview this time. This try wasn't counted, so you still have 3 left. Try again, or use a different photo.",
+  "Your preview didn’t finish. We couldn’t confirm whether a try was used. Check AI Try-on for your latest tries remaining.",
 );
-assert.equal(AI_TRY_ON_MESSAGES.photoBlocked, "We couldn't use this photo. This try wasn't counted. Please try a different photo.");
+assert.equal(AI_TRY_ON_MESSAGES.photoBlocked, "We couldn't use this photo. Please try a different photo.");
 assert.equal(AI_TRY_ON_MESSAGES.tooManyTries, "That's a lot of tries in a short time. Please wait a while and try again.");
 assert.equal(
   AI_TRY_ON_MESSAGES.outOfPreviews,
@@ -1022,7 +1024,7 @@ for (const [outcome, text] of errorCases) {
   await act(async () => {
     await generateButton(cors.renderer).props.onClick();
   });
-  assert.match(textOf(cors.renderer.root), /so you still have 5 left/);
+  assert.match(textOf(cors.renderer.root), /couldn’t confirm whether a try was used/);
 
   const uploadedDesign = renderPanel({ targets: [target({ garmentImageUrl: null })] });
   assert.match(textOf(uploadedDesign.renderer.root), /isn't available for uploaded designs yet/);
@@ -1181,13 +1183,13 @@ for (const [outcome, text] of errorCases) {
   assert.equal(
     section!.paragraphs![1],
     // Approved wording (PR 4): the order image (60 days), then the consent addition.
-    "We delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it earlier if you ask. If you place your order, we keep one preview per person with that order for up to 60 days after payment, and delete it earlier if the order is cancelled or refunded or you delete it in My Orders. Your photo is never shared with our workshop. The preview saved with your order is visible to our team and tailors, for reference only. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. Your consent also covers keeping the preview with your order. You can withdraw it at any time by deleting the AI preview in My Orders. To limit use, we count previews per order (5 per order, kept for 90 days), per signed-in account (15 in any 30 days, kept for 30 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
+    "We delete your photo as soon as the preview is created. Before you order, we keep the preview privately for up to 30 days and delete it earlier if you ask. If you place your order, we keep one preview per garment and the latest combined outfit preview per person with that order for up to 60 days after payment, and delete it earlier if the order is cancelled or refunded or you delete it in My Orders. Your photo is never shared with our workshop. The preview saved with your order is visible to our team and tailors, for reference only. Our legal basis is your consent, which you give by uploading a photo; you can withdraw it at any time by not using AI Try-on or asking us to delete your preview. Your consent also covers keeping the preview with your order. You can withdraw it at any time by deleting the AI preview in My Orders. To limit use, we count previews per order (5 per order, kept for 90 days), per signed-in account (15 in any 30 days, kept for 30 days) and requests per IP address (10 per hour), stored only in scrambled (hashed) form.",
   );
   const all = JSON.stringify(PRIVACY_POLICY);
   assert.match(all, /Google \(Gemini API\): creates AI Try-on previews/);
   assert.match(all, /Google may process and briefly store your photo and preview in any country/);
   assert.match(all, /AI Try-on: we delete your photo as soon as the preview is created[^"]*55 days/);
-  assert.match(all, /When you place your order, we keep one preview per person on the order with that order for up to 60 days/);
+  assert.match(all, /When you place your order, we keep one preview per garment and the latest combined outfit preview per person with that order for up to 60 days/);
   assert.match(all, /Brevo: sends our sign-in code emails and order confirmation emails\. If Brevo is unavailable/);
   assert.equal(all.includes("Try-on photos and previews are never shared with our workshop"), false, "old wording gone");
   assert.match(all, /\[TRANSFER SAFEGUARDS\]/, "placeholder stays until the Google DPA is accepted");
@@ -1316,4 +1318,60 @@ class FakeFirestore {
   assert.equal((post.state.body as { orderTriesRemaining?: number }).orderTriesRemaining, 4, "refunded: still 4 left");
 }
 
+
+// Uploaded-design mode: per-garment target, own input identity and no customer/model inputs.
+{
+  const input = baseInput();
+  const uploadedOccurrence = { ...input.occurrences[0], assignmentImage: null,
+    uploadedDesignPreviewUrl: "blob:existing-private-design",
+    assignment: { garmentKey: input.occurrences[0].garmentKey, sourceKind: "uploaded" as const, sourceKey: "uploaded:private-1", uploadedSourceRef: "private-1" },
+  };
+  const [built] = buildAiTryOnWearerTargets({ ...input, occurrences: [uploadedOccurrence, input.occurrences[1]] });
+  assert.equal(built.previewableGarments?.length, 2, "uploaded and catalogue garments both stay selectable");
+  assert.equal(built.previewableGarments?.[0].uploadedDesign?.previewUrl, "blob:existing-private-design");
+  const renamedBlob = buildAiTryOnWearerTargets({ ...input, occurrences: [{ ...uploadedOccurrence, uploadedDesignPreviewUrl: "blob:restored-same-design" }, input.occurrences[1]] });
+  assert.equal(renamedBlob[0].inputFingerprint, built.inputFingerprint, "restoring the same private image must not stale the preview");
+  const replaced = buildAiTryOnWearerTargets({ ...input, occurrences: [{ ...uploadedOccurrence, assignment: { ...uploadedOccurrence.assignment, sourceKey: "uploaded:private-2", uploadedSourceRef: "private-2" } }, input.occurrences[1]] });
+  assert.notEqual(replaced[0].inputFingerprint, built.inputFingerprint, "replacing the Step 3 design stales the old preview");
+  const studio = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+  const targetsMemo = studio.slice(studio.indexOf("const aiTryOnWearerTargets = useMemo("), studio.indexOf("// Background AI Try-on:"));
+  assert.match(targetsMemo, /uploadedDesignPreviewUrl: futureDesignStylePreviewByOccurrenceToken/);
+  assert.match(targetsMemo, /futureDesignStyleStepProjection\.occurrences,\s+futureDesignStylePreviewByOccurrenceToken,/, "restored upload URL must invalidate the targets memo");
+  assert.match(studio, /onUploadAnotherDesign=\{[\s\S]*?setFutureActiveDesignStyleOccurrence\(occurrence\.target\);\s+navigateToFutureStage\("design_style"\);/, "replacement reuses the existing targeted Step 3 uploader");
+  const reads: string[] = [];
+  const replacements: string[] = [];
+  const photoUpdates: unknown[] = [];
+  const { renderer, requests } = renderPanel({
+    targets: [{ ...built, wearerId: "w-ada" }],
+    sessionPhoto: { wearerId: "w-ada", image: { mimeType: "image/jpeg", data: "CUSTOMER_PHOTO_MUST_NOT_BE_SENT" }, thumbnailUrl: null },
+    onSessionPhotoChange: (next) => photoUpdates.push(next),
+    sessionModelIdByWearer: { "w-ada": "male-plus" },
+    loadUploadedDesign: async (url) => { reads.push(url); return fakeImage; },
+    onUploadAnotherDesign: (key) => replacements.push(key),
+  });
+  const use = () => renderer.root.find((node) => node.type === "button" && /^Use this design/.test(textOf(node)));
+  assert.equal(use().props.disabled, false, "no new customer photo or model needed");
+  assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-model-option"]).length, 0);
+  assert.equal(renderer.root.findAll((node) => node.type === "input" && node.props.type === "file").length, 0, "replacement must reuse Step 3, not introduce a new upload/storage flow");
+  assert.match(textOf(renderer.root), /person in your uploaded picture, not you/);
+  await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-upload-another-design"]).props.onClick(); });
+  assert.deepEqual(replacements, [uploadedOccurrence.garmentKey]);
+  await act(async () => { use().props.onClick(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.deepEqual(reads, ["blob:existing-private-design"]);
+  assert.deepEqual(requests, [{ mode: "fabric", inputFingerprint: built.inputFingerprint, wearerKey: aiTryOnGarmentPreviewKey("w-ada", uploadedOccurrence.garmentKey), uploadedDesignImage: fakeImage, uploadedGarmentType: "shirt", fabricSwatchImageUrl: "https://example.test/red.jpg" }]);
+  assert.equal(photoUpdates.length, 0, "unused customer photo for other garments must not be cleared");
+  assert.match(textOf(renderer.root), /on your uploaded design/);
+  assert.match(textOf(renderer.root), /4 tries left/);
+  // Switching to catalogue garment restores its ordinary photo/model controls.
+  await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-garment"] === input.occurrences[1].garmentKey).props.onClick(); });
+  assert.equal(renderer.root.findAll((node) => node.props["data-ai-try-on-uploaded-design"]).length, 0);
+  assert.equal(renderer.root.findAll((node) => node.type === "input" && node.props.type === "file").length, 1);
+  await act(async () => { renderer.root.find((node) => node.props["data-ai-try-on-garment"] === input.occurrences[0].garmentKey).props.onClick(); });
+  assert.match(textOf(renderer.root), /on your uploaded design/, "per-garment preview stays after switching away and back");
+  act(() => renderer.unmount());
+  const noSwatch = renderPanel({ targets: [target({ garmentImageUrl: "blob:design", uploadedDesign: { garmentKey: "base:shirt", garmentType: "shirt", previewUrl: "blob:design" }, fabricSwatchImageUrl: null })] });
+  assert.equal(noSwatch.renderer.root.find((node) => node.type === "button" && /^Use this design/.test(textOf(node))).props.disabled, true);
+  assert.match(textOf(noSwatch.renderer.root), /Choose a fabric with a swatch image/);
+  act(() => noSwatch.renderer.unmount());
+}
 console.log("PASS: AI Try-on Step 5 UI, consent, privacy policy and 90-day order counters");

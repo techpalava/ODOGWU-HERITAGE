@@ -66,8 +66,9 @@ assert.equal(nearestAiTryOnAspectRatio(0, 100), null);
 // Wiring: both flows crop the swatch before the model cache key is built.
 {
   const http = readFileSync("src/server/aiTryOnHttp.ts", "utf8");
-  const crop = http.indexOf("cropAiTryOnFabricSwatch)(images[2])");
+  const crop = http.indexOf("cropAiTryOnFabricSwatch)(images[fabricImageIndex])");
   assert.ok(crop > 0);
+  assert.match(http, /const fabricImageIndex = parsed\.uploadedDesign \? 1 : 2;/, "uploaded design has two images; ordinary try-on still has three");
   assert.ok(crop < http.indexOf("modelCacheKey = createAiTryOnModelResultKey("), "cache key hashes the cropped swatch");
   assert.match(http, /aspectRatio: defaultModel \? "3:4" : photoAspectRatio,/, "model mode keeps 3:4");
 }

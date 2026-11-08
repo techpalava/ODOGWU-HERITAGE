@@ -19,10 +19,12 @@ import {
   type AiTryOnOrderDetails,
   type AiTryOnOrderDetailsSource,
 } from "./aiTryOnOrderDetails.js";
-import { chooseAiTryOnMode, type AiTryOnMode } from "./aiTryOnGatewayContract.js";
+import { chooseAiTryOnMode, type AiTryOnMode, type AiTryOnOutfitGarmentRequest } from "./aiTryOnGatewayContract.js";
 import {
   AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT,
   aiTryOnGarmentPreviewKey,
+  aiTryOnOutfitPreviewKey,
+  aiTryOnOutfitFingerprint,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   type AiTryOnOccurrenceDesignSource,
 } from "./aiTryOnWorkflow.js";
@@ -47,14 +49,23 @@ import { wearerAssignmentLabel } from "./wearerOrder.js";
 export const AI_TRY_ON_SINGLE_TARGET_ID = "order" as const;
 
 /**
- * One catalogue garment the customer can send on a single Generate.
+ * One catalogue or uploaded garment the customer can send on a single Generate.
  * The wearer fingerprint stays on the full design; this only picks the
  * garment picture and that garment's fabric swatch.
  */
+interface UploadedDesignPreview {
+  readonly garmentKey: string;
+  readonly garmentType: CanonicalPhysicalGarmentType;
+  readonly previewUrl: string | null;
+}
+
 export interface AiTryOnPreviewableGarment {
   readonly garmentKey: string;
+  readonly uploadedDesign?: UploadedDesignPreview;
+  readonly garmentType?: CanonicalPhysicalGarmentType;
+  readonly sourceKind?: "catalog" | "uploaded";
   readonly label: string;
-  readonly garmentImageUrl: string;
+  readonly garmentImageUrl: string | null;
   /** This garment's fabric picture. Null when that fabric has no picture. */
   readonly fabricSwatchImageUrl: string | null;
   /** Fabric colour chip when there is no swatch picture. */
@@ -67,6 +78,8 @@ export interface AiTryOnPreviewableGarment {
 }
 
 export interface AiTryOnWearerTarget {
+  readonly uploadedDesign?: UploadedDesignPreview;
+  readonly previewKind?: "outfit";
   readonly wearerId: string;
   readonly label: string;
   /** null while that wearer's design is not ready. */
@@ -80,8 +93,8 @@ export interface AiTryOnWearerTarget {
   /** Swatch for that default garment; set only in fabric mode. */
   readonly fabricSwatchImageUrl: string | null;
   /**
-   * Catalogue garments this wearer can preview, in occurrence order.
-   * One Generate uses exactly one of these. Empty for uploaded designs.
+   * Catalogue and uploaded garments this wearer can preview, in occurrence order.
+   * One Generate uses exactly one of these. Uploaded previews reuse Step 3’s private photo.
    * Omitted only by older callers; the builder always sets it.
    */
   readonly previewableGarments?: readonly AiTryOnPreviewableGarment[];
@@ -98,6 +111,7 @@ export interface AiTryOnTargetOccurrence {
   readonly garmentType: CanonicalPhysicalGarmentType;
   readonly assignment: AiTryOnOccurrenceDesignSource["assignment"];
   readonly assignmentImage?: string | null;
+  readonly uploadedDesignPreviewUrl?: string | null;
 }
 
 export interface BuildAiTryOnWearerTargetsInput
@@ -184,8 +198,9 @@ const buildTarget = ({
   );
   const previewableGarments: AiTryOnPreviewableGarment[] = [];
   for (const occurrence of occurrences) {
-    const imageUrl = httpUrl(occurrence.assignmentImage);
-    if (!imageUrl) continue;
+    const uploaded = occurrence.assignment?.sourceKind === "uploaded";
+    const imageUrl = uploaded ? occurrence.uploadedDesignPreviewUrl || null : httpUrl(occurrence.assignmentImage);
+    if (!imageUrl && !uploaded) continue;
     const garmentSwatchCode = fabricCodeFor(input.fabricAllocations, occurrence.garmentKey);
     const garmentFabric = garmentSwatchCode
       ? input.fabrics.find((fabric) => fabric?.code === garmentSwatchCode)
@@ -193,6 +208,9 @@ const buildTarget = ({
     const garmentSwatchUrl = httpUrl(garmentFabric?.image);
     previewableGarments.push({
       garmentKey: occurrence.garmentKey,
+      ...(uploaded ? { uploadedDesign: { garmentKey: occurrence.garmentKey, garmentType: occurrence.garmentType, previewUrl: imageUrl } } : {}),
+      garmentType: occurrence.garmentType,
+      sourceKind: occurrence.assignment?.sourceKind === "catalog" ? "catalog" : occurrence.assignment?.sourceKind === "uploaded" ? "uploaded" : undefined,
       label: personLabels.get(occurrence.garmentKey) || occurrence.garmentType,
       garmentImageUrl: imageUrl,
       fabricSwatchImageUrl: garmentSwatchUrl,
@@ -251,9 +269,10 @@ const buildTarget = ({
     wearerId,
     label,
     inputFingerprint,
-    mode,
-    garmentImageUrl,
-    fabricSwatchImageUrl: mode === "fabric" ? fabricSwatchImageUrl : null,
+    mode: previewableGarments.length ? chooseAiTryOnMode({ hasFabricSwatch: Boolean(previewableGarments[0].fabricSwatchImageUrl) }) : mode,
+    garmentImageUrl: previewableGarments.length ? previewableGarments[0].garmentImageUrl : garmentImageUrl,
+    ...(previewableGarments[0]?.uploadedDesign ? { uploadedDesign: previewableGarments[0].uploadedDesign } : {}),
+    fabricSwatchImageUrl: previewableGarments.length ? previewableGarments[0].fabricSwatchImageUrl : (mode === "fabric" ? fabricSwatchImageUrl : null),
     previewableGarments,
     fitHints,
     orderDetails,
@@ -344,8 +363,42 @@ export const aiTryOnPreviewTargets = (targets: readonly AiTryOnWearerTarget[]) =
       label: `${target.label} — ${garment.label}`,
       mode: chooseAiTryOnMode({ hasFabricSwatch: Boolean(garment.fabricSwatchImageUrl) }),
       garmentImageUrl: garment.garmentImageUrl,
+      uploadedDesign: garment.uploadedDesign,
       fabricSwatchImageUrl: garment.fabricSwatchImageUrl,
       orderDetails: garment.orderDetails,
       previewableGarments: [garment],
     }));
   });
+
+export const aiTryOnOutfitPart = (garmentType: string | undefined): "top" | "bottom" | null => {
+  if (garmentType === "shirt" || garmentType === "kaftan") return "top";
+  if (["trouser", "skirt", "long_skirt", "standard_shorts", "bum_shorts"].includes(garmentType || "")) return "bottom";
+  return null;
+};
+export interface AiTryOnOutfitChoice extends AiTryOnPreviewableGarment {
+  readonly garmentType: CanonicalPhysicalGarmentType;
+  readonly garmentImageUrl: string;
+}
+export const aiTryOnOutfitChoices = (target: AiTryOnWearerTarget) => {
+  const garments: AiTryOnOutfitChoice[] = (target.previewableGarments ?? []).flatMap((garment) => {
+    const type = garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;
+    return garment.sourceKind === "catalog" && garment.garmentImageUrl && type ? [{ ...garment, garmentType: type, garmentImageUrl: garment.garmentImageUrl }] : [];
+  });
+  return {
+    tops: garments.filter((garment) => aiTryOnOutfitPart(garment.garmentType) === "top"),
+    bottoms: garments.filter((garment) => aiTryOnOutfitPart(garment.garmentType) === "bottom"),
+  };
+};
+export const buildAiTryOnOutfitRequestGarment = (garment: AiTryOnOutfitChoice): AiTryOnOutfitGarmentRequest => ({
+  garmentKey: garment.garmentKey, garmentType: garment.garmentType, garmentImageUrl: garment.garmentImageUrl,
+  ...(garment.fabricSwatchImageUrl ? { fabricSwatchImageUrl: garment.fabricSwatchImageUrl } : {}),
+  ...(garment.orderDetails ? { orderDetails: garment.orderDetails } : {}),
+});
+export const aiTryOnOutfitTarget = (target: AiTryOnWearerTarget): AiTryOnWearerTarget | null => {
+  const { tops, bottoms } = aiTryOnOutfitChoices(target);
+  return tops.length && bottoms.length ? { ...target, wearerId: aiTryOnOutfitPreviewKey(target.wearerId), inputFingerprint: aiTryOnOutfitFingerprint(target.inputFingerprint), label: `${target.label} — Combined outfit`, previewKind: "outfit", previewableGarments: [] } : null;
+};
+export const aiTryOnOrderPreviewTargets = (targets: readonly AiTryOnWearerTarget[]): AiTryOnWearerTarget[] => targets.flatMap((target) => {
+  const outfit = aiTryOnOutfitTarget(target);
+  return [...aiTryOnPreviewTargets([target]), ...(outfit ? [outfit] : [])];
+});

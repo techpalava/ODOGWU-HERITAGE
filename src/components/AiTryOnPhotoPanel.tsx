@@ -1,4 +1,10 @@
-import { aiTryOnPreviewTargets } from "../utils/aiTryOnWearerTargets";
+import {
+  aiTryOnPreviewTargets,
+  aiTryOnOrderPreviewTargets,
+  aiTryOnOutfitTarget,
+  aiTryOnOutfitChoices,
+  buildAiTryOnOutfitRequestGarment,
+} from "../utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -125,7 +131,7 @@ export const AI_TRY_ON_PREVIEW_DISCLAIMER =
  * No consent notice: no personal photo is involved.
  */
 export const AI_TRY_ON_MODEL_COPY = {
-  option: "No photo? Try it on a model",
+  option: "Choose a model",
   heading: "Choose a model",
   intro: "See the design on one of our AI-generated models instead of a photo of you.",
   filterAll: "All",
@@ -140,9 +146,11 @@ export const AI_TRY_ON_MESSAGES = {
   accountOutOfPreviews:
     "You've used all 15 AI Try-on previews on your account in the last 30 days. You can still continue without one.",
   tooManyTries: "That's a lot of tries in a short time. Please wait a while and try again.",
-  failed: (left: number) =>
-    `We couldn't create a preview this time. This try wasn't counted, so you still have ${left} left. Try again, or use a different photo.`,
-  photoBlocked: "We couldn't use this photo. This try wasn't counted. Please try a different photo.",
+  failed: (left: number, tryRefunded = false) =>
+    tryRefunded
+      ? `${AI_TRY_ON_BACKGROUND_COPY.refundedBody} You have ${left} left.`
+      : AI_TRY_ON_BACKGROUND_COPY.failedBody,
+  photoBlocked: "We couldn't use this photo. Please try a different photo.",
   previewDeleted: "Your preview was deleted.",
   deleteFailed: "We couldn't delete your preview. Please try again.",
 } as const;
@@ -154,10 +162,10 @@ type PanelMessage =
   | { kind: "out_of_previews" }
   | { kind: "account_out_of_previews" }
   | { kind: "too_many_tries" }
-  | { kind: "failed"; left: number }
-  /** Still busy after the retries (try refunded). */
-  | { kind: "busy_failed" }
-  | { kind: "photo_blocked" };
+  | { kind: "failed"; left: number; tryRefunded?: boolean }
+  /** Still busy after the retries. */
+  | { kind: "busy_failed"; tryRefunded?: boolean }
+  | { kind: "photo_blocked"; tryRefunded?: boolean };
 
 const messageText = (message: PanelMessage): string => {
   switch (message.kind) {
@@ -168,11 +176,11 @@ const messageText = (message: PanelMessage): string => {
     case "too_many_tries":
       return AI_TRY_ON_MESSAGES.tooManyTries;
     case "failed":
-      return AI_TRY_ON_MESSAGES.failed(message.left);
+      return AI_TRY_ON_MESSAGES.failed(message.left, message.tryRefunded);
     case "busy_failed":
-      return AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
+      return message.tryRefunded ? AI_TRY_ON_BACKGROUND_COPY.refundedBody : AI_TRY_ON_BACKGROUND_COPY.busyFailedBody;
     case "photo_blocked":
-      return AI_TRY_ON_MESSAGES.photoBlocked;
+      return `${AI_TRY_ON_MESSAGES.photoBlocked} ${message.tryRefunded ? AI_TRY_ON_BACKGROUND_COPY.refundedBody : AI_TRY_ON_BACKGROUND_COPY.failedBody}`;
     case "preview_deleted":
       return AI_TRY_ON_MESSAGES.previewDeleted;
     case "delete_failed":
@@ -207,7 +215,16 @@ interface SelectedPhoto {
   thumbnailUrl: string | null;
 }
 
+const loadUploadedDesignImage = async (url: string): Promise<AiTryOnInlineImage> => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("The uploaded design photo could not be read.");
+  const blob = await response.blob();
+  return prepareAiTryOnPersonPhoto(new File([blob], "uploaded-design", { type: blob.type }));
+};
+
 export interface AiTryOnPhotoPanelProps {
+  onUploadAnotherDesign?: (garmentKey: string) => void;
+  loadUploadedDesign?: (url: string) => Promise<AiTryOnInlineImage>;
   targets: readonly AiTryOnWearerTarget[];
   /** Step 7: who is calling, for the server-issued session. */
   credentials?: AiTryOnCredentials;
@@ -295,6 +312,8 @@ const defaultRevoke = (url: string) => {
 };
 
 export const AiTryOnPhotoPanel = ({
+  onUploadAnotherDesign,
+  loadUploadedDesign = loadUploadedDesignImage,
   targets,
   credentials,
   triesPerOrder,
@@ -391,6 +410,8 @@ export const AiTryOnPhotoPanel = ({
   );
   /** Which catalogue garment this Generate sends, per wearer. Default is the first pictured. */
   const [selectedGarmentKeyByWearer, setSelectedGarmentKeyByWearer] = useState<Record<string, string>>({});
+  const [outfitModeByWearer, setOutfitModeByWearer] = useState<Record<string, boolean>>({});
+  const [outfitChoicesByWearer, setOutfitChoicesByWearer] = useState<Record<string, { top?: string; bottom?: string }>>({});
   const [modelFilter, setModelFilter] = useState<AiTryOnModelGroup | "all">("all");
   const [message, setMessage] = useState<PanelMessage | null>(() =>
     initialAccountTriesRemaining === 0
@@ -405,7 +426,7 @@ export const AiTryOnPhotoPanel = ({
     const job = wearerId ? jobs[wearerId] : undefined;
     return job && job.scope === jobScope ? job : null;
   };
-  const previewTargets = aiTryOnPreviewTargets(targets);
+  const previewTargets = aiTryOnOrderPreviewTargets(targets);
   const anyGenerating = previewTargets.some((entry) => jobFor(entry.wearerId)?.status === "running");
   const onGeneratingChangeRef = useRef(onGeneratingChange);
   onGeneratingChangeRef.current = onGeneratingChange;
@@ -503,17 +524,24 @@ export const AiTryOnPhotoPanel = ({
     ) ||
     previewableGarments[0] ||
     null;
-  const previewTarget = target ? aiTryOnPreviewTargets([target]).find((entry) =>
+  const singlePreviewTarget = target ? aiTryOnPreviewTargets([target]).find((entry) =>
     target.previewableGarments && target.previewableGarments.length > 1
       ? entry.previewableGarments?.[0]?.garmentKey === selectedPreview?.garmentKey
       : entry.wearerId === target.wearerId,
   ) ?? target : null;
+  const outfitTarget = target ? aiTryOnOutfitTarget(target) : null;
+  const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
+  const outfitMode = Boolean(outfitTarget && outfitModeByWearer[target?.wearerId || ""]);
+  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ?? {};
+  const selectedTop = outfitChoices.tops.find((entry) => entry.garmentKey === outfitSelection.top);
+  const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
+  const previewTarget = outfitMode ? outfitTarget : singlePreviewTarget;
   const previewKey = previewTarget?.wearerId ?? "";
   const measurementTarget =
     targets.find((entry) => entry.wearerId === measurementWearerId) || target;
   /** This wearer's request is running (other wearers may still be chosen). */
   const generating = jobFor(previewKey)?.status === "running";
-  const wearerGenerating = target && aiTryOnPreviewTargets([target]).some((entry) => jobFor(entry.wearerId)?.status === "running");
+  const wearerGenerating = target && aiTryOnOrderPreviewTargets([target]).some((entry) => jobFor(entry.wearerId)?.status === "running");
   const busy = generating && Boolean(jobFor(previewKey)?.busy);
 
   // Tell the job store who is on screen: a request that ends while its
@@ -530,13 +558,13 @@ export const AiTryOnPhotoPanel = ({
   const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
   const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
   const preview =
-    target && target.inputFingerprint
-      ? previews[previewKey]?.inputFingerprint === target.inputFingerprint
+    previewTarget && previewTarget.inputFingerprint
+      ? previews[previewKey]?.inputFingerprint === previewTarget.inputFingerprint
         ? previews[previewKey]
         : null
       : null;
   const hasPreview = (entry: AiTryOnWearerTarget) =>
-    aiTryOnPreviewTargets([entry]).some((item) => Boolean(item.inputFingerprint &&
+    aiTryOnOrderPreviewTargets([entry]).some((item) => Boolean(item.inputFingerprint &&
       (previews[item.wearerId]?.inputFingerprint === item.inputFingerprint ||
        stored[item.wearerId]?.inputFingerprint === item.inputFingerprint)));
 
@@ -587,10 +615,10 @@ export const AiTryOnPhotoPanel = ({
   // for that wearer's current design. This reads the private server copy.
   // It does not generate and does not use another try.
   useEffect(() => {
-    if (!target?.inputFingerprint) return;
+    if (!previewTarget?.inputFingerprint) return;
     const summary = stored[previewKey];
-    if (!summary || summary.inputFingerprint !== target.inputFingerprint) return;
-    if (previews[previewKey]?.inputFingerprint === target.inputFingerprint) return;
+    if (!summary || summary.inputFingerprint !== previewTarget.inputFingerprint) return;
+    if (previews[previewKey]?.inputFingerprint === previewTarget.inputFingerprint) return;
     if (restoringRef.current.has(summary.previewId)) return;
     restoringRef.current.add(summary.previewId);
     const wearerId = previewKey;
@@ -629,7 +657,7 @@ export const AiTryOnPhotoPanel = ({
         setModelPickerOpen(true);
       }
     });
-  }, [previewKey, target?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews]);
+  }, [previewKey, previewTarget?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews]);
 
   const handleDeletePreview = async () => {
     if (!target || !preview?.storedPreviewId || deleting) return;
@@ -666,18 +694,20 @@ export const AiTryOnPhotoPanel = ({
       setDeleting(false);
     }
   };
-  const showGarmentPicker = previewableGarments.length > 1;
+  const showGarmentPicker = !outfitMode && previewableGarments.length > 1;
   // One Generate sends exactly one catalogue picture and that garment's swatch.
-  const garmentImageUrl = selectedPreview?.garmentImageUrl ?? target?.garmentImageUrl ?? null;
+  const garmentImageUrl = outfitMode ? selectedTop?.garmentImageUrl ?? null : selectedPreview ? selectedPreview.garmentImageUrl : target?.garmentImageUrl ?? null;
+  const uploadedDesign = outfitMode ? undefined : selectedPreview ? selectedPreview.uploadedDesign : target?.uploadedDesign;
   const fabricSwatchImageUrl = selectedPreview
     ? selectedPreview.fabricSwatchImageUrl
     : target?.fabricSwatchImageUrl ?? null;
   const requestOrderDetails = selectedPreview ? selectedPreview.orderDetails : target?.orderDetails ?? null;
   const missingGarmentImage = Boolean(target && !garmentImageUrl);
   const canGenerate =
-    Boolean(target?.inputFingerprint) &&
+    Boolean(previewTarget?.inputFingerprint) &&
+    (!outfitMode || Boolean(selectedTop && selectedBottom)) &&
     !missingGarmentImage &&
-    Boolean(currentPhoto || currentModel) &&
+    Boolean(uploadedDesign ? uploadedDesign.previewUrl && fabricSwatchImageUrl : currentPhoto || currentModel) &&
     !wearerGenerating &&
     !preparingPhoto &&
     left > 0;
@@ -790,9 +820,10 @@ export const AiTryOnPhotoPanel = ({
       });
       // The photo has done its job; drop it from memory.
       const owner = targets.find((entry) =>
-        aiTryOnPreviewTargets([entry]).some((item) => item.wearerId === wearerId),
+        aiTryOnOrderPreviewTargets([entry]).some((item) => item.wearerId === wearerId),
       );
-      if (owner && photoRef.current?.wearerId === owner.wearerId) clearPhoto();
+      const generatedTarget = aiTryOnPreviewTargets(targets).find((entry) => entry.wearerId === wearerId);
+      if (!generatedTarget?.uploadedDesign && owner && photoRef.current?.wearerId === owner.wearerId) clearPhoto();
       if (live && outcome?.kind === "completed") {
         setTriesRemaining(
           (current) => outcome.orderTriesRemaining ?? Math.max(0, (current ?? triesPerOrder) - 1),
@@ -825,7 +856,7 @@ export const AiTryOnPhotoPanel = ({
         if (typeof outcome.accountTriesRemaining === "number") {
           setAccountTriesRemaining(outcome.accountTriesRemaining);
         }
-        show({ kind: "photo_blocked" });
+        show({ kind: "photo_blocked", tryRefunded: outcome.tryRefunded });
         break;
       case "failed": {
         const remaining = outcome.orderTriesRemaining ?? triesRemaining ?? triesPerOrder;
@@ -835,7 +866,7 @@ export const AiTryOnPhotoPanel = ({
             : accountTriesRemaining;
         setTriesRemaining(remaining);
         setAccountTriesRemaining(accountRemaining);
-        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity) });
+        show({ kind: "failed", left: Math.min(remaining, accountRemaining ?? Infinity), tryRefunded: outcome.tryRefunded });
         break;
       }
       case "busy_failed":
@@ -843,7 +874,7 @@ export const AiTryOnPhotoPanel = ({
         if (typeof outcome.accountTriesRemaining === "number") {
           setAccountTriesRemaining(outcome.accountTriesRemaining);
         }
-        show({ kind: "busy_failed" });
+        show({ kind: "busy_failed", tryRefunded: outcome.tryRefunded });
         break;
       case "busy":
         // Never settles a job (the store keeps retrying).
@@ -899,16 +930,17 @@ export const AiTryOnPhotoPanel = ({
   useEffect(() => {
     if (!focusJob) return;
     if (focusJob.wearerId !== previewKey) {
-      const owner = targets.find((entry) => aiTryOnPreviewTargets([entry]).some((item) => item.wearerId === focusJob.wearerId));
+      const owner = targets.find((entry) => aiTryOnOrderPreviewTargets([entry]).some((item) => item.wearerId === focusJob.wearerId));
       if (!owner) return;
       if (owner.wearerId !== target?.wearerId) selectWearer(owner.wearerId);
       const garment = previewTargets.find((entry) => entry.wearerId === focusJob.wearerId)?.previewableGarments?.[0];
+      setOutfitModeByWearer((current) => ({ ...current, [owner.wearerId]: previewTargets.find((entry) => entry.wearerId === focusJob.wearerId)?.previewKind === "outfit" }));
       if (garment) setSelectedGarmentKeyByWearer((current) => ({ ...current, [owner.wearerId]: garment.garmentKey }));
       return;
     }
     // "Try again" (or a preview that no longer matches): show the wearer only.
     if (focusJob.status !== "completed" || !preview) {
-      if (focusJob.status === "completed" && focusJob.inputFingerprint === target?.inputFingerprint) return;
+      if (focusJob.status === "completed" && focusJob.inputFingerprint === previewTarget?.inputFingerprint) return;
       jobStore.clearFocus(focusJob.wearerId);
       return;
     }
@@ -936,41 +968,38 @@ export const AiTryOnPhotoPanel = ({
   }, [highlightResult]);
 
   const handleGenerate = () => {
-    if (!target || !target.inputFingerprint || !garmentImageUrl) return;
-    const model = currentPhoto ? null : currentModel;
-    if (!currentPhoto && !model) return;
-    if (left <= 0) {
-      setMessage(outOfPreviews);
-      return;
-    }
-    if (aiTryOnPreviewTargets([target]).some((entry) => jobStore.isRunning(entry.wearerId))) return;
+    if (!target || !previewTarget?.inputFingerprint || !garmentImageUrl) return;
+    if (outfitMode && (!selectedTop || !selectedBottom)) return;
+    const model = uploadedDesign || currentPhoto ? null : currentModel;
+    if (uploadedDesign ? !uploadedDesign.previewUrl || !fabricSwatchImageUrl : !currentPhoto && !model) return;
+    if (left <= 0) { setMessage(outOfPreviews); return; }
+    if (aiTryOnOrderPreviewTargets([target]).some((entry) => jobStore.isRunning(entry.wearerId))) return;
     const wearerId = previewKey;
-    const inputFingerprint = target.inputFingerprint;
+    const inputFingerprint = previewTarget.inputFingerprint;
     setMessage(null);
-    if (currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
-      setMessage({ kind: "failed", left });
-      return;
+    if (!uploadedDesign && currentPhoto && !fitsAiTryOnTotalLimit([currentPhoto.image])) {
+      setMessage({ kind: "failed", left }); return;
     }
-    // Step 6: the server loads the catalogue pictures itself, so browser
-    // CORS on the Storage bucket no longer matters. Exactly one garment
-    // picture, plus that garment's swatch when it has one. Never every
-    // garment on the order.
-    const fabricMode = Boolean(fabricSwatchImageUrl);
-    // Model mode sends no fit hints: they describe the customer, not the
-    // model, and would stop a saved model result from being reused.
-    // Photo mode sends the measurement wearer's hints, even when that
-    // person is not the one in the photo. Empty hints omit the block.
     const photoFitHints = measurementTarget?.fitHints ?? [];
-    const request: AiTryOnGenerationRequest = {
-      mode: fabricMode ? "fabric" : "garment",
-      inputFingerprint,
-      wearerKey: wearerId,
-      ...(model ? { defaultModelId: model.id } : { personImage: currentPhoto!.image }),
-      garmentImageUrl,
-      ...(fabricMode ? { fabricSwatchImageUrl: fabricSwatchImageUrl! } : {}),
-      ...(!model && photoFitHints.length ? { fitHints: photoFitHints } : {}),
-      ...(requestOrderDetails ? { orderDetails: requestOrderDetails } : {}),
+    const outfitGarments: AiTryOnGenerationRequest["outfitGarments"] = selectedTop && selectedBottom
+      ? [buildAiTryOnOutfitRequestGarment(selectedTop), buildAiTryOnOutfitRequestGarment(selectedBottom)] : undefined;
+    const photoRequest = (): AiTryOnGenerationRequest => {
+      const common = {
+        inputFingerprint, wearerKey: wearerId,
+        ...(model ? { defaultModelId: model.id } : currentPhoto ? { personImage: currentPhoto.image } : {}),
+        ...(!model && photoFitHints.length ? { fitHints: photoFitHints } : {}),
+      };
+      return outfitMode && outfitGarments ? { ...common, mode: "garment", outfitGarments } : {
+        ...common, mode: fabricSwatchImageUrl ? "fabric" : "garment", garmentImageUrl,
+        ...(fabricSwatchImageUrl ? { fabricSwatchImageUrl } : {}),
+        ...(requestOrderDetails ? { orderDetails: requestOrderDetails } : {}),
+      };
     };
+    const request: Promise<AiTryOnGenerationRequest> = uploadedDesign
+      ? loadUploadedDesign(uploadedDesign.previewUrl).then((image) => ({
+          mode: "fabric", inputFingerprint, wearerKey: wearerId,
+          uploadedDesignImage: image, uploadedGarmentType: uploadedDesign.garmentType, fabricSwatchImageUrl,
+        })) : Promise.resolve(photoRequest());
     // The request belongs to the job store, not this panel: it keeps going
     // when the customer moves to another step.
     jobStore.start({
@@ -980,7 +1009,8 @@ export const AiTryOnPhotoPanel = ({
       scope: jobScope,
       modelId: model ? model.id : null,
       run: async (busyJobId) => {
-        const outcome = await requestPreview(busyJobId ? { ...request, busyJobId } : request);
+        const prepared = await request;
+        const outcome = await requestPreview(busyJobId ? { ...prepared, busyJobId } : prepared);
         if (outcome.kind === "completed") {
           onPreviewCreatedRef.current({
             wearerId,
@@ -1006,7 +1036,7 @@ export const AiTryOnPhotoPanel = ({
             Who's this for?
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            Choose the person in the photo. We'll use only their garments, fabric and details.
+            {uploadedDesign ? "Choose whose garment this preview belongs to. The photo uses the person in the uploaded picture." : "Choose the person in the photo. We'll use only their garments, fabric and details."}
           </p>
           <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Who's this for?">
             {targets.map((entry) => {
@@ -1040,7 +1070,7 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
-      {showPicker && (
+      {showPicker && !uploadedDesign && (
         <fieldset className="min-w-0" data-ai-try-on-measurement-picker>
           <legend className="font-serif text-lg font-bold text-heritage-green">
             Whose measurements?
@@ -1074,13 +1104,31 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
+      {outfitTarget && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
+        <legend className="px-1 font-serif text-lg font-bold text-heritage-green">What would you like to preview?</legend>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-pressed={!outfitMode} onClick={() => setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: false }))} className={tryOnChoiceChipClass(!outfitMode)} data-ai-try-on-single-mode>One garment</button>
+          <button type="button" aria-pressed={outfitMode} onClick={() => setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: true }))} className={tryOnChoiceChipClass(outfitMode)} data-ai-try-on-outfit-mode>Combined outfit · 1 try</button>
+        </div>
+        {outfitMode && <>
+          <p className="text-sm leading-relaxed text-heritage-ink/75">Choose exactly one top and one bottom for this wearer, using the same photo or studio model. Only your chosen garments are included. One combined picture uses 1 try from this order’s shared tries. Your individual previews stay saved separately.</p>
+          {(["top", "bottom"] as const).map((part) => <label key={part} className="block text-sm font-semibold text-heritage-green">
+            Choose a {part}
+            <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => { const key = event.target.value; setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...current[target.wearerId], [part]: key } })); }} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
+              <option value="">Select a {part}</option>
+              {(part === "top" ? outfitChoices.tops : outfitChoices.bottoms).map((garment) => <option key={garment.garmentKey} value={garment.garmentKey}>{garment.label}</option>)}
+            </select>
+          </label>)}
+        </>}
+      </fieldset>}
+
       {showGarmentPicker && (
         <fieldset className="min-w-0" data-ai-try-on-garment-picker>
           <legend className="font-serif text-lg font-bold text-heritage-green">
             Which garment?
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            This preview uses one garment and its fabric. Each preview uses one try.
+            This preview uses one garment and its fabric. Each preview uses one try from this order’s {triesPerOrder} tries, shared across all garments and wearers.
           </p>
           <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Which garment?">
             {previewableGarments.map((garment) => {
@@ -1126,7 +1174,16 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
-      {!currentModel && (
+      {uploadedDesign && (
+        <section className="space-y-3 rounded-xl border border-heritage-gold/30 bg-heritage-cream/30 p-4" data-ai-try-on-uploaded-design>
+          <h3 className="font-serif text-lg font-bold text-heritage-green">Your uploaded design</h3>
+          {uploadedDesign.previewUrl ? <img src={uploadedDesign.previewUrl} alt="Your uploaded design photograph" className="max-h-80 w-full rounded-xl object-contain" /> : <p role="status">Your uploaded design photo is not available. Return to Step 3 to upload it again.</p>}
+          <p className="text-sm leading-relaxed text-heritage-ink/80">This shows the person in your uploaded picture, not you. Only the garment’s fabric will change to your chosen swatch.</p>
+          <button type="button" data-ai-try-on-upload-another-design disabled={Boolean(wearerGenerating) || !onUploadAnotherDesign} onClick={() => onUploadAnotherDesign?.(uploadedDesign.garmentKey)} className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green/30 bg-white px-4 text-sm font-semibold text-heritage-green disabled:opacity-50">Upload another design</button>
+          {!fabricSwatchImageUrl && <p role="status" className="text-sm text-heritage-ink/80">Choose a fabric with a swatch image in Step 2 to use this design.</p>}
+        </section>
+      )}
+      {!uploadedDesign && !currentModel && (
         <>
         <div className="rounded-xl border border-heritage-green/15 bg-heritage-cream/35 p-4">
           <p className="text-sm leading-relaxed text-heritage-ink/80" data-ai-try-on-consent>
@@ -1184,6 +1241,7 @@ export const AiTryOnPhotoPanel = ({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-3">
+          {!uploadedDesign && <>
           <input
             ref={fileInputRef}
             id={photoInputId}
@@ -1193,31 +1251,45 @@ export const AiTryOnPhotoPanel = ({
             disabled={generating || preparingPhoto || missingGarmentImage}
             onChange={handlePhotoChange}
           />
-          <label
-            htmlFor={photoInputId}
-            className={`inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-heritage-green/40 bg-white px-5 text-xs font-bold uppercase tracking-wider text-heritage-green hover:border-heritage-green sm:w-auto ${
-              generating || preparingPhoto || missingGarmentImage ? "pointer-events-none opacity-60" : ""
-            }`}
-          >
-            {preparingPhoto ? (
-              <Loader2 aria-hidden="true" size={15} className="animate-spin" />
-            ) : (
-              <ImagePlus aria-hidden="true" size={15} />
-            )}
-            {currentPhoto ? "Change photo" : "Choose a photo"}
-          </label>
-          {!modelPickerOpen && (
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2" data-ai-try-on-source-cards>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={generating || preparingPhoto || missingGarmentImage}
+              aria-pressed={Boolean(currentPhoto) && !currentModel}
+              data-ai-try-on-photo-option
+              className={`flex min-h-28 min-w-0 items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                currentPhoto && !currentModel
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 bg-white hover:border-heritage-gold/45"
+              }`}
+            >
+              {preparingPhoto ? <Loader2 aria-hidden="true" size={22} className="shrink-0 animate-spin text-heritage-green" /> : <ImagePlus aria-hidden="true" size={22} className="shrink-0 text-heritage-green" />}
+              <span className="min-w-0">
+                <span className="block font-serif text-lg font-bold text-heritage-green">Upload a photo</span>
+                <span className="mt-1 block text-sm leading-relaxed text-heritage-ink/70">{currentPhoto ? "Change your photo to try another." : "See the design on a photo of you."}</span>
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setModelPickerOpen(true)}
               disabled={generating || missingGarmentImage}
+              aria-pressed={Boolean(currentModel)}
+              aria-expanded={modelPickerOpen}
               data-ai-try-on-model-option
-              className="inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-heritage-green underline underline-offset-2 hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60"
+              className={`flex min-h-28 min-w-0 items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                currentModel || modelPickerOpen
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 bg-white hover:border-heritage-gold/45"
+              }`}
             >
-              <UserRound aria-hidden="true" size={15} />
-              {AI_TRY_ON_MODEL_COPY.option}
+              <UserRound aria-hidden="true" size={22} className="shrink-0 text-heritage-green" />
+              <span className="min-w-0">
+                <span className="block font-serif text-lg font-bold text-heritage-green">{AI_TRY_ON_MODEL_COPY.option}</span>
+                <span className="mt-1 block text-sm leading-relaxed text-heritage-ink/70">See the design on one of our studio models.</span>
+              </span>
             </button>
-          )}
+          </div>
           {modelPickerOpen && (
             <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker>
               <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
@@ -1266,7 +1338,7 @@ export const AiTryOnPhotoPanel = ({
                             disabled={generating}
                             onClick={() => chooseModel(entry.id)}
                             data-ai-try-on-model={entry.id}
-                            className={`flex w-24 shrink-0 flex-col items-center gap-1 rounded-xl border-2 p-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+                            className={`relative flex w-24 shrink-0 flex-col items-center gap-1 rounded-xl border-2 p-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
                               selected ? "border-heritage-green bg-heritage-cream/50" : "border-transparent hover:border-heritage-green/30"
                             }`}
                           >
@@ -1315,6 +1387,7 @@ export const AiTryOnPhotoPanel = ({
               uploaded designs yet.
             </p>
           )}
+          </>}
           <button
             type="button"
             onClick={handleGenerate}
@@ -1327,9 +1400,12 @@ export const AiTryOnPhotoPanel = ({
             ) : (
               <Sparkles aria-hidden="true" size={15} />
             )}
-            <span>{preview ? "Make a new preview" : "Generate preview"}</span>
+            <span>{uploadedDesign ? "Use this design" : outfitMode ? "Generate combined outfit" : preview ? "Make a new preview" : "Generate preview"}</span>
             <span className="font-medium normal-case tracking-normal text-white/80">· {triesLabel}</span>
           </button>
+          <p className="text-xs leading-relaxed text-heritage-ink/70" data-ai-try-on-order-tries-note>
+            {triesPerOrder} tries per order, shared across all garments and wearers—not {triesPerOrder} per garment. Account limits also apply.
+          </p>
         </div>
       </div>
 
@@ -1383,6 +1459,8 @@ export const AiTryOnPhotoPanel = ({
             className="mx-auto max-h-[32rem] w-auto max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain"
           />
           <figcaption className="space-y-1 text-xs leading-relaxed text-heritage-ink/65">
+            {uploadedDesign && <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-uploaded-design>on your uploaded design — this shows the person in your uploaded picture, not you.</span>}
+            {outfitMode && <span className="block font-semibold text-heritage-green" data-ai-try-on-outfit-preview>Latest combined outfit preview. Individual garment previews are kept separately.</span>}
             {preview.modelId && (
               <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-model>
                 {AI_TRY_ON_MODEL_COPY.shownOnModel}

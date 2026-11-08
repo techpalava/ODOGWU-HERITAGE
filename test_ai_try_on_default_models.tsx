@@ -39,6 +39,7 @@ import { handleAiTryOn, parseAiTryOnGenerationRequest, type AiTryOnHttpDependenc
 import { createAiTryOnPreviewStore, AI_TRY_ON_PREVIEW_COLLECTION } from "./src/server/aiTryOnPreviewStore";
 import { createAiTryOnSessions } from "./src/server/aiTryOnSession";
 import {
+  AI_TRY_ON_OUTFIT_PROMPT_VERSION,
   AI_TRY_ON_MODEL_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
 } from "./src/utils/aiTryOnGatewayContract";
@@ -550,6 +551,71 @@ const harness = () => {
   assert.equal(h.usage(), "[]");
 }
 
+// Combined outfits use one normal reservation, never the shared model cache.
+for (const onModel of [false, true]) {
+  const h = harness();
+  h.deps.createModelResultCache = () => { throw new Error("outfit must not use shared cache"); };
+  const outfitGarments = [
+    { garmentKey: "shirt:chosen", garmentType: "shirt", garmentImageUrl: GARMENT_URL, fabricSwatchImageUrl: FABRIC_URL },
+    { garmentKey: "trouser:chosen", garmentType: "trouser", garmentImageUrl: `${GARMENT_URL}&bottom=1`, fabricSwatchImageUrl: `${FABRIC_URL}&bottom=1` },
+  ];
+  const refs: string[] = [];
+  h.deps.loadReferenceImage = async (url) => { refs.push(url); return img(Buffer.from(url), "image/jpeg"); };
+  const cropped: string[] = [];
+  h.deps.cropFabricSwatch = async (image) => { cropped.push(Buffer.from(image.data, "base64").toString()); return { ...image, data: Buffer.from(`cropped:${Buffer.from(image.data, "base64")}`).toString("base64") }; };
+  const body = { garmentImageUrl: undefined, wearerKey: "w-outfit", outfitGarments, ...(onModel ? { defaultModelId: "male-plus" } : { personImage: { mimeType: "image/jpeg", data: PERSON_PHOTO } }) };
+  const result = await h.post(body);
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.promptVersion, AI_TRY_ON_OUTFIT_PROMPT_VERSION);
+  assert.equal(result.body.orderTriesRemaining, 4, "one whole outfit costs exactly one try");
+  assert.equal(h.events.filter((event) => event === "ip").length, 1);
+  assert.equal(h.geminiRequests.length, 1);
+  assert.deepEqual(refs, [GARMENT_URL, FABRIC_URL, `${GARMENT_URL}&bottom=1`, `${FABRIC_URL}&bottom=1`]);
+  assert.deepEqual(cropped, [FABRIC_URL, `${FABRIC_URL}&bottom=1`], "crop both swatches, never either garment");
+  const images = h.geminiRequests[0].contents[0].parts.flatMap((part) => part.inlineData ? [part.inlineData.data] : []);
+  assert.equal(images.length, 5);
+  assert.deepEqual(images.slice(1).map((data) => Buffer.from(data, "base64").toString()), [GARMENT_URL, `cropped:${FABRIC_URL}`, `${GARMENT_URL}&bottom=1`, `cropped:${FABRIC_URL}&bottom=1`]);
+  const docs = h.db.inCollection(AI_TRY_ON_PREVIEW_COLLECTION);
+  assert.equal(docs.length, 1, "one private compressed outfit slot");
+  assert.equal(docs[0][1].wearerKey, "w-outfit");
+  assert.equal(docs[0][1].mimeType, "image/webp");
+  assert.equal((docs[0][1].expiresAt as Date).getTime(), Date.UTC(2026, 10, 2, 12) + 30 * DAY, "existing 30-day TTL");
+  assert.equal(h.bucket.under(AI_TRY_ON_MODEL_RESULT_STORAGE_PREFIX).length, 0);
+  await h.post(body);
+  assert.equal(h.db.inCollection(AI_TRY_ON_PREVIEW_COLLECTION).length, 1, "regenerating replaces only latest outfit slot");
+  assert.equal(h.geminiRequests.length, 2, "repeat combined request still costs one try, no shared cache");
+  assert.equal((await h.post({ ...body, wearerKey: "w-shirt", outfitGarments: undefined, garmentImageUrl: GARMENT_URL })).body.orderTriesRemaining, 2);
+  assert.equal(h.db.inCollection(AI_TRY_ON_PREVIEW_COLLECTION).length, 2, "individual preview coexists");
+}
+
+{
+  const top = { garmentKey: "shirt:1", garmentType: "shirt", garmentImageUrl: GARMENT_URL };
+  const bottom = { garmentKey: "trouser:1", garmentType: "trouser", garmentImageUrl: GARMENT_URL };
+  const valid = { mode: "garment", inputFingerprint: FINGERPRINT, defaultModelId: "male-plus", outfitGarments: [top, bottom] };
+  assert.equal(parseAiTryOnGenerationRequest(valid).ok, true);
+  for (const overrides of [
+    { outfitGarments: [top, top] }, { outfitGarments: [bottom, bottom] }, { outfitGarments: [top, bottom, bottom] },
+    { outfitGarments: [top] }, { outfitGarments: [top, { ...bottom, garmentKey: top.garmentKey }] },
+    { outfitGarments: [{ ...top, garmentImage: img(png) }, bottom] },
+    { outfitGarments: [{ ...top, garmentImageUrl: "http://example.test/a" }, bottom] },
+    { outfitGarments: [{ ...top, orderDetails: { garments: [{ garmentType: "trouser", optionIds: [], decorations: [] }] } }, bottom] },
+    { garmentImageUrl: GARMENT_URL }, { fabricSwatchImageUrl: FABRIC_URL }, { mode: "fabric" },
+    { uploadedDesignImage: img(png) }, { defaultModelId: undefined },
+  ]) assert.equal(parseAiTryOnGenerationRequest({ ...valid, ...overrides }).ok, false, JSON.stringify(overrides));
+}
+
+{
+  const h = harness();
+  h.deps.createGenerateContent = () => async () => ({ candidates: [{ finishReason: "SAFETY", content: { parts: [] } }] });
+  const result = await h.post({ garmentImageUrl: undefined, defaultModelId: "male-plus", outfitGarments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: GARMENT_URL },
+    { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: GARMENT_URL },
+  ] });
+  assert.equal(result.status, 422);
+  assert.equal(result.body.orderTriesRemaining, 5, "failed combined generation refunds its single reservation");
+  assert.equal(h.db.inCollection(AI_TRY_ON_PREVIEW_COLLECTION).length, 0);
+}
+
 // ------------------------------------------------------------ client gateway mapping
 {
   const completed = (extra: Record<string, unknown>) =>
@@ -658,10 +724,17 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   // The option sits next to the photo picker; the picker opens on demand.
   const option = byData(renderer, "data-ai-try-on-model-option");
   assert.equal(option.length, 1);
-  assert.equal(textOf(option[0]), AI_TRY_ON_MODEL_COPY.option);
+  assert.ok(textOf(option[0]).startsWith(AI_TRY_ON_MODEL_COPY.option));
+  const photoOption = byData(renderer, "data-ai-try-on-photo-option")[0];
+  assert.match(textOf(photoOption), /^Upload a photo/);
+  assert.equal(photoOption.type, "button");
+  assert.equal(photoOption.props["aria-pressed"], false);
+  assert.equal(option[0].props["aria-pressed"], false);
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0);
   assert.equal(hasConsent(renderer), true);
   await click(option[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model-option").length, 1, "both source cards remain available");
+  assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-expanded"], true);
   const picker = byData(renderer, "data-ai-try-on-model-picker")[0];
   assert.match(textOf(picker), new RegExp(AI_TRY_ON_MODEL_COPY.heading));
   assert.equal(byData(renderer, "data-ai-try-on-model").length, 10, "all ten models");
@@ -678,6 +751,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.equal(generateButton(renderer).props.disabled, true, "nothing chosen yet");
   await click(byData(renderer, "data-ai-try-on-model", "female-plus")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-pressed"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], false);
   assert.equal(hasConsent(renderer), false, "model mode needs no consent notice");
   assert.equal(generateButton(renderer).props.disabled, false, "no photo needed");
   await click(generateButton(renderer));
@@ -704,6 +779,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   await choosePhoto(renderer);
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0, "a photo replaces the model");
   assert.equal(hasConsent(renderer), true);
+  assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-pressed"], false);
   await click(generateButton(renderer));
   assert.equal(requests[0].defaultModelId, undefined);
   assert.ok(requests[0].personImage, "photo flow unchanged");
@@ -751,7 +828,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   );
   assert.ok(live.includes("Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."));
   assert.deepEqual(AI_TRY_ON_MODEL_COPY, {
-    option: "No photo? Try it on a model",
+    option: "Choose a model",
     heading: "Choose a model",
     intro: "See the design on one of our AI-generated models instead of a photo of you.",
     filterAll: "All",

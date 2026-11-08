@@ -14,6 +14,8 @@ import {
   type AiTryOnFitHint,
 } from "./aiTryOnFitHints.js";
 import {
+  AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION,
+  AI_TRY_ON_OUTFIT_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
   type AiTryOnGenerationRequest,
 } from "./aiTryOnGatewayContract.js";
@@ -385,6 +387,8 @@ export const createAiTryOnVisualInputFingerprint = (
     personalizedInputRevision: input.personalizedInputRevision || null,
     ...(measurementFitHints ? { measurementFitHints } : {}),
     promptVersion: AI_TRY_ON_PROMPT_VERSION,
+    ...(garmentDesigns?.some((design) => design.sourceKind === "uploaded")
+      ? { uploadedDesignPromptVersion: AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION } : {}),
     orderDetails: orderDetailsFingerprintIdentity(input.orderDetails),
     customerPhotoAssetIdentity:
       privatePhoto &&
@@ -725,3 +729,7 @@ export const recordAiTryOnPreviewCompletion = ({
 /** Bounded opaque key accepted by the existing private preview endpoints. */
 export const aiTryOnGarmentPreviewKey = (wearerId: string, garmentKey: string): string =>
   `garment-${hashVisualIdentity([wearerId, garmentKey])}`;
+
+export const aiTryOnOutfitPreviewKey = (wearerId: string): string => aiTryOnGarmentPreviewKey(wearerId, "__combined_outfit__");
+/** Latest outfit slot: design changes invalidate it; pending chooser changes do not relabel an older result. */
+export const aiTryOnOutfitFingerprint = (fingerprint: string | null): string | null => fingerprint ? hashVisualIdentity({ fingerprint, outfitPromptVersion: AI_TRY_ON_OUTFIT_PROMPT_VERSION }) : null;

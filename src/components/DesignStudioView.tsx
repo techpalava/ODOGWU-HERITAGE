@@ -345,7 +345,7 @@ import {
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
-import { aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
+import { aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets, buildAiTryOnWearerTargets } from "../utils/aiTryOnWearerTargets";
 import {
   deleteStoredAiTryOnPreviews,
   fetchAiTryOnAvailability,
@@ -3876,6 +3876,7 @@ export default function DesignStudioView({
               garmentType: occurrence.garmentType,
               assignment: occurrence.assignment,
               assignmentImage: occurrence.assignmentImage,
+              uploadedDesignPreviewUrl: futureDesignStylePreviewByOccurrenceToken[occurrence.target.occurrenceToken] || null,
             })),
             physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
             wearerOrder: wearerOrderForPlan,
@@ -3895,6 +3896,7 @@ export default function DesignStudioView({
     [
       futureScopedCustomDetailsReconciliation,
       futureDesignStyleStepProjection.occurrences,
+      futureDesignStylePreviewByOccurrenceToken,
       authoritativePhysicalOccurrencesForDomain,
       wearerOrderForPlan,
       futureMeasurementState,
@@ -11807,6 +11809,12 @@ export default function DesignStudioView({
             aiTryOnWearerTargets.length > 0 ? (
               <AiTryOnPhotoPanel
                 targets={aiTryOnWearerTargets}
+                onUploadAnotherDesign={(garmentKey) => {
+                  const occurrence = futureDesignStyleStepProjection.occurrences.find((entry) => entry.target.garmentKey === garmentKey);
+                  if (!occurrence) return;
+                  setFutureActiveDesignStyleOccurrence(occurrence.target);
+                  navigateToFutureStage("design_style");
+                }}
                 credentials={aiTryOnCredentials}
                 triesPerOrder={aiTryOnAvailability.triesPerOrder}
                 initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
