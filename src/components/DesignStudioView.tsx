@@ -618,6 +618,10 @@ export interface DesignStudioViewProps {
   initialStyleId?: string | null;
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
+  /** Shown after a gallery look has been saved into this studio session. */
+  loadedLookBanner?: string | null;
+  /** JSON list of gallery card id corrections applied for this look. */
+  loadedLookCorrections?: string | null;
   onStartFreshIndividualOrder?: () => void;
   /**
    * Starts the homepage Join flow for another community batch. Used only by
@@ -829,6 +833,8 @@ export default function DesignStudioView({
   initialStyleId,
   initialFabricCode,
   clearInitialPreset,
+  loadedLookBanner,
+  loadedLookCorrections,
   onStartFreshIndividualOrder,
   onJoinCommunityBatch,
   futureDraftRepository,
@@ -11460,6 +11466,17 @@ export default function DesignStudioView({
       }
       className="font-sans"
     >
+      {loadedLookBanner ? (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="gallery-look-banner"
+          data-gallery-look-corrections={loadedLookCorrections || "[]"}
+          className="mb-4 min-w-0 rounded-2xl border border-heritage-gold/40 bg-heritage-cream px-4 py-3 text-sm font-semibold leading-relaxed text-heritage-green"
+        >
+          {loadedLookBanner}
+        </div>
+      ) : null}
       {isRestoringFutureDraft && (
         <div
           role="status"

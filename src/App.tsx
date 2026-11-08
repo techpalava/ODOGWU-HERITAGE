@@ -136,7 +136,12 @@ import { ViewLoadingFallback } from "./components/ViewLoadingFallback";
 
 import { AdminAuthGuard } from "./components/AdminAuthGuard";
 import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
+import { GalleryLookReplaceDialog } from "./components/GalleryLookReplaceDialog";
 import { IndividualOrderStartDialog } from "./components/IndividualOrderStartDialog";
+import {
+  buildGalleryLookDraft,
+  type GalleryLookBuildResult,
+} from "./utils/galleryLookPreset";
 import PrivateBatchSetupView, {
   resolvePrivateBatchSubmitLimits,
   type PrivateBatchSetupSubmission,
@@ -163,6 +168,14 @@ type IndividualOrderStartRequest = Readonly<{
   resumeContext: OrderContext | null;
   entry: "individual" | "design-studio";
   resumeActionLabel?: string;
+}>;
+
+type PreparedGalleryLook = Extract<GalleryLookBuildResult, { ok: true }>;
+
+type GalleryLookReplaceRequest = Readonly<{
+  decisionGeneration: number;
+  existing: LoadedHomepageMutableDraft;
+  prepared: PreparedGalleryLook;
 }>;
 
 type PrivateBatchDraftReplacementRequest = Readonly<{
@@ -422,6 +435,11 @@ export default function App() {
   const [privateBatchSetupError, setPrivateBatchSetupError] = useState<string | null>(null);
   const [isHomepageDraftOperationBusy, setIsHomepageDraftOperationBusy] =
     useState(false);
+  const [galleryLookReplacement, setGalleryLookReplacement] =
+    useState<GalleryLookReplaceRequest | null>(null);
+  const [galleryLookBanner, setGalleryLookBanner] = useState<string | null>(null);
+  const [galleryLookCorrections, setGalleryLookCorrections] = useState("[]");
+  const [studioContinueNonce, setStudioContinueNonce] = useState(0);
 
   const triggerNotification = (
     message: string,
@@ -445,6 +463,7 @@ export default function App() {
     setHomepageDraftReplacement(null);
     setPrivateBatchDraftReplacement(null);
     setIndividualOrderStartRequest(null);
+    setGalleryLookReplacement(null);
   };
 
   const getHomepageDraftReplacementService = () => {
@@ -509,6 +528,8 @@ export default function App() {
   const openFreshCommunityStudio = (context: OrderContext) => {
     setPresetStyleId(null);
     setPresetFabricCode(null);
+    setGalleryLookBanner(null);
+    setGalleryLookCorrections("[]");
     setOrderContext(context);
     setActiveTab("design");
   };
@@ -521,11 +542,170 @@ export default function App() {
   const openDesignStudioForOrder = (context: OrderContext) => {
     setPresetStyleId(null);
     setPresetFabricCode(null);
+    setGalleryLookBanner(null);
+    setGalleryLookCorrections("[]");
     setOrderContext(context);
     setActiveTab("design");
   };
 
-  const [studioContinueNonce, setStudioContinueNonce] = useState(0);
+  const openGalleryLookStudio = (prepared: PreparedGalleryLook) => {
+    setPresetStyleId(null);
+    setPresetFabricCode(null);
+    setOrderContext(freshIndividualOrderContext());
+    setGalleryLookBanner(prepared.banner);
+    setGalleryLookCorrections(JSON.stringify(prepared.corrections));
+    setStudioContinueNonce((current) => current + 1);
+    setActiveTab("design");
+    triggerNotification(prepared.toast, "success");
+  };
+
+  const persistPreparedGalleryLook = async (
+    prepared: PreparedGalleryLook,
+  ): Promise<boolean> => {
+    const saved = GuestOrderSessionService.saveFutureDesignDraft(prepared.draft);
+    if (!saved || saved.status !== "saved") {
+      triggerNotification(
+        "This look could not be saved, so it was not opened.",
+        "info",
+      );
+      return false;
+    }
+    const firebaseUser = auth.currentUser;
+    if (currentUser && firebaseUser && !firebaseUser.isAnonymous) {
+      try {
+        const repository = createFirebaseAuthenticatedFutureDraftRepository({
+          customer: currentUser,
+          authResolved: true,
+          firebaseUser,
+        });
+        const loaded = await repository.load();
+        const expectedRevision =
+          loaded.status === "loaded" ? loaded.record.revision : null;
+        await repository.save(prepared.draft, expectedRevision);
+      } catch (error) {
+        console.error("Unable to save the gallery look for this account.", error);
+        triggerNotification(
+          "This look could not be saved to your account, so it was not opened.",
+          "info",
+        );
+        return false;
+      }
+    }
+    allowNextStudioFutureDesignDraftSession();
+    return true;
+  };
+
+  const commitPreparedGalleryLook = async (
+    prepared: PreparedGalleryLook,
+    existing: LoadedHomepageMutableDraft | null,
+  ) => {
+    if (homepageDraftOperationInFlightRef.current) return;
+    homepageDraftOperationInFlightRef.current = true;
+    setIsHomepageDraftOperationBusy(true);
+    try {
+      if (existing) {
+        const discarded = await getHomepageDraftReplacementService().discard(
+          existing,
+        );
+        if (discarded.status !== "discarded") {
+          triggerNotification(
+            "We could not replace your unfinished order safely. It has not been changed.",
+            "info",
+          );
+          return;
+        }
+      }
+      const saved = await persistPreparedGalleryLook(prepared);
+      if (!saved) {
+        if (existing) {
+          const restored = GuestOrderSessionService.saveFutureDesignDraft(
+            existing.draft,
+          );
+          if (!restored || restored.status !== "saved") {
+            triggerNotification(
+              "This look could not be saved, and the previous order could not be put back. Please try again.",
+              "info",
+            );
+          }
+        }
+        return;
+      }
+      setGalleryLookReplacement(null);
+      setUnfinishedOrderLabel(null);
+      openGalleryLookStudio(prepared);
+    } catch (error) {
+      console.error("Unable to open this gallery look.", error);
+      triggerNotification(
+        "This look could not be opened. Your order was left unchanged when that was still possible.",
+        "info",
+      );
+    } finally {
+      homepageDraftOperationInFlightRef.current = false;
+      setIsHomepageDraftOperationBusy(false);
+    }
+  };
+
+  const handleGalleryCustomizeLook = (
+    styleId: string,
+    fabricCode: string,
+    look?: { title: string; styleName: string; fabricName: string },
+  ) => {
+    void (async () => {
+      if (
+        homepageDraftEntryRequestInFlight.current ||
+        homepageDraftOperationInFlightRef.current ||
+        galleryLookReplacement
+      ) {
+        return;
+      }
+      homepageDraftEntryRequestInFlight.current = true;
+      try {
+        const catalogue = useAppStore.getState();
+        const prepared = buildGalleryLookDraft({
+          styleId,
+          fabricCode,
+          title: look?.title,
+          styleName: look?.styleName,
+          fabricName: look?.fabricName,
+          styles: catalogue.styles,
+          fabrics: catalogue.fabrics,
+          stylesLoadState: catalogue.stylesLoadState,
+          fabricsLoadState: catalogue.fabricsLoadState,
+          customDetailCatalog: catalogue.customDetailCatalog,
+        });
+        if (prepared.ok === false) {
+          triggerNotification(prepared.message, "info");
+          return;
+        }
+        const authority = getHomepageDraftReplacementService();
+        const inspected = await authority.inspect();
+        if (inspected.status === "valid") {
+          setGalleryLookReplacement({
+            decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+            existing: inspected.existing,
+            prepared,
+          });
+          return;
+        }
+        if (inspected.status !== "empty") {
+          triggerNotification(
+            "We could not safely check your unfinished order. Please try again.",
+            "info",
+          );
+          return;
+        }
+        await commitPreparedGalleryLook(prepared, null);
+      } catch (error) {
+        console.error("Unable to customize this gallery look.", error);
+        triggerNotification(
+          "This look could not be opened. Please try again.",
+          "info",
+        );
+      } finally {
+        homepageDraftEntryRequestInFlight.current = false;
+      }
+    })();
+  };
 
   const inspectActiveDraftForSavedOrder = async () => {
     const inspected = await getHomepageDraftReplacementService().inspect();
@@ -2072,6 +2252,8 @@ export default function App() {
                 setCustomers={setCustomers}
                 initialStyleId={presetStyleId}
                 initialFabricCode={presetFabricCode}
+                loadedLookBanner={galleryLookBanner}
+                loadedLookCorrections={galleryLookCorrections}
                 clearInitialPreset={() => {
                   setPresetStyleId(null);
                   setPresetFabricCode(null);
@@ -2208,15 +2390,7 @@ export default function App() {
                 styles={styles}
                 batches={batches}
                 onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                onSelectStyle={(styleId, fabricCode) => {
-                  setPresetStyleId(styleId);
-                  setPresetFabricCode(fabricCode);
-                  setActiveTab("design");
-                  triggerNotification(
-                    `Gallery preset loaded: ${styleId} + ${fabricCode}`,
-                    "info",
-                  );
-                }}
+                onSelectStyle={handleGalleryCustomizeLook}
               />
             )}
 
@@ -2261,6 +2435,28 @@ export default function App() {
 
       {/* STICKY SITE FEEDBACK TAB (every page) */}
       <SiteFeedbackButton />
+
+      {galleryLookReplacement && (
+        <GalleryLookReplaceDialog
+          lookTitle={galleryLookReplacement.prepared.title}
+          busy={isHomepageDraftOperationBusy}
+          onReplace={() => {
+            const request = galleryLookReplacement;
+            if (
+              request.decisionGeneration !==
+              homepageDraftDecisionGenerationRef.current
+            ) {
+              return;
+            }
+            void commitPreparedGalleryLook(request.prepared, request.existing);
+          }}
+          onKeep={() => {
+            if (!homepageDraftOperationInFlightRef.current) {
+              setGalleryLookReplacement(null);
+            }
+          }}
+        />
+      )}
 
       {individualOrderStartRequest && (
         <IndividualOrderStartDialog
