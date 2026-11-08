@@ -128,12 +128,12 @@ export default function HomepageCommunityShowcase({
               <div
                 key={group.number}
                 data-community-group={group.name}
-                className={`min-w-0 ${FIVE_ITEM_TABLET_SPAN_CLASS}${fiveItemTabletOffsetClass(index)} rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-left`}
+                className={`min-w-0 ${FIVE_ITEM_TABLET_SPAN_CLASS}${fiveItemTabletOffsetClass(index)} rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-center sm:text-left`}
               >
                 <p className="text-xs font-semibold text-heritage-gold font-sans break-words">
                   Group {group.number} · {group.name}
                 </p>
-                {/* Below sm (phones) the counts stack. From sm up they stay one line. */}
+                {/* Below sm (phones) the counts stack and the card text is centred. From sm up they stay one left-aligned line. */}
                 <p className="text-xs text-white/70 font-sans mt-1 break-words">
                   <span className="block sm:inline">{group.people} people</span><span className="hidden sm:inline"> · </span><span className="block sm:inline">{group.outfits} outfits</span>
                 </p>

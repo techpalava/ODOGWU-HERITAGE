@@ -143,6 +143,8 @@ try {
   );
   groupCards.forEach((card, index) => {
     const className = String(card.props.className);
+    assert.match(className, /text-center sm:text-left/, `group card ${index} centres text on phones only`);
+    assert.doesNotMatch(className, /(^|\s)text-left(\s|$)/, `group card ${index} is not left-aligned below sm`);
     assert.match(className, /sm:col-span-2 lg:col-span-1/, `group card ${index} spans two tablet columns`);
     assert.equal(
       /sm:col-start-2 lg:col-start-auto/.test(className),
