@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -63,5 +64,9 @@ assert.ok(failedHtml.includes("AI Try-on could not be completed") && failedHtml.
 assert.ok(!render(ready).includes("could not be completed"));
 
 // 5. Retention line wording.
-assert.equal(AI_TRY_ON_RETENTION_NOTICE, "We use your photo only to make the try-on preview for this order. Photos are kept with the order until it's completed, then deleted.");
+assert.equal(AI_TRY_ON_RETENTION_NOTICE, "We use your photo only to make your try-on preview and don't store it. Your preview is kept with your order and deleted 60 days after payment. Previews for unpaid orders are deleted after 30 days.");
+const studioSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
+assert.ok(studioSource.includes("{AI_TRY_ON_RETENTION_NOTICE}"), "retention line rendered");
+const summarySource = readFileSync("src/utils/designStudioFutureSummary.ts", "utf8");
+assert.match(summarySource, /skipOrigin === "continued_while_generating"\) \{\s+return \{ status: "skipped", label: "No preview yet" \}/);
 console.log("AI Try-on step status tests passed");

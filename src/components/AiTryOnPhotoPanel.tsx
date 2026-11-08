@@ -91,13 +91,13 @@ export const AI_TRY_ON_CONSENT_NOTICE =
   "By uploading a photo, you agree that The Odogwu Heritage can send it to Google's Gemini AI to create a try-on preview. The photo must be of you, or of someone aged 18 or over who has agreed to it.";
 
 /**
- * How the photo is used and kept (wording approved by Xavier, card t88s783).
- * NOTE: the server today never stores the uploaded photo at all; the
- * generated previews are deleted at payment, and the copy saved with a paid
- * order is deleted 60 days after payment, not when the order is completed.
+ * How the photo is used and kept (Xavier, cards t88s783 / t88s789). Matches
+ * the code: the uploaded photo is never stored (aiTryOnPreviewStore), the
+ * order copy is deleted 60 days after payment (aiTryOnOrderImages), and
+ * unpaid previews expire after 30 days (AI_TRY_ON_PREVIEW_RETENTION_MS).
  */
 export const AI_TRY_ON_RETENTION_NOTICE =
-  "We use your photo only to make the try-on preview for this order. Photos are kept with the order until it's completed, then deleted.";
+  "We use your photo only to make your try-on preview and don't store it. Your preview is kept with your order and deleted 60 days after payment. Previews for unpaid orders are deleted after 30 days.";
 
 export const AI_TRY_ON_HOW_WE_USE_BULLETS: ReadonlyArray<{ label: string; text: string }> = [
   {
