@@ -21,6 +21,9 @@ assert.match(
   /text-\[1\.75rem\][\s\S]*sm:text-\[2rem\][\s\S]*lg:text-\[2\.15rem\][\s\S]*xl:text-\[2\.4rem\]/,
   "Both heading lines share one size on the h1",
 );
+assert.match(h1, /\btext-center\b/, "Title is centered on phones");
+assert.match(h1, /\bmd:text-left\b/, "Title returns to the left from 768px");
+assert.doesNotMatch(h1, /\b(?:sm|lg|xl):text-center\b/, "Title is not centered on tablet or desktop");
 
 const lineSpans = [...h1.matchAll(/<span\b[^>]*className="([^"]*)"/g)].map((match) => match[1]);
 assert.equal(lineSpans.length, 3, "Title, tagline, and gold phrase are the only heading spans");
@@ -41,7 +44,16 @@ assert.match(
   source,
   /const heroProseClassName =\s*"text-left leading-relaxed font-sans lg:text-justify lg:\[text-align-last:left\]"/,
 );
-assert.equal((hero.match(/heroProseClassName/g) || []).length, 7, "Welcome, vision, mission, and four values use the prose class");
+assert.match(
+  source,
+  /const heroIntroProseClassName =\s*"text-center \[text-align-last:center\] leading-relaxed font-sans md:text-left md:\[text-align-last:left\] lg:text-justify lg:\[text-align-last:left\]"/,
+);
+assert.equal((hero.match(/heroIntroProseClassName/g) || []).length, 1, "Only the welcome paragraph uses the mobile-centered intro");
+assert.equal((hero.match(/heroProseClassName/g) || []).length, 6, "Vision, mission, and four values stay left until desktop");
+assert.ok(
+  hero.indexOf("heroIntroProseClassName") < hero.indexOf("data-hero-photos"),
+  "Centered intro is the welcome text above the slider",
+);
 assert.doesNotMatch(hero, /\\u00AD|\u00AD/, "Hero copy has no discretionary hyphens");
 assert.doesNotMatch(hero, /hyphens-/);
 

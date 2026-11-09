@@ -33,9 +33,13 @@ import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jp
 import ankaraKidsImage from "../assets/images/regenerated_image_1784258480371.png";
 import ankaraFamilyImage from "../assets/images/regenerated_image_1784259611604.png";
 
-/** Left on phones; justified from the desktop column breakpoint, last line left. */
+/** Values stay left on phones and tablets; justified from the desktop columns. */
 const heroProseClassName =
   "text-left leading-relaxed font-sans lg:text-justify lg:[text-align-last:left]";
+
+/** Intro above the slider is centered only below the md (768px) breakpoint. */
+const heroIntroProseClassName =
+  "text-center [text-align-last:center] leading-relaxed font-sans md:text-left md:[text-align-last:left] lg:text-justify lg:[text-align-last:left]";
 
 interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
@@ -285,7 +289,7 @@ export default function HomeView({
               (font-display) only has capital glyphs. */}
           <div className="space-y-5 sm:space-y-6" data-hero-heading>
             <h1
-              className="font-serif font-medium leading-tight text-left text-[1.75rem] sm:text-[2rem] lg:text-[2.15rem] xl:text-[2.4rem]"
+              className="font-serif font-medium leading-tight text-center md:text-left text-[1.75rem] sm:text-[2rem] lg:text-[2.15rem] xl:text-[2.4rem]"
               data-hero-title
             >
               <span className="block text-balance lg:whitespace-nowrap">
@@ -300,7 +304,7 @@ export default function HomeView({
             </h1>
             {/* Hero Description */}
             <p
-              className={`text-sm sm:text-base lg:text-lg text-heritage-beige ${heroProseClassName}`}
+              className={`text-sm sm:text-base lg:text-lg text-heritage-beige ${heroIntroProseClassName}`}
               data-hero-welcome
             >
               Welcome to {businessSettings.applicationSettings.communityName}. We
