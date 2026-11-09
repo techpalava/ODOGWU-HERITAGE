@@ -38,23 +38,39 @@ try {
   assert.ok(![...classes(row)].some(token => /^h-|^max-h-/.test(token)),
     "Mobile row must grow with wrapped branding, without a fixed height cap");
   assert.ok(classes(row).has("items-center"), "Keep logo and actions vertically aligned");
+  assert.ok(classes(row).has("gap-y-0") && !classes(row).has("gap-y-1"),
+    "Phone row gap does not insert space beyond the line boxes");
+  assert.ok(classes(row).has("gap-x-1.5") && classes(row).has("min-[360px]:gap-x-2.5"),
+    "Narrow phones use a 6px column gap so the title can sit on two lines");
   // Phones: 3-column grid so the community line spans under title + controls (max 2 lines at 320px).
   assert.ok(classes(row).has("grid") && classes(row).has("sm:flex"),
     "Phone grid layout, single flex row from sm");
   assert.ok(classes(brand).has("sm:min-w-0"), "Brand text can wrap in the available width");
   assert.ok(classes(logo).has("shrink-0") && classes(logo).has("row-span-2"),
     "Logo keeps its size and centres against both brand lines");
+  assert.ok(classes(logo).has("max-[359px]:translate-y-2") && classes(logo).has("min-[360px]:max-sm:translate-y-1.5"),
+    "Phone logo shifts down onto the lockup and the shift stops at sm");
 
   // Screenshot bug (2026-10-25): at 1024-1180px the desktop nav squeezed the brand and
   // the title rendered as "THE ODOG…". One title, one community line, no ellipsis.
   const title = header.findByProps({ "data-header-brand-title": true });
   const community = header.findByProps({ "data-header-community-line": true });
+  assert.ok(classes(title).has("self-end") && classes(title).has("sm:self-stretch"),
+    "Phone title sits on the bottom of the icon row; sm+ stretch is unchanged");
+  assert.ok(classes(title).has("text-[11px]") && classes(title).has("min-[360px]:text-[12px]"),
+    "Title is 11px below 360px so it can stay on two lines, then 12px");
+  assert.ok(![...classes(title)].some(token => token.includes("text-box-trim")),
+    "Title uses line-height, not text-box-trim");
   assert.equal(text(title), "THE ODOGWU HERITAGE", "Full brand title is present");
   assert.equal(text(community), originalState.businessSettings.applicationSettings.tagline ||
     "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)", "Full community line is present");
   assert.equal(header.findAll(node => node.type === "span" && text(node) === "THE ODOGWU HERITAGE").length, 1,
     "Exactly one brand title element (no duplicated hidden copies)");
   assert.ok(classes(community).has("col-span-2"), "Community line uses the full phone width");
+  assert.ok(classes(community).has("self-start") && classes(community).has("leading-tight"),
+    "Phone slogan starts at the top of its row with tight leading under the title");
+  assert.ok(![...classes(community)].some(token => token.includes("text-box-trim")),
+    "Slogan uses line-height, not text-box-trim");
   for (const line of [title, community]) {
     assert.ok(classes(line).has("break-words"));
     assert.ok(![...classes(line)].some(token =>
