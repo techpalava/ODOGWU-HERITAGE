@@ -20,6 +20,7 @@ import {
   type AiTryOnGenerationRequest,
 } from "./aiTryOnGatewayContract.js";
 import { DESIGN_STUDIO_STAGE_IDS } from "./designSourceJourney.js";
+import { AI_TRY_ON_DEFAULT_MODELS, findAiTryOnDefaultModel } from "./aiTryOnDefaultModels.js";
 import {
   orderDetailsFingerprintIdentity,
   type AiTryOnOrderDetails,
@@ -780,19 +781,46 @@ export const aiTryOnGarmentPreviewKey = (wearerId: string, garmentKey: string): 
   `garment-${hashVisualIdentity([wearerId, garmentKey])}`;
 
 export const aiTryOnOutfitPreviewKey = (wearerId: string): string => aiTryOnGarmentPreviewKey(wearerId, "__combined_outfit__");
+
+/** Who the combined outfit was pictured on. No photo bytes, names, or tokens. */
+export type AiTryOnOutfitVisualSource =
+  | { readonly kind: "studio_model"; readonly modelId: string }
+  | { readonly kind: "customer_photo" };
+
+/** Allowlisted studio models, or a customer photo. Unknown ids become "no source". */
+export const aiTryOnOutfitVisualSource = (
+  source: AiTryOnOutfitVisualSource | null | undefined,
+): AiTryOnOutfitVisualSource | null => {
+  if (!source) return null;
+  if (source.kind === "customer_photo") return { kind: "customer_photo" };
+  const model = findAiTryOnDefaultModel(source.modelId);
+  return model ? { kind: "studio_model", modelId: model.id } : null;
+};
+
+/** Every source Summary can treat as the current outfit. The panel picks one. */
+export const aiTryOnOutfitVisualSources = (): readonly AiTryOnOutfitVisualSource[] => [
+  { kind: "customer_photo" },
+  ...AI_TRY_ON_DEFAULT_MODELS.map(
+    (model): AiTryOnOutfitVisualSource => ({ kind: "studio_model", modelId: model.id }),
+  ),
+];
+
 /**
  * Outfit slot (deep check M1): the chosen top and bottom, each by its own
- * garment fingerprint. Changing another garment, or choosing a different
- * pair, makes an older outfit result out of date.
+ * garment fingerprint, plus the studio model or customer photo. Changing
+ * another garment, the pair, or the model makes an older outfit result out
+ * of date. `source` is allowlisted; it never contains a photo or a secret.
  */
 export const aiTryOnOutfitFingerprint = (
   top: { garmentKey: string; inputFingerprint?: string | null },
   bottom: { garmentKey: string; inputFingerprint?: string | null },
+  source: AiTryOnOutfitVisualSource | null = null,
 ): string | null =>
   top.inputFingerprint && bottom.inputFingerprint
     ? hashVisualIdentity({
         top: [top.garmentKey, top.inputFingerprint],
         bottom: [bottom.garmentKey, bottom.inputFingerprint],
         outfitPromptVersion: AI_TRY_ON_OUTFIT_PROMPT_VERSION,
+        visualSource: aiTryOnOutfitVisualSource(source),
       })
     : null;

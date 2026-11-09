@@ -8,6 +8,7 @@ import {
   aiTryOnTargetHasDesign,
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
+import type { AiTryOnOutfitVisualSource } from "../utils/aiTryOnWorkflow";
 import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -606,6 +607,14 @@ export const AiTryOnPhotoPanel = ({
       ? entry.previewableGarments?.[0]?.garmentKey === selectedPreview?.garmentKey
       : entry.wearerId === target.wearerId,
   ) ?? target : null;
+  const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
+  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
+  // No studio model means the customer-photo source, including after the
+  // photo bytes are dropped. Picking a model is what makes an older picture
+  // out of date.
+  const outfitVisualSource: AiTryOnOutfitVisualSource = currentModel
+    ? { kind: "studio_model", modelId: currentModel.id }
+    : { kind: "customer_photo" };
   const outfitSlot = target ? aiTryOnOutfitTarget(target) : null;
   const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
   const outfitMode = Boolean(outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
@@ -621,8 +630,23 @@ export const AiTryOnPhotoPanel = ({
   const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
   // Deep check M1: the outfit's fingerprint is the chosen pair's.
   const outfitTarget = target && outfitSlot
-    ? aiTryOnOutfitTarget(target, selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null)
+    ? aiTryOnOutfitTarget(
+        target,
+        selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null,
+        outfitVisualSource,
+      )
     : null;
+  const outfitRecordFingerprints = outfitSlot
+    ? [previews[outfitSlot.wearerId]?.inputFingerprint, stored[outfitSlot.wearerId]?.inputFingerprint].filter(
+        (fingerprint): fingerprint is string => Boolean(fingerprint),
+      )
+    : [];
+  const outfitPreviewStale = Boolean(
+    outfitMode &&
+      outfitTarget?.inputFingerprint &&
+      outfitRecordFingerprints.length > 0 &&
+      outfitRecordFingerprints.every((fingerprint) => fingerprint !== outfitTarget.inputFingerprint),
+  );
   const previewTarget = outfitMode ? outfitTarget : singlePreviewTarget;
   // Deep check L3: a preview stored under the wearer's own key before it had
   // 2+ garments. It can't be tied to a garment: out of date for the wearer.
@@ -650,8 +674,6 @@ export const AiTryOnPhotoPanel = ({
   const left = Math.min(triesRemaining ?? triesPerOrder, accountTriesRemaining ?? Infinity);
   const outOfPreviews: PanelMessage =
     accountTriesRemaining === 0 ? { kind: "account_out_of_previews" } : { kind: "out_of_previews" };
-  const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
-  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
   const preview =
     previewTarget && previewTarget.inputFingerprint
       ? previews[previewKey]?.inputFingerprint === previewTarget.inputFingerprint
@@ -699,6 +721,9 @@ export const AiTryOnPhotoPanel = ({
       for (const [wearerId, entry] of Object.entries(current)) {
         const match = previewTargets.find((item) => item.wearerId === wearerId);
         if (!match || !aiTryOnTargetHasDesign(match) || aiTryOnPreviewFingerprintIsCurrent(match, entry.inputFingerprint)) continue;
+        // Keep a combined-outfit picture so the panel can mark it out of date
+        // when the studio model or photo changes. The image stays hidden.
+        if (match.previewKind === "outfit") continue;
         delete next[wearerId];
         changed = true;
       }
@@ -1290,6 +1315,12 @@ export const AiTryOnPhotoPanel = ({
         </>}
       </fieldset>}
 
+      {outfitPreviewStale && target && (
+        <div className="rounded-xl border border-heritage-gold/35 bg-heritage-gold/8 p-3" data-ai-try-on-outfit-preview-stale={target.wearerId}>
+          <p className="text-xs font-bold text-heritage-green">{AI_TRY_ON_ORDER_IMAGE_COPY.staleTitle(target.label)}</p>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">{AI_TRY_ON_ORDER_IMAGE_COPY.staleBody}</p>
+        </div>
+      )}
       {legacyWearerPreview && target && (
         <div className="rounded-xl border border-heritage-gold/35 bg-heritage-gold/8 p-3" data-ai-try-on-legacy-preview-stale={target.wearerId}>
           <p className="text-xs font-bold text-heritage-green">{AI_TRY_ON_ORDER_IMAGE_COPY.staleTitle(target.label)}</p>

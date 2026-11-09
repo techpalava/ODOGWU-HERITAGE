@@ -1302,4 +1302,47 @@ console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt
   assert.ok(connect.split(" ").includes("blob:"), "connect-src lists blob:");
   assert.ok(connect.split(" ").includes("'self'"));
   console.log("PASS: CSP connect-src allows blob: (L5)");
+
+{
+  const modelBody = {
+    mode: "garment",
+    orderKey: "draft-model-log",
+    inputFingerprint: FINGERPRINT,
+    defaultModelId: "male-plus",
+    garmentImageUrl: "https://example.test/shirt.jpg",
+    wearerKey: "order",
+  };
+  const completed = harness();
+  completed.deps.loadDefaultModelImage = async () => ({ mimeType: "image/png", data: png });
+  completed.deps.loadReferenceImage = async () => ({ mimeType: "image/png", data: png });
+  completed.deps.createModelResultCache = () => ({ reuse: async () => null, save: async () => undefined });
+  const completedResult = response();
+  await handleAiTryOn(post(modelBody), completedResult.res, completed.deps);
+  assert.equal(completedResult.state.status, 200);
+  const completedLog = completed.logs.find((line) => line.includes('"outcome":"completed"')) ?? "";
+  assert.match(completedLog, /"modelId":"male-plus"/);
+  assert.doesNotMatch(completedLog, /@|personImage|AIza/);
+
+  const cached = harness();
+  cached.deps.loadDefaultModelImage = async () => ({ mimeType: "image/png", data: png });
+  cached.deps.loadReferenceImage = async () => ({ mimeType: "image/png", data: png });
+  cached.deps.createModelResultCache = () => ({
+    reuse: async () => ({ mimeType: "image/png", data: png }),
+    save: async () => undefined,
+  });
+  const cachedResult = response();
+  await handleAiTryOn(post({ ...modelBody, orderKey: "draft-model-hit", defaultModelId: "male-1-light" }), cachedResult.res, cached.deps);
+  assert.equal(cachedResult.state.status, 200);
+  const hitLog = cached.logs.find((line) => line.includes('"outcome":"model_cache_hit"')) ?? "";
+  assert.match(hitLog, /"modelId":"male-1-light"/);
+  assert.equal(cached.calls.length, 0, "a cache hit does not call Gemini");
+
+  const photo = harness();
+  const photoResult = response();
+  await handleAiTryOn(post(validBody({ orderKey: "draft-photo-log" })), photoResult.res, photo.deps);
+  assert.equal(photoResult.state.status, 200);
+  const photoLog = photo.logs.find((line) => line.includes('"outcome":"completed"')) ?? "";
+  assert.match(photoLog, /"modelId":null/);
+  console.log("PASS: completed try-on logs record the allowlisted model id");
+}
 }

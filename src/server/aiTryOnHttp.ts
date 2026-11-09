@@ -1292,6 +1292,7 @@ async function handleAiTryOnRequest(
           mode: parsed.mode,
           promptVersion,
           previewStored: Boolean(stored),
+          modelId: defaultModel.id,
         }),
       );
       const body: AiTryOnGenerationSuccess = {
@@ -1618,6 +1619,7 @@ async function handleAiTryOnRequest(
       attempts: outcome.attempts ?? 1,
       ...(claim ? { busy: "recovered", busyRequest: claim.requests } : {}),
       previewStored: Boolean(stored),
+      modelId: defaultModel ? defaultModel.id : null,
     }),
   );
   const body: AiTryOnGenerationSuccess = {
