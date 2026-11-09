@@ -62,6 +62,14 @@ import { GarmentTypeStep, getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJourneyStepper";
+import { GalleryStyleIntentBanner } from "./GalleryStyleIntentBanner";
+import {
+  isGalleryStyleId,
+  readGalleryStyleId,
+  replaceGalleryStyleId,
+  requestReturnToExploreDesignStyles,
+  resolveGalleryStyleIntent,
+} from "../utils/galleryStyleIntent";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import {
   decideOrderFeedbackPromptAfterNavigation,
@@ -1093,6 +1101,16 @@ export default function DesignStudioView({
     getGarmentTypeStageCompletion(garmentTypeSelection);
   const [futureStageId, setFutureStageId] =
     useState<DesignStudioStageId>("garment_type");
+  const [galleryStyleId, setGalleryStyleId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return initialStyleId ?? null;
+    return readGalleryStyleId(window.location.search) || initialStyleId || null;
+  });
+  const [galleryStyleDismissed, setGalleryStyleDismissed] = useState(false);
+  const [galleryReplaceConfirmed, setGalleryReplaceConfirmed] = useState(false);
+  const galleryAssignAttemptRef = useRef<string | null>(null);
+  const galleryAssignRef = useRef<
+    (requests: readonly DesignStyleStepCatalogMutationRequest[]) => void
+  >(() => {});
   const futureStageNavigationRequestIdRef = useRef(0);
   const [futureStageNavigationRequest, setFutureStageNavigationRequest] =
     useState<DesignStudioNavigationRequest | null>(null);
@@ -2250,6 +2268,27 @@ export default function DesignStudioView({
     futureDesignStyleUploadedSourceByGarmentKey,
     futureDesignStyleDraftAuthority,
   ]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncGalleryStyleFromUrl = () => {
+      const next = readGalleryStyleId(window.location.search);
+      setGalleryStyleDismissed(false);
+      setGalleryReplaceConfirmed(false);
+      galleryAssignAttemptRef.current = null;
+      setGalleryStyleId(next);
+    };
+    window.addEventListener("popstate", syncGalleryStyleFromUrl);
+    return () => window.removeEventListener("popstate", syncGalleryStyleFromUrl);
+  }, []);
+  useEffect(() => {
+    if (galleryStyleDismissed || galleryStyleId || !initialStyleId) return;
+    if (!isGalleryStyleId(initialStyleId)) return;
+    setGalleryStyleId(initialStyleId);
+    if (typeof window !== "undefined" && readGalleryStyleId(window.location.search) !== initialStyleId) {
+      replaceGalleryStyleId(initialStyleId, window.history, window.location);
+    }
+  }, [galleryStyleDismissed, galleryStyleId, initialStyleId]);
+  const activeGalleryStyleId = galleryStyleDismissed ? null : galleryStyleId;
   const futureDesignStyleStepProjection = useMemo(
     () =>
       projectDesignStyleStep({
@@ -2265,6 +2304,52 @@ export default function DesignStudioView({
       styles,
     ],
   );
+  const galleryStyleIntent = useMemo(
+    () =>
+      resolveGalleryStyleIntent({
+        styleId: activeGalleryStyleId,
+        stylesLoadState,
+        styles,
+        garmentTypeSelection,
+        occurrences: futureDesignStyleStepProjection.occurrences.map(
+          (occurrence) => ({
+            occurrenceToken: occurrence.target.occurrenceToken,
+            garmentKey: occurrence.target.garmentKey,
+            garmentType: occurrence.garmentType,
+            label: occurrence.label,
+            assignmentKind: occurrence.assignment?.sourceKind ?? "none",
+            assignmentStyleId:
+              occurrence.assignment?.sourceKind === "catalog"
+                ? occurrence.assignment.catalogStyleId
+                : null,
+          }),
+        ),
+        hydrationSettled:
+          guestDraftHydrated &&
+          Boolean(currentFutureDesignStyleDraftHydration?.result.ledger) &&
+          futureDesignStyleStepProjection.runtimeStatus !== "hydrating" &&
+          futureDesignStyleStepProjection.runtimeStatus !== "blocked",
+        replaceConfirmed: galleryReplaceConfirmed,
+      }),
+    [
+      activeGalleryStyleId,
+      stylesLoadState,
+      styles,
+      garmentTypeSelection,
+      futureDesignStyleStepProjection,
+      guestDraftHydrated,
+      currentFutureDesignStyleDraftHydration,
+      galleryReplaceConfirmed,
+    ],
+  );
+  const galleryBannerIntent =
+    galleryStyleIntent.kind === "ready_to_assign" && futureStageId !== "design_style"
+      ? {
+          kind: "awaiting_choices" as const,
+          styleId: galleryStyleIntent.styleId,
+          styleName: galleryStyleIntent.styleName,
+        }
+      : galleryStyleIntent;
   const resolvedFutureActiveDesignStyleOccurrence =
     resolveActiveDesignStyleOccurrence({
       occurrences: futureDesignStyleStepProjection.occurrences,
@@ -2660,27 +2745,32 @@ export default function DesignStudioView({
     setFabricPage((current) => (current === 1 ? current : 1));
   }, [fabricSearch, fabricCategoryFilter]);
 
-  // Load preset style & fabric from Gallery selection
+  // Fabric preset still applies when the catalogue can see it. Gallery styles
+  // are owned by ?style= and are not written into the legacy selected-style id.
   useEffect(() => {
-    if (initialStyleId) {
-      const match = styles.find((s) => s.id === initialStyleId);
-      if (match) {
-        invalidateFutureGarmentRemovalRetention();
-        setFutureSelectedStyleId(match.id);
-        setFutureDesignSource(createCatalogDesignSource(match.id));
-      }
-    }
     if (initialFabricCode) {
       const match = fabrics.find((f) => f?.code === initialFabricCode);
       if (match) {
         setSelectedFabric(match);
       }
     }
-    if (initialStyleId || initialFabricCode) {
-      // Clear preset after loading so it doesn't continuously override user changes
+    const styleSettled =
+      !initialStyleId || stylesLoadState === "ready" || stylesLoadState === "error";
+    const fabricSettled =
+      !initialFabricCode ||
+      fabrics.some((fabric) => fabric?.code === initialFabricCode) ||
+      fabrics.length > 0;
+    if ((initialStyleId || initialFabricCode) && styleSettled && fabricSettled) {
       clearInitialPreset?.();
     }
-  }, [initialStyleId, initialFabricCode, styles, fabrics, clearInitialPreset]);
+  }, [
+    initialStyleId,
+    initialFabricCode,
+    stylesLoadState,
+    styles,
+    fabrics,
+    clearInitialPreset,
+  ]);
 
   const revokeUploadedDesignPreview = () => {
     if (uploadedDesignPreviewUrlRef.current) {
@@ -7319,6 +7409,51 @@ export default function DesignStudioView({
       requestFutureDesignStyleAssignmentFeedback(feedbackTarget);
     }
   };
+  galleryAssignRef.current = handleAssignFutureCatalogueStyle;
+
+  useEffect(() => {
+    if (galleryStyleIntent.kind !== "ready_to_assign") return;
+    if (futureStageId !== "design_style") return;
+    const current = futureDesignStyleMutationAuthorityRef.current;
+    const ledger = current?.hydration.ledger;
+    if (!current?.stepIsActive || !ledger) return;
+    const facts = current.authority.catalogStylesById[galleryStyleIntent.styleId];
+    if (!facts || facts.availability !== "available") return;
+    const key = `${galleryStyleIntent.styleId}:${galleryStyleIntent.targets
+      .map((target) => target.occurrenceToken)
+      .join(",")}:${ledger.revision}`;
+    if (galleryAssignAttemptRef.current === key) return;
+    const requests: DesignStyleStepCatalogMutationRequest[] = [];
+    for (const target of galleryStyleIntent.targets) {
+      const eligibility = facts.occurrenceEligibilityByToken[target.occurrenceToken];
+      if (eligibility?.status !== "eligible") continue;
+      const occurrence = current.occurrenceTargets.find(
+        (candidate) => candidate.occurrenceToken === target.occurrenceToken,
+      );
+      if (!occurrence || occurrence.garmentKey !== target.garmentKey) continue;
+      requests.push({
+        runtimeGeneration: current.runtimeGeneration,
+        expectedLedgerRevision: ledger.revision,
+        target: occurrence,
+        styleId: galleryStyleIntent.styleId,
+        sourceKey: facts.sourceKey,
+        eligibilityFingerprint: facts.eligibilityFingerprint,
+      });
+    }
+    if (requests.length === 0) return;
+    galleryAssignAttemptRef.current = key;
+    galleryAssignRef.current(requests);
+  }, [galleryStyleIntent, futureStageId]);
+
+  const dismissGalleryStyle = () => {
+    galleryAssignAttemptRef.current = null;
+    setGalleryStyleDismissed(true);
+    setGalleryStyleId(null);
+    setGalleryReplaceConfirmed(false);
+    if (typeof window !== "undefined") {
+      replaceGalleryStyleId(null, window.history, window.location);
+    }
+  };
 
   const clearAdditionalGarmentStep5ConfigurationSession = () => {
     additionalGarmentFabricTransactionRef.current = null;
@@ -7539,6 +7674,12 @@ export default function DesignStudioView({
     }
     applyFutureDesignStyleMutationLedger(current, result.ledger);
     retireFutureDesignStyleUploadDisplayForTarget(request.target);
+    if (
+      assignment?.sourceKind === "catalog" &&
+      assignment.catalogStyleId === activeGalleryStyleId
+    ) {
+      dismissGalleryStyle();
+    }
   };
 
   const handleClearAllFutureDesignStyleAssignments = () => {
@@ -7607,6 +7748,11 @@ export default function DesignStudioView({
       nextLedger = result.ledger;
     }
     if (nextLedger === ledger) return;
+    const clearedGalleryStyle = Object.values(ledger.assignmentsByGarmentKey).some(
+      (assignment) =>
+        assignment.sourceKind === "catalog" &&
+        assignment.catalogStyleId === activeGalleryStyleId,
+    );
     applyFutureDesignStyleMutationLedger(current, nextLedger);
     for (const target of current.occurrenceTargets) {
       retireFutureDesignStyleUploadDisplayForTarget(target);
@@ -7621,6 +7767,7 @@ export default function DesignStudioView({
         identityGeneration: current.identityGeneration,
       }),
     );
+    if (clearedGalleryStyle) dismissGalleryStyle();
   };
 
   const retireFutureDesignStyleUploadDisplayForTarget = (
@@ -11549,6 +11696,24 @@ export default function DesignStudioView({
         onSelectShipping={handleStepperJump(handleOpenDormantShippingStage)}
         onSelectPayment={handleStepperJump(handleOpenDormantPaymentReviewStage)}
       />
+      {galleryBannerIntent.kind !== "none" ? (
+        <GalleryStyleIntentBanner
+          intent={galleryBannerIntent}
+          style={styles.find((style) => style.id === galleryBannerIntent.styleId) || null}
+          onBackToStyles={() => {
+            const action = requestReturnToExploreDesignStyles(
+              window.history,
+              window.location,
+            );
+            if (action === "home") {
+              useAppStore.getState().setActiveTab("home");
+            }
+          }}
+          onClear={dismissGalleryStyle}
+          onUseSavedStyle={() => setGalleryReplaceConfirmed(true)}
+          onKeepSavedDesigns={dismissGalleryStyle}
+        />
+      ) : null}
       <AiTryOnGeneratingChip
         jobs={aiTryOnScopedJobs
           .filter((job) => job.status === "running")
@@ -11740,6 +11905,7 @@ export default function DesignStudioView({
           incompleteFocusOccurrenceToken={
             designStyleIncompleteFocusRequest?.occurrenceToken ?? null
           }
+          galleryStyleId={activeGalleryStyleId}
           onIncompleteFocusHandled={(requestId) => {
             setDesignStyleIncompleteFocusRequest((current) =>
               current?.id === requestId ? null : current,
