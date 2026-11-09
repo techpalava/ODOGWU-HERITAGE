@@ -1,5 +1,6 @@
 import type { AiTryOnGeminiAspectRatio } from "./aiTryOnImagePrep.js";
 import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract.js";
+import { readAiTryOnBillingSignal, type AiTryOnProviderBillingSignal } from "./aiTryOnBilling.js";
 
 /**
  * Server-only Gemini image call for AI Try-on.
@@ -70,6 +71,9 @@ export type AiTryOnGeminiOutcome =
       retryable: boolean;
       /** Gemini was over capacity (503 / high demand) on the last attempt. */
       capacity?: boolean;
+      /** Explicit billing / payment-required signal. Never set for 429 or network errors. */
+      billing?: boolean;
+      billingSignal?: AiTryOnProviderBillingSignal;
       /** Short, key-free reason for server logs. */
       reason: string;
     };
@@ -223,11 +227,13 @@ export const runAiTryOnGemini = async ({
     } catch (error) {
       const status = statusOf(error);
       const aborted = controller.signal.aborted;
+      const billingSignal = aborted ? null : readAiTryOnBillingSignal(error);
       return {
         ok: false,
         kind: "failed",
         retryable: aborted || status === null || status === 429 || status >= 500,
-        capacity: !aborted && isGeminiCapacityError(error, status),
+        capacity: !aborted && !billingSignal && isGeminiCapacityError(error, status),
+        ...(billingSignal ? { billing: true, billingSignal } : {}),
         reason: aborted
           ? "timeout"
           : `provider_error${status ? ` status=${status}` : ""} ${redactGeminiText(error, secret)}`.trim(),

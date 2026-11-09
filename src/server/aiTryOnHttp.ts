@@ -1,4 +1,9 @@
 import { handleAiTryOnAdminUsage } from "./aiTryOnAdminUsage.js";
+import {
+  isAiTryOnBillingUnavailableAccount,
+  type AiTryOnBillingAccountIdentity,
+  type AiTryOnProviderBillingSignal,
+} from "./aiTryOnBilling.js";
 import { handleAiTryOnAdminTopUp, type AiTryOnAdminTopUpDependencies } from "./aiTryOnTopUp.js";
 import type { CanonicalPhysicalGarmentType } from "../types.js";
 import { aiTryOnOutfitPart } from "../utils/aiTryOnWearerTargets.js";
@@ -653,16 +658,27 @@ async function handleAiTryOnRequest(
 
   // Caller identity: a verified non-anonymous Firebase user, or a guest
   // (with or without a session token). A bad ID token is refused rather
-  // than silently treated as a guest.
+  // than silently treated as a guest. The billing gate reads only this
+  // verified token (email + email_verified), never a client-sent address.
+  let billingCaller: AiTryOnBillingAccountIdentity | null = null;
   const readIdentity = async (): Promise<AiTryOnSessionIdentity | "auth_failed"> => {
     const token = readHeader(req, AI_TRY_ON_SESSION_HEADER);
     const authorization = readHeader(req, "authorization");
     const bearer = authorization?.match(/^Bearer ([^\s]+)$/)?.[1] ?? null;
-    if (!bearer) return { uid: null, token };
+    if (!bearer) {
+      billingCaller = null;
+      return { uid: null, token };
+    }
     try {
       const verified = await (dependencies.verifyIdToken ?? defaultVerifyIdToken)(bearer);
       const provider = verified.firebase?.sign_in_provider;
       if (typeof provider !== "string" || !provider || !verified.uid) return "auth_failed";
+      billingCaller = {
+        uid: verified.uid,
+        email: verified.email,
+        email_verified: verified.email_verified,
+        firebase: verified.firebase,
+      };
       return { uid: provider === "anonymous" ? null : verified.uid, token };
     } catch {
       return "auth_failed";
@@ -1146,15 +1162,31 @@ async function handleAiTryOnRequest(
       }
     }
   } catch (error) {
-    log(
-      JSON.stringify({
-        event: "ai_try_on",
-        outcome: "reference_unavailable",
-        mode: parsed.mode,
-        reason: error instanceof AiTryOnReferenceImageError ? error.message : "reference_error",
-      }),
-    );
+    const storageBilling = error instanceof AiTryOnReferenceImageError && error.message === "reference_billing";
+    if (storageBilling) {
+      log(
+        JSON.stringify({
+          event: "ai_try_on",
+          outcome: "billing_unavailable",
+          source: "storage",
+          status: error.httpStatus,
+          reason: error.providerReason,
+        }),
+      );
+    } else {
+      log(
+        JSON.stringify({
+          event: "ai_try_on",
+          outcome: "reference_unavailable",
+          mode: parsed.mode,
+          reason: error instanceof AiTryOnReferenceImageError ? error.message : "reference_error",
+        }),
+      );
+    }
     await refundClaim();
+    if (storageBilling && isAiTryOnBillingUnavailableAccount(billingCaller)) {
+      return sendError(res, 503, "NOT_CONFIGURED", "AI Try-on is currently unavailable.", false);
+    }
     return sendError(
       res,
       422,
@@ -1347,6 +1379,61 @@ async function handleAiTryOnRequest(
     ...(dependencies.geminiRetrySleep ? { sleep: dependencies.geminiRetrySleep } : {}),
   });
   const latencyMs = now() - startedAt;
+
+  if (outcome.ok === false && outcome.billing && outcome.billingSignal) {
+    const signal: AiTryOnProviderBillingSignal = outcome.billingSignal;
+    log(
+      JSON.stringify({
+        event: "ai_try_on",
+        outcome: "billing_unavailable",
+        source: "gemini",
+        status: signal.status,
+        reason: signal.reason,
+      }),
+    );
+    let tryRefunded = false;
+    if (claim) {
+      tryRefunded = await refundClaim("other");
+    } else if (reservation && reservation.ok) {
+      try {
+        await limits.release(reservation.orderDocId, reservation.account, reservation.orderResetGeneration, "other");
+        tryRefunded = true;
+      } catch {
+        // A failed release only makes the cap stricter; never block the reply.
+      }
+    }
+    if (isAiTryOnBillingUnavailableAccount(billingCaller)) {
+      return sendError(res, 503, "NOT_CONFIGURED", "AI Try-on is currently unavailable.", false);
+    }
+    const left = claim
+      ? await readTriesLeft()
+      : reservation && reservation.ok
+        ? {
+            order: Math.min(
+              AI_TRY_ON_TRIES_PER_ORDER,
+              reservation.orderTriesRemaining + (tryRefunded ? 1 : 0),
+            ),
+            account:
+              reservation.accountTriesRemaining === null
+                ? null
+                : Math.min(
+                    AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
+                    reservation.accountTriesRemaining + (tryRefunded ? 1 : 0),
+                  ),
+          }
+        : await readTriesLeft();
+    return sendError(
+      res,
+      502,
+      "PROVIDER_FAILED",
+      "AI Try-on could not be completed.",
+      false,
+      undefined,
+      left.order,
+      left.account,
+      tryRefunded,
+    );
+  }
 
   if (outcome.ok === false) {
     const logFailure = (busy: string | null) =>
