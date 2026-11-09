@@ -45,21 +45,73 @@ try {
       "Old small/light header classes are gone");
   }
 
-  const footer = tree!.root.findByType("footer");
-  const footerTagline = footer.find(node => node.type === "p" && text(node) === tagline);
-  assert.ok(classes(footerTagline).has("font-bold"), "Footer community tagline is bold");
-  assert.ok(classes(footerTagline).has("text-base"), "Footer community tagline is text-base or larger");
-  assert.ok(!classes(footerTagline).has("text-sm") && !classes(footerTagline).has("font-medium"));
-  assert.ok(classes(footerTagline).has("break-words"));
+  const footer = () => tree!.root.findByType("footer");
+  const footerTaglineNodes = () => footer().findAll(node =>
+    node.type === "p" && classes(node).has("italic") && classes(node).has("font-serif"));
+  // Stored tagline currently repeats the community name. The footer keeps the
+  // gold name and omits the italic copy. The same markup is used at every width.
+  assert.equal(footerTaglineNodes().length, 0,
+    "Footer hides the italic tagline when it repeats the community name");
+  const nameCopies = footer().findAll(node =>
+    (node.type === "span" || node.type === "p") && text(node) === communityName);
+  assert.equal(nameCopies.length, 1, "Footer prints the community name once in the brand column");
 
-  const footerName = footer.find(node => node.type === "span" && text(node) === communityName);
+  const footerName = footer().find(node => node.type === "span" && text(node) === communityName);
   assert.ok(classes(footerName).has("font-extrabold"), "Footer community name is extrabold");
   assert.ok(classes(footerName).has("text-base"), "Footer community name is text-base");
+  assert.ok(classes(footerName).has("text-heritage-gold"), "Footer community name stays gold");
+  assert.ok(classes(footerName).has("uppercase"), "Footer community name stays uppercase");
+  assert.ok(classes(footerName).has("font-display"), "Footer community name uses the display face");
   assert.ok(!classes(footerName).has("text-sm"));
   assert.ok(classes(footerName).has("break-words"));
 
+  const brandColumn = footerName.parent?.parent?.parent;
+  assert.ok(brandColumn && classes(brandColumn).has("space-y-4"),
+    "Brand column keeps its stacked spacing");
+  const brandElements = brandColumn!.children.filter(child => typeof child !== "string");
+  assert.equal(brandElements.length, 2,
+    "Removing the duplicate leaves the logo row and the description, with no empty slot");
+  assert.equal(brandElements[1].type, "p");
+  assert.ok(text(brandElements[1] as ReactTestInstance).includes("Connecting cultures"),
+    "Description follows the name directly");
+
+  const withDistinctTagline = {
+    ...originalState.businessSettings,
+    applicationSettings: {
+      ...originalState.businessSettings.applicationSettings,
+      tagline: "Handcrafted for the diaspora",
+    },
+  };
+  act(() => {
+    useAppStore.setState({ businessSettings: withDistinctTagline });
+  });
+  const distinctTagline = footerTaglineNodes();
+  assert.equal(distinctTagline.length, 1, "A tagline that differs from the name is still shown");
+  assert.equal(text(distinctTagline[0]), "Handcrafted for the diaspora");
+  assert.ok(classes(distinctTagline[0]).has("font-bold"), "Footer community tagline is bold");
+  assert.ok(classes(distinctTagline[0]).has("text-base"), "Footer community tagline is text-base or larger");
+  assert.ok(!classes(distinctTagline[0]).has("text-sm") && !classes(distinctTagline[0]).has("font-medium"));
+  assert.ok(classes(distinctTagline[0]).has("break-words"));
+  assert.equal(footer().findAll(node =>
+    node.type === "span" && text(node) === communityName).length, 1,
+    "The gold community name stays when a real tagline is shown");
+
+  act(() => {
+    useAppStore.setState({
+      businessSettings: {
+        ...withDistinctTagline,
+        applicationSettings: {
+          ...withDistinctTagline.applicationSettings,
+          tagline: `  ${communityName.toLocaleLowerCase()}  `,
+        },
+      },
+    });
+  });
+  assert.equal(footerTaglineNodes().length, 0,
+    "Case and surrounding spaces still count as the same name");
+
   // Footer bottom bar copyright line (Fredrick's follow-up, 2026-10-19).
-  const copyright = footer.find(node => node.type === "div" &&
+  const copyright = footer().find(node => node.type === "div" &&
     node.children.some(child => typeof child === "string" && child.startsWith("©")) &&
     text(node).includes(communityName));
   const copyrightTokens = classes(copyright);
