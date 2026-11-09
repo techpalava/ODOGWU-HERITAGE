@@ -110,12 +110,22 @@ export const readAiTryOnBillingSignal = (error: unknown): AiTryOnProviderBilling
  * Gmail dot-stripping and plus-tags do not count, and a client-supplied
  * address is never an input to this function.
  */
-export const isAiTryOnBillingUnavailableAccount = (
+export const isVerifiedFirebaseAccountEmail = (
   identity: AiTryOnBillingAccountIdentity | null | undefined,
+  email: string,
 ): boolean => {
   if (!identity || typeof identity.uid !== "string" || identity.uid.length === 0) return false;
   if (identity.email_verified !== true || typeof identity.email !== "string") return false;
   const provider = identity.firebase?.sign_in_provider;
   if (typeof provider !== "string" || provider.length === 0 || provider === "anonymous") return false;
-  return identity.email.trim().toLowerCase() === AI_TRY_ON_BILLING_UNAVAILABLE_EMAIL;
+  return identity.email.trim().toLowerCase() === email.trim().toLowerCase();
 };
+
+export const isVerifiedFirebaseAccountEmailIn = (
+  identity: AiTryOnBillingAccountIdentity | null | undefined,
+  emails: readonly string[],
+): boolean => emails.some((email) => isVerifiedFirebaseAccountEmail(identity, email));
+
+export const isAiTryOnBillingUnavailableAccount = (
+  identity: AiTryOnBillingAccountIdentity | null | undefined,
+): boolean => isVerifiedFirebaseAccountEmail(identity, AI_TRY_ON_BILLING_UNAVAILABLE_EMAIL);

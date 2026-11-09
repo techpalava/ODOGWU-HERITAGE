@@ -10,6 +10,8 @@ import { createAiTryOnBusyJobs } from "./src/server/aiTryOnBusyJobs";
 import { AdminAiTryOnReset } from "./src/components/AdminAiTryOnReset";
 import type { HttpResponse } from "./src/server/httpTypes";
 import { aiTryOnGlobalCapWarning } from "./src/services/aiTryOnAdminReset";
+import { AI_TRY_ON_RESET_RETRY_EMAILS } from "./src/server/aiTryOnAdminReset";
+import { AI_TRY_ON_BILLING_UNAVAILABLE_EMAIL, isAiTryOnBillingUnavailableAccount } from "./src/server/aiTryOnBilling";
 import { readFileSync } from "node:fs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -117,6 +119,82 @@ assert.equal(await limits.readOrderTriesRemaining(current.sessionId), 4);
 assert.equal((await call({ email: ALLOWED_ADMIN_EMAILS[1], uid: "fred" })).status, 200);
 assert.equal(await limits.readAccountTriesRemaining("fred"), 15, "Fred can reset himself");
 assert.equal(await limits.readAccountTriesRemaining("xavier"), 14, "Fred cannot reset Xavier");
+
+assert.deepEqual([...AI_TRY_ON_RESET_RETRY_EMAILS], ["techpalavabox@gmail.com", "f.o.startups@gmail.com"]);
+assert.equal(AI_TRY_ON_BILLING_UNAVAILABLE_EMAIL, "techpalavabox@gmail.com");
+assert.equal(
+  isAiTryOnBillingUnavailableAccount({
+    uid: "fred",
+    email: "f.o.startups@gmail.com",
+    email_verified: true,
+    firebase: { sign_in_provider: "google.com" },
+  }),
+  false,
+  "Fred is on the reset list and not on the billing-outcome list",
+);
+
+const renderReset = async (email: string, verified = true) => {
+  const probe = await call({ method: "GET", email, verified, admin: true });
+  const eligible = probe.body.eligible === true;
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(createElement(AdminAiTryOnReset, {
+      readStatus: async () => ({ eligible, globalUsage: null }),
+      reset: async () => (await call({ method: "POST", email, verified, admin: true, uid: email.startsWith("f") || email.startsWith("F") ? "fred" : "xavier" })).status === 200,
+    }));
+  });
+  const buttons = renderer.root.findAllByType("button");
+  const visible = renderer.root.findAll((node) => node.props["data-admin-ai-try-on-reset"] !== undefined).length;
+  act(() => renderer.unmount());
+  return { probe, buttons: buttons.length, visible };
+};
+
+for (const email of ["TechPalavaBox@Gmail.com", "F.O.Startups@Gmail.com"]) {
+  const seen = await renderReset(email);
+  assert.equal(seen.probe.status, 200);
+  assert.equal(seen.probe.body.eligible, true, email);
+  assert.equal(seen.visible, 1, `${email} sees the reset control`);
+  assert.equal(seen.buttons, 1);
+  const reset = await call({
+    email,
+    verified: true,
+    admin: true,
+    uid: email.toLowerCase().startsWith("f.") ? "fred" : "xavier",
+  });
+  assert.equal(reset.status, 200, `${email} can reset`);
+  assert.equal(reset.body.status, "reset");
+}
+
+for (const email of [
+  "customer@example.test",
+  "vaprecfamily@gmail.com",
+  "fostartups@gmail.com",
+  "tech.palavabox@gmail.com",
+  "f.o.startups+tag@gmail.com",
+]) {
+  const before = structuredClone([...db.docs]);
+  const seen = await renderReset(email);
+  assert.equal(seen.probe.body.eligible, false, `${email} does not see the control`);
+  assert.equal(seen.visible, 0);
+  assert.equal(seen.buttons, 0);
+  const denied = await call({ email, verified: true, admin: true });
+  assert.equal(denied.status, 403, `${email} is forbidden`);
+  assert.equal(denied.body.status, undefined);
+  assert.deepEqual([...db.docs], before, `${email} causes no reset`);
+}
+
+const unverifiedBefore = structuredClone([...db.docs]);
+const unverified = await renderReset("techpalavabox@gmail.com", false);
+assert.equal(unverified.probe.body.eligible, false);
+assert.equal(unverified.visible, 0);
+assert.equal(unverified.buttons, 0);
+const unverifiedPost = await call({ email: "techpalavabox@gmail.com", verified: false, admin: true });
+assert.equal(unverifiedPost.status, 403);
+assert.deepEqual([...db.docs], unverifiedBefore, "an unverified allowlisted address causes no reset");
+const spoofBefore = structuredClone([...db.docs]);
+const spoof = await call({ email: "customer@example.test", verified: true, admin: false });
+assert.equal(spoof.status, 403);
+assert.deepEqual([...db.docs], spoofBefore, "a client body cannot choose whose tries are reset");
 
 // Held jobs carry the reservation generation across retries and refund safely.
 const heldReservation = await limits.reserve(current.sessionId, { accountUid: "xavier" });
