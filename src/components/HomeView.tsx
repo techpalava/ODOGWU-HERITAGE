@@ -33,6 +33,10 @@ import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jp
 import ankaraKidsImage from "../assets/images/regenerated_image_1784258480371.png";
 import ankaraFamilyImage from "../assets/images/regenerated_image_1784259611604.png";
 
+/** Left on phones; justified from the desktop column breakpoint, last line left. */
+const heroProseClassName =
+  "text-left leading-relaxed font-sans lg:text-justify lg:[text-align-last:left]";
+
 interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
   onStartIndividualOrder: () => void;
@@ -265,25 +269,40 @@ export default function HomeView({
       </div>
 
       {/* Editorial Luxury Hero Header */}
-      <section className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 sm:p-12 lg:p-16 text-white shadow-2xl border border-heritage-gold/20">
+      <section
+        id="homepage-hero"
+        data-homepage-hero="true"
+        className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 sm:p-12 lg:p-16 text-white shadow-2xl border border-heritage-gold/20"
+      >
         <div className="absolute -right-24 -bottom-24 w-96 h-96 rounded-full border border-heritage-gold/10 pointer-events-none"></div>
         <div className="absolute top-10 right-10 text-4xl text-heritage-gold/25 pointer-events-none font-serif">
           ⚜
         </div>
 
         <div className="relative z-10 space-y-10 sm:space-y-12 lg:space-y-14">
-          {/* Full-width heading block: title, tagline, then welcome text. */}
-          <div className="space-y-5 sm:space-y-6">
-            <h1 className="font-display tracking-tight leading-tight">
-              <span className="block text-3xl sm:text-4xl lg:text-5xl xl:text-[3.25rem] lg:whitespace-nowrap">
+          {/* Full-width heading block: title, tagline, then welcome text.
+              Playfair (font-serif) so title case stays mixed case. Cinzel
+              (font-display) only has capital glyphs. */}
+          <div className="space-y-5 sm:space-y-6" data-hero-heading>
+            <h1
+              className="font-serif font-medium leading-tight text-left text-[1.75rem] sm:text-[2rem] lg:text-[2.15rem] xl:text-[2.4rem]"
+              data-hero-title
+            >
+              <span className="block text-balance lg:whitespace-nowrap">
                 Nigerian Traditional Clothing
               </span>
-              <span className="mt-2 sm:mt-3 block text-2xl sm:text-3xl lg:text-4xl">
+              <span
+                className="mt-2 block text-balance sm:mt-3 lg:whitespace-nowrap"
+                data-hero-tagline
+              >
                 <span className="text-heritage-gold italic">Custom Made</span> for You
               </span>
             </h1>
             {/* Hero Description */}
-            <p className="text-sm sm:text-base lg:text-lg text-heritage-beige leading-relaxed font-sans">
+            <p
+              className={`text-sm sm:text-base lg:text-lg text-heritage-beige ${heroProseClassName}`}
+              data-hero-welcome
+            >
               Welcome to {businessSettings.applicationSettings.communityName}. We
               celebrate and promote the rich, colourful and dynamic traditional
               cultures of Nigeria and its extensions through authentic,
@@ -296,12 +315,13 @@ export default function HomeView({
             </p>
           </div>
 
-          {/* Below the heading: photos left, Vision/Mission/Core Values right
-              from md up. Phones keep the stacked order (values, button, photos). */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-10 lg:gap-14 items-center">
+          {/* Below the heading: photos left and values right from lg up.
+              Narrower screens show the photos first, then Vision, Mission,
+              Core Values and the button. */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
             {/* Hero Image Carousel */}
-            <div className="order-2 md:order-1 md:col-span-5 font-sans relative flex justify-center md:justify-start">
-              <div className="rounded-2xl overflow-hidden border border-heritage-gold/30 shadow-2xl relative aspect-[3/4] w-full max-w-[320px] md:max-w-[420px] bg-heritage-forest/50">
+            <div className="lg:col-span-5 font-sans relative flex justify-center lg:justify-start" data-hero-photos>
+              <div className="rounded-2xl overflow-hidden border border-heritage-gold/30 shadow-2xl relative aspect-[3/4] w-full max-w-[320px] lg:max-w-[420px] bg-heritage-forest/50">
                 {heroSlides.map((slide, index) => (
                   <img
                     key={slide.id}
@@ -327,14 +347,14 @@ export default function HomeView({
               </div>
             </div>
 
-            <div className="order-1 md:order-2 md:col-span-7 space-y-8">
+            <div className="lg:col-span-7 space-y-8" data-hero-values>
               {/* Vision, Mission & Core Values */}
               <div className="space-y-7 sm:space-y-8 border-l-2 border-heritage-gold/40 pl-4 sm:pl-6">
                 <div className="space-y-2">
-                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg">
+                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg text-left">
                     The Vision
                   </h2>
-                  <p className="text-sm sm:text-base text-heritage-beige/95 leading-relaxed font-sans">
+                  <p className={`text-sm sm:text-base text-heritage-beige/95 ${heroProseClassName}`}>
                     To enrich global cultures—starting with the Netherlands—by
                     weaving the warmth, colour, and joy of Nigerian heritage into
                     everyday life, while building bridges through cross-cultural
@@ -342,10 +362,10 @@ export default function HomeView({
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg">
+                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg text-left">
                     Our Mission
                   </h2>
-                  <p className="text-sm sm:text-base text-heritage-beige/95 leading-relaxed font-sans">
+                  <p className={`text-sm sm:text-base text-heritage-beige/95 ${heroProseClassName}`}>
                     To empower local tailors in Nigeria and beyond by creating
                     sustainable economic opportunities, while inspiring
                     individuals to tell their unique stories through custom-made,
@@ -353,27 +373,27 @@ export default function HomeView({
                   </p>
                 </div>
                 <div className="space-y-2.5">
-                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg">
+                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg text-left">
                     Core Values
                   </h2>
-                  <ul className="space-y-2 text-sm sm:text-base text-heritage-beige/95 leading-relaxed font-sans">
-                      <li>
-                        <strong className="font-bold text-white">Cultural Inclusion:</strong>{" "}
+                  <ul className="space-y-2 text-sm sm:text-base text-heritage-beige/95 font-sans">
+                      <li className={heroProseClassName}>
+                        <strong className="block font-bold text-white lg:inline">Cultural Inclusion:</strong>{" "}
                         Fostering mutual respect, appreciation, and unity across
                         diverse cultures.
                       </li>
-                      <li>
-                        <strong className="font-bold text-white">Authenticity:</strong>{" "}
+                      <li className={heroProseClassName}>
+                        <strong className="block font-bold text-white lg:inline">Authenticity:</strong>{" "}
                         Celebrating genuine craftsmanship and heritage through
                         custom Nigerian tailoring.
                       </li>
-                      <li>
-                        <strong className="font-bold text-white">Empowerment:</strong>{" "}
+                      <li className={heroProseClassName}>
+                        <strong className="block font-bold text-white lg:inline">Empowerment:</strong>{" "}
                         Supporting and uplifting artisans by creating meaningful
                         livelihoods.
                       </li>
-                      <li>
-                        <strong className="font-bold text-white">Self-Expression:</strong>{" "}
+                      <li className={heroProseClassName}>
+                        <strong className="block font-bold text-white lg:inline">Self-Expression:</strong>{" "}
                         Encouraging everyone to wear their identity proudly with
                         bold prints and stories.
                       </li>
@@ -381,10 +401,10 @@ export default function HomeView({
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 lg:flex lg:justify-center" data-hero-cta>
                 <button
                   onClick={handleHeroPrimaryAction}
-                  className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
+                  className="w-full lg:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
                 >
                   {firstHeroPrimaryAction} <ArrowRight size={18} />
                 </button>
