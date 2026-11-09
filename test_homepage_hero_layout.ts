@@ -18,9 +18,10 @@ assert.ok(!h1.includes("font-display"), "Hero title does not use the all-caps di
 assert.ok(!/\buppercase\b/.test(h1), "Hero title is not forced to uppercase");
 assert.match(
   h1,
-  /text-\[1\.75rem\][\s\S]*sm:text-\[2rem\][\s\S]*lg:text-\[2\.15rem\][\s\S]*xl:text-\[2\.4rem\]/,
-  "Both heading lines share one size on the h1",
+  /text-\[1\.75rem\][\s\S]*sm:text-\[2rem\][\s\S]*lg:text-\[2\.15rem\][\s\S]*xl:text-\[2\.5rem\]/,
+  "Every title word shares one size on the h1",
 );
+assert.match(h1, /\blg:whitespace-nowrap\b/, "The whole title stays on one line from 1024px");
 assert.match(h1, /\btext-center\b/, "Title is centered on phones");
 assert.match(h1, /\bmd:text-left\b/, "Title returns to the left from 768px");
 assert.doesNotMatch(h1, /\b(?:sm|lg|xl):text-center\b/, "Title is not centered on tablet or desktop");
@@ -34,8 +35,12 @@ for (const className of lineSpans) {
     `Heading spans must inherit the h1 size: ${className}`,
   );
 }
-assert.match(lineSpans[0], /\blg:whitespace-nowrap\b/);
-assert.match(lineSpans[1], /\blg:whitespace-nowrap\b/);
+assert.match(lineSpans[0], /\bblock\b/);
+assert.match(lineSpans[0], /\blg:inline\b/, "The desktop break before Custom Made is removed");
+assert.match(lineSpans[1], /\bblock\b/);
+assert.match(lineSpans[1], /\blg:inline\b/);
+assert.doesNotMatch(lineSpans[0], /whitespace-nowrap/);
+assert.doesNotMatch(lineSpans[1], /whitespace-nowrap/);
 assert.match(lineSpans[2], /\bitalic\b/);
 assert.match(lineSpans[2], /\btext-heritage-gold\b/);
 assert.doesNotMatch(lineSpans[2], /\buppercase\b/);

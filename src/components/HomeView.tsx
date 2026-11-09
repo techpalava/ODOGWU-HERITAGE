@@ -289,14 +289,14 @@ export default function HomeView({
               (font-display) only has capital glyphs. */}
           <div className="space-y-5 sm:space-y-6" data-hero-heading>
             <h1
-              className="font-serif font-medium leading-tight text-center md:text-left text-[1.75rem] sm:text-[2rem] lg:text-[2.15rem] xl:text-[2.4rem]"
+              className="font-serif font-medium leading-tight text-center md:text-left text-[1.75rem] sm:text-[2rem] lg:whitespace-nowrap lg:text-[2.15rem] xl:text-[2.5rem]"
               data-hero-title
             >
-              <span className="block text-balance lg:whitespace-nowrap">
+              <span className="block text-balance lg:inline">
                 Nigerian Traditional Clothing
-              </span>
+              </span>{" "}
               <span
-                className="mt-2 block text-balance sm:mt-3 lg:whitespace-nowrap"
+                className="mt-2 block text-balance lg:mt-0 lg:inline"
                 data-hero-tagline
               >
                 <span className="text-heritage-gold italic">Custom Made</span> for You
