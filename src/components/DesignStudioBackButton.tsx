@@ -53,7 +53,7 @@ const StudioNavLabel = ({
     data-studio-nav-label="stack"
     className="flex min-w-0 flex-1 flex-col items-center justify-center text-center leading-none"
   >
-    <span className="max-w-full truncate uppercase tracking-wide">{primary}</span>
+    <span className="max-w-full uppercase tracking-wide max-sm:whitespace-normal max-sm:leading-tight sm:truncate">{primary}</span>
     {secondary ? (
       <span
         className={`mt-0.5 max-w-full text-[10px] font-semibold normal-case leading-tight tracking-normal text-current/75 ${
