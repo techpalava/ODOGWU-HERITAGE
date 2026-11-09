@@ -271,16 +271,19 @@ export default function HomeView({
           ⚜
         </div>
 
-        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-7 space-y-6">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-display tracking-tight leading-tight">
-              Traditional Nigerian Clothing,
-              <br />
-              <span className="text-heritage-gold italic">Custom Made</span> for
-              You.
+        <div className="relative z-10 space-y-10 sm:space-y-12 lg:space-y-14">
+          {/* Full-width heading block: title, tagline, then welcome text. */}
+          <div className="space-y-5 sm:space-y-6">
+            <h1 className="font-display tracking-tight leading-tight">
+              <span className="block text-3xl sm:text-4xl lg:text-5xl xl:text-[3.25rem] lg:whitespace-nowrap">
+                Nigerian Traditional Clothing
+              </span>
+              <span className="mt-2 sm:mt-3 block text-2xl sm:text-3xl lg:text-4xl">
+                <span className="text-heritage-gold italic">Custom Made</span> for You
+              </span>
             </h1>
             {/* Hero Description */}
-            <p className="text-xs sm:text-sm text-heritage-beige max-w-xl leading-relaxed font-sans">
+            <p className="text-sm sm:text-base lg:text-lg text-heritage-beige leading-relaxed font-sans">
               Welcome to {businessSettings.applicationSettings.communityName}. We
               celebrate and promote the rich, colourful and dynamic traditional
               cultures of Nigeria and its extensions through authentic,
@@ -291,94 +294,100 @@ export default function HomeView({
               exceptional care and craftsmanship in Nigeria and shipped to the
               Netherlands.
             </p>
-
-            {/* Vision, Mission & Core Values */}
-            <div className="space-y-4 max-w-xl border-l-2 border-heritage-gold/40 pl-4 sm:pl-5">
-              <div className="space-y-1">
-                <h2 className="text-[11px] sm:text-xs font-sans font-bold uppercase tracking-widest text-heritage-gold">
-                  The Vision
-                </h2>
-                <p className="text-xs sm:text-sm text-heritage-beige/95 leading-relaxed font-sans">
-                  To enrich global cultures—starting with the Netherlands—by
-                  weaving the warmth, colour, and joy of Nigerian heritage into
-                  everyday life, while building bridges through cross-cultural
-                  collaboration worldwide.
-                </p>
-              </div>
-              <div className="space-y-1">
-                <h2 className="text-[11px] sm:text-xs font-sans font-bold uppercase tracking-widest text-heritage-gold">
-                  Our Mission
-                </h2>
-                <p className="text-xs sm:text-sm text-heritage-beige/95 leading-relaxed font-sans">
-                  To empower local tailors in Nigeria and beyond by creating
-                  sustainable economic opportunities, while inspiring
-                  individuals to tell their unique stories through custom-made,
-                  vibrant traditional attire.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <h2 className="text-[11px] sm:text-xs font-sans font-bold uppercase tracking-widest text-heritage-gold">
-                  Core Values
-                </h2>
-                <ul className="space-y-1.5 text-xs sm:text-sm text-heritage-beige/95 leading-relaxed font-sans">
-                  <li>
-                    <strong className="font-semibold text-white">Cultural Inclusion:</strong>{" "}
-                    Fostering mutual respect, appreciation, and unity across
-                    diverse cultures.
-                  </li>
-                  <li>
-                    <strong className="font-semibold text-white">Authenticity:</strong>{" "}
-                    Celebrating genuine craftsmanship and heritage through
-                    custom Nigerian tailoring.
-                  </li>
-                  <li>
-                    <strong className="font-semibold text-white">Empowerment:</strong>{" "}
-                    Supporting and uplifting artisans by creating meaningful
-                    livelihoods.
-                  </li>
-                  <li>
-                    <strong className="font-semibold text-white">Self-Expression:</strong>{" "}
-                    Encouraging everyone to wear their identity proudly with
-                    bold prints and stories.
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="pt-4 sm:pt-6">
-              <button
-                onClick={handleHeroPrimaryAction}
-                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
-              >
-                {firstHeroPrimaryAction} <ArrowRight size={18} />
-              </button>
-            </div>
           </div>
-          
-          {/* Hero Image Carousel */}
-          <div className="lg:col-span-5 font-sans relative flex justify-center lg:justify-end mt-8 lg:mt-0">
-            <div className="rounded-2xl overflow-hidden border border-heritage-gold/30 shadow-2xl relative aspect-[3/4] w-full max-w-[320px] lg:max-w-sm bg-heritage-forest/50">
-              {heroSlides.map((slide, index) => (
-                <img
-                  key={slide.id}
-                  src={slide.src}
-                  alt={slide.alt}
-                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}
-                  referrerPolicy="no-referrer"
-                />
-              ))}
-              <div className="absolute inset-0 bg-gradient-to-t from-heritage-forest/60 to-transparent pointer-events-none"></div>
-              
-              {/* Slide Indicators */}
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
-                {heroSlides.map((_, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setCurrentSlide(index)}
-                    className={`h-1.5 rounded-full transition-all duration-500 cursor-pointer ${currentSlide === index ? "bg-heritage-gold w-5" : "bg-white/40 w-1.5 hover:bg-white/70"}`}
-                    aria-label={`Go to slide ${index + 1}`}
+
+          {/* Below the heading: photos left, Vision/Mission/Core Values right
+              from md up. Phones keep the stacked order (values, button, photos). */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-10 lg:gap-14 items-center">
+            {/* Hero Image Carousel */}
+            <div className="order-2 md:order-1 md:col-span-5 font-sans relative flex justify-center md:justify-start">
+              <div className="rounded-2xl overflow-hidden border border-heritage-gold/30 shadow-2xl relative aspect-[3/4] w-full max-w-[320px] md:max-w-[420px] bg-heritage-forest/50">
+                {heroSlides.map((slide, index) => (
+                  <img
+                    key={slide.id}
+                    src={slide.src}
+                    alt={slide.alt}
+                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}
+                    referrerPolicy="no-referrer"
                   />
                 ))}
+                <div className="absolute inset-0 bg-gradient-to-t from-heritage-forest/60 to-transparent pointer-events-none"></div>
+
+                {/* Slide Indicators */}
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
+                  {heroSlides.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentSlide(index)}
+                      className={`h-1.5 rounded-full transition-all duration-500 cursor-pointer ${currentSlide === index ? "bg-heritage-gold w-5" : "bg-white/40 w-1.5 hover:bg-white/70"}`}
+                      aria-label={`Go to slide ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="order-1 md:order-2 md:col-span-7 space-y-8">
+              {/* Vision, Mission & Core Values */}
+              <div className="space-y-7 sm:space-y-8 border-l-2 border-heritage-gold/40 pl-4 sm:pl-6">
+                <div className="space-y-2">
+                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg">
+                    The Vision
+                  </h2>
+                  <p className="text-sm sm:text-base text-heritage-beige/95 leading-relaxed font-sans">
+                    To enrich global cultures—starting with the Netherlands—by
+                    weaving the warmth, colour, and joy of Nigerian heritage into
+                    everyday life, while building bridges through cross-cultural
+                    collaboration worldwide.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg">
+                    Our Mission
+                  </h2>
+                  <p className="text-sm sm:text-base text-heritage-beige/95 leading-relaxed font-sans">
+                    To empower local tailors in Nigeria and beyond by creating
+                    sustainable economic opportunities, while inspiring
+                    individuals to tell their unique stories through custom-made,
+                    vibrant traditional attire.
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  <h2 className="font-sans font-extrabold uppercase tracking-[0.18em] text-heritage-gold text-sm sm:text-base lg:text-lg">
+                    Core Values
+                  </h2>
+                  <ul className="space-y-2 text-sm sm:text-base text-heritage-beige/95 leading-relaxed font-sans">
+                      <li>
+                        <strong className="font-bold text-white">Cultural Inclusion:</strong>{" "}
+                        Fostering mutual respect, appreciation, and unity across
+                        diverse cultures.
+                      </li>
+                      <li>
+                        <strong className="font-bold text-white">Authenticity:</strong>{" "}
+                        Celebrating genuine craftsmanship and heritage through
+                        custom Nigerian tailoring.
+                      </li>
+                      <li>
+                        <strong className="font-bold text-white">Empowerment:</strong>{" "}
+                        Supporting and uplifting artisans by creating meaningful
+                        livelihoods.
+                      </li>
+                      <li>
+                        <strong className="font-bold text-white">Self-Expression:</strong>{" "}
+                        Encouraging everyone to wear their identity proudly with
+                        bold prints and stories.
+                      </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={handleHeroPrimaryAction}
+                  className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
+                >
+                  {firstHeroPrimaryAction} <ArrowRight size={18} />
+                </button>
               </div>
             </div>
           </div>
