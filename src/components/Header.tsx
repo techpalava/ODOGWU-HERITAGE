@@ -53,8 +53,14 @@ export function Header() {
     <header className="sticky top-0 z-40 bg-heritage-green border-b border-heritage-gold/25 shadow-md">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Phones: a 3-column grid so the community line can use the full width
-            under the title and controls. sm+: a single flex row. */}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 py-2 min-h-20 sm:flex sm:h-20 sm:py-0 sm:justify-between sm:gap-4">
+            under the title and controls. The icon buttons set the first row to
+            44px; the title sits on the bottom of that row and the slogan on the
+            top of the next. No extra row gap — the line boxes themselves leave
+            a few pixels between the caps. Below 360px the title is 11px with
+            tighter tracking and a 6px column gap so "THE ODOGWU" fits on one
+            line beside the 44px controls. The logo shifts down a few pixels so
+            it centres on that lockup. sm+: a single flex row. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0 min-[360px]:gap-x-2.5 py-2 min-h-20 sm:flex sm:h-20 sm:py-0 sm:justify-between sm:gap-4">
           {/* Logo */}
           <div
             onClick={() => {
@@ -67,19 +73,19 @@ export function Header() {
               loading="lazy"
               src={odogwuLogo}
               alt="The Odogwu Heritage Logo"
-              className="col-start-1 row-start-1 row-span-2 self-center w-11 h-11 rounded-full border border-heritage-gold/35 object-cover bg-heritage-forest shrink-0 shadow-md cursor-pointer"
+              className="col-start-1 row-start-1 row-span-2 self-center w-11 h-11 rounded-full border border-heritage-gold/35 object-cover bg-heritage-forest shrink-0 shadow-md cursor-pointer max-[359px]:translate-y-2 min-[360px]:max-sm:translate-y-1.5"
               referrerPolicy="no-referrer"
             />
             <div className="contents sm:flex sm:flex-col sm:justify-center sm:min-w-0">
               <span
                 data-header-brand-title
-                className="col-start-2 row-start-1 self-center sm:self-stretch min-w-0 cursor-pointer text-[12px] min-[380px]:text-[13px] sm:text-sm md:text-base leading-tight font-bold tracking-[0.08em] sm:tracking-[0.16em] xl:tracking-[0.14em] text-heritage-gold uppercase font-display break-words text-balance"
+                className="col-start-2 row-start-1 self-end sm:self-stretch min-w-0 cursor-pointer text-[11px] min-[360px]:text-[12px] min-[380px]:text-[13px] sm:text-sm md:text-base leading-tight font-bold tracking-[0.03em] min-[360px]:tracking-[0.08em] sm:tracking-[0.16em] xl:tracking-[0.14em] text-heritage-gold uppercase font-display break-words text-balance"
               >
                 THE ODOGWU HERITAGE
               </span>
               <span
                 data-header-community-line
-                className="col-start-2 col-span-2 row-start-2 min-w-0 cursor-pointer sm:mt-0.5 text-[10px] md:text-[11px] leading-snug sm:leading-tight tracking-[0.04em] sm:tracking-wide text-heritage-beige uppercase font-sans font-extrabold break-words text-balance"
+                className="col-start-2 col-span-2 row-start-2 self-start sm:self-stretch min-w-0 cursor-pointer sm:mt-0.5 text-[10px] md:text-[11px] leading-tight tracking-[0.04em] sm:tracking-wide text-heritage-beige uppercase font-sans font-extrabold break-words text-balance"
               >
                 {businessSettings.applicationSettings.tagline ||
                   "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}

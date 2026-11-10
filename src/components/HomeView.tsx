@@ -767,7 +767,7 @@ export default function HomeView({
 
 
       {/* Design Styles Showcase */}
-      <section className="space-y-8 py-8">
+      <section id="explore-design-styles" className="space-y-8 py-8">
         <div className="text-center space-y-3 max-w-3xl mx-auto">
           <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
             Explore Design Styles
