@@ -2886,6 +2886,7 @@ export const DormantFutureFabricStep = ({
             : undefined
         }
         onRemove={handleCatalogueRemove}
+        showPhotoPreview
         dataAttributes={
           changeCardPresentation
             ? {

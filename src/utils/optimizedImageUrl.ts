@@ -74,6 +74,22 @@ export const DESIGN_STYLE_DIALOG_IMAGE_PRESET: ResponsiveImagePreset = {
   sizes: "(min-width: 640px) 576px, 92vw",
 };
 
+/**
+ * Enlarged fabric photo. `/_vercel/image` only serves up to 512 px (the card
+ * size). The stored original is the full photo, about 1600 px, so the enlarged
+ * view offers that original beside the 512 px image. A wide slot picks the
+ * original; a phone-sized slot picks 512. `useImageLoadRetry` still falls back
+ * to the original alone if the resized request fails.
+ */
+export const FABRIC_PHOTO_PREVIEW_IMAGE_PRESET: ResponsiveImagePreset = {
+  widths: [512],
+  fallbackWidth: 512,
+  sizes: "90vw",
+};
+
+/** Width descriptor for the stored original in the enlarged-photo srcset. */
+export const FABRIC_PHOTO_PREVIEW_ORIGINAL_WIDTH = 1600;
+
 /** Small Design Style thumbs (Step 3 occurrence preview, Summary 96 px thumb). */
 export const DESIGN_STYLE_THUMB_IMAGE_PRESET: ResponsiveImagePreset = {
   widths: [128, 256],
@@ -170,6 +186,21 @@ export const buildOptimizedImageSources = (
       .map((width) => `${buildVercelImageUrl(original, width)} ${width}w`)
       .join(", "),
     sizes: preset.sizes,
+  };
+};
+
+/**
+ * Optimised sources for the enlarged fabric photo, or null when optimisation
+ * is off (the caller then shows the stored original).
+ */
+export const buildFabricPhotoPreviewSources = (
+  url: string | null | undefined,
+): OptimizedImageSources | null => {
+  const optimized = buildOptimizedImageSources(url, FABRIC_PHOTO_PREVIEW_IMAGE_PRESET);
+  if (!optimized || typeof url !== "string" || !url.trim()) return null;
+  return {
+    ...optimized,
+    srcSet: `${optimized.srcSet}, ${url.trim()} ${FABRIC_PHOTO_PREVIEW_ORIGINAL_WIDTH}w`,
   };
 };
 
