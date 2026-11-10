@@ -291,12 +291,10 @@ export const FutureFabricCatalogueCard = ({
               }
               setPhotoPreviewOpen(true);
             }}
-            className="catalogue-photo-eye group/eye absolute bottom-2 left-2 z-10 inline-flex min-h-11 max-w-[calc(100%-0.5rem)] items-end justify-start bg-transparent p-0 focus-visible:outline-none"
+            className="catalogue-photo-eye absolute bottom-2 left-2 z-10 inline-flex max-w-[calc(100%-0.5rem)] items-center gap-1 rounded-full border border-white/70 bg-white/70 py-1.5 pr-2 pl-1.5 text-[11px] font-bold leading-none whitespace-nowrap text-heritage-green shadow-sm backdrop-blur-sm hover:border-white hover:bg-white focus-visible:border-white focus-visible:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
           >
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-white/70 bg-white/70 py-1.5 pr-2 pl-1.5 text-[11px] font-bold leading-none whitespace-nowrap text-heritage-green shadow-sm backdrop-blur-sm group-hover/eye:border-white group-hover/eye:bg-white group-focus-visible/eye:border-white group-focus-visible/eye:bg-white group-focus-visible/eye:ring-2 group-focus-visible/eye:ring-heritage-gold group-focus-visible/eye:ring-offset-1">
-              <Eye aria-hidden="true" size={10} />
-              Quick look
-            </span>
+            <Eye aria-hidden="true" size={10} />
+            <span>Quick look</span>
           </button>
         ) : null}
         {canPreviewPhoto && photoPreviewOpen ? (
