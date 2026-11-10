@@ -25,7 +25,9 @@ import {
   aiTryOnGarmentPreviewKey,
   aiTryOnOutfitPreviewKey,
   aiTryOnOutfitFingerprint,
+  aiTryOnOutfitVisualSources,
   createAiTryOnFingerprintFromOccurrenceAssignments,
+  type AiTryOnOutfitVisualSource,
   type AiTryOnOccurrenceDesignSource,
 } from "./aiTryOnWorkflow.js";
 import {
@@ -447,17 +449,25 @@ const outfitPairLabel = (top: AiTryOnOutfitChoice, bottom: AiTryOnOutfitChoice) 
 export const aiTryOnOutfitTarget = (
   target: AiTryOnWearerTarget,
   pair?: { top: AiTryOnOutfitChoice; bottom: AiTryOnOutfitChoice } | null,
+  /**
+   * The picture currently on screen. Omit it for Summary, which treats every
+   * allowlisted model and a customer photo as current for the same garments.
+   * Pass null when the panel has not chosen a photo or a model yet.
+   */
+  source?: AiTryOnOutfitVisualSource | null,
 ): AiTryOnWearerTarget | null => {
   const { tops, bottoms } = aiTryOnOutfitChoices(target);
   if (!tops.length || !bottoms.length) return null;
   const base = { ...target, wearerId: aiTryOnOutfitPreviewKey(target.wearerId), previewKind: "outfit" as const, previewableGarments: [] };
+  const visualSources = source === undefined ? aiTryOnOutfitVisualSources() : [source];
   if (pair) {
-    return { ...base, inputFingerprint: aiTryOnOutfitFingerprint(pair.top, pair.bottom), label: `${target.label} — Combined outfit (${outfitPairLabel(pair.top, pair.bottom)})` };
+    const visual = source === undefined ? { kind: "customer_photo" as const } : source;
+    return { ...base, inputFingerprint: aiTryOnOutfitFingerprint(pair.top, pair.bottom, visual), label: `${target.label} — Combined outfit (${outfitPairLabel(pair.top, pair.bottom)})` };
   }
-  const outfitPairs = tops.flatMap((top) => bottoms.flatMap((bottom) => {
-    const fingerprint = aiTryOnOutfitFingerprint(top, bottom);
+  const outfitPairs = tops.flatMap((top) => bottoms.flatMap((bottom) => visualSources.flatMap((visualSource) => {
+    const fingerprint = aiTryOnOutfitFingerprint(top, bottom, visualSource);
     return fingerprint ? [{ top: top.garmentKey, bottom: bottom.garmentKey, label: outfitPairLabel(top, bottom), inputFingerprint: fingerprint }] : [];
-  }));
+  })));
   return { ...base, inputFingerprint: null, outfitPairs, label: `${target.label} — Combined outfit` };
 };
 /** The pair a stored outfit preview was made from, while still current. */

@@ -7,7 +7,7 @@ import { AiTryOnPhotoPanel, type AiTryOnPhotoPanelProps } from "./src/components
 import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
 import { aiTryOnOutfitChoices, aiTryOnOutfitTarget, aiTryOnOrderPreviewTargets, type AiTryOnPreviewableGarment, type AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_OUTFIT_PROMPT_VERSION, type AiTryOnGenerationRequest, type AiTryOnOutfitGarmentRequest } from "./src/utils/aiTryOnGatewayContract";
-import { aiTryOnOutfitPreviewKey } from "./src/utils/aiTryOnWorkflow";
+import { aiTryOnOutfitFingerprint, aiTryOnOutfitPreviewKey } from "./src/utils/aiTryOnWorkflow";
 import { buildAiTryOnOutfitPrompt, buildAiTryOnOutfitImageLabels } from "./src/server/aiTryOnPrompt";
 import { selectAiTryOnOrderPreviews } from "./src/components/AiTryOnOrderPreviewThumbnails";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -51,6 +51,16 @@ for (const onModel of [false, true]) {
   assert.match(buildAiTryOnOutfitImageLabels(promptGarments, onModel)[3], /IMAGE 4: Trouser/);
 }
 assert.match(buildAiTryOnOutfitPrompt({ garments: [{ ...promptGarments[0], garmentType: "kaftan" }, promptGarments[1]], onModel: false }), /Chosen top: Long Shirt/);
+const withFingerprint = (garmentKey: string) => ({ garmentKey, inputFingerprint: fp });
+const photoFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[1].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "customer_photo" });
+const lightModelFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[0].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "studio_model", modelId: "male-1-light" });
+const plusModelFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[0].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "studio_model", modelId: "male-plus" });
+const unselectedFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[0].garmentKey), withFingerprint(garments[2].garmentKey), null);
+assert.ok(photoFingerprint && lightModelFingerprint && plusModelFingerprint && unselectedFingerprint);
+assert.notEqual(photoFingerprint, plusModelFingerprint);
+assert.notEqual(lightModelFingerprint, plusModelFingerprint);
+assert.equal(aiTryOnOutfitFingerprint(withFingerprint(garments[0].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "studio_model", modelId: "not-a-model" }), unselectedFingerprint, "unknown model ids are dropped");
+assert.notEqual(unselectedFingerprint, aiTryOnOutfitFingerprint(withFingerprint(garments[1].garmentKey), withFingerprint(garments[2].garmentKey), null), "a different garment still changes the hash");
 
 const text = (node: ReactTestInstance): string => node.children.map((child) => typeof child === "string" ? child : text(child)).join("");
 const requests: AiTryOnGenerationRequest[] = [];
@@ -94,6 +104,7 @@ assert.deepEqual(requests[2].outfitGarments?.map((g) => g.garmentKey), ["shirt-c
 assert.equal(requests[2].personImage?.data, requests[0].personImage?.data, "same base photo");
 assert.equal(requests[2].garmentImageUrl, undefined);
 assert.equal(requests[2].orderDetails, undefined);
+assert.equal(requests[2].inputFingerprint, photoFingerprint, "a photo outfit fingerprint includes the photo source");
 assert.match(JSON.stringify(panel.toJSON()), /Latest combined outfit preview/);
 const outfitSrc = panel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:"))[0].props.src;
 await click(data("data-ai-try-on-single-mode")[0]);
@@ -122,6 +133,11 @@ await click(generate());
 assert.equal(requests[3].defaultModelId, "male-plus");
 assert.equal(requests[3].personImage, undefined);
 assert.equal(requests[3].fitHints, undefined);
+assert.equal(requests[3].inputFingerprint, plusModelFingerprint, "the request uses the selected model fingerprint");
+await click(data("data-ai-try-on-model", "male-1-light")[0]);
+assert.equal(requests.length, 4, "switching model does not generate");
+assert.equal(data("data-ai-try-on-outfit-preview-stale").length, 1, "the previous model's outfit preview is out of date");
+assert.equal(panel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:")).length, 0);
 await act(async () => { panel.unmount(); });
 for (const list of [[garments[0]], [garment("dress", "dress")], [garments[3], garments[2]]]) {
   await act(async () => { panel = create(createElement(AiTryOnPhotoPanel, { ...props, targets: [{ ...target, previewableGarments: list }], jobStore: createAiTryOnBackgroundJobs({ storage: null }) })); });

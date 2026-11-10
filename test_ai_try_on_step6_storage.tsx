@@ -229,6 +229,56 @@ const DAY = 24 * 60 * 60 * 1000;
   fetched.length = 0;
   assert.equal((await load("https://images.unsplash.com/photo-1?w=800")).mimeType, "image/jpeg");
   assert.equal(fetched[0].init?.redirect, "error", "redirects are refused");
+
+  const statusBucket = (failure: unknown) => ({
+    name: bucket.name,
+    file: () => ({ download: async (): Promise<[Buffer]> => { throw failure; } }),
+  });
+  const ownStatus = (path: string) =>
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=abc`;
+  const loadStatus = (failure: unknown, path: string) =>
+    loadAiTryOnReferenceImageOnServer(ownStatus(path), { bucket: statusBucket(failure), fetchImpl });
+  const missing = await assert.rejects(
+    () => loadStatus(Object.assign(new Error("No such object"), { code: 404, errors: [{ reason: "notFound" }] }), "styles/gone.png"),
+    (error: unknown) => error instanceof AiTryOnReferenceImageError && error.message === "reference_missing" && error.httpStatus === 404 && error.providerReason === "notFound",
+  );
+  assert.equal(missing, undefined);
+  const rateLimited = await loadStatus(Object.assign(new Error("slow down"), { code: 429, errors: [{ reason: "rateLimitExceeded" }] }), "styles/rate.png").catch((error: unknown) => error);
+  assert.ok(rateLimited instanceof AiTryOnReferenceImageError);
+  assert.equal(rateLimited.message, "reference_missing");
+  assert.equal(rateLimited.httpStatus, 429);
+  assert.notEqual(rateLimited.message, "reference_billing");
+  const billing = await loadStatus(
+    Object.assign(new Error("The billing account for techpalavabox@gmail.com is disabled"), { code: 403, errors: [{ reason: "billingDisabled" }] }),
+    "styles/billing.png",
+  ).catch((error: unknown) => error);
+  assert.ok(billing instanceof AiTryOnReferenceImageError);
+  assert.equal(billing.message, "reference_billing");
+  assert.equal(billing.httpStatus, 403);
+  assert.equal(billing.providerReason, "billingdisabled");
+  const payment = await loadStatus(
+    Object.assign(new Error("payment required"), { status: 402, errors: [{ reason: "paymentRequired" }] }),
+    "styles/payment.png",
+  ).catch((error: unknown) => error);
+  assert.ok(payment instanceof AiTryOnReferenceImageError);
+  assert.equal(payment.message, "reference_billing");
+  assert.equal(payment.httpStatus, 402);
+  const offline = await loadStatus(new Error("socket hang up"), "styles/offline.png").catch((error: unknown) => error);
+  assert.ok(offline instanceof AiTryOnReferenceImageError);
+  assert.equal(offline.message, "reference_missing", "a storage network error stays a missing reference");
+  const unsplashPayment = await loadAiTryOnReferenceImageOnServer("https://images.unsplash.com/payment", {
+    bucket,
+    fetchImpl: async () => new Response("", { status: 402 }),
+  }).catch((error: unknown) => error);
+  assert.ok(unsplashPayment instanceof AiTryOnReferenceImageError);
+  assert.equal(unsplashPayment.message, "reference_missing");
+  assert.equal(unsplashPayment.httpStatus, 402);
+  const unsplashDown = await loadAiTryOnReferenceImageOnServer("https://images.unsplash.com/down", {
+    bucket,
+    fetchImpl: async () => { throw new Error("socket hang up"); },
+  }).catch((error: unknown) => error);
+  assert.ok(unsplashDown instanceof AiTryOnReferenceImageError);
+  assert.equal(unsplashDown.message, "reference_fetch");
 }
 
 // ------------------------------------------------------------ HTTP: generate, store, read, delete

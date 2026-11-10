@@ -28,6 +28,12 @@ import {
   type AiTryOnGeminiResponseLike,
 } from "./src/server/aiTryOnGemini";
 import {
+  AI_TRY_ON_BILLING_UNAVAILABLE_EMAIL,
+  isAiTryOnBillingUnavailableAccount,
+  readAiTryOnBillingSignal,
+} from "./src/server/aiTryOnBilling";
+import { AiTryOnReferenceImageError } from "./src/server/aiTryOnReferenceImages";
+import {
   handleAiTryOn,
   isAiTryOnEnabled,
   isAiTryOnRequest,
@@ -1083,6 +1089,211 @@ for (const stall of ["fetch", "credentials", "body"]) {
 
 console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt modes, fit hints, fingerprint, browser gateway)");
 
+// Billing: explicit status+reason only, and the unavailable page only for one verified account.
+{
+  const ALLOWED = AI_TRY_ON_BILLING_UNAVAILABLE_EMAIL;
+  const providerError = (status: number, reason: string, message = `secret text for ${ALLOWED}`) =>
+    Object.assign(new Error(message), { status, errors: [{ reason, message }] });
+  assert.equal(readAiTryOnBillingSignal(providerError(403, "billingDisabled"))?.reason, "billingdisabled");
+  assert.equal(readAiTryOnBillingSignal(providerError(402, "PAYMENT_REQUIRED"))?.status, 402);
+  assert.equal(readAiTryOnBillingSignal(providerError(403, "BILLING_ACCOUNT_DISABLED"))?.reason, "billingaccountdisabled");
+  assert.equal(readAiTryOnBillingSignal(providerError(429, "billingDisabled")), null, "429 is never billing");
+  assert.equal(readAiTryOnBillingSignal(providerError(404, "notFound")), null);
+  assert.equal(readAiTryOnBillingSignal(providerError(403, "forbidden")), null, "403 without a billing reason");
+  assert.equal(readAiTryOnBillingSignal(Object.assign(new Error("Your billing account is disabled"), { status: 403 })), null, "wording alone is not a signal");
+  assert.equal(readAiTryOnBillingSignal(new Error("socket hang up")), null);
+  assert.equal(
+    isAiTryOnBillingUnavailableAccount({
+      uid: "uid-allowed",
+      email: "  TechPalavaBox@Gmail.com ",
+      email_verified: true,
+      firebase: { sign_in_provider: "password" },
+    }),
+    true,
+  );
+  assert.equal(
+    isAiTryOnBillingUnavailableAccount({
+      uid: "uid-dotted",
+      email: "tech.palavabox@gmail.com",
+      email_verified: true,
+      firebase: { sign_in_provider: "password" },
+    }),
+    false,
+    "gmail dots are not an exact match",
+  );
+  assert.equal(
+    isAiTryOnBillingUnavailableAccount({
+      uid: "uid-unverified",
+      email: ALLOWED,
+      email_verified: false,
+      firebase: { sign_in_provider: "password" },
+    }),
+    false,
+  );
+  assert.equal(
+    isAiTryOnBillingUnavailableAccount({
+      uid: "uid-anon",
+      email: ALLOWED,
+      email_verified: true,
+      firebase: { sign_in_provider: "anonymous" },
+    }),
+    false,
+  );
+  assert.equal(isAiTryOnBillingUnavailableAccount(null), false);
+
+  const authed = (
+    identity: { uid: string; email: string; email_verified: boolean; provider?: string } | null,
+    extraHeaders: Record<string, string> = {},
+  ) => {
+    const h = harness();
+    if (identity) {
+      h.deps.verifyIdToken = async () => ({
+        uid: identity.uid,
+        email: identity.email,
+        email_verified: identity.email_verified,
+        firebase: { sign_in_provider: identity.provider ?? "password" },
+      });
+    }
+    const req = post(validBody());
+    if (identity) req.headers.authorization = "Bearer verified-firebase-token";
+    Object.assign(req.headers, extraHeaders);
+    return { h, req };
+  };
+  const runBilling = async (
+    identity: { uid: string; email: string; email_verified: boolean; provider?: string } | null,
+    error: unknown,
+    extraHeaders: Record<string, string> = {},
+  ) => {
+    const { h, req } = authed(identity, extraHeaders);
+    h.deps.createGenerateContent = () => async () => {
+      throw error;
+    };
+    const result = response();
+    await handleAiTryOn(req, result.res, h.deps);
+    return { h, result };
+  };
+  const assertNoCustomerBillingWords = (body: unknown) => {
+    assert.doesNotMatch(JSON.stringify(body), /billing|payment/i);
+  };
+  const assertServerLog = (logs: string[], email: string) => {
+    const line = logs.find((entry) => entry.includes("billing_unavailable"));
+    assert.ok(line, "billing_unavailable is logged");
+    assert.equal(line!.includes(email), false);
+    assert.equal(line!.includes("@"), false);
+    assert.equal(line!.includes("secret text"), false);
+  };
+
+  const signal = providerError(403, "billingDisabled");
+  const allowed = await runBilling(
+    { uid: "uid-allowed", email: "TechPalavaBox@Gmail.com", email_verified: true },
+    signal,
+  );
+  assert.equal(allowed.result.state.status, 503);
+  const allowedBody = allowed.result.state.body as { code?: string; error?: string };
+  assert.equal(allowedBody.code, "NOT_CONFIGURED");
+  assert.equal(allowedBody.error, "AI Try-on is currently unavailable.");
+  assertNoCustomerBillingWords(allowedBody);
+  assert.equal(mapAiTryOnPreviewResponse(allowed.result.state.status, allowedBody).kind, "unavailable");
+  assert.equal(allowed.h.db.docs.get("aiTryOnUsage/global")?.count, 0, "the try is refunded");
+  assertServerLog(allowed.h.logs, ALLOWED);
+
+  const other = await runBilling(
+    { uid: "uid-other", email: "someoneelse@example.com", email_verified: true },
+    providerError(402, "paymentRequired"),
+    { "x-customer-email": ALLOWED },
+  );
+  assert.equal(other.result.state.status, 502);
+  const otherBody = other.result.state.body as { code?: string; error?: string; tryRefunded?: boolean; orderTriesRemaining?: number };
+  assert.equal(otherBody.code, "PROVIDER_FAILED");
+  assert.equal(otherBody.error, "AI Try-on could not be completed.");
+  assert.equal(otherBody.tryRefunded, true);
+  assert.equal(otherBody.orderTriesRemaining, AI_TRY_ON_TRIES_PER_ORDER);
+  assertNoCustomerBillingWords(otherBody);
+  assert.equal(mapAiTryOnPreviewResponse(other.result.state.status, otherBody).kind, "failed");
+  assert.equal(other.h.db.docs.get("aiTryOnUsage/global")?.count, 0);
+  assertServerLog(other.h.logs, "someoneelse@example.com");
+
+  const unverified = await runBilling(
+    { uid: "uid-unverified", email: ALLOWED, email_verified: false },
+    signal,
+  );
+  assert.equal(unverified.result.state.status, 502);
+  assert.equal((unverified.result.state.body as { code?: string }).code, "PROVIDER_FAILED");
+  assertNoCustomerBillingWords(unverified.result.state.body);
+  assertServerLog(unverified.h.logs, ALLOWED);
+
+  const guest = await runBilling(null, signal);
+  assert.equal(guest.result.state.status, 502);
+  assert.equal((guest.result.state.body as { code?: string }).code, "PROVIDER_FAILED");
+  assertNoCustomerBillingWords(guest.result.state.body);
+  assertServerLog(guest.h.logs, ALLOWED);
+
+  const quota = await runBilling(
+    { uid: "uid-allowed", email: ALLOWED, email_verified: true },
+    providerError(429, "rateLimitExceeded", "RESOURCE_EXHAUSTED"),
+  );
+  assert.equal(quota.result.state.status, 502);
+  assert.equal((quota.result.state.body as { code?: string; retryable?: boolean }).code, "PROVIDER_FAILED");
+  assert.equal((quota.result.state.body as { retryable?: boolean }).retryable, true);
+  assert.equal(quota.h.logs.some((line) => line.includes("billing_unavailable")), false, "429 stays off the billing log");
+
+  const network = await runBilling(
+    { uid: "uid-allowed", email: ALLOWED, email_verified: true },
+    new Error("socket hang up"),
+  );
+  assert.equal((network.result.state.body as { code?: string }).code, "PROVIDER_FAILED");
+  assert.equal(network.h.logs.some((line) => line.includes("billing_unavailable")), false);
+
+  const storageBilling = async (email: string | null, verified = true) => {
+    const identity = email
+      ? { uid: "uid-storage", email, email_verified: verified }
+      : null;
+    const { h, req } = authed(identity);
+    h.deps.loadReferenceImage = async () => {
+      throw new AiTryOnReferenceImageError("reference_billing", { httpStatus: 403, providerReason: "billingdisabled" });
+    };
+    const result = response();
+    await handleAiTryOn(
+      { ...req, body: { ...(req.body as object), garmentImage: undefined, garmentImageUrl: "https://example.test/styles/shirt.jpg" } },
+      result.res,
+      h.deps,
+    );
+    return { h, result };
+  };
+  const storageAllowed = await storageBilling("TechPalavaBox@Gmail.com");
+  assert.equal(storageAllowed.result.state.status, 503);
+  assert.equal((storageAllowed.result.state.body as { code?: string }).code, "NOT_CONFIGURED");
+  assert.equal(storageAllowed.h.calls.length, 0, "Gemini is not called");
+  assert.equal(storageAllowed.h.db.docs.get("aiTryOnUsage/global")?.count ?? 0, 0, "the try is skipped");
+  assertServerLog(storageAllowed.h.logs, ALLOWED);
+  const storageOther = await storageBilling("someoneelse@example.com");
+  assert.equal(storageOther.result.state.status, 422);
+  assert.equal((storageOther.result.state.body as { code?: string }).code, "REFERENCE_IMAGE_UNAVAILABLE");
+  assertNoCustomerBillingWords(storageOther.result.state.body);
+  assert.equal(storageOther.h.calls.length, 0);
+  assert.equal(storageOther.h.db.docs.get("aiTryOnUsage/global")?.count ?? 0, 0);
+  assertServerLog(storageOther.h.logs, "someoneelse@example.com");
+  const storageMissing = await (async () => {
+    const { h, req } = authed({ uid: "uid-allowed", email: ALLOWED, email_verified: true });
+    h.deps.loadReferenceImage = async () => {
+      throw new AiTryOnReferenceImageError("reference_missing", { httpStatus: 404, providerReason: "notFound" });
+    };
+    const result = response();
+    await handleAiTryOn(
+      { ...req, body: { ...(req.body as object), garmentImage: undefined, garmentImageUrl: "https://example.test/styles/missing.jpg" } },
+      result.res,
+      h.deps,
+    );
+    return { h, result };
+  })();
+  assert.equal(storageMissing.result.state.status, 422);
+  assert.equal((storageMissing.result.state.body as { code?: string }).code, "REFERENCE_IMAGE_UNAVAILABLE");
+  assert.equal(storageMissing.h.logs.some((line) => line.includes("billing_unavailable")), false);
+  assert.equal(storageMissing.h.logs.some((line) => line.includes("reference_missing")), true);
+
+  console.log("PASS: AI Try-on billing signal is unavailable only for the verified allowlisted account");
+}
+
 // Deep check L5: uploaded-design mode fetches its private blob: URL; the CSP
 // (report-only today) must allow it so enforcing CSP never breaks it.
 {
@@ -1091,4 +1302,47 @@ console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt
   assert.ok(connect.split(" ").includes("blob:"), "connect-src lists blob:");
   assert.ok(connect.split(" ").includes("'self'"));
   console.log("PASS: CSP connect-src allows blob: (L5)");
+
+{
+  const modelBody = {
+    mode: "garment",
+    orderKey: "draft-model-log",
+    inputFingerprint: FINGERPRINT,
+    defaultModelId: "male-plus",
+    garmentImageUrl: "https://example.test/shirt.jpg",
+    wearerKey: "order",
+  };
+  const completed = harness();
+  completed.deps.loadDefaultModelImage = async () => ({ mimeType: "image/png", data: png });
+  completed.deps.loadReferenceImage = async () => ({ mimeType: "image/png", data: png });
+  completed.deps.createModelResultCache = () => ({ reuse: async () => null, save: async () => undefined });
+  const completedResult = response();
+  await handleAiTryOn(post(modelBody), completedResult.res, completed.deps);
+  assert.equal(completedResult.state.status, 200);
+  const completedLog = completed.logs.find((line) => line.includes('"outcome":"completed"')) ?? "";
+  assert.match(completedLog, /"modelId":"male-plus"/);
+  assert.doesNotMatch(completedLog, /@|personImage|AIza/);
+
+  const cached = harness();
+  cached.deps.loadDefaultModelImage = async () => ({ mimeType: "image/png", data: png });
+  cached.deps.loadReferenceImage = async () => ({ mimeType: "image/png", data: png });
+  cached.deps.createModelResultCache = () => ({
+    reuse: async () => ({ mimeType: "image/png", data: png }),
+    save: async () => undefined,
+  });
+  const cachedResult = response();
+  await handleAiTryOn(post({ ...modelBody, orderKey: "draft-model-hit", defaultModelId: "male-1-light" }), cachedResult.res, cached.deps);
+  assert.equal(cachedResult.state.status, 200);
+  const hitLog = cached.logs.find((line) => line.includes('"outcome":"model_cache_hit"')) ?? "";
+  assert.match(hitLog, /"modelId":"male-1-light"/);
+  assert.equal(cached.calls.length, 0, "a cache hit does not call Gemini");
+
+  const photo = harness();
+  const photoResult = response();
+  await handleAiTryOn(post(validBody({ orderKey: "draft-photo-log" })), photoResult.res, photo.deps);
+  assert.equal(photoResult.state.status, 200);
+  const photoLog = photo.logs.find((line) => line.includes('"outcome":"completed"')) ?? "";
+  assert.match(photoLog, /"modelId":null/);
+  console.log("PASS: completed try-on logs record the allowlisted model id");
+}
 }
