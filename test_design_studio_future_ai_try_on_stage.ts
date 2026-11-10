@@ -338,6 +338,15 @@ assert.ok(
   "jobId appears only in the busy-job release call",
 );
 assert.equal(/localStorage|sessionStorage|indexedDB/.test(livePanelSource), false);
+assert.match(livePanelSource, /readOwnAiTryOnAdminStatus/);
+assert.match(livePanelSource, /resetOwnAiTryOnTries/);
+assert.match(livePanelSource, /Reset my AI try-on tries/);
+assert.match(livePanelSource, /Reset your own tries now\?/);
+assert.match(
+  livePanelSource,
+  /const \[resetEligible, setResetEligible\] = useState\(false\)/,
+  "reset control stays hidden until eligibility resolves",
+);
 assert.match(stepperSource, /DESIGN_STUDIO_TEN_STAGE_FOUNDATION\.map/);
 assert.match(stepperSource, /canEnterTryOn/);
 assert.match(stepperSource, /canEnterMeasurement/);

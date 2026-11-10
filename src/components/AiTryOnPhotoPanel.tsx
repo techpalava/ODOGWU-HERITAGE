@@ -9,6 +9,8 @@ import {
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
 import type { AiTryOnOutfitVisualSource } from "../utils/aiTryOnWorkflow";
+import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW } from "../utils/aiTryOnGatewayContract";
+import { readOwnAiTryOnAdminStatus, resetOwnAiTryOnTries } from "../services/aiTryOnAdminReset";
 import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -369,6 +371,12 @@ export interface AiTryOnPhotoPanelProps {
   onSessionPreviewsChange?: (
     update: (current: Record<string, AiTryOnSessionPreview>) => Record<string, AiTryOnSessionPreview>,
   ) => void;
+  /**
+   * Existing admin reset. Eligible stays false until this resolves, so
+   * ineligible customers never see a flash of the control.
+   */
+  readResetStatus?: () => Promise<{ eligible: boolean }>;
+  resetOwnTries?: () => Promise<boolean>;
 }
 
 const tryOnChoiceChipClass = (selected: boolean) =>
@@ -420,6 +428,8 @@ export const AiTryOnPhotoPanel = ({
   onSessionMeasurementWearerIdChange,
   sessionPreviews,
   onSessionPreviewsChange,
+  readResetStatus = readOwnAiTryOnAdminStatus,
+  resetOwnTries = resetOwnAiTryOnTries,
 }: AiTryOnPhotoPanelProps) => {
   const idPrefix = useId();
   const howWeUseId = `${idPrefix}-how-we-use`;
@@ -1150,6 +1160,38 @@ export const AiTryOnPhotoPanel = ({
     });
   };
 
+  const [resetEligible, setResetEligible] = useState(false);
+  const [resetPhase, setResetPhase] = useState<"idle" | "confirming" | "resetting" | "failed">("idle");
+  useEffect(() => {
+    let active = true;
+    void readResetStatus().then((status) => {
+      if (active) setResetEligible(status.eligible === true);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [readResetStatus]);
+  const confirmOwnTryReset = async () => {
+    setResetPhase("resetting");
+    try {
+      const reset = await resetOwnTries();
+      if (!reset) {
+        setResetPhase("failed");
+        return;
+      }
+      setTriesRemaining(triesPerOrder);
+      setAccountTriesRemaining((current) =>
+        current === null ? null : AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
+      );
+      setMessage((current) =>
+        current?.kind === "out_of_previews" || current?.kind === "account_out_of_previews"
+          ? null
+          : current,
+      );
+      setResetPhase("idle");
+    } catch {
+      setResetPhase("failed");
+    }
+  };
+
   if (!target) return null;
 
   const triesLabel = `${left} ${left === 1 ? "try" : "tries"} left`;
@@ -1598,6 +1640,29 @@ export const AiTryOnPhotoPanel = ({
           <p className="text-xs leading-relaxed text-heritage-ink/70" data-ai-try-on-order-tries-note>
             {triesPerOrder} tries per order, shared across all garments and wearers—not {triesPerOrder} per garment. Account limits also apply.
           </p>
+          {resetEligible ? (
+            <div data-ai-try-on-reset-tries="true" className="flex flex-wrap items-center gap-3">
+              {resetPhase === "confirming" ? (
+                <>
+                  <span className="text-sm">Reset your own tries now?</span>
+                  <button type="button" className="rounded-lg bg-heritage-green px-4 py-2 text-sm text-white" onClick={() => void confirmOwnTryReset()}>Confirm reset</button>
+                  <button type="button" className="text-sm underline" onClick={() => setResetPhase("idle")}>Cancel</button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="rounded-lg bg-heritage-green px-4 py-2 text-sm text-white disabled:opacity-50"
+                  disabled={resetPhase === "resetting"}
+                  onClick={() => setResetPhase("confirming")}
+                >
+                  {resetPhase === "resetting" ? "Resetting…" : "Reset my AI try-on tries"}
+                </button>
+              )}
+              {resetPhase === "failed" ? (
+                <p role="alert" className="text-sm text-red-700">Your tries could not be reset. Sign in again or try later.</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
