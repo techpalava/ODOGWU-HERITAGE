@@ -354,6 +354,13 @@ import {
   recordAiTryOnPreviewCompletion,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
+import { AI_TRY_ON_TRIES_PER_ORDER } from "../utils/aiTryOnGatewayContract";
+import {
+  aiTryOnControlsVisible,
+  aiTryOnGenerationEnabled,
+  resolveAiTryOnStepAvailability,
+  useAiTryOnStepAvailability,
+} from "../utils/aiTryOnStepAvailability";
 import {
   aiTryOnOrderPreviewTargets as aiTryOnPreviewTargets,
   aiTryOnPreviewFingerprintIsCurrent,
@@ -365,7 +372,6 @@ import {
   fetchStoredAiTryOnPreview,
   saveAiTryOnOrderSelection,
   releaseAiTryOnBusyJob,
-  type AiTryOnAvailabilityDetails,
 } from "../services/aiTryOnGateway";
 import {
   AiTryOnOrderPreviewThumbnails,
@@ -1298,14 +1304,6 @@ export default function DesignStudioView({
     useState(0);
   const [futureAiTryOnWorkflow, setFutureAiTryOnWorkflow] =
     useState<AiTryOnWorkflowStateV1>(createEmptyAiTryOnWorkflowState);
-  /** `GET /api/ai-try-on`; "unknown" until the Try-on step first asks. */
-  const [aiTryOnAvailability, setAiTryOnAvailability] = useState<
-    AiTryOnAvailabilityDetails | { status: "unknown" }
-  >({ status: "unknown" });
-  const aiTryOnGatewayAvailable: boolean | "unknown" =
-    aiTryOnAvailability.status === "unknown"
-      ? "unknown"
-      : aiTryOnAvailability.status === "available";
   /** A Try-on preview is generating; the step hides its skip button. */
   const [aiTryOnGenerating, setAiTryOnGenerating] = useState(false);
   const [futureMeasurementState, setFutureMeasurementState] =
@@ -4017,12 +4015,12 @@ export default function DesignStudioView({
       fabrics,
     ],
   );
-  useEffect(() => {
-    if (!guestDraftHydrated || futureStageId !== "try_on") return;
-    let cancelled = false;
-    const credentials = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
-    void fetchAiTryOnAvailability({ credentials }).then((availability) => {
-      if (cancelled) return;
+  const aiTryOnAvailabilityState = useAiTryOnStepAvailability({
+    active: guestDraftHydrated && futureStageId === "try_on",
+    reloadKey: `${futureDraftIdentityKey}`,
+    load: async () => {
+      const credentials = aiTryOnCredentialsForIdentity(futureDraftIdentityKey);
+      const availability = await fetchAiTryOnAvailability({ credentials });
       if (availability.status === "available") {
         const signedIn = futureDraftIdentityKey.startsWith("authenticated:");
         if (signedIn) {
@@ -4046,12 +4044,14 @@ export default function DesignStudioView({
           );
         }
       }
-      setAiTryOnAvailability(availability);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [guestDraftHydrated, futureStageId, futureDraftIdentityKey]);
+      return availability;
+    },
+  });
+  const aiTryOnAvailability = aiTryOnAvailabilityState.details;
+  const aiTryOnGatewayAvailable: boolean | "unknown" =
+    aiTryOnAvailability.status === "unknown"
+      ? "unknown"
+      : aiTryOnAvailability.status === "available";
   // Background AI Try-on: requests outlive the step, one per wearer.
   const aiTryOnJobScope = futureDraftIdentityKey;
   const aiTryOnJobs = useAiTryOnBackgroundJobs();
@@ -11562,6 +11562,16 @@ export default function DesignStudioView({
     savedOrderLivePriceTotal,
   ]);
 
+  const tryOnKnownAvailability = aiTryOnAvailability.status === "available" ? aiTryOnAvailability : null;
+  const tryOnStepAvailability = resolveAiTryOnStepAvailability({
+    reported:
+      aiTryOnAvailability.status === "available" || aiTryOnAvailability.status === "unavailable"
+        ? aiTryOnAvailability.status
+        : "unknown",
+    checkInFlight: aiTryOnAvailabilityState.checkInFlight,
+    inputFingerprintPending: aiTryOnInputFingerprintPending,
+  });
+
   return (
     <SaveOrderActionProvider
       value={{
@@ -12092,11 +12102,7 @@ export default function DesignStudioView({
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
           onContinue={handleOpenDormantSummaryStage}
-          availability={
-            aiTryOnAvailability.status === "unknown" || aiTryOnInputFingerprintPending
-              ? "checking"
-              : aiTryOnAvailability.status
-          }
+          availability={tryOnStepAvailability}
           missingInputs={[
             ...(!isFutureDesignSourceReadyForCustomDetails ? ["Design Style"] : []),
             ...(!futureScopedCustomDetailsReconciliation || !isFutureCustomDetailsStageReady
@@ -12104,11 +12110,12 @@ export default function DesignStudioView({
               : []),
           ]}
           livePanel={
-            aiTryOnAvailability.status === "available" &&
+            aiTryOnControlsVisible(tryOnStepAvailability) &&
             futureAiTryOnInputFingerprint &&
             aiTryOnWearerTargets.length > 0 ? (
               <AiTryOnPhotoPanel
                 targets={aiTryOnWearerTargets}
+                generateEnabled={aiTryOnGenerationEnabled(tryOnStepAvailability)}
                 onUploadAnotherDesign={(garmentKey) => {
                   const occurrence = futureDesignStyleStepProjection.occurrences.find((entry) => entry.target.garmentKey === garmentKey);
                   if (!occurrence) return;
@@ -12116,14 +12123,14 @@ export default function DesignStudioView({
                   navigateToFutureStage("design_style");
                 }}
                 credentials={aiTryOnCredentials}
-                triesPerOrder={aiTryOnAvailability.triesPerOrder}
-                initialTriesRemaining={aiTryOnAvailability.orderTriesRemaining}
-                initialAccountTriesRemaining={aiTryOnAvailability.accountTriesRemaining}
-                storedPreviews={aiTryOnAvailability.storedPreviews}
+                triesPerOrder={tryOnKnownAvailability?.triesPerOrder ?? AI_TRY_ON_TRIES_PER_ORDER}
+                initialTriesRemaining={tryOnKnownAvailability ? tryOnKnownAvailability.orderTriesRemaining : null}
+                initialAccountTriesRemaining={tryOnKnownAvailability ? tryOnKnownAvailability.accountTriesRemaining : null}
+                storedPreviews={tryOnKnownAvailability?.storedPreviews ?? []}
                 loadStoredPreview={loadStoredAiTryOnPreview}
                 deleteStoredPreview={deleteStoredAiTryOnPreview}
                 onPreviewCreated={handleAiTryOnPreviewCreated}
-                onUnavailable={() => setAiTryOnAvailability({ status: "unavailable" })}
+                onUnavailable={() => aiTryOnAvailabilityState.reportUnavailable()}
                 onGeneratingChange={setAiTryOnGenerating}
                 jobScope={aiTryOnJobScope}
                 sessionPhoto={aiTryOnSessionPhoto}

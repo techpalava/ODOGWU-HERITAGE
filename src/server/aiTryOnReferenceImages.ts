@@ -1,4 +1,5 @@
 import type { AiTryOnImageMimeType, AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract.js";
+import { readAiTryOnBillingSignal, readProviderHttpStatus, readProviderReasons } from "./aiTryOnBilling.js";
 
 /**
  * Server-side loading of the garment and fabric reference pictures (Step 6).
@@ -27,11 +28,34 @@ export interface AiTryOnReferenceBucket {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export class AiTryOnReferenceImageError extends Error {
-  constructor(reason: string) {
+  /** HTTP status from the storage or fetch failure, when the provider sent one. */
+  readonly httpStatus: number | null;
+  /** Provider reason code, preserved so billing can be told apart from a missing object. */
+  readonly providerReason: string | null;
+
+  constructor(
+    reason: string,
+    details?: { httpStatus?: number | null; providerReason?: string | null },
+  ) {
     super(reason);
     this.name = "AiTryOnReferenceImageError";
+    this.httpStatus = details?.httpStatus ?? null;
+    this.providerReason = details?.providerReason ?? null;
   }
 }
+
+const storageFailure = (error: unknown, fallback: string): AiTryOnReferenceImageError => {
+  const httpStatus = readProviderHttpStatus(error);
+  const providerReason = readProviderReasons(error)[0] ?? null;
+  const billing = readAiTryOnBillingSignal(error);
+  if (billing) {
+    return new AiTryOnReferenceImageError("reference_billing", {
+      httpStatus: billing.status,
+      providerReason: billing.reason,
+    });
+  }
+  return new AiTryOnReferenceImageError(fallback, { httpStatus, providerReason });
+};
 
 export const sniffAiTryOnImageMime = (bytes: Buffer): AiTryOnImageMimeType | null => {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
@@ -95,8 +119,8 @@ export const loadAiTryOnReferenceImageOnServer = async (
     let bytes: Buffer;
     try {
       [bytes] = await bucket.file(objectPath).download();
-    } catch {
-      throw new AiTryOnReferenceImageError("reference_missing");
+    } catch (error) {
+      throw storageFailure(error, "reference_missing");
     }
     return toInline(bytes);
   }
@@ -109,13 +133,15 @@ export const loadAiTryOnReferenceImageOnServer = async (
       signal: controller.signal,
       headers: { Accept: "image/jpeg,image/png,image/webp" },
     });
-    if (!response.ok) throw new AiTryOnReferenceImageError("reference_missing");
+    if (!response.ok) {
+      throw new AiTryOnReferenceImageError("reference_missing", { httpStatus: response.status });
+    }
     const declared = Number(response.headers.get("content-length") || "0");
     if (declared > AI_TRY_ON_REFERENCE_MAX_BYTES) throw new AiTryOnReferenceImageError("reference_size");
     return toInline(Buffer.from(await response.arrayBuffer()));
   } catch (error) {
     if (error instanceof AiTryOnReferenceImageError) throw error;
-    throw new AiTryOnReferenceImageError("reference_fetch");
+    throw storageFailure(error, "reference_fetch");
   } finally {
     clearTimeout(timer);
   }

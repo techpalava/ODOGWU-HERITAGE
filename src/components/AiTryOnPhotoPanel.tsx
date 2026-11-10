@@ -8,6 +8,7 @@ import {
   aiTryOnTargetHasDesign,
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
+import type { AiTryOnOutfitVisualSource } from "../utils/aiTryOnWorkflow";
 import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import {
@@ -223,6 +224,61 @@ type WearerPreview = AiTryOnSessionPreview;
 
 const EMPTY_SESSION_PREVIEWS: Readonly<Record<string, AiTryOnSessionPreview>> = {};
 const loadNoStoredPreview = async (): Promise<{ mimeType: string; data: string } | null> => null;
+
+/** The assigned design picture, with a quiet fallback when it is missing or fails to load. */
+const DesignReferenceImage = ({ url, alt }: { url: string | null; alt: string }) => {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <span
+        data-ai-try-on-design-missing="true"
+        className="flex h-16 w-12 shrink-0 items-center justify-center rounded-md border border-dashed border-heritage-gold/50 bg-heritage-cream/40 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/60"
+      >
+        No design photo
+      </span>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={alt}
+      data-ai-try-on-design-image="true"
+      className="h-16 w-12 shrink-0 rounded-md border border-heritage-gold/40 bg-heritage-cream/30 object-cover"
+      onError={() => setFailed(true)}
+    />
+  );
+};
+
+/** Fabric stays beside the design photo. It never replaces that photo. */
+const FabricMark = ({
+  url,
+  color,
+}: {
+  url: string | null;
+  color: string | null;
+}) => {
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt=""
+        data-ai-try-on-fabric-swatch="image"
+        className="h-7 w-7 shrink-0 rounded-full border border-heritage-gold/40 object-cover"
+      />
+    );
+  }
+  if (color) {
+    return (
+      <span
+        aria-hidden="true"
+        data-ai-try-on-garment-swatch="color"
+        className="inline-block h-7 w-7 shrink-0 rounded-full border border-heritage-gold/40"
+        style={{ backgroundColor: color }}
+      />
+    );
+  }
+  return null;
+};
 const deleteNoStoredPreview = async (): Promise<boolean> => false;
 
 interface SelectedPhoto {
@@ -245,6 +301,11 @@ export interface AiTryOnPhotoPanelProps {
   /** Step 7: who is calling, for the server-issued session. */
   credentials?: AiTryOnCredentials;
   triesPerOrder: number;
+  /**
+   * False while availability is still loading. Controls stay usable, but
+   * Generate does not send a request until this is true.
+   */
+  generateEnabled?: boolean;
   /** From GET; null when the server did not report it. */
   initialTriesRemaining: number | null;
   /**
@@ -333,6 +394,7 @@ export const AiTryOnPhotoPanel = ({
   targets,
   credentials,
   triesPerOrder,
+  generateEnabled = true,
   initialTriesRemaining,
   initialAccountTriesRemaining = null,
   onPreviewCreated,
@@ -545,6 +607,14 @@ export const AiTryOnPhotoPanel = ({
       ? entry.previewableGarments?.[0]?.garmentKey === selectedPreview?.garmentKey
       : entry.wearerId === target.wearerId,
   ) ?? target : null;
+  const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
+  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
+  // No studio model means the customer-photo source, including after the
+  // photo bytes are dropped. Picking a model is what makes an older picture
+  // out of date.
+  const outfitVisualSource: AiTryOnOutfitVisualSource = currentModel
+    ? { kind: "studio_model", modelId: currentModel.id }
+    : { kind: "customer_photo" };
   const outfitSlot = target ? aiTryOnOutfitTarget(target) : null;
   const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
   const outfitMode = Boolean(outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
@@ -560,8 +630,23 @@ export const AiTryOnPhotoPanel = ({
   const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
   // Deep check M1: the outfit's fingerprint is the chosen pair's.
   const outfitTarget = target && outfitSlot
-    ? aiTryOnOutfitTarget(target, selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null)
+    ? aiTryOnOutfitTarget(
+        target,
+        selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null,
+        outfitVisualSource,
+      )
     : null;
+  const outfitRecordFingerprints = outfitSlot
+    ? [previews[outfitSlot.wearerId]?.inputFingerprint, stored[outfitSlot.wearerId]?.inputFingerprint].filter(
+        (fingerprint): fingerprint is string => Boolean(fingerprint),
+      )
+    : [];
+  const outfitPreviewStale = Boolean(
+    outfitMode &&
+      outfitTarget?.inputFingerprint &&
+      outfitRecordFingerprints.length > 0 &&
+      outfitRecordFingerprints.every((fingerprint) => fingerprint !== outfitTarget.inputFingerprint),
+  );
   const previewTarget = outfitMode ? outfitTarget : singlePreviewTarget;
   // Deep check L3: a preview stored under the wearer's own key before it had
   // 2+ garments. It can't be tied to a garment: out of date for the wearer.
@@ -589,8 +674,6 @@ export const AiTryOnPhotoPanel = ({
   const left = Math.min(triesRemaining ?? triesPerOrder, accountTriesRemaining ?? Infinity);
   const outOfPreviews: PanelMessage =
     accountTriesRemaining === 0 ? { kind: "account_out_of_previews" } : { kind: "out_of_previews" };
-  const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
-  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
   const preview =
     previewTarget && previewTarget.inputFingerprint
       ? previews[previewKey]?.inputFingerprint === previewTarget.inputFingerprint
@@ -638,6 +721,9 @@ export const AiTryOnPhotoPanel = ({
       for (const [wearerId, entry] of Object.entries(current)) {
         const match = previewTargets.find((item) => item.wearerId === wearerId);
         if (!match || !aiTryOnTargetHasDesign(match) || aiTryOnPreviewFingerprintIsCurrent(match, entry.inputFingerprint)) continue;
+        // Keep a combined-outfit picture so the panel can mark it out of date
+        // when the studio model or photo changes. The image stays hidden.
+        if (match.previewKind === "outfit") continue;
         delete next[wearerId];
         changed = true;
       }
@@ -738,6 +824,7 @@ export const AiTryOnPhotoPanel = ({
   const requestOrderDetails = selectedPreview ? selectedPreview.orderDetails : target?.orderDetails ?? null;
   const missingGarmentImage = Boolean(target && !garmentImageUrl);
   const canGenerate =
+    generateEnabled &&
     Boolean(previewTarget?.inputFingerprint) &&
     (!outfitMode || Boolean(selectedTop && selectedBottom)) &&
     !missingGarmentImage &&
@@ -1006,6 +1093,7 @@ export const AiTryOnPhotoPanel = ({
   }, [highlightResult]);
 
   const handleGenerate = () => {
+    if (!generateEnabled) return;
     if (!target || !previewTarget?.inputFingerprint || !garmentImageUrl) return;
     if (outfitMode && (!selectedTop || !selectedBottom)) return;
     const model = uploadedDesign || currentPhoto ? null : currentModel;
@@ -1184,16 +1272,55 @@ export const AiTryOnPhotoPanel = ({
         </div>
         {outfitMode && <>
           <p className="text-sm leading-relaxed text-heritage-ink/75">Choose exactly one top and one bottom for this wearer, using the same photo or studio model. Only your chosen garments are included. One combined picture uses 1 try from this order’s shared tries. Your individual previews stay saved separately.</p>
-          {(["top", "bottom"] as const).map((part) => <label key={part} className="block text-sm font-semibold text-heritage-green">
-            Choose a {part}
-            <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => { const key = event.target.value; setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...outfitSelection, [part]: key } })); }} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
-              <option value="">Select a {part}</option>
-              {(part === "top" ? outfitChoices.tops : outfitChoices.bottoms).map((garment) => <option key={garment.garmentKey} value={garment.garmentKey}>{garment.label}</option>)}
-            </select>
-          </label>)}
+          {(["top", "bottom"] as const).map((part) => {
+            const choices = part === "top" ? outfitChoices.tops : outfitChoices.bottoms;
+            const choosePart = (key: string) => setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...outfitSelection, [part]: key } }));
+            return (
+              <div key={part}>
+                <label className="block text-sm font-semibold text-heritage-green">
+                  Choose a {part}
+                  <select value={outfitSelection[part] ?? ""} data-ai-try-on-outfit-choice={part} onChange={(event) => choosePart(event.target.value)} className="mt-1 block min-h-11 w-full rounded-xl border border-heritage-green/25 bg-white px-3 text-sm">
+                    <option value="">Select a {part}</option>
+                    {choices.map((garment) => <option key={garment.garmentKey} value={garment.garmentKey}>{garment.label}</option>)}
+                  </select>
+                </label>
+                <div role="radiogroup" aria-label={`Design photo for the ${part}`} className="mt-2 flex flex-wrap gap-2">
+                  {choices.map((garment) => {
+                    const selected = outfitSelection[part] === garment.garmentKey;
+                    return (
+                      <button
+                        key={garment.garmentKey}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => choosePart(garment.garmentKey)}
+                        data-ai-try-on-design-choice={part}
+                        data-ai-try-on-design-garment={garment.garmentKey}
+                        className={`inline-flex min-h-16 max-w-full items-center gap-2 rounded-2xl border py-1 pl-1 pr-3 text-left text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                          selected ? "border-heritage-green bg-heritage-green text-white" : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                        }`}
+                      >
+                        <DesignReferenceImage url={garment.garmentImageUrl} alt={`Design reference for ${garment.label}`} />
+                        <span className="min-w-0">
+                          <span className="block truncate">{garment.label}</span>
+                          <FabricMark url={garment.fabricSwatchImageUrl} color={garment.fabricColorHex} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </>}
       </fieldset>}
 
+      {outfitPreviewStale && target && (
+        <div className="rounded-xl border border-heritage-gold/35 bg-heritage-gold/8 p-3" data-ai-try-on-outfit-preview-stale={target.wearerId}>
+          <p className="text-xs font-bold text-heritage-green">{AI_TRY_ON_ORDER_IMAGE_COPY.staleTitle(target.label)}</p>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">{AI_TRY_ON_ORDER_IMAGE_COPY.staleBody}</p>
+        </div>
+      )}
       {legacyWearerPreview && target && (
         <div className="rounded-xl border border-heritage-gold/35 bg-heritage-gold/8 p-3" data-ai-try-on-legacy-preview-stale={target.wearerId}>
           <p className="text-xs font-bold text-heritage-green">{AI_TRY_ON_ORDER_IMAGE_COPY.staleTitle(target.label)}</p>
@@ -1223,7 +1350,6 @@ export const AiTryOnPhotoPanel = ({
           <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Which garment?">
             {previewableGarments.map((garment) => {
               const selected = garment.garmentKey === selectedPreview?.garmentKey;
-              const swatchClass = "h-7 w-7 shrink-0 rounded-full border border-heritage-gold/40 object-cover";
               return (
                 <button
                   key={garment.garmentKey}
@@ -1238,30 +1364,33 @@ export const AiTryOnPhotoPanel = ({
                     )
                   }
                   data-ai-try-on-garment={garment.garmentKey}
-                  className={`inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border py-1 pl-1 pr-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                  data-ai-try-on-design-choice="garment"
+                  className={`inline-flex min-h-16 max-w-full items-center gap-2 rounded-2xl border py-1 pl-1 pr-4 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
                     selected
                       ? "border-heritage-green bg-heritage-green text-white"
                       : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
                   }`}
                 >
-                  {garment.fabricSwatchImageUrl ? (
-                    <img src={garment.fabricSwatchImageUrl} alt="" className={swatchClass} />
-                  ) : garment.fabricColorHex ? (
-                    <span
-                      aria-hidden="true"
-                      data-ai-try-on-garment-swatch="color"
-                      className={`${swatchClass} inline-block`}
-                      style={{ backgroundColor: garment.fabricColorHex }}
-                    />
-                  ) : (
-                    <img src={garment.garmentImageUrl} alt="" className={swatchClass} />
-                  )}
-                  <span className="min-w-0 truncate">{garment.label}</span>
+                  <DesignReferenceImage url={garment.garmentImageUrl} alt={`Design reference for ${garment.label}`} />
+                  <span className="min-w-0">
+                    <span className="block truncate">{garment.label}</span>
+                    <FabricMark url={garment.fabricSwatchImageUrl} color={garment.fabricColorHex} />
+                  </span>
                 </button>
               );
             })}
           </div>
         </fieldset>
+      )}
+
+      {!outfitMode && !showGarmentPicker && selectedPreview && !uploadedDesign && (
+        <div className="flex items-center gap-3 rounded-2xl border border-heritage-green/15 bg-white p-3" data-ai-try-on-design-reference={selectedPreview.garmentKey}>
+          <DesignReferenceImage url={selectedPreview.garmentImageUrl} alt={`Design reference for ${selectedPreview.label}`} />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-heritage-green">{selectedPreview.label}</p>
+            <FabricMark url={selectedPreview.fabricSwatchImageUrl} color={selectedPreview.fabricColorHex} />
+          </div>
+        </div>
       )}
 
       {uploadedDesign && (
@@ -1454,6 +1583,7 @@ export const AiTryOnPhotoPanel = ({
             type="button"
             onClick={handleGenerate}
             disabled={!canGenerate}
+            data-ai-try-on-generate
             aria-describedby={message ? `${idPrefix}-message` : undefined}
             className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition-opacity hover:bg-heritage-green/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
@@ -1463,7 +1593,7 @@ export const AiTryOnPhotoPanel = ({
               <Sparkles aria-hidden="true" size={15} />
             )}
             <span>{uploadedDesign ? "Use this design" : outfitMode ? "Generate combined outfit" : preview ? "Make a new preview" : "Generate preview"}</span>
-            <span className="font-medium normal-case tracking-normal text-white/80">· {triesLabel}</span>
+            {generateEnabled ? <span className="font-medium normal-case tracking-normal text-white/80">· {triesLabel}</span> : null}
           </button>
           <p className="text-xs leading-relaxed text-heritage-ink/70" data-ai-try-on-order-tries-note>
             {triesPerOrder} tries per order, shared across all garments and wearers—not {triesPerOrder} per garment. Account limits also apply.

@@ -1,5 +1,7 @@
 # Agent Instructions
 
+Remaining pre-launch tasks: `docs/PRE_LAUNCH_CHECKLIST.md`.
+
 ## Universal Fabric Import via AI Prompt
 
 When a user asks you to "upload this fabric", "identify this fabric", "add this fabric", or "create catalogue item" and attaches an image, you MUST initiate the Universal Fabric Import Workflow.
