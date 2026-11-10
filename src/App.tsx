@@ -131,6 +131,14 @@ import {
 import Footer from "./components/Footer";
 import { lazyView, prefetchWhenIdle } from "./utils/lazyView";
 import { legalPagePathFor } from "./utils/legalPages";
+import {
+  consumeGalleryStyleEntryArmed,
+  isGalleryStyleHistoryEntry,
+  noteGalleryStyleEntryArmed,
+  pushGalleryStyleEntry,
+  readGalleryStyleId,
+  replaceGalleryStyleId,
+} from "./utils/galleryStyleIntent";
 import { ViewLoadingFallback } from "./components/ViewLoadingFallback";
 
 
@@ -226,10 +234,38 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("future_order_v2_stripe_return") === "1") return;
     const orderId = (params.get("future_order_v2_order_id") ?? "").trim();
-    if (!orderId) return;
-    stashFutureOrderV2OpenOrderId(orderId);
-    setActiveTab("dashboard");
-  }, [setActiveTab]);
+    if (orderId) {
+      stashFutureOrderV2OpenOrderId(orderId);
+      setActiveTab("dashboard");
+      return;
+    }
+    if (isGalleryStyleHistoryEntry(window.history.state)) {
+      noteGalleryStyleEntryArmed(true);
+    }
+    const openGalleryStyle = () => {
+      const styleId = readGalleryStyleId(window.location.search);
+      if (styleId) {
+        noteGalleryStyleEntryArmed(true);
+        setPresetStyleId(styleId);
+        setActiveTab("design");
+        return;
+      }
+      const leavingGalleryStudio = consumeGalleryStyleEntryArmed();
+      if (
+        leavingGalleryStudio ||
+        window.location.hash === "#explore-design-styles"
+      ) {
+        setActiveTab("home");
+      }
+    };
+    const styleOnLoad = readGalleryStyleId(window.location.search);
+    if (styleOnLoad) {
+      setPresetStyleId(styleOnLoad);
+      setActiveTab("design");
+    }
+    window.addEventListener("popstate", openGalleryStyle);
+    return () => window.removeEventListener("popstate", openGalleryStyle);
+  }, [setActiveTab, setPresetStyleId]);
 
   // Replacement confirmation can outlive a render. Keep the authoritative
   // batch collection in a ref so no async continuation validates against the
@@ -2018,6 +2054,7 @@ export default function App() {
                 showpieces={showpieces}
                 fabrics={fabrics}
                 onSelectStyle={(styleId, fabricCode) => {
+                  pushGalleryStyleEntry(styleId, window.history, window.location);
                   setPresetStyleId(styleId);
                   setPresetFabricCode(fabricCode);
                   setOrderContext(activeCommunityBatch ?? null);
@@ -2030,6 +2067,7 @@ export default function App() {
                   );
                 }}
                 onSelectFabric={(fabricCode) => {
+                  replaceGalleryStyleId(null, window.history, window.location);
                   setPresetStyleId(undefined);
                   setPresetFabricCode(fabricCode);
                   setOrderContext(activeCommunityBatch ?? null);
@@ -2209,6 +2247,7 @@ export default function App() {
                 batches={batches}
                 onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 onSelectStyle={(styleId, fabricCode) => {
+                  pushGalleryStyleEntry(styleId, window.history, window.location);
                   setPresetStyleId(styleId);
                   setPresetFabricCode(fabricCode);
                   setActiveTab("design");
