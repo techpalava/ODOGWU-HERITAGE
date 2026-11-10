@@ -357,7 +357,7 @@ assert.equal(studioSource.includes("gatewayAvailable: true"), false);
 assert.match(tryOnSource, /\{canSkip && \(/);
 assert.match(tryOnSource, /generating \? AI_TRY_ON_BACKGROUND_COPY\.continueWhileGenerating : "Continue without AI Try-on"/);
 assert.match(studioSource, /onSkip=\{handleSkipDormantAiTryOn\}/);
-assert.match(studioSource, /event: \{ type: "skip" \},[\s\S]{0,160}navigateToFutureStage\("summary"\)/);
+assert.match(studioSource, /event: \{ type: "skip", whileGenerating: aiTryOnGenerating \},[\s\S]{0,160}navigateToFutureStage\("summary"\)/);
 assert.match(studioSource, /onGeneratingChange=\{setAiTryOnGenerating\}/);
 assert.match(studioSource, /generating=\{aiTryOnGenerating\}/);
 assert.match(legacyCardSource, /Coming Soon/);

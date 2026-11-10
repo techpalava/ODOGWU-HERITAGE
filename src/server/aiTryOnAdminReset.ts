@@ -3,10 +3,16 @@ import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { AI_TRY_ON_SESSION_COLLECTION, hashAiTryOnUid } from "./aiTryOnSession.js";
 import { AI_TRY_ON_GLOBAL_USAGE_DOC, AI_TRY_ON_USAGE_COLLECTION, aiTryOnAccountUsageDocId, aiTryOnEffectiveGlobalCap, hashAiTryOnOrderKey, readPurchasedTries } from "./aiTryOnUsageLimits.js";
 import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW, AI_TRY_ON_ACCOUNT_WINDOW_MS, AI_TRY_ON_TRIES_PER_ORDER } from "../utils/aiTryOnGatewayContract.js";
-import { getCanonicalEmail } from "../security/authIdentity.js";
+import { isVerifiedFirebaseAccountEmailIn } from "./aiTryOnBilling.js";
 
-// Deliberately narrower than the general admin allowlist; never sent to the browser.
-const RESET_ADMIN_EMAILS = new Set(["techpalavabox@gmail.com", "f.o.startups@gmail.com"].map(getCanonicalEmail));
+/**
+ * Reset tries is a separate allowlist from the billing-unavailable account.
+ * Exact addresses only: no Gmail dot-folding, and never written to a log.
+ */
+export const AI_TRY_ON_RESET_RETRY_EMAILS = [
+  "techpalavabox@gmail.com",
+  "f.o.startups@gmail.com",
+] as const;
 
 export interface AiTryOnResetIdentity {
   uid: string;
@@ -17,9 +23,7 @@ export interface AiTryOnResetIdentity {
 }
 
 export const canResetOwnAiTryOn = (identity: AiTryOnResetIdentity): boolean =>
-  Boolean(identity.uid) && identity.admin === true && identity.email_verified === true &&
-  typeof identity.email === "string" && RESET_ADMIN_EMAILS.has(getCanonicalEmail(identity.email)) &&
-  typeof identity.firebase?.sign_in_provider === "string" && Boolean(identity.firebase.sign_in_provider) && identity.firebase.sign_in_provider !== "anonymous";
+  identity.admin === true && isVerifiedFirebaseAccountEmailIn(identity, AI_TRY_ON_RESET_RETRY_EMAILS);
 
 /** Reset only counters whose server session records prove this UID owns them. */
 export const resetOwnAiTryOnCounters = async (db: Firestore, uid: string, now = Date.now) => {
