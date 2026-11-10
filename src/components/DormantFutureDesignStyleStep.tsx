@@ -131,6 +131,8 @@ interface DormantFutureDesignStyleStepProps {
   incompleteFocusRequestId?: number | null;
   incompleteFocusOccurrenceToken?: string | null;
   onIncompleteFocusHandled?: (requestId: number) => void;
+  /** Catalogue id handed off from Explore Design Styles, when one is active. */
+  galleryStyleId?: string | null;
 }
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
@@ -257,6 +259,7 @@ export const DormantFutureDesignStyleStep = ({
   incompleteFocusRequestId = null,
   incompleteFocusOccurrenceToken = null,
   onIncompleteFocusHandled,
+  galleryStyleId = null,
 }: DormantFutureDesignStyleStepProps) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const lastHandledIncompleteFocusRequestIdRef = useRef<number | null>(null);
@@ -1429,6 +1432,7 @@ export const DormantFutureDesignStyleStep = ({
                         alt={`${displayStyleName} design`}
                         styleId={entry.style.id}
                       />
+                      {galleryStyleId && galleryStyleId === entry.style.id ? <span className="absolute left-3 top-3 inline-flex max-w-[58%] items-center rounded-full border border-heritage-gold bg-white px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-heritage-green shadow-sm">From gallery</span> : null}
                       {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                     </div>
                      <div data-testid="design-style-card-content" className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col p-3 sm:p-4">
