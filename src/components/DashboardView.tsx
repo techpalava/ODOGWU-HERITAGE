@@ -7,6 +7,7 @@ import { Edit2, Users, User, Share2, Trash2, CheckCircle2, FileText, Check, Shie
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
+import { customerFacingPickupLocationLabel } from "../utils/designStudioFutureShipping";
 import { StorageService } from "../services/storageService";
 import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
@@ -631,7 +632,11 @@ export default function DashboardView({
               </p>
               <p>
                 <strong>2. Locker Location:</strong> The lockers are in{" "}
-                <strong>{businessSettings.productionSettings.defaultPickupLocation}</strong>.
+                <strong>
+                  {customerFacingPickupLocationLabel(
+                    businessSettings.productionSettings.defaultPickupLocation,
+                  )}
+                </strong>.
               </p>
               <p>
                 <strong>3. Fitting & Adjustments:</strong> You can try on your
@@ -724,7 +729,10 @@ export default function DashboardView({
                     {selectedReceipt.customer?.phone || profilePhone}
                   </span>
                   <span className="text-heritage-ink/50 block italic">
-                    {businessSettings.productionSettings.defaultPickupLocation} Delivery
+                    {customerFacingPickupLocationLabel(
+                      businessSettings.productionSettings.defaultPickupLocation,
+                    )}{" "}
+                    Delivery
                   </span>
                 </div>
                 <div className="space-y-1 text-right">
@@ -748,7 +756,9 @@ export default function DashboardView({
                     <strong>Locker Location:</strong>{" "}
                     {selectedReceipt.batchType === "alone"
                       ? "Direct priority home shipping"
-                      : businessSettings.productionSettings.defaultPickupLocation}
+                      : customerFacingPickupLocationLabel(
+                          businessSettings.productionSettings.defaultPickupLocation,
+                        )}
                   </span>
                 </div>
               </div>
@@ -852,7 +862,7 @@ export default function DashboardView({
                           <strong className="text-heritage-green">
                             {selectedReceipt.finalMileShipping.method ===
                             "PICKUP"
-                              ? `${selectedReceipt.finalMileShipping.pickupLocation} pickup (€0.00)`
+                              ? `${customerFacingPickupLocationLabel(selectedReceipt.finalMileShipping.pickupLocation)} pickup (€0.00)`
                               : selectedReceipt.finalMileShipping.status ===
                                   "READY"
                                 ? `${selectedReceipt.finalMileShipping.zoneLabel} (${selectedReceipt.finalMileShipping.weightBand}) · €${(
@@ -1025,7 +1035,7 @@ export default function DashboardView({
                   to source raw fibers and spool loom threads. The remaining 50%
                   balance is stored in escrow and will be unlocked for our
                   tailors in Lagos upon the successful fitting session on-site
-                  at Veldhoven.
+                  at Eindhoven.
                 </p>
                 <p className="font-mono text-[8px]">
                   Authorized by Coordinator: Fredrick Ezeh | NTCC Veldhoven

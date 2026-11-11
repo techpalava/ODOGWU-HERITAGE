@@ -14,6 +14,7 @@ import type {
 } from "../types.js";
 import { clampRatio, roundMoney } from "./money.js";
 import { inspectCartItemFabricAllocations } from "./fabricAllocationPersistence.js";
+import { customerFacingPickupCity } from "./designStudioFutureShipping.js";
 
 export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;
@@ -484,7 +485,9 @@ export const calculateFinalMileShipping = ({
       method: "PICKUP",
       zone: "EINDHOVEN",
       zoneLabel: "Eindhoven pickup",
-      pickupLocation: normalizeText(deliverySelection.pickupLocation),
+      pickupLocation: customerFacingPickupCity(
+        normalizeText(deliverySelection.pickupLocation),
+      ).trim(),
       pickupWindow: normalizeText(deliverySelection.pickupWindow),
       garmentPieceCount: normalizedPieceCount,
       weightSource: null,

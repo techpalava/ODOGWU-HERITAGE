@@ -1,4 +1,8 @@
 import { CUSTOMER_WORKSHOP_DELIVERY_UNSCHEDULED, presentCustomerWorkshopProgress } from "./customerWorkshopProgress.js";
+import {
+  customerFacingPickupCity,
+  customerFacingPickupWording,
+} from "./designStudioFutureShipping.js";
 
 export const FUTURE_ORDER_V2_WORKSHOP_COLLECTION = "future_order_v2_workshop" as const;
 
@@ -72,7 +76,8 @@ export const resolveWorkshopPickupPin = (
 
 export const workshopStageStatus = (stage: number, pickupLocation: string): string => {
   if (stage === 6) {
-    const location = pickupLocation.trim() || "the pickup location";
+    const location =
+      customerFacingPickupCity(pickupLocation).trim() || "the pickup location";
     return `Arrived at ${location}. Ready for secure PIN pickup!`;
   }
   return STAGE_STATUSES[stage - 1] || "In Production Pipeline";
@@ -177,7 +182,7 @@ export const presentWorkshopStageLines = (
 ): FutureOrderV2WorkshopStageLine[] =>
   (record?.stageHistory ?? []).map((entry) => ({
     stageLabel: `Stage ${entry.stage} of 6`,
-    statusLabel: entry.status,
+    statusLabel: customerFacingPickupWording(entry.status),
   }));
 
 export const presentFutureOrderV2WorkshopCard = (

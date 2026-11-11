@@ -17,6 +17,7 @@ import {
   presentWorkshopStageLines,
   workshopDispatchLabel,
 } from "../utils/futureOrderV2WorkshopProgress";
+import { customerFacingPickupLocationLabel } from "../utils/designStudioFutureShipping";
 import { WorkshopStageList } from "./WorkshopStageList";
 import type { Fabric } from "../types";
 import { getOrderGarmentPictures } from "../utils/orderGarmentPictures";
@@ -471,7 +472,8 @@ export const CustomerFutureOrderV2Details = ({
               {shipping.fulfilmentMethod === "eindhoven_pickup" &&
                 shipping.pickupLocation.trim() && (
                   <p data-customer-v2-order-pickup-location>
-                    Pickup location: {shipping.pickupLocation.trim()}
+                    Pickup location:{" "}
+                    {customerFacingPickupLocationLabel(shipping.pickupLocation)}
                   </p>
                 )}
               {workshop ? (

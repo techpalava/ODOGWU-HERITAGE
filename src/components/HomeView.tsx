@@ -1127,7 +1127,7 @@ export default function HomeView({
           <p className="text-xs text-heritage-ink/75 leading-relaxed">
             We handle all customs and international shipping. Your clothes are
             grouped together and delivered safely to your campus lockers in
-            Veldhoven.
+            Eindhoven.
           </p>
         </div>
       </section>

@@ -24,6 +24,7 @@ import {
   BATCH_FLAT_RATE_EUR_PER_GARMENT,
   BATCH_MINIMUM_GARMENTS,
 } from "../utils/shippingPricing";
+import { customerFacingPickupLocationLabel } from "../utils/designStudioFutureShipping";
 
 interface CustomOrderViewProps {
   customGroups: CustomGroup[];
@@ -608,7 +609,12 @@ export default function CustomOrderView({
                           size={11}
                           className="text-heritage-gold shrink-0"
                         />
-                        <span>{batch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation}</span>
+                        <span>
+                          {customerFacingPickupLocationLabel(
+                            batch.pickupLocation ||
+                              businessSettings.productionSettings.defaultPickupLocation,
+                          )}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5 font-sans font-medium">
                         <Users
