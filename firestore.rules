@@ -831,17 +831,9 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isAdmin() || ownsExistingDocument();
-      // New canonical V2 orders are only persisted through the authenticated
-      // server/Admin SDK boundary, which checks private-batch membership in
-      // the same transaction. Retain only the legacy client path here.
-      allow create: if !isFutureOrderV2(request.resource.data)
-        && (
-          isAdmin()
-          || (
-          ownsIncomingDocument()
-          && request.resource.data.customer.ownerUid == request.auth.uid
-          )
-        );
+      // V2 orders are persisted only through the Admin SDK. Legacy orders are
+      // staff-created. A signed-in customer cannot insert a legacy order.
+      allow create: if !isFutureOrderV2(request.resource.data) && isAdmin();
       allow update: if !isFutureOrderV2(resource.data)
         && !isFutureOrderV2(request.resource.data)
         && (
