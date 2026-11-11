@@ -37,6 +37,20 @@ const garmentRowActionClassName =
 
 const quietGarmentMetaClassName = garmentDetailClassName;
 
+const GarmentPlainDescription = ({
+  line,
+}: {
+  line: LiveOrderSummaryLine;
+}) =>
+  line.plainDescription ? (
+    <p
+      data-testid={`live-order-summary-plain-description-${line.id}`}
+      className="mt-0.5 break-words text-[12px] font-normal leading-snug text-heritage-ink/70"
+    >
+      {line.plainDescription}
+    </p>
+  ) : null;
+
 const GarmentWearerLine = ({
   line,
 }: {
@@ -273,6 +287,7 @@ const SummarySection = ({
                 >
                   {formatCustomDetailsGarmentLabel(line.label)}
                 </p>
+                <GarmentPlainDescription line={line} />
                 {line.detail ? (
                   <p
                     className={
@@ -471,6 +486,7 @@ const SummarySubsection = ({
             >
               {formatCustomDetailsGarmentLabel(line.label)}
             </p>
+            <GarmentPlainDescription line={line} />
             {line.detail ? (
               <p
                 className={
