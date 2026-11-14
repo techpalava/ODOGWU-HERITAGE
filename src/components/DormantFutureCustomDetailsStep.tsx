@@ -105,8 +105,11 @@ import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/de
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 import {
+  getGarmentLength,
   getGarmentLengthFamily,
   getGarmentLengthFamilyForSelectionGroup,
+  getOptionGarmentLength,
+  getOriginalGarmentTypeFromKey,
 } from "../utils/garmentLengthVariant";
 
 /** First garments kept visible in the main Miscellaneous list before it is expanded. */
@@ -457,14 +460,31 @@ const getConstructionPresentationPrefix = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
   selectionGroup: CustomDetailSelectionGroup,
 ): string | null => {
+  const lengthFamily = getGarmentLengthFamily(occurrence.subject.parentGarmentType);
   // Standard and Long garments of one family offer every length option of that family; the chosen
   // option decides Standard vs Long (Layout B below). Any other parent of these groups (Agbada's
   // shirt) keeps its Standard options only.
   if (
-    getGarmentLengthFamilyForSelectionGroup(selectionGroup)?.id ===
-    getGarmentLengthFamily(occurrence.subject.parentGarmentType)?.id &&
-    getGarmentLengthFamily(occurrence.subject.parentGarmentType)
+    getGarmentLengthFamilyForSelectionGroup(selectionGroup)?.id === lengthFamily?.id &&
+    lengthFamily
   ) {
+    // Standard Dress and Long Dress: the length picked in Step 1 is locked. Only the options of
+    // that length are offered (sleeve choices), so Step 4 can never switch one dress into the
+    // other. A saved draft that already holds the other length keeps showing that length.
+    if (lengthFamily.id === "dress") {
+      const selectedOptionId = getSelectedConstructionId(occurrence, selectionGroup);
+      const lockedLength =
+        (selectedOptionId
+          ? getOptionGarmentLength(selectionGroup, selectedOptionId)
+          : null) ??
+        getGarmentLength(
+          getOriginalGarmentTypeFromKey(occurrence.subject.parentGarmentKey) ??
+            occurrence.subject.parentGarmentType,
+        );
+      return lockedLength === "long"
+        ? lengthFamily.longOptionPrefix
+        : lengthFamily.standardOptionPrefix;
+    }
     return null;
   }
   switch (selectionGroup) {
