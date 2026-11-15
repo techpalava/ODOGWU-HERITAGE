@@ -12,6 +12,8 @@ import {
   AI_TRY_ON_PROMPT_VERSION,
   buildAiTryOnFitBlock,
   buildAiTryOnImageLabels,
+  buildAiTryOnModelPrompt,
+  buildAiTryOnOutfitPrompt,
   buildAiTryOnPrompt,
 } from "./src/server/aiTryOnPrompt";
 import { chooseAiTryOnMode } from "./src/utils/aiTryOnGatewayContract";
@@ -33,7 +35,7 @@ import {
   AI_TRY_ON_ORDER_DETAILS_MAX_LINES,
   buildAiTryOnOrderDetailsBlock,
 } from "./src/server/aiTryOnPrompt";
-import { createAiTryOnVisualInputFingerprint } from "./src/utils/aiTryOnWorkflow";
+import { aiTryOnOutfitFingerprint, createAiTryOnVisualInputFingerprint } from "./src/utils/aiTryOnWorkflow";
 import { parseAiTryOnGenerationRequest } from "./src/server/aiTryOnHttp";
 
 // ---------------------------------------------------------------- snapshots
@@ -45,10 +47,10 @@ The person in image 2 is only a stand-in model. Never use their face, body, pose
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
 When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
-From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.
+From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
-Ignore everything that is not the person or the garment: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
+Ignore everything that is not the person or the garment: app or website interface, interface buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
 Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.
 Check: the face, body and background must be the customer's from image 1, not the model's.`;
 
@@ -60,13 +62,13 @@ From image 1 keep only the customer's identity, face, hair, skin tone, body shap
 When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
-From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
+From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
 From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
 Do not take any colour, pattern or texture from the clothes in image 1.
 Use only what is in image 3. Do not invent or add prints, motifs or colours.
 Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
-Ignore everything that is not the person, the garment or the fabric: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
+Ignore everything that is not the person, the garment or the fabric: app or website interface, interface buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
 Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.
 Check: the face, body and background must be the customer's from image 1, not the model's.`;
 
@@ -98,7 +100,7 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v9": createHash("sha256")
+  "tryon-prompt-v10": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -111,7 +113,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v9");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v10");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -483,7 +485,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v9": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v10": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
@@ -502,4 +504,67 @@ assert.match(UPLOADED_DESIGN_SNAPSHOT, /No text, labels, numbers, logos, waterma
 
 assert.match(buildAiTryOnUploadedDesignPrompt("kaftan"), /Fabric edit target: Long Shirt/);
 assert.doesNotMatch(buildAiTryOnUploadedDesignPrompt("kaftan"), /Kaftan/);
+
+const SLEEVE_CASES = [
+  ["dress_std_sleeveless", "Sleeveless"],
+  ["dress_std_short", "Short Sleeve"],
+  ["dress_std_mid", "Mid Sleeve"],
+  ["dress_std_long", "Long Sleeve"],
+] as const;
+const sleeveOrder = (optionId: string): AiTryOnOrderDetails => ({
+  garments: [{ garmentType: "dress", optionIds: [optionId, "neck_no_v"], decorations: [] }],
+});
+for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+  for (const [optionId, sleeve] of SLEEVE_CASES) {
+    const prompt = builder({ mode: "garment", orderDetails: sleeveOrder(optionId) });
+    assert.match(prompt, new RegExp(sleeve), `${sleeve} is applied`);
+    assert.match(prompt, /Neck Design/);
+    assert.match(prompt, /No Collar, V-Shaped Neck/);
+    assert.match(prompt, /front placket buttons/);
+    assert.match(prompt, /wrist cuffs when the sleeve is Long Sleeve/);
+  }
+}
+const outfitPrompt = buildAiTryOnOutfitPrompt({
+  onModel: false,
+  garments: [
+    { garmentKey: "top", garmentType: "dress", garmentImageUrl: "https://example.test/dress", orderDetails: sleeveOrder("dress_std_long") },
+    { garmentKey: "bottom", garmentType: "skirt", garmentImageUrl: "https://example.test/skirt", orderDetails: { garments: [{ garmentType: "skirt", optionIds: ["skirt_std"], decorations: [] }] } },
+  ],
+});
+assert.match(outfitPrompt, /Long Sleeve reaches the wrist/);
+assert.match(outfitPrompt, /Neck Design/);
+assert.match(outfitPrompt, /front placket buttons/);
+assert.match(outfitPrompt, /the design-style reference photo/);
+assert.match(outfitPrompt, /Standard Length, Long Sleeve/);
+
+const sleeveFingerprint = (optionId: string) => createAiTryOnVisualInputFingerprint({
+  garmentTypeSelection: {
+    garmentTypes: ["dress"],
+    demographic: "female",
+    constructionByGarment: {
+      dress: {
+        status: "resolved",
+        garmentType: "dress",
+        components: [{ selectionGroup: "dress_construction", optionId, componentKey: optionId, priceCents: 7500, price: 75 }],
+        totalPriceCents: 7500,
+        totalPrice: 75,
+      },
+    },
+  } as never,
+  fabricAllocations: [],
+  selectedStyleId: "style-1",
+  orderDetails: sleeveOrder(optionId),
+});
+const midFingerprint = sleeveFingerprint("dress_std_mid");
+const longFingerprint = sleeveFingerprint("dress_std_long");
+assert.notEqual(midFingerprint, longFingerprint, "Mid Sleeve and Long Sleeve invalidate the cached preview");
+assert.equal(midFingerprint, sleeveFingerprint("dress_std_mid"));
+const outfitOf = (topFingerprint: string) => aiTryOnOutfitFingerprint(
+  { garmentKey: "base:dress", inputFingerprint: topFingerprint },
+  { garmentKey: "base:skirt", inputFingerprint: "tryon-bottom-stable" },
+  { kind: "customer_photo" },
+);
+assert.notEqual(outfitOf(midFingerprint), outfitOf(longFingerprint), "switching Mid Sleeve and Long Sleeve changes the outfit fingerprint");
+assert.equal(outfitOf(midFingerprint), outfitOf(midFingerprint));
+
 console.log(`PASS: AI Try-on prompt ${AI_TRY_ON_PROMPT_VERSION} snapshots, determinism, budget, mode choice, per-wearer hints`);

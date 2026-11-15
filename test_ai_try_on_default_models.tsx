@@ -112,8 +112,8 @@ const DAY = 24 * 60 * 60 * 1000;
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
   // v6: explicit order choices win over either reference photo.
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v6");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v9");
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v7");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v10");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
