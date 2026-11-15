@@ -1,4 +1,5 @@
 import type { CanonicalPhysicalGarmentType } from "../types.js";
+import type { AiTryOnModelLengthCategory } from "../utils/aiTryOnDefaultModels.js";
 import {
   AI_TRY_ON_FIT_HINT_IDS,
   AI_TRY_ON_FIT_HINT_LABELS,
@@ -306,6 +307,23 @@ const MODEL_OUTPUT =
   "Output one photorealistic full-body photo of the studio model from image 1 only, head to feet in frame. No text, labels, numbers, logos, watermarks or borders anywhere in the image.";
 const MODEL_CHECK =
   "Check: the face, body, skin tone and background must be the studio model's from image 1, not the stand-in's.";
+/**
+ * Short studio bases wear bum shorts or short knickers so a skirt, shorts or
+ * dress is not generated on top of trouser legs. Long bases keep the
+ * existing "other clothing" rule and do not get this line.
+ */
+const SHORT_STUDIO_BASE =
+  "Replace the base bum shorts or short knickers in image 1 with the target skirt, shorts or dress. The lower legs stay bare. No trouser legs may be visible.";
+
+const withShortStudioBase = (
+  lines: readonly string[],
+  baseLength: AiTryOnModelLengthCategory | null | undefined,
+): readonly string[] => {
+  if (baseLength !== "short") return lines;
+  const index = lines.findIndex((line) => line.startsWith("Replace only the clothing"));
+  if (index < 0) return [...lines, SHORT_STUDIO_BASE];
+  return [...lines.slice(0, index + 1), SHORT_STUDIO_BASE, ...lines.slice(index + 1)];
+};
 
 const MODEL_GARMENT_MODE_LINES: readonly string[] = [
   "Virtual try-on photo edit on a studio model.",
@@ -357,12 +375,15 @@ export const buildAiTryOnModelImageLabels = (mode: AiTryOnMode): readonly string
 export const buildAiTryOnModelPrompt = ({
   mode,
   orderDetails,
+  baseLength = "long",
 }: {
   mode: AiTryOnMode;
   orderDetails?: AiTryOnOrderDetails | null;
+  /** Short when image 1 is a bum-shorts or short-knickers studio base. */
+  baseLength?: AiTryOnModelLengthCategory | null;
 }): string =>
   [
-    (mode === "fabric" ? MODEL_FABRIC_MODE_LINES : MODEL_GARMENT_MODE_LINES).join("\n"),
+    withShortStudioBase(mode === "fabric" ? MODEL_FABRIC_MODE_LINES : MODEL_GARMENT_MODE_LINES, baseLength).join("\n"),
     buildAiTryOnOrderDetailsBlock({ mode, orderDetails }),
   ]
     .filter(Boolean)
@@ -410,7 +431,7 @@ export const buildAiTryOnOutfitImageLabels = (garments: readonly AiTryOnOutfitGa
   }
   return labels;
 };
-export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [] }: { garments: readonly AiTryOnOutfitGarmentRequest[]; onModel: boolean; fitHints?: readonly AiTryOnFitHint[] }): string => {
+export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [], baseLength = null }: { garments: readonly AiTryOnOutfitGarmentRequest[]; onModel: boolean; fitHints?: readonly AiTryOnFitHint[]; baseLength?: AiTryOnModelLengthCategory | null }): string => {
   let image = 2;
   const blocks = garments.map((garment, index) => {
     const design = image++;
@@ -426,6 +447,7 @@ export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [] }: {
     AI_TRY_ON_OUTFIT_PROMPT_VERSION,
     "Create one full-outfit photo: exactly the explicitly chosen top and bottom together on the one person from image 1. Do not add unchosen order garments, duplicate garments, make a collage or split panels.",
     onModel ? KEEP_MODEL : KEEP_PERSON,
+    onModel && baseLength === "short" ? SHORT_STUDIO_BASE : "",
     "People in every garment reference are stand-ins only. Never copy their identity, face, body, pose or background; never return a reference photo.",
     ORDERED_TYPE,
     "Replace the top and bottom clothing regions on image 1 with the two chosen garments; keep the person's body shape, shoes and background. Do not reshape the body. Each garment keeps its own design and its own fabric.",

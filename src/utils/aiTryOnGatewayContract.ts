@@ -70,7 +70,9 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v10" as const;
  */
 // v6: share photo v9 construction priority and Standard Shirt type lock.
 // v7: share photo v10 sleeve, Neck Design, placket, and long-sleeve cuff rules.
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v7" as const;
+// v8: a short studio base (bum shorts or short knickers) is replaced by the
+// ordered skirt, shorts or dress. Lower legs stay bare. No trouser legs.
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v8" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
