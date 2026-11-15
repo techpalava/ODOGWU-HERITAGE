@@ -44,6 +44,7 @@ import {
   type BuildAiTryOnWearerTargetsInput,
 } from "./src/utils/aiTryOnWearerTargets";
 import {
+  aiTryOnWearerPreviewFingerprint,
   normalizeAiTryOnWorkflowState,
   recordAiTryOnPreviewCompletion,
 } from "./src/utils/aiTryOnWorkflow";
@@ -526,6 +527,9 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   );
   assert.equal(chips.length, 2, "picker shown for two wearers");
   assert.match(textOf(renderer.root), /Who's this for\?/);
+  act(() => {
+    renderer.root.find((node) => node.props["data-ai-try-on-model-close"]).props.onClick();
+  });
   const howButton = renderer.root.find((node) => node.type === "button" && /How we use your photo/.test(textOf(node)));
   act(() => howButton.props.onClick());
   assert.match(textOf(renderer.root), /What we keep: we delete your photo straight after/);
@@ -538,7 +542,11 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.deepEqual(created, ["w-ada"]);
   const sent = requests[0] as Record<string, unknown>;
   assert.equal(sent.mode, "garment");
-  assert.equal(sent.inputFingerprint, "tryon-v1-0123456789abcdef", "Ada's own fingerprint");
+  assert.equal(
+    sent.inputFingerprint,
+    aiTryOnWearerPreviewFingerprint("tryon-v1-0123456789abcdef", { kind: "customer_photo" }),
+    "Ada's fingerprint includes the customer-photo wearer",
+  );
   assert.equal("fabricSwatchImageUrl" in sent, false);
   assert.equal(sent.garmentImageUrl, "https://example.test/style-a.jpg", "server loads the picture");
   assert.equal("garmentImage" in sent, false, "no client-side reference download");
@@ -557,7 +565,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     renderer.root.findAll((node) => node.type === "img" && /AI try-on preview/.test(node.props.alt || "")).length,
     0,
   );
-  assert.equal(generateButton(renderer).props.disabled, true);
+  assert.equal(generateButton(renderer).props.disabled, false, "the other wearer starts on the default studio model");
 }
 
 {
@@ -600,8 +608,12 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(first.mode, "fabric");
   assert.equal(first.garmentImageUrl, "https://example.test/style-a.jpg");
   assert.equal(first.fabricSwatchImageUrl, "https://example.test/red.jpg");
-  assert.equal(first.inputFingerprint, built.previewableGarments?.[0]?.inputFingerprint, "fingerprint is this garment's own (deep check M1)");
-  assert.notEqual(first.inputFingerprint, built.inputFingerprint);
+  assert.equal(
+    first.inputFingerprint,
+    aiTryOnWearerPreviewFingerprint(built.previewableGarments?.[0]?.inputFingerprint, { kind: "customer_photo" }),
+    "fingerprint is this garment's own plus the wearer source (deep check M1)",
+  );
+  assert.notEqual(first.inputFingerprint, aiTryOnWearerPreviewFingerprint(built.inputFingerprint, { kind: "customer_photo" }));
   assert.equal(first.orderDetails.garments.length, 1);
   assert.equal(first.orderDetails.garments[0].garmentType, "shirt");
   assert.equal(JSON.stringify(first).includes("style-b"), false, "the other garment picture is not sent");
@@ -618,7 +630,11 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   assert.equal(second.mode, "garment", "no swatch picture → garment mode");
   assert.equal(second.garmentImageUrl, "https://example.test/style-b.jpg");
   assert.equal(second.fabricSwatchImageUrl, undefined);
-  assert.equal(second.inputFingerprint, built.previewableGarments?.[1]?.inputFingerprint, "each garment has its own fingerprint (M1)");
+  assert.equal(
+    second.inputFingerprint,
+    aiTryOnWearerPreviewFingerprint(built.previewableGarments?.[1]?.inputFingerprint, { kind: "customer_photo" }),
+    "each garment has its own fingerprint plus the wearer source (M1)",
+  );
   assert.equal(second.orderDetails.garments.length, 1);
   assert.equal(second.orderDetails.garments[0].garmentType, "trouser");
   assert.equal(JSON.stringify(second).includes("style-a"), false);
@@ -757,7 +773,11 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     defaultModelId?: string;
   };
   assert.equal(sent.wearerKey, aiTryOnPreviewTargets([ada])[1].wearerId);
-  assert.equal(sent.inputFingerprint, ada.inputFingerprint, "fingerprint stays with the photo wearer");
+  assert.equal(
+    sent.inputFingerprint,
+    aiTryOnWearerPreviewFingerprint(aiTryOnPreviewTargets([ada])[1].inputFingerprint, { kind: "customer_photo" }),
+    "fingerprint stays with the photo wearer and that garment",
+  );
   assert.equal(sent.garmentImageUrl, "https://example.test/ada-trouser.jpg");
   assert.deepEqual(sent.orderDetails?.garments[0].optionIds, ["wide-leg"], "garment details stay");
   assert.deepEqual(sent.fitHints, obiHints, "Generate uses the measurement wearer's hints");
@@ -803,7 +823,10 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   });
   const withObi = emptyAda.requests[1] as { wearerKey: string; fitHints?: unknown; inputFingerprint: string };
   assert.equal(withObi.wearerKey, "w-ada");
-  assert.equal(withObi.inputFingerprint, "tryon-v1-0123456789abcdef");
+  assert.equal(
+    withObi.inputFingerprint,
+    aiTryOnWearerPreviewFingerprint("tryon-v1-0123456789abcdef", { kind: "customer_photo" }),
+  );
   assert.deepEqual(withObi.fitHints, obiHints, "hints are sent when that wearer has them");
 
   act(() => {
@@ -963,7 +986,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     renderer.root.findAll((node) => node.type === "button" && node.props["data-wearer-chip"]);
   act(() => wearerChips()[1].props.onClick());
   assert.equal(thumb().length, 0, "a photo belongs to one person");
-  assert.equal(generateButton(renderer).props.disabled, true);
+  assert.equal(generateButton(renderer).props.disabled, false, "the other wearer starts on the default studio model");
   act(() => wearerChips()[0].props.onClick());
   assert.equal(thumb().length, 0, "switching back does not restore the cleared photo");
 
@@ -1024,7 +1047,7 @@ for (const [outcome, text] of errorCases) {
   const gif = renderPanel();
   await choosePhoto(gif.renderer, "image/gif");
   assert.match(textOf(gif.renderer.root), /Please choose a JPEG, PNG or WebP photo\./);
-  assert.equal(generateButton(gif.renderer).props.disabled, true);
+  assert.equal(generateButton(gif.renderer).props.disabled, false, "a rejected photo leaves the default model ready");
 
   // The server could not load a catalogue picture: failed, no try used.
   const cors = renderPanel({

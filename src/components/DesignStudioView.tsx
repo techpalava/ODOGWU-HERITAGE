@@ -3976,13 +3976,22 @@ export default function DesignStudioView({
     () =>
       futureScopedCustomDetailsReconciliation
         ? buildAiTryOnWearerTargets({
-            occurrences: futureDesignStyleStepProjection.occurrences.map((occurrence) => ({
-              garmentKey: occurrence.target.garmentKey,
-              garmentType: occurrence.garmentType,
-              assignment: occurrence.assignment,
-              assignmentImage: occurrence.assignmentImage,
-              uploadedDesignPreviewUrl: futureDesignStylePreviewByOccurrenceToken[occurrence.target.occurrenceToken] || null,
-            })),
+            occurrences: futureDesignStyleStepProjection.occurrences.map((occurrence) => {
+              const assignment = occurrence.assignment;
+              const catalogueStyle =
+                assignment?.sourceKind === "catalog"
+                  ? styles.find((style) => style.id === assignment.catalogStyleId) ?? null
+                  : null;
+              return {
+                garmentKey: occurrence.target.garmentKey,
+                garmentType: occurrence.garmentType,
+                assignment,
+                assignmentImage: occurrence.assignmentImage,
+                uploadedDesignPreviewUrl: futureDesignStylePreviewByOccurrenceToken[occurrence.target.occurrenceToken] || null,
+                styleShowsWearer: catalogueStyle?.showsWearer === true,
+                styleGender: catalogueStyle?.gender ?? null,
+              };
+            }),
             physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
             wearerOrder: wearerOrderForPlan,
             measurement: futureMeasurementState,
@@ -4002,6 +4011,7 @@ export default function DesignStudioView({
       futureScopedCustomDetailsReconciliation,
       futureDesignStyleStepProjection.occurrences,
       futureDesignStylePreviewByOccurrenceToken,
+      styles,
       authoritativePhysicalOccurrencesForDomain,
       wearerOrderForPlan,
       futureMeasurementState,

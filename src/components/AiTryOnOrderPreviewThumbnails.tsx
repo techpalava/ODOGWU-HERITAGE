@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import { AI_TRY_ON_ORDER_IMAGE_COPY as COPY } from "../utils/aiTryOnOrderImageCopy";
+import { aiTryOnPreviewFingerprintMatchesDesign } from "../utils/aiTryOnWorkflow";
 import { AI_TRY_ON_PREVIEW_DISCLAIMER } from "./AiTryOnPhotoPanel";
 
 /** A wearer of the order as it is now (from the AI Try-on targets). */
@@ -47,7 +48,7 @@ export const selectAiTryOnOrderPreviews = (
     const preview = previews.find((entry) => entry.wearerKey === target.wearerId);
     if (!preview) return [];
     const pair = target.outfitPairs?.find((entry) => entry.inputFingerprint === preview.inputFingerprint);
-    return preview.inputFingerprint === target.inputFingerprint || pair
+    return aiTryOnPreviewFingerprintMatchesDesign(target.inputFingerprint, preview.inputFingerprint) || pair
       ? [
           {
             kind: "fresh",

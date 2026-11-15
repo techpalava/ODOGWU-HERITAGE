@@ -23,6 +23,7 @@ import {
 } from "./src/components/AiTryOnBackgroundToasts";
 import { AI_TRY_ON_BACKGROUND_COPY, aiTryOnPossessive } from "./src/utils/aiTryOnBackgroundCopy";
 import type { AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
+import { aiTryOnWearerPreviewFingerprint } from "./src/utils/aiTryOnWorkflow";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -276,7 +277,14 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   // The customer moves to Measurement: the panel goes away, the request doesn't.
   act(() => renderer.unmount());
   await act(async () => { pending.resolve(completed(3)); await flush(); });
-  assert.deepEqual(created, [{ wearerId: "w-ada", inputFingerprint: "tryon-v1-0123456789abcdef" }], "recorded off-screen");
+  assert.deepEqual(
+    created,
+    [{
+      wearerId: "w-ada",
+      inputFingerprint: aiTryOnWearerPreviewFingerprint("tryon-v1-0123456789abcdef", { kind: "customer_photo" }),
+    }],
+    "recorded off-screen",
+  );
   const job = jobStore.getSnapshot()["w-ada"];
   assert.equal(job.toast, "open", "toast, since the panel was not on screen");
   assert.equal(requests, 1, "never sent twice");

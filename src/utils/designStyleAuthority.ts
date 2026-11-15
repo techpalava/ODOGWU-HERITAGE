@@ -72,6 +72,11 @@ export interface DesignStylePresentationV1 {
   readonly monogramCuffEligible: boolean;
   readonly embroideryProminence: "standard" | "heavy";
   readonly defaultGarmentDetails: Readonly<Record<string, unknown>>;
+  /**
+   * Present only when an admin has flagged the style photograph as showing
+   * a wearer. Absent means false, so older records stay valid.
+   */
+  readonly showsWearer?: boolean;
 }
 
 export interface AuthoritativeDesignStyleRecordV1 {
@@ -472,7 +477,16 @@ const parseConstructionDetails = (value: unknown): ConstructionDetail[] | null =
 };
 
 const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => {
-  if (!isRecord(value) || !hasExactKeys(value, PRESENTATION_KEYS)) return null;
+  if (!isRecord(value)) return null;
+  const presentationKeys = Object.keys(value);
+  const allowedPresentationKeys = new Set<string>([...PRESENTATION_KEYS, "showsWearer"]);
+  if (
+    !PRESENTATION_KEYS.every((key) => presentationKeys.includes(key)) ||
+    presentationKeys.some((key) => !allowedPresentationKeys.has(key)) ||
+    (value.showsWearer !== undefined && typeof value.showsWearer !== "boolean")
+  ) {
+    return null;
+  }
   if (
     !isBoundedString(value.name, 160) ||
     !value.name.trim() ||
@@ -552,6 +566,7 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
     monogramCuffEligible: value.monogramCuffEligible,
     embroideryProminence: value.embroideryProminence,
     defaultGarmentDetails: toJsonMap(value.defaultGarmentDetails),
+    ...(value.showsWearer === true ? { showsWearer: true } : {}),
   };
 };
 
@@ -751,6 +766,7 @@ const presentationFromStyle = (
     defaultGarmentDetails: toJsonMap(
       style.defaultGarmentDetails as DesignSelections | undefined,
     ),
+    ...(style.showsWearer === true ? { showsWearer: true } : {}),
   };
 };
 
@@ -879,6 +895,7 @@ export const projectDesignStyleRecordForAdmin = (
     hasNet: record.presentation.includedDesignFeatures.hasNet,
     monogramCuffEligible: record.presentation.monogramCuffEligible,
     embroideryProminence: record.presentation.embroideryProminence,
+    ...(record.presentation.showsWearer === true ? { showsWearer: true } : {}),
     defaultGarmentDetails: toJsonMap(
       record.presentation.defaultGarmentDetails,
     ) as DesignSelections,

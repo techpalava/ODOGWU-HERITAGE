@@ -249,7 +249,7 @@ const text = (renderer: ReactTestRenderer) => JSON.stringify(renderer.toJSON());
     await second.promise;
   });
   assert.equal(text(renderer).includes("currently unavailable"), false);
-  assert.equal(generateButton(renderer).props.disabled, true, "a model must still be chosen after availability");
+  assert.equal(generateButton(renderer).props.disabled, false, "the default studio model is selected once availability is confirmed");
   await act(async () => {
     renderer.root.findByProps({ "data-ai-try-on-model-option": true }).props.onClick();
   });
