@@ -69,7 +69,14 @@ const REALISM =
   "Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.";
 
 const NOISE =
-  "app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.";
+  "app or website interface, interface buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.";
+
+/**
+ * Step 4 sleeve and neck choices are explicit. Front placket buttons and
+ * long-sleeve wrist cuffs stay with the design-style reference photo.
+ */
+const sleeveNeckAndConstructionDetails = (reference: string): string =>
+  `Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from ${reference}, and wrist cuffs when the sleeve is Long Sleeve.`;
 const GARMENT_IGNORE_NOISE = `Ignore everything that is not the person or the garment: ${NOISE}`;
 const FABRIC_IGNORE_NOISE = `Ignore everything that is not the person, the garment or the fabric: ${NOISE}`;
 
@@ -112,7 +119,7 @@ const GARMENT_MODE_LINES: readonly string[] = [
   KEEP_PERSON,
   ORDERED_TYPE,
   COPY_ONLY_ORDERED,
-  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.",
+  `From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. ${sleeveNeckAndConstructionDetails("image 2")} Use image 2 only for details the order does not specify. Keep all other design details.`,
   REPLACE_COVERED,
   REALISM,
   GARMENT_IGNORE_NOISE,
@@ -136,7 +143,7 @@ const FABRIC_MODE_LINES: readonly string[] = [
   ORDERED_TYPE,
   COPY_ONLY_ORDERED,
   REPLACE_COVERED,
-  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.",
+  `From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. ${sleeveNeckAndConstructionDetails("image 2")} Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.`,
   FABRIC_FROM_SWATCH,
   "Do not take any colour, pattern or texture from the clothes in image 1.",
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
@@ -309,7 +316,7 @@ const MODEL_GARMENT_MODE_LINES: readonly string[] = [
   ORDERED_TYPE,
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
   "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
-  "Copy the silhouette from image 2: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.",
+  `Copy the silhouette from image 2: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. ${sleeveNeckAndConstructionDetails("image 2")} Use image 2 only for details the order does not specify. Keep all other design details.`,
   REALISM,
   `Ignore everything that is not the studio model or the garment: ${NOISE}`,
   MODEL_OUTPUT,
@@ -325,7 +332,7 @@ const MODEL_FABRIC_MODE_LINES: readonly string[] = [
   ORDERED_TYPE,
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.",
   "Replace only the clothing it covers; keep the studio model's other clothing and shoes from image 1.",
-  "From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Ignore its original fabric colour and print.",
+  `From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. ${sleeveNeckAndConstructionDetails("image 2")} Use image 2 only for details the order does not specify. Ignore its original fabric colour and print.`,
   FABRIC_FROM_SWATCH,
   "Use only what is in image 3. Do not invent or add prints, motifs or colours.",
   SWATCH_TEXT,
@@ -410,7 +417,7 @@ export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [] }: {
     const swatch = garment.fabricSwatchImageUrl ? image++ : null;
     return [
       `Chosen ${index === 0 ? "top" : "bottom"}: ${AI_TRY_ON_GARMENT_LABELS[garment.garmentType]}, design in image ${design}. Use only this garment from that reference, not any other clothing or person.`,
-      "The named garment type and explicitly chosen order details win over reference photos for neckline, collar, sleeves, length and construction. References only fill in details the customer did not choose.",
+      `The named garment type and explicitly chosen order details win over reference photos for neckline, collar, sleeves, length and construction. ${sleeveNeckAndConstructionDetails("the design-style reference photo")} References only fill in details the customer did not choose.`,
       swatch ? `For this garment alone, image ${swatch} decides fabric colour, pattern, motif scale, texture and sheen. Ignore its original design-photo fabric and all swatch labels, tags, codes and text. Scale the close-up fabric to natural size and keep patterns continuous across seams. Never transfer this swatch to the other garment.` : "Keep this garment's fabric from its design reference; do not borrow fabric from the other garment.",
       buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: garment.orderDetails, designImage: design }),
     ].filter(Boolean).join("\n");

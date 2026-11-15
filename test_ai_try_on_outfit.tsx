@@ -32,7 +32,7 @@ const promptGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmen
   { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/top", fabricSwatchImageUrl: "https://example.test/swatch", orderDetails: garments[1].orderDetails },
   { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/bottom", orderDetails: garments[2].orderDetails },
 ];
-assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v1");
+assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v2");
 const snapshots = JSON.parse(readFileSync("test_ai_try_on_outfit.snap.json", "utf8"));
 for (const onModel of [false, true]) {
   const key = onModel ? "model" : "photo";

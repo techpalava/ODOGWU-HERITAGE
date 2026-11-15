@@ -262,11 +262,19 @@ export const getConstructionSewingCost = (
       CONSTRUCTION_SEWING_COST_MAP.dress.standard_shortSleeve,
     dress_std_midlong:
       CONSTRUCTION_SEWING_COST_MAP.dress.standard_longSleeve,
+    dress_std_mid:
+      CONSTRUCTION_SEWING_COST_MAP.dress.standard_longSleeve,
+    dress_std_long:
+      CONSTRUCTION_SEWING_COST_MAP.dress.standard_longSleeve,
     dress_long_sleeveless:
       CONSTRUCTION_SEWING_COST_MAP.dress.long_sleeveless,
     dress_long_short:
       CONSTRUCTION_SEWING_COST_MAP.dress.long_shortSleeve,
     dress_long_midlong:
+      CONSTRUCTION_SEWING_COST_MAP.dress.long_longSleeve,
+    dress_long_mid:
+      CONSTRUCTION_SEWING_COST_MAP.dress.long_longSleeve,
+    dress_long_long:
       CONSTRUCTION_SEWING_COST_MAP.dress.long_longSleeve,
     shorts_std_rope: CONSTRUCTION_SEWING_COST_MAP.shorts.rope,
     shorts_std_elastic: CONSTRUCTION_SEWING_COST_MAP.shorts.elastic,
