@@ -12327,6 +12327,13 @@ export default function DesignStudioView({
             const nextBagEmpty = isFutureMeasurementEnteredBagEmpty(
               getActiveFutureMeasurementEntered(state),
             );
+            if (
+              hydratedMeasurementGarmentKey &&
+              state.activeGarmentKey &&
+              state.activeGarmentKey !== hydratedMeasurementGarmentKey
+            ) {
+              setHydratedMeasurementGarmentKey(null);
+            }
             setFutureMeasurementState(state);
             if (activeWearer) {
               setWearerOrder((order) =>

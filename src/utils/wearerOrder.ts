@@ -122,6 +122,7 @@ const stripGarmentFromMeasurement = (
     ),
     invalidInputKeys: state.invalidInputKeys.filter((key) => !keyMatches(key)),
     ...(invalidInputKeysByRoute ? { invalidInputKeysByRoute } : {}),
+    ...(state.activeGarmentKey === garmentKey ? { activeGarmentKey: undefined } : {}),
   };
 };
 

@@ -247,11 +247,15 @@ const MeasurementField = ({
   requirement,
   state,
   onChange,
+  onFieldFocus,
+  onFieldBlur,
   rangeRecheck,
 }: {
   requirement: PlannedMeasurementRequirement;
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
+  onFieldFocus?: (fieldKey: string) => void;
+  onFieldBlur?: (fieldKey: string) => void;
   rangeRecheck: boolean;
 }) => {
   const stored = getResolvedMeasurementValue(state, requirement);
@@ -385,6 +389,8 @@ const MeasurementField = ({
             aria-describedby={hasInvalidValue || implausible ? errorId : undefined}
             aria-label={`${fieldLabel} in ${unitWord}`}
             value={displayValue}
+            onFocus={() => onFieldFocus?.(requirement.key)}
+            onBlur={() => onFieldBlur?.(requirement.key)}
             onChange={(event) => {
               const raw = event.target.value;
               onChange(setFutureMeasurementInput({
@@ -469,6 +475,8 @@ const MeasurementSection = ({
   requirements,
   state,
   onChange,
+  onFieldFocus,
+  onFieldBlur,
   section,
   sampleMode,
   occurrenceLabels,
@@ -480,6 +488,8 @@ const MeasurementSection = ({
   requirements: PlannedMeasurementRequirement[];
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
+  onFieldFocus?: (fieldKey: string) => void;
+  onFieldBlur?: (fieldKey: string) => void;
   section: MeasurementSectionKind;
   sampleMode: boolean;
   occurrenceLabels: ReadonlyMap<string, { conciseLabel: string }>;
@@ -512,6 +522,8 @@ const MeasurementSection = ({
         requirement={requirement}
         state={state}
         onChange={onChange}
+        onFieldFocus={onFieldFocus}
+        onFieldBlur={onFieldBlur}
         rangeRecheck={state.diagnostics.some(
           (diagnostic) =>
             diagnostic.code === "measurement_range_recheck" &&
@@ -706,12 +718,29 @@ export const DormantFutureMeasurementStep = ({
   const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
     restoredGarmentKey ?? state.activeGarmentKey ?? null,
   );
+  const lastExternalGarmentKeyRef = useRef<string | null>(
+    restoredGarmentKey ?? state.activeGarmentKey ?? null,
+  );
+  const lastExternalWearerIdRef = useRef<string | null>(activeWearerId);
   useEffect(() => {
-    setPickedGarmentKey(restoredGarmentKey ?? state.activeGarmentKey ?? null);
-  }, [restoredGarmentKey, state.activeGarmentKey]);
+    const incoming = restoredGarmentKey ?? state.activeGarmentKey ?? null;
+    if (
+      incoming === lastExternalGarmentKeyRef.current &&
+      activeWearerId === lastExternalWearerIdRef.current
+    ) {
+      return;
+    }
+    lastExternalGarmentKeyRef.current = incoming;
+    lastExternalWearerIdRef.current = activeWearerId;
+    setPickedGarmentKey(incoming);
+  }, [activeWearerId, restoredGarmentKey, state.activeGarmentKey]);
   const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
+  const previousSelectedGarmentKeyRef = useRef<string | null>(null);
+  const previousActiveWearerIdRef = useRef<string | null>(activeWearerId);
   const previousSelectedRemainingRef = useRef<number | null>(null);
   const previousSharedRemainingRef = useRef<number | null>(null);
+  const focusedFieldKeyRef = useRef<string | null>(null);
+  const isFieldInputChangeRef = useRef(false);
   // Guide cue: only a customer click on an Option 1 / Option 2 radio requests it (never mount/restore).
   const [guideCueRequest, setGuideCueRequest] = useState(0);
   const [guideCuePhase, setGuideCuePhase] = useState<"idle" | "flash" | "beam">("idle");
@@ -901,6 +930,8 @@ export const DormantFutureMeasurementStep = ({
   const selectGarmentKey = (garmentKey: string) => {
     const chip = chipByGarmentKey.get(garmentKey);
     const kind = chip?.kind || "profile";
+    previousSelectedGarmentKeyRef.current = garmentKey;
+    previousActiveWearerIdRef.current = activeWearerId;
     previousSelectedRemainingRef.current =
       kind === "remaining"
         ? chip?.remainingCount ?? 0
@@ -909,16 +940,67 @@ export const DormantFutureMeasurementStep = ({
           : null;
     previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
     setAllowPendingChipSelection(kind === "assignment" || kind === "profile");
+    lastExternalGarmentKeyRef.current = garmentKey;
     setPickedGarmentKey(garmentKey);
     if (state.activeGarmentKey !== garmentKey) {
       onChange({ ...state, activeGarmentKey: garmentKey });
     }
   };
+  const handleFieldFocus = (fieldKey: string) => {
+    focusedFieldKeyRef.current = fieldKey;
+    if (selectedGarmentKey && pickedGarmentKey !== selectedGarmentKey) {
+      lastExternalGarmentKeyRef.current = selectedGarmentKey;
+      setPickedGarmentKey(selectedGarmentKey);
+    }
+  };
+  const handleFieldBlur = (fieldKey: string) => {
+    if (focusedFieldKeyRef.current === fieldKey) {
+      focusedFieldKeyRef.current = null;
+    }
+  };
+  const handleFieldChange = (nextState: FutureMeasurementStateV1) => {
+    isFieldInputChangeRef.current = true;
+    if (selectedGarmentKey) {
+      lastExternalGarmentKeyRef.current = selectedGarmentKey;
+      if (pickedGarmentKey !== selectedGarmentKey) {
+        setPickedGarmentKey(selectedGarmentKey);
+      }
+    }
+    onChange(
+      selectedGarmentKey && nextState.activeGarmentKey !== selectedGarmentKey
+        ? { ...nextState, activeGarmentKey: selectedGarmentKey }
+        : nextState,
+    );
+  };
   useEffect(() => {
+    const previousGarmentKey = previousSelectedGarmentKeyRef.current;
+    const previousWearerId = previousActiveWearerIdRef.current;
     const previousRemaining = previousSelectedRemainingRef.current;
     const previousShared = previousSharedRemainingRef.current;
+    const wasFieldInputChange = isFieldInputChangeRef.current;
+    isFieldInputChangeRef.current = false;
+    previousSelectedGarmentKeyRef.current = selectedGarmentKey;
+    previousActiveWearerIdRef.current = activeWearerId;
     previousSelectedRemainingRef.current = selectedGarmentRemaining;
     previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
+
+    // Never yank the active garment away while the customer is actively typing
+    // into a measurement field (even when the first digit satisfies minCm).
+    if (
+      wasFieldInputChange ||
+      focusedFieldKeyRef.current !== null ||
+      isTypingIntoField()
+    ) {
+      return;
+    }
+
+    // Only auto-advance when the same wearer's same selected garment transitions
+    // from incomplete (> 0 remaining) to complete (0 remaining), never when a newly
+    // assigned garment replaces an unassigned/other garment on the first keystroke.
+    const sameGarmentAndWearer =
+      previousGarmentKey === selectedGarmentKey &&
+      previousWearerId === activeWearerId;
+    if (!sameGarmentAndWearer) return;
 
     const garmentJustCompleted =
       selectedGarmentRemaining === 0 &&
@@ -935,11 +1017,13 @@ export const DormantFutureMeasurementStep = ({
       return;
     }
     setAllowPendingChipSelection(false);
+    lastExternalGarmentKeyRef.current = nextIncompleteGarmentKey;
     setPickedGarmentKey(nextIncompleteGarmentKey);
     if (state.activeGarmentKey !== nextIncompleteGarmentKey) {
       onChange({ ...state, activeGarmentKey: nextIncompleteGarmentKey });
     }
   }, [
+    activeWearerId,
     selectedGarmentRemaining,
     chipProjection.sharedRemainingCount,
     nextIncompleteGarmentKey,
@@ -1809,7 +1893,9 @@ export const DormantFutureMeasurementStep = ({
         }
         requirements={visibleRequiredRequirements}
         state={resolvedState}
-        onChange={onChange}
+        onChange={handleFieldChange}
+        onFieldFocus={handleFieldFocus}
+        onFieldBlur={handleFieldBlur}
         section="required"
         registerGroupHeading={registerGroupHeading}
         sampleMode={sampleSelected}
@@ -1823,7 +1909,9 @@ export const DormantFutureMeasurementStep = ({
           description={CALCULATED_FROM_HEIGHT_DESCRIPTION}
           requirements={visibleCalculatedRequirements}
           state={resolvedState}
-          onChange={onChange}
+          onChange={handleFieldChange}
+          onFieldFocus={handleFieldFocus}
+          onFieldBlur={handleFieldBlur}
           section="calculated"
         registerGroupHeading={registerGroupHeading}
           sampleMode={false}
@@ -1838,7 +1926,9 @@ export const DormantFutureMeasurementStep = ({
           description="Add any of these if you want. They are not required."
           requirements={visibleOptionalRequirements}
           state={resolvedState}
-          onChange={onChange}
+          onChange={handleFieldChange}
+          onFieldFocus={handleFieldFocus}
+          onFieldBlur={handleFieldBlur}
           section="optional"
         registerGroupHeading={registerGroupHeading}
           sampleMode={sampleSelected}

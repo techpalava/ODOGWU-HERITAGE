@@ -1484,3 +1484,184 @@ console.log("PASS: measurement Measuring-for person chips switch the active wear
 }
 
 console.log("PASS: measurement calculated-from-height fills from height alone");
+
+// Regression: typing the first digit (and subsequent digits) into an initially
+// empty measurement field on a newly assigned Sleeveless Standard Dress keeps
+// the current garment form open and preserves the input instance without jumping
+// or switching away.
+{
+  const dressSleevelessConstruction = {
+    sourceRole: "additional" as const,
+    garmentKey: "additional:dress:1",
+    garmentType: "dress" as const,
+    demographic: "female" as const,
+    selectedOptionId: "dress_std_sleeveless",
+    selectionGroupId: "dress_construction_selection",
+    status: "resolved" as const,
+  };
+  const twoGarments: readonly MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:dress:1", garmentType: "dress" },
+  ];
+  const dressPlan = planMeasurementRequirements({
+    route: "medium_risk",
+    garmentTypeSelection: {
+      ...shirtSelection,
+      demographic: "female",
+    },
+    physicalGarments: twoGarments,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:dress:1": dressSleevelessConstruction },
+    },
+  });
+
+  // Case 1: Newly assigned Sleeveless Standard Dress auto-selected via defaultGarmentKey
+  // (no activeGarmentKey set yet, shared measurements still open). Typing the first
+  // digit "2" into sleeve_length_sleeveless satisfies minCm=1 and flips the dress chip
+  // from "remaining" to "shared", but must NOT jump back to base:shirt.
+  const firstDigitHarness = renderPickerHarness({
+    state: reconcileFutureMeasurementState({
+      state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "medium_risk"),
+      plan: dressPlan,
+    }),
+    plan: dressPlan,
+    physicalGarments: twoGarments,
+    orderMeasurementsComplete: false,
+  });
+
+  assert.equal(
+    firstDigitHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "newly assigned Sleeveless Standard Dress is initially selected",
+  );
+  const findSleevelessInput = () =>
+    firstDigitHarness.renderer.root
+      .findByProps({ "data-measurement-field": "sleeve_length_sleeveless" })
+      .findByType("input");
+
+  const inputBeforeFirstDigit = findSleevelessInput();
+  act(() => {
+    inputBeforeFirstDigit.props.onFocus?.();
+    inputBeforeFirstDigit.props.onChange({ target: { value: "2" } });
+  });
+  firstDigitHarness.sync();
+
+  assert.equal(
+    firstDigitHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "typing first digit '2' must keep Sleeveless Standard Dress selected",
+  );
+  assert.equal(
+    firstDigitHarness.state.activeGarmentKey,
+    "additional:dress:1",
+    "typing first digit locks activeGarmentKey to the current garment",
+  );
+  const inputAfterFirstDigit = findSleevelessInput();
+  assert.equal(
+    inputAfterFirstDigit,
+    inputBeforeFirstDigit,
+    "input element instance must stay mounted (preserving focus) after first digit",
+  );
+  assert.equal(inputAfterFirstDigit.props.value, 2);
+
+  act(() => {
+    inputAfterFirstDigit.props.onChange({ target: { value: "25" } });
+  });
+  firstDigitHarness.sync();
+  assert.equal(
+    firstDigitHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "typing subsequent digits keeps Sleeveless Standard Dress selected",
+  );
+  assert.equal(findSleevelessInput().props.value, 25);
+
+  // Case 2: Low-risk order where another garment still has remaining fields and
+  // shared fields are already filled; typing the first digit into the last
+  // remaining field of the active garment must NOT auto-advance away mid-typing.
+  const lowRiskPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: {
+      ...shirtSelection,
+      demographic: "female",
+    },
+    physicalGarments: twoGarments,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:dress:1": dressSleevelessConstruction },
+    },
+  });
+  let lowRiskInitial = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState(),
+    "low_risk",
+  );
+  const lowRiskRequired = projectMeasurementRequirementsForPresentation({
+    requirements: lowRiskPlan.requirements,
+    state: lowRiskInitial,
+  }).filter((requirement) => requirement.section === "required");
+  for (const requirement of lowRiskRequired) {
+    if (requirement.scope === "shared" && requirement.directInput) {
+      lowRiskInitial = setFutureMeasurementInput({
+        state: lowRiskInitial,
+        requirement,
+        displayValue: requirement.measurementId === "total_height" ? 170 : 85,
+      });
+    }
+    if (
+      requirement.garmentKey === "additional:dress:1" &&
+      requirement.measurementId === "dress_length_standard"
+    ) {
+      lowRiskInitial = setFutureMeasurementInput({
+        state: lowRiskInitial,
+        requirement,
+        displayValue: 95,
+      });
+    }
+  }
+  lowRiskInitial = reconcileFutureMeasurementState({
+    state: { ...lowRiskInitial, activeGarmentKey: "additional:dress:1" },
+    plan: lowRiskPlan,
+  });
+  const lowRiskHarness = renderPickerHarness({
+    state: lowRiskInitial,
+    plan: lowRiskPlan,
+    physicalGarments: twoGarments,
+    orderMeasurementsComplete: false,
+  });
+  const findLowRiskSleevelessInput = () =>
+    lowRiskHarness.renderer.root
+      .findByProps({ "data-measurement-field": "sleeve_length_sleeveless" })
+      .findByType("input");
+  const lowRiskInputBefore = findLowRiskSleevelessInput();
+  act(() => {
+    lowRiskInputBefore.props.onFocus?.();
+    lowRiskInputBefore.props.onChange({ target: { value: "1" } });
+  });
+  lowRiskHarness.sync();
+  assert.equal(
+    lowRiskHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "typing first digit into last required garment field must not auto-switch away mid-typing",
+  );
+  assert.equal(
+    findLowRiskSleevelessInput(),
+    lowRiskInputBefore,
+    "input element remains mounted on first digit in low_risk",
+  );
+  act(() => {
+    lowRiskInputBefore.props.onChange({ target: { value: "18" } });
+    lowRiskInputBefore.props.onBlur?.();
+  });
+  lowRiskHarness.sync();
+  assert.equal(findLowRiskSleevelessInput().props.value, 18);
+}
+
+console.log("PASS: measurement first-digit typing keeps garment form open and preserves input focus");
