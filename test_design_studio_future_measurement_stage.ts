@@ -1497,16 +1497,17 @@ console.log("PASS: measurement calculated-from-height fills from height alone");
 // or switching away.
 {
   const dressSleevelessConstruction = {
-    sourceRole: "additional" as const,
-    garmentKey: "additional:dress:1",
-    garmentType: "dress" as const,
-    demographic: "female" as const,
-    selectedOptionId: "dress_std_sleeveless",
-    selectionGroupId: "dress_construction_selection" as const,
     status: "resolved" as const,
-    components: [],
-    totalPriceCents: 0,
-    totalPrice: 0,
+    garmentType: "dress" as const,
+    components: [{
+      componentKey: "dress:dress_construction:dress_std_sleeveless",
+      optionId: "dress_std_sleeveless",
+      selectionGroup: "dress_construction" as const,
+      priceCents: 1,
+      price: 0.01,
+    }],
+    totalPriceCents: 1,
+    totalPrice: 0.01,
   };
   const twoGarments: readonly MeasurementPhysicalGarment[] = [
     { garmentKey: "base:shirt", garmentType: "shirt" },
@@ -1525,10 +1526,12 @@ console.log("PASS: measurement calculated-from-height fills from height alone");
     },
   });
 
-  // Case 1: Newly assigned Sleeveless Standard Dress auto-selected via defaultGarmentKey
-  // (no activeGarmentKey set yet, shared measurements still open). Typing the first
-  // digit "2" into sleeve_length_sleeveless satisfies minCm=1 and flips the dress chip
-  // from "remaining" to "shared", but must NOT jump back to base:shirt.
+  // Case 1: The customer picks the newly assigned Sleeveless Standard Dress chip while
+  // the shirt still has remaining fields (no activeGarmentKey from the store yet, shared
+  // measurements still open). Typing the first digit "2" into sleeve_length_sleeveless
+  // satisfies minCm=1 and flips the dress chip from "remaining" to "shared", but must
+  // NOT jump back to base:shirt. (The default pick is the first chip with remaining
+  // fields, i.e. the shirt, so the dress is reached by a chip click like in the app.)
   const firstDigitHarness = renderPickerHarness({
     state: reconcileFutureMeasurementState({
       state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "medium_risk"),
@@ -1539,12 +1542,18 @@ console.log("PASS: measurement calculated-from-height fills from height alone");
     orderMeasurementsComplete: false,
   });
 
+  act(() => {
+    firstDigitHarness.renderer.root
+      .findByProps({ "data-measurement-garment": "additional:dress:1" })
+      .props.onClick();
+  });
+  firstDigitHarness.sync();
   assert.equal(
     firstDigitHarness.renderer.root.findByProps({
       "data-measurement-garment": "additional:dress:1",
     }).props["aria-pressed"],
     true,
-    "newly assigned Sleeveless Standard Dress is initially selected",
+    "picked Sleeveless Standard Dress is selected before typing",
   );
   const findSleevelessInput = () =>
     firstDigitHarness.renderer.root
@@ -1622,14 +1631,17 @@ console.log("PASS: measurement calculated-from-height fills from height alone");
         displayValue: requirement.measurementId === "total_height" ? 170 : 85,
       });
     }
+    // Fill every other required dress field so the sleeveless field is the LAST one
+    // remaining: typing its first digit completes the dress, which is exactly the
+    // transition that used to auto-advance away mid-typing.
     if (
       requirement.garmentKey === "additional:dress:1" &&
-      requirement.measurementId === "dress_length_standard"
+      requirement.measurementId !== "sleeve_length_sleeveless"
     ) {
       lowRiskInitial = setFutureMeasurementInput({
         state: lowRiskInitial,
         requirement,
-        displayValue: 95,
+        displayValue: requirement.measurementId === "dress_length_standard" ? 95 : 60,
       });
     }
   }
