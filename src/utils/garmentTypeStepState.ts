@@ -17,6 +17,7 @@ import {
 } from "./garmentConstructionPricing.js";
 import { isClothingPriceSelectionGroup } from "./catalogHelpers.js";
 import { getOptionGarmentLength } from "./garmentLengthVariant.js";
+import { resolveLegacySleeveConstructionOptionId } from "./sleeveConstruction.js";
 
 const CANONICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
@@ -260,7 +261,12 @@ export const reconcileGarmentConstructionResolution = (
       return [];
     }
     const option = normalizedCustomDetailCatalog.find(
-      (candidate) => candidate.id === component.optionId,
+      (candidate) =>
+        candidate.id ===
+        resolveLegacySleeveConstructionOptionId(
+          component.optionId,
+          `${component.componentKey} ${component.selectionGroup}`,
+        ),
     );
     if (
       !option?.active ||

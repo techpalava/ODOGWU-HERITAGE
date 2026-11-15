@@ -23,6 +23,7 @@ import type {
   StyleCategory,
 } from "../types";
 import { sortCustomDetailOptions } from "./catalogHelpers";
+import { isCustomerHiddenLegacySleeveOption } from "./sleeveConstruction.js";
 import type {
   FutureCustomDetailPhysicalSubject,
   GarmentScopedCustomDetailsReconciliationResult,
@@ -324,7 +325,9 @@ export const projectFutureCustomDetailsCatalogue = ({
     const options = sortCustomDetailOptions(
       activeOptions.filter(
         (option) =>
-          option.active && option.selectionGroup === selectionGroup,
+          option.active &&
+          option.selectionGroup === selectionGroup &&
+          !isCustomerHiddenLegacySleeveOption(option.id),
       ),
     );
     const occurrences = reconciliation.subjects.flatMap((subject) => {

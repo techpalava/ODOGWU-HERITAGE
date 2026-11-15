@@ -88,6 +88,7 @@ import {
 } from "./src/utils/designStyleAuthority";
 import { buildDesignStyleDraftValidationAuthority } from "./src/utils/designStyleDraftPersistence";
 import { createPhysicalGarmentOccurrenceIdentityToken } from "./src/utils/physicalGarmentOccurrenceIdentity";
+import { resolveLegacySleeveConstructionOptionId } from "./src/utils/sleeveConstruction";
 
 const catalogInspection = inspectCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const catalog = catalogInspection.activeOptions;
@@ -377,7 +378,7 @@ for (const [types, stepOne, group, optionId] of [
   assert.ok(component?.status === "resolved");
   assert.equal(
     component.components.find((candidate) => candidate.selectionGroup === group)?.optionId,
-    optionId,
+    resolveLegacySleeveConstructionOptionId(optionId),
     `${stepOne} switched to ${optionId} survives reload`,
   );
 }

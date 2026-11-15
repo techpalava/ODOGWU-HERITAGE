@@ -14,6 +14,11 @@ import {
   isCompanionCustomerAdditionalClothesCostGroup,
 } from "../config/GarmentDetailsConfig";
 import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownPresentation";
+import {
+  canonicalSleeveConstructionLabel,
+  isCustomerHiddenLegacySleeveOption,
+  resolveLegacySleeveConstructionOptionId,
+} from "../utils/sleeveConstruction";
 import { individualLagosToEindhovenChargeCents } from "../utils/individualInboundShippingDisplay";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
@@ -1225,11 +1230,12 @@ export const DormantFutureCustomDetailsStep = ({
       occurrence,
       group.selectionGroup,
     );
-    const presentationOptions = constructionPresentationPrefix
+    const presentationOptions = (constructionPresentationPrefix
       ? group.options.filter((option) =>
           option.id.startsWith(constructionPresentationPrefix),
         )
-      : group.options;
+      : group.options
+    ).filter((option) => !isCustomerHiddenLegacySleeveOption(option.id));
     const noneSelected = !group.isConstruction && !hasSelection(
       reconciliation.state,
       occurrence.subject.garmentKey,
@@ -1242,7 +1248,7 @@ export const DormantFutureCustomDetailsStep = ({
         group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP &&
         option.id === PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID;
       const checked = group.isConstruction
-        ? selectedConstructionId === option.id
+        ? resolveLegacySleeveConstructionOptionId(selectedConstructionId || "") === option.id
         : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id);
       return (
         <div key={option.id} className="h-full min-w-0 w-full">
@@ -1268,7 +1274,7 @@ export const DormantFutureCustomDetailsStep = ({
             />
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-start justify-between gap-x-3">
-                <span className="min-w-0 flex-1 break-words text-sm font-bold leading-5 text-heritage-green">{option.label}</span>
+                <span className="min-w-0 flex-1 break-words text-sm font-bold leading-5 text-heritage-green">{canonicalSleeveConstructionLabel(option.id, option.label)}</span>
                 <span className="shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked)}</span>
               </span>
               {!isPersonalizedRequirement && option.description && <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">{option.description}</span>}

@@ -1069,9 +1069,9 @@ assert.ok(midLongLine);
 assert.equal(midLongLine.label, "Standard Shirt");
 assert.equal(
   midLongLine.detail,
-  "Standard Length Shirt, Mid-Long Sleeve",
+  "Standard Length Shirt, Long Sleeve",
 );
-assert.match(midLongLine.detail || "", /Mid-Long/);
+assert.match(midLongLine.detail || "", /Long Sleeve/);
 assert.equal(midLongLine.amountLabel, "€70.00");
 assert.equal(
   midLongOrder.summary.garmentSummary[0]?.constructionTotalCents,

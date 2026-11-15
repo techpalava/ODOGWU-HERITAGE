@@ -154,7 +154,7 @@ const DAY = 24 * 60 * 60 * 1000;
   assert.match(garmentPrompt, /Order details\. Keep the named garment type\./);
   assert.match(garmentPrompt, /Use image 2 only for details the order does not specify/);
   assert.equal(garmentPrompt.includes("where they differ from image 2, follow these"), false);
-  assert.equal(garmentPrompt.includes("Long Length Shirt, Mid-Long Sleeve"), true, "chosen length and sleeves reach the prompt");
+  assert.equal(garmentPrompt.includes("Long Length Shirt, Long Sleeve"), true, "chosen length and sleeves reach the prompt");
   assert.equal(garmentPrompt.includes("Vertical Collar, Round Neck"), true, "chosen neckline reaches the prompt");
   assert.match(garmentPrompt, /Embroidery: as on the garment in image 2/);
   assert.match(garmentPrompt, /keep the studio model's other clothing and shoes from image 1/);
