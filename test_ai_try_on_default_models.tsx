@@ -16,6 +16,8 @@ import type { Firestore } from "firebase-admin/firestore";
 import {
   AI_TRY_ON_DEFAULT_MODELS,
   aiTryOnDefaultModelImageUrl,
+  aiTryOnDefaultModelLengthVariant,
+  aiTryOnStudioModelLengthForGarment,
   findAiTryOnDefaultModel,
 } from "./src/utils/aiTryOnDefaultModels";
 import {
@@ -55,6 +57,7 @@ import type { AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
 import type { HttpResponse } from "./src/server/httpTypes";
 import type { AiTryOnOrderDetails } from "./src/utils/aiTryOnOrderDetails";
 import { PRIVACY_POLICY } from "./src/data/legalContent";
+import { aiTryOnWearerPreviewFingerprint } from "./src/utils/aiTryOnWorkflow";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -62,14 +65,32 @@ const DAY = 24 * 60 * 60 * 1000;
 
 // ------------------------------------------------------------ catalogue + assets
 {
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.length, 10);
-  assert.equal(new Set(AI_TRY_ON_DEFAULT_MODELS.map((m) => m.id)).size, 10, "unique ids");
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "men").length, 5);
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "women").length, 5);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.length, 20);
+  assert.equal(new Set(AI_TRY_ON_DEFAULT_MODELS.map((m) => m.id)).size, 20, "unique ids");
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "long").length, 10);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "short").length, 10);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "men").length, 10);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "women").length, 10);
   for (const group of ["men", "women"] as const) {
-    const models = AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === group);
-    assert.deepEqual(new Set(models.map((m) => m.skinTone)), new Set(["light", "medium", "deep"]), `${group}: skin tones`);
-    assert.deepEqual(new Set(models.map((m) => m.build)), new Set(["regular", "medium", "plus"]), `${group}: builds`);
+    for (const lengthCategory of ["long", "short"] as const) {
+      const models = AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === group && m.lengthCategory === lengthCategory);
+      assert.equal(models.length, 5, `${group} ${lengthCategory}`);
+      assert.deepEqual(new Set(models.map((m) => m.skinTone)), new Set(["light", "medium", "deep"]), `${group}: skin tones`);
+      assert.deepEqual(new Set(models.map((m) => m.build)), new Set(["regular", "medium", "plus"]), `${group}: builds`);
+    }
+  }
+  for (const persona of AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "long")) {
+    const short = aiTryOnDefaultModelLengthVariant(persona.personaId, "short");
+    assert.ok(short, persona.id);
+    assert.equal(short.id, `${persona.personaId}-short`);
+    assert.equal(short.personaId, persona.personaId);
+    assert.equal(short.group, persona.group);
+    assert.equal(short.skinTone, persona.skinTone);
+    assert.equal(short.build, persona.build);
+    assert.equal(short.label, persona.label);
+    assert.equal(short.lengthCategory, "short");
+    assert.equal(persona.lengthCategory, "long");
+    assert.equal(persona.id, persona.personaId);
   }
   const files = readdirSync("public/ai-try-on-models").sort();
   assert.deepEqual(files, AI_TRY_ON_DEFAULT_MODELS.map((m) => `${m.id}.webp`).sort(), "one WebP per model, nothing else");
@@ -82,9 +103,9 @@ const DAY = 24 * 60 * 60 * 1000;
     assert.equal(loaded.mimeType, "image/webp");
     assert.equal(loaded.data, bytes.toString("base64"));
   }
-  // Approved captions: the original six are "regular build".
+  // Approved captions: the original six are "regular build". Short bases reuse them.
   assert.deepEqual(
-    AI_TRY_ON_DEFAULT_MODELS.map((m) => `${m.id}: ${m.label}`),
+    AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "long").map((m) => `${m.id}: ${m.label}`),
     [
       "male-1-light: Light skin tone, regular build",
       "male-2-medium: Medium skin tone, regular build",
@@ -101,6 +122,22 @@ const DAY = 24 * 60 * 60 * 1000;
   assert.equal(AI_TRY_ON_DEFAULT_MODELS.some((m) => /slim/i.test(m.label)), false);
   assert.equal(findAiTryOnDefaultModel("../secrets"), null);
   assert.equal(findAiTryOnDefaultModel(undefined), null);
+  assert.equal(findAiTryOnDefaultModel("male-1-light")?.lengthCategory, "long");
+  assert.equal(findAiTryOnDefaultModel("female-plus-short")?.lengthCategory, "short");
+  for (const [garmentType, length] of [
+    ["standard_shorts", "short"],
+    ["bum_shorts", "short"],
+    ["skirt", "short"],
+    ["dress", "short"],
+    ["full_length_gown", "long"],
+    ["long_skirt", "long"],
+    ["shirt", "long"],
+    ["kaftan", "long"],
+    ["trouser", "long"],
+  ] as const) {
+    assert.equal(aiTryOnStudioModelLengthForGarment(garmentType), length, garmentType);
+  }
+  assert.equal(aiTryOnStudioModelLengthForGarment(null), null);
   // Bundled into the AI Try-on function so the server reads them from disk.
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
   assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].includeFiles, "public/ai-try-on-models/**");
@@ -112,7 +149,7 @@ const DAY = 24 * 60 * 60 * 1000;
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
   // v6: explicit order choices win over either reference photo.
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v7");
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v8");
   assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v10");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
@@ -158,6 +195,18 @@ const DAY = 24 * 60 * 60 * 1000;
   assert.equal(garmentPrompt.includes("Vertical Collar, Round Neck"), true, "chosen neckline reaches the prompt");
   assert.match(garmentPrompt, /Embroidery: as on the garment in image 2/);
   assert.match(garmentPrompt, /keep the studio model's other clothing and shoes from image 1/);
+  assert.equal(garmentPrompt.includes("base bum shorts"), false, "a long base does not mention the short-base replacement");
+  for (const mode of ["garment", "fabric"] as const) {
+    const shortPrompt = buildAiTryOnModelPrompt({
+      mode,
+      baseLength: "short",
+      orderDetails: { garments: [{ garmentType: "dress", optionIds: [], decorations: [] }] },
+    });
+    assert.match(shortPrompt, /Replace the base bum shorts or short knickers in image 1 with the target skirt, shorts or dress\./);
+    assert.match(shortPrompt, /The lower legs stay bare\. No trouser legs may be visible\./);
+    assert.equal(/Kaftan/.test(shortPrompt), false, "customer copy says Long Shirt, never Kaftan");
+    assert.match(shortPrompt, /Standard Dress/);
+  }
 }
 
 // All four variants retain explicit collar choices and ban shirt-to-polo swaps.
@@ -882,6 +931,95 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   const section = PRIVACY_POLICY.sections.find((entry) => entry.id === "privacy-ai-try-on")!;
   assert.match(section.paragraphs!.at(-1)!, /^If you choose to try a design on one of our models instead, no photo of you is used\./);
   assert.match(section.paragraphs!.at(-1)!, /90 days after it was last shown/);
+}
+
+{
+  // Short garments show only short bases. Long garments show only long bases.
+  // Switching keeps the persona and changes the fingerprint. No Generate until asked.
+  const lengthGarment = (
+    garmentType: "standard_shorts" | "bum_shorts" | "skirt" | "dress" | "full_length_gown" | "long_skirt" | "shirt" | "kaftan",
+    styleGender?: string,
+  ) => ({
+    garmentKey: garmentType,
+    garmentType,
+    sourceKind: "catalog" as const,
+    label: garmentType,
+    garmentImageUrl: `https://example.test/${garmentType}.jpg`,
+    fabricSwatchImageUrl: null,
+    fabricColorHex: null,
+    styleGender: styleGender ?? null,
+    orderDetails: { garments: [{ garmentType, optionIds: [], decorations: [] }] },
+    inputFingerprint: FINGERPRINT,
+  });
+  const modelIds = (renderer: ReturnType<typeof create>) =>
+    byData(renderer, "data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
+  for (const garmentType of ["standard_shorts", "bum_shorts", "skirt", "dress"] as const) {
+    const { renderer, requests } = renderPanel({
+      targets: [target({ previewableGarments: [lengthGarment(garmentType, garmentType === "dress" ? "female" : undefined)] })],
+    });
+    assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short", garmentType);
+    const ids = modelIds(renderer);
+    assert.equal(ids.length, 10, `${garmentType} shows the short bases only`);
+    assert.ok(ids.every((id) => String(id).endsWith("-short")), garmentType);
+    assert.equal(ids.some((id) => id === "male-1-light" || id === "female-1-light"), false, garmentType);
+    const expected = garmentType === "dress" ? "female-1-light-short" : "male-1-light-short";
+    assert.equal(byData(renderer, "data-ai-try-on-model", expected)[0].props["aria-checked"], true, garmentType);
+    assert.equal(requests.length, 0, "showing a short base does not generate");
+    await act(async () => { renderer.unmount(); });
+  }
+  for (const garmentType of ["full_length_gown", "long_skirt", "shirt", "kaftan"] as const) {
+    const { renderer, requests } = renderPanel({
+      targets: [target({ previewableGarments: [lengthGarment(garmentType)] })],
+    });
+    assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long", garmentType);
+    const ids = modelIds(renderer);
+    assert.equal(ids.length, 10, `${garmentType} shows the long bases only`);
+    assert.ok(ids.every((id) => !String(id).endsWith("-short")), garmentType);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true, garmentType);
+    assert.equal(requests.length, 0, "showing a long base does not generate");
+    await act(async () => { renderer.unmount(); });
+  }
+  const { renderer, requests } = renderPanel({
+    targets: [target({
+      previewableGarments: [
+        lengthGarment("standard_shorts"),
+        lengthGarment("shirt"),
+        lengthGarment("dress"),
+        lengthGarment("full_length_gown"),
+        lengthGarment("skirt"),
+        lengthGarment("long_skirt"),
+        lengthGarment("kaftan"),
+      ],
+    })],
+  });
+  assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light-short")[0].props["aria-checked"], true);
+  await click(byData(renderer, "data-ai-try-on-model", "female-3-deep-short")[0]);
+  assert.equal(requests.length, 0, "picking a short persona does not generate");
+  await click(byData(renderer, "data-ai-try-on-garment", "shirt")[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
+  assert.ok(modelIds(renderer).every((id) => !String(id).endsWith("-short")));
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-3-deep")[0].props["aria-checked"], true, "same persona, long base");
+  assert.equal(requests.length, 0, "switching to a long garment does not generate");
+  const longFingerprint = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "studio_model", modelId: "female-3-deep" });
+  const shortFingerprint = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "studio_model", modelId: "female-3-deep-short" });
+  assert.notEqual(longFingerprint, shortFingerprint);
+  await click(generateButton(renderer));
+  assert.equal(requests[0].defaultModelId, "female-3-deep");
+  assert.equal(requests[0].inputFingerprint, longFingerprint, "the long base is in the fingerprint");
+  await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-3-deep-short")[0].props["aria-checked"], true, "back to the short base of the same persona");
+  assert.equal(requests.length, 1, "switching back to a short garment does not generate");
+  await click(generateButton(renderer));
+  assert.equal(requests[1].defaultModelId, "female-3-deep-short");
+  assert.equal(requests[1].inputFingerprint, shortFingerprint, "the short base changes the fingerprint");
+  await click(byData(renderer, "data-ai-try-on-garment", "kaftan")[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-3-deep")[0].props["aria-checked"], true, "Long Shirt uses the long base");
+  assert.equal(modelIds(renderer).includes("female-3-deep-short"), false);
+  await choosePhoto(renderer);
+  await click(byData(renderer, "data-ai-try-on-garment", "standard_shorts")[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0, "an uploaded photo stays the wearer");
+  assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], true);
+  await act(async () => { renderer.unmount(); });
 }
 
 console.log("AI Try-on default models: all checks passed");

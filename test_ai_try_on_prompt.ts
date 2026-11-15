@@ -567,4 +567,52 @@ const outfitOf = (topFingerprint: string) => aiTryOnOutfitFingerprint(
 assert.notEqual(outfitOf(midFingerprint), outfitOf(longFingerprint), "switching Mid Sleeve and Long Sleeve changes the outfit fingerprint");
 assert.equal(outfitOf(midFingerprint), outfitOf(midFingerprint));
 
+const shortModelPrompt = buildAiTryOnModelPrompt({
+  mode: "garment",
+  baseLength: "short",
+  orderDetails: { garments: [{ garmentType: "skirt", optionIds: [], decorations: [] }] },
+});
+assert.match(shortModelPrompt, /Replace the base bum shorts or short knickers in image 1 with the target skirt, shorts or dress\./);
+assert.match(shortModelPrompt, /The lower legs stay bare\. No trouser legs may be visible\./);
+assert.equal(shortModelPrompt.includes("Kaftan"), false);
+assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("base bum shorts"), false, "long bases stay on the trouser prompt");
+assert.match(buildAiTryOnModelPrompt({ mode: "fabric", baseLength: "short" }), /No trouser legs may be visible/);
+const shortOutfitPrompt = buildAiTryOnOutfitPrompt({
+  onModel: true,
+  baseLength: "short",
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+    { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts" },
+  ],
+});
+assert.match(shortOutfitPrompt, /Replace the base bum shorts or short knickers in image 1 with the target skirt, shorts or dress\./);
+assert.match(shortOutfitPrompt, /No trouser legs may be visible/);
+assert.equal(buildAiTryOnOutfitPrompt({
+  onModel: true,
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+    { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+  ],
+}).includes("base bum shorts"), false, "a long outfit base is unchanged");
+assert.equal(buildAiTryOnOutfitPrompt({
+  onModel: false,
+  baseLength: "short",
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+    { garmentKey: "bottom", garmentType: "skirt", garmentImageUrl: "https://example.test/skirt" },
+  ],
+}).includes("base bum shorts"), false, "a customer photo is not a short studio base");
+const shortModelFingerprint = aiTryOnOutfitFingerprint(
+  { garmentKey: "base:shirt", inputFingerprint: "tryon-top" },
+  { garmentKey: "base:standard_shorts", inputFingerprint: "tryon-bottom" },
+  { kind: "studio_model", modelId: "female-1-light-short" },
+);
+const longModelFingerprint = aiTryOnOutfitFingerprint(
+  { garmentKey: "base:shirt", inputFingerprint: "tryon-top" },
+  { garmentKey: "base:standard_shorts", inputFingerprint: "tryon-bottom" },
+  { kind: "studio_model", modelId: "female-1-light" },
+);
+assert.ok(shortModelFingerprint && longModelFingerprint);
+assert.notEqual(shortModelFingerprint, longModelFingerprint, "the outfit fingerprint follows the short or long studio model id");
+
 console.log(`PASS: AI Try-on prompt ${AI_TRY_ON_PROMPT_VERSION} snapshots, determinism, budget, mode choice, per-wearer hints`);

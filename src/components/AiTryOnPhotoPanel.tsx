@@ -39,9 +39,12 @@ import {
   AI_TRY_ON_DEFAULT_MODELS,
   AI_TRY_ON_MODEL_GROUP_LABELS,
   aiTryOnDefaultModelImageUrl,
+  aiTryOnDefaultModelLengthVariant,
+  aiTryOnStudioModelLengthForGarment,
   defaultAiTryOnStudioModelId,
   findAiTryOnDefaultModel,
   type AiTryOnModelGroup,
+  type AiTryOnModelLengthCategory,
 } from "../utils/aiTryOnDefaultModels";
 import {
   AI_TRY_ON_PHOTO_ACCEPT,
@@ -665,7 +668,34 @@ export const AiTryOnPhotoPanel = ({
       selectedPreview.garmentImageUrl,
   );
   const stylePhotoActive = stylePhotoOffered && wearerChoice === "style_photo";
-  const defaultModelId = defaultAiTryOnStudioModelId(selectedPreview?.styleGender);
+  // The outfit pair is resolved before the model so a short bottom can select
+  // the short base. Until the customer picks, the pair is the one the current
+  // outfit preview was made from (if any), so that preview is shown as current.
+  const outfitShownPair = outfitSlot
+    ? aiTryOnOutfitPairFor(outfitSlot, previews[outfitSlot.wearerId]?.inputFingerprint) ??
+      aiTryOnOutfitPairFor(outfitSlot, stored[outfitSlot.wearerId]?.inputFingerprint)
+    : null;
+  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ??
+    (outfitShownPair ? { top: outfitShownPair.top, bottom: outfitShownPair.bottom } : {});
+  const selectedTop = outfitChoices.tops.find((entry) => entry.garmentKey === outfitSelection.top);
+  const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
+  const singleGarmentType =
+    selectedPreview?.garmentType ??
+    selectedPreview?.orderDetails?.garments[0]?.garmentType ??
+    target?.orderDetails?.garments[0]?.garmentType ??
+    null;
+  // No chosen outfit bottom yet: keep the current base until the bottom is known.
+  const explicitStudioLength: AiTryOnModelLengthCategory | null = outfitMode
+    ? selectedBottom
+      ? aiTryOnStudioModelLengthForGarment(selectedBottom.garmentType)
+      : null
+    : aiTryOnStudioModelLengthForGarment(singleGarmentType) ?? "long";
+  const studioLength: AiTryOnModelLengthCategory =
+    explicitStudioLength ?? currentModel?.lengthCategory ?? "long";
+  const defaultModelId = defaultAiTryOnStudioModelId(
+    selectedPreview?.styleGender,
+    explicitStudioLength ?? "long",
+  );
   // Combined outfit has no style-photo wearer. A style-photo choice falls
   // back to the studio model for that request only.
   const outfitFallbackModel =
@@ -687,16 +717,6 @@ export const AiTryOnPhotoPanel = ({
       : wearerChoice === "customer_photo" || wearerChoice === "cleared"
         ? { kind: "customer_photo" }
         : { kind: "studio_model", modelId: defaultModelId };
-  // Until the customer picks, the pair is the one the current outfit
-  // preview was made from (if any), so that preview is shown as current.
-  const outfitShownPair = outfitSlot
-    ? aiTryOnOutfitPairFor(outfitSlot, previews[outfitSlot.wearerId]?.inputFingerprint) ??
-      aiTryOnOutfitPairFor(outfitSlot, stored[outfitSlot.wearerId]?.inputFingerprint)
-    : null;
-  const outfitSelection = outfitChoicesByWearer[target?.wearerId || ""] ??
-    (outfitShownPair ? { top: outfitShownPair.top, bottom: outfitShownPair.bottom } : {});
-  const selectedTop = outfitChoices.tops.find((entry) => entry.garmentKey === outfitSelection.top);
-  const selectedBottom = outfitChoices.bottoms.find((entry) => entry.garmentKey === outfitSelection.bottom);
   // Deep check M1: the outfit's fingerprint is the chosen pair's.
   const outfitTarget = target && outfitSlot
     ? aiTryOnOutfitTarget(
@@ -904,6 +924,24 @@ export const AiTryOnPhotoPanel = ({
     previews,
     previewKey,
   ]);
+
+  // A short garment is never generated on a trouser base. Keep the same
+  // persona and switch only its length. This does not generate.
+  useEffect(() => {
+    if (!target || !explicitStudioLength) return;
+    const wearerId = target.wearerId;
+    const choice = sourceByWearer[wearerId];
+    if (choice === "customer_photo" || choice === "style_photo" || choice === "cleared") return;
+    const current = findAiTryOnDefaultModel(modelByWearer[wearerId]);
+    if (!current || current.lengthCategory === explicitStudioLength) return;
+    const next = aiTryOnDefaultModelLengthVariant(current.personaId, explicitStudioLength);
+    if (!next || next.id === current.id) return;
+    updateModelByWearer((currentMap) =>
+      currentMap[wearerId] === next.id ? currentMap : { ...currentMap, [wearerId]: next.id },
+    );
+    // updateModelByWearer is recreated each render and only writes the model id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [explicitStudioLength, target?.wearerId, sourceByWearer, modelByWearer]);
 
   // Reload: restore the selected wearer's stored preview while it still
   // matches this wearer source. This reads the private server copy.
@@ -1770,7 +1808,7 @@ export const AiTryOnPhotoPanel = ({
             )}
           </div>
           {modelPickerOpen && (
-            <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker>
+            <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker data-ai-try-on-model-length={studioLength}>
               <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
                 {AI_TRY_ON_MODEL_COPY.heading}
               </legend>
@@ -1806,7 +1844,7 @@ export const AiTryOnPhotoPanel = ({
                       role="radiogroup"
                       aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: ${AI_TRY_ON_MODEL_GROUP_LABELS[group]}`}
                     >
-                      {AI_TRY_ON_DEFAULT_MODELS.filter((entry) => entry.group === group).map((entry) => {
+                      {AI_TRY_ON_DEFAULT_MODELS.filter((entry) => entry.group === group && entry.lengthCategory === studioLength).map((entry) => {
                         const selected = visibleModel?.id === entry.id;
                         return (
                           <button
