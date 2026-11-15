@@ -72,6 +72,14 @@ export const AI_TRY_ON_DEFAULT_MODEL_PUBLIC_DIR = "ai-try-on-models" as const;
 export const findAiTryOnDefaultModel = (id: unknown): AiTryOnDefaultModel | null =>
   typeof id === "string" ? BY_ID.get(id) ?? null : null;
 
+/**
+ * Studio model pre-selected for a design style's audience.
+ * A women's style uses the first women's model. Every other audience,
+ * including unisex and unknown, uses the first model in the catalogue.
+ */
+export const defaultAiTryOnStudioModelId = (styleGender: string | null | undefined): string =>
+  styleGender === "female" ? "female-1-light" : AI_TRY_ON_DEFAULT_MODELS[0].id;
+
 /** Site-relative picture URL, e.g. `/ai-try-on-models/male-plus.webp`. */
 export const aiTryOnDefaultModelImageUrl = (entry: AiTryOnDefaultModel): string =>
   `/${AI_TRY_ON_DEFAULT_MODEL_PUBLIC_DIR}/${entry.id}.webp`;

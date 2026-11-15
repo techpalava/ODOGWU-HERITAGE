@@ -202,6 +202,22 @@ try {
     assert.ok(featureLabel, `${featureName} is on the Included Decorative Features form.`);
     assert.equal(featureLabel.findByType("input").props.checked, false);
   }
+  const wearerToggle = renderer.root.findByProps({
+    "aria-label": "Style photo shows a wearer",
+  });
+  assert.equal(wearerToggle.props.checked, false, "the style-photo wearer flag defaults off");
+  await act(async () => {
+    wearerToggle.props.onChange({ target: { checked: true } });
+  });
+  assert.equal(
+    renderer.root.findByProps({ "aria-label": "Style photo shows a wearer" }).props.checked,
+    true,
+  );
+  await act(async () => {
+    renderer.root.findByProps({ "aria-label": "Style photo shows a wearer" }).props.onChange({
+      target: { checked: false },
+    });
+  });
   const firstMonogramInput = renderer.root.findByProps({
     "aria-label": "Custom price for Name Monogram",
   });
@@ -221,6 +237,7 @@ try {
   assert.equal(publicationInputs.length, 1, "The Admin form must invoke publication once.");
   assert.equal(publicationInputs[0]?.style.id, "ODG-042");
   assert.equal(publicationInputs[0]?.lifecycle, "published");
+  assert.equal("showsWearer" in committedRecord.presentation, false, "a flag left off is not written");
   assert.equal(committedRecord.id, "ODG-042");
   assert.equal(committedRecord.lifecycle, "published");
   assert.deepEqual(
