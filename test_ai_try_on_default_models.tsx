@@ -658,6 +658,43 @@ for (const onModel of [false, true]) {
   }
 }
 
+{
+  const h = harness();
+  const loads: string[] = [];
+  const logs: string[] = [];
+  h.deps.loadReferenceImage = async (url) => {
+    loads.push(url);
+    return url.includes("fabrics") ? img(jpeg, "image/jpeg") : img(png);
+  };
+  h.deps.log = (line) => logs.push(line);
+  const result = await h.post({
+    mode: "fabric",
+    wearerSource: "style_photo",
+    fabricSwatchImageUrl: FABRIC_URL,
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.orderTriesRemaining, 4, "a style-photo preview uses one try");
+  assert.equal("modelId" in result.body, false, "style photo is not a studio-model cache result");
+  assert.equal(result.body.cacheHit, undefined);
+  assert.equal(result.body.promptVersion, "tryon-style-photo-prompt-v1");
+  assert.equal(loads.length, 2, "the style photograph and the swatch are loaded once each");
+  assert.equal(loads[0], GARMENT_URL);
+  assert.equal(loads[1], FABRIC_URL);
+  const parts = h.geminiRequests[0].contents[0].parts;
+  const pictures = parts.filter((part) => part.inlineData);
+  assert.equal(pictures.length, 2, "Gemini receives the style photograph and the swatch only");
+  assert.equal(pictures[0].inlineData?.data, img(png).data, "the wearer image is the style photograph already loaded");
+  assert.equal(h.events.includes("gemini"), true);
+  assert.ok(logs.some((line) => line.includes("\"wearerSource\":\"style_photo\"") && !line.includes("person")));
+  const refused = await h.post({
+    mode: "fabric",
+    wearerSource: "style_photo",
+    fabricSwatchImageUrl: FABRIC_URL,
+    fitHints: [{ id: "total_height", valueCm: 170 }],
+  });
+  assert.equal(refused.status, 400, "measurements are refused");
+}
+
 // ------------------------------------------------------------ panel: picker, per-wearer, photo flow
 const textOf = (node: ReactTestInstance): string =>
   node.children.map((child) => (typeof child === "string" ? child : textOf(child))).join("");
@@ -729,9 +766,10 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.match(textOf(photoOption), /^Upload a photo/);
   assert.equal(photoOption.type, "button");
   assert.equal(photoOption.props["aria-pressed"], false);
-  assert.equal(option[0].props["aria-pressed"], false);
-  assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0);
-  assert.equal(hasConsent(renderer), true);
+  assert.equal(option[0].props["aria-pressed"], true, "a studio model is selected by default");
+  assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 1);
+  assert.equal(hasConsent(renderer), false, "the default model needs no consent notice");
   await click(option[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model-option").length, 1, "both source cards remain available");
   assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-expanded"], true);
@@ -748,7 +786,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   const thumbs = renderer.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("/ai-try-on-models/"));
   assert.equal(thumbs.length, 5, "static assets, no Storage");
   assert.ok(byData(renderer, "data-ai-try-on-model").every((node) => /skin tone/.test(textOf(node))), "skin tone + build shown");
-  assert.equal(generateButton(renderer).props.disabled, true, "nothing chosen yet");
+  assert.equal(generateButton(renderer).props.disabled, false, "the default model is ready");
+  assert.equal(requests.length, 0, "selecting the default model does not generate");
   await click(byData(renderer, "data-ai-try-on-model", "female-plus")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true);
   assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-pressed"], true);
@@ -771,9 +810,9 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   await click(byData(renderer, "data-ai-try-on-model-option")[0]);
   await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
   await click(byData(renderer, "data-wearer-chip", "w-obi")[0]);
-  assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0, "Obi has no model chosen");
-  assert.equal(hasConsent(renderer), true);
-  assert.equal(generateButton(renderer).props.disabled, true);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true, "Obi starts on the default model");
+  assert.equal(hasConsent(renderer), false);
+  assert.equal(generateButton(renderer).props.disabled, false);
   await click(byData(renderer, "data-wearer-chip", "w-ada")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model", "male-plus")[0].props["aria-checked"], true, "Ada's model is kept");
   await choosePhoto(renderer);

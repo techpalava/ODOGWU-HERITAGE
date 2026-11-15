@@ -172,6 +172,12 @@ export interface StyleCategory {
    * outfitType, image, or display labels.
    */
   styleApplicability?: StyleApplicability;
+  /**
+   * Admin-only. True when this design's photograph shows a person wearing
+   * the style, so AI Try-on may offer that photo as the wearer. Missing
+   * means false.
+   */
+  showsWearer?: boolean;
 }
 
 /** Internal half-fabric integers: 1 = 1/2 customer-facing unit, 2 = 1 customer-facing unit. */

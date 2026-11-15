@@ -2332,6 +2332,29 @@ export default function DatabaseView({
                         placeholder="e.g. Royal Senator"
                       />
                     </div>
+                    <div className="col-span-1 sm:col-span-2">
+                      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-heritage-gold/20 bg-white px-3 py-2">
+                        <input
+                          type="checkbox"
+                          aria-label="Style photo shows a wearer"
+                          data-design-style-shows-wearer="true"
+                          checked={editingItem.showsWearer === true}
+                          onChange={(event) =>
+                            setEditingItem({
+                              ...editingItem,
+                              showsWearer: event.target.checked,
+                            })
+                          }
+                          className="mt-0.5 h-4 w-4 rounded text-heritage-green"
+                        />
+                        <span>
+                          <span className="block font-bold text-heritage-green">Style photo shows a wearer</span>
+                          <span className="mt-1 block text-[11px] leading-relaxed text-heritage-ink/60">
+                            Off by default. Turn this on only when this design’s photo shows a person wearing the style. AI Try-on can then offer “Use the style photo”, which keeps that person and changes only the customer’s fabric. It uses one try.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
                     <div className="space-y-2 col-span-1 sm:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-4">
                       <div>
                         <h4 className="font-bold text-heritage-green">

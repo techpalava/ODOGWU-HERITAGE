@@ -187,7 +187,7 @@ assert.match(
 // The photo flow's response reports AI_TRY_ON_PROMPT_VERSION; model mode reports its own.
 assert.match(
   readFileSync("src/server/aiTryOnHttp.ts", "utf8"),
-  /const promptVersion = parsed\.uploadedDesign \? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed\.outfitGarments \? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel \? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;/,
+  /const promptVersion = parsed\.stylePhoto \? AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION : parsed\.uploadedDesign \? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed\.outfitGarments \? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel \? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;/,
 );
 assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /\n {4}promptVersion,\n {4}\.\.\.\(defaultModel/);
 
