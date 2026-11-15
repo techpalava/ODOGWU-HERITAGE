@@ -179,7 +179,11 @@ const CUFF_ELIGIBLE_CONSTRUCTION_OPTION_IDS = new Set([
   "shirt_std_midlong",
   "shirt_long_midlong",
   "dress_std_midlong",
+  "dress_std_mid",
+  "dress_std_long",
   "dress_long_midlong",
+  "dress_long_mid",
+  "dress_long_long",
 ]);
 
 
@@ -191,9 +195,13 @@ const UPPER_BODY_CONSTRUCTION_OPTION_IDS = new Set([
   "dress_std_sleeveless",
   "dress_std_short",
   "dress_std_midlong",
+  "dress_std_mid",
+  "dress_std_long",
   "dress_long_sleeveless",
   "dress_long_short",
   "dress_long_midlong",
+  "dress_long_mid",
+  "dress_long_long",
 ]);
 
 export const TRADITIONAL_ACCESSORY_OPTIONS = [

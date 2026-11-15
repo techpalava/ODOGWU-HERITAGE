@@ -1136,7 +1136,8 @@ const longConstruction = groupInGarmentSection(
 assert.match(textContent(standardShirtBlock), /Standard Shirt/);
 assert.match(textContent(standardConstruction), /Main Garment/);
 assert.match(textContent(standardConstruction), /Standard Length Shirt, Short Sleeve/);
-assert.match(textContent(standardConstruction), /Standard Length Shirt, Mid-Long Sleeve/);
+assert.match(textContent(standardConstruction), /Standard Length Shirt, Long Sleeve/);
+assert.doesNotMatch(textContent(standardConstruction), /Mid-Long Sleeve|Mid-to-Long Sleeve|Mid Sleeve/);
 // Step 4 length switch: every shirt offers both lengths' Main Garment options.
 assert.match(textContent(standardConstruction), /Long Length Shirt, Short Sleeve/);
 assert.doesNotMatch(
@@ -1147,7 +1148,8 @@ assert.doesNotMatch(
 assert.match(textContent(longShirtBlock), /Long Shirt/);
 assert.match(textContent(longConstruction), /Main Garment/);
 assert.match(textContent(longConstruction), /Long Length Shirt, Short Sleeve/);
-assert.match(textContent(longConstruction), /Long Length Shirt, Mid-Long Sleeve/);
+assert.match(textContent(longConstruction), /Long Length Shirt, Long Sleeve/);
+assert.doesNotMatch(textContent(longConstruction), /Mid-Long Sleeve|Mid-to-Long Sleeve|Mid Sleeve/);
 assert.match(textContent(longConstruction), /Standard Length Shirt, Short Sleeve/);
 assert.equal(
   optionInOccurrenceGroup(
@@ -1167,7 +1169,7 @@ assert.equal(
 );
 const standardAlternative = optionInOccurrenceGroup(
   standardConstruction,
-  "Standard Length Shirt, Mid-Long Sleeve",
+  "Standard Length Shirt, Long Sleeve",
 );
 assert.ok(standardAlternative);
 assert.equal(standardAlternative.findByType("input").props.disabled, undefined);
@@ -1407,10 +1409,12 @@ assert.deepEqual(
   [
     "dress_std_sleeveless",
     "dress_std_short",
-    "dress_std_midlong",
+    "dress_std_mid",
+    "dress_std_long",
     "dress_long_sleeveless",
     "dress_long_short",
-    "dress_long_midlong",
+    "dress_long_mid",
+    "dress_long_long",
   ],
   "Dress construction eligibility remains the full authoritative option set",
 );
@@ -1491,14 +1495,18 @@ assert.match(textContent(standardDressOwnedBlock), /Standard Dress/);
 assert.match(textContent(standardDressOwnedConstruction), /Main Garment/);
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Short Sleeve/);
-assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Mid \(3-Quarter\) \/ Long Sleeve/);
+assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Mid Sleeve/);
+assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Long Sleeve/);
+assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
 // Step 4 length switch: every dress offers both lengths' Main Garment options.
 assert.match(textContent(standardDressOwnedConstruction), /Long Length, Sleeveless/);
 assert.match(textContent(longDressOwnedBlock), /Long Dress/);
 assert.match(textContent(longDressOwnedConstruction), /Main Garment/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Sleeveless \/ Over Shoulder/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Short Sleeve/);
-assert.match(textContent(longDressOwnedConstruction), /Long Length, Mid \(3-Quarter\) \/ Long Sleeve/);
+assert.match(textContent(longDressOwnedConstruction), /Long Length, Mid Sleeve/);
+assert.match(textContent(longDressOwnedConstruction), /Long Length, Long Sleeve/);
+assert.doesNotMatch(textContent(longDressOwnedConstruction), /Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
 assert.match(textContent(longDressOwnedConstruction), /Standard Length, Sleeveless/);
 assert.equal(
   optionInOccurrenceGroup(
@@ -1536,6 +1544,46 @@ assert.deepEqual(dressOwnedConstructionEvents, [[
   "dress_construction",
   "dress_std_short",
 ]]);
+const standardDressMid = optionInOccurrenceGroup(
+  standardDressOwnedConstruction,
+  "Standard Length, Mid Sleeve",
+);
+const standardDressLong = optionInOccurrenceGroup(
+  standardDressOwnedConstruction,
+  "Standard Length, Long Sleeve",
+);
+assert.ok(standardDressMid && standardDressLong);
+assert.match(textContent(standardDressMid), /€75\.00/);
+assert.match(textContent(standardDressLong), /€75\.00/);
+const longDressMid = optionInOccurrenceGroup(
+  longDressOwnedConstruction,
+  "Long Length, Mid Sleeve",
+);
+const longDressLong = optionInOccurrenceGroup(
+  longDressOwnedConstruction,
+  "Long Length, Long Sleeve",
+);
+assert.ok(longDressMid && longDressLong);
+assert.match(textContent(longDressMid), /€80\.00/);
+assert.match(textContent(longDressLong), /€80\.00/);
+act(() => {
+  standardDressMid.findByType("input").props.onChange();
+});
+assert.deepEqual(dressOwnedConstructionEvents[1], [
+  "base:dress",
+  "dress",
+  "dress_construction",
+  "dress_std_mid",
+]);
+act(() => {
+  standardDressLong.findByType("input").props.onChange();
+});
+assert.deepEqual(dressOwnedConstructionEvents[2], [
+  "base:dress",
+  "dress",
+  "dress_construction",
+  "dress_std_long",
+]);
 assert.equal(
   standardDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
   1,

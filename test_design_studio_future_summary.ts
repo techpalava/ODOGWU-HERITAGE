@@ -1044,7 +1044,7 @@ if (selectedShirtAlternative.status === "selected") {
     [{
       garmentKey: "base:shirt",
       garmentLabel: "Standard Shirt",
-      constructionLabel: "Standard Length Shirt, Mid-Long Sleeve",
+      constructionLabel: "Standard Length Shirt, Long Sleeve",
       role: "main",
       priceCents: 7000,
     }],

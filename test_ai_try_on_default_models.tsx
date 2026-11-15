@@ -112,8 +112,8 @@ const DAY = 24 * 60 * 60 * 1000;
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
   // v6: explicit order choices win over either reference photo.
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v6");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v9");
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v7");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v10");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -154,7 +154,7 @@ const DAY = 24 * 60 * 60 * 1000;
   assert.match(garmentPrompt, /Order details\. Keep the named garment type\./);
   assert.match(garmentPrompt, /Use image 2 only for details the order does not specify/);
   assert.equal(garmentPrompt.includes("where they differ from image 2, follow these"), false);
-  assert.equal(garmentPrompt.includes("Long Length Shirt, Mid-Long Sleeve"), true, "chosen length and sleeves reach the prompt");
+  assert.equal(garmentPrompt.includes("Long Length Shirt, Long Sleeve"), true, "chosen length and sleeves reach the prompt");
   assert.equal(garmentPrompt.includes("Vertical Collar, Round Neck"), true, "chosen neckline reaches the prompt");
   assert.match(garmentPrompt, /Embroidery: as on the garment in image 2/);
   assert.match(garmentPrompt, /keep the studio model's other clothing and shoes from image 1/);
