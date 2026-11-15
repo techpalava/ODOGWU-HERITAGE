@@ -418,8 +418,10 @@ import {
   type FutureMeasurementHydrationResult,
 } from "../utils/measurementBlueprint";
 import {
+  addPersonAndAssignGarment,
   addWearer,
   applyWearerMeasurementUpdate,
+  assignGarmentToWearer,
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
@@ -12289,6 +12291,7 @@ export default function DesignStudioView({
           restoredGarmentKey={hydratedMeasurementGarmentKey}
           orderMeasurementsComplete={tryOnUnlockedByMeasurements}
           physicalGarments={futureMeasurementPhysicalGarments}
+          garmentLabels={yourGarmentsConstructionDisplayLabelByGarmentKey}
           multiPersonAssignmentActive={wearerOrderForPlan.wearers.length > 1}
           unassignedGarments={futureMeasurementPhysicalGarments.filter(
             (garment) => !wearerOrderForPlan.assignmentByGarmentKey[garment.garmentKey],
@@ -12300,6 +12303,102 @@ export default function DesignStudioView({
           wearerChips={measurementWearerChips}
           activeWearerId={activeWearer?.wearerId || null}
           onSelectWearer={handleSelectMeasurementWearer}
+          onAssignUnassignedGarment={(garmentKey, wearerId) => {
+            const garment = futureMeasurementPhysicalGarments.find(
+              (candidate) => candidate.garmentKey === garmentKey,
+            );
+            if (!garment) return;
+            const assigned = assignGarmentToWearer({
+              order: wearerOrderForPlanRef.current,
+              garmentKey,
+              wearerId,
+              garment,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
+            });
+            if (assigned.status !== "updated") return;
+            const defaultRoute =
+              reconciledFutureMeasurementState.route ?? "medium_risk";
+            const nextOrder = {
+              ...assigned.order,
+              wearers: assigned.order.wearers.map((wearer) =>
+                wearer.wearerId === wearerId
+                  ? {
+                      ...wearer,
+                      measurement: {
+                        ...(wearer.measurement.route
+                          ? wearer.measurement
+                          : setFutureMeasurementRoute(
+                              wearer.measurement,
+                              defaultRoute,
+                            )),
+                        activeGarmentKey: garmentKey,
+                      },
+                    }
+                  : wearer,
+              ),
+            };
+            wearerOrderForPlanRef.current = nextOrder;
+            setWearerOrder(nextOrder);
+            activeWearerIdRef.current = wearerId;
+            setActiveWearerId(wearerId);
+            setHydratedMeasurementGarmentKey(garmentKey);
+            const targetWearer = nextOrder.wearers.find(
+              (wearer) => wearer.wearerId === wearerId,
+            );
+            if (targetWearer) {
+              setFutureMeasurementState(targetWearer.measurement);
+            }
+          }}
+          onAddPersonAndAssignGarment={(displayName, garmentKey) => {
+            const defaultRoute =
+              reconciledFutureMeasurementState.route ?? "medium_risk";
+            const result = addPersonAndAssignGarment({
+              order: wearerOrderForPlanRef.current,
+              garments: futureMeasurementPhysicalGarments,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
+              displayName,
+              garmentKey,
+              defaultRoute,
+            });
+            if (result.status !== "updated") return;
+            const nextOrder = {
+              ...result.order,
+              wearers: result.order.wearers.map((wearer) =>
+                wearer.wearerId === result.wearerId
+                  ? {
+                      ...wearer,
+                      measurement: {
+                        ...(wearer.measurement.route
+                          ? wearer.measurement
+                          : setFutureMeasurementRoute(
+                              wearer.measurement,
+                              defaultRoute,
+                            )),
+                        activeGarmentKey: garmentKey,
+                      },
+                    }
+                  : wearer,
+              ),
+            };
+            wearerOrderForPlanRef.current = nextOrder;
+            setWearerOrder(nextOrder);
+            setUnsavedWearerNameIds((current) =>
+              current.filter((id) => id !== result.wearerId),
+            );
+            activeWearerIdRef.current = result.wearerId;
+            setActiveWearerId(result.wearerId);
+            setHydratedMeasurementGarmentKey(garmentKey);
+            const targetWearer = nextOrder.wearers.find(
+              (wearer) => wearer.wearerId === result.wearerId,
+            );
+            if (targetWearer) {
+              setFutureMeasurementState(targetWearer.measurement);
+            }
+          }}
           groupFocusRequest={measurementGroupFocusRequest}
           onGroupFocusHandled={(requestId, found) => {
             setMeasurementGroupFocusRequest((current) =>

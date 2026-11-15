@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Ruler, ShieldAlert } from "lucide-react";
+import { Ruler, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
   DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS,
   DesignStudioStepGuide,
@@ -61,6 +62,7 @@ import {
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
+  setFutureMeasurementRoute,
   setFutureMeasurementUnit,
   type MeasurementGarmentChipState,
   type MeasurementPhysicalGarment,
@@ -72,6 +74,8 @@ interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
   state: FutureMeasurementStateV1;
   physicalGarments?: readonly MeasurementPhysicalGarment[];
+  /** Construction-specific labels by garment key (e.g., "Sleeveless Standard Dress"). */
+  garmentLabels?: Readonly<Record<string, string>>;
   /** Garments not yet assigned to a wearer; blocks order-wide Summary unlock. */
   unassignedGarments?: readonly MeasurementPhysicalGarment[];
   /**
@@ -102,6 +106,10 @@ interface DormantFutureMeasurementStepProps {
   wearerChips?: readonly { wearerId: string; label: string }[];
   activeWearerId?: string | null;
   onSelectWearer?: (wearerId: string) => void;
+  /** Assign an unassigned garment directly from the Step 5 assignment modal. */
+  onAssignUnassignedGarment?: (garmentKey: string, wearerId: string) => void;
+  /** Add a new person and assign an unassigned garment to them from the Step 5 assignment modal. */
+  onAddPersonAndAssignGarment?: (displayName: string, garmentKey: string) => void;
   /**
    * Transient Summary section-Edit jump: show this person and garment, then
    * scroll to and focus that group's heading. Never persisted.
@@ -692,6 +700,7 @@ export const DormantFutureMeasurementStep = ({
   plan,
   state,
   physicalGarments = [],
+  garmentLabels,
   unassignedGarments,
   multiPersonAssignmentActive = true,
   setupPendingGarments = [],
@@ -707,6 +716,8 @@ export const DormantFutureMeasurementStep = ({
   wearerChips = [],
   activeWearerId = null,
   onSelectWearer,
+  onAssignUnassignedGarment,
+  onAddPersonAndAssignGarment,
   groupFocusRequest = null,
   onGroupFocusHandled,
   onChange,
@@ -715,6 +726,27 @@ export const DormantFutureMeasurementStep = ({
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const occurrenceLabels = projectOccurrenceDisplayLabels(physicalGarments);
+  const resolveDisplayGarmentLabel = (
+    garmentType?: string,
+    garmentKey?: string,
+  ): string => {
+    if (garmentKey && garmentLabels?.[garmentKey]) {
+      return garmentLabels[garmentKey];
+    }
+    return formatGarmentLabel(occurrenceLabels, garmentType, garmentKey);
+  };
+  const [localAssignedByGarmentKey, setLocalAssignedByGarmentKey] = useState<
+    Record<string, string>
+  >({});
+  const [localAddedWearers, setLocalAddedWearers] = useState<
+    Array<{ wearerId: string; label: string }>
+  >([]);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignModalGarmentKey, setAssignModalGarmentKey] = useState<string | null>(
+    null,
+  );
+  const [assignModalNewPersonName, setAssignModalNewPersonName] = useState("");
+  const [assignModalError, setAssignModalError] = useState<string | null>(null);
   const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
     restoredGarmentKey ?? state.activeGarmentKey ?? null,
   );
@@ -838,9 +870,17 @@ export const DormantFutureMeasurementStep = ({
       ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
     ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
-  const assignmentPendingGarments = multiPersonAssignmentActive
+  const rawAssignmentPendingGarments = multiPersonAssignmentActive
     ? (unassignedGarments ?? setupPendingGarments)
     : [];
+  const assignmentPendingGarments = rawAssignmentPendingGarments.filter(
+    (garment) => !localAssignedByGarmentKey[garment.garmentKey],
+  );
+  const hasUnassignedGarments = assignmentPendingGarments.length > 0;
+  useReportDesignStudioBlockingOverlay(
+    "step5-unassigned-garment-dialog",
+    assignModalOpen && hasUnassignedGarments,
+  );
   const unassignedGarmentKeySet = new Set(
     assignmentPendingGarments.map((garment) => garment.garmentKey),
   );
@@ -854,6 +894,7 @@ export const DormantFutureMeasurementStep = ({
     .filter(
       (garment) =>
         !unassignedGarmentKeySet.has(garment.garmentKey) &&
+        !localAssignedByGarmentKey[garment.garmentKey] &&
         (
           unsupportedGarments.some(
             (diagnostic) => diagnostic.garmentKey === garment.garmentKey,
@@ -880,6 +921,7 @@ export const DormantFutureMeasurementStep = ({
     chipProjection.chips.find((chip) => chip.kind === "done")?.garmentKey ??
     measurementGarments.find((garment) => measurableGarmentKeys.has(garment.garmentKey))
       ?.garmentKey ??
+    chipProjection.chips.find((chip) => chip.kind === "assignment")?.garmentKey ??
     null;
   const pickExists = Boolean(
     pickedGarmentKey &&
@@ -901,6 +943,127 @@ export const DormantFutureMeasurementStep = ({
   const selectedGarmentProfilePending = selectedChip?.kind === "profile";
   const selectedGarmentPending =
     selectedGarmentUnassigned || selectedGarmentProfilePending;
+  const effectiveWearerChips = [
+    ...(wearerChips.length > 0
+      ? wearerChips
+      : [
+          {
+            wearerId: activeWearerId || "wearer-1",
+            label: activeWearerLabel || "Person 1",
+          },
+        ]),
+    ...localAddedWearers,
+  ];
+  const activeModalGarment =
+    assignmentPendingGarments.find(
+      (garment) => garment.garmentKey === assignModalGarmentKey,
+    ) ??
+    assignmentPendingGarments[0] ??
+    null;
+  const openAssignModal = (preferredGarmentKey?: string | null) => {
+    if (!hasUnassignedGarments) return;
+    const targetKey =
+      preferredGarmentKey &&
+      assignmentPendingGarments.some(
+        (garment) => garment.garmentKey === preferredGarmentKey,
+      )
+        ? preferredGarmentKey
+        : selectedGarmentUnassigned && selectedGarmentKey
+          ? selectedGarmentKey
+          : assignmentPendingGarments[0]?.garmentKey ?? null;
+    setAssignModalGarmentKey(targetKey);
+    setAssignModalError(null);
+    setAssignModalOpen(true);
+  };
+  useEffect(() => {
+    if (!hasUnassignedGarments && assignModalOpen) {
+      setAssignModalOpen(false);
+      setAssignModalError(null);
+      setAssignModalNewPersonName("");
+    }
+  }, [hasUnassignedGarments, assignModalOpen]);
+  const handleAssignToExistingPerson = (wearerId: string) => {
+    const targetGarment = activeModalGarment;
+    if (!targetGarment) return;
+    const remainingAfter = assignmentPendingGarments.filter(
+      (garment) => garment.garmentKey !== targetGarment.garmentKey,
+    );
+    setAssignModalError(null);
+    if (onAssignUnassignedGarment) {
+      onAssignUnassignedGarment(targetGarment.garmentKey, wearerId);
+    } else {
+      setLocalAssignedByGarmentKey((current) => ({
+        ...current,
+        [targetGarment.garmentKey]: wearerId,
+      }));
+      onSelectWearer?.(wearerId);
+      const nextState = state.route
+        ? { ...state, activeGarmentKey: targetGarment.garmentKey }
+        : {
+            ...setFutureMeasurementRoute(state, "medium_risk"),
+            activeGarmentKey: targetGarment.garmentKey,
+          };
+      if (!state.route) {
+        onRouteChange("medium_risk");
+      }
+      onChange(nextState);
+    }
+    setAllowPendingChipSelection(false);
+    lastExternalGarmentKeyRef.current = targetGarment.garmentKey;
+    setPickedGarmentKey(targetGarment.garmentKey);
+    if (remainingAfter.length === 0) {
+      setAssignModalOpen(false);
+      setAssignModalNewPersonName("");
+    } else {
+      setAssignModalGarmentKey(remainingAfter[0]?.garmentKey ?? null);
+    }
+  };
+  const handleAddNewPersonAndAssign = () => {
+    const targetGarment = activeModalGarment;
+    if (!targetGarment) return;
+    const trimmedName = assignModalNewPersonName.trim().slice(0, 40).trim();
+    if (!trimmedName) {
+      setAssignModalError("Enter a name or nickname to add a new person.");
+      return;
+    }
+    const remainingAfter = assignmentPendingGarments.filter(
+      (garment) => garment.garmentKey !== targetGarment.garmentKey,
+    );
+    setAssignModalError(null);
+    setAssignModalNewPersonName("");
+    if (onAddPersonAndAssignGarment) {
+      onAddPersonAndAssignGarment(trimmedName, targetGarment.garmentKey);
+    } else {
+      const newWearerId = `wearer-added-${localAddedWearers.length + 1}`;
+      setLocalAddedWearers((current) => [
+        ...current,
+        { wearerId: newWearerId, label: trimmedName },
+      ]);
+      setLocalAssignedByGarmentKey((current) => ({
+        ...current,
+        [targetGarment.garmentKey]: newWearerId,
+      }));
+      onSelectWearer?.(newWearerId);
+      const nextState = state.route
+        ? { ...state, activeGarmentKey: targetGarment.garmentKey }
+        : {
+            ...setFutureMeasurementRoute(state, "medium_risk"),
+            activeGarmentKey: targetGarment.garmentKey,
+          };
+      if (!state.route) {
+        onRouteChange("medium_risk");
+      }
+      onChange(nextState);
+    }
+    setAllowPendingChipSelection(false);
+    lastExternalGarmentKeyRef.current = targetGarment.garmentKey;
+    setPickedGarmentKey(targetGarment.garmentKey);
+    if (remainingAfter.length === 0) {
+      setAssignModalOpen(false);
+    } else {
+      setAssignModalGarmentKey(remainingAfter[0]?.garmentKey ?? null);
+    }
+  };
   const projectionNextKey = chipProjection.nextIncompleteGarmentKey;
   const projectionNextChip = projectionNextKey
     ? chipByGarmentKey.get(projectionNextKey) || null
@@ -944,6 +1107,9 @@ export const DormantFutureMeasurementStep = ({
     setPickedGarmentKey(garmentKey);
     if (state.activeGarmentKey !== garmentKey) {
       onChange({ ...state, activeGarmentKey: garmentKey });
+    }
+    if (kind === "assignment") {
+      openAssignModal(garmentKey);
     }
   };
   const handleFieldFocus = (fieldKey: string) => {
@@ -1274,8 +1440,12 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToTryOn,
             locked: !canContinueToTryOn,
-            onLockedClick: () =>
-              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
+            onLockedClick: () => {
+              if (hasUnassignedGarments) {
+                openAssignModal();
+              }
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options");
+            },
             ariaLabel: "Continue to AI Try-on",
           }}
         />
@@ -1353,9 +1523,21 @@ export const DormantFutureMeasurementStep = ({
                   ))}
                 </div>
               ) : (
-                <p className="text-sm leading-relaxed font-medium text-heritage-ink/80">
-                  No garments assigned to {activeWearerLabel} yet.
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm leading-relaxed font-medium text-heritage-ink/80">
+                    No garments assigned to {activeWearerLabel} yet.
+                  </p>
+                  {hasUnassignedGarments && (
+                    <button
+                      type="button"
+                      data-measurement-empty-wearer-assign-trigger="true"
+                      onClick={() => openAssignModal()}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-gold/45 bg-heritage-gold/10 px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                    >
+                      Assign in order to continue
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1447,6 +1629,12 @@ export const DormantFutureMeasurementStep = ({
                       if (hydrationInvalid || unavailable) return;
                       onRouteChange(route.id);
                       requestGuideCue("form");
+                      if (
+                        hasUnassignedGarments &&
+                        (selectedGarmentUnassigned || measurableGarmentKeys.size === 0)
+                      ) {
+                        openAssignModal();
+                      }
                     }}
                     className="mt-1 size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                   />
@@ -1524,6 +1712,12 @@ export const DormantFutureMeasurementStep = ({
                   if (hydrationInvalid) return;
                   onRouteChange(MEASUREMENT_SAMPLE_CLOTH_METHOD);
                   requestGuideCue("form");
+                  if (
+                    hasUnassignedGarments &&
+                    (selectedGarmentUnassigned || measurableGarmentKeys.size === 0)
+                  ) {
+                    openAssignModal();
+                  }
                 }}
                 className="mt-1 size-4 shrink-0 accent-heritage-green"
               />
@@ -1633,6 +1827,14 @@ export const DormantFutureMeasurementStep = ({
         data-measurement-guide-beam={
           guideCueTarget === "form" && guideCuePhase === "beam" ? "true" : undefined
         }
+        onClick={() => {
+          if (
+            hasUnassignedGarments &&
+            (selectedGarmentUnassigned || measurableGarmentKeys.size === 0)
+          ) {
+            openAssignModal();
+          }
+        }}
         className={withMeasurementGuideBeam(
           `scroll-mt-24 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 outline-none transition sm:p-5${
             guideCueTarget === "form" && guideCuePhase === "flash" ? ` ${MEASUREMENT_GUIDE_FLASH_CLASS}` : ""
@@ -1656,6 +1858,21 @@ export const DormantFutureMeasurementStep = ({
             {completedManualInputCount} / {requiredUnitCount} saved
           </div>
         </div>
+        {hasUnassignedGarments && (
+          <div className="mt-4">
+            <button
+              type="button"
+              data-measurement-status-assign-trigger="true"
+              onClick={(event) => {
+                event.stopPropagation?.();
+                openAssignModal();
+              }}
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Assign in order to continue
+            </button>
+          </div>
+        )}
         {showGoToNextWearer && nextIncompleteWearer && onGoToWearer && (
           <div className="mt-4">
             <button
@@ -1830,10 +2047,14 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       {selectedGarmentUnassigned && (
-        <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5">
+        <section
+          data-measurement-unassigned-banner="true"
+          onClick={() => openAssignModal(selectedGarmentKey)}
+          className="cursor-pointer rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 transition hover:border-heritage-gold/60 sm:p-5"
+        >
           <div className="flex min-w-0 items-start gap-3">
             <ShieldAlert aria-hidden="true" size={19} className="mt-0.5 shrink-0 text-heritage-gold" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h3 className="font-serif text-lg font-bold text-heritage-green">
                 Assign this garment to a person
               </h3>
@@ -1841,9 +2062,22 @@ export const DormantFutureMeasurementStep = ({
                 Assign {selectedGarmentLabel} above before its measurements can unlock Summary.
                 You can keep measuring other assigned garments.
               </p>
-              <p className="mt-2 inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
-                {selectedGarmentLabel}
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <p className="inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
+                  {selectedGarmentLabel}
+                </p>
+                <button
+                  type="button"
+                  data-measurement-assign-unassigned-trigger="true"
+                  onClick={(event) => {
+                    event.stopPropagation?.();
+                    openAssignModal(selectedGarmentKey);
+                  }}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green bg-heritage-green px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  Assign in order to continue
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1938,6 +2172,197 @@ export const DormantFutureMeasurementStep = ({
         </>
       )}
 
+      {assignModalOpen && hasUnassignedGarments && activeModalGarment && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/40 p-3 sm:items-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="step5-unassigned-garment-dialog-title"
+          aria-describedby="step5-unassigned-garment-dialog-description"
+          data-testid="step5-unassigned-garment-assignment-dialog"
+        >
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-heritage-gold/40 bg-white p-5 shadow-xl sm:p-7">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-heritage-gold/15 text-heritage-green">
+                  <Users size={20} aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-heritage-bronze">
+                    Garment Assignment Required
+                  </p>
+                  <h3
+                    id="step5-unassigned-garment-dialog-title"
+                    className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
+                  >
+                    Assign in order to continue
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close assignment dialog"
+                data-measurement-assign-modal-close="true"
+                onClick={() => {
+                  setAssignModalOpen(false);
+                  setAssignModalError(null);
+                }}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-heritage-green/15 text-heritage-ink/65 transition hover:border-heritage-green/35 hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <p
+              id="step5-unassigned-garment-dialog-description"
+              className="mt-3 text-sm leading-relaxed text-heritage-ink/80"
+            >
+              Every garment must be assigned to a person before you can enter its
+              measurements or continue to AI Try-on.
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/55 p-4">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-bronze">
+                {assignmentPendingGarments.length === 1
+                  ? "1 garment still needs assignment"
+                  : `${assignmentPendingGarments.length} garments still need assignment`}
+              </p>
+              <div
+                className="mt-2.5 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Unassigned garments"
+              >
+                {assignmentPendingGarments.map((garment) => {
+                  const isTarget =
+                    garment.garmentKey === activeModalGarment.garmentKey;
+                  const label = resolveDisplayGarmentLabel(
+                    garment.garmentType,
+                    garment.garmentKey,
+                  );
+                  return (
+                    <button
+                      key={garment.garmentKey}
+                      type="button"
+                      aria-pressed={isTarget}
+                      data-measurement-assign-modal-garment={garment.garmentKey}
+                      onClick={() => {
+                        setAssignModalGarmentKey(garment.garmentKey);
+                        setAssignModalError(null);
+                      }}
+                      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                        isTarget
+                          ? "border-heritage-green bg-heritage-green text-white shadow-sm"
+                          : "border-heritage-gold/40 bg-white text-heritage-green hover:border-heritage-green/50"
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
+                          isTarget
+                            ? "bg-white/20 text-white"
+                            : "bg-heritage-gold/15 text-heritage-bronze"
+                        }`}
+                      >
+                        Unassigned
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-heritage-green/15 bg-white p-4">
+                <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-green">
+                  Assign{" "}
+                  <span className="underline decoration-heritage-gold/60 underline-offset-2">
+                    {resolveDisplayGarmentLabel(
+                      activeModalGarment.garmentType,
+                      activeModalGarment.garmentKey,
+                    )}
+                  </span>{" "}
+                  to an existing person
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/75">
+                  Select a person below to assign this garment and open their
+                  measurements.
+                </p>
+                <div
+                  className="mt-3 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Assign to an existing person"
+                >
+                  {effectiveWearerChips.map((chip) => (
+                    <button
+                      key={chip.wearerId}
+                      type="button"
+                      data-measurement-assign-modal-wearer={chip.wearerId}
+                      onClick={() => handleAssignToExistingPerson(chip.wearerId)}
+                      className="inline-flex min-h-10 items-center justify-center rounded-xl border border-heritage-green/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                    >
+                      Assign to {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-heritage-green/15 bg-white p-4">
+                <div className="flex items-center gap-2">
+                  <UserPlus
+                    size={16}
+                    aria-hidden="true"
+                    className="shrink-0 text-heritage-bronze"
+                  />
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-green">
+                    Or add a new person
+                  </p>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/75">
+                  Enter a name or nickname to create a new person and assign{" "}
+                  {resolveDisplayGarmentLabel(
+                    activeModalGarment.garmentType,
+                    activeModalGarment.garmentKey,
+                  )}{" "}
+                  to them.
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    maxLength={40}
+                    aria-label="New person name or nickname"
+                    placeholder="e.g., Ada, Chidi, Partner"
+                    data-measurement-assign-modal-new-person-input="true"
+                    value={assignModalNewPersonName}
+                    onChange={(event) => {
+                      setAssignModalNewPersonName(event.target.value);
+                      if (assignModalError) setAssignModalError(null);
+                    }}
+                    className="min-h-11 flex-1 rounded-xl border border-heritage-green/25 bg-white px-3.5 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+                  />
+                  <button
+                    type="button"
+                    data-measurement-assign-modal-add-person-button="true"
+                    onClick={handleAddNewPersonAndAssign}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  >
+                    Add person & assign
+                  </button>
+                </div>
+                {assignModalError && (
+                  <p
+                    role="alert"
+                    data-measurement-assign-modal-error="true"
+                    className="mt-2 text-xs font-semibold text-red-700"
+                  >
+                    {assignModalError}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           slot="footer"
@@ -1959,8 +2384,12 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToTryOn,
             locked: !canContinueToTryOn,
-            onLockedClick: () =>
-              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
+            onLockedClick: () => {
+              if (hasUnassignedGarments) {
+                openAssignModal();
+              }
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options");
+            },
             ariaLabel: "Continue to AI Try-on",
             "aria-describedby": "measurement-risk-selection-notice",
           }}
