@@ -33,6 +33,7 @@ import {
   getCustomDetailGroupsForFabricGarmentType,
   getStyleBaseCustomDetailGroups,
 } from "../config/StyleFabricCapacityConfig.js";
+import { canonicalSleeveConstructionLabel } from "./sleeveConstruction.js";
 import {
   getCanonicalShortsPriceCents,
   resolveGarmentPolicyDemographic,
@@ -369,7 +370,7 @@ const normalizeCatalogOption = (
 
   return {
     id: merged.id.trim(),
-    label: merged.label.trim(),
+    label: canonicalSleeveConstructionLabel(merged.id.trim(), merged.label.trim()),
     description: merged.description.trim(),
     garmentGroup: merged.garmentGroup as CustomDetailGarmentGroup,
     selectionGroup: merged.selectionGroup as CustomDetailSelectionGroup,

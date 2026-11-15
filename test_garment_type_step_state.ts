@@ -133,8 +133,8 @@ assert.equal(
   repairedLongDressDraft?.status === "resolved"
     ? repairedLongDressDraft.components[0].optionId
     : null,
-  "dress_long_midlong",
-  "A valid saved Long Dress construction outranks the canonical Sleeveless default.",
+  "dress_long_long",
+  "A saved Long Dress Mid-to-Long Sleeve choice resolves to Long Sleeve and outranks the canonical Sleeveless default.",
 );
 assert.equal(
   repairedLongDressDraft?.status === "resolved"

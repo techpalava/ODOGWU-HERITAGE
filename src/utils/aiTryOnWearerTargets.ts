@@ -26,6 +26,7 @@ import {
   aiTryOnOutfitPreviewKey,
   aiTryOnOutfitFingerprint,
   aiTryOnOutfitVisualSources,
+  aiTryOnPreviewFingerprintMatchesDesign,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   type AiTryOnOutfitVisualSource,
   type AiTryOnOccurrenceDesignSource,
@@ -72,6 +73,10 @@ export interface AiTryOnPreviewableGarment {
   readonly fabricSwatchImageUrl: string | null;
   /** Fabric colour chip when there is no swatch picture. */
   readonly fabricColorHex: string | null;
+  /** Admin flagged this catalogue style's photo as showing a wearer. */
+  readonly styleShowsWearer?: boolean;
+  /** Catalogue style audience, used only to pre-select a studio model. */
+  readonly styleGender?: string | null;
   /**
    * Prompt details for this garment alone. A Generate sends these, never
    * the wearer's other garments.
@@ -135,6 +140,8 @@ export interface AiTryOnTargetOccurrence {
   readonly assignment: AiTryOnOccurrenceDesignSource["assignment"];
   readonly assignmentImage?: string | null;
   readonly uploadedDesignPreviewUrl?: string | null;
+  readonly styleShowsWearer?: boolean;
+  readonly styleGender?: string | null;
 }
 
 export interface BuildAiTryOnWearerTargetsInput
@@ -238,6 +245,8 @@ const buildTarget = ({
       garmentImageUrl: imageUrl,
       fabricSwatchImageUrl: garmentSwatchUrl,
       fabricColorHex: fabricColorHex(garmentFabric?.colorHex),
+      ...(occurrence.styleShowsWearer === true ? { styleShowsWearer: true } : {}),
+      ...(occurrence.styleGender ? { styleGender: occurrence.styleGender } : {}),
       orderDetails: orderDetailsForOccurrence(
         occurrence,
         garmentSwatchUrl ? garmentSwatchCode : null,
@@ -475,7 +484,10 @@ export const aiTryOnOutfitPairFor = (target: AiTryOnWearerTarget, fingerprint: s
   fingerprint ? target.outfitPairs?.find((pair) => pair.inputFingerprint === fingerprint) ?? null : null;
 /** A preview made with `fingerprint` still shows this target's current design. */
 export const aiTryOnPreviewFingerprintIsCurrent = (target: AiTryOnWearerTarget, fingerprint: string | null | undefined): boolean =>
-  Boolean(fingerprint) && (target.inputFingerprint === fingerprint || Boolean(aiTryOnOutfitPairFor(target, fingerprint)));
+  Boolean(fingerprint) && (
+    aiTryOnPreviewFingerprintMatchesDesign(target.inputFingerprint, fingerprint) ||
+    Boolean(aiTryOnOutfitPairFor(target, fingerprint))
+  );
 /** The target can judge a preview at all (design ready). */
 export const aiTryOnTargetHasDesign = (target: AiTryOnWearerTarget): boolean =>
   Boolean(target.inputFingerprint || target.outfitPairs?.length);

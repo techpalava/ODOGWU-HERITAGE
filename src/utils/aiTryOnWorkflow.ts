@@ -17,6 +17,7 @@ import {
   AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION,
   AI_TRY_ON_OUTFIT_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
+  AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION,
   type AiTryOnGenerationRequest,
 } from "./aiTryOnGatewayContract.js";
 import { DESIGN_STUDIO_STAGE_IDS } from "./designSourceJourney.js";
@@ -811,6 +812,99 @@ export const aiTryOnOutfitVisualSources = (): readonly AiTryOnOutfitVisualSource
  * another garment, the pair, or the model makes an older outfit result out
  * of date. `source` is allowlisted; it never contains a photo or a secret.
  */
+/**
+ * Who a single-garment preview was pictured on. No photo bytes, names, or
+ * measurements. `style_photo` is the catalogue style photograph.
+ */
+export type AiTryOnWearerSource =
+  | { readonly kind: "customer_photo" }
+  | { readonly kind: "studio_model"; readonly modelId: string }
+  | { readonly kind: "style_photo" };
+
+export const aiTryOnWearerSource = (
+  source: AiTryOnWearerSource | null | undefined,
+): AiTryOnWearerSource | null => {
+  if (!source) return null;
+  if (source.kind === "customer_photo") return { kind: "customer_photo" };
+  if (source.kind === "style_photo") return { kind: "style_photo" };
+  if (source.kind === "studio_model") {
+    const model = findAiTryOnDefaultModel(source.modelId);
+    return model ? { kind: "studio_model", modelId: model.id } : null;
+  }
+  return null;
+};
+
+/** Every wearer source a stored preview of this design may have used. */
+export const aiTryOnWearerSources = (): readonly AiTryOnWearerSource[] => [
+  { kind: "customer_photo" },
+  { kind: "style_photo" },
+  ...AI_TRY_ON_DEFAULT_MODELS.map(
+    (model): AiTryOnWearerSource => ({ kind: "studio_model", modelId: model.id }),
+  ),
+];
+
+/**
+ * Preview fingerprint for one design plus the wearer source. Switching
+ * wearer (photo, studio model, or style photo) changes it. The design
+ * fingerprint itself is unchanged, so older callers stay stable.
+ */
+export const aiTryOnWearerPreviewFingerprint = (
+  designFingerprint: string | null | undefined,
+  source: AiTryOnWearerSource | null | undefined,
+): string | null => {
+  const wearerSource = aiTryOnWearerSource(source);
+  if (!designFingerprint || !wearerSource) return null;
+  return hashVisualIdentity({
+    designFingerprint,
+    wearerSource,
+    ...(wearerSource.kind === "style_photo"
+      ? { stylePhotoPromptVersion: AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION }
+      : {}),
+  });
+};
+
+/**
+ * A stored preview still belongs to this design. Wearer-source fingerprints
+ * and the older design-only fingerprint both count, so Summary can keep a
+ * paid preview when the try-on step's selected wearer changes.
+ */
+export const aiTryOnPreviewFingerprintMatchesDesign = (
+  designFingerprint: string | null | undefined,
+  fingerprint: string | null | undefined,
+): boolean => {
+  if (!designFingerprint || !fingerprint) return false;
+  if (fingerprint === designFingerprint) return true;
+  return aiTryOnWearerSources().some(
+    (source) => aiTryOnWearerPreviewFingerprint(designFingerprint, source) === fingerprint,
+  );
+};
+
+/**
+ * The preview was made for this wearer source. A design-only fingerprint
+ * from before wearer source was recorded still matches a customer photo
+ * with no model id, or the studio model id stored on that preview.
+ */
+export const aiTryOnPreviewMatchesWearerSource = ({
+  designFingerprint,
+  fingerprint,
+  source,
+  storedModelId = null,
+}: {
+  designFingerprint: string | null | undefined;
+  fingerprint: string | null | undefined;
+  source: AiTryOnWearerSource | null | undefined;
+  storedModelId?: string | null;
+}): boolean => {
+  const wearerSource = aiTryOnWearerSource(source);
+  const expected = aiTryOnWearerPreviewFingerprint(designFingerprint, wearerSource);
+  if (!fingerprint || !expected || !wearerSource) return false;
+  if (fingerprint === expected) return true;
+  if (fingerprint !== designFingerprint) return false;
+  if (wearerSource.kind === "style_photo") return false;
+  if (wearerSource.kind === "studio_model") return storedModelId === wearerSource.modelId;
+  return storedModelId == null || storedModelId === "";
+};
+
 export const aiTryOnOutfitFingerprint = (
   top: { garmentKey: string; inputFingerprint?: string | null },
   bottom: { garmentKey: string; inputFingerprint?: string | null },

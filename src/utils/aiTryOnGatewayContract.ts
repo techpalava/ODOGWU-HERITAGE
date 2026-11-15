@@ -50,7 +50,10 @@ export type AiTryOnMode = "garment" | "fabric";
  * lock and coverage stay.
  */
 // v9: explicit order construction wins over reference photos.
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v9" as const;
+// v10: custom-details sleeve (Sleeveless, Short, Mid, Long) and Neck Design
+// are applied exactly, and front placket buttons plus long-sleeve wrist
+// cuffs stay with the design-style reference.
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v10" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -66,7 +69,8 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v9" as const;
  * differs from image 2. Swatch lock and studio-model coverage stay.
  */
 // v6: share photo v9 construction priority and Standard Shirt type lock.
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v6" as const;
+// v7: share photo v10 sleeve, Neck Design, placket, and long-sleeve cuff rules.
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v7" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
@@ -88,7 +92,16 @@ export interface AiTryOnInlineImage {
 
 export const AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION = "tryon-uploaded-design-prompt-v1" as const;
 
-export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v1" as const;
+/**
+ * Style-photo mode keeps the person, pose, cut and background in the
+ * catalogue style photograph and changes only the fabric. Separate from the
+ * photo and model prompt versions so those fingerprints stay put.
+ */
+export const AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION = "tryon-style-photo-prompt-v1" as const;
+
+// v2: each garment applies its custom-details sleeve and Neck Design, and
+// keeps front placket buttons and long-sleeve wrist cuffs from its design reference.
+export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v2" as const;
 
 export interface AiTryOnOutfitGarmentRequest {
   readonly garmentKey: string;
@@ -281,4 +294,32 @@ export const AI_TRY_ON_ACCOUNT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 export const AI_TRY_ON_MAX_IMAGE_BYTES = 1_400_000;
 export const AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES = 3_000_000;
 
-export type AiTryOnGenerationRequest = AiTryOnPhotoGenerationRequest | AiTryOnOutfitGenerationRequest | AiTryOnUploadedDesignGenerationRequest;
+/**
+ * The catalogue style photograph is the wearer. The browser sends no photo
+ * bytes: the server loads the style image it already uses as the garment
+ * reference, and the fabric swatch. No customer measurements or order text.
+ */
+export interface AiTryOnStylePhotoGenerationRequest {
+  readonly mode: "fabric";
+  readonly inputFingerprint: string;
+  readonly wearerKey?: string;
+  readonly wearerSource: "style_photo";
+  readonly garmentImageUrl: string;
+  readonly fabricSwatchImageUrl: string;
+  readonly busyJobId?: string;
+  readonly personImage?: never;
+  readonly defaultModelId?: never;
+  readonly fitHints?: never;
+  readonly orderDetails?: never;
+  readonly uploadedDesignImage?: never;
+  readonly uploadedGarmentType?: never;
+  readonly outfitGarments?: never;
+  readonly garmentImage?: never;
+  readonly fabricSwatchImage?: never;
+}
+
+export type AiTryOnGenerationRequest =
+  | AiTryOnPhotoGenerationRequest
+  | AiTryOnOutfitGenerationRequest
+  | AiTryOnUploadedDesignGenerationRequest
+  | AiTryOnStylePhotoGenerationRequest;
