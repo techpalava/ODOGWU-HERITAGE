@@ -1,7 +1,8 @@
 /**
- * Step 4 length switch: Standard and Long garments of one family (Shirt, Dress, Skirt) offer the
- * Main Garment options of both lengths, and picking the other length switches the garment type
- * in the order while the garment keeps its key (and everything stored against it).
+ * Step 4 length switch: Standard and Long garments of Shirt and Skirt offer the Main Garment options
+ * of both lengths, and picking the other length switches the garment type in the order while the
+ * garment keeps its key (and everything stored against it). Dresses are locked to the length chosen
+ * in Step 1 and only offer that length's sleeve options.
  */
 import assert from "node:assert/strict";
 import { createElement, useState } from "react";
@@ -228,7 +229,7 @@ const mainGarmentInputs = (
       node.props.id.startsWith(`future-custom-detail-${parentGarmentKey}-${selectionGroup}-`),
   );
 
-// --- 1. Every Standard and Long garment shows both lengths in Step 4 (Layout B). -------------
+// --- 1. Shirts and skirts show both lengths in Step 4 (Layout B). Dresses are locked to the Step 1 length. ---
 for (const garmentType of [
   "shirt",
   "kaftan",
@@ -243,21 +244,57 @@ for (const garmentType of [
   const lengthGroups = renderer.root.findAll(
     (node) => node.type === "div" && typeof node.props["data-construction-length-group"] === "string",
   );
-  assert.deepEqual(
-    lengthGroups.map((node) => textContent(node.children[0] as ReactTestInstance)),
-    ["Standard Length", "Long Length"],
-    `${garmentType}: Main Garment options are grouped Standard Length then Long Length`,
-  );
   const optionIds = mainGarmentInputs(renderer, `base:${garmentType}`, selectionGroup).map(
     (node) => String(node.props.id).replace(`future-custom-detail-base:${garmentType}-${selectionGroup}-`, ""),
   );
   const lengths = new Set(optionIds.map((id) => getOptionGarmentLength(selectionGroup as never, id)));
-  assert.deepEqual([...lengths].sort(), ["long", "standard"], `${garmentType} offers both lengths`);
+  if (garmentType === "dress" || garmentType === "full_length_gown") {
+    // Step 4 never offers the other length of a dress: no Standard/Long Length selector at all.
+    assert.equal(lengthGroups.length, 0, `${garmentType}: no Standard/Long Length selector in Step 4`);
+    assert.deepEqual(
+      [...lengths],
+      [garmentType === "dress" ? "standard" : "long"],
+      `${garmentType}: only the Step 1 length is offered`,
+    );
+    assert.equal(optionIds.length, 3, `${garmentType}: three sleeve options remain`);
+    assert.doesNotMatch(
+      textContent(renderer.root),
+      garmentType === "dress" ? /Long Length/ : /Standard Length/,
+      `${garmentType}: the other length is not shown anywhere in Step 4`,
+    );
+  } else {
+    assert.deepEqual(
+      lengthGroups.map((node) => textContent(node.children[0] as ReactTestInstance)),
+      ["Standard Length", "Long Length"],
+      `${garmentType}: Main Garment options are grouped Standard Length then Long Length`,
+    );
+    assert.deepEqual([...lengths].sort(), ["long", "standard"], `${garmentType} offers both lengths`);
+  }
   assert.equal(
     mainGarmentInputs(renderer, `base:${garmentType}`, selectionGroup).every((node) => !node.props.disabled),
     true,
     `${garmentType}: nothing is locked when the order holds one length`,
   );
+}
+
+// A dress still shows Sleeve options, neck design and pockets: only the length selector is gone.
+for (const garmentType of ["dress", "full_length_gown"] as const) {
+  const renderer = renderCustomDetails({ selection: step1([garmentType], "female") });
+  const groups = renderer.root
+    .findAll((node) => typeof node.props["data-custom-detail-group"] === "string")
+    .map((node) => node.props["data-custom-detail-group"]);
+  assert.ok(groups.includes("dress_construction"), `${garmentType}: sleeve options group remains`);
+  assert.ok(groups.includes("neck_design"), `${garmentType}: neck design remains`);
+  assert.ok(groups.includes("dress_pockets"), `${garmentType}: pockets remain`);
+}
+
+// A saved draft that already holds the other dress length keeps showing that length (never hidden).
+{
+  const savedLong = switched(step1(["dress"], "female"), "dress", "dress_construction", "dress_long_midlong");
+  const renderer = renderCustomDetails({ selection: savedLong });
+  const optionIds = mainGarmentInputs(renderer, "base:dress", "dress_construction").map((node) => node);
+  assert.equal(optionIds.length, 3, "saved Long Length choice on a Standard Dress card still renders its options");
+  assert.equal(optionIds.some((node) => node.props.checked), true, "the saved option stays selected");
 }
 
 // Option prices and text are the catalogue's, unchanged.

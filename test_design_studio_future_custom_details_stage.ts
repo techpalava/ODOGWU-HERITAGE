@@ -1497,17 +1497,22 @@ assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Slee
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Short Sleeve/);
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Mid Sleeve/);
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Long Sleeve/);
-assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
-// Step 4 length switch: every dress offers both lengths' Main Garment options.
-assert.match(textContent(standardDressOwnedConstruction), /Long Length, Sleeveless/);
+assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Mid \\(3-Quarter\\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
+// Step 4 length lock: a dress only offers the options of the length picked in Step 1.
+assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Long Length/);
+assert.doesNotMatch(textContent(standardDressOwnedConstruction), /dress_long_/);
+assert.equal(standardDressOwnedConstruction.findAllByType("input").length, 4, "Standard Dress offers its four Standard Length options");
 assert.match(textContent(longDressOwnedBlock), /Long Dress/);
 assert.match(textContent(longDressOwnedConstruction), /Main Garment/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Sleeveless \/ Over Shoulder/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Short Sleeve/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Mid Sleeve/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Long Sleeve/);
-assert.doesNotMatch(textContent(longDressOwnedConstruction), /Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
-assert.match(textContent(longDressOwnedConstruction), /Standard Length, Sleeveless/);
+assert.doesNotMatch(textContent(longDressOwnedConstruction), /Mid \\(3-Quarter\\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
+assert.doesNotMatch(textContent(longDressOwnedConstruction), /Standard Length/);
+assert.equal(longDressOwnedConstruction.findAllByType("input").length, 4, "Long Dress offers its four Long Length options");
+assert.equal(standardDressOwnedConstruction.findAllByProps({ "data-construction-length-group": "dress_std_" }).length, 0, "no Standard/Long Length sub-headings for Standard Dress");
+assert.equal(longDressOwnedConstruction.findAllByProps({ "data-construction-length-group": "dress_long_" }).length, 0, "no Standard/Long Length sub-headings for Long Dress");
 assert.equal(
   optionInOccurrenceGroup(
     standardDressOwnedConstruction,
@@ -2402,12 +2407,12 @@ assert.deepEqual(
 const standardDressConstruction = assertOccurrenceOwnedGroup({
   block: standardDressBlock,
   selectionGroup: "dress_construction",
-  controlIdPrefix: "future-custom-detail-base:dress-dress_construction-dress_", // both lengths (Step 4 length switch)
+  controlIdPrefix: "future-custom-detail-base:dress-dress_construction-dress_std_", // locked to the Step 1 length (Standard)
 });
 const longDressConstruction = assertOccurrenceOwnedGroup({
   block: longDressBlock,
   selectionGroup: "dress_construction",
-  controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_construction-dress_", // both lengths (Step 4 length switch)
+  controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_construction-dress_long_", // locked to the Step 1 length (Long)
 });
 const standardDressPockets = assertOccurrenceOwnedGroup({
   block: standardDressBlock,
@@ -2422,9 +2427,9 @@ const longDressPockets = assertOccurrenceOwnedGroup({
 assert.match(textContent(standardDressConstruction), /Main Garment/);
 assert.match(textContent(longDressConstruction), /Main Garment/);
 assert.match(textContent(standardDressConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
-assert.match(textContent(standardDressConstruction), /Long Length/); // Step 4 length switch: both lengths offered
+assert.doesNotMatch(textContent(standardDressConstruction), /Long Length/); // Step 4 length lock: only the Step 1 length is offered
 assert.match(textContent(longDressConstruction), /Long Length, Short Sleeve/);
-assert.match(textContent(longDressConstruction), /Standard Length/); // Step 4 length switch: both lengths offered
+assert.doesNotMatch(textContent(longDressConstruction), /Standard Length/); // Step 4 length lock: only the Step 1 length is offered
 assert.match(textContent(standardDressPockets), /Pocket for Standard Dress/);
 assert.match(textContent(longDressPockets), /Pocket for Long Dress/);
 assert.doesNotMatch(textContent(standardDressPockets), /Long Dress/);

@@ -122,6 +122,7 @@ const stripGarmentFromMeasurement = (
     ),
     invalidInputKeys: state.invalidInputKeys.filter((key) => !keyMatches(key)),
     ...(invalidInputKeysByRoute ? { invalidInputKeysByRoute } : {}),
+    ...(state.activeGarmentKey === garmentKey ? { activeGarmentKey: undefined } : {}),
   };
 };
 
@@ -573,6 +574,118 @@ export const assignGarmentToWearer = ({
       [garmentKey]: wearerId,
     },
   });
+};
+
+export type AddPersonAndAssignGarmentResult =
+  | {
+      readonly status: "updated";
+      readonly order: WearerOrderStateV2;
+      readonly wearerId: string;
+    }
+  | {
+      readonly status: "blocked";
+      readonly code: string;
+      readonly order: WearerOrderStateV2;
+    };
+
+export const addPersonAndAssignGarment = ({
+  order,
+  garments,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+  displayName,
+  garmentKey,
+  defaultRoute = null,
+}: {
+  order: WearerOrderStateV2;
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  displayName: string;
+  garmentKey: string;
+  defaultRoute?: MeasurementMethodId | null;
+}): AddPersonAndAssignGarmentResult => {
+  const name = canonicalWearerDisplayName(displayName);
+  if (!name) {
+    return { status: "blocked", code: "EMPTY_DISPLAY_NAME", order };
+  }
+  const garment = garments.find((candidate) => candidate.garmentKey === garmentKey);
+  if (!garment) {
+    return { status: "blocked", code: "GARMENT_NOT_FOUND", order };
+  }
+  const cap = resolveActiveWearerCap(garments.length);
+  const sortedWearers = sortWearers(order.wearers);
+  const unnamedEmptyAdditionalWearer = sortedWearers.find(
+    (wearer) =>
+      wearer.presentationOrder > 0 &&
+      wearer.displayName.trim() === "" &&
+      !wearerOwnsGarment(order, wearer.wearerId),
+  );
+  const capReachedEmptyWearer =
+    order.wearers.length >= cap
+      ? sortedWearers.find((wearer) => !wearerOwnsGarment(order, wearer.wearerId))
+      : undefined;
+  const reusableWearer = unnamedEmptyAdditionalWearer ?? capReachedEmptyWearer;
+
+  let baseOrder = order;
+  let targetWearerId: string;
+
+  if (reusableWearer) {
+    targetWearerId = reusableWearer.wearerId;
+    baseOrder = {
+      ...order,
+      wearers: order.wearers.map((wearer) =>
+        wearer.wearerId === targetWearerId
+          ? { ...wearer, displayName: name }
+          : wearer,
+      ),
+    };
+  } else {
+    const newWearer = createWearerProfile({
+      displayName: name,
+      fitContext: null,
+      presentationOrder: order.wearers.length,
+    });
+    targetWearerId = newWearer.wearerId;
+    baseOrder = {
+      ...order,
+      wearers: sortWearers([...order.wearers, newWearer]),
+    };
+  }
+
+  const assigned = assignGarmentToWearer({
+    order: baseOrder,
+    garmentKey,
+    wearerId: targetWearerId,
+    garment,
+    garmentTypeSelection,
+    additionalGarmentConstructions,
+  });
+  if (assigned.status !== "updated") {
+    return assigned;
+  }
+
+  const withTargetMeasurement: WearerOrderStateV2 = {
+    ...assigned.order,
+    wearers: assigned.order.wearers.map((wearer) =>
+      wearer.wearerId === targetWearerId
+        ? {
+            ...wearer,
+            measurement: {
+              ...wearer.measurement,
+              route: wearer.measurement.route ?? defaultRoute ?? null,
+              activeGarmentKey: garmentKey,
+            },
+          }
+        : wearer,
+    ),
+  };
+
+  return {
+    status: "updated",
+    order: withTargetMeasurement,
+    wearerId: targetWearerId,
+  };
 };
 
 export const removeGarmentFromWearerOrder = (
