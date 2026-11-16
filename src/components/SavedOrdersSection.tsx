@@ -1,5 +1,6 @@
 import { Bookmark, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { formatSavedNikkaDisplayText } from "../utils/optionalShortsPresentation";
 import {
   formatSavedStudioOrderDate,
   getSavedStudioOrderStageTitle,
@@ -90,10 +91,10 @@ export const SavedOrdersSection = ({
               ) : (
                 <>
                   <h5 className="font-serif text-sm font-bold text-heritage-green">
-                    {item.name}
+                    {formatSavedNikkaDisplayText(item.name)}
                   </h5>
                   <p className="text-[10px] font-medium leading-relaxed text-heritage-ink/70">
-                    {item.garmentSummary || "Saved order"}
+                    {formatSavedNikkaDisplayText(item.garmentSummary || "Saved order")}
                   </p>
                   <p className="text-[10px] font-medium text-heritage-ink/70">
                     Saved at {getSavedStudioOrderStageTitle(item.savedStage)}

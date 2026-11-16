@@ -37,6 +37,10 @@ import {
 } from "../utils/decorativePricing";
 import { inspectCartItemFabricAllocations } from "../utils/fabricAllocationPersistence";
 import {
+  formatCustomDetailsGarmentLabel,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
+import {
   getCartFabricQuantity,
   getCartGarmentAssignmentPresentation,
   getCartDesignDemographicLabel,
@@ -402,10 +406,10 @@ export function CartDrawer() {
                           Unfinished
                         </span>
                         <h4 className="mt-1.5 font-serif text-xs font-bold text-heritage-green">
-                          {item.name}
+                          {formatSavedNikkaDisplayText(item.name)}
                         </h4>
                         <p className="mt-0.5 text-[10px] font-semibold text-heritage-ink/70">
-                          {item.garmentSummary || "Saved order"}
+                          {formatSavedNikkaDisplayText(item.garmentSummary || "Saved order")}
                         </p>
                         <p className="text-[10px] font-medium text-heritage-ink/70">
                           {getSavedStudioOrderStageTitle(item.savedStage)} ·{" "}
@@ -569,7 +573,7 @@ export function CartDrawer() {
                                   );
                                   return (
                                     <p key={garment.garmentKey}>
-                                      {garment.label} - <strong>{garment.role}</strong>
+                                      {formatCustomDetailsGarmentLabel(garment.label)} - <strong>{garment.role}</strong>
                                       {fabricSelection
                                         ? ` - ${fabricSelection.fabricName} (${fabricSelection.fabricCode})`
                                         : ""}

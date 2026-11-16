@@ -124,7 +124,7 @@ export const STEP_1_GARMENT_DISPLAY_LABELS: Readonly<
   trouser: "Trouser",
   skirt: "Standard Skirt",
   long_skirt: "Long Skirt",
-  standard_shorts: "Standard Nikka Shorts",
+  standard_shorts: "Standard Knicker Shorts",
   bum_shorts: "Standard Bum Shorts",
   dress: "Standard Dress",
   kaftan: "Long Shirt",

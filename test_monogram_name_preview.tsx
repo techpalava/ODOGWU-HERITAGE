@@ -128,7 +128,7 @@ assert.equal(getDefaultMonogramPlacementForGarmentType("shirt"), "left_chest");
 assert.equal(getDefaultMonogramPlacementForGarmentType("kaftan"), "left_chest");
 assert.equal(getDefaultMonogramPlacementForGarmentType("dress"), "left_chest");
 assert.equal(STEP_1_GARMENT_DISPLAY_LABELS.trouser, "Trouser");
-assert.equal(STEP_1_GARMENT_DISPLAY_LABELS.standard_shorts, "Standard Nikka Shorts");
+assert.equal(STEP_1_GARMENT_DISPLAY_LABELS.standard_shorts, "Standard Knicker Shorts");
 
 const dotState = (node: ReactTestInstance, placement: MonogramPlacement) =>
   node.findByProps({ "data-monogram-placement-dot": placement }).props[

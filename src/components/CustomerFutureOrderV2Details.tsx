@@ -41,6 +41,10 @@ import {
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
 import {
+  formatCustomDetailsGarmentLabel,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
+import {
   formatPersonalizedPriceEuros,
   PERSONALIZED_BASE_PAYMENT_NOTICE,
   personalizedAdditionCustomerStatusLabel,
@@ -414,7 +418,9 @@ export const CustomerFutureOrderV2Details = ({
                         />
                       </div>
                     ) : null}
-                    <p className="font-serif font-bold text-heritage-green">{garment.label}</p>
+                    <p className="font-serif font-bold text-heritage-green">
+                      {formatCustomDetailsGarmentLabel(garment.label)}
+                    </p>
                     <p className="text-xs">Style: {styleByGarmentKey.get(garment.garmentKey) || "Not recorded"}</p>
                     {fabricAllocations.map((allocation) => (
                       <p key={allocation.allocationId} className="text-xs">
@@ -426,7 +432,7 @@ export const CustomerFutureOrderV2Details = ({
                       <ul className="mt-1 space-y-0.5 text-xs">
                         {customDetails.map((detail) => (
                           <li key={detail.occurrenceKey}>
-                            {detail.selectionGroupTitle}: {detail.optionLabel}
+                            {formatSavedNikkaDisplayText(detail.selectionGroupTitle)}: {detail.optionLabel}
                             {detail.personalizedText ? ` "${detail.personalizedText}"` : ""}
                           </li>
                         ))}
