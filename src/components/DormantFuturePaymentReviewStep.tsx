@@ -59,6 +59,10 @@ import {
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
+  formatCustomDetailsGarmentLabel,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
+import {
   PERSONALIZED_BASE_PAYMENT_NOTICE,
   readFutureOrderV2ChargeableCents,
 } from "../utils/futureOrderV2PersonalizedPrice";
@@ -356,7 +360,7 @@ const GarmentReview = ({
                     data-garment-removal-row-heading={garment.garmentKey}
                     className="min-w-0 break-words font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                   >
-                    {garment.label}
+                    {formatCustomDetailsGarmentLabel(garment.label)}
                   </h4>
                   <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
                     {garment.role}
@@ -443,7 +447,7 @@ const GarmentReview = ({
                   )}
                 </div>
                 <EditButton
-                  label={`Edit ${garment.label} fabric`}
+                  label={`Edit ${formatCustomDetailsGarmentLabel(garment.label)} fabric`}
                   onClick={() => onEditStage("fabric")}
                 />
               </div>
@@ -455,7 +459,7 @@ const GarmentReview = ({
                   Custom Details
                 </p>
                 <EditButton
-                  label={`Edit ${garment.label} Custom Details`}
+                  label={`Edit ${formatCustomDetailsGarmentLabel(garment.label)} Custom Details`}
                   onClick={() => onEditStage("custom_details")}
                 />
               </div>
@@ -481,7 +485,7 @@ const GarmentReview = ({
                             {detail.optionLabel}
                           </p>
                           <p className="mt-0.5 break-words text-xs text-heritage-ink/55">
-                            {detail.selectionGroupTitle}
+                            {formatSavedNikkaDisplayText(detail.selectionGroupTitle)}
                           </p>
                         </div>
                         <span className="min-w-0 max-w-full break-words text-right font-mono text-sm font-bold text-heritage-green">
@@ -572,7 +576,7 @@ const RetainedGarmentReview = ({
                   data-garment-removal-row-heading={garment.garmentKey}
                   className="min-w-0 break-words font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
-                  {garment.label}
+                  {formatCustomDetailsGarmentLabel(garment.label)}
                 </h4>
                 <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
                   {garment.role}
@@ -942,7 +946,7 @@ export const DormantFuturePaymentReviewStep = ({
                   >
                     <div className="min-w-0">
                       <p className="break-words text-sm font-bold text-heritage-green">
-                        {snapshot.occurrence.label}
+                        {formatCustomDetailsGarmentLabel(snapshot.occurrence.label)}
                       </p>
                       <p className="break-words text-xs text-heritage-ink/60">
                         {snapshot.sourceKind === "catalogue"
@@ -1031,8 +1035,10 @@ export const DormantFuturePaymentReviewStep = ({
                   <p className="mt-2 break-words text-xs text-heritage-ink/65">
                     Assigned to: {allocation.garmentAssignments.map(
                       (assignment) =>
-                        garmentLabelByKey.get(assignment.garmentKey) ||
-                        "Garment",
+                        formatCustomDetailsGarmentLabel(
+                          garmentLabelByKey.get(assignment.garmentKey) ||
+                            "Garment",
+                        ),
                     ).join(", ")}
                   </p>
                   <dl className="mt-3 space-y-2 text-sm">

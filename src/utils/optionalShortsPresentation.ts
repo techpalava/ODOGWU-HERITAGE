@@ -1,5 +1,5 @@
 import type { CustomDetailParentSectionId } from "../config/GarmentDetailsConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
 import type { FabricGarmentType } from "../types";
 import type { AllowedAdditionalGarment } from "./additionalGarmentDomain";
 
@@ -11,19 +11,32 @@ export type InlineOptionalShortsGarmentType = Extract<
 export const INLINE_OPTIONAL_SHORTS_LABELS: Readonly<
   Record<InlineOptionalShortsGarmentType, string>
 > = {
-  standard_shorts: "Standard Nikka Shorts",
+  standard_shorts: "Standard Knicker Shorts",
   bum_shorts: "Standard Bum Shorts",
 };
 
 /** Customer-visible garment labels, preserving repeated-occurrence numbers. */
 export const formatCustomDetailsGarmentLabel = (label: string): string => {
-  const match = /^(Nikka \/ Standard Shorts|Bum Shorts)( \d+)?$/.exec(label);
+  const match =
+    /^(Knicker \/ Standard Shorts|Nikka \/ Standard Shorts|Standard Nikka Shorts|Nikka|Bum Shorts)( \d+)?$/.exec(
+      label,
+    );
   if (match) {
     const garmentType = match[1] === "Bum Shorts" ? "bum_shorts" : "standard_shorts";
     return `${INLINE_OPTIONAL_SHORTS_LABELS[garmentType]}${match[2] || ""}`;
   }
   return label;
 };
+
+/** Normalizes legacy saved "Nikka" strings inside summaries and saved order text. */
+export const formatSavedNikkaDisplayText = (text: string): string =>
+  text
+    .replace(/\bNikka\s*\/\s*Standard Shorts\b/g, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/\bKnicker\s*\/\s*Standard Shorts\b/g, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/\bStandard Nikka Shorts\b/g, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/\bNikka\/Standard Shorts Fastening\b/g, "Knicker/Standard Shorts Fastening")
+    .replace(/\bNikka Pockets\b/g, "Knicker Pockets")
+    .replace(/\bNikka\b/g, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts);
 
 export const getCustomDetailsGarmentLabel = (garmentType: FabricGarmentType): string =>
   formatCustomDetailsGarmentLabel(getFabricGarmentLabel(garmentType));

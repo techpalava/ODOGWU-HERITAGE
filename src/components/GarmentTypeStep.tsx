@@ -79,7 +79,7 @@ export const STEP1_AUDIENCE_GUIDE_BEAM_CLASS =
   "motion-safe:animate-step1-audience-beam motion-reduce:animate-none";
 
 export const STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS =
-  "mt-2.5 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2 active:scale-[0.97]";
+  "mt-auto inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2 active:scale-[0.97]";
 
 export const Step1GarmentReferencePhoto = ({
   src,
@@ -559,7 +559,7 @@ export const GarmentTypeStep = ({
                       toggleGarment(category.garmentType);
                     }
                   }}
-                  className={`flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-md ${
+                  className={`flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-md ${
                     category.selected
                       ? "border-heritage-green shadow-sm ring-2 ring-heritage-green/25"
                       : "border-heritage-gold/20 bg-white"
@@ -604,35 +604,37 @@ export const GarmentTypeStep = ({
                           : "bg-white"
                     }`}
                   >
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
-                      <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
-                        {category.label}
-                      </h3>
-                      {isResolved && (
-                        <p className="shrink-0 font-mono text-sm font-bold text-heritage-green">
-                          {formatGarmentTypeStepEuro(price.totalPrice)}
+                    <div className="mb-2.5 min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                        <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
+                          {category.label}
+                        </h3>
+                        {isResolved && (
+                          <p className="shrink-0 font-mono text-sm font-bold text-heritage-green">
+                            {formatGarmentTypeStepEuro(price.totalPrice)}
+                          </p>
+                        )}
+                      </div>
+                      <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
+                        {category.fabricCapacityUsage}
+                      </p>
+                      {category.selected && lengthSwitchNotes[category.garmentType] && (
+                        <p
+                          data-garment-type-length-switch-note={category.garmentType}
+                          className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
+                        >
+                          {lengthSwitchNotes[category.garmentType]}
+                        </p>
+                      )}
+                      {category.selected && !isResolved && (
+                        <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
+                          <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
+                          <span className="min-w-0 break-words">
+                            Construction pricing needs review.
+                          </span>
                         </p>
                       )}
                     </div>
-                    <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
-                      {category.fabricCapacityUsage}
-                    </p>
-                    {category.selected && lengthSwitchNotes[category.garmentType] && (
-                      <p
-                        data-garment-type-length-switch-note={category.garmentType}
-                        className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
-                      >
-                        {lengthSwitchNotes[category.garmentType]}
-                      </p>
-                    )}
-                    {category.selected && !isResolved && (
-                      <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
-                        <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
-                        <span className="min-w-0 break-words">
-                          Construction pricing needs review.
-                        </span>
-                      </p>
-                    )}
                     <button
                       id={buttonId}
                       type="button"

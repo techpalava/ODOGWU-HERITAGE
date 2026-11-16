@@ -71,7 +71,7 @@ export function getFabricGarmentLabel(
   switch (garmentType) {
     case "trouser": return "Trouser";
     case "long_skirt": return "Long Skirt";
-    case "standard_shorts": return "Nikka / Standard Shorts";
+    case "standard_shorts": return "Knicker / Standard Shorts";
     case "bum_shorts": return "Bum Shorts";
     case "agbada": return "Agbada";
     case "other": return "Other Garment";

@@ -123,8 +123,16 @@ for (const [garmentType, expected] of Object.entries(EXPECTED)) {
 assert.equal(getFabricGarmentLabel("trouser"), "Trouser");
 assert.equal(getFabricGarmentLabel("long_skirt"), "Long Skirt");
 assert.equal(getFabricGarmentLabel("agbada"), "Agbada");
-assert.equal(getCustomDetailsGarmentLabel("standard_shorts"), "Standard Nikka Shorts");
+assert.equal(getCustomDetailsGarmentLabel("standard_shorts"), "Standard Knicker Shorts");
 assert.equal(getCustomDetailsGarmentLabel("bum_shorts"), "Standard Bum Shorts");
+assert.equal(getStep1GarmentDisplayLabel("standard_shorts"), "Standard Knicker Shorts");
+assert.equal(getFabricGarmentLabel("standard_shorts"), "Knicker / Standard Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts"), "Standard Knicker Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Nikka / Standard Shorts"), "Standard Knicker Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Knicker / Standard Shorts"), "Standard Knicker Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Nikka"), "Standard Knicker Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Nikka 2"), "Standard Knicker Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts 2"), "Standard Knicker Shorts 2");
 
 // 2. Numbered duplicates keep their ordinal after the prefixed name.
 const occurrenceLabels = projectOccurrenceDisplayLabels([

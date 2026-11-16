@@ -36,7 +36,7 @@ const expectedGarmentLabels = [
   "Long Shirt",
   "Standard Dress",
   "Long Dress",
-  "Standard Nikka Shorts",
+  "Standard Knicker Shorts",
   "Standard Bum Shorts",
   "Trouser",
   "Standard Skirt",
