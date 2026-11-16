@@ -9,6 +9,7 @@ import {
   classifyHomepageDraftEntry,
   createHomepageDraftReplacementService,
   executeHomepageDraftReplacementDiscard,
+  executeHomepageDraftReplacementRecoveryDiscard,
   type HomepageGuestDraftAuthority,
 } from "./src/services/homepageDraftReplacement";
 import {
@@ -894,9 +895,83 @@ const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8")
 assert.match(appSource, /inspect: GuestOrderSessionService\.inspectFutureDesignDraft/);
 assert.match(appSource, /onAuthStateChanged\(auth/);
 assert.match(appSource, /executeHomepageDraftReplacementDiscard\(/);
+assert.match(appSource, /executeHomepageDraftReplacementRecoveryDiscard\(/);
 assert.match(appSource, /homepageDraftDecisionGenerationRef/);
 assert.match(appSource, /homepageCurrentBatchesRef\.current/);
 assert.match(studioSource, /resolvePersistedDraftHydrationContext\(/);
 assert.match(studioSource, /futureDraftPersistenceStatus !== "ready"/);
+
+// Unmigrated pre-future legacy GuestOrderSession drafts without the future marker
+// must inspect as empty (matching loadFutureDraftWithMigration) rather than invalid.
+const preFutureStorage = new MemoryStorage();
+const preFutureRepo = createDesignStudioDraftRepository({
+  storage: preFutureStorage,
+  legacy: {
+    load: () => ({ currentStep: 2 } as unknown as GuestDesignDraft),
+    inspect: () => ({
+      status: "valid",
+      draft: { currentStep: 2 } as unknown as GuestDesignDraft,
+      fingerprint: "legacy-pre-future",
+    }),
+  },
+  normalizeDraft: (value) => value,
+  legacySourceVersion: "test",
+});
+assert.deepEqual(preFutureRepo.inspectFutureDraftForHomepage(), { status: "empty" });
+
+// Unrecoverable guest and blocked/invalid cloud drafts can be explicitly cleared
+// via discardUnrecoverable and executeHomepageDraftReplacementRecoveryDiscard.
+const corruptGuestStorage = new MemoryStorage();
+corruptGuestStorage.setItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE, "{not-json");
+const corruptGuestRepo = createDesignStudioDraftRepository({
+  storage: corruptGuestStorage,
+  legacy: { load: () => null },
+  normalizeDraft: (value) => value,
+  legacySourceVersion: "test",
+});
+const corruptCloudAdapter = new AccountMemoryAdapter();
+corruptCloudAdapter.values.set("owner-a", {
+  schemaVersion: 1,
+  lifecycleStatus: "active",
+  revision: 3,
+  createdAt: "2026-09-10T10:00:00.000Z",
+  updatedAt: "2026-09-10T10:00:00.000Z",
+  draft: {
+    ...avatarsDraft(),
+    uploadedDesignOwnershipTransition: { status: "transfer_required" },
+  },
+});
+const corruptSession = { ownerUid: "owner-a", epoch: 1 };
+const corruptService = createRacingAuthenticatedService({
+  adapter: corruptCloudAdapter,
+  session: corruptSession,
+  guestAuthority: {
+    inspect: corruptGuestRepo.inspectFutureDraftForHomepage,
+    clear: () => corruptGuestRepo.clearFutureDraftV1(),
+    inspectionSession: {
+      authEpoch: 1,
+      storageKind: "guest",
+      ownerKey: "guest",
+      isCurrent: () => true,
+    },
+  },
+});
+assert.equal((await corruptService.inspect()).status, "unavailable");
+const recoveredBatch = await executeHomepageDraftReplacementRecoveryDiscard({
+  authority: corruptService,
+  isOperationCurrent: () => true,
+  getCurrentTarget: currentTarget,
+});
+assert.equal(recoveredBatch.status, "discarded");
+assert.deepEqual(await corruptService.inspect(), { status: "empty" });
+assert.equal(
+  (corruptCloudAdapter.values.get("owner-a") as { lifecycleStatus?: string; revision?: number })
+    .lifecycleStatus,
+  "cleared",
+);
+assert.equal(
+  (corruptCloudAdapter.values.get("owner-a") as { revision?: number }).revision,
+  4,
+);
 
 console.log("PASS: homepage draft replacement persistence safety");
