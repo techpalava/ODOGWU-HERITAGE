@@ -14,12 +14,14 @@ import {
   AI_TRY_ON_MODEL_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
   type AiTryOnMode,
+  type AiTryOnTopTuckPreference,
 } from "../utils/aiTryOnGatewayContract.js";
 import {
   AI_TRY_ON_GARMENT_LABELS,
   AI_TRY_ON_MONOGRAM_PLACEMENT_LABELS,
   AI_TRY_ON_ORDER_FIELD_ORDER,
   AI_TRY_ON_VISIBLE_OPTIONS,
+  aiTryOnOrderHasWaistbandShowcase,
   type AiTryOnOrderDetails,
 } from "../utils/aiTryOnOrderDetails.js";
 
@@ -51,7 +53,52 @@ const KEEP_PERSON =
  * names: a Long Shirt order stays a Long Shirt.
  */
 const ORDERED_TYPE =
-  "When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
+  "When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
+
+const buildSingleTopTuckInstruction = (
+  orderDetails: AiTryOnOrderDetails | null | undefined,
+  topTuckPreference: AiTryOnTopTuckPreference = "auto",
+): string => {
+  const types = orderDetails?.garments.map((garment) => garment.garmentType) ?? [];
+  if (types.includes("shirt")) {
+    if (topTuckPreference === "tucked") {
+      return "Top styling: tuck the Standard Shirt cleanly into the waistband of the trousers or shorts all the way around.";
+    }
+    return "Top styling: wear the Standard Shirt completely untucked, draping naturally outside and over the waistband of trousers or shorts. Never tuck the shirt in, even if a reference photo shows a tucked-in shirt.";
+  }
+  if (types.includes("kaftan")) {
+    return "Top styling: wear the Long Shirt completely untucked, draping naturally outside over trousers or shorts. Never tuck it in.";
+  }
+  if (types.length === 0) {
+    if (topTuckPreference === "tucked") {
+      return "Top styling: if the ordered garment is a Standard Shirt, tuck it cleanly into the waistband of the trousers or shorts all the way around.";
+    }
+    if (topTuckPreference === "untucked") {
+      return "Top styling: if the ordered garment is a shirt or top, wear it completely untucked outside and over the waistband, never tucked in.";
+    }
+  }
+  return "";
+};
+
+const buildOutfitTopTuckInstruction = (
+  top: AiTryOnOutfitGarmentRequest,
+  bottom: AiTryOnOutfitGarmentRequest,
+  topTuckPreference: AiTryOnTopTuckPreference = "auto",
+): string => {
+  if (top.garmentType !== "shirt") {
+    return "Top styling: wear the Long Shirt completely untucked, draping naturally outside and over the waistband of the bottom garment. Never tuck it in.";
+  }
+  if (topTuckPreference === "tucked") {
+    return "Top styling: tuck the Standard Shirt cleanly into the waistband of the bottom garment all the way around so the full waistband, fastening and any belt loops are clearly visible.";
+  }
+  if (topTuckPreference === "untucked") {
+    return "Top styling: wear the Standard Shirt completely untucked, hanging naturally outside and over the waistband of the bottom garment down to its shirt hem. Never tuck the shirt in, even if the bottom reference photo shows a tucked-in shirt or belt loops/drawstring.";
+  }
+  if (aiTryOnOrderHasWaistbandShowcase(bottom.orderDetails)) {
+    return "Top styling: style the Standard Shirt with a relaxed front-tuck (French tuck), lightly tucking only the center front hem into the waistband so the bottom's belt loops or drawstring fastening remain clearly visible, while leaving the sides and back of the shirt hanging naturally untucked.";
+  }
+  return "Top styling: wear the Standard Shirt completely untucked, hanging naturally outside and over the waistband of the bottom garment down to its shirt hem. Never tuck the shirt in, even if either reference photo shows a tucked-in shirt.";
+};
 
 const COPY_ONLY_ORDERED =
   "Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.";
@@ -271,14 +318,17 @@ export const buildAiTryOnPrompt = ({
   mode,
   fitHints,
   orderDetails,
+  topTuckPreference = "auto",
 }: {
   mode: AiTryOnMode;
   fitHints?: readonly AiTryOnFitHint[] | null;
   orderDetails?: AiTryOnOrderDetails | null;
+  topTuckPreference?: AiTryOnTopTuckPreference;
 }): string => {
   const lines = mode === "fabric" ? FABRIC_MODE_LINES : GARMENT_MODE_LINES;
   return [
     lines.join("\n"),
+    buildSingleTopTuckInstruction(orderDetails, topTuckPreference),
     buildAiTryOnOrderDetailsBlock({ mode, orderDetails }),
     buildAiTryOnFitBlock(fitHints),
   ]
@@ -376,14 +426,17 @@ export const buildAiTryOnModelPrompt = ({
   mode,
   orderDetails,
   baseLength = "long",
+  topTuckPreference = "auto",
 }: {
   mode: AiTryOnMode;
   orderDetails?: AiTryOnOrderDetails | null;
   /** Short when image 1 is a bum-shorts or short-knickers studio base. */
   baseLength?: AiTryOnModelLengthCategory | null;
+  topTuckPreference?: AiTryOnTopTuckPreference;
 }): string =>
   [
     withShortStudioBase(mode === "fabric" ? MODEL_FABRIC_MODE_LINES : MODEL_GARMENT_MODE_LINES, baseLength).join("\n"),
+    buildSingleTopTuckInstruction(orderDetails, topTuckPreference),
     buildAiTryOnOrderDetailsBlock({ mode, orderDetails }),
   ]
     .filter(Boolean)
@@ -431,7 +484,19 @@ export const buildAiTryOnOutfitImageLabels = (garments: readonly AiTryOnOutfitGa
   }
   return labels;
 };
-export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [], baseLength = null }: { garments: readonly AiTryOnOutfitGarmentRequest[]; onModel: boolean; fitHints?: readonly AiTryOnFitHint[]; baseLength?: AiTryOnModelLengthCategory | null }): string => {
+export const buildAiTryOnOutfitPrompt = ({
+  garments,
+  onModel,
+  fitHints = [],
+  baseLength = null,
+  topTuckPreference = "auto",
+}: {
+  garments: readonly AiTryOnOutfitGarmentRequest[];
+  onModel: boolean;
+  fitHints?: readonly AiTryOnFitHint[];
+  baseLength?: AiTryOnModelLengthCategory | null;
+  topTuckPreference?: AiTryOnTopTuckPreference;
+}): string => {
   let image = 2;
   const blocks = garments.map((garment, index) => {
     const design = image++;
@@ -443,6 +508,10 @@ export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [], bas
       buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: garment.orderDetails, designImage: design }),
     ].filter(Boolean).join("\n");
   });
+  const topTuckInstruction =
+    garments.length >= 2
+      ? buildOutfitTopTuckInstruction(garments[0], garments[1], topTuckPreference)
+      : "";
   return [
     AI_TRY_ON_OUTFIT_PROMPT_VERSION,
     "Create one full-outfit photo: exactly the explicitly chosen top and bottom together on the one person from image 1. Do not add unchosen order garments, duplicate garments, make a collage or split panels.",
@@ -451,6 +520,7 @@ export const buildAiTryOnOutfitPrompt = ({ garments, onModel, fitHints = [], bas
     "People in every garment reference are stand-ins only. Never copy their identity, face, body, pose or background; never return a reference photo.",
     ORDERED_TYPE,
     "Replace the top and bottom clothing regions on image 1 with the two chosen garments; keep the person's body shape, shoes and background. Do not reshape the body. Each garment keeps its own design and its own fabric.",
+    topTuckInstruction,
     ...blocks,
     REALISM,
     onModel ? "" : buildAiTryOnFitBlock(fitHints),

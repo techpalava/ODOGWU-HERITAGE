@@ -496,6 +496,9 @@ export const readAiTryOnPreviewGalleryState = (
         if (scoped !== undefined) {
           return normalizeOrMigrateAiTryOnGalleryState(scoped);
         }
+        if (safeScope === "resolving" && parsed.byScope["guest"] !== undefined) {
+          return normalizeOrMigrateAiTryOnGalleryState(parsed.byScope["guest"]);
+        }
       }
       // Backward compatibility: top-level single preview or unscoped gallery
       const migrated = normalizeOrMigrateAiTryOnGalleryState(parsed);
@@ -511,7 +514,9 @@ export const readAiTryOnPreviewGalleryState = (
       const scopedCandidate =
         isRecord(parsedLegacy) && isRecord(parsedLegacy[safeScope])
           ? parsedLegacy[safeScope]
-          : parsedLegacy;
+          : safeScope === "resolving" && isRecord(parsedLegacy) && isRecord(parsedLegacy["guest"])
+            ? parsedLegacy["guest"]
+            : parsedLegacy;
       const migrated = normalizeOrMigrateAiTryOnGalleryState(scopedCandidate);
       if (migrated.items.length > 0) {
         saveAiTryOnPreviewGalleryState(safeScope, migrated, store);
@@ -532,6 +537,7 @@ export const saveAiTryOnPreviewGalleryState = (
 ): void => {
   if (!store) return;
   const safeScope = scope || "default";
+  if (safeScope === "resolving") return;
   try {
     let envelope: { schemaVersion: 1; byScope: Record<string, AiTryOnPreviewGalleryState> } = {
       schemaVersion: 1,

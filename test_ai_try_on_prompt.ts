@@ -45,7 +45,7 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment.
 Edit image 1 so this same customer wears only the ordered garment from image 2.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
@@ -59,7 +59,7 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment'
 Edit image 1 so this same customer wears only the ordered garment from image 2, made only from the fabric in image 3.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
@@ -100,7 +100,7 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v10": createHash("sha256")
+  "tryon-prompt-v11": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -113,7 +113,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v10");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v11");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -170,9 +170,9 @@ for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
 }
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
-// v9 adds explicit construction priority while keeping the prompt bounded.
-assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 490, "garment prompt stays short");
-assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 620, "fabric prompt stays short");
+// v11 adds untucked-by-default shirt rule while keeping the prompt bounded.
+assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 505, "garment prompt stays short");
+assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 635, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
   8,
@@ -189,7 +189,7 @@ assert.match(
   readFileSync("src/server/aiTryOnHttp.ts", "utf8"),
   /const promptVersion = parsed\.stylePhoto \? AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION : parsed\.uploadedDesign \? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed\.outfitGarments \? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel \? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;/,
 );
-assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /\n {4}promptVersion,\n {4}\.\.\.\(defaultModel/);
+assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /\r?\n {4}promptVersion,\r?\n {4}\.\.\.\(defaultModel/);
 
 // ---------------------------------------------------------------- mode choice
 
@@ -334,7 +334,7 @@ assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built
 assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: null }), "");
 assert.equal(
   buildAiTryOnPrompt({ mode: "fabric", orderDetails: built, fitHints: shuffledHints }),
-  `${FABRIC_SNAPSHOT}\n\n${ORDER_BLOCK_FABRIC}\n\n${FIT_SNAPSHOT}`,
+  `${FABRIC_SNAPSHOT}\n\nTop styling: wear the Standard Shirt completely untucked, draping naturally outside and over the waistband of trousers or shorts. Never tuck the shirt in, even if a reference photo shows a tucked-in shirt.\n\n${ORDER_BLOCK_FABRIC}\n\n${FIT_SNAPSHOT}`,
 );
 const many: AiTryOnOrderDetails = {
   garments: Array.from({ length: 4 }, () => ({
@@ -485,7 +485,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v10": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v11": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
@@ -614,5 +614,107 @@ const longModelFingerprint = aiTryOnOutfitFingerprint(
 );
 assert.ok(shortModelFingerprint && longModelFingerprint);
 assert.notEqual(shortModelFingerprint, longModelFingerprint, "the outfit fingerprint follows the short or long studio model id");
+
+// Top tuck styling rules across single garment & outfit prompts
+const shirtDetails: AiTryOnOrderDetails = {
+  garments: [{ garmentType: "shirt", optionIds: ["shirt_std_short", "neck_flat_collar"], decorations: [] }],
+};
+const shortsWithBelt: AiTryOnOrderDetails = {
+  garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_belt"], decorations: [] }],
+};
+const shortsElasticOnly: AiTryOnOrderDetails = {
+  garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_elastic"], decorations: [] }],
+};
+for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+  assert.match(
+    builder({ mode: "garment", orderDetails: shirtDetails }),
+    /wear the Standard Shirt completely untucked, draping naturally outside and over the waistband/,
+  );
+  assert.match(
+    builder({ mode: "garment", orderDetails: shirtDetails, topTuckPreference: "untucked" }),
+    /wear the Standard Shirt completely untucked, draping naturally outside and over the waistband/,
+  );
+  assert.match(
+    builder({ mode: "garment", orderDetails: shirtDetails, topTuckPreference: "tucked" }),
+    /tuck the Standard Shirt cleanly into the waistband of the trousers or shorts all the way around/,
+  );
+  assert.equal(
+    builder({ mode: "garment", orderDetails: shortsWithBelt }).includes("Top styling:"),
+    false,
+    "bottom-only preview does not inject top tucking rule",
+  );
+}
+// Outfit: Option A fallback when auto vs explicit untucked / tucked
+const beltAutoOutfit = buildAiTryOnOutfitPrompt({
+  onModel: false,
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+    { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsWithBelt },
+  ],
+});
+assert.match(beltAutoOutfit, /relaxed front-tuck \(French tuck\)/);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "untucked",
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsWithBelt },
+    ],
+  }),
+  /wear the Standard Shirt completely untucked/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "tucked",
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsElasticOnly },
+    ],
+  }),
+  /tuck the Standard Shirt cleanly into the waistband of the bottom garment all the way around/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsElasticOnly },
+    ],
+  }),
+  /wear the Standard Shirt completely untucked/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "tucked",
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/kaftan" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+    ],
+  }),
+  /wear the Long Shirt completely untucked/,
+);
+assert.equal(
+  parseAiTryOnGenerationRequest({
+    mode: "garment",
+    inputFingerprint: "tryon-v1-0123456789abcdef",
+    defaultModelId: "male-1-light",
+    garmentImageUrl: "https://example.test/shirt.jpg",
+    topTuckPreference: "tucked",
+  }).ok,
+  true,
+);
+assert.equal(
+  parseAiTryOnGenerationRequest({
+    mode: "garment",
+    inputFingerprint: "tryon-v1-0123456789abcdef",
+    defaultModelId: "male-1-light",
+    garmentImageUrl: "https://example.test/shirt.jpg",
+    topTuckPreference: "bogus",
+  }).ok,
+  false,
+);
 
 console.log(`PASS: AI Try-on prompt ${AI_TRY_ON_PROMPT_VERSION} snapshots, determinism, budget, mode choice, per-wearer hints`);

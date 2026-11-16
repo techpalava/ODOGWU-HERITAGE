@@ -53,7 +53,8 @@ export type AiTryOnMode = "garment" | "fabric";
 // v10: custom-details sleeve (Sleeveless, Short, Mid, Long) and Neck Design
 // are applied exactly, and front placket buttons plus long-sleeve wrist
 // cuffs stay with the design-style reference.
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v10" as const;
+// v11: top tuck styling (untucked by default; optional tucked/untucked override).
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v11" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -72,7 +73,8 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v10" as const;
 // v7: share photo v10 sleeve, Neck Design, placket, and long-sleeve cuff rules.
 // v8: a short studio base (bum shorts or short knickers) is replaced by the
 // ordered skirt, shorts or dress. Lower legs stay bare. No trouser legs.
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v8" as const;
+// v9: share photo v11 top tuck styling rules.
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v9" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
@@ -103,7 +105,12 @@ export const AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION = "tryon-style-photo-prompt-v1
 
 // v2: each garment applies its custom-details sleeve and Neck Design, and
 // keeps front placket buttons and long-sleeve wrist cuffs from its design reference.
-export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v2" as const;
+// v3: top tuck styling (auto front-tuck when bottom has belt holder / rope;
+// untucked otherwise, or explicit untucked / tucked override).
+export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v3" as const;
+
+export const AI_TRY_ON_TOP_TUCK_PREFERENCES = ["auto", "untucked", "tucked"] as const;
+export type AiTryOnTopTuckPreference = (typeof AI_TRY_ON_TOP_TUCK_PREFERENCES)[number];
 
 export interface AiTryOnOutfitGarmentRequest {
   readonly garmentKey: string;
@@ -139,6 +146,8 @@ export interface AiTryOnPhotoGenerationRequest {
   readonly fitHints?: readonly AiTryOnFitHint[];
   /** Visible order details (ids/enums only); rendered server-side. */
   readonly orderDetails?: AiTryOnOrderDetails | null;
+  /** Top styling preference for Standard Shirt (omitted or 'auto' uses smart fallback). */
+  readonly topTuckPreference?: AiTryOnTopTuckPreference;
   /**
    * Retry of a busy (over-capacity) try: the id from the PROVIDER_BUSY
    * answer. The held try is reused, so nothing is charged again.
@@ -257,7 +266,7 @@ export interface AiTryOnGenerationSuccess {
 
 /** Uploaded Step 3 photo is the base; no customer photo, studio model or catalogue garment. */
 type AiTryOnUploadedDesignGenerationRequest = (
-  Omit<AiTryOnPhotoGenerationRequest, "mode" | "uploadedDesignImage" | "uploadedGarmentType" | "personImage" | "defaultModelId" | "garmentImage" | "garmentImageUrl" | "fitHints" | "orderDetails"> & {
+  Omit<AiTryOnPhotoGenerationRequest, "mode" | "uploadedDesignImage" | "uploadedGarmentType" | "personImage" | "defaultModelId" | "garmentImage" | "garmentImageUrl" | "fitHints" | "orderDetails" | "topTuckPreference"> & {
     readonly mode: "fabric";
     readonly uploadedDesignImage: AiTryOnInlineImage;
     readonly uploadedGarmentType: CanonicalPhysicalGarmentType;
@@ -267,6 +276,7 @@ type AiTryOnUploadedDesignGenerationRequest = (
     readonly garmentImageUrl?: never;
     readonly fitHints?: never;
     readonly orderDetails?: never;
+    readonly topTuckPreference?: never;
   }
 );
 
@@ -313,6 +323,7 @@ export interface AiTryOnStylePhotoGenerationRequest {
   readonly defaultModelId?: never;
   readonly fitHints?: never;
   readonly orderDetails?: never;
+  readonly topTuckPreference?: never;
   readonly uploadedDesignImage?: never;
   readonly uploadedGarmentType?: never;
   readonly outfitGarments?: never;

@@ -92,7 +92,7 @@ const fakeStorage = () => {
 }
 
 // ------------------------------------------------------------ wiring (static)
-const http = readFileSync("src/server/aiTryOnHttp.ts", "utf8");
+const http = readFileSync("src/server/aiTryOnHttp.ts", "utf8").replace(/\r\n/g, "\n");
 const cleanup = readFileSync("src/server/aiTryOnPaymentCleanup.ts", "utf8");
 const block = (source: string, start: string) => source.slice(source.indexOf(start), source.indexOf(";\n", source.indexOf(start)) + 2);
 assert.match(block(http, "const defaultPreviewStore"), /aiTryOnStorageBucket\(\)/, "preview store uses the dedicated bucket");

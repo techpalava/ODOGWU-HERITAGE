@@ -10,14 +10,21 @@ import {
 } from "../utils/aiTryOnWearerTargets";
 import {
   aiTryOnGarmentPreviewKey,
+  aiTryOnOutfitFingerprint,
   aiTryOnOutfitPreviewKey,
   aiTryOnPreviewFingerprintMatchesDesign,
   aiTryOnPreviewMatchesWearerSource,
   aiTryOnWearerPreviewFingerprint,
+  resolveAiTryOnTopTuckFromFingerprint,
   type AiTryOnOutfitVisualSource,
   type AiTryOnWearerSource,
 } from "../utils/aiTryOnWorkflow";
-import { AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW } from "../utils/aiTryOnGatewayContract";
+import {
+  AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
+  AI_TRY_ON_TOP_TUCK_PREFERENCES,
+  type AiTryOnTopTuckPreference,
+} from "../utils/aiTryOnGatewayContract";
+import { aiTryOnOrderHasWaistbandShowcase } from "../utils/aiTryOnOrderDetails";
 import { readOwnAiTryOnAdminStatus, resetOwnAiTryOnTries } from "../services/aiTryOnAdminReset";
 import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
@@ -687,6 +694,7 @@ export const AiTryOnPhotoPanel = ({
   const measurementControlled = onSessionMeasurementWearerIdChange !== undefined;
   const [uncontrolledMeasurementWearerId, setUncontrolledMeasurementWearerId] =
     useState<string>(initialWearerId);
+  const [topTuckByKey, setTopTuckByKey] = useState<Record<string, AiTryOnTopTuckPreference>>({});
   const storedMeasurementWearerId = measurementControlled
     ? sessionMeasurementWearerId
     : uncontrolledMeasurementWearerId;
@@ -756,11 +764,14 @@ export const AiTryOnPhotoPanel = ({
       : entry.wearerId === target.wearerId,
   ) ?? target : null;
   const currentPhoto = photo && target && photo.wearerId === target.wearerId ? photo : null;
-  const currentModel = target ? findAiTryOnDefaultModel(modelByWearer[target.wearerId]) : null;
+  const wearerChoice = target ? sourceByWearer[target.wearerId] : undefined;
+  const currentModel =
+    target && wearerChoice !== "customer_photo" && wearerChoice !== "cleared"
+      ? findAiTryOnDefaultModel(modelByWearer[target.wearerId])
+      : null;
   const outfitSlot = target ? aiTryOnOutfitTarget(target) : null;
   const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
   const outfitMode = Boolean(outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
-  const wearerChoice = target ? sourceByWearer[target.wearerId] : undefined;
   const stylePhotoOffered = Boolean(
     target &&
       !outfitMode &&
@@ -820,12 +831,39 @@ export const AiTryOnPhotoPanel = ({
       : wearerChoice === "customer_photo" || wearerChoice === "cleared"
         ? { kind: "customer_photo" }
         : { kind: "studio_model", modelId: defaultModelId };
+  const usingUploadedDesign = Boolean(
+    !outfitMode && (selectedPreview?.uploadedDesign || target?.uploadedDesign),
+  );
+  const singleDesignFingerprint = outfitMode ? null : singlePreviewTarget?.inputFingerprint ?? null;
+  const currentSlotKey = outfitMode
+    ? outfitSlot?.wearerId ?? ""
+    : singlePreviewTarget?.wearerId ?? "";
+  const topTuckEligible = outfitMode
+    ? selectedTop?.garmentType === "shirt"
+    : !stylePhotoActive && !usingUploadedDesign && singleGarmentType === "shirt";
+  const singleRememberedTuck =
+    !outfitMode && currentSlotKey
+      ? resolveAiTryOnTopTuckFromFingerprint({
+          designFingerprint: singleDesignFingerprint,
+          source: resolvedWearerSource,
+          fingerprint:
+            previews[currentSlotKey]?.inputFingerprint ??
+            stored[currentSlotKey]?.inputFingerprint,
+        })
+      : null;
+  const activeTopTuckPreference: AiTryOnTopTuckPreference =
+    topTuckEligible && currentSlotKey
+      ? topTuckByKey[currentSlotKey] ??
+        (outfitMode ? outfitShownPair?.topTuckPreference : singleRememberedTuck) ??
+        "auto"
+      : "auto";
   // Deep check M1: the outfit's fingerprint is the chosen pair's.
   const outfitTarget = target && outfitSlot
     ? aiTryOnOutfitTarget(
         target,
         selectedTop && selectedBottom ? { top: selectedTop, bottom: selectedBottom } : null,
         outfitVisualSource,
+        activeTopTuckPreference,
       )
     : null;
   const outfitRecordFingerprints = outfitSlot
@@ -897,15 +935,15 @@ export const AiTryOnPhotoPanel = ({
   const left = Math.min(triesRemaining ?? triesPerOrder, accountTriesRemaining ?? Infinity);
   const outOfPreviews: PanelMessage =
     accountTriesRemaining === 0 ? { kind: "account_out_of_previews" } : { kind: "out_of_previews" };
-  const singleDesignFingerprint = outfitMode ? null : singlePreviewTarget?.inputFingerprint ?? null;
-  const usingUploadedDesign = Boolean(
-    !outfitMode && (selectedPreview?.uploadedDesign || target?.uploadedDesign),
-  );
   const activeFingerprint = outfitMode
     ? previewTarget?.inputFingerprint ?? null
     : usingUploadedDesign
       ? singleDesignFingerprint
-      : aiTryOnWearerPreviewFingerprint(singleDesignFingerprint, resolvedWearerSource);
+      : aiTryOnWearerPreviewFingerprint(
+          singleDesignFingerprint,
+          resolvedWearerSource,
+          activeTopTuckPreference,
+        );
   const previewRecord = previewKey ? previews[previewKey] : undefined;
   const storedSummary = previewKey ? stored[previewKey] : undefined;
   const previewMatchesWearer = (fingerprint: string | null | undefined, modelId?: string | null) =>
@@ -918,6 +956,7 @@ export const AiTryOnPhotoPanel = ({
             fingerprint,
             source: resolvedWearerSource,
             storedModelId: modelId,
+            topTuckPreference: activeTopTuckPreference,
           });
   const preview =
     previewRecord && previewMatchesWearer(previewRecord.inputFingerprint, previewRecord.modelId)
@@ -1107,26 +1146,52 @@ export const AiTryOnPhotoPanel = ({
     if (choice === "customer_photo" || choice === "style_photo" || choice === "cleared") return;
     if (choice === "studio_model" && modelExplicitByWearer[wearerId]) return;
     const remembered = previews[previewKey];
-    const summary = stored[previewKey] ?? (remembered
-      ? { inputFingerprint: remembered.inputFingerprint, modelId: remembered.modelId ?? null }
-      : undefined);
+    const matchingGallery = wearerGalleryItems.find((item) =>
+      outfitMode
+        ? item.previewKind === "outfit"
+        : item.previewKey === previewKey ||
+          item.garmentKey === selectedPreview?.garmentKey ||
+          !target.previewableGarments ||
+          target.previewableGarments.length <= 1,
+    );
+    const summary =
+      stored[previewKey] ??
+      (remembered
+        ? { inputFingerprint: remembered.inputFingerprint, modelId: remembered.modelId ?? null }
+        : matchingGallery
+          ? { inputFingerprint: matchingGallery.inputFingerprint, modelId: matchingGallery.modelId ?? null }
+          : undefined);
     const storedModel = findAiTryOnDefaultModel(summary?.modelId);
     // A saved photo or style-photo preview has no studio model. Keep that
     // wearer so the saved picture stays current. A fresh visit still
     // pre-selects a studio model.
     if (summary && !storedModel && !modelExplicitByWearer[wearerId]) {
       const wearerMatch = (source: AiTryOnWearerSource) =>
-        aiTryOnPreviewMatchesWearerSource({
-          designFingerprint: singleDesignFingerprint,
-          fingerprint: summary.inputFingerprint,
-          source,
-          storedModelId: null,
-        });
-      const kept = wearerMatch({ kind: "style_photo" })
-        ? "style_photo"
-        : wearerMatch({ kind: "customer_photo" })
+        AI_TRY_ON_TOP_TUCK_PREFERENCES.some((tuck) =>
+          aiTryOnPreviewMatchesWearerSource({
+            designFingerprint: singleDesignFingerprint,
+            fingerprint: summary.inputFingerprint,
+            source,
+            storedModelId: null,
+            topTuckPreference: tuck,
+          }),
+        );
+      const outfitMatchesCustomerPhoto =
+        outfitMode &&
+        Boolean(selectedTop && selectedBottom) &&
+        AI_TRY_ON_TOP_TUCK_PREFERENCES.some(
+          (tuck) =>
+            aiTryOnOutfitFingerprint(selectedTop!, selectedBottom!, { kind: "customer_photo" }, tuck) ===
+            summary.inputFingerprint,
+        );
+      const kept =
+        outfitMatchesCustomerPhoto
           ? "customer_photo"
-          : null;
+          : wearerMatch({ kind: "style_photo" })
+            ? "style_photo"
+            : wearerMatch({ kind: "customer_photo" })
+              ? "customer_photo"
+              : null;
       if (kept) {
         if (choice === "studio_model") {
           updateModelByWearer((current) => {
@@ -1188,7 +1253,9 @@ export const AiTryOnPhotoPanel = ({
     const next = aiTryOnDefaultModelLengthVariant(current.personaId, explicitStudioLength);
     if (!next || next.id === current.id) return;
     updateModelByWearer((currentMap) =>
-      currentMap[wearerId] === next.id ? currentMap : { ...currentMap, [wearerId]: next.id },
+      !currentMap[wearerId] || currentMap[wearerId] === next.id
+        ? currentMap
+        : { ...currentMap, [wearerId]: next.id },
     );
     // updateModelByWearer is recreated each render and only writes the model id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1304,9 +1371,29 @@ export const AiTryOnPhotoPanel = ({
     readonly stylePhoto: boolean;
   }
 
+  const isMatchingSlot =
+    !target?.previewableGarments ||
+    target.previewableGarments.length <= 1 ||
+    (outfitMode
+      ? activeGalleryItem?.previewKind === "outfit"
+      : activeGalleryItem?.previewKey === previewKey ||
+        (Boolean(activeGalleryItem?.garmentKey) &&
+          activeGalleryItem?.garmentKey === selectedPreview?.garmentKey));
+
+  const isCurrentModelOrSource =
+    (!activeGalleryItem?.modelId ||
+      !modelByWearer[target?.wearerId || ""] ||
+      modelByWearer[target?.wearerId || ""] === activeGalleryItem.modelId) &&
+    (!topTuckEligible ||
+      !topTuckByKey[currentSlotKey] ||
+      previewMatchesWearer(activeGalleryItem?.inputFingerprint, activeGalleryItem?.modelId));
+
   const mainView: MainStagePreviewView | null = (() => {
-    if (!target || generating) return null;
-    if (wearerGalleryItems.length >= 2 && activeGalleryItem) {
+    if (!target || generating || outfitPreviewStale) return null;
+    if (
+      activeGalleryItem &&
+      (wearerGalleryItems.length >= 2 || (isMatchingSlot && isCurrentModelOrSource && !wearerPreviewStale))
+    ) {
       return {
         galleryId: activeGalleryItem.id,
         previewKey: activeGalleryItem.previewKey,
@@ -1321,25 +1408,17 @@ export const AiTryOnPhotoPanel = ({
       };
     }
     if (!preview) return null;
-    const matchedSingle =
-      activeGalleryItem &&
-      activeGalleryItem.previewKey === previewKey &&
-      activeGalleryItem.inputFingerprint === preview.inputFingerprint
-        ? activeGalleryItem
-        : null;
     return {
-      galleryId: matchedSingle?.id ?? null,
+      galleryId: null,
       previewKey,
       mimeType: preview.mimeType,
       data: preview.data,
       storedPreviewId: preview.storedPreviewId,
       modelId: preview.modelId,
-      caption:
-        matchedSingle?.caption ??
-        formatAiTryOnPreviewCaption(1, currentTargetGarmentTitle),
-      uploadedDesign: matchedSingle ? matchedSingle.uploadedDesign : usingUploadedDesign,
-      isOutfit: matchedSingle ? matchedSingle.previewKind === "outfit" : outfitMode,
-      stylePhoto: matchedSingle ? matchedSingle.stylePhoto : stylePhotoActive,
+      caption: formatAiTryOnPreviewCaption(1, currentTargetGarmentTitle),
+      uploadedDesign: usingUploadedDesign,
+      isOutfit: outfitMode,
+      stylePhoto: stylePhotoActive,
     };
   })();
 
@@ -1779,6 +1858,9 @@ export const AiTryOnPhotoPanel = ({
         inputFingerprint, wearerKey: wearerId,
         ...(model ? { defaultModelId: model.id } : currentPhoto ? { personImage: currentPhoto.image } : {}),
         ...(!model && photoFitHints.length ? { fitHints: photoFitHints } : {}),
+        ...(topTuckEligible && activeTopTuckPreference !== "auto"
+          ? { topTuckPreference: activeTopTuckPreference }
+          : {}),
       };
       return outfitMode && outfitGarments ? { ...common, mode: "garment", outfitGarments } : {
         ...common, mode: fabricSwatchImageUrl ? "fabric" : "garment", garmentImageUrl,
@@ -2389,6 +2471,61 @@ export const AiTryOnPhotoPanel = ({
             </p>
           )}
           </>}
+          {topTuckEligible && currentSlotKey && (
+            <div
+              className="space-y-2 rounded-xl border border-heritage-green/15 bg-heritage-cream/25 p-3"
+              data-ai-try-on-top-tuck-controls
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.1em] text-heritage-green">
+                  Shirt styling
+                </span>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Shirt styling">
+                  {AI_TRY_ON_TOP_TUCK_PREFERENCES.map((option) => {
+                    const selected = activeTopTuckPreference === option;
+                    const optionLabel =
+                      option === "auto"
+                        ? "Auto"
+                        : option === "untucked"
+                          ? "Untucked"
+                          : "Tucked in";
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={generating}
+                        onClick={() =>
+                          setTopTuckByKey((current) => ({
+                            ...current,
+                            [currentSlotKey]: option,
+                          }))
+                        }
+                        data-ai-try-on-top-tuck={option}
+                        className={`inline-flex min-h-9 items-center rounded-lg border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold disabled:cursor-not-allowed disabled:opacity-60 ${
+                          selected
+                            ? "border-heritage-green bg-heritage-green text-white"
+                            : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                        }`}
+                      >
+                        {optionLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed text-heritage-ink/75" data-ai-try-on-top-tuck-note>
+                {activeTopTuckPreference === "tucked"
+                  ? "Tucked cleanly into the waistband all the way around."
+                  : activeTopTuckPreference === "untucked"
+                    ? "Worn completely untucked, hanging loosely outside and over the waistband."
+                    : outfitMode && selectedBottom && aiTryOnOrderHasWaistbandShowcase(selectedBottom.orderDetails)
+                      ? "Front-tucked lightly at the waist so your bottom's belt holder or rope stays visible while keeping the shirt's natural drape."
+                      : "Worn untucked outside and over bottoms (Odogwu Heritage signature style)."}
+              </p>
+            </div>
+          )}
           <button
             type="button"
             onClick={handleGenerate}

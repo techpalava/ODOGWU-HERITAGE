@@ -32,7 +32,7 @@ const promptGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmen
   { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/top", fabricSwatchImageUrl: "https://example.test/swatch", orderDetails: garments[1].orderDetails },
   { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/bottom", orderDetails: garments[2].orderDetails },
 ];
-assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v2");
+assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v3");
 const snapshots = JSON.parse(readFileSync("test_ai_try_on_outfit.snap.json", "utf8"));
 for (const onModel of [false, true]) {
   const key = onModel ? "model" : "photo";
@@ -298,4 +298,118 @@ assert.equal(/Kaftan/.test(shortOutfitPrompt), false);
   assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 1 — shirt-first");
   await act(async () => { gPanel.unmount(); });
 }
+
+// Option D + Option A fallback: top tuck toggle UI, prompt wiring, waistband helper copy, and reload persistence.
+{
+  const shirtItem: AiTryOnPreviewableGarment = {
+    ...garment("top-shirt", "shirt"),
+    label: "Standard Shirt",
+    orderDetails: { garments: [{ garmentType: "shirt", optionIds: ["shirt_std_short"], decorations: [] }] },
+  };
+  const kaftanItem: AiTryOnPreviewableGarment = {
+    ...garment("top-kaftan", "kaftan"),
+    label: "Long Shirt",
+    orderDetails: { garments: [{ garmentType: "kaftan", optionIds: [], decorations: [] }] },
+  };
+  const beltShortsItem: AiTryOnPreviewableGarment = {
+    ...garment("bottom-belt-shorts", "standard_shorts"),
+    label: "Shorts (Belt)",
+    orderDetails: { garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_belt"], decorations: [] }] },
+  };
+  const elasticShortsItem: AiTryOnPreviewableGarment = {
+    ...garment("bottom-elastic-shorts", "standard_shorts"),
+    label: "Shorts (Elastic)",
+    orderDetails: { garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_elastic"], decorations: [] }] },
+  };
+  const tuckTarget: AiTryOnWearerTarget = {
+    wearerId: "w-tuck",
+    label: "Tuck Tester",
+    inputFingerprint: fp,
+    mode: "fabric",
+    garmentImageUrl: shirtItem.garmentImageUrl,
+    fabricSwatchImageUrl: shirtItem.fabricSwatchImageUrl,
+    fitHints: [],
+    orderDetails: null,
+    previewableGarments: [shirtItem, kaftanItem, beltShortsItem, elasticShortsItem],
+  };
+  const tuckRequests: AiTryOnGenerationRequest[] = [];
+  const tuckSaved = new Map<string, { previewId: string; wearerKey: string; inputFingerprint: string; modelId?: string }>();
+  let tPanel!: ReturnType<typeof create>;
+  const mountTuckPanel = async (storedList: Array<{ previewId: string; wearerKey: string; inputFingerprint: string; expiresAt: string; modelId?: string }> = []) => {
+    tPanel = create(createElement(AiTryOnPhotoPanel, {
+      targets: [tuckTarget],
+      triesPerOrder: 5,
+      initialTriesRemaining: 5,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      onPreviewCreated: () => undefined,
+      onUnavailable: () => undefined,
+      storedPreviews: storedList,
+      loadStoredPreview: async (id) => ({ mimeType: "image/webp" as const, data: Buffer.from(id).toString("base64") }),
+      requestPreview: async (req) => {
+        tuckRequests.push(req);
+        const previewId = `tuck-${tuckRequests.length}`;
+        tuckSaved.set(req.wearerKey ?? "", { previewId, wearerKey: req.wearerKey ?? "", inputFingerprint: req.inputFingerprint, ...(req.defaultModelId ? { modelId: req.defaultModelId } : {}) });
+        return {
+          kind: "completed",
+          resultReference: { kind: "verified_private_try_on_result", assetId: previewId, ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp", data: Buffer.from(previewId).toString("base64") },
+          orderTriesRemaining: 5 - tuckRequests.length,
+        };
+      },
+      preparePhoto: async () => ({ mimeType: "image/jpeg" as const, data: "/9j/4AAQ" }),
+      createThumbnailUrl: () => null,
+      revokeThumbnailUrl: () => undefined,
+    }));
+  };
+  await act(async () => { await mountTuckPanel(); });
+  const tData = (attr: string, value?: string) =>
+    tPanel.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined && (value === undefined || node.props[attr] === value));
+  const tGenerate = () => tPanel.root.find((node) => node.type === "button" && /Generate preview|Generate combined outfit|Make a new preview/.test(text(node)));
+  // Single garment: Standard Shirt shows toggle; Long Shirt & Shorts hide toggle.
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 1);
+  assert.equal(tData("data-ai-try-on-top-tuck", "auto")[0].props["aria-checked"], true);
+  await act(async () => { tData("data-ai-try-on-garment", "top-kaftan")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 0, "Long Shirt hides tuck toggle");
+  await act(async () => { tData("data-ai-try-on-garment", "bottom-belt-shorts")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 0, "Shorts alone hides tuck toggle");
+
+  // Outfit mode: Shirt + Belt-holder shorts shows Option A helper copy on Auto
+  await act(async () => { tData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  for (const [part, value] of [["top", "top-shirt"], ["bottom", "bottom-belt-shorts"]]) {
+    await act(async () => { tData("data-ai-try-on-outfit-choice", part)[0].props.onChange({ target: { value } }); });
+  }
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 1);
+  assert.match(text(tData("data-ai-try-on-top-tuck-note")[0]), /Front-tucked lightly at the waist/);
+
+  // Switching to elastic shorts changes Auto helper copy to untucked signature style
+  await act(async () => { tData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "bottom-elastic-shorts" } }); });
+  assert.match(text(tData("data-ai-try-on-top-tuck-note")[0]), /Worn untucked outside and over bottoms/);
+
+  // Explicit Tucked override sends topTuckPreference: "tucked"
+  await act(async () => { tData("data-ai-try-on-top-tuck", "tucked")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-top-tuck", "tucked")[0].props["aria-checked"], true);
+  await act(async () => { await tPanel.root.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ target: { files: [file] } }); });
+  await act(async () => { await tGenerate().props.onClick(); });
+  assert.equal(tuckRequests[0].topTuckPreference, "tucked");
+  // Summary keeps tucked outfit preview
+  assert.equal(selectAiTryOnOrderPreviews(aiTryOnOrderPreviewTargets([tuckTarget]), [...tuckSaved.values()]).length, 1);
+
+  // Toggling to Untucked marks preview stale
+  await act(async () => { tData("data-ai-try-on-top-tuck", "untucked")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-outfit-preview-stale").length, 1);
+
+  await act(async () => { tPanel.unmount(); });
+
+  // Reloading restores the tucked preference & preview cleanly
+  await act(async () => {
+    await mountTuckPanel([...tuckSaved.values()].map((e) => ({ ...e, expiresAt: "2026-12-01T00:00:00Z" })));
+  });
+  await act(async () => { tData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.equal(tData("data-ai-try-on-top-tuck", "tucked")[0].props["aria-checked"], true, "reload restores tucked selection");
+  assert.equal(tPanel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:")).length, 1, "reload restores tucked preview");
+  await act(async () => { tPanel.unmount(); });
+}
+
 console.log("Combined outfit: snapshots, explicit choices, slot isolation, downstream selection and reload passed");
