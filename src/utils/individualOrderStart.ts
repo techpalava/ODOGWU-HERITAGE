@@ -4,8 +4,9 @@ import { getDesignStudioStepCounter } from "./designSourceJourney";
 
 /**
  * Starting an Individual Order never resumes a saved draft.
- * A valid draft must be confirmed before it is replaced. Invalid storage is
- * left untouched.
+ * A valid draft must be confirmed before it is replaced; invalid or
+ * unavailable draft checks offer explicit fresh-start recovery instead of
+ * trapping the customer.
  */
 export type IndividualOrderStartDecision =
   | Readonly<{ kind: "start_fresh" }>
@@ -13,7 +14,11 @@ export type IndividualOrderStartDecision =
       kind: "confirm_replacement";
       existing: Extract<HomepageDraftInspectionResult, { status: "valid" }>["existing"];
     }>
-  | Readonly<{ kind: "blocked"; reason: string }>;
+  | Readonly<{
+      kind: "confirm_recovery";
+      inspectionStatus: "invalid" | "unavailable";
+      reason: string;
+    }>;
 
 export const classifyIndividualOrderStart = (
   inspection: HomepageDraftInspectionResult,
@@ -22,7 +27,11 @@ export const classifyIndividualOrderStart = (
   if (inspection.status === "valid") {
     return { kind: "confirm_replacement", existing: inspection.existing };
   }
-  return { kind: "blocked", reason: inspection.reason };
+  return {
+    kind: "confirm_recovery",
+    inspectionStatus: inspection.status,
+    reason: inspection.reason,
+  };
 };
 
 /**

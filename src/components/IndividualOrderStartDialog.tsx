@@ -18,6 +18,7 @@ export const IndividualOrderStartDialog = ({
   onCancel,
   entry = "individual",
   resumeLabel = "Resume unfinished order",
+  recoveryMode,
 }: {
   unfinishedOrderLabel: string;
   canResume: boolean;
@@ -27,6 +28,7 @@ export const IndividualOrderStartDialog = ({
   onCancel: () => void;
   entry?: "individual" | "design-studio";
   resumeLabel?: string;
+  recoveryMode?: "invalid" | "unavailable";
 }) => {
   const designStudioNav = entry === "design-studio";
   const title = designStudioNav
@@ -38,12 +40,26 @@ export const IndividualOrderStartDialog = ({
   const cancelLabel = designStudioNav
     ? "Cancel opening Design Studio"
     : "Cancel starting a new Individual Order";
-  const description = designStudioNav
-    ? `You already have an unfinished order: ${unfinishedOrderLabel}. Design Studio will not open that saved order unless you resume it. Starting fresh begins a new Individual Order at Step 1 and replaces that draft only after you confirm. Cancel leaves it unchanged.`
-    : `You already have an unfinished order: ${unfinishedOrderLabel}. Starting a new Individual Order begins at Step 1 and replaces that draft only after you confirm. Resume keeps the saved order. Cancel leaves it unchanged.`;
-  const blockedNote = designStudioNav
-    ? "This saved order cannot be reopened from here. You can still start fresh, which replaces it, or cancel to leave it unchanged."
-    : "This saved order cannot be reopened from here. You can still start a new Individual Order, which replaces it, or cancel to leave it unchanged.";
+  const description =
+    recoveryMode === "invalid"
+      ? designStudioNav
+        ? "We found a saved draft that could not be restored. Starting fresh begins a new Individual Order at Step 1 and clears that unreadable draft. Cancel leaves it unchanged."
+        : "We found a saved draft that could not be restored. Starting a new Individual Order begins at Step 1 and clears that unreadable draft. Cancel leaves it unchanged."
+      : recoveryMode === "unavailable"
+        ? designStudioNav
+          ? "We could not verify whether you have an unfinished saved order right now. Starting fresh begins a new Individual Order at Step 1 and clears any readable draft on this account or device. Cancel leaves everything unchanged so you can try again."
+          : "We could not verify whether you have an unfinished saved order right now. Starting a new Individual Order begins at Step 1 and clears any readable draft on this account or device. Cancel leaves everything unchanged so you can try again."
+        : designStudioNav
+          ? `You already have an unfinished order: ${unfinishedOrderLabel}. Design Studio will not open that saved order unless you resume it. Starting fresh begins a new Individual Order at Step 1 and replaces that draft only after you confirm. Cancel leaves it unchanged.`
+          : `You already have an unfinished order: ${unfinishedOrderLabel}. Starting a new Individual Order begins at Step 1 and replaces that draft only after you confirm. Resume keeps the saved order. Cancel leaves it unchanged.`;
+  const blockedNote =
+    recoveryMode === "invalid"
+      ? "No resumable order could be loaded from your saved draft."
+      : recoveryMode === "unavailable"
+        ? "Your saved draft could not be checked right now."
+        : designStudioNav
+          ? "This saved order cannot be reopened from here. You can still start fresh, which replaces it, or cancel to leave it unchanged."
+          : "This saved order cannot be reopened from here. You can still start a new Individual Order, which replaces it, or cancel to leave it unchanged.";
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -218,6 +234,12 @@ export const IndividualOrderStartDialog = ({
     </div>
   );
 
-  if (typeof document === "undefined") return dialog;
+  if (
+    typeof document === "undefined" ||
+    !document.body ||
+    typeof document.body.appendChild !== "function"
+  ) {
+    return dialog;
+  }
   return createPortal(dialog, document.body);
 };

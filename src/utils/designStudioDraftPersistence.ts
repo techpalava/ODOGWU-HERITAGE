@@ -372,6 +372,13 @@ export const createDesignStudioDraftRepository = ({
 
         const legacyInspection = inspectLegacyDraft();
         if (legacyInspection.status !== "valid") return legacyInspection;
+        // Older pre-future GuestOrderSession drafts lack the 9/10-stage marker.
+        // Historical migration leaves them untouched as not_migrated_ambiguous_source
+        // and Studio hydration treats them as empty, so homepage preflight must not
+        // block entry over them.
+        if (!hasAuthoritativeFutureDraftMarker(legacyInspection.draft)) {
+          return { status: "empty" };
+        }
         const normalized = normalizeJsonSafeFutureDraft({
           value: legacyInspection.draft,
           normalizeDraft,
