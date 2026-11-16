@@ -268,11 +268,11 @@ assert.deepEqual(
 );
 assert.equal(
   INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
-  "Standard Nikka Shorts",
+  "Standard Knicker Shorts",
 );
 assert.equal(INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts, "Standard Bum Shorts");
 for (const [garmentType, label, legacyLabel] of [
-  ["standard_shorts", "Standard Nikka Shorts", "Nikka / Standard Shorts"],
+  ["standard_shorts", "Standard Knicker Shorts", "Nikka / Standard Shorts"],
   ["bum_shorts", "Standard Bum Shorts", "Bum Shorts"],
 ] as const) {
   assert.equal(getCustomDetailsGarmentLabel(garmentType), label);

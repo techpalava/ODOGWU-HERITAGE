@@ -1905,7 +1905,7 @@ export const DormantFutureCustomDetailsStep = ({
               selectionGroups.has("standard_shorts_additional")
             ? {
                 section: "standard-shorts-additional-clothes-costs",
-                ariaLabel: "Standard Nikka Shorts additional clothes costs",
+                ariaLabel: "Standard Knicker Shorts additional clothes costs",
                 helper:
                   "Optional extras for these shorts. Keep None if you do not want extra pockets.",
               }

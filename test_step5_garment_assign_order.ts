@@ -277,7 +277,7 @@ assert.deepEqual(
     "Trouser",
     "Standard Skirt",
     "Long Skirt",
-    "Standard Nikka Shorts",
+    "Standard Knicker Shorts",
     "Standard Bum Shorts",
     "Standard Dress",
     "Long Shirt",
