@@ -141,16 +141,16 @@ const DAY = 24 * 60 * 60 * 1000;
   // Bundled into the AI Try-on function so the server reads them from disk.
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
   assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].includeFiles, "public/ai-try-on-models/**");
-  assert.match(readFileSync("storage.rules", "utf8"), /match \/ai-try-on-model-results\/\{allPaths=\*\*\} \{\n\s+allow read, write: if false;/);
-  assert.match(readFileSync("firestore.rules", "utf8"), /match \/aiTryOnModelResults\/\{document=\*\*\} \{\n\s+allow read, write: if false;/);
+  assert.match(readFileSync("storage.rules", "utf8"), /match \/ai-try-on-model-results\/\{allPaths=\*\*\} \{\r?\n\s+allow read, write: if false;/);
+  assert.match(readFileSync("firestore.rules", "utf8"), /match \/aiTryOnModelResults\/\{document=\*\*\} \{\r?\n\s+allow read, write: if false;/);
 }
 
 // ------------------------------------------------------------ model-mode prompt
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
   // v6: explicit order choices win over either reference photo.
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v8");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v10");
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v9");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v11");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -248,12 +248,14 @@ const img = (bytes: Buffer, mimeType: "image/png" | "image/jpeg" | "image/webp" 
   differs({ fabricImage: img(Buffer.concat([jpeg, Buffer.from("x")]), "image/jpeg") }, "fabric picture");
   differs({ mode: "garment", fabricImage: null } as never, "mode");
   differs({ orderDetails: { garments: [{ garmentType: "shirt", optionIds: ["x"], decorations: [] }] } as never }, "order details");
+  differs({ topTuckPreference: "tucked" }, "top tuck preference");
+  differs({ topTuckPreference: "untucked" }, "top untucked preference");
   // Same details in another order: same key.
   const a = { garments: [{ garmentType: "shirt", optionIds: ["b", "a"], decorations: [] }] } as never;
   const b = { garments: [{ garmentType: "shirt", optionIds: ["a", "b"], decorations: [] }] } as never;
   assert.equal(createAiTryOnModelResultKey({ ...base, orderDetails: a }), createAiTryOnModelResultKey({ ...base, orderDetails: b }));
   // The model prompt version is folded in (bumping it stales every saved result).
-  assert.match(readFileSync("src/server/aiTryOnModelResultCache.ts", "utf8"), /CACHE_KEY_SCHEMA,\n\s+AI_TRY_ON_MODEL_PROMPT_VERSION,/);
+  assert.match(readFileSync("src/server/aiTryOnModelResultCache.ts", "utf8"), /CACHE_KEY_SCHEMA,\r?\n\s+AI_TRY_ON_MODEL_PROMPT_VERSION,/);
 }
 
 // ------------------------------------------------------------ request parsing

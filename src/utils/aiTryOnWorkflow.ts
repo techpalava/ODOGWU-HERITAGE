@@ -18,7 +18,9 @@ import {
   AI_TRY_ON_OUTFIT_PROMPT_VERSION,
   AI_TRY_ON_PROMPT_VERSION,
   AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION,
+  AI_TRY_ON_TOP_TUCK_PREFERENCES,
   type AiTryOnGenerationRequest,
+  type AiTryOnTopTuckPreference,
 } from "./aiTryOnGatewayContract.js";
 import { DESIGN_STUDIO_STAGE_IDS } from "./designSourceJourney.js";
 import { AI_TRY_ON_DEFAULT_MODELS, findAiTryOnDefaultModel } from "./aiTryOnDefaultModels.js";
@@ -851,15 +853,18 @@ export const aiTryOnWearerSources = (): readonly AiTryOnWearerSource[] => [
 export const aiTryOnWearerPreviewFingerprint = (
   designFingerprint: string | null | undefined,
   source: AiTryOnWearerSource | null | undefined,
+  topTuckPreference: AiTryOnTopTuckPreference = "auto",
 ): string | null => {
   const wearerSource = aiTryOnWearerSource(source);
   if (!designFingerprint || !wearerSource) return null;
+  const tuck = wearerSource.kind !== "style_photo" && topTuckPreference !== "auto" ? topTuckPreference : null;
   return hashVisualIdentity({
     designFingerprint,
     wearerSource,
     ...(wearerSource.kind === "style_photo"
       ? { stylePhotoPromptVersion: AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION }
       : {}),
+    ...(tuck ? { topTuckPreference: tuck } : {}),
   });
 };
 
@@ -874,8 +879,10 @@ export const aiTryOnPreviewFingerprintMatchesDesign = (
 ): boolean => {
   if (!designFingerprint || !fingerprint) return false;
   if (fingerprint === designFingerprint) return true;
-  return aiTryOnWearerSources().some(
-    (source) => aiTryOnWearerPreviewFingerprint(designFingerprint, source) === fingerprint,
+  return aiTryOnWearerSources().some((source) =>
+    AI_TRY_ON_TOP_TUCK_PREFERENCES.some(
+      (tuck) => aiTryOnWearerPreviewFingerprint(designFingerprint, source, tuck) === fingerprint,
+    ),
   );
 };
 
@@ -889,26 +896,49 @@ export const aiTryOnPreviewMatchesWearerSource = ({
   fingerprint,
   source,
   storedModelId = null,
+  topTuckPreference = "auto",
 }: {
   designFingerprint: string | null | undefined;
   fingerprint: string | null | undefined;
   source: AiTryOnWearerSource | null | undefined;
   storedModelId?: string | null;
+  topTuckPreference?: AiTryOnTopTuckPreference;
 }): boolean => {
   const wearerSource = aiTryOnWearerSource(source);
-  const expected = aiTryOnWearerPreviewFingerprint(designFingerprint, wearerSource);
+  const expected = aiTryOnWearerPreviewFingerprint(designFingerprint, wearerSource, topTuckPreference);
   if (!fingerprint || !expected || !wearerSource) return false;
   if (fingerprint === expected) return true;
+  if (topTuckPreference !== "auto") return false;
   if (fingerprint !== designFingerprint) return false;
   if (wearerSource.kind === "style_photo") return false;
   if (wearerSource.kind === "studio_model") return storedModelId === wearerSource.modelId;
   return storedModelId == null || storedModelId === "";
 };
 
+export const resolveAiTryOnTopTuckFromFingerprint = ({
+  designFingerprint,
+  source,
+  fingerprint,
+}: {
+  designFingerprint: string | null | undefined;
+  source: AiTryOnWearerSource | null | undefined;
+  fingerprint: string | null | undefined;
+}): AiTryOnTopTuckPreference | null => {
+  const wearerSource = aiTryOnWearerSource(source);
+  if (!designFingerprint || !wearerSource || !fingerprint) return null;
+  for (const tuck of AI_TRY_ON_TOP_TUCK_PREFERENCES) {
+    if (aiTryOnWearerPreviewFingerprint(designFingerprint, wearerSource, tuck) === fingerprint) {
+      return tuck;
+    }
+  }
+  return null;
+};
+
 export const aiTryOnOutfitFingerprint = (
   top: { garmentKey: string; inputFingerprint?: string | null },
   bottom: { garmentKey: string; inputFingerprint?: string | null },
   source: AiTryOnOutfitVisualSource | null = null,
+  topTuckPreference: AiTryOnTopTuckPreference = "auto",
 ): string | null =>
   top.inputFingerprint && bottom.inputFingerprint
     ? hashVisualIdentity({
@@ -916,5 +946,6 @@ export const aiTryOnOutfitFingerprint = (
         bottom: [bottom.garmentKey, bottom.inputFingerprint],
         outfitPromptVersion: AI_TRY_ON_OUTFIT_PROMPT_VERSION,
         visualSource: aiTryOnOutfitVisualSource(source),
+        ...(topTuckPreference !== "auto" ? { topTuckPreference } : {}),
       })
     : null;
