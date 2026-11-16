@@ -4,6 +4,7 @@ import {
   readAiTryOnIdToken,
   type AiTryOnCredentials,
 } from "./aiTryOnGateway";
+import { clearAiTryOnPreviewGalleryStorage } from "./aiTryOnPreviewGalleryStorage";
 
 /**
  * Browser side of the Step 7 AI Try-on session.
@@ -119,6 +120,7 @@ export const retireAiTryOnSessions = (
   try {
     store.removeItem(AI_TRY_ON_SESSION_STORAGE_KEY);
     store.removeItem(AI_TRY_ON_LEGACY_ORDER_KEY_STORAGE_KEY);
+    clearAiTryOnPreviewGalleryStorage(store);
   } catch {
     // Ignore blocked storage.
   }

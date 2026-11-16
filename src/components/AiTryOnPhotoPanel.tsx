@@ -9,6 +9,8 @@ import {
   buildAiTryOnOutfitRequestGarment,
 } from "../utils/aiTryOnWearerTargets";
 import {
+  aiTryOnGarmentPreviewKey,
+  aiTryOnOutfitPreviewKey,
   aiTryOnPreviewFingerprintMatchesDesign,
   aiTryOnPreviewMatchesWearerSource,
   aiTryOnWearerPreviewFingerprint,
@@ -66,6 +68,19 @@ import {
   type AiTryOnBackgroundJob,
   type AiTryOnBackgroundJobs,
 } from "../services/aiTryOnBackgroundJobs";
+import {
+  appendAiTryOnGalleryPreview,
+  EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE,
+  formatAiTryOnPreviewCaption,
+  readAiTryOnPreviewGalleryState,
+  removeAiTryOnGalleryPreviews,
+  resolveAiTryOnTargetGarmentTitle,
+  saveAiTryOnPreviewGalleryState,
+  selectAiTryOnActiveGalleryPreview,
+  type AiTryOnGalleryPreviewItem,
+  type AiTryOnGalleryStore,
+  type AiTryOnPreviewGalleryState,
+} from "../services/aiTryOnPreviewGalleryStorage";
 import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
 import type {
   AiTryOnGenerationRequest,
@@ -392,6 +407,14 @@ export interface AiTryOnPhotoPanelProps {
     update: (current: Record<string, AiTryOnSessionPreview>) => Record<string, AiTryOnSessionPreview>,
   ) => void;
   /**
+   * Ordered multi-preview gallery state for Step 7 (#1305 extension).
+   */
+  sessionGallery?: AiTryOnPreviewGalleryState;
+  onSessionGalleryChange?: (
+    update: (current: AiTryOnPreviewGalleryState) => AiTryOnPreviewGalleryState,
+  ) => void;
+  galleryStore?: AiTryOnGalleryStore | null;
+  /**
    * Existing admin reset. Eligible stays false until this resolves, so
    * ineligible customers never see a flash of the control.
    */
@@ -448,6 +471,9 @@ export const AiTryOnPhotoPanel = ({
   onSessionMeasurementWearerIdChange,
   sessionPreviews,
   onSessionPreviewsChange,
+  sessionGallery,
+  onSessionGalleryChange,
+  galleryStore,
   readResetStatus = readOwnAiTryOnAdminStatus,
   resetOwnTries = resetOwnAiTryOnTries,
 }: AiTryOnPhotoPanelProps) => {
@@ -477,7 +503,51 @@ export const AiTryOnPhotoPanel = ({
   const [accountTriesRemaining, setAccountTriesRemaining] = useState<number | null>(
     initialAccountTriesRemaining,
   );
-  const [uncontrolledPreviews, setUncontrolledPreviews] = useState<Record<string, WearerPreview>>({});
+  const [uncontrolledGallery, setUncontrolledGallery] = useState<AiTryOnPreviewGalleryState>(() =>
+    readAiTryOnPreviewGalleryState(jobScope, galleryStore),
+  );
+  const galleryControlled = onSessionGalleryChange !== undefined;
+  const gallery = galleryControlled
+    ? sessionGallery ?? EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE
+    : uncontrolledGallery;
+  const onSessionGalleryChangeRef = useRef(onSessionGalleryChange);
+  onSessionGalleryChangeRef.current = onSessionGalleryChange;
+  const commitGallery = useCallback(
+    (
+      update: (
+        current: AiTryOnPreviewGalleryState,
+      ) => AiTryOnPreviewGalleryState,
+    ) => {
+      const publish = onSessionGalleryChangeRef.current;
+      if (publish) {
+        publish((current) => {
+          const next = update(current);
+          saveAiTryOnPreviewGalleryState(jobScope, next, galleryStore);
+          return next;
+        });
+      } else {
+        setUncontrolledGallery((current) => {
+          const next = update(current);
+          saveAiTryOnPreviewGalleryState(jobScope, next, galleryStore);
+          return next;
+        });
+      }
+    },
+    [jobScope, galleryStore],
+  );
+  const [uncontrolledPreviews, setUncontrolledPreviews] = useState<Record<string, WearerPreview>>(() => {
+    const initial: Record<string, WearerPreview> = {};
+    for (const item of uncontrolledGallery.items) {
+      initial[item.previewKey] = {
+        inputFingerprint: item.inputFingerprint,
+        mimeType: item.mimeType,
+        data: item.data,
+        storedPreviewId: item.storedPreviewId,
+        modelId: item.modelId,
+      };
+    }
+    return initial;
+  });
   const previewsControlled = onSessionPreviewsChange !== undefined;
   const previews = previewsControlled ? sessionPreviews ?? EMPTY_SESSION_PREVIEWS : uncontrolledPreviews;
   const onSessionPreviewsChangeRef = useRef(onSessionPreviewsChange);
@@ -490,6 +560,39 @@ export const AiTryOnPhotoPanel = ({
     },
     [],
   );
+  const prevGalleryScopeRef = useRef(jobScope);
+  useEffect(() => {
+    if (prevGalleryScopeRef.current === jobScope) return;
+    prevGalleryScopeRef.current = jobScope;
+    const restored = readAiTryOnPreviewGalleryState(jobScope, galleryStore);
+    if (onSessionGalleryChangeRef.current) {
+      onSessionGalleryChangeRef.current(() => restored);
+    } else {
+      setUncontrolledGallery(restored);
+    }
+  }, [jobScope, galleryStore]);
+  // Ensure restored gallery items also populate in-memory previews map so model/source sync sees them.
+  useEffect(() => {
+    if (gallery.items.length === 0) return;
+    commitPreviews((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const item of gallery.items) {
+        if (!next[item.previewKey]) {
+          next[item.previewKey] = {
+            inputFingerprint: item.inputFingerprint,
+            mimeType: item.mimeType,
+            data: item.data,
+            storedPreviewId: item.storedPreviewId,
+            modelId: item.modelId,
+          };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [gallery.items, commitPreviews]);
+  const generationSeqRef = useRef(0);
   /** Stored previews by wearer, minus any deleted in this session. */
   const [stored, setStored] = useState<Record<string, AiTryOnStoredPreviewSummary>>(() =>
     Object.fromEntries(storedPreviews.map((entry) => [entry.wearerKey, entry])),
@@ -829,6 +932,116 @@ export const AiTryOnPhotoPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storedPreviewKey]);
 
+  const resolveSlotGalleryMeta = useCallback(
+    (slotKey: string, fingerprint: string, modelId: string | null) => {
+      for (const entry of targets) {
+        const oSlot = aiTryOnOutfitTarget(entry);
+        if (oSlot && oSlot.wearerId === slotKey) {
+          const pair = aiTryOnOutfitPairFor(oSlot, fingerprint);
+          const activeTop = entry.wearerId === target?.wearerId ? selectedTop : undefined;
+          const activeBottom = entry.wearerId === target?.wearerId ? selectedBottom : undefined;
+          return {
+            wearerId: entry.wearerId,
+            previewKey: slotKey,
+            garmentKey: pair ? `${pair.top}+${pair.bottom}` : null,
+            garmentTitle: resolveAiTryOnTargetGarmentTitle({
+              outfitMode: true,
+              outfitPairLabel: pair?.label,
+              selectedTopLabel: activeTop?.label,
+              selectedBottomLabel: activeBottom?.label,
+              wearerLabel: entry.label,
+            }),
+            previewKind: "outfit" as const,
+            uploadedDesign: false,
+            stylePhoto: false,
+          };
+        }
+        const garments = entry.previewableGarments ?? [];
+        if (garments.length > 1) {
+          const matched = garments.find(
+            (g) => aiTryOnGarmentPreviewKey(entry.wearerId, g.garmentKey) === slotKey,
+          );
+          if (matched) {
+            const singleFp =
+              matched.inputFingerprint === undefined ? entry.inputFingerprint : matched.inputFingerprint;
+            return {
+              wearerId: entry.wearerId,
+              previewKey: slotKey,
+              garmentKey: matched.garmentKey,
+              garmentTitle: resolveAiTryOnTargetGarmentTitle({
+                outfitMode: false,
+                selectedGarmentLabel: matched.label,
+                selectedGarmentType:
+                  matched.garmentType ??
+                  matched.uploadedDesign?.garmentType ??
+                  matched.orderDetails?.garments?.[0]?.garmentType,
+                fallbackGarmentType: entry.orderDetails?.garments?.[0]?.garmentType,
+                wearerLabel: entry.label,
+              }),
+              previewKind: "single" as const,
+              uploadedDesign: Boolean(matched.uploadedDesign),
+              stylePhoto: Boolean(
+                !modelId &&
+                  aiTryOnPreviewMatchesWearerSource({
+                    designFingerprint: singleFp ?? null,
+                    fingerprint,
+                    source: { kind: "style_photo" },
+                    storedModelId: null,
+                  }),
+              ),
+            };
+          }
+        }
+        if (entry.wearerId === slotKey) {
+          const matched = garments[0] ?? null;
+          const singleFp =
+            matched?.inputFingerprint === undefined ? entry.inputFingerprint : matched.inputFingerprint;
+          return {
+            wearerId: entry.wearerId,
+            previewKey: slotKey,
+            garmentKey: matched?.garmentKey ?? null,
+            garmentTitle: resolveAiTryOnTargetGarmentTitle({
+              outfitMode: false,
+              selectedGarmentLabel: matched?.label,
+              selectedGarmentType:
+                matched?.garmentType ??
+                matched?.uploadedDesign?.garmentType ??
+                matched?.orderDetails?.garments?.[0]?.garmentType,
+              fallbackGarmentType:
+                entry.uploadedDesign?.garmentType ??
+                entry.orderDetails?.garments?.[0]?.garmentType,
+              wearerLabel: entry.label,
+            }),
+            previewKind: "single" as const,
+            uploadedDesign: Boolean(matched?.uploadedDesign || entry.uploadedDesign),
+            stylePhoto: Boolean(
+              !modelId &&
+                aiTryOnPreviewMatchesWearerSource({
+                  designFingerprint: singleFp ?? null,
+                  fingerprint,
+                  source: { kind: "style_photo" },
+                  storedModelId: null,
+                }),
+            ),
+          };
+        }
+      }
+      return {
+        wearerId: target?.wearerId || slotKey.replace(/--(?:garment--.*|outfit)$/, "") || slotKey,
+        previewKey: slotKey,
+        garmentKey: null,
+        garmentTitle: resolveAiTryOnTargetGarmentTitle({
+          outfitMode: false,
+          wearerLabel: target?.label,
+        }),
+        previewKind: "single" as const,
+        uploadedDesign: false,
+        stylePhoto: false,
+      };
+    },
+    [targets, target?.wearerId, target?.label, selectedTop, selectedBottom],
+  );
+
   // The design moved on: this wearer's kept image is no longer the one to show.
   useEffect(() => {
     commitPreviews((current) => {
@@ -845,7 +1058,14 @@ export const AiTryOnPhotoPanel = ({
       }
       return changed ? next : current;
     });
-  }, [targets, commitPreviews]);
+    commitGallery((current) =>
+      removeAiTryOnGalleryPreviews(current, (item) => {
+        const match = previewTargets.find((entry) => entry.wearerId === item.previewKey);
+        if (!match || !aiTryOnTargetHasDesign(match)) return false;
+        return !aiTryOnPreviewFingerprintIsCurrent(match, item.inputFingerprint);
+      }),
+    );
+  }, [targets, commitPreviews, commitGallery]);
 
   // A studio model is selected until the customer uploads a photo, picks the
   // style photo, or clears the model. This does not generate.
@@ -979,6 +1199,31 @@ export const AiTryOnPhotoPanel = ({
               },
             },
       );
+      const meta = resolveSlotGalleryMeta(wearerId, fingerprint, summary.modelId ?? null);
+      commitGallery((current) => {
+        if (
+          current.items.some(
+            (item) =>
+              item.storedPreviewId === summary.previewId ||
+              item.id === summary.previewId ||
+              (item.previewKey === wearerId &&
+                item.inputFingerprint === fingerprint &&
+                item.data === image.data),
+          )
+        ) {
+          return current;
+        }
+        return appendAiTryOnGalleryPreview(current, {
+          id: summary.previewId,
+          ...meta,
+          inputFingerprint: fingerprint,
+          mimeType: image.mimeType,
+          data: image.data,
+          storedPreviewId: summary.previewId,
+          modelId: summary.modelId ?? null,
+          activate: true,
+        });
+      });
       // A restored model preview brings back that wearer's model choice.
       const restoredModelId = summary.modelId;
       if (restoredModelId && findAiTryOnDefaultModel(restoredModelId)) {
@@ -988,32 +1233,127 @@ export const AiTryOnPhotoPanel = ({
         setModelPickerOpen(true);
       }
     });
-  }, [previewKey, previewTarget?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews, stylePhotoActive, currentModel?.id, wearerChoice]);
+  }, [previewKey, previewTarget?.inputFingerprint, stored, previews, loadStoredPreview, commitPreviews, commitGallery, resolveSlotGalleryMeta, stylePhotoActive, currentModel?.id, wearerChoice]);
+
+  const currentTargetGarmentTitle = resolveAiTryOnTargetGarmentTitle({
+    outfitMode,
+    selectedTopLabel: selectedTop?.label,
+    selectedBottomLabel: selectedBottom?.label,
+    outfitPairLabel: outfitShownPair?.label,
+    selectedGarmentLabel: selectedPreview?.label,
+    selectedGarmentType:
+      selectedPreview?.garmentType ??
+      selectedPreview?.uploadedDesign?.garmentType ??
+      selectedPreview?.orderDetails?.garments?.[0]?.garmentType,
+    fallbackGarmentType:
+      target?.uploadedDesign?.garmentType ??
+      target?.orderDetails?.garments?.[0]?.garmentType,
+    wearerLabel: target?.label,
+  });
+  const wearerGalleryItems = target
+    ? gallery.items.filter((item) => item.wearerId === target.wearerId)
+    : [];
+  const activeGalleryId = target ? gallery.activeIdByWearer[target.wearerId] : undefined;
+  const activeGalleryItem =
+    wearerGalleryItems.length > 0
+      ? wearerGalleryItems.find((item) => item.id === activeGalleryId) ??
+        wearerGalleryItems[wearerGalleryItems.length - 1]
+      : null;
+
+  interface MainStagePreviewView {
+    readonly galleryId: string | null;
+    readonly previewKey: string;
+    readonly mimeType: string;
+    readonly data: string;
+    readonly storedPreviewId: string | null;
+    readonly modelId: string | null;
+    readonly caption: string;
+    readonly uploadedDesign: boolean;
+    readonly isOutfit: boolean;
+    readonly stylePhoto: boolean;
+  }
+
+  const mainView: MainStagePreviewView | null = (() => {
+    if (!target || generating) return null;
+    if (wearerGalleryItems.length >= 2 && activeGalleryItem) {
+      return {
+        galleryId: activeGalleryItem.id,
+        previewKey: activeGalleryItem.previewKey,
+        mimeType: activeGalleryItem.mimeType,
+        data: activeGalleryItem.data,
+        storedPreviewId: activeGalleryItem.storedPreviewId,
+        modelId: activeGalleryItem.modelId,
+        caption: activeGalleryItem.caption,
+        uploadedDesign: activeGalleryItem.uploadedDesign,
+        isOutfit: activeGalleryItem.previewKind === "outfit",
+        stylePhoto: activeGalleryItem.stylePhoto,
+      };
+    }
+    if (!preview) return null;
+    const matchedSingle =
+      activeGalleryItem &&
+      activeGalleryItem.previewKey === previewKey &&
+      activeGalleryItem.inputFingerprint === preview.inputFingerprint
+        ? activeGalleryItem
+        : null;
+    return {
+      galleryId: matchedSingle?.id ?? null,
+      previewKey,
+      mimeType: preview.mimeType,
+      data: preview.data,
+      storedPreviewId: preview.storedPreviewId,
+      modelId: preview.modelId,
+      caption:
+        matchedSingle?.caption ??
+        formatAiTryOnPreviewCaption(1, currentTargetGarmentTitle),
+      uploadedDesign: matchedSingle ? matchedSingle.uploadedDesign : usingUploadedDesign,
+      isOutfit: matchedSingle ? matchedSingle.previewKind === "outfit" : outfitMode,
+      stylePhoto: matchedSingle ? matchedSingle.stylePhoto : stylePhotoActive,
+    };
+  })();
+
+  const sideGalleryItems: readonly AiTryOnGalleryPreviewItem[] =
+    mainView && wearerGalleryItems.length >= 2
+      ? wearerGalleryItems.filter((item) => item.id !== mainView.galleryId)
+      : [];
+
+  const handleSelectSidePreview = (item: AiTryOnGalleryPreviewItem) => {
+    if (!target || item.id === mainView?.galleryId) return;
+    commitGallery((current) =>
+      selectAiTryOnActiveGalleryPreview(current, target.wearerId, item.id),
+    );
+  };
 
   const handleDeletePreview = async () => {
-    if (!target || !preview?.storedPreviewId || deleting) return;
-    const wearerId = previewKey;
-    const previewId = preview.storedPreviewId;
+    const deleteStoredId = mainView?.storedPreviewId ?? preview?.storedPreviewId;
+    const deleteSlotKey = mainView?.previewKey ?? previewKey;
+    const deleteGalleryId = mainView?.galleryId ?? null;
+    if (!target || !deleteStoredId || deleting) return;
     setDeleting(true);
     try {
-      const ok = await deleteStoredPreview(previewId);
+      const ok = await deleteStoredPreview(deleteStoredId);
       if (!ok) {
         setMessage({ kind: "delete_failed" });
         return;
       }
-      dismissedPreviewIdsRef.current.add(previewId);
-      jobStore.forget(wearerId);
+      dismissedPreviewIdsRef.current.add(deleteStoredId);
+      jobStore.forget(deleteSlotKey);
+      commitGallery((current) =>
+        removeAiTryOnGalleryPreviews(current, (item) =>
+          deleteGalleryId ? item.id === deleteGalleryId : item.storedPreviewId === deleteStoredId,
+        ),
+      );
       commitPreviews((current) => {
         const next = { ...current };
-        delete next[wearerId];
+        delete next[deleteSlotKey];
         return next;
       });
       setStored((current) => {
         const next = { ...current };
-        delete next[wearerId];
+        delete next[deleteSlotKey];
         return next;
       });
-      if (previewableGarments.length <= 1) {
+      if (previewableGarments.length <= 1 && wearerGalleryItems.length <= 1) {
         updateModelByWearer((current) => {
           const next = { ...current };
           delete next[target.wearerId];
@@ -1175,6 +1515,30 @@ export const AiTryOnPhotoPanel = ({
           modelId: job.modelId,
         },
       }));
+      generationSeqRef.current += 1;
+      const seq = generationSeqRef.current;
+      const meta = resolveSlotGalleryMeta(wearerId, job.inputFingerprint, job.modelId);
+      commitGallery((current) => {
+        const alreadyStored =
+          Boolean(job.storedPreviewId) &&
+          current.items.some((item) => item.storedPreviewId === job.storedPreviewId);
+        const itemId =
+          job.storedPreviewId && !current.items.some((item) => item.id === job.storedPreviewId)
+            ? job.storedPreviewId
+            : `gen-${wearerId}-${job.startedAt}-${seq}`;
+        return appendAiTryOnGalleryPreview(current, {
+          id: alreadyStored
+            ? current.items.find((item) => item.storedPreviewId === job.storedPreviewId)!.id
+            : itemId,
+          ...meta,
+          inputFingerprint: job.inputFingerprint,
+          mimeType: preview.mimeType,
+          data: preview.data,
+          storedPreviewId: job.storedPreviewId,
+          modelId: job.modelId,
+          activate: true,
+        });
+      });
       // The new preview replaces this wearer's stored one on the server.
       setStored((current) => {
         const next = { ...current };
@@ -1286,8 +1650,30 @@ export const AiTryOnPhotoPanel = ({
               },
             },
       );
+      const meta = resolveSlotGalleryMeta(job.wearerId, job.inputFingerprint, job.modelId);
+      commitGallery((current) => {
+        const alreadyRecorded = current.items.some(
+          (item) =>
+            (job.storedPreviewId && item.storedPreviewId === job.storedPreviewId) ||
+            (item.previewKey === job.wearerId &&
+              item.inputFingerprint === job.inputFingerprint &&
+              item.data === image.data &&
+              (item.storedPreviewId ?? null) === (job.storedPreviewId ?? null)),
+        );
+        if (alreadyRecorded) return current;
+        return appendAiTryOnGalleryPreview(current, {
+          id: job.storedPreviewId || `job-${job.wearerId}-${job.startedAt}-${job.settledAt ?? job.startedAt}`,
+          ...meta,
+          inputFingerprint: job.inputFingerprint,
+          mimeType: image.mimeType,
+          data: image.data,
+          storedPreviewId: job.storedPreviewId,
+          modelId: job.modelId,
+          activate: false,
+        });
+      });
     }
-  }, [jobs, jobScope, targets, commitPreviews]);
+  }, [jobs, jobScope, targets, commitPreviews, commitGallery, resolveSlotGalleryMeta]);
 
   // "View preview" from a toast: show that wearer, then scroll to and
   // briefly highlight the preview.
@@ -1562,14 +1948,64 @@ export const AiTryOnPhotoPanel = ({
       {outfitSlot && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
         <legend className="px-1 font-serif text-lg font-bold text-heritage-green">What would you like to preview?</legend>
         <div className="flex flex-wrap gap-2">
-          <button type="button" aria-pressed={!outfitMode} onClick={() => setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: false }))} className={tryOnChoiceChipClass(!outfitMode)} data-ai-try-on-single-mode>One garment</button>
-          <button type="button" aria-pressed={outfitMode} onClick={() => setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: true }))} className={tryOnChoiceChipClass(outfitMode)} data-ai-try-on-outfit-mode>Combined outfit · 1 try</button>
+          <button
+            type="button"
+            aria-pressed={!outfitMode}
+            onClick={() => {
+              setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: false }));
+              const singleSlotKey =
+                previewableGarments.length > 1 && selectedPreview
+                  ? aiTryOnGarmentPreviewKey(target.wearerId, selectedPreview.garmentKey)
+                  : target.wearerId;
+              const matches = wearerGalleryItems.filter(
+                (item) => item.previewKey === singleSlotKey || item.previewKind === "single",
+              );
+              const preferred =
+                matches.filter((item) => item.previewKey === singleSlotKey).pop() ??
+                matches[matches.length - 1];
+              if (preferred) {
+                commitGallery((current) =>
+                  selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
+                );
+              }
+            }}
+            className={tryOnChoiceChipClass(!outfitMode)}
+            data-ai-try-on-single-mode
+          >
+            One garment
+          </button>
+          <button
+            type="button"
+            aria-pressed={outfitMode}
+            onClick={() => {
+              setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: true }));
+              const outfitKey = aiTryOnOutfitPreviewKey(target.wearerId);
+              const matches = wearerGalleryItems.filter((item) => item.previewKey === outfitKey);
+              const preferred = matches[matches.length - 1];
+              if (preferred) {
+                commitGallery((current) =>
+                  selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
+                );
+              }
+            }}
+            className={tryOnChoiceChipClass(outfitMode)}
+            data-ai-try-on-outfit-mode
+          >
+            Combined outfit · 1 try
+          </button>
         </div>
         {outfitMode && <>
           <p className="text-sm leading-relaxed text-heritage-ink/75">Choose exactly one top and one bottom for this wearer, using the same photo or studio model. Only your chosen garments are included. One combined picture uses 1 try from this order’s shared tries. Your individual previews stay saved separately.</p>
           {(["top", "bottom"] as const).map((part) => {
             const choices = part === "top" ? outfitChoices.tops : outfitChoices.bottoms;
-            const choosePart = (key: string) => setOutfitChoicesByWearer((current) => ({ ...current, [target.wearerId]: { ...outfitSelection, [part]: key } }));
+            const choosePart = (key: string) =>
+              setOutfitChoicesByWearer((current) => ({
+                ...current,
+                [target.wearerId]: {
+                  ...(current[target.wearerId] ?? outfitSelection),
+                  [part]: key,
+                },
+              }));
             return (
               <div key={part}>
                 <label className="block text-sm font-semibold text-heritage-green">
@@ -1657,13 +2093,24 @@ export const AiTryOnPhotoPanel = ({
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  onClick={() =>
+                  onClick={() => {
                     setSelectedGarmentKeyByWearer((current) =>
                       current[target.wearerId] === garment.garmentKey
                         ? current
                         : { ...current, [target.wearerId]: garment.garmentKey },
-                    )
-                  }
+                    );
+                    const targetSlotKey =
+                      previewableGarments.length > 1
+                        ? aiTryOnGarmentPreviewKey(target.wearerId, garment.garmentKey)
+                        : target.wearerId;
+                    const matches = wearerGalleryItems.filter((item) => item.previewKey === targetSlotKey);
+                    const preferred = matches[matches.length - 1];
+                    if (preferred) {
+                      commitGallery((current) =>
+                        selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
+                      );
+                    }
+                  }}
                   data-ai-try-on-garment={garment.garmentKey}
                   data-ai-try-on-design-choice="garment"
                   className={`inline-flex min-h-16 max-w-full items-center gap-2 rounded-2xl border py-1 pl-1 pr-4 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
@@ -1985,7 +2432,7 @@ export const AiTryOnPhotoPanel = ({
         )}
       </div>
 
-      {preview && !generating && (
+      {mainView && !generating && (
         <figure
           ref={resultRef}
           className={`space-y-3 rounded-2xl transition-shadow duration-500 ${
@@ -1994,27 +2441,69 @@ export const AiTryOnPhotoPanel = ({
           data-ai-try-on-result
           data-ai-try-on-highlight={highlightResult ? "true" : undefined}
         >
-          <img
-            src={`data:${preview.mimeType};base64,${preview.data}`}
-            alt={`AI try-on preview for ${target.label}`}
-            className="mx-auto max-h-[32rem] w-auto max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain"
-          />
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="min-w-0 flex-1 space-y-2" data-ai-try-on-main-stage>
+              <img
+                src={`data:${mainView.mimeType};base64,${mainView.data}`}
+                alt={`AI try-on preview for ${target.label}`}
+                className="mx-auto max-h-[32rem] w-auto max-w-full rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 object-contain"
+              />
+              <p
+                className="text-center text-sm font-semibold text-heritage-green sm:text-left"
+                data-ai-try-on-main-caption
+              >
+                {mainView.caption}
+              </p>
+            </div>
+            {sideGalleryItems.length > 0 && (
+              <div
+                className="min-w-0 space-y-2 sm:w-44 sm:shrink-0"
+                data-ai-try-on-side-rail
+              >
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-heritage-gold">
+                  Earlier previews ({sideGalleryItems.length})
+                </p>
+                <div className="flex flex-row gap-2.5 overflow-x-auto pb-1 sm:flex-col sm:overflow-visible sm:pb-0">
+                  {sideGalleryItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleSelectSidePreview(item)}
+                      data-ai-try-on-side-preview={item.id}
+                      data-ai-try-on-side-caption={item.caption}
+                      aria-label={`Show ${item.caption} in main preview`}
+                      className="group flex w-28 shrink-0 flex-col gap-1.5 rounded-xl border border-heritage-green/20 bg-white p-1.5 text-left transition hover:border-heritage-gold hover:bg-heritage-cream/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold sm:w-full"
+                    >
+                      <img
+                        src={`data:${item.mimeType};base64,${item.data}`}
+                        alt={item.caption}
+                        className="h-28 w-full rounded-lg bg-heritage-cream/30 object-contain sm:h-32"
+                      />
+                      <span className="line-clamp-2 text-[11px] font-semibold leading-snug text-heritage-green group-hover:text-heritage-gold">
+                        {item.caption}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <figcaption className="space-y-1 text-xs leading-relaxed text-heritage-ink/65">
-            {uploadedDesign && <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-uploaded-design>on your uploaded design — this shows the person in your uploaded picture, not you.</span>}
-            {outfitMode && <span className="block font-semibold text-heritage-green" data-ai-try-on-outfit-preview>Latest combined outfit preview. Individual garment previews are kept separately.</span>}
-            {stylePhotoActive && (
+            {mainView.uploadedDesign && <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-uploaded-design>on your uploaded design — this shows the person in your uploaded picture, not you.</span>}
+            {mainView.isOutfit && <span className="block font-semibold text-heritage-green" data-ai-try-on-outfit-preview>Latest combined outfit preview. Individual garment previews are kept separately.</span>}
+            {mainView.stylePhoto && (
               <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-style-photo>
                 Shown on the person in this style photo, with your chosen fabric. The cut and pose stay as photographed.
               </span>
             )}
-            {preview.modelId && (
+            {mainView.modelId && (
               <span className="block font-semibold text-heritage-green" data-ai-try-on-shown-on-model>
                 {AI_TRY_ON_MODEL_COPY.shownOnModel}
               </span>
             )}
             <span className="block">{AI_TRY_ON_PREVIEW_DISCLAIMER}</span>
           </figcaption>
-          {preview.storedPreviewId && (
+          {mainView.storedPreviewId && (
             <button
               type="button"
               onClick={handleDeletePreview}

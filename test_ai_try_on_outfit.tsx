@@ -247,4 +247,55 @@ const shortOutfitPrompt = buildAiTryOnOutfitPrompt({
 assert.match(shortOutfitPrompt, /base bum shorts or short knickers/);
 assert.match(shortOutfitPrompt, /No trouser legs may be visible/);
 assert.equal(/Kaftan/.test(shortOutfitPrompt), false);
+// Verify gallery retention & click-to-swap between combined outfit and single garment previews.
+{
+  const outfitGalleryStore = new Map<string, string>();
+  const mockStore = {
+    getItem: (key: string) => outfitGalleryStore.get(key) ?? null,
+    setItem: (key: string, value: string) => void outfitGalleryStore.set(key, value),
+    removeItem: (key: string) => void outfitGalleryStore.delete(key),
+  };
+  let outfitReq = 0;
+  let gPanel!: ReturnType<typeof create>;
+  await act(async () => {
+    gPanel = create(createElement(AiTryOnPhotoPanel, {
+      ...props,
+      galleryStore: mockStore,
+      jobScope: "outfit-switcher-test",
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      requestPreview: async (request) => {
+        requests.push(request);
+        outfitReq += 1;
+        const previewId = `out-sw-${outfitReq}`;
+        return {
+          kind: "completed",
+          resultReference: { kind: "verified_private_try_on_result", assetId: previewId, ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp", data: Buffer.from(previewId).toString("base64") },
+          storedPreviewId: previewId,
+          orderTriesRemaining: 5 - outfitReq,
+        };
+      },
+    }));
+  });
+  const gData = (attr: string, value?: string) =>
+    gPanel.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined && (value === undefined || node.props[attr] === value));
+  const gGenerate = () => gPanel.root.find((node) => node.type === "button" && /Generate preview|Generate combined outfit|Make a new preview/.test(text(node)));
+  await act(async () => { await gPanel.root.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ target: { files: [file] } }); });
+  await act(async () => { await gGenerate().props.onClick(); });
+  assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 1 — shirt-first");
+  await act(async () => { await gData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  for (const [part, value] of [["top", "shirt-chosen"], ["bottom", "trouser"]]) {
+    await act(async () => { gData("data-ai-try-on-outfit-choice", part)[0].props.onChange({ target: { value } }); });
+  }
+  await act(async () => { await gPanel.root.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ target: { files: [file] } }); });
+  await act(async () => { await gGenerate().props.onClick(); });
+  assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 2 — shirt-chosen & trouser");
+  assert.equal(gData("data-ai-try-on-side-preview").length, 1);
+  const reqBeforeSwap = requests.length;
+  await act(async () => { gData("data-ai-try-on-side-preview")[0].props.onClick(); });
+  assert.equal(requests.length, reqBeforeSwap, "side preview swap never calls requestPreview");
+  assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 1 — shirt-first");
+  await act(async () => { gPanel.unmount(); });
+}
 console.log("Combined outfit: snapshots, explicit choices, slot isolation, downstream selection and reload passed");

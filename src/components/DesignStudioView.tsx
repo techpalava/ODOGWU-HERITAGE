@@ -394,6 +394,12 @@ import {
   type AiTryOnSessionPreview,
 } from "./AiTryOnPhotoPanel";
 import {
+  clearAiTryOnPreviewGalleryStorage,
+  EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE,
+  readAiTryOnPreviewGalleryState,
+  type AiTryOnPreviewGalleryState,
+} from "../services/aiTryOnPreviewGalleryStorage";
+import {
   aiTryOnBackgroundJobs,
   useAiTryOnBackgroundJobs,
 } from "../services/aiTryOnBackgroundJobs";
@@ -3932,6 +3938,15 @@ export default function DesignStudioView({
   const [aiTryOnSessionPreviews, setAiTryOnSessionPreviews] = useState<
     Record<string, AiTryOnSessionPreview>
   >({});
+  const [aiTryOnSessionGallery, setAiTryOnSessionGallery] = useState<AiTryOnPreviewGalleryState>(
+    () => readAiTryOnPreviewGalleryState(futureDraftIdentityKey),
+  );
+  const aiTryOnGalleryScopeRef = useRef(futureDraftIdentityKey);
+  useEffect(() => {
+    if (aiTryOnGalleryScopeRef.current === futureDraftIdentityKey) return;
+    aiTryOnGalleryScopeRef.current = futureDraftIdentityKey;
+    setAiTryOnSessionGallery(readAiTryOnPreviewGalleryState(futureDraftIdentityKey));
+  }, [futureDraftIdentityKey]);
   const aiTryOnSessionPhotoRef = useRef(aiTryOnSessionPhoto);
   aiTryOnSessionPhotoRef.current = aiTryOnSessionPhoto;
   const replaceAiTryOnSessionPhoto = useCallback((next: AiTryOnSessionPhoto | null) => {
@@ -3955,6 +3970,8 @@ export default function DesignStudioView({
     setAiTryOnSessionWearerId(null);
     setAiTryOnSessionMeasurementWearerId(null);
     setAiTryOnSessionPreviews({});
+    setAiTryOnSessionGallery(EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE);
+    clearAiTryOnPreviewGalleryStorage();
   }, []);
   const loadStoredAiTryOnPreview = useCallback(
     (previewId: string) => fetchStoredAiTryOnPreview({ credentials: aiTryOnCredentials, previewId }),
@@ -12155,6 +12172,8 @@ export default function DesignStudioView({
                 onSessionMeasurementWearerIdChange={setAiTryOnSessionMeasurementWearerId}
                 sessionPreviews={aiTryOnSessionPreviews}
                 onSessionPreviewsChange={(update) => setAiTryOnSessionPreviews(update)}
+                sessionGallery={aiTryOnSessionGallery}
+                onSessionGalleryChange={(update) => setAiTryOnSessionGallery(update)}
               />
             ) : undefined
           }
