@@ -319,3 +319,28 @@ export const orderDetailsFingerprintIdentity = (
           : null,
       }
     : null;
+
+/**
+ * Visible waistband details (belt loops / drawstring rope) that would be
+ * hidden behind a completely untucked top in an outfit preview.
+ */
+export const AI_TRY_ON_WAISTBAND_SHOWCASE_OPTION_IDS: ReadonlySet<string> = new Set([
+  "shorts_std_belt",
+  "bum_belt",
+  "trouser_belt",
+  "shorts_std_rope",
+  "bum_rope",
+  "trouser_rope",
+  "shorts_std_rope_elastic",
+  "bum_rope_elastic",
+  "trouser_rope_elastic",
+]);
+
+export const aiTryOnOrderHasWaistbandShowcase = (
+  details: AiTryOnOrderDetails | null | undefined,
+): boolean =>
+  Boolean(
+    details?.garments.some((garment) =>
+      garment.optionIds.some((optionId) => AI_TRY_ON_WAISTBAND_SHOWCASE_OPTION_IDS.has(optionId)),
+    ),
+  );

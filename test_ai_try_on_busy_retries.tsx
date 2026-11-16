@@ -55,7 +55,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 }
 
 // Server-only collection: no client access.
-assert.match(readFileSync("firestore.rules", "utf8"), /match \/aiTryOnJobs\/\{document=\*\*\} \{\n\s+allow read, write: if false;/);
+assert.match(readFileSync("firestore.rules", "utf8"), /match \/aiTryOnJobs\/\{document=\*\*\} \{\r?\n\s+allow read, write: if false;/);
 
 // ------------------------------------------------------------ server fakes
 type Doc = Record<string, unknown>;

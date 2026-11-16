@@ -3939,14 +3939,32 @@ export default function DesignStudioView({
     Record<string, AiTryOnSessionPreview>
   >({});
   const [aiTryOnSessionGallery, setAiTryOnSessionGallery] = useState<AiTryOnPreviewGalleryState>(
-    () => readAiTryOnPreviewGalleryState(futureDraftIdentityKey),
+    () => {
+      const initial = readAiTryOnPreviewGalleryState(futureDraftIdentityKey);
+      if (initial.items.length > 0 || futureDraftIdentityKey !== "resolving") {
+        return initial;
+      }
+      return readAiTryOnPreviewGalleryState("guest");
+    },
   );
   const aiTryOnGalleryScopeRef = useRef(futureDraftIdentityKey);
   useEffect(() => {
     if (aiTryOnGalleryScopeRef.current === futureDraftIdentityKey) return;
     aiTryOnGalleryScopeRef.current = futureDraftIdentityKey;
-    setAiTryOnSessionGallery(readAiTryOnPreviewGalleryState(futureDraftIdentityKey));
+    const restored = readAiTryOnPreviewGalleryState(futureDraftIdentityKey);
+    setAiTryOnSessionGallery((current) => {
+      if (restored.items.length > 0) return restored;
+      if (current.items.length > 0 && futureDraftIdentityKey === "guest") return current;
+      return restored;
+    });
   }, [futureDraftIdentityKey]);
+  useEffect(() => {
+    if (!guestDraftHydrated) return;
+    setAiTryOnSessionGallery((current) => {
+      if (current.items.length > 0) return current;
+      return readAiTryOnPreviewGalleryState(futureDraftIdentityKey);
+    });
+  }, [guestDraftHydrated, futureDraftIdentityKey]);
   const aiTryOnSessionPhotoRef = useRef(aiTryOnSessionPhoto);
   aiTryOnSessionPhotoRef.current = aiTryOnSessionPhoto;
   const replaceAiTryOnSessionPhoto = useCallback((next: AiTryOnSessionPhoto | null) => {
@@ -9589,6 +9607,16 @@ export default function DesignStudioView({
     async (previewId: string) => {
       const cached = aiTryOnOrderPreviewImagesRef.current.get(previewId);
       if (cached) return cached;
+      const galleryItem = aiTryOnSessionGallery.items.find(
+        (entry) =>
+          (entry.storedPreviewId && entry.storedPreviewId === previewId) ||
+          entry.id === previewId,
+      );
+      if (galleryItem?.data) {
+        const result = { mimeType: galleryItem.mimeType, data: galleryItem.data };
+        aiTryOnOrderPreviewImagesRef.current.set(previewId, result);
+        return result;
+      }
       const job = aiTryOnScopedJobsRef.current.find(
         (entry) => entry.storedPreviewId === previewId && entry.preview,
       );
@@ -9597,7 +9625,7 @@ export default function DesignStudioView({
       if (image) aiTryOnOrderPreviewImagesRef.current.set(previewId, image);
       return image;
     },
-    [aiTryOnCredentials],
+    [aiTryOnCredentials, aiTryOnSessionGallery.items],
   );
   const aiTryOnOrderPreviewEntries = aiTryOnOrderPreviewStageActive
     ? selectAiTryOnOrderPreviews(aiTryOnPreviewTargets(aiTryOnWearerTargets), aiTryOnOrderPreviewSummaries)

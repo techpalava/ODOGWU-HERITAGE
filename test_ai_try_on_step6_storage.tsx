@@ -936,6 +936,8 @@ console.log("PASS: multi-garment previews survive switch, generation, reload, de
   const {
     AI_TRY_ON_LEGACY_SINGLE_PREVIEW_STORAGE_KEY,
     AI_TRY_ON_PREVIEW_GALLERY_STORAGE_KEY,
+    EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE,
+    appendAiTryOnGalleryPreview,
     normalizeAiTryOnGarmentTitle,
     readAiTryOnPreviewGalleryState,
     saveAiTryOnPreviewGalleryState,
@@ -1175,6 +1177,97 @@ console.log("PASS: multi-garment previews survive switch, generation, reload, de
   assert.equal(resultImages(reloaded)[0].props.src, `data:image/png;base64,${Buffer.from("img-2").toString("base64")}`);
   act(() => {
     reloaded.unmount();
+  });
+
+  // Single generated preview reload test: simulate refresh when exactly 1 preview was created.
+  const singlePreviewStore = makeStore();
+  const singleGalleryState = appendAiTryOnGalleryPreview(
+    EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE,
+    {
+      id: "stored-single-1",
+      wearerId: "w-ada",
+      previewKey: "w-ada--garment--base:kaftan",
+      garmentKey: "base:kaftan",
+      garmentTitle: "Long Shirt",
+      inputFingerprint: "fp-single-reload",
+      mimeType: "image/webp",
+      data: Buffer.from("single-preview-bytes").toString("base64"),
+      storedPreviewId: "stored-single-1",
+      modelId: "female-2-medium",
+      previewKind: "single",
+      uploadedDesign: false,
+      stylePhoto: false,
+      activate: true,
+    },
+  );
+  saveAiTryOnPreviewGalleryState("guest", singleGalleryState, singlePreviewStore);
+
+  // Test 1: "resolving" scope falls back to "guest"
+  const resolvingRestored = readAiTryOnPreviewGalleryState("resolving", singlePreviewStore);
+  assert.equal(resolvingRestored.items.length, 1, "resolving scope falls back to guest gallery");
+  assert.equal(resolvingRestored.items[0].caption, "Preview 1 — Long Shirt");
+
+  // Test 2: saving under "resolving" scope is ignored to prevent corrupting stored guest drafts
+  saveAiTryOnPreviewGalleryState("resolving", EMPTY_AI_TRY_ON_PREVIEW_GALLERY_STATE, singlePreviewStore);
+  assert.equal(readAiTryOnPreviewGalleryState("guest", singlePreviewStore).items.length, 1, "saving under resolving never wipes guest gallery");
+
+  // Test 3: 1 single preview restores onto Main Stage after page refresh with 0 side previews and syncs model
+  let restoredModelId: string | null = null;
+  const singleTarget: AiTryOnWearerTarget = {
+    wearerId: "w-ada",
+    label: "Ada",
+    inputFingerprint: "fp-single-reload",
+    mode: "garment",
+    garmentImageUrl: "https://example.test/kaftan.jpg",
+    fabricSwatchImageUrl: null,
+    fitHints: [],
+    orderDetails: null,
+    previewableGarments: [
+      {
+        garmentKey: "base:kaftan",
+        label: "Long Shirt",
+        garmentType: "kaftan",
+        garmentImageUrl: "https://example.test/kaftan.jpg",
+        fabricSwatchImageUrl: null,
+        fabricColorHex: null,
+        orderDetails: null,
+      },
+    ],
+  };
+  let singleReloaded!: ReturnType<typeof create>;
+  await act(async () => {
+    singleReloaded = create(createElement(AiTryOnPhotoPanel, {
+      targets: [singleTarget],
+      credentials: { getIdToken: async () => null, sessionToken: "st-single" },
+      triesPerOrder: 3,
+      initialTriesRemaining: 3,
+      storedPreviews: [],
+      loadStoredPreview: async () => null,
+      deleteStoredPreview: async () => true,
+      onPreviewCreated: () => {},
+      onUnavailable: () => {},
+      galleryStore: singlePreviewStore,
+      jobScope: "guest",
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      sessionModelIdByWearer: {},
+      onSessionModelIdByWearerChange: (update) => {
+        const next = typeof update === "function" ? update({}) : update;
+        restoredModelId = next["w-ada"] ?? null;
+      },
+    }));
+  });
+  await flush();
+
+  const singleByAttr = (attr: string) =>
+    singleReloaded.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined);
+  assert.equal(singleByAttr("data-ai-try-on-main-stage").length, 1, "1 single preview renders on main stage on reload");
+  assert.equal(textOf(singleByAttr("data-ai-try-on-main-caption")[0]), "Preview 1 — Long Shirt");
+  assert.equal(singleByAttr("data-ai-try-on-side-preview").length, 0, "side rail remains hidden for single preview");
+  assert.equal(resultImages(singleReloaded)[0].props.src, `data:image/webp;base64,${Buffer.from("single-preview-bytes").toString("base64")}`);
+  assert.equal(restoredModelId, "female-2-medium", "restores wearer model choice from active gallery item");
+
+  act(() => {
+    singleReloaded.unmount();
   });
 
   // Clearing session clears gallery persistence cleanly.
