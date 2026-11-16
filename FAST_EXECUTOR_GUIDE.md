@@ -577,12 +577,14 @@ or unrequested squash/rebase. Never delete main or production as a PR head.
 
 Check-gated merge (PowerShell). gh pr checks exits 0 only when every check
 passed, and 8 while any is pending. A watcher that drops its network connection
-proves nothing, so poll and merge only on exit 0:
+proves nothing, so poll and merge only on exit 0.
+To save credits, tokens, and tool calls, poll on a 3–4 minute cadence (e.g. 180–240
+seconds) rather than tight loops:
 
 $n = 123
 $ok = $false
-for ($i = 0; $i -lt 40; $i++) {
-  Start-Sleep -Seconds 30
+for ($i = 0; $i -lt 10; $i++) {
+  Start-Sleep -Seconds 210
   $out = gh pr checks $n --repo techpalava/ODOGWU-HERITAGE 2>&1
   if ($LASTEXITCODE -eq 0) { $ok = $true; break }
   if ($LASTEXITCODE -eq 1 -and ($out -match 'fail')) { break }
@@ -601,14 +603,32 @@ makes that equality expected; do not erase legitimate newer main content.
 Normal flow, all through GitHub PRs with merge commits (no local merges into
 main or production; the local main/production worktrees may be stale):
 
+0. Pre-flight check:
+   - Run `gh pr list --repo techpalava/ODOGWU-HERITAGE --state open` and inspect
+     active worktrees to verify no conflicting bot release or release PR is currently
+     in flight.
+   - Verify target PR HEAD SHA matches the reviewed commit and all GitHub/Vercel
+     checks on that exact SHA are SUCCESS (polling checks every 3–4 minutes).
+
 1. Feature PR:
    git push github <feature-branch>
    gh pr create --repo techpalava/ODOGWU-HERITAGE --base main --head <feature-branch> --title "<title>" --body-file "$env:TEMP\pr-body.md"
+   Merge using merge commit (`--merge`, no squash, no rebase).
+
 2. Release PR:
+   git fetch github
+   Verify `git diff --stat github/production...github/main` contains only the intended delta.
    gh pr create --repo techpalava/ODOGWU-HERITAGE --base production --head main --title "Release <what> to production" --body "Releases PR #N: <summary>."
+   Wait for Vercel checks on the exact head SHA to pass (poll every 3–4 minutes) and merge using merge commit (`--merge`).
+
 3. Sync PR (reuse an open one; the title is exact):
    gh pr list --repo techpalava/ODOGWU-HERITAGE --state open --base main --head production
    gh pr create --repo techpalava/ODOGWU-HERITAGE --base main --head production --title "Sync production release history back to main" --body "Brings the production release merge for PR #N back into main."
+   Wait for checks to pass and merge using merge commit (`--merge`).
+
+4. Verification:
+   - Live health verification: poll `https://odogwu-heritage.vercel.app/api/health` until `buildId` equals the production merge SHA.
+   - Tree equality: verify `git rev-parse github/main^{tree}` matches `git rev-parse github/production^{tree}`.
 
 Merge each PR with the check-gated loop in section 19, in that order.
 Record each merge commit with:
