@@ -74,6 +74,7 @@ Object.defineProperty(globalThis, "window", {
     localStorage,
     sessionStorage,
     location: { hash: "", search: "", pathname: "/" },
+    history: { state: null, replaceState: () => undefined },
     scrollY: 0,
     innerWidth: 1280,
     innerHeight: 800,
@@ -362,6 +363,49 @@ try {
     "empty",
     "Continue attempted during Discard must not preserve or reopen old state.",
   );
+
+  // Corrupt V1 storage must offer recovery instead of dead-ending fresh starts.
+  await act(async () => {
+    useAppStore.setState({ activeTab: "home", orderContext: null });
+    await flush();
+  });
+  localStorage.values.delete(FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE);
+  localStorage.values.set(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE, "{not-json");
+  await act(async () => {
+    renderer!.root.findByProps({ id: "btn-start-individual-order" }).props.onClick();
+    await flush();
+  });
+  const recoveryDialog = renderer!.root.findByProps({
+    "data-individual-order-start-dialog": "true",
+  });
+  assert.equal(
+    recoveryDialog.findAllByProps({ "data-individual-order-resume": "true" }).length,
+    0,
+  );
+  await act(async () => {
+    recoveryDialog.findByProps({ "data-individual-order-cancel": "true" }).props.onClick();
+  });
+  assert.equal(
+    localStorage.values.get(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE),
+    "{not-json",
+    "Cancelling recovery leaves storage untouched.",
+  );
+  await act(async () => {
+    renderer!.root.findByProps({ id: "btn-start-individual-order" }).props.onClick();
+    await flush();
+  });
+  const recoveryDialogConfirm = renderer!.root.findByProps({
+    "data-individual-order-start-dialog": "true",
+  });
+  await act(async () => {
+    recoveryDialogConfirm
+      .findByProps({ "data-individual-order-start-fresh": "true" })
+      .props.onClick();
+    await flush();
+  });
+  assert.equal(useAppStore.getState().activeTab, "design");
+  assert.equal(useAppStore.getState().orderContext?.orderType, "Individual");
+  assert.equal(GuestOrderSessionService.inspectFutureDesignDraft().status, "empty");
 } finally {
   if (renderer) {
     await act(async () => renderer!.unmount());

@@ -17,6 +17,7 @@ export const HomepageDraftReplacementDialog = ({
   busy,
   targetAction = "join",
   unavailableMessage,
+  recoveryMode,
   onContinueExisting,
   onDiscardAndJoin,
   onCancel,
@@ -28,6 +29,7 @@ export const HomepageDraftReplacementDialog = ({
   busy: boolean;
   targetAction?: "join" | "create";
   unavailableMessage?: string;
+  recoveryMode?: "invalid" | "unavailable";
   onContinueExisting: () => void;
   onDiscardAndJoin: () => void;
   onCancel: () => void;
@@ -92,13 +94,30 @@ export const HomepageDraftReplacementDialog = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [busy, onCancel]);
 
-  const title = isIndividualDraft
-    ? "You already have an unfinished Individual Order"
-    : "You already have an unfinished order";
   const action = targetAction === "create" ? "create" : "join";
-  const body = isIndividualDraft
-    ? `To ${action} ${clickedBatchName}, you'll need to discard your unfinished Individual Order.`
-    : `Your current draft is for ${existingOrderLabel}. To ${action} ${clickedBatchName}, you'll need to discard the unfinished ${existingOrderLabel} order.`;
+  const title =
+    recoveryMode === "invalid"
+      ? "Unreadable unfinished order"
+      : recoveryMode === "unavailable"
+        ? "Could not check unfinished order"
+        : isIndividualDraft
+          ? "You already have an unfinished Individual Order"
+          : "You already have an unfinished order";
+  const body =
+    recoveryMode === "invalid"
+      ? `We found a saved draft that could not be read. To ${action} ${clickedBatchName}, you'll need to clear that unreadable draft.`
+      : recoveryMode === "unavailable"
+        ? `We could not verify whether you have an unfinished order right now. To ${action} ${clickedBatchName}, confirm below to clear any readable draft and continue, or cancel to try again.`
+        : isIndividualDraft
+          ? `To ${action} ${clickedBatchName}, you'll need to discard your unfinished Individual Order.`
+          : `Your current draft is for ${existingOrderLabel}. To ${action} ${clickedBatchName}, you'll need to discard the unfinished ${existingOrderLabel} order.`;
+  const resolvedUnavailableMessage =
+    unavailableMessage ||
+    (recoveryMode === "invalid"
+      ? "No resumable order could be loaded from your saved draft."
+      : recoveryMode === "unavailable"
+        ? "Your saved draft could not be checked right now."
+        : "This saved Community batch is no longer accepting orders, so it cannot be resumed.");
 
   const dialog = (
     <div
@@ -166,8 +185,7 @@ export const HomepageDraftReplacementDialog = ({
           </div>
           {!canContinueExisting && (
             <p className="mt-4 break-words text-sm leading-relaxed text-heritage-ink/70">
-              {unavailableMessage ||
-                "This saved Community batch is no longer accepting orders, so it cannot be resumed."}
+              {resolvedUnavailableMessage}
             </p>
           )}
         </div>
@@ -195,7 +213,7 @@ export const HomepageDraftReplacementDialog = ({
             }}
             disabled={busy}
             data-homepage-draft-discard-and-join="true"
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-red-700 bg-red-700 px-4 text-sm font-bold text-white transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+            className={`inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-red-700 bg-red-700 px-4 text-sm font-bold text-white transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45${!canContinueExisting ? " sm:col-span-2" : ""}`}
           >
             {busy
               ? "Working..."
