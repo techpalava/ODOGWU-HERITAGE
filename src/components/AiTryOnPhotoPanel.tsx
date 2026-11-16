@@ -847,6 +847,37 @@ export const AiTryOnPhotoPanel = ({
       (stored[target.wearerId] || previews[target.wearerId]),
   );
   const garmentPickerRef = useRef<HTMLFieldSetElement | null>(null);
+  const modelPickerRef = useRef<HTMLFieldSetElement | null>(null);
+  const pendingModelPickerFocusRef = useRef(false);
+
+  const focusModelPicker = () => {
+    const picker = modelPickerRef.current;
+    if (!picker) return false;
+    pendingModelPickerFocusRef.current = false;
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    picker.scrollIntoView?.({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+    picker.focus?.({ preventScroll: true });
+    return true;
+  };
+
+  const handleOpenModelPicker = () => {
+    pendingModelPickerFocusRef.current = true;
+    setModelPickerOpen(true);
+    if (modelPickerOpen) {
+      focusModelPicker();
+    }
+  };
+
+  useEffect(() => {
+    if (!modelPickerOpen || !pendingModelPickerFocusRef.current) return;
+    focusModelPicker();
+  }, [modelPickerOpen]);
   const previewKey = previewTarget?.wearerId ?? "";
   const measurementTarget =
     targets.find((entry) => entry.wearerId === measurementWearerId) || target;
@@ -2211,7 +2242,7 @@ export const AiTryOnPhotoPanel = ({
             </button>
             <button
               type="button"
-              onClick={() => setModelPickerOpen(true)}
+              onClick={handleOpenModelPicker}
               disabled={generating || missingGarmentImage}
               aria-pressed={Boolean(visibleModel)}
               aria-expanded={modelPickerOpen}
@@ -2255,7 +2286,13 @@ export const AiTryOnPhotoPanel = ({
             )}
           </div>
           {modelPickerOpen && (
-            <fieldset className="min-w-0 rounded-xl border border-heritage-green/15 bg-white p-4" data-ai-try-on-model-picker data-ai-try-on-model-length={studioLength}>
+            <fieldset
+              ref={modelPickerRef}
+              tabIndex={-1}
+              className="min-w-0 scroll-mt-28 rounded-xl border border-heritage-green/15 bg-white p-4 outline-none sm:scroll-mt-24"
+              data-ai-try-on-model-picker
+              data-ai-try-on-model-length={studioLength}
+            >
               <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
                 {AI_TRY_ON_MODEL_COPY.heading}
               </legend>
