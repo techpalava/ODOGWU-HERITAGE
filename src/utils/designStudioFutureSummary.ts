@@ -1166,9 +1166,19 @@ const summarizeOrderMeasurements = ({
       byGarment: summary.byGarment,
     };
   });
+  const assignedKeys = new Set(
+    wearerGroups.flatMap((wearer) => wearer.garmentKeys),
+  );
+  const hasUnassignedGarment = [...garmentLabels.keys()].some(
+    (garmentKey) => !assignedKeys.has(garmentKey),
+  );
   if (
+    hasUnassignedGarment ||
     wearerGroups.some(
-      (wearer) => wearer.route === null || wearer.status !== "complete",
+      (wearer) =>
+        wearer.garmentKeys.length === 0 ||
+        wearer.route === null ||
+        wearer.status !== "complete",
     )
   ) {
     blockers.push({
