@@ -927,3 +927,259 @@ console.log("PASS: AI Try-on Step 6 private preview storage, retention, deletion
   act(() => restored.renderer.unmount());
 }
 console.log("PASS: multi-garment previews survive switch, generation, reload, deletion and Summary selection");
+
+// Step 7 Multi-Preview Switcher (#1305 extension):
+// 1. Retain 1st, 2nd & 3+ previews across generations and Admin try reset with "Preview X — <Title>" ("Long Shirt" wording).
+// 2. Click-to-swap in Main Stage + Side Rail without API calls, try decrements, or garment mutation.
+// 3. Persistence across page refresh via localStorage/galleryStore + active selection + legacy single-preview migration.
+{
+  const {
+    AI_TRY_ON_LEGACY_SINGLE_PREVIEW_STORAGE_KEY,
+    AI_TRY_ON_PREVIEW_GALLERY_STORAGE_KEY,
+    normalizeAiTryOnGarmentTitle,
+    readAiTryOnPreviewGalleryState,
+    saveAiTryOnPreviewGalleryState,
+  } = await import("./src/services/aiTryOnPreviewGalleryStorage");
+  const { retireAiTryOnSessions } = await import("./src/services/aiTryOnSessionToken");
+
+  assert.equal(normalizeAiTryOnGarmentTitle("Kaftan"), "Long Shirt");
+  assert.equal(normalizeAiTryOnGarmentTitle("Kaftan + Shorts"), "Long Shirt & Shorts");
+
+  const makeStore = (initial: Record<string, string> = {}) => {
+    const map = new Map<string, string>(Object.entries(initial));
+    return {
+      map,
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => void map.set(key, value),
+      removeItem: (key: string) => void map.delete(key),
+    };
+  };
+
+  // Legacy single-preview migration + Long Shirt wording enforcement.
+  const legacyStore = makeStore({
+    [AI_TRY_ON_LEGACY_SINGLE_PREVIEW_STORAGE_KEY]: JSON.stringify({
+      default: {
+        wearerKey: "w-ada",
+        inputFingerprint: FINGERPRINT,
+        mimeType: "image/png",
+        data: "bGVnYWN5LTE=",
+        garmentTitle: "Kaftan",
+        modelId: "male-plus",
+      },
+    }),
+  });
+  const migrated = readAiTryOnPreviewGalleryState("default", legacyStore);
+  assert.equal(migrated.items.length, 1, "legacy single preview migrates to 1-item gallery");
+  assert.equal(migrated.items[0].caption, "Preview 1 — Long Shirt");
+  assert.equal(migrated.activeIdByWearer["w-ada"], migrated.items[0].id);
+  assert.equal(legacyStore.getItem(AI_TRY_ON_LEGACY_SINGLE_PREVIEW_STORAGE_KEY), null);
+  assert.ok(legacyStore.getItem(AI_TRY_ON_PREVIEW_GALLERY_STORAGE_KEY));
+
+  // Full multi-preview workflow in AiTryOnPhotoPanel:
+  const multiTarget = target({
+    wearerId: "w-ada",
+    label: "Ada",
+    previewableGarments: [
+      {
+        garmentKey: "base:skirt",
+        garmentType: "skirt",
+        sourceKind: "catalog",
+        label: "Standard Skirt",
+        garmentImageUrl: "https://example.test/skirt.jpg",
+        fabricSwatchImageUrl: "https://example.test/fabric.jpg",
+        fabricColorHex: null,
+        orderDetails: null,
+      },
+      {
+        garmentKey: "base:kaftan",
+        garmentType: "kaftan",
+        sourceKind: "catalog",
+        label: "Kaftan",
+        garmentImageUrl: "https://example.test/kaftan.jpg",
+        fabricSwatchImageUrl: "https://example.test/fabric.jpg",
+        fabricColorHex: null,
+        orderDetails: null,
+      },
+      {
+        garmentKey: "base:shorts",
+        garmentType: "standard_shorts",
+        sourceKind: "catalog",
+        label: "Shorts",
+        garmentImageUrl: "https://example.test/shorts.jpg",
+        fabricSwatchImageUrl: "https://example.test/fabric.jpg",
+        fabricColorHex: null,
+        orderDetails: null,
+      },
+    ],
+  });
+
+  const galleryStore = makeStore();
+  let apiCalls = 0;
+  let remaining = 2;
+  let resets = 0;
+  const switcherBase: AiTryOnPhotoPanelProps = {
+    targets: [multiTarget],
+    triesPerOrder: 2,
+    initialTriesRemaining: 2,
+    onPreviewCreated: () => undefined,
+    onUnavailable: () => undefined,
+    galleryStore,
+    jobScope: "scope-switcher",
+    storedPreviews: [],
+    readResetStatus: async () => ({ eligible: true }),
+    resetOwnTries: async () => {
+      resets += 1;
+      remaining = 2;
+      return true;
+    },
+    requestPreview: async () => {
+      apiCalls += 1;
+      remaining = Math.max(0, remaining - 1);
+      const id = `sw-${apiCalls}`;
+      return {
+        kind: "completed",
+        resultReference: {
+          kind: "verified_private_try_on_result",
+          assetId: id,
+          ownerBindingId: "owner-sw",
+        },
+        preview: {
+          mimeType: "image/png",
+          data: Buffer.from(`img-${apiCalls}`).toString("base64"),
+        },
+        storedPreviewId: id,
+        orderTriesRemaining: remaining,
+      };
+    },
+  };
+
+  let swRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    swRenderer = create(createElement(AiTryOnPhotoPanel, {
+      ...switcherBase,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+    }));
+  });
+  await flush();
+
+  const swButtons = () => swRenderer.root.findAll((node) => node.type === "button");
+  const swByAttr = (attr: string) =>
+    swRenderer.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined);
+  const swGenerate = () =>
+    swButtons().find((node) =>
+      /Generate preview|Make a new preview|Generate combined outfit/.test(textOf(node)),
+    )!;
+
+  // 1st Preview: Standard Skirt
+  await act(async () => {
+    await swGenerate().props.onClick();
+  });
+  await flush();
+  assert.equal(apiCalls, 1);
+  assert.equal(swByAttr("data-ai-try-on-main-caption")[0] ? textOf(swByAttr("data-ai-try-on-main-caption")[0]) : "", "Preview 1 — Standard Skirt");
+  assert.equal(swByAttr("data-ai-try-on-side-preview").length, 0, "1 preview hides the side rail");
+  assert.equal(resultImages(swRenderer)[0].props.src, `data:image/png;base64,${Buffer.from("img-1").toString("base64")}`);
+
+  // 2nd Preview: Combined outfit Long Shirt & Shorts ("Kaftan" normalized to "Long Shirt")
+  await act(async () => {
+    swByAttr("data-ai-try-on-outfit-mode")[0].props.onClick();
+  });
+  await act(async () => {
+    swByAttr("data-ai-try-on-outfit-choice")[0].props.onChange({ target: { value: "base:kaftan" } });
+  });
+  await act(async () => {
+    swByAttr("data-ai-try-on-outfit-choice")[1].props.onChange({ target: { value: "base:shorts" } });
+  });
+  await act(async () => {
+    await swGenerate().props.onClick();
+  });
+  await flush();
+  assert.equal(apiCalls, 2);
+  const caption2 = textOf(swByAttr("data-ai-try-on-main-caption")[0]);
+  assert.equal(caption2, "Preview 2 — Long Shirt & Shorts");
+  assert.equal(/Kaftan/i.test(textOf(swByAttr("data-ai-try-on-result")[0])), false);
+  assert.equal(/Kaftan/i.test(caption2), false, "customer-facing caption uses Long Shirt wording");
+
+  const sideAfter2 = swByAttr("data-ai-try-on-side-preview");
+  assert.equal(sideAfter2.length, 1, "side slot retains Preview 1");
+  assert.match(textOf(sideAfter2[0]), /Preview 1 — Standard Skirt/);
+  assert.equal(resultImages(swRenderer).length, 1, "main stage image stays uniquely keyed for order compatibility");
+  assert.equal(resultImages(swRenderer)[0].props.src, `data:image/png;base64,${Buffer.from("img-2").toString("base64")}`);
+
+  // Click side preview to swap Preview 1 into Main Stage — zero API calls, tries/garment controls unchanged.
+  assert.equal(swByAttr("data-ai-try-on-outfit-mode")[0].props["aria-pressed"], true);
+  assert.match(textOf(swGenerate()), /0 tries left/);
+  await act(async () => {
+    sideAfter2[0].props.onClick();
+  });
+  assert.equal(apiCalls, 2, "click-to-swap never triggers an API call");
+  assert.equal(textOf(swByAttr("data-ai-try-on-main-caption")[0]), "Preview 1 — Standard Skirt");
+  assert.equal(resultImages(swRenderer)[0].props.src, `data:image/png;base64,${Buffer.from("img-1").toString("base64")}`);
+  assert.equal(swByAttr("data-ai-try-on-side-preview").length, 1);
+  assert.match(textOf(swByAttr("data-ai-try-on-side-preview")[0]), /Preview 2 — Long Shirt & Shorts/);
+  assert.equal(swByAttr("data-ai-try-on-outfit-mode")[0].props["aria-pressed"], true, "swap does not mutate garment/mode controls");
+  assert.match(textOf(swGenerate()), /0 tries left/, "swap does not alter tries");
+
+  // 3rd Preview via Admin Reset flow -> stacks all session previews without losing earlier previews.
+  const resetStartBtn = swButtons().find((node) => /Reset my AI try-on tries/.test(textOf(node)))!;
+  await act(async () => {
+    resetStartBtn.props.onClick();
+  });
+  const resetConfirmBtn = swButtons().find((node) => /Confirm reset/.test(textOf(node)))!;
+  await act(async () => {
+    await resetConfirmBtn.props.onClick();
+  });
+  assert.equal(resets, 1);
+
+  await act(async () => {
+    swByAttr("data-ai-try-on-single-mode")[0].props.onClick();
+  });
+  const kaftanGarmentBtn = swButtons().find((node) => node.props["data-ai-try-on-garment"] === "base:kaftan")!;
+  await act(async () => {
+    kaftanGarmentBtn.props.onClick();
+  });
+  await act(async () => {
+    await swGenerate().props.onClick();
+  });
+  await flush();
+  assert.equal(apiCalls, 3);
+  assert.equal(textOf(swByAttr("data-ai-try-on-main-caption")[0]), "Preview 3 — Long Shirt");
+  const sideAfter3 = swByAttr("data-ai-try-on-side-preview");
+  assert.equal(sideAfter3.length, 2, "Preview 1 and Preview 2 stack in the side rail");
+  assert.match(textOf(sideAfter3[0]), /Preview 1 — Standard Skirt/);
+  assert.match(textOf(sideAfter3[1]), /Preview 2 — Long Shirt & Shorts/);
+
+  // Swap Preview 2 into Main Stage before simulated browser refresh.
+  await act(async () => {
+    sideAfter3[1].props.onClick();
+  });
+  assert.equal(textOf(swByAttr("data-ai-try-on-main-caption")[0]), "Preview 2 — Long Shirt & Shorts");
+
+  // Simulate full browser reload (#1305): unmount and remount fresh panel reading only galleryStore.
+  act(() => {
+    swRenderer.unmount();
+  });
+  let reloaded!: ReturnType<typeof create>;
+  await act(async () => {
+    reloaded = create(createElement(AiTryOnPhotoPanel, {
+      ...switcherBase,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+    }));
+  });
+  await flush();
+  const reByAttr = (attr: string) =>
+    reloaded.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined);
+  assert.equal(apiCalls, 3, "reload restores persisted gallery without API calls");
+  assert.equal(textOf(reByAttr("data-ai-try-on-main-caption")[0]), "Preview 2 — Long Shirt & Shorts", "active selection survives refresh");
+  assert.equal(reByAttr("data-ai-try-on-side-preview").length, 2, "all 3 session previews survive refresh");
+  assert.equal(resultImages(reloaded)[0].props.src, `data:image/png;base64,${Buffer.from("img-2").toString("base64")}`);
+  act(() => {
+    reloaded.unmount();
+  });
+
+  // Clearing session clears gallery persistence cleanly.
+  saveAiTryOnPreviewGalleryState("scope-switcher", readAiTryOnPreviewGalleryState("scope-switcher", galleryStore), galleryStore);
+  retireAiTryOnSessions(galleryStore as unknown as Storage);
+  assert.equal(readAiTryOnPreviewGalleryState("scope-switcher", galleryStore).items.length, 0);
+}
+console.log("PASS: Step 7 multi-preview switcher retains 1/2/3+ previews, Long Shirt wording, click-to-swap, refresh persistence, and legacy migration");
