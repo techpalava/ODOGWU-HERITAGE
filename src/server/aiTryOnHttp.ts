@@ -1392,9 +1392,9 @@ async function handleAiTryOnRequest(
   );
   const outcome = await runAiTryOnGemini({
     generateContent: (dependencies.createGenerateContent ?? createGeminiGenerateContent)(apiKey),
-    prompt: parsed.stylePhoto ? buildAiTryOnStylePhotoPrompt() : parsed.uploadedDesign ? buildAiTryOnUploadedDesignPrompt(parsed.uploadedDesign.garmentType) : parsed.outfitGarments ? buildAiTryOnOutfitPrompt({ garments: parsed.outfitGarments, onModel: Boolean(defaultModel), fitHints: parsed.fitHints }) : defaultModel
+    prompt: parsed.stylePhoto ? buildAiTryOnStylePhotoPrompt() : parsed.uploadedDesign ? buildAiTryOnUploadedDesignPrompt(parsed.uploadedDesign.garmentType) : parsed.outfitGarments ? buildAiTryOnOutfitPrompt({ garments: parsed.outfitGarments, onModel: Boolean(defaultModel), fitHints: parsed.fitHints, baseLength: defaultModel?.lengthCategory ?? null }) : defaultModel
 
-      ? buildAiTryOnModelPrompt({ mode: parsed.mode, orderDetails: parsed.orderDetails })
+      ? buildAiTryOnModelPrompt({ mode: parsed.mode, orderDetails: parsed.orderDetails, baseLength: defaultModel.lengthCategory })
       : buildAiTryOnPrompt({
           mode: parsed.mode,
           fitHints: parsed.fitHints,

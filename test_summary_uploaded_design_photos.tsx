@@ -558,13 +558,14 @@ for (const chip of chips()) {
   await act(async () => { chip.props.onClick(); });
   for (const button of garments()) {
     await act(async () => { button.props.onClick(); });
-    const model = people.root.findAll((node) => node.props["data-ai-try-on-model"] === "male-plus")[0];
+    const plusOnScreen = () => people.root.findAll((node) => node.props["data-ai-try-on-model"] === "male-plus" || node.props["data-ai-try-on-model"] === "male-plus-short")[0];
+    const model = plusOnScreen();
     if (!model) {
       const choose = people.root.findAll((node) => node.type === "button" && /Try it on a model|Choose a model/.test(textOf(node as never)))[0];
       assert.ok(choose);
       await act(async () => { await choose.props.onClick(); });
     }
-    const picked = people.root.findAll((node) => node.props["data-ai-try-on-model"] === "male-plus")[0];
+    const picked = plusOnScreen();
     assert.ok(picked);
     await act(async () => { picked.props.onClick(); });
     const preview = people.root.findAll((node) => node.type === "button" && /Generate preview/.test(textOf(node as never)) && node.props.disabled !== true)[0];
@@ -597,7 +598,7 @@ for (const button of obiStudio.root.findAll((node) => node.type === "button" && 
   await act(async () => { button.props.onClick(); });
   const choose = obiStudio.root.findAll((node) => node.type === "button" && /Try it on a model|Choose a model/.test(textOf(node as never)))[0];
   if (choose) await act(async () => { await choose.props.onClick(); });
-  const picked = obiStudio.root.findAll((node) => node.props["data-ai-try-on-model"] === "male-plus")[0];
+  const picked = obiStudio.root.findAll((node) => node.props["data-ai-try-on-model"] === "male-plus" || node.props["data-ai-try-on-model"] === "male-plus-short")[0];
   assert.ok(picked);
   await act(async () => { picked.props.onClick(); });
   const preview = obiStudio.root.findAll((node) => node.type === "button" && /Generate preview/.test(textOf(node as never)) && node.props.disabled !== true)[0];
