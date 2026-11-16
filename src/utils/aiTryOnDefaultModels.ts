@@ -1,17 +1,20 @@
 /**
- * Default try-on models: ten fictional studio models a customer can pick
+ * Default try-on models: ten fictional studio personas a customer can pick
  * instead of uploading a photo ("No photo? Try it on a model").
  *
- * The pictures are AI-generated, fictional adults (no real person), shipped
- * as static WebP files in public/ai-try-on-models/ (~20 KB each). They use no
- * Firebase Storage: the browser shows them from the site, and the server
- * reads the same files from disk (vercel.json `includeFiles`) to send to
- * Gemini, so a request only ever carries the model id.
+ * Each persona has two static base photos in public/ai-try-on-models/:
+ * `long` (full-length trousers) and `short` (neutral bum shorts for women,
+ * short knickers for men, bare lower legs). They use no Firebase Storage:
+ * the browser shows them from the site, and the server reads the same files
+ * from disk (vercel.json `includeFiles`) to send to Gemini, so a request
+ * only ever carries the model id.
  */
 
 export type AiTryOnModelGroup = "men" | "women";
 export type AiTryOnModelSkinTone = "light" | "medium" | "deep";
 export type AiTryOnModelBuild = "regular" | "medium" | "plus";
+/** Which base photo this catalogue row uses. */
+export type AiTryOnModelLengthCategory = "short" | "long";
 
 export interface AiTryOnDefaultModel {
   readonly id: string;
@@ -20,6 +23,9 @@ export interface AiTryOnDefaultModel {
   readonly build: AiTryOnModelBuild;
   /** Short customer-facing description (wording approved by Xavier). */
   readonly label: string;
+  readonly lengthCategory: AiTryOnModelLengthCategory;
+  /** Shared identity for the long and short base photos of one persona. */
+  readonly personaId: string;
 }
 
 export const AI_TRY_ON_MODEL_GROUP_LABELS: Readonly<Record<AiTryOnModelGroup, string>> = {
@@ -39,46 +45,100 @@ const BUILD_LABELS: Readonly<Record<AiTryOnModelBuild, string>> = {
 };
 
 const model = (
-  id: string,
+  personaId: string,
   group: AiTryOnModelGroup,
   skinTone: AiTryOnModelSkinTone,
   build: AiTryOnModelBuild,
+  lengthCategory: AiTryOnModelLengthCategory,
 ): AiTryOnDefaultModel => ({
-  id,
+  id: lengthCategory === "short" ? `${personaId}-short` : personaId,
   group,
   skinTone,
   build,
+  lengthCategory,
+  personaId,
   label: `${SKIN_TONE_LABELS[skinTone]}, ${BUILD_LABELS[build]}`,
 });
 
-/** Display order: skin tones first, then builds, men before women. */
+const PERSONAS: readonly (readonly [string, AiTryOnModelGroup, AiTryOnModelSkinTone, AiTryOnModelBuild])[] = [
+  ["male-1-light", "men", "light", "regular"],
+  ["male-2-medium", "men", "medium", "regular"],
+  ["male-3-deep", "men", "deep", "regular"],
+  ["male-medium-build", "men", "medium", "medium"],
+  ["male-plus", "men", "medium", "plus"],
+  ["female-1-light", "women", "light", "regular"],
+  ["female-2-medium", "women", "medium", "regular"],
+  ["female-3-deep", "women", "deep", "regular"],
+  ["female-medium-build", "women", "medium", "medium"],
+  ["female-plus", "women", "medium", "plus"],
+];
+
+/**
+ * Display order: the original long (trouser) bases first, in the approved
+ * persona order, then the matching short bases. Skin tones first, then
+ * builds, men before women.
+ */
 export const AI_TRY_ON_DEFAULT_MODELS: readonly AiTryOnDefaultModel[] = [
-  model("male-1-light", "men", "light", "regular"),
-  model("male-2-medium", "men", "medium", "regular"),
-  model("male-3-deep", "men", "deep", "regular"),
-  model("male-medium-build", "men", "medium", "medium"),
-  model("male-plus", "men", "medium", "plus"),
-  model("female-1-light", "women", "light", "regular"),
-  model("female-2-medium", "women", "medium", "regular"),
-  model("female-3-deep", "women", "deep", "regular"),
-  model("female-medium-build", "women", "medium", "medium"),
-  model("female-plus", "women", "medium", "plus"),
+  ...PERSONAS.map(([personaId, group, skinTone, build]) => model(personaId, group, skinTone, build, "long")),
+  ...PERSONAS.map(([personaId, group, skinTone, build]) => model(personaId, group, skinTone, build, "short")),
 ];
 
 const BY_ID = new Map(AI_TRY_ON_DEFAULT_MODELS.map((entry) => [entry.id, entry]));
 
 export const AI_TRY_ON_DEFAULT_MODEL_PUBLIC_DIR = "ai-try-on-models" as const;
 
+/**
+ * Garments whose try-on base must be the short photo. Everything else,
+ * including a standalone Standard Shirt or Long Shirt, uses the long photo.
+ */
+const SHORT_STUDIO_GARMENT_TYPES = new Set([
+  "skirt",
+  "standard_shorts",
+  "bum_shorts",
+  "dress",
+]);
+
 export const findAiTryOnDefaultModel = (id: unknown): AiTryOnDefaultModel | null =>
   typeof id === "string" ? BY_ID.get(id) ?? null : null;
 
+/** The other length of the same persona, or null when the id is unknown. */
+export const aiTryOnDefaultModelLengthVariant = (
+  personaId: string,
+  lengthCategory: AiTryOnModelLengthCategory,
+): AiTryOnDefaultModel | null =>
+  AI_TRY_ON_DEFAULT_MODELS.find(
+    (entry) => entry.personaId === personaId && entry.lengthCategory === lengthCategory,
+  ) ?? null;
+
 /**
- * Studio model pre-selected for a design style's audience.
- * A women's style uses the first women's model. Every other audience,
- * including unisex and unknown, uses the first model in the catalogue.
+ * Short bases for Standard Skirt, Standard Nikka Shorts, Standard Bum Shorts
+ * and Standard Dress. Long bases for Long Dress, Long Skirt, Trouser, and a
+ * standalone Standard Shirt or Long Shirt. An unknown type has no length yet.
  */
-export const defaultAiTryOnStudioModelId = (styleGender: string | null | undefined): string =>
-  styleGender === "female" ? "female-1-light" : AI_TRY_ON_DEFAULT_MODELS[0].id;
+export const aiTryOnStudioModelLengthForGarment = (
+  garmentType: string | null | undefined,
+): AiTryOnModelLengthCategory | null => {
+  if (!garmentType) return null;
+  return SHORT_STUDIO_GARMENT_TYPES.has(garmentType) ? "short" : "long";
+};
+
+/**
+ * Studio model pre-selected for a design style's audience and garment length.
+ * A women's style uses the first women's model of that length. Every other
+ * audience, including unisex and unknown, uses the first men's model of that
+ * length. Long stays the historical default.
+ */
+export const defaultAiTryOnStudioModelId = (
+  styleGender: string | null | undefined,
+  lengthCategory: AiTryOnModelLengthCategory = "long",
+): string => {
+  const group: AiTryOnModelGroup = styleGender === "female" ? "women" : "men";
+  return (
+    AI_TRY_ON_DEFAULT_MODELS.find(
+      (entry) => entry.group === group && entry.lengthCategory === lengthCategory,
+    )?.id ?? AI_TRY_ON_DEFAULT_MODELS[0].id
+  );
+};
 
 /** Site-relative picture URL, e.g. `/ai-try-on-models/male-plus.webp`. */
 export const aiTryOnDefaultModelImageUrl = (entry: AiTryOnDefaultModel): string =>
@@ -86,5 +146,8 @@ export const aiTryOnDefaultModelImageUrl = (entry: AiTryOnDefaultModel): string 
 
 export const aiTryOnDefaultModelsInGroup = (
   group: AiTryOnModelGroup,
+  lengthCategory?: AiTryOnModelLengthCategory,
 ): readonly AiTryOnDefaultModel[] =>
-  AI_TRY_ON_DEFAULT_MODELS.filter((entry) => entry.group === group);
+  AI_TRY_ON_DEFAULT_MODELS.filter(
+    (entry) => entry.group === group && (lengthCategory === undefined || entry.lengthCategory === lengthCategory),
+  );
