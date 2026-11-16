@@ -151,15 +151,33 @@ export const createEmptyFutureShippingState = (): FutureShippingStateV1 => ({
 
 /** Legacy Admin / draft venue label replaced by DEFAULT_FUTURE_PICKUP_LOCATION. */
 const LEGACY_FUTURE_PICKUP_LOCATION = "veldhoven campus lockers";
-
-const normalizeFuturePickupLocationLabel = (value: string): string => {
+/**
+ * Pickup-city wording for customers.
+ * The legacy venue name becomes Eindhoven. Blank stays blank.
+ * Any other text, including a full street address, is returned unchanged.
+ */
+export const customerFacingPickupCity = (
+  value: string | null | undefined,
+): string => {
+  if (typeof value !== "string") return "";
   const trimmed = value.trim();
-  if (!trimmed) return DEFAULT_FUTURE_PICKUP_LOCATION;
   if (trimmed.toLocaleLowerCase("en") === LEGACY_FUTURE_PICKUP_LOCATION) {
     return DEFAULT_FUTURE_PICKUP_LOCATION;
   }
-  return trimmed;
+  return value;
 };
+
+/** Same city rule as the order flow. Blank shows Eindhoven. Full addresses stay. */
+export const customerFacingPickupLocationLabel = (
+  value: string | null | undefined,
+): string => customerFacingPickupCity(value).trim() || DEFAULT_FUTURE_PICKUP_LOCATION;
+
+/** Rewrites only the legacy pickup venue name inside a customer-facing sentence. */
+export const customerFacingPickupWording = (value: string): string =>
+  value.replace(/veldhoven campus lockers/gi, DEFAULT_FUTURE_PICKUP_LOCATION);
+
+const normalizeFuturePickupLocationLabel = (value: string): string =>
+  customerFacingPickupLocationLabel(value);
 
 /**
  * Resolves the venue label for Eindhoven pickup.
