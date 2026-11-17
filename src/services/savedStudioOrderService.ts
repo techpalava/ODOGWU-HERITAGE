@@ -9,20 +9,37 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import type {
+  CustomerDesignUploadReference,
   DesignStudioResumeLocusV1,
   DesignStudioStageId,
   GuestDesignDraft,
 } from "../types";
 import { db } from "./firebase";
-import { normalizeAuthenticatedFutureDraft } from "./authenticatedFutureDraftService";
+import {
+  loadAuthenticatedCloudDraftForOwner,
+  normalizeAuthenticatedFutureDraft,
+  type AuthenticatedFutureDraftLoadResult,
+} from "./authenticatedFutureDraftService";
+import { CustomerDesignUploadService } from "./customerDesignUploadService";
+import { isCustomerDesignDraftStoragePath } from "./customerDesignUploadReference";
+import {
+  getFutureOrderV2HistorySafetyStatus,
+  type FutureOrderV2HistorySafetyStatus,
+} from "./futureOrderV2History";
+import { GuestOrderSessionService } from "./guestOrderSessionService";
+import { useAppStore } from "../store/useAppStore";
 import {
   SAVED_STUDIO_ORDER_COLLECTION,
   SAVED_STUDIO_ORDER_MAX_PER_CUSTOMER,
   SAVED_STUDIO_ORDER_RETRY_MESSAGE,
   SAVED_STUDIO_ORDER_CAP_MESSAGE,
+  collectUploadedDesignReferencesFromDraft,
+  collectUploadedSourceRefsFromDraft,
+  collectUploadedSourceRefsFromV2CartItems,
   createSavedStudioOrderPriceSnapshot,
   generateSavedStudioOrderName,
   getSavedStudioOrderGate,
+  isUploadedSourceReferencedBySavedOrders,
   normalizeSavedStudioOrderIndex,
   normalizeSavedStudioOrderItem,
   normalizeSavedStudioOrderName,
@@ -33,6 +50,7 @@ import {
   type SavedStudioOrderIndexV1,
   type SavedStudioOrderItemV1,
 } from "../utils/savedStudioOrderModel";
+import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
 
 export type SavedStudioOrderWriteResult =
   | { status: "saved"; item: SavedStudioOrderItemV1 }
@@ -442,8 +460,195 @@ export const createFirebaseSavedStudioOrderAdapter = (
   },
 });
 
+export type SavedStudioOrderOrphanCleanupResult = {
+  deletedPaths: string[];
+  retainedRefs: string[];
+  failedPaths: string[];
+};
+
+export type SavedStudioOrderOrphanCleanupDependencies = {
+  loadBundle: (ownerUid: string) => Promise<StoredBundle>;
+  loadCloudDraft?: (ownerUid: string) => Promise<AuthenticatedFutureDraftLoadResult>;
+  getLocalActiveDraft?: () => GuestDesignDraft | null;
+  getCartV2Items?: () => readonly Pick<FutureOrderCartItemV2, "candidate">[];
+  getOrderHistorySafetyStatus?: (
+    sourceRef: string,
+  ) => Promise<FutureOrderV2HistorySafetyStatus>;
+  deleteUpload?: (reference: CustomerDesignUploadReference) => Promise<void>;
+};
+
+const retainAllRefs = (
+  refs: readonly CustomerDesignUploadReference[],
+): SavedStudioOrderOrphanCleanupResult => ({
+  deletedPaths: [],
+  retainedRefs: refs.map((ref) => ref.designReferenceId),
+  failedPaths: [],
+});
+
+/**
+ * Deletes uploaded design objects left behind by a deleted saved order ONLY
+ * when they belong to `ownerUid` and are proven unreferenced by remaining
+ * saved orders, any active local/cloud draft, parked V2 cart items, and
+ * persisted V2 order history. Any lookup uncertainty fails closed (retain),
+ * and any Storage deletion error is swallowed non-destructively.
+ */
+export const cleanupOrphanedSavedOrderUploads = async ({
+  ownerUid,
+  deletedItem,
+  loadBundle,
+  loadCloudDraft = loadAuthenticatedCloudDraftForOwner,
+  getLocalActiveDraft = () => GuestOrderSessionService.getFutureDesignDraft(),
+  getCartV2Items = () => useAppStore.getState().futureOrderV2CartItems,
+  getOrderHistorySafetyStatus = getFutureOrderV2HistorySafetyStatus,
+  deleteUpload = CustomerDesignUploadService.deleteCustomerDesignDraft,
+}: SavedStudioOrderOrphanCleanupDependencies & {
+  ownerUid: string;
+  deletedItem: SavedStudioOrderItemV1;
+}): Promise<SavedStudioOrderOrphanCleanupResult> => {
+  const allRefs = collectUploadedDesignReferencesFromDraft(deletedItem.draft);
+  const ownedRefs = allRefs.filter(
+    (ref) => ref.ownerUid === ownerUid && isCustomerDesignDraftStoragePath(ref),
+  );
+  const retained = new Set<string>(
+    allRefs
+      .filter((ref) => !ownedRefs.includes(ref))
+      .map((ref) => ref.designReferenceId),
+  );
+  if (ownedRefs.length === 0) {
+    return { deletedPaths: [], retainedRefs: [...retained], failedPaths: [] };
+  }
+
+  let remainingItems: SavedStudioOrderItemV1[];
+  try {
+    const bundle = await loadBundle(ownerUid);
+    if (bundle.index) {
+      const parsedIndex = normalizeSavedStudioOrderIndex(bundle.index, ownerUid);
+      if (!parsedIndex.index) return retainAllRefs(allRefs);
+      remainingItems = [];
+      for (const id of parsedIndex.index.itemIds) {
+        if (id === deletedItem.savedOrderId) return retainAllRefs(allRefs);
+        const raw = bundle.items.get(id);
+        if (!raw) return retainAllRefs(allRefs);
+        const parsed = normalizeSavedStudioOrderItem(
+          raw,
+          normalizeAuthenticatedFutureDraft,
+          ownerUid,
+        );
+        if (!parsed.item) return retainAllRefs(allRefs);
+        remainingItems.push(parsed.item);
+      }
+    } else {
+      remainingItems = [];
+    }
+  } catch {
+    return retainAllRefs(allRefs);
+  }
+
+  const afterSavedOrders: CustomerDesignUploadReference[] = [];
+  for (const ref of ownedRefs) {
+    if (isUploadedSourceReferencedBySavedOrders(ref.designReferenceId, remainingItems)) {
+      retained.add(ref.designReferenceId);
+    } else {
+      afterSavedOrders.push(ref);
+    }
+  }
+  if (afterSavedOrders.length === 0) {
+    return { deletedPaths: [], retainedRefs: [...retained], failedPaths: [] };
+  }
+
+  const localAndCartRefs = new Set<string>();
+  try {
+    const localDraft = getLocalActiveDraft();
+    if (localDraft) {
+      for (const sourceRef of collectUploadedSourceRefsFromDraft(localDraft)) {
+        localAndCartRefs.add(sourceRef);
+      }
+    }
+    for (const sourceRef of collectUploadedSourceRefsFromV2CartItems(getCartV2Items())) {
+      localAndCartRefs.add(sourceRef);
+    }
+  } catch {
+    return retainAllRefs(allRefs);
+  }
+
+  const afterLocalAndCart: CustomerDesignUploadReference[] = [];
+  for (const ref of afterSavedOrders) {
+    if (localAndCartRefs.has(ref.designReferenceId)) {
+      retained.add(ref.designReferenceId);
+    } else {
+      afterLocalAndCart.push(ref);
+    }
+  }
+  if (afterLocalAndCart.length === 0) {
+    return { deletedPaths: [], retainedRefs: [...retained], failedPaths: [] };
+  }
+
+  const cloudDraftRefs = new Set<string>();
+  try {
+    const cloudDraft = await loadCloudDraft(ownerUid);
+    if (cloudDraft.status === "invalid" || cloudDraft.status === "blocked") {
+      return retainAllRefs(allRefs);
+    }
+    if (
+      cloudDraft.status === "loaded" &&
+      cloudDraft.record.lifecycleStatus === "active" &&
+      cloudDraft.record.draft
+    ) {
+      for (const sourceRef of collectUploadedSourceRefsFromDraft(cloudDraft.record.draft)) {
+        cloudDraftRefs.add(sourceRef);
+      }
+    }
+  } catch {
+    return retainAllRefs(allRefs);
+  }
+
+  const candidatesForHistoryCheck: CustomerDesignUploadReference[] = [];
+  for (const ref of afterLocalAndCart) {
+    if (cloudDraftRefs.has(ref.designReferenceId)) {
+      retained.add(ref.designReferenceId);
+    } else {
+      candidatesForHistoryCheck.push(ref);
+    }
+  }
+
+  const deletedPaths: string[] = [];
+  const failedPaths: string[] = [];
+  for (const ref of candidatesForHistoryCheck) {
+    let historyStatus: FutureOrderV2HistorySafetyStatus;
+    try {
+      historyStatus = await getOrderHistorySafetyStatus(ref.designReferenceId);
+    } catch {
+      historyStatus = "unknown";
+    }
+    if (historyStatus !== "safe-to-delete") {
+      retained.add(ref.designReferenceId);
+      continue;
+    }
+    try {
+      await deleteUpload(ref);
+      deletedPaths.push(ref.storagePath);
+    } catch {
+      failedPaths.push(ref.storagePath);
+    }
+  }
+
+  return {
+    deletedPaths,
+    retainedRefs: [...retained],
+    failedPaths,
+  };
+};
+
+export type SavedStudioOrderRepositoryOptions = {
+  cleanupOrphanedUploads?: (input: {
+    ownerUid: string;
+    deletedItem: SavedStudioOrderItemV1;
+  }) => Promise<unknown>;
+};
+
 export const createSavedStudioOrderRepository = (
   adapter: SavedStudioOrderPersistenceAdapter,
+  options: SavedStudioOrderRepositoryOptions = {},
 ) => {
   const save = async (
     input: SavedStudioOrderSaveInput,
@@ -596,7 +801,16 @@ export const createSavedStudioOrderRepository = (
       if (!snapshot.index.itemIds.includes(savedOrderId)) {
         return { status: "absent", savedOrderId };
       }
+      const deletedItem =
+        snapshot.items.find((item) => item.savedOrderId === savedOrderId) ?? null;
       await adapter.mutate(ownerUid, { type: "delete", savedOrderId });
+      if (deletedItem && options.cleanupOrphanedUploads) {
+        try {
+          await options.cleanupOrphanedUploads({ ownerUid, deletedItem });
+        } catch {
+          // Non-destructive: saved-order deletion already committed.
+        }
+      }
       return { status: "deleted", savedOrderId };
     } catch {
       return { status: "error", message: SAVED_STUDIO_ORDER_RETRY_MESSAGE };
@@ -624,8 +838,17 @@ export const createSavedStudioOrderRepository = (
   return { save, rename, remove, list, subscribe };
 };
 
-export const createFirebaseSavedStudioOrderRepository = () =>
-  createSavedStudioOrderRepository(createFirebaseSavedStudioOrderAdapter());
+export const createFirebaseSavedStudioOrderRepository = () => {
+  const adapter = createFirebaseSavedStudioOrderAdapter();
+  return createSavedStudioOrderRepository(adapter, {
+    cleanupOrphanedUploads: ({ ownerUid, deletedItem }) =>
+      cleanupOrphanedSavedOrderUploads({
+        ownerUid,
+        deletedItem,
+        loadBundle: adapter.loadBundle,
+      }),
+  });
+};
 
 let defaultRepository: ReturnType<typeof createSavedStudioOrderRepository> | null =
   null;

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CustomerJourneyEngine } from "./src/engine/CustomerJourneyEngine";
-import { presentCustomerDashboardBanner } from "./src/utils/customerDashboardBanner";
+import {
+  isCustomerDashboardBannerSettled,
+  presentCustomerDashboardBanner,
+} from "./src/utils/customerDashboardBanner";
 import {
   appendWorkshopStageHistory,
   presentFutureOrderV2WorkshopCard,
@@ -225,6 +228,50 @@ assert.equal(longHistory.stageHistory[longHistory.stageHistory.length - 1].recor
 assert.deepEqual(emptyCard.stageLines, []);
 
 assert.equal(presentCustomerDashboardBanner([{ shipment: { trackingId: "ODG-1" } }], new Map()), null);
+
+// Banner stays gated until orders, payments, and workshop snapshots have settled.
+{
+  const fourOrders = [
+    persisted("future-order-1", "2026-09-27T12:00:00.000Z"),
+    persisted("future-order-2", "2026-09-28T12:00:00.000Z"),
+    persisted("future-order-3", "2026-09-29T12:00:00.000Z"),
+    persisted("future-order-4", "2026-09-30T12:00:00.000Z"),
+  ];
+  assert.equal(
+    isCustomerDashboardBannerSettled({
+      ordersLoaded: true,
+      paymentsLoaded: false,
+      workshopLoaded: true,
+    }),
+    false,
+  );
+  assert.equal(
+    presentCustomerDashboardBanner(fourOrders, new Map(), new Map(), {
+      settled: false,
+    }),
+    null,
+  );
+  const settledThreePaid = presentCustomerDashboardBanner(
+    fourOrders,
+    new Map([
+      ["future-order-1", { paid: true }],
+      ["future-order-2", { paid: true }],
+      ["future-order-3", { paid: true }],
+    ]),
+    new Map(),
+    {
+      settled: isCustomerDashboardBannerSettled({
+        ordersLoaded: true,
+        paymentsLoaded: true,
+        workshopLoaded: true,
+      }),
+    },
+  );
+  assert.equal(
+    settledThreePaid?.message,
+    "You have 4 orders. 1 is waiting for payment.",
+  );
+}
 
 const customer = {
   name: "Ada",

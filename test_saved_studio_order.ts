@@ -23,7 +23,9 @@ import {
   SAVED_STUDIO_ORDER_MAX_PER_CUSTOMER,
   buildSavedStudioOrderGarmentSummary,
   clearPendingSaveStudioOrder,
+  collectUploadedDesignReferencesFromDraft,
   collectUploadedSourceRefsFromDraft,
+  collectUploadedSourceRefsFromV2CartItems,
   createSavedStudioOrderPriceSnapshot,
   evaluateSavedStudioOrderChangeWarnings,
   generateSavedStudioOrderName,
@@ -44,11 +46,13 @@ import {
 import {
   SavedStudioOrderAbsentError,
   SavedStudioOrderCapError,
+  cleanupOrphanedSavedOrderUploads,
   createMemorySavedStudioOrderAdapter,
   createSavedStudioOrderRepository,
   planSavedStudioOrderMutation,
   type SavedStudioOrderPersistenceAdapter,
 } from "./src/services/savedStudioOrderService";
+import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
 
 const makeDraft = (
   overrides: Partial<GuestDesignDraft> = {},
@@ -572,6 +576,272 @@ assert.throws(
   assert.equal(resaved.item.revision, 3);
   assert.equal(resaved.item.name, "Mine");
   assert.equal((await repoRev.list("rev")).items.length, 1);
+}
+
+// --- Orphaned Storage cleanup on saved order deletion ---
+{
+  const cleanupOwner = "cleanup-owner";
+  const ownedRefA = createCustomerDesignUploadReference({
+    ownerUid: cleanupOwner,
+    designReferenceId: "upload-cleanup-a",
+    mimeType: "image/jpeg",
+    originalFileName: "a.jpg",
+    createdAt: "2026-11-01T10:00:00.000Z",
+  });
+  const ownedRefB = createCustomerDesignUploadReference({
+    ownerUid: cleanupOwner,
+    designReferenceId: "upload-cleanup-b",
+    mimeType: "image/png",
+    originalFileName: "b.png",
+    createdAt: "2026-11-01T10:01:00.000Z",
+  });
+  const foreignRef = createCustomerDesignUploadReference({
+    ownerUid: "other-user",
+    designReferenceId: "upload-foreign",
+    mimeType: "image/webp",
+    originalFileName: "f.webp",
+    createdAt: "2026-11-01T10:02:00.000Z",
+  });
+
+  const makeDraftWithRefs = (
+    refs: ReturnType<typeof createCustomerDesignUploadReference>[],
+  ): GuestDesignDraft =>
+    makeDraft({
+      uploadedDesignSourceRegistry: {
+        schemaVersion: 1,
+        sourcesByUploadedSourceRef: Object.fromEntries(
+          refs.map((uploadReference) => [
+            uploadReference.designReferenceId,
+            {
+              kind: "uploaded",
+              sourceKey: `uploaded:${uploadReference.designReferenceId}`,
+              uploadReference,
+              demographic: "female",
+              displayLabel: uploadReference.originalFileName ?? "Uploaded design",
+              fabricCapacityComposition: [
+                { key: "dress-1", garmentType: "dress", fabricUnits: 1 },
+              ],
+            },
+          ]),
+        ),
+      },
+    } as Partial<GuestDesignDraft>);
+
+  assert.deepEqual(
+    collectUploadedDesignReferencesFromDraft(makeDraftWithRefs([ownedRefA, ownedRefB])).map(
+      (ref) => ref.designReferenceId,
+    ),
+    ["upload-cleanup-a", "upload-cleanup-b"],
+  );
+  assert.deepEqual(
+    collectUploadedSourceRefsFromV2CartItems([
+      {
+        candidate: {
+          occurrenceStyleSnapshots: [
+            {
+              sourceKind: "uploaded",
+              uploaded: { uploadedSourceRef: "upload-cart-1" },
+            },
+          ],
+        },
+      } as never,
+    ]),
+    ["upload-cart-1"],
+  );
+
+  // 1. Deletes truly orphaned owned upload; skips foreign upload.
+  {
+    const adapter = createMemorySavedStudioOrderAdapter();
+    const deletedPaths: string[] = [];
+    const repoWithCleanup = createSavedStudioOrderRepository(adapter, {
+      cleanupOrphanedUploads: ({ ownerUid: uid, deletedItem }) =>
+        cleanupOrphanedSavedOrderUploads({
+          ownerUid: uid,
+          deletedItem,
+          loadBundle: adapter.loadBundle,
+          loadCloudDraft: async () => ({ status: "absent", record: null }),
+          getLocalActiveDraft: () => null,
+          getCartV2Items: () => [],
+          getOrderHistorySafetyStatus: async () => "safe-to-delete",
+          deleteUpload: async (ref) => {
+            deletedPaths.push(ref.storagePath);
+          },
+        }),
+    });
+    const saved = await repoWithCleanup.save({
+      ownerUid: cleanupOwner,
+      draft: makeDraftWithRefs([ownedRefA, foreignRef]),
+      savedStage: "design_style",
+    });
+    if (saved.status !== "saved") throw new Error("expected saved");
+    const removed = await repoWithCleanup.remove({
+      ownerUid: cleanupOwner,
+      savedOrderId: saved.item.savedOrderId,
+    });
+    assert.equal(removed.status, "deleted");
+    assert.deepEqual(deletedPaths, [ownedRefA.storagePath]);
+  }
+
+  // 2. Retains uploads referenced by another saved order, local draft, cloud draft, cart, or V2 history.
+  {
+    const adapter = createMemorySavedStudioOrderAdapter();
+    const repoSeed = createSavedStudioOrderRepository(adapter);
+    const saved1 = await repoSeed.save({
+      ownerUid: cleanupOwner,
+      draft: makeDraftWithRefs([ownedRefA, ownedRefB]),
+      savedStage: "design_style",
+    });
+    const saved2 = await repoSeed.save({
+      ownerUid: cleanupOwner,
+      draft: makeDraftWithRefs([ownedRefA]),
+      savedStage: "design_style",
+    });
+    if (saved1.status !== "saved" || saved2.status !== "saved") {
+      throw new Error("expected saved");
+    }
+    await adapter.mutate(cleanupOwner, {
+      type: "delete",
+      savedOrderId: saved1.item.savedOrderId,
+    });
+
+    // ownedRefA is in saved2; ownedRefB is in cloud draft -> both retained.
+    const cloudRetained = await cleanupOrphanedSavedOrderUploads({
+      ownerUid: cleanupOwner,
+      deletedItem: saved1.item,
+      loadBundle: adapter.loadBundle,
+      loadCloudDraft: async () => ({
+        status: "loaded",
+        record: {
+          schemaVersion: 1,
+          lifecycleStatus: "active",
+          revision: 1,
+          createdAt: "2026-11-01T10:00:00.000Z",
+          updatedAt: "2026-11-01T10:00:00.000Z",
+          draft: makeDraftWithRefs([ownedRefB]),
+        },
+      }),
+      getLocalActiveDraft: () => null,
+      getCartV2Items: () => [],
+      getOrderHistorySafetyStatus: async () => "safe-to-delete",
+      deleteUpload: async () => {
+        throw new Error("should not delete retained upload");
+      },
+    });
+    assert.deepEqual(cloudRetained.deletedPaths, []);
+    assert.deepEqual(
+      cloudRetained.retainedRefs.sort(),
+      ["upload-cleanup-a", "upload-cleanup-b"],
+    );
+
+    // Local active draft retains ownedRefB.
+    const localRetained = await cleanupOrphanedSavedOrderUploads({
+      ownerUid: cleanupOwner,
+      deletedItem: saved1.item,
+      loadBundle: adapter.loadBundle,
+      loadCloudDraft: async () => ({ status: "absent", record: null }),
+      getLocalActiveDraft: () => makeDraftWithRefs([ownedRefB]),
+      getCartV2Items: () => [],
+      getOrderHistorySafetyStatus: async () => "safe-to-delete",
+      deleteUpload: async () => {
+        throw new Error("should not delete locally active upload");
+      },
+    });
+    assert.deepEqual(localRetained.deletedPaths, []);
+
+    // Cart V2 item retains ownedRefB.
+    const cartRetained = await cleanupOrphanedSavedOrderUploads({
+      ownerUid: cleanupOwner,
+      deletedItem: saved1.item,
+      loadBundle: adapter.loadBundle,
+      loadCloudDraft: async () => ({ status: "absent", record: null }),
+      getLocalActiveDraft: () => null,
+      getCartV2Items: () => [
+        {
+          candidate: {
+            occurrenceStyleSnapshots: [
+              {
+                sourceKind: "uploaded",
+                uploaded: { uploadedSourceRef: ownedRefB.designReferenceId },
+              },
+            ],
+          } as never,
+        },
+      ],
+      getOrderHistorySafetyStatus: async () => "safe-to-delete",
+      deleteUpload: async () => {
+        throw new Error("should not delete cart-retained upload");
+      },
+    });
+    assert.deepEqual(cartRetained.deletedPaths, []);
+
+    // Paid / persisted V2 order ("retain" or "unknown") retains ownedRefB.
+    for (const status of ["retain", "unknown"] as const) {
+      const historyRetained = await cleanupOrphanedSavedOrderUploads({
+        ownerUid: cleanupOwner,
+        deletedItem: saved1.item,
+        loadBundle: adapter.loadBundle,
+        loadCloudDraft: async () => ({ status: "absent", record: null }),
+        getLocalActiveDraft: () => null,
+        getCartV2Items: () => [],
+        getOrderHistorySafetyStatus: async () => status,
+        deleteUpload: async () => {
+          throw new Error(`should not delete when history is ${status}`);
+        },
+      });
+      assert.deepEqual(historyRetained.deletedPaths, []);
+    }
+
+    // Malformed/blocked cloud draft fails closed (retains ownedRefB).
+    const blockedCloud = await cleanupOrphanedSavedOrderUploads({
+      ownerUid: cleanupOwner,
+      deletedItem: saved1.item,
+      loadBundle: adapter.loadBundle,
+      loadCloudDraft: async () => ({
+        status: "invalid",
+        record: null,
+        reason: "corrupt",
+      }),
+      getLocalActiveDraft: () => null,
+      getCartV2Items: () => [],
+      getOrderHistorySafetyStatus: async () => "safe-to-delete",
+      deleteUpload: async () => {
+        throw new Error("should fail closed on invalid cloud draft");
+      },
+    });
+    assert.deepEqual(blockedCloud.deletedPaths, []);
+  }
+
+  // 3. Storage permission / failure during cleanup is non-destructive so saved-order deletion completes.
+  {
+    const adapter = createMemorySavedStudioOrderAdapter();
+    const repoWithFailingStorage = createSavedStudioOrderRepository(adapter, {
+      cleanupOrphanedUploads: ({ ownerUid: uid, deletedItem }) =>
+        cleanupOrphanedSavedOrderUploads({
+          ownerUid: uid,
+          deletedItem,
+          loadBundle: adapter.loadBundle,
+          loadCloudDraft: async () => ({ status: "absent", record: null }),
+          getLocalActiveDraft: () => null,
+          getCartV2Items: () => [],
+          getOrderHistorySafetyStatus: async () => "safe-to-delete",
+          deleteUpload: async () => {
+            throw new Error("storage/unauthorized");
+          },
+        }),
+    });
+    const saved = await repoWithFailingStorage.save({
+      ownerUid: cleanupOwner,
+      draft: makeDraftWithRefs([ownedRefA]),
+      savedStage: "design_style",
+    });
+    if (saved.status !== "saved") throw new Error("expected saved");
+    const removed = await repoWithFailingStorage.remove({
+      ownerUid: cleanupOwner,
+      savedOrderId: saved.item.savedOrderId,
+    });
+    assert.equal(removed.status, "deleted");
+    assert.equal((await repoWithFailingStorage.list(cleanupOwner)).items.length, 0);
+  }
 }
 
 console.log("PASS: saved studio order model and service");
