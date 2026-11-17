@@ -4597,6 +4597,13 @@ export default function DesignStudioView({
     futureOrderIdentity?.orderType,
     ctx.orderType,
   ]);
+  const measurementStageIndex = DESIGN_STUDIO_STEPS.findIndex(
+    (step) => step.id === "measurement",
+  );
+  const effectiveHighestUnlockedStageIndex =
+    tryOnUnlockedByMeasurements || measurementStageIndex < 0
+      ? highestUnlockedStageIndex
+      : Math.min(highestUnlockedStageIndex, measurementStageIndex);
   const liveOrderSummaryUnlockedStages = useMemo(() => {
     const unlocked = new Set<DesignStudioStageId>();
     // The Summary uses the same currently-enterable authority as the Journey
@@ -4632,13 +4639,13 @@ export default function DesignStudioView({
       currentlyEnterable.add("payment");
     }
     DESIGN_STUDIO_STEPS.forEach((step, index) => {
-      if (index <= highestUnlockedStageIndex || currentlyEnterable.has(step.id)) {
+      if (index <= effectiveHighestUnlockedStageIndex || currentlyEnterable.has(step.id)) {
         unlocked.add(step.id);
       }
     });
     return unlocked;
   }, [
-    highestUnlockedStageIndex,
+    effectiveHighestUnlockedStageIndex,
     garmentTypeStageCompletion.isComplete,
     futureFabricStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
@@ -8637,6 +8644,10 @@ export default function DesignStudioView({
     navigateToFutureStage("personalized_additions", target);
   };
   const handleOpenDormantAiTryOnStage = () => {
+    if (!tryOnUnlockedByMeasurements) {
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
+      return;
+    }
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
     if (returnStage) {
       const fromStageId = futureStageId;
@@ -8644,13 +8655,6 @@ export default function DesignStudioView({
       if (fromStageId === "personalized_additions") {
         promptOrderFeedbackAfterSuccessfulContinue(fromStageId, returnStage);
       }
-      return;
-    }
-    if (
-      !tryOnUnlockedByMeasurements &&
-      !isStageHistoricallyUnlocked("try_on")
-    ) {
-      navigateToFutureStage("measurement", getValidationNavigationTarget());
       return;
     }
     const fromStageId = futureStageId;
@@ -8688,6 +8692,10 @@ export default function DesignStudioView({
     }
   };
   const handleOpenDormantSummaryStage = () => {
+    if (!tryOnUnlockedByMeasurements) {
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
+      return;
+    }
     const returnStage = consumeSummaryEditReturnLeaseIfActive();
     if (returnStage) {
       navigateToFutureStage(returnStage);
@@ -8710,6 +8718,10 @@ export default function DesignStudioView({
     navigateToFutureStage("summary");
   };
   const handleOpenDormantShippingStage = () => {
+    if (!tryOnUnlockedByMeasurements) {
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
+      return;
+    }
     if (
       !isFutureShippingUnlocked &&
       !isStageHistoricallyUnlocked("shipping")
@@ -8750,6 +8762,10 @@ export default function DesignStudioView({
     });
   };
   const handleOpenDormantPaymentReviewStage = () => {
+    if (!tryOnUnlockedByMeasurements) {
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
+      return;
+    }
     const capturedPrivateAuthorization = capturePrivateAuthorization();
     if (!isCurrentPrivateAuthorization(capturedPrivateAuthorization)) {
       return;
@@ -9717,20 +9733,19 @@ export default function DesignStudioView({
     if (route === "critical_risk" && !futureMeasurementPlan.criticalRiskSupported) {
       return;
     }
-    setFutureMeasurementState((current) => {
-      const next = setFutureMeasurementRoute(current, route);
-      if (activeWearer) {
-        setWearerOrder((order) =>
-          applyWearerMeasurementUpdate(
-            order,
-            reconciledWearerOrder,
-            activeWearer.wearerId,
-            next,
-          ),
-        );
-      }
-      return next;
-    });
+    const next = setFutureMeasurementRoute(reconciledFutureMeasurementState, route);
+    setFutureMeasurementState(next);
+    const currentWearerId = activeWearerIdRef.current || activeWearer?.wearerId;
+    if (currentWearerId) {
+      setWearerOrder((order) =>
+        applyWearerMeasurementUpdate(
+          order,
+          wearerOrderForPlanRef.current,
+          currentWearerId,
+          next,
+        ),
+      );
+    }
   };
   const updateFutureScopedCustomDetails = (
     update: (current: DesignSelections) => DesignSelections,
@@ -11735,7 +11750,7 @@ export default function DesignStudioView({
       ) : null}
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
-        highestUnlockedStageIndex={highestUnlockedStageIndex}
+        highestUnlockedStageIndex={effectiveHighestUnlockedStageIndex}
         canEnterFabric={
           garmentTypeStageCompletion.isComplete &&
           !(communityBatchClosed && futureStageId === "garment_type")
@@ -12252,12 +12267,18 @@ export default function DesignStudioView({
             }
           }}
           onRenameWearer={(wearerId, displayName) => {
-            const result = renameWearer(wearerOrderForPlan, wearerId, displayName);
-            if (result.status === "updated") setWearerOrder(result.order);
+            const result = renameWearer(wearerOrderForPlanRef.current, wearerId, displayName);
+            if (result.status === "updated") {
+              wearerOrderForPlanRef.current = result.order;
+              setWearerOrder(result.order);
+            }
           }}
           onReorderWearers={(wearerIds) => {
-            const result = reorderWearers(wearerOrderForPlan, wearerIds);
-            if (result.status === "updated") setWearerOrder(result.order);
+            const result = reorderWearers(wearerOrderForPlanRef.current, wearerIds);
+            if (result.status === "updated") {
+              wearerOrderForPlanRef.current = result.order;
+              setWearerOrder(result.order);
+            }
           }}
           onDeleteWearer={(wearerId) => {
             const result = deleteWearer(wearerOrderForPlanRef.current, wearerId);

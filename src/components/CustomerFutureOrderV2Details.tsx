@@ -43,6 +43,7 @@ import {
 } from "../utils/futureOrderV2PaymentRecord";
 import {
   formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
   formatSavedNikkaDisplayText,
 } from "../utils/optionalShortsPresentation";
 import {
@@ -146,7 +147,9 @@ export const CustomerFutureOrderV2Details = ({
   const styleByGarmentKey = new Map(
     candidate.occurrenceStyleSnapshots.map((snapshot) => [
       snapshot.occurrence.garmentKey,
-      snapshot.sourceKind === "catalogue" ? snapshot.catalogue!.name : "Uploaded design",
+      snapshot.sourceKind === "catalogue"
+        ? formatCustomerVisibleKaftanText(snapshot.catalogue!.name)
+        : "Uploaded design",
     ]),
   );
   const garments = getFuturePaymentReviewGarments(candidate);

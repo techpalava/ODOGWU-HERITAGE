@@ -48,11 +48,13 @@ import {
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewMeasurementGroups,
   getFuturePaymentReviewMeasurementHeader,
+  getFuturePaymentReviewWearerMeasurementSections,
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
   isAwaitingPersonalizedPriceEvaluation,
   isFuturePaymentReviewStageUnlocked,
   type FuturePaymentReviewCandidate,
+  type FuturePaymentReviewMeasurementGroup,
   type FuturePaymentReviewResult,
   type FutureOrderV2PreparationPresentation,
   type FutureOrderV2PaymentPresentation,
@@ -60,6 +62,7 @@ import {
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
   formatSavedNikkaDisplayText,
 } from "../utils/optionalShortsPresentation";
 import {
@@ -705,6 +708,11 @@ export const DormantFuturePaymentReviewStep = ({
         plainPersonGarmentLabels: true,
       })
     : [];
+  const measurementWearerSections = candidate
+    ? getFuturePaymentReviewWearerMeasurementSections(candidate, {
+        plainPersonGarmentLabels: true,
+      })
+    : [];
   const measurementCount = measurementGroups.reduce(
     (count, group) => count + group.items.length,
     0,
@@ -957,6 +965,8 @@ export const DormantFuturePaymentReviewStep = ({
                     <p className="min-w-0 break-words text-sm font-semibold text-heritage-green sm:text-right">
                       {snapshot.sourceKind === "catalogue"
                         ? snapshot.catalogue?.name
+                          ? formatCustomerVisibleKaftanText(snapshot.catalogue.name)
+                          : undefined
                         : snapshot.uploaded?.displayLabel}
                     </p>
                   </li>
@@ -968,7 +978,7 @@ export const DormantFuturePaymentReviewStep = ({
                   {candidate.design.image ? (
                     <img
                       src={candidate.design.image}
-                      alt={`${candidate.design.name} design`}
+                      alt={`${formatCustomerVisibleKaftanText(candidate.design.name)} design`}
                       className="h-full w-full object-contain"
                       referrerPolicy="no-referrer"
                     />
@@ -983,7 +993,7 @@ export const DormantFuturePaymentReviewStep = ({
                     Design Style
                   </p>
                   <h2 className="mt-1 break-words font-serif text-lg font-bold text-heritage-green">
-                    {candidate.design.name}
+                    {formatCustomerVisibleKaftanText(candidate.design.name)}
                   </h2>
                   <p className="mt-1 break-words text-sm text-heritage-ink/70">
                     {candidate.design.compositionLabel}
@@ -1119,13 +1129,24 @@ export const DormantFuturePaymentReviewStep = ({
                       </>
                     );
                   }
+                  const wearerSectionById = new Map(
+                    measurementWearerSections.map((section) => [section.wearerId, section]),
+                  );
                   return (
                     <div className="space-y-2">
-                      {measurementHeader.wearers.map((wearer) => (
+                      {measurementHeader.wearers.map((wearer) => {
+                        const assignedGarmentLabels =
+                          wearerSectionById.get(wearer.wearerId)?.assignedGarmentLabels || [];
+                        return (
                         <div key={wearer.wearerId}>
                           <p className="font-bold text-heritage-green">
                             {wearer.displayName}
                           </p>
+                          {assignedGarmentLabels.length > 0 ? (
+                            <p className="text-xs text-heritage-ink/75">
+                              Garments: {assignedGarmentLabels.join(", ")}
+                            </p>
+                          ) : null}
                           <p className="text-xs capitalize text-heritage-ink/70">
                             {wearer.routeLabel} route
                           </p>
@@ -1133,7 +1154,8 @@ export const DormantFuturePaymentReviewStep = ({
                             Status: {wearer.statusLabel}
                           </p>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -1150,15 +1172,21 @@ export const DormantFuturePaymentReviewStep = ({
                 hideLabel="Hide measurements"
                 className="mt-4"
               >
-              <div className="grid min-w-0 gap-4 md:grid-cols-2">
-                {measurementGroups.map((group) => (
+              {(() => {
+                const renderMeasurementGroupCard = (
+                  group: FuturePaymentReviewMeasurementGroup,
+                  keyPrefix = "",
+                  headingLevel: "h4" | "h5" = "h4",
+                ) => {
+                  const GroupHeading = headingLevel;
+                  return (
                   <article
-                    key={group.garmentKey || "shared"}
+                    key={`${keyPrefix}${group.garmentKey ?? "shared"}:${group.title}`}
                     className="min-w-0 rounded-xl border border-heritage-green/12 p-4"
                   >
-                    <h4 className="break-words font-bold text-heritage-green">
+                    <GroupHeading className="break-words font-bold text-heritage-green">
                       {group.title}
-                    </h4>
+                    </GroupHeading>
                     <dl className="mt-3 space-y-2 text-sm">
                       {group.items.map((item) => (
                         <div
@@ -1181,8 +1209,50 @@ export const DormantFuturePaymentReviewStep = ({
                       ))}
                     </dl>
                   </article>
-                ))}
-              </div>
+                  );
+                };
+                if (measurementWearerSections.length > 1) {
+                  return (
+                    <div className="space-y-4">
+                      {measurementWearerSections.map((wearerSection) => (
+                        <section
+                          key={wearerSection.wearerId}
+                          data-payment-review-measurement-wearer={wearerSection.wearerId}
+                          className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/10 p-4"
+                        >
+                          <div className="mb-3 flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                            <h4 className="font-serif text-base font-bold text-heritage-green">
+                              {wearerSection.displayName}
+                            </h4>
+                            {wearerSection.assignedGarmentLabels.length > 0 ? (
+                              <p
+                                data-payment-review-measurement-wearer-garments={wearerSection.wearerId}
+                                className="text-xs text-heritage-ink/70"
+                              >
+                                {wearerSection.assignedGarmentLabels.join(", ")}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                            {wearerSection.groups.map((group) =>
+                              renderMeasurementGroupCard(
+                                group,
+                                `${wearerSection.wearerId}:`,
+                                "h5",
+                              ),
+                            )}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                    {measurementGroups.map((group) => renderMeasurementGroupCard(group))}
+                  </div>
+                );
+              })()}
               </PaymentReviewDisclosure>
             )}
           </ReviewSection>

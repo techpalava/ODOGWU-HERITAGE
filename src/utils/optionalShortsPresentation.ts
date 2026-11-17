@@ -15,6 +15,12 @@ export const INLINE_OPTIONAL_SHORTS_LABELS: Readonly<
   bum_shorts: "Standard Bum Shorts",
 };
 
+/** Normalizes customer- and admin-visible "Kaftan" wording to "Long Shirt". */
+export const formatCustomerVisibleKaftanText = (text: string): string =>
+  text
+    .replace(/\bkaftans\b/gi, "Long Shirts")
+    .replace(/\bkaftan\b/gi, "Long Shirt");
+
 /** Customer-visible garment labels, preserving repeated-occurrence numbers. */
 export const formatCustomDetailsGarmentLabel = (label: string): string => {
   const match =
@@ -25,7 +31,7 @@ export const formatCustomDetailsGarmentLabel = (label: string): string => {
     const garmentType = match[1] === "Bum Shorts" ? "bum_shorts" : "standard_shorts";
     return `${INLINE_OPTIONAL_SHORTS_LABELS[garmentType]}${match[2] || ""}`;
   }
-  return label;
+  return formatCustomerVisibleKaftanText(label);
 };
 
 /** Normalizes legacy saved "Nikka" strings inside summaries and saved order text. */
