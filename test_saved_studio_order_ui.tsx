@@ -332,6 +332,132 @@ act(() => {
 });
 assert.deepEqual(actions, ["continue", "delete"]);
 
+// Inline delete confirmation: Escape dismisses without deleting and restores trigger focus.
+{
+  let deleteCalls = 0;
+  let cancelFocused = 0;
+  let triggerFocused = 0;
+  const triggerNode = {
+    isConnected: true,
+    focus: () => {
+      triggerFocused += 1;
+    },
+  };
+  let inlineSection!: ReturnType<typeof create>;
+  act(() => {
+    inlineSection = create(
+      <SavedOrdersSection
+        items={[item]}
+        onContinue={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => {
+          deleteCalls += 1;
+        }}
+      />,
+      {
+        createNodeMock: (element) => {
+          if (element.props?.["data-testid"] === "saved-order-delete-confirm-cancel") {
+            return {
+              focus: () => {
+                cancelFocused += 1;
+              },
+            };
+          }
+          if (element.props?.["data-testid"] === "saved-order-delete") {
+            return triggerNode;
+          }
+          return null;
+        },
+      },
+    );
+  });
+
+  // Escape while closed does not call preventDefault or affect unrelated handlers.
+  let closedStopped = false;
+  const closedEscape = {
+    key: "Escape",
+    preventDefault: () => {
+      throw new Error("should not preventDefault when confirmation is closed");
+    },
+    stopPropagation: () => {
+      closedStopped = true;
+    },
+  };
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-orders-section" })
+      .props.onKeyDown(closedEscape);
+  });
+  assert.equal(closedStopped, false);
+
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-order-delete" })
+      .props.onClick({ currentTarget: triggerNode });
+  });
+  assert.equal(cancelFocused, 1, "opening inline confirmation focuses Cancel");
+  assert.equal(
+    inlineSection.root.findAllByProps({ "data-testid": "saved-order-delete-confirm" }).length,
+    1,
+  );
+
+  let escStopped = false;
+  let escPrevented = false;
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-order-delete-confirm" })
+      .props.onKeyDown({
+        key: "Escape",
+        preventDefault: () => {
+          escPrevented = true;
+        },
+        stopPropagation: () => {
+          escStopped = true;
+        },
+      });
+  });
+  assert.equal(escPrevented, true);
+  assert.equal(escStopped, true);
+  assert.equal(
+    inlineSection.root.findAllByProps({ "data-testid": "saved-order-delete-confirm" }).length,
+    0,
+  );
+  assert.equal(deleteCalls, 0);
+  assert.equal(triggerFocused, 1, "Escape restores focus to the Delete trigger");
+
+  // Re-open and press Escape via section handler (e.g. if focus stayed on the trigger).
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-order-delete" })
+      .props.onClick({ currentTarget: triggerNode });
+  });
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-orders-section" })
+      .props.onKeyDown(escapeKey());
+  });
+  assert.equal(
+    inlineSection.root.findAllByProps({ "data-testid": "saved-order-delete-confirm" }).length,
+    0,
+  );
+  assert.equal(deleteCalls, 0);
+  assert.equal(triggerFocused, 2);
+
+  // Confirming Delete does not restore focus to the deleted card's trigger.
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-order-delete" })
+      .props.onClick({ currentTarget: triggerNode });
+  });
+  act(() => {
+    inlineSection.root
+      .findByProps({ "data-testid": "saved-order-delete-confirm-yes" })
+      .props.onClick();
+  });
+  assert.equal(deleteCalls, 1);
+  assert.equal(triggerFocused, 2);
+}
+
 const warnings = render(
   <SavedOrderChangeWarningBanner
     warnings={[

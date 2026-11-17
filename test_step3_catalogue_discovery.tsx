@@ -78,25 +78,14 @@ const renderModel = async (
 const styleCards = (root: ReactTestInstance) =>
   root.findAll((node) => node.props?.["data-style-card"] === "true");
 
-const styleDisplayLabel = (styleName: string): string => {
-  const visibleName = String(styleName ?? "").trim();
-  return /^ODG(\s+|-)\d+$/i.test(visibleName)
-    ? visibleName.replace(/^ODG(\s+|-)/i, "ODGH$1")
-    : visibleName;
-};
-
-const styleButton = (root: ReactTestInstance, styleName: string) => {
-  const visibleName = styleDisplayLabel(styleName);
-  return root
+const styleButton = (root: ReactTestInstance, styleName: string) =>
+  root
     .findAllByType("button")
     .find(
       (button) =>
         button.props["aria-label"] === `Use This Design ${styleName}` ||
-        button.props["aria-label"] === `Use Again ${styleName}` ||
-        button.props["aria-label"] === `Use This Design ${visibleName}` ||
-        button.props["aria-label"] === `Use Again ${visibleName}`,
+        button.props["aria-label"] === `Use Again ${styleName}`,
     )!;
-};
 
 const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   dialog
@@ -104,30 +93,35 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
     .find((label) => textContent(label).startsWith(occurrenceLabel))!
     .findByType("input");
 
-// ODG display labels should be presentation-formatted to ODGH.
+// Legacy ODG and new ODGH display names both render as stored without prefix rewriting.
 {
-  const canonicalName = "ODG-004";
-  const canonicalId = canonicalName;
+  const legacyName = "ODG-004";
+  const newName = "ODGH-004";
   const model = createDesignStyleStepTestModel({
-    styles: [makeStyle(canonicalId, canonicalName, "kaftan", "male")],
+    styles: [
+      makeStyle(legacyName, legacyName, "kaftan", "male"),
+      makeStyle(newName, newName, "shirt", "male"),
+    ],
     garmentTypeSelection: selection,
   });
   const renderer = await renderModel(model);
-  const visibleName = styleDisplayLabel(canonicalName);
 
-  assert.equal(model.styles[0]!.name, canonicalName);
-  assert.equal(model.styles[0]!.id, canonicalId);
+  assert.equal(model.styles[0]!.name, legacyName);
+  assert.equal(model.styles[0]!.id, legacyName);
+  assert.equal(model.styles[1]!.name, newName);
+  assert.equal(model.styles[1]!.id, newName);
 
-  const card = styleCards(renderer.root).find(
-    (candidate) => candidate.props["data-style-name"] === canonicalName,
-  )!;
-  const cardHeading = textContent(card.findByType("h4"));
-  assert.equal(cardHeading, visibleName);
-  assert.equal(cardHeading.includes(canonicalName), false);
-  assert.equal(
-    styleButton(renderer.root, canonicalName).props["aria-label"],
-    `Use This Design ${visibleName}`,
-  );
+  for (const expectedName of [legacyName, newName]) {
+    const card = styleCards(renderer.root).find(
+      (candidate) => candidate.props["data-style-name"] === expectedName,
+    )!;
+    const cardHeading = textContent(card.findByType("h4"));
+    assert.equal(cardHeading, expectedName);
+    assert.equal(
+      styleButton(renderer.root, expectedName).props["aria-label"],
+      `Use This Design ${expectedName}`,
+    );
+  }
 }
 
 // All published projections render once, without filters or compatibility groups.
@@ -146,7 +140,7 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
     assert.equal(textContent(title), card.props["data-style-name"]);
     assert.match(
       title.props.className,
-      /break-words font-serif text-base font-bold text-heritage-green/,
+      /break-words font-serif text-base font-bold(?: leading-snug)? text-heritage-green/,
     );
   }
   assert.equal(renderer.root.findAllByProps({ "data-testid": "step3-best-matches" }).length, 0);
@@ -167,9 +161,9 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   assert.equal(dialog.props["aria-modal"], "true");
   assert.deepEqual(
     dialog.findAllByType("label").map((label) =>
-      textContent(label).replace(/Already using this design|Current:.*$/g, ""),
+      textContent(label).replace(/Using this design|Current design:.*$/g, ""),
     ),
-    ["Shirt", "Trouser", "Shirt 2", "Bum Shorts", "Kaftan"],
+    ["Standard Shirt", "Trouser", "Standard Shirt 2", "Bum Shorts", "Long Shirt"],
   );
 }
 
@@ -193,7 +187,7 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   const dialog = renderer.root.findByProps({
     "data-testid": "design-garment-mapping-dialog",
   });
-  await act(async () => checkboxFor(dialog, "Shirt").props.onChange());
+  await act(async () => checkboxFor(dialog, "Standard Shirt").props.onChange());
   await act(async () => checkboxFor(dialog, "Trouser").props.onChange());
   assert.match(
     textContent(
@@ -201,7 +195,7 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
         "data-testid": "reference-composition-warning",
       }),
     ),
-    /Trouser.*not part of the reference outfit.*still apply/i,
+    /Trouser.*still apply/i,
   );
   const apply = renderer.root.findByProps({ "data-testid": "apply-design-mapping" });
   assert.equal(apply.props.disabled, false);
@@ -237,13 +231,13 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   const dialog = renderer.root.findByProps({
     "data-testid": "design-garment-mapping-dialog",
   });
-  assert.equal(checkboxFor(dialog, "Shirt").props.checked, true);
+  assert.equal(checkboxFor(dialog, "Standard Shirt").props.checked, true);
   assert.equal(checkboxFor(dialog, "Trouser").props.checked, true);
   await act(async () => checkboxFor(dialog, "Bum Shorts").props.onChange());
   assert.equal(renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.disabled, false);
 }
 
-// Selecting an occurrence with a different style shows a scoped replacement warning.
+// Selecting an occurrence with a different style shows a scoped replacement warning after Change unlock.
 {
   const model = createDesignStyleStepTestModel({
     styles,
@@ -259,10 +253,14 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   const dialog = renderer.root.findByProps({
     "data-testid": "design-garment-mapping-dialog",
   });
-  await act(async () => checkboxFor(dialog, "Shirt").props.onChange());
+  const changeShirtButton = dialog
+    .findAllByType("button")
+    .find((button) => button.props["aria-label"] === "Change design for Standard Shirt")!;
+  await act(async () => changeShirtButton.props.onClick());
+  await act(async () => checkboxFor(dialog, "Standard Shirt").props.onChange());
   assert.match(
     textContent(dialog),
-    /Shirt currently uses Shirt Reference.*will replace it for Shirt/i,
+    /This garment currently uses Shirt Reference.*Applying Shorts Reference will replace it/i,
   );
 }
 
