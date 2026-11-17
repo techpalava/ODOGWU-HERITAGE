@@ -965,7 +965,7 @@ try {
     );
   });
 
-  await runCase("new V2 orders are server-only while the legacy order path remains supported", async () => {
+  await runCase("V2 client creates stay denied and legacy client creates are denied", async () => {
     await assertFails(
       setDoc(
         orderReference(signedIn(OWNER_UID), "v2-organizer-client"),
@@ -1013,10 +1013,103 @@ try {
         recordTypeOnlyV2,
       ),
     );
-    await assertSucceeds(
+    await assertFails(
       setDoc(orderReference(signedIn(OWNER_UID), "legacy-client"), legacyOrder(OWNER_UID)),
     );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "legacy-paid-stage-6"),
+        {
+          ...legacyOrder(OWNER_UID),
+          customer: {
+            ownerUid: OWNER_UID,
+            name: "Claimed customer",
+            email: "claimed@example.test",
+          },
+          payment: { isPaid: true, subtotal: 1, deposit: 0, remaining: 0 },
+          shipment: {
+            trackingId: "legacy-paid-stage-6",
+            status: "Delivered",
+            currentStage: 6,
+          },
+        },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "legacy-extra-key"),
+        { ...legacyOrder(OWNER_UID), unexpectedNote: "not a staff field" },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "legacy-owner-mismatch"),
+        { ownerUid: OTHER_UID, customer: { ownerUid: OWNER_UID } },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "legacy-customer-mismatch"),
+        { ownerUid: OWNER_UID, customer: { ownerUid: OTHER_UID } },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(anonymous(), "legacy-anonymous"),
+        legacyOrder("anonymous-user"),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(testEnvironment.unauthenticatedContext(), "legacy-signed-out"),
+        legacyOrder(OWNER_UID),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(orderReference(admin(), "legacy-manual"), {
+        ownerUid: "design-style-admin",
+        customer: {
+          name: "Guest User",
+          email: "guest@asml.com",
+          phone: "",
+          location: "Eindhoven",
+          ownerUid: "design-style-admin",
+        },
+        style: { id: "style-kaftan", name: "Standard Senator" },
+        fabric: { code: "ODG-001", name: "Traditional Ankara" },
+        design: { collar: "Mandarin High Collar" },
+        garment: { type: "Shirt + Trouser Set", totalPrice: 195 },
+        measurements: { neck: 16, chest: 41.5 },
+        payment: {
+          subtotal: 195,
+          deposit: 97.5,
+          remaining: 97.5,
+          method: "Escrow Portal Transaction",
+          date: "June 26, 2026",
+          isPaid: true,
+        },
+        shipment: {
+          trackingId: "ODH-manual",
+          status: "Pattern Drafting & Sewing on Lagos floor",
+          currentStage: 3,
+          estimatedDeliveryDate: "",
+        },
+        specialInstructions: "Ensure loose comfort fits",
+        notesAboutLeftoverFabric: "Sew traditional fila cap",
+      }),
+    );
+    const ownedLegacyOrder = {
+      ownerUid: OWNER_UID,
+      customer: { ownerUid: OWNER_UID },
+      payment: { isPaid: false, subtotal: 10, deposit: 5, remaining: 5 },
+      shipment: {
+        trackingId: "legacy-owned",
+        status: "Saved",
+        currentStage: 1,
+      },
+    };
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(orderReference(context, "legacy-owned"), ownedLegacyOrder);
       await setDoc(
         orderReference(context, "v2-trusted-server"),
         directV2Order(OWNER_UID, {
@@ -1025,6 +1118,23 @@ try {
         }),
       );
     });
+    await assertSucceeds(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "legacy-owned"),
+        ownedLegacyOrder,
+        { merge: true },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "legacy-owned"),
+        {
+          ...ownedLegacyOrder,
+          payment: { ...ownedLegacyOrder.payment, isPaid: true },
+        },
+        { merge: true },
+      ),
+    );
   });
 
   await runCase("PUBLIC discovery query excludes Private Batches", async () => {
