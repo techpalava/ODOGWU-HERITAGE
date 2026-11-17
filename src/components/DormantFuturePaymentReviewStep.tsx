@@ -62,6 +62,7 @@ import {
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
   formatSavedNikkaDisplayText,
 } from "../utils/optionalShortsPresentation";
 import {
@@ -964,6 +965,8 @@ export const DormantFuturePaymentReviewStep = ({
                     <p className="min-w-0 break-words text-sm font-semibold text-heritage-green sm:text-right">
                       {snapshot.sourceKind === "catalogue"
                         ? snapshot.catalogue?.name
+                          ? formatCustomerVisibleKaftanText(snapshot.catalogue.name)
+                          : undefined
                         : snapshot.uploaded?.displayLabel}
                     </p>
                   </li>
@@ -975,7 +978,7 @@ export const DormantFuturePaymentReviewStep = ({
                   {candidate.design.image ? (
                     <img
                       src={candidate.design.image}
-                      alt={`${candidate.design.name} design`}
+                      alt={`${formatCustomerVisibleKaftanText(candidate.design.name)} design`}
                       className="h-full w-full object-contain"
                       referrerPolicy="no-referrer"
                     />
@@ -990,7 +993,7 @@ export const DormantFuturePaymentReviewStep = ({
                     Design Style
                   </p>
                   <h2 className="mt-1 break-words font-serif text-lg font-bold text-heritage-green">
-                    {candidate.design.name}
+                    {formatCustomerVisibleKaftanText(candidate.design.name)}
                   </h2>
                   <p className="mt-1 break-words text-sm text-heritage-ink/70">
                     {candidate.design.compositionLabel}

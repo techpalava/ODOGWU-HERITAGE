@@ -32,6 +32,13 @@ import {
   reconcileWearerOrder,
   updateWearerMeasurement,
 } from "./src/utils/wearerOrder";
+import { getFutureOrderV2CartLineLabel } from "./src/utils/futureOrderV2CartBag";
+import { presentFutureOrderV2History } from "./src/utils/futureOrderV2History";
+import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
+import {
+  formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
+} from "./src/utils/optionalShortsPresentation";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -450,9 +457,11 @@ assert.match(
   assert.equal(/kaftan/i.test(summaryText), false, "Customer summary must never show Kaftan");
 }
 
-// 8. Payment Review displays separate wearer measurement sections alongside assigned garments.
+// 8. Payment Review displays separate wearer measurement sections alongside assigned garments
+// and normalizes any legacy/raw Kaftan labels or style names to Long Shirt.
 {
-  const baseCandidate = createFutureOrderV2Fixture("multi-wearer-review").cartItem.candidate;
+  const fixture = createFutureOrderV2Fixture("multi-wearer-review");
+  const baseCandidate = fixture.cartItem.candidate;
   const twoWearerCandidate = {
     ...baseCandidate,
     garments: [
@@ -467,6 +476,30 @@ assert.match(
         garmentKey: "base:kaftan",
         garmentType: "kaftan" as const,
         label: "Long Shirt",
+      },
+    ],
+    occurrenceStyleSnapshots: [
+      {
+        ...baseCandidate.occurrenceStyleSnapshots[0]!,
+        occurrence: {
+          garmentKey: "base:shirt",
+          occurrenceToken: "token-shirt-1",
+          label: "Shirt",
+          garmentType: "shirt",
+        },
+      },
+      {
+        ...baseCandidate.occurrenceStyleSnapshots[0]!,
+        occurrence: {
+          garmentKey: "base:kaftan",
+          occurrenceToken: "token-kaftan-1",
+          label: "Kaftan",
+          garmentType: "kaftan",
+        },
+        catalogue: {
+          ...baseCandidate.occurrenceStyleSnapshots[0]!.catalogue!,
+          name: "Royal Kaftan",
+        },
       },
     ],
     measurements: multiOrderComplete,
@@ -496,8 +529,48 @@ assert.match(
   assert.ok(reviewMarkup.includes('data-payment-review-measurement-wearer-garments="wearer-2"'));
   assert.ok(reviewMarkup.includes("Garments: Standard Shirt"));
   assert.ok(reviewMarkup.includes("Garments: Long Shirt"));
+  assert.ok(reviewMarkup.includes("Royal Long Shirt"));
   const reviewText = reviewMarkup.replace(/<[^>]+>/g, " ");
   assert.equal(/kaftan/i.test(reviewText), false, "Payment review must never show Kaftan");
+
+  assert.equal(formatCustomDetailsGarmentLabel("Kaftan"), "Long Shirt");
+  assert.equal(formatCustomDetailsGarmentLabel("Kaftan 2"), "Long Shirt 2");
+  assert.equal(formatCustomerVisibleKaftanText("Executive Kaftan"), "Executive Long Shirt");
+  const cartLabel = getFutureOrderV2CartLineLabel({
+    ...fixture.cartItem,
+    candidate: twoWearerCandidate as never,
+  });
+  assert.equal(/kaftan/i.test(cartLabel), false, "Cart line label must never show Kaftan");
+  assert.ok(cartLabel.includes("Long Shirt"));
+
+  const persistedResult = createPersistedFutureOrderV2({
+    masterOrder: {
+      ...fixture,
+      cartItem: {
+        ...fixture.cartItem,
+        candidate: twoWearerCandidate as never,
+      },
+    },
+    owner: { uid: "test-owner", isAnonymous: false },
+    customerOwnerUid: "test-owner",
+    persistedAt: "2026-11-17T10:00:00.000Z",
+  });
+  assert.equal(persistedResult.status, "valid");
+  const historyResult =
+    persistedResult.status === "valid"
+      ? presentFutureOrderV2History(persistedResult.value)
+      : ({ status: "not_v2" } as const);
+  assert.equal(historyResult.status, "valid");
+  if (historyResult.status === "valid") {
+    const kaftanOccurrence = historyResult.value.occurrences.find(
+      (occurrence) => occurrence.garmentKey === "base:kaftan",
+    );
+    assert.equal(kaftanOccurrence?.garmentLabel, "Long Shirt");
+    assert.equal(
+      kaftanOccurrence?.style.kind === "catalogue" ? kaftanOccurrence.style.name : "",
+      "Royal Long Shirt",
+    );
+  }
 }
 
 console.log("PASS: multi-wearer measurement validation & summary/review display");

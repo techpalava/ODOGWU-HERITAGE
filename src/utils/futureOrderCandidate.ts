@@ -33,6 +33,7 @@ import {
 } from "./designSourceState.js";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint.js";
 import { canonicalWearerDisplayName, isWearerOrderStateV2 } from "./wearerOrder.js";
+import { formatCustomerVisibleKaftanText } from "./optionalShortsPresentation.js";
 import {
   getCanonicalOrderIdentity,
   type CanonicalOrderIdentity,
@@ -490,7 +491,11 @@ export const buildFutureOrderCandidateOccurrenceStyleSnapshotsV2 = (
           generation: occurrence.occurrenceGeneration!,
         })
       : null;
-    const label = `${occurrence.garmentType[0].toUpperCase()}${occurrence.garmentType.slice(1)}${count > 1 ? ` ${count}` : ""}`;
+    const baseLabel =
+      occurrence.garmentType === "kaftan"
+        ? "Long Shirt"
+        : `${occurrence.garmentType[0].toUpperCase()}${occurrence.garmentType.slice(1)}`;
+    const label = `${baseLabel}${count > 1 ? ` ${count}` : ""}`;
     const resolved = validation.occurrencesByGarmentKey[occurrence.garmentKey];
     if (!token || !resolved) {
       blockers.push(candidateV2Blocker("DESIGN_STYLE_OCCURRENCE_MISSING", "This garment's Design Style needs review.", occurrence.garmentKey));
@@ -525,7 +530,7 @@ export const buildFutureOrderCandidateOccurrenceStyleSnapshotsV2 = (
         sourceKey: assignment.sourceKey,
         catalogue: {
           styleId: style.id,
-          name: style.name,
+          name: formatCustomerVisibleKaftanText(style.name),
           image: style.image?.trim() || null,
           publicRevision: metadata.publicRevision,
           eligibilityRevision: metadata.eligibilityRevision,

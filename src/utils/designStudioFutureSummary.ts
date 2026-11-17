@@ -40,6 +40,7 @@ import {
 } from "./designPricing.js";
 import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState.js";
 import { projectOccurrenceDisplayLabels, projectPersonGarmentLabels } from "./occurrenceDisplayLabel.js";
+import { formatCustomerVisibleKaftanText } from "./optionalShortsPresentation.js";
 import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime.js";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
@@ -621,7 +622,7 @@ const mapOccurrenceStyles = ({
         occurrenceLabel: occurrence.label,
         sourceKind: "catalogue" as const,
         status: "selected" as const,
-        name: style.name,
+        name: formatCustomerVisibleKaftanText(style.name),
         image: style.image?.trim() || null,
         detail: getFutureDesignStyleCompositionLabel(style),
       };

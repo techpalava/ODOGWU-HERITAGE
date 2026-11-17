@@ -11,6 +11,7 @@ import {
 import { isAwaitingPersonalizedPriceEvaluation } from "./designStudioFuturePaymentReview";
 import { repriceUnpaidIndividualDeliveryCandidate } from "./futureOrderPayableTotal";
 import { readFutureOrderV2ChargeableCents } from "./futureOrderV2PersonalizedPrice";
+import { formatCustomDetailsGarmentLabel } from "./optionalShortsPresentation";
 
 export type ParkFutureOrderV2CandidateResult =
   | {
@@ -167,7 +168,7 @@ export const getFutureOrderV2CartLineLabel = (
   item: FutureOrderCartItemV2,
 ): string => {
   const labels = item.candidate.occurrenceStyleSnapshots.map((snapshot) =>
-    snapshot.occurrence.label.trim(),
+    formatCustomDetailsGarmentLabel(snapshot.occurrence.label.trim()),
   );
   const unique = labels.filter(
     (label, index) => label.length > 0 && labels.indexOf(label) === index,
