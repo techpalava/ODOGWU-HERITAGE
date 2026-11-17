@@ -958,7 +958,9 @@ export const DormantFuturePaymentReviewStep = ({
                       </p>
                       <p className="break-words text-xs text-heritage-ink/60">
                         {snapshot.sourceKind === "catalogue"
-                          ? `Catalogue style: ${snapshot.catalogue?.styleId}${snapshot.catalogue ? ` · Eligibility revision ${snapshot.catalogue.eligibilityRevision}` : ""}`
+                          ? snapshot.catalogue
+                            ? `Catalogue style · Eligibility revision ${snapshot.catalogue.eligibilityRevision}`
+                            : "Catalogue style"
                           : "Confirmed uploaded design"}
                       </p>
                     </div>
@@ -967,7 +969,9 @@ export const DormantFuturePaymentReviewStep = ({
                         ? snapshot.catalogue?.name
                           ? formatCustomerVisibleKaftanText(snapshot.catalogue.name)
                           : undefined
-                        : snapshot.uploaded?.displayLabel}
+                        : snapshot.uploaded?.displayLabel
+                          ? formatCustomerVisibleKaftanText(snapshot.uploaded.displayLabel)
+                          : undefined}
                     </p>
                   </li>
                 ))}
@@ -1001,8 +1005,8 @@ export const DormantFuturePaymentReviewStep = ({
                   <p className="mt-1 text-xs capitalize text-heritage-ink/55">
                     For: {candidate.design.demographic}
                   </p>
-                  <p className="mt-1 break-words font-mono text-xs text-heritage-ink/50">
-                    Catalog style: {candidate.source.styleId}
+                  <p className="mt-1 break-words text-xs text-heritage-ink/50">
+                    Catalogue style
                   </p>
                   <p className="mt-1 text-xs font-semibold text-heritage-green">
                     Status: {getFuturePaymentReviewContentStatusLabel(candidate)}

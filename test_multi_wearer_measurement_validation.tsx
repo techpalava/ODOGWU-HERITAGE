@@ -498,6 +498,7 @@ assert.match(
         },
         catalogue: {
           ...baseCandidate.occurrenceStyleSnapshots[0]!.catalogue!,
+          styleId: "striped-kaftan-tunic-1",
           name: "Royal Kaftan",
         },
       },
