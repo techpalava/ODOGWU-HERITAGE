@@ -1330,9 +1330,11 @@ export const DormantFutureMeasurementStep = ({
     : [];
   const canContinueToTryOn =
     !hydrationInvalid &&
-    (orderMeasurementsComplete !== undefined
-      ? orderMeasurementsComplete
-      : isTryOnUnlockedByMeasurements(resolvedState));
+    !hasUnassignedGarments &&
+    otherWearerIncompleteLabels.length === 0 &&
+    emptyWearerLabels.length === 0 &&
+    isTryOnUnlockedByMeasurements(resolvedState) &&
+    (orderMeasurementsComplete ?? true);
   const activeWearerComplete = isFutureMeasurementStageComplete(resolvedState);
   const unassignedLabels = assignmentPendingGarments.map((garment) =>
     formatGarmentLabel(occurrenceLabels, garment.garmentType, garment.garmentKey),

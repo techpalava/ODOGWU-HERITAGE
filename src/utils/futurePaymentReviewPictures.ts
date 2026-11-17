@@ -1,6 +1,10 @@
 import type { CanonicalPhysicalGarmentType } from "../types.js";
 import type { FuturePaymentReviewCandidate } from "./designStudioFuturePaymentReview.js";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary.js";
+import {
+  formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
+} from "./optionalShortsPresentation.js";
 import { getSummaryGarmentReferenceImage } from "./summaryGarmentGroups.js";
 
 /**
@@ -96,7 +100,9 @@ export const getFuturePaymentReviewGarmentPictures = (
     if (!occurrence || occurrence.sourceKind === "unassigned") return null;
     return {
       sourceKind: occurrence.sourceKind,
-      name: occurrence.name || null,
+      name: occurrence.name
+        ? formatCustomerVisibleKaftanText(occurrence.name)
+        : null,
       imageUrl: cleanUrl(occurrence.image),
     };
   };
@@ -117,7 +123,7 @@ export const getFuturePaymentReviewGarmentPictures = (
       if (snapshot?.sourceKind === "catalogue" && snapshot.catalogue) {
         design = {
           sourceKind: "catalogue",
-          name: snapshot.catalogue.name,
+          name: formatCustomerVisibleKaftanText(snapshot.catalogue.name),
           imageUrl: cleanUrl(snapshot.catalogue.image),
         };
       } else if (snapshot?.sourceKind === "uploaded" && snapshot.uploaded) {
@@ -125,13 +131,13 @@ export const getFuturePaymentReviewGarmentPictures = (
         // displayable preview comes from the Summary projection below.
         design = {
           sourceKind: "uploaded",
-          name: snapshot.uploaded.displayLabel,
+          name: formatCustomerVisibleKaftanText(snapshot.uploaded.displayLabel),
           imageUrl: null,
         };
       } else if (candidate.schemaVersion === 1 && candidate.design) {
         design = {
           sourceKind: "catalogue",
-          name: candidate.design.name,
+          name: formatCustomerVisibleKaftanText(candidate.design.name),
           imageUrl: cleanUrl(candidate.design.image),
         };
       }
@@ -164,7 +170,7 @@ export const getFuturePaymentReviewGarmentPictures = (
         });
       return {
         garmentKey: garment.garmentKey,
-        label: garment.label,
+        label: formatCustomDetailsGarmentLabel(garment.label),
         role: garment.role,
         wearerLabel: wearerByKey.get(garment.garmentKey) ?? null,
         constructionTotalCents: garment.constructionTotalCents,
@@ -177,7 +183,7 @@ export const getFuturePaymentReviewGarmentPictures = (
 
   return summaryGarments.map((garment) => ({
     garmentKey: garment.garmentKey,
-    label: garment.label,
+    label: formatCustomDetailsGarmentLabel(garment.label),
     role: garment.role,
     wearerLabel: garment.wearerLabel,
     constructionTotalCents: garment.constructionTotalCents,

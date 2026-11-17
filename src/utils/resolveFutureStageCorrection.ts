@@ -42,6 +42,13 @@ export const resolveFutureStageCorrection = ({
   additionalGarmentFabricRepairTargeted?: boolean;
 }): DesignStudioStageId | null => {
   if (
+    (currentStageId === "shipping" || currentStageId === "payment") &&
+    !tryOnUnlockedByMeasurements
+  ) {
+    return "measurement";
+  }
+
+  if (
     currentStageId !== "design_style" &&
     currentStageId !== "custom_details" &&
     currentStageId !== "personalized_additions" &&
