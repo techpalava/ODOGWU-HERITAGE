@@ -7,6 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
+import { projectFutureGarmentRemovalTargets } from "./src/components/FutureGarmentRemovalConfirmationDialog";
 import { getFabricGarmentLabel } from "./src/engine/FabricCapacityEngine";
 import type {
   AiTryOnWorkflowStateV1,
@@ -127,6 +128,20 @@ assert.equal(getCustomDetailsGarmentLabel("standard_shorts"), "Standard Knicker 
 assert.equal(getCustomDetailsGarmentLabel("bum_shorts"), "Standard Bum Shorts");
 assert.equal(getStep1GarmentDisplayLabel("standard_shorts"), "Standard Knicker Shorts");
 assert.equal(getFabricGarmentLabel("standard_shorts"), "Knicker / Standard Shorts");
+assert.equal(getFabricGarmentLabel("bum_shorts"), "Bum Shorts");
+assert.deepEqual(
+  projectFutureGarmentRemovalTargets({
+    occurrences: [
+      { garmentKey: "base:standard_shorts", garmentType: "standard_shorts", sourceRole: "main", fabricUnits: 1 },
+      { garmentKey: "base:bum_shorts", garmentType: "bum_shorts", sourceRole: "main", fabricUnits: 1 },
+    ],
+    provisionalGarmentKey: null,
+  }).map((target) => target.accessibleName),
+  [
+    "Remove Standard Knicker Shorts, base garment",
+    "Remove Standard Bum Shorts, base garment",
+  ],
+);
 assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts"), "Standard Knicker Shorts");
 assert.equal(formatCustomDetailsGarmentLabel("Nikka / Standard Shorts"), "Standard Knicker Shorts");
 assert.equal(formatCustomDetailsGarmentLabel("Knicker / Standard Shorts"), "Standard Knicker Shorts");
