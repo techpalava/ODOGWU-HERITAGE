@@ -132,6 +132,29 @@ export const STEP_1_GARMENT_DISPLAY_LABELS: Readonly<
   agbada: "Long Shirt (Agbada)",
 };
 
+/**
+ * Approved plain description for Standard Knicker Shorts.
+ * Other garments have no approved description and must not gain one here.
+ */
+export const KNICKER_PLAIN_DESCRIPTION =
+  "Knicker: native-style shorts that end at or just below the knee.";
+
+/** @deprecated Use KNICKER_PLAIN_DESCRIPTION. */
+export const NIKKA_PLAIN_DESCRIPTION = KNICKER_PLAIN_DESCRIPTION;
+
+const STEP_1_GARMENT_PLAIN_DESCRIPTIONS: Partial<
+  Record<CanonicalPhysicalGarmentType, string>
+> = {
+  standard_shorts: KNICKER_PLAIN_DESCRIPTION,
+};
+
+export const getStep1GarmentPlainDescription = (
+  garmentType: FabricGarmentType,
+): string | null =>
+  garmentType === "other"
+    ? null
+    : (STEP_1_GARMENT_PLAIN_DESCRIPTIONS[garmentType] ?? null);
+
 export const getStep1GarmentDisplayLabel = (
   garmentType: FabricGarmentType,
 ): string =>
