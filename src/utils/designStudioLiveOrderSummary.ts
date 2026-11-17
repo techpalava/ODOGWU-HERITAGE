@@ -26,6 +26,7 @@ import {
   isSelectedMeasurementMethod,
   type MeasurementRequirementPlan,
 } from "./measurementBlueprint";
+import { getStep1GarmentPlainDescription } from "./garmentConstructionPricing.js";
 import { PRICING_CURRENCY_SYMBOL } from "./money";
 
 export const LIVE_ORDER_SUMMARY_HIDDEN_STAGES = ["summary", "payment"] as const;
@@ -73,6 +74,8 @@ export interface LiveOrderSummaryLine {
   readonly id: string;
   readonly label: string;
   readonly detail: string | null;
+  /** Approved plain description for an unfamiliar garment name. Absent for every other line. */
+  readonly plainDescription?: string | null;
   /** A second customer-facing status line, used when the primary detail is construction. */
   readonly supportingDetail?: string | null;
   /**
@@ -813,12 +816,14 @@ export const projectDesignStudioLiveOrderSummary = ({
   const constructionLineFor = (
     garment: (typeof summary.garmentSummary)[number],
   ): LiveOrderSummaryLine => {
+    const plainDescription = getStep1GarmentPlainDescription(garment.garmentType);
     return {
       id: `construction-${garment.garmentKey}`,
       // Garment name leads (same as Stage 8 cards); the selected
       // clothing-price construction sits underneath. Null when unresolved.
       label: garmentLabels.get(garment.garmentKey) || garment.label,
       detail: mainConstructionIdentityLabel(garment),
+      ...(plainDescription ? { plainDescription } : {}),
       ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
       ...(garment.fitLabel ? { fitLabel: garment.fitLabel } : {}),
       amountLabel:

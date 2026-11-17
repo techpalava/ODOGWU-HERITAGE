@@ -3,6 +3,7 @@ import type {
   StyleCategory,
 } from "../types.js";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
+import { customerCatalogueLabel } from "./customerCatalogueLabel.js";
 import {
   getDesignStyleAuthorityMetadata,
   isAuthoritativeDesignStyleProjection,
@@ -385,7 +386,10 @@ const referenceCompositionLabel = (
       .map(getFabricGarmentLabel)
       .join(" + ");
   }
-  return style.garmentComposition?.trim() || "Reference composition unavailable";
+  const storedComposition = style.garmentComposition?.trim() || "";
+  return storedComposition
+    ? customerCatalogueLabel(storedComposition)
+    : "Reference composition unavailable";
 };
 
 const presentationForEligibility = ({
