@@ -862,6 +862,29 @@ const createFirestoreAdapter = (
   },
 });
 
+export const loadAuthenticatedCloudDraftForOwner = async (
+  ownerUid: string,
+  firestore: Firestore = db,
+): Promise<AuthenticatedFutureDraftLoadResult> => {
+  if (!ownerUid) {
+    return {
+      status: "blocked",
+      record: null,
+      reason: "application_customer_without_firebase_user",
+    };
+  }
+  try {
+    const raw = await createFirestoreAdapter(firestore).load(ownerUid);
+    return normalizeLoadedValue(raw, ownerUid);
+  } catch {
+    return {
+      status: "blocked",
+      record: null,
+      reason: "cloud_draft_load_failed",
+    };
+  }
+};
+
 export const createFirebaseAuthenticatedFutureDraftRepository = ({
   customer,
   authResolved,

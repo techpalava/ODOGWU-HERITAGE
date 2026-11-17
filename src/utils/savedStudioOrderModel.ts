@@ -1,4 +1,5 @@
 import type {
+  CustomerDesignUploadReference,
   DesignStudioResumeLocusV1,
   DesignStudioStageId,
   Fabric,
@@ -11,10 +12,16 @@ import {
   DESIGN_STUDIO_STAGE_IDS,
 } from "./designSourceJourney";
 import { normalizeDesignStudioResumeLocus } from "./designStudioResumeLocus";
-import { inspectUploadedDesignSourceRegistry } from "./uploadedDesignSourceRegistry";
+import {
+  collectReferencedUploadedSourceRefsFromLedger,
+  inspectUploadedDesignSourceRegistry,
+} from "./uploadedDesignSourceRegistry";
+import { inspectPersistedDesignStyleDraft } from "./designStyleDraftPersistence";
 import { isValidUploadedDesignDraftSource } from "./designSourceState";
 import { getPersistedDraftOrderIdentity } from "./orderContextIdentity";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
+import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference";
+import type { FutureOrderCartItemV2 } from "./futureOrderV2Storage";
 
 export const SAVED_STUDIO_ORDER_SCHEMA_VERSION = 1 as const;
 export const SAVED_STUDIO_ORDER_MAX_PER_CUSTOMER = 5;
@@ -212,18 +219,97 @@ export const collectUploadedSourceRefsFromDraft = (
 ): string[] => {
   const refs = new Set<string>();
   const registry = inspectUploadedDesignSourceRegistry(draft);
-  if (registry.status === "valid") {
-    for (const [sourceRef, source] of Object.entries(
-      registry.registry.sourcesByUploadedSourceRef,
-    )) {
+  const registrySources =
+    registry.status === "valid"
+      ? registry.registry.sourcesByUploadedSourceRef
+      : registry.status === "malformed" && registry.recovered
+        ? registry.recovered.sourcesByUploadedSourceRef
+        : null;
+  if (registrySources) {
+    for (const [sourceRef, source] of Object.entries(registrySources)) {
       if (sourceRef) refs.add(sourceRef);
       collectUploadedSourceRefFromUnknown(source, refs);
+    }
+  }
+  const styleDraft = inspectPersistedDesignStyleDraft(draft);
+  if (styleDraft.status === "valid") {
+    for (const sourceRef of collectReferencedUploadedSourceRefsFromLedger(
+      styleDraft.envelope.ledger,
+    )) {
+      refs.add(sourceRef);
+    }
+    if (styleDraft.envelope.migration?.sourceKind === "uploaded") {
+      refs.add(styleDraft.envelope.migration.uploadedSourceRef);
     }
   }
   collectUploadedSourceRefFromUnknown(draft.designSource, refs);
   if (isValidUploadedDesignDraftSource(draft.designSource)) {
     const sourceRef = draft.designSource.uploadReference.designReferenceId;
     if (sourceRef) refs.add(sourceRef);
+  }
+  return [...refs];
+};
+
+const toCustomerDesignUploadReference = (
+  value: unknown,
+): CustomerDesignUploadReference | null => {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.designReferenceId !== "string" ||
+    typeof value.ownerUid !== "string" ||
+    typeof value.storagePath !== "string" ||
+    typeof value.mimeType !== "string" ||
+    typeof value.createdAt !== "string"
+  ) {
+    return null;
+  }
+  const candidate = value as unknown as CustomerDesignUploadReference;
+  return isCustomerDesignDraftStoragePath(candidate) ? candidate : null;
+};
+
+export const collectUploadedDesignReferencesFromDraft = (
+  draft: GuestDesignDraft,
+): CustomerDesignUploadReference[] => {
+  const byPath = new Map<string, CustomerDesignUploadReference>();
+  const add = (candidate: unknown) => {
+    const parsed = toCustomerDesignUploadReference(candidate);
+    if (parsed && !byPath.has(parsed.storagePath)) {
+      byPath.set(parsed.storagePath, parsed);
+    }
+  };
+  const registry = inspectUploadedDesignSourceRegistry(draft);
+  const registrySources =
+    registry.status === "valid"
+      ? registry.registry.sourcesByUploadedSourceRef
+      : registry.status === "malformed" && registry.recovered
+        ? registry.recovered.sourcesByUploadedSourceRef
+        : null;
+  if (registrySources) {
+    for (const source of Object.values(registrySources)) {
+      add(source.uploadReference);
+    }
+  }
+  if (isRecord(draft.designSource) && draft.designSource.kind === "uploaded") {
+    add(draft.designSource.uploadReference);
+  }
+  if (isValidUploadedDesignDraftSource(draft.designSource)) {
+    add(draft.designSource.uploadReference);
+  }
+  return [...byPath.values()];
+};
+
+export const collectUploadedSourceRefsFromV2CartItems = (
+  items: readonly Pick<FutureOrderCartItemV2, "candidate">[],
+): string[] => {
+  const refs = new Set<string>();
+  for (const item of items) {
+    for (const snapshot of item.candidate.occurrenceStyleSnapshots ?? []) {
+      const ref =
+        snapshot.sourceKind === "uploaded"
+          ? snapshot.uploaded?.uploadedSourceRef
+          : null;
+      if (typeof ref === "string" && ref.trim()) refs.add(ref);
+    }
   }
   return [...refs];
 };
