@@ -148,7 +148,7 @@ export const CustomerFutureOrderV2Details = ({
     candidate.occurrenceStyleSnapshots.map((snapshot) => [
       snapshot.occurrence.garmentKey,
       snapshot.sourceKind === "catalogue"
-        ? formatCustomerVisibleKaftanText(snapshot.catalogue!.name)
+        ? formatSavedNikkaDisplayText(formatCustomerVisibleKaftanText(snapshot.catalogue!.name))
         : "Uploaded design",
     ]),
   );
@@ -436,7 +436,7 @@ export const CustomerFutureOrderV2Details = ({
                       <ul className="mt-1 space-y-0.5 text-xs">
                         {customDetails.map((detail) => (
                           <li key={detail.occurrenceKey}>
-                            {formatSavedNikkaDisplayText(detail.selectionGroupTitle)}: {detail.optionLabel}
+                            {formatSavedNikkaDisplayText(formatCustomerVisibleKaftanText(detail.selectionGroupTitle))}: {detail.optionLabel}
                             {detail.personalizedText ? ` "${detail.personalizedText}"` : ""}
                           </li>
                         ))}
@@ -453,7 +453,9 @@ export const CustomerFutureOrderV2Details = ({
                 <div className="space-y-3">
                   {measurementGroups.map((group) => (
                     <div key={`${group.garmentKey ?? "shared"}:${group.title}`}>
-                      <p className="font-semibold text-heritage-green">{group.title}</p>
+                      <p className="font-semibold text-heritage-green">
+                        {formatCustomDetailsGarmentLabel(group.title)}
+                      </p>
                       <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
                         {group.items.map((item) => (
                           <div key={item.measurementId} className="flex justify-between gap-2">

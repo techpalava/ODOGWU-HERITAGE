@@ -9,6 +9,7 @@ import {
 import {
   formatCustomDetailsGarmentLabel,
   formatCustomerVisibleKaftanText,
+  formatSavedNikkaDisplayText,
 } from "./optionalShortsPresentation.js";
 
 export type FutureOrderV2HistoricalStylePresentation =
@@ -99,7 +100,7 @@ export const presentFutureOrderV2History = (
     return [
       {
         garmentKey: detail.garmentKey,
-        garmentLabel: detail.garmentLabel,
+        garmentLabel: formatCustomDetailsGarmentLabel(detail.garmentLabel),
         text,
         placementLabel,
       },
@@ -128,13 +129,17 @@ export const presentFutureOrderV2History = (
         orderId: parsed.value.orderId,
         garmentKey: snapshot.occurrence.garmentKey,
         occurrenceToken: snapshot.occurrence.occurrenceToken,
-        garmentLabel: formatCustomDetailsGarmentLabel(snapshot.occurrence.label),
+        garmentLabel: formatCustomDetailsGarmentLabel(
+          snapshot.occurrence.label || snapshot.occurrence.garmentType,
+        ),
         garmentType: snapshot.occurrence.garmentType,
         style:
           snapshot.sourceKind === "catalogue"
             ? {
                 kind: "catalogue",
-                name: formatCustomerVisibleKaftanText(snapshot.catalogue!.name),
+                name: formatSavedNikkaDisplayText(
+                  formatCustomerVisibleKaftanText(snapshot.catalogue!.name),
+                ),
                 image: snapshot.catalogue!.image,
                 evidence: {
                   styleId: snapshot.catalogue!.styleId,
