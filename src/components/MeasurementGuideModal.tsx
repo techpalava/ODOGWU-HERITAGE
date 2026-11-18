@@ -12,6 +12,7 @@ import { useReturnFocusOnClose } from "./savedOrderDialogKeyboard";
 
 export const MEASUREMENT_GUIDE_PDF_HREF =
   "/guides/odogwu-heritage-measurement-guide.pdf";
+export const MEASUREMENT_GUIDE_PDF_IFRAME_SRC = `${MEASUREMENT_GUIDE_PDF_HREF}?v=2`;
 export const MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME =
   "Odogwu-Heritage-Measurement-Guide.pdf";
 
@@ -519,7 +520,7 @@ export const MeasurementGuideModal = ({
               </div>
 
               <iframe
-                src={MEASUREMENT_GUIDE_PDF_HREF}
+                src={MEASUREMENT_GUIDE_PDF_IFRAME_SRC}
                 title="Odogwu Heritage Illustrated Measurement Guide"
                 data-measurement-guide-iframe="true"
                 className="h-[65vh] min-h-[420px] w-full rounded-2xl border border-heritage-green/20 bg-white shadow-inner"

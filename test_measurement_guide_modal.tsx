@@ -11,6 +11,7 @@ import {
   MEASUREMENT_GUIDE_CHECKLIST_SECTIONS,
   MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME,
   MEASUREMENT_GUIDE_PDF_HREF,
+  MEASUREMENT_GUIDE_PDF_IFRAME_SRC,
   MeasurementGuideModal,
 } from "./src/components/MeasurementGuideModal";
 import type {
@@ -364,7 +365,11 @@ assert.equal(
   true,
 );
 const iframe = modal.findByType("iframe");
-assert.equal(iframe.props.src, MEASUREMENT_GUIDE_PDF_HREF);
+assert.equal(
+  MEASUREMENT_GUIDE_PDF_IFRAME_SRC,
+  `${MEASUREMENT_GUIDE_PDF_HREF}?v=2`,
+);
+assert.equal(iframe.props.src, MEASUREMENT_GUIDE_PDF_IFRAME_SRC);
 assert.equal(
   iframe.props.title,
   "Odogwu Heritage Illustrated Measurement Guide",
