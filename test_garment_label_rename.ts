@@ -148,6 +148,18 @@ assert.equal(formatCustomDetailsGarmentLabel("Knicker / Standard Shorts"), "Stan
 assert.equal(formatCustomDetailsGarmentLabel("Nikka"), "Standard Knicker Shorts");
 assert.equal(formatCustomDetailsGarmentLabel("Nikka 2"), "Standard Knicker Shorts 2");
 assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts 2"), "Standard Knicker Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Long_skirt"), "Long Skirt");
+assert.equal(formatCustomDetailsGarmentLabel("long_skirt 2"), "Long Skirt 2");
+assert.equal(formatCustomDetailsGarmentLabel("Standard_shorts"), "Standard Knicker Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("standard_shorts 3"), "Standard Knicker Shorts 3");
+assert.equal(formatCustomDetailsGarmentLabel("Bum_shorts"), "Standard Bum Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("bum_shorts 2"), "Standard Bum Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Full_length_gown"), "Full-Length Gown");
+assert.equal(formatCustomDetailsGarmentLabel("full_length_gown 2"), "Full-Length Gown 2");
+assert.equal(formatCustomDetailsGarmentLabel("kaftan"), "Long Shirt");
+assert.equal(formatCustomDetailsGarmentLabel("KAFTAN 2"), "Long Shirt 2");
+assert.equal(formatCustomDetailsGarmentLabel("nikka"), "Standard Knicker Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("nikka 2"), "Standard Knicker Shorts 2");
 
 // 2. Numbered duplicates keep their ordinal after the prefixed name.
 const occurrenceLabels = projectOccurrenceDisplayLabels([
