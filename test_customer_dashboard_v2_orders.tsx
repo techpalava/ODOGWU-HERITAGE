@@ -461,4 +461,76 @@ const noWorkshopList = renderToStaticMarkup(
 assert.ok(noWorkshopList.includes("Production has not started"));
 assert.equal(noWorkshopList.includes("data-customer-v2-order-stage-history"), false);
 
+// Legacy/historical V2 orders with raw underscore or lowercase garment keys
+// must display canonical customer-facing labels in My orders & Details without
+// mutating the persisted Firestore payload.
+{
+  const makeRawLabelOrder = (orderId: string, rawLabels: [string, string, string]) => {
+    const base = persistedOrder(orderId, "2026-09-28T10:00:00.000Z");
+    const candidate = base.masterOrder.cartItem.candidate;
+    rawLabels.forEach((rawLabel, index) => {
+      (candidate.garments[index] as { label: string }).label = rawLabel;
+      (candidate.occurrenceStyleSnapshots[index]!.occurrence as { label: string }).label = rawLabel;
+    });
+    return base;
+  };
+  const rawOrderA = makeRawLabelOrder("historical-raw-a", [
+    "Long_skirt",
+    "Standard_shorts",
+    "Bum_shorts",
+  ]);
+  const rawOrderB = makeRawLabelOrder("historical-raw-b", [
+    "Full_length_gown",
+    "kaftan",
+    "nikka",
+  ]);
+  const rawSnapshotBeforeA = JSON.stringify(rawOrderA);
+  const rawSnapshotBeforeB = JSON.stringify(rawOrderB);
+
+  const rawListMarkup = renderToStaticMarkup(
+    <CustomerFutureOrderV2List
+      orders={[rawOrderA, rawOrderB]}
+      paymentsByOrderId={new Map()}
+    />,
+  );
+  for (const expectedLabel of [
+    "Long Skirt",
+    "Standard Knicker Shorts",
+    "Standard Bum Shorts",
+    "Full-Length Gown",
+    "Long Shirt",
+  ]) {
+    assert.ok(
+      rawListMarkup.includes(expectedLabel),
+      `My orders card should render "${expectedLabel}"`,
+    );
+  }
+  for (const rawKey of ["Long_skirt", "Standard_shorts", "Bum_shorts", "Full_length_gown", "kaftan", "nikka"]) {
+    assert.equal(
+      rawListMarkup.includes(rawKey),
+      false,
+      `My orders card must not render raw garment key "${rawKey}"`,
+    );
+  }
+
+  const rawDetailsA = renderToStaticMarkup(
+    <CustomerFutureOrderV2Details order={rawOrderA} payment={undefined} onClose={() => undefined} />,
+  );
+  const rawDetailsB = renderToStaticMarkup(
+    <CustomerFutureOrderV2Details order={rawOrderB} payment={undefined} onClose={() => undefined} />,
+  );
+  assert.ok(rawDetailsA.includes("Long Skirt"));
+  assert.ok(rawDetailsA.includes("Standard Knicker Shorts"));
+  assert.ok(rawDetailsA.includes("Standard Bum Shorts"));
+  assert.ok(rawDetailsB.includes("Full-Length Gown"));
+  assert.ok(rawDetailsB.includes("Long Shirt"));
+  assert.ok(rawDetailsB.includes("Standard Knicker Shorts"));
+  for (const rawKey of ["Long_skirt", "Standard_shorts", "Bum_shorts", "Full_length_gown", "kaftan", "nikka"]) {
+    assert.equal(rawDetailsA.includes(rawKey), false);
+    assert.equal(rawDetailsB.includes(rawKey), false);
+  }
+  assert.equal(JSON.stringify(rawOrderA), rawSnapshotBeforeA);
+  assert.equal(JSON.stringify(rawOrderB), rawSnapshotBeforeB);
+}
+
 console.log("Customer dashboard V2 order tests passed.");

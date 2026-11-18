@@ -8,6 +8,11 @@ import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import { customerFacingPickupLocationLabel } from "../utils/designStudioFutureShipping";
+import {
+  formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
 import { StorageService } from "../services/storageService";
 import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
@@ -858,9 +863,13 @@ export default function DashboardView({
                   <div className="flex justify-between border-b border-gray-100 pb-2">
                     <div>
                       <strong className="text-heritage-green text-sm font-serif">
-                        {selectedReceipt.styleName ||
-                          selectedReceipt.style?.name ||
-                          "Traditional Senator Suit"}
+                        {formatSavedNikkaDisplayText(
+                          formatCustomerVisibleKaftanText(
+                            selectedReceipt.styleName ||
+                              selectedReceipt.style?.name ||
+                              "Traditional Senator Suit",
+                          ),
+                        )}
                       </strong>
                       <span className="text-[10px] text-heritage-ink/50 block font-mono mt-0.5">
                         Fabric:{" "}
@@ -873,9 +882,11 @@ export default function DashboardView({
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] font-mono bg-heritage-green/10 text-heritage-green px-2 py-0.5 rounded-md font-semibold">
-                        {selectedReceipt.garmentType ||
-                          selectedReceipt.garment?.type ||
-                          "Full 2-Piece Set"}
+                        {formatCustomDetailsGarmentLabel(
+                          selectedReceipt.garmentType ||
+                            selectedReceipt.garment?.type ||
+                            "Full 2-Piece Set",
+                        )}
                       </span>
                     </div>
                   </div>
