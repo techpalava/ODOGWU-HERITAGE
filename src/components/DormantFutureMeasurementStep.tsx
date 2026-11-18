@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Ruler, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { BookOpen, Download, Ruler, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
+import {
+  MeasurementGuideModal,
+  MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME,
+  MEASUREMENT_GUIDE_PDF_HREF,
+} from "./MeasurementGuideModal";
 import {
   DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS,
   DesignStudioStepGuide,
@@ -742,6 +747,8 @@ export const DormantFutureMeasurementStep = ({
     Array<{ wearerId: string; label: string }>
   >([]);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [guideModalOpen, setGuideModalOpen] = useState(false);
+  useReportDesignStudioBlockingOverlay("step7-measurement-guide-modal", guideModalOpen);
   const [assignModalGarmentKey, setAssignModalGarmentKey] = useState<string | null>(
     null,
   );
@@ -1545,6 +1552,53 @@ export const DormantFutureMeasurementStep = ({
           </div>
         ) : null}
       </header>
+
+      <section
+        aria-label="Measurement guide and PDF download"
+        data-measurement-guide-banner="true"
+        className="rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
+      >
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
+              <BookOpen size={19} aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
+                Illustrated 25-Page Guide
+              </p>
+              <h3 className="mt-0.5 font-serif text-base font-bold text-heritage-green sm:text-lg">
+                Need help taking accurate measurements?
+              </h3>
+              <p className="mt-1 text-xs font-medium leading-relaxed text-heritage-ink/80 sm:text-sm">
+                Open our close-to-body checklists and photo diagrams in this
+                window without losing any values you have typed, or download the
+                full PDF guide.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-measurement-guide-open="true"
+              onClick={() => setGuideModalOpen(true)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              <BookOpen size={15} aria-hidden="true" />
+              <span>View Measurement Guide</span>
+            </button>
+            <a
+              href={MEASUREMENT_GUIDE_PDF_HREF}
+              download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
+              data-measurement-guide-download="true"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              <Download size={15} aria-hidden="true" />
+              <span>Download PDF Guide</span>
+            </a>
+          </div>
+        </div>
+      </section>
 
       <section
         ref={measurementOptionsRef}
@@ -2398,6 +2452,11 @@ export const DormantFutureMeasurementStep = ({
           }}
         />
       </footer>
+
+      <MeasurementGuideModal
+        open={guideModalOpen}
+        onClose={() => setGuideModalOpen(false)}
+      />
     </section>
   );
 };
