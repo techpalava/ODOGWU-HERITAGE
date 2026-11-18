@@ -67,6 +67,35 @@ assert.ok(
 const pdfPrefix = readFileSync(pdfPath).subarray(0, 5).toString("ascii");
 assert.equal(pdfPrefix, "%PDF-", "measurement guide asset starts with %PDF-");
 
+// 1b. Verify vercel.json permits same-origin iframe embedding for /guides/(.*) while keeping global DENY.
+const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8")) as {
+  headers?: Array<{
+    source: string;
+    headers: Array<{ key: string; value: string }>;
+  }>;
+};
+const headerRules = vercelConfig.headers ?? [];
+const globalRuleIndex = headerRules.findIndex((rule) => rule.source === "/(.*)");
+const guidesRuleIndex = headerRules.findIndex((rule) => rule.source === "/guides/(.*)");
+assert.ok(globalRuleIndex >= 0, "global /(.*) header rule exists");
+assert.ok(
+  guidesRuleIndex > globalRuleIndex,
+  "/guides/(.*) header override must appear after /(.*) in vercel.json",
+);
+const globalXfo = headerRules[globalRuleIndex].headers.find(
+  (h) => h.key === "X-Frame-Options",
+)?.value;
+assert.equal(globalXfo, "DENY", "global routes retain X-Frame-Options: DENY");
+const guidesXfo = headerRules[guidesRuleIndex].headers.find(
+  (h) => h.key === "X-Frame-Options",
+)?.value;
+assert.equal(guidesXfo, "SAMEORIGIN", "/guides/(.*) allows same-origin framing");
+const guidesCsp = headerRules[guidesRuleIndex].headers.find(
+  (h) => h.key === "Content-Security-Policy-Report-Only",
+)?.value;
+assert.ok(guidesCsp?.includes("frame-ancestors 'self'"), "/guides/(.*) allows frame-ancestors 'self'");
+assert.ok(guidesCsp?.includes("object-src 'self'"), "/guides/(.*) allows object-src 'self' for PDF rendering");
+
 // 2. Verify DormantFutureMeasurementStep renders the callout banner and preserves entered inputs.
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
