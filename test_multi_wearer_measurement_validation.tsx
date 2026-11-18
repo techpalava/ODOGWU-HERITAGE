@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { AiTryOnPhotoPanel } from "./src/components/AiTryOnPhotoPanel";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
@@ -39,6 +40,8 @@ import {
   formatCustomDetailsGarmentLabel,
   formatCustomerVisibleKaftanText,
 } from "./src/utils/optionalShortsPresentation";
+import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
+import type { AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -575,3 +578,366 @@ assert.match(
 }
 
 console.log("PASS: multi-wearer measurement validation & summary/review display");
+
+const nodeText = (node: ReactTestRenderer["root"]): string =>
+  node.children.map((child) => (typeof child === "string" ? child : nodeText(child))).join("");
+
+const readEnteredCm = (
+  state: FutureMeasurementStateV1,
+  measurementId: string,
+): number | undefined => {
+  const bags = [state.entered.shared, ...Object.values(state.entered.byGarmentKey)];
+  for (const bag of bags) {
+    const value = bag[measurementId];
+    if (typeof value?.valueCm === "number") return value.valueCm;
+  }
+  return undefined;
+};
+
+const fieldInput = (renderer: ReactTestRenderer, measurementId: string) => {
+  const labels = renderer.root.findAll(
+    (node) => node.props?.["data-measurement-field"] === measurementId,
+  );
+  for (const label of labels) {
+    const inputs = label.findAllByType("input");
+    if (inputs.length > 0) return inputs[0]!;
+  }
+  return null;
+};
+
+{
+  // Who's this for? and Whose measurements? are one wearer cursor.
+  const adaHints = [{ id: "chest_bust_circumference" as const, valueCm: 90 }];
+  const chidiHints = [
+    { id: "total_height" as const, valueCm: 188 },
+    { id: "chest_bust_circumference" as const, valueCm: 104 },
+  ];
+  const tryOnTarget = (overrides: Partial<AiTryOnWearerTarget>): AiTryOnWearerTarget => ({
+    wearerId: "w-ada",
+    label: "Ada",
+    inputFingerprint: "tryon-v1-0123456789abcdef",
+    mode: "garment",
+    garmentImageUrl: "https://example.test/ada.jpg",
+    fabricSwatchImageUrl: null,
+    fitHints: adaHints,
+    orderDetails: null,
+    ...overrides,
+  });
+  const requests: Array<{ wearerKey?: string; fitHints?: readonly { id: string; valueCm: number }[] }> = [];
+  let renderer!: ReactTestRenderer;
+  act(() => {
+    renderer = create(
+      createElement(AiTryOnPhotoPanel, {
+        targets: [
+          tryOnTarget({}),
+          tryOnTarget({
+            wearerId: "w-chidi",
+            label: "Chidi",
+            inputFingerprint: "tryon-v1-fedcba9876543210",
+            garmentImageUrl: "https://example.test/chidi.jpg",
+            fitHints: chidiHints,
+          }),
+        ],
+        triesPerOrder: 5,
+        initialTriesRemaining: 5,
+        onPreviewCreated: () => undefined,
+        onUnavailable: () => undefined,
+        requestPreview: async (request) => {
+          requests.push(request);
+          return {
+            kind: "completed",
+            resultReference: {
+              kind: "verified_private_try_on_result",
+              assetId: "tryon-1",
+              ownerBindingId: "order-x",
+            },
+            preview: { mimeType: "image/png", data: "iVBORw0KGgo=" },
+            orderTriesRemaining: 4,
+          };
+        },
+        preparePhoto: async () => ({ mimeType: "image/jpeg" as const, data: "/9j/4AAQ" }),
+        createThumbnailUrl: () => null,
+        revokeThumbnailUrl: () => undefined,
+        jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      }),
+    );
+  });
+  const checked = (attribute: "data-wearer-chip" | "data-ai-try-on-measurement-wearer") =>
+    renderer.root
+      .findAll((node) => node.type === "button" && node.props[attribute])
+      .find((node) => node.props["aria-checked"] === true)?.props[attribute];
+  assert.equal(checked("data-wearer-chip"), "w-ada");
+  assert.equal(checked("data-ai-try-on-measurement-wearer"), "w-ada");
+  const choosePhoto = async () => {
+    const input = renderer.root.find((node) => node.type === "input" && node.props.type === "file");
+    const file = Object.assign(new Blob([new Uint8Array(20)], { type: "image/jpeg" }), {
+      name: "me.jpg",
+    });
+    await act(async () => {
+      await input.props.onChange({ target: { files: [file] } });
+    });
+  };
+  const generate = async () => {
+    const button = renderer.root.find(
+      (node) => node.type === "button" && /Generate preview|Make a new preview/.test(nodeText(node)),
+    );
+    await act(async () => {
+      await button.props.onClick();
+    });
+  };
+  act(() => {
+    renderer.root
+      .findAll((node) => node.type === "button" && node.props["data-wearer-chip"] === "w-chidi")[0]!
+      .props.onClick();
+  });
+  assert.equal(checked("data-wearer-chip"), "w-chidi", "Who's this for? selects Chidi");
+  assert.equal(
+    checked("data-ai-try-on-measurement-wearer"),
+    "w-chidi",
+    "Whose measurements? follows Who's this for?",
+  );
+  await choosePhoto();
+  await generate();
+  assert.equal(requests[0]?.wearerKey, "w-chidi");
+  assert.deepEqual(requests[0]?.fitHints, chidiHints, "preview measurements swap to Chidi");
+  act(() => {
+    renderer.root
+      .findAll(
+        (node) =>
+          node.type === "button" && node.props["data-ai-try-on-measurement-wearer"] === "w-ada",
+      )[0]!
+      .props.onClick();
+  });
+  assert.equal(checked("data-ai-try-on-measurement-wearer"), "w-ada");
+  assert.equal(checked("data-wearer-chip"), "w-ada", "Whose measurements? selects Who's this for?");
+  await choosePhoto();
+  await generate();
+  assert.equal(requests[1]?.wearerKey, "w-ada");
+  assert.deepEqual(requests[1]?.fitHints, adaHints, "preview measurements swap back to Ada");
+  assert.deepEqual(
+    renderer.root
+      .findAll((node) => node.type === "button" && node.props["data-wearer-chip"] === "w-chidi")
+      .length,
+    1,
+  );
+}
+
+{
+  // Measurement fields follow the active wearer. Editing one person does not
+  // write into the other person's slice, and garment assignment stays put.
+  const assignmentBefore = JSON.stringify(multiOrderIncompleteSecondary.assignmentByGarmentKey);
+  const bodySelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt", "trouser"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+      trouser: construction("trouser", "trouser_std", "trouser_fastening"),
+    },
+  };
+  const bodyGarments = [
+    { garmentKey: "base:shirt", garmentType: "shirt" as const },
+    { garmentKey: "base:trouser", garmentType: "trouser" as const },
+  ];
+  const chidiPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: bodySelection,
+    physicalGarments: bodyGarments,
+  });
+  const chest = chidiPlan.requirements.find(
+    (requirement) =>
+      requirement.directInput && requirement.measurementId === "chest_bust_circumference",
+  );
+  const waist = chidiPlan.requirements.find(
+    (requirement) =>
+      requirement.directInput && requirement.measurementId === "waist_circumference",
+  );
+  const height = chidiPlan.requirements.find(
+    (requirement) => requirement.directInput && requirement.measurementId === "total_height",
+  );
+  assert.ok(chest && waist && height, "shirt and trouser plan includes chest, waist and height");
+  const adaPlan = planMeasurementRequirements({
+    route: "medium_risk",
+    garmentTypeSelection: bodySelection,
+    physicalGarments: bodyGarments,
+  });
+  const adaChest = adaPlan.requirements.find(
+    (requirement) =>
+      requirement.directInput && requirement.measurementId === "chest_bust_circumference",
+  );
+  const adaWaist = adaPlan.requirements.find(
+    (requirement) =>
+      requirement.directInput && requirement.measurementId === "waist_circumference",
+  );
+  const adaHeight = adaPlan.requirements.find(
+    (requirement) => requirement.directInput && requirement.measurementId === "total_height",
+  );
+  assert.ok(adaChest && adaWaist && adaHeight, "medium-risk plan includes chest, waist and height");
+  let chidiInitial = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState("low_risk", "cm"),
+    "low_risk",
+  );
+  chidiInitial = setFutureMeasurementInput({
+    state: chidiInitial,
+    requirement: chest,
+    displayValue: 82,
+  });
+  chidiInitial = setFutureMeasurementInput({
+    state: chidiInitial,
+    requirement: waist,
+    displayValue: 82,
+  });
+  chidiInitial = setFutureMeasurementInput({
+    state: chidiInitial,
+    requirement: height,
+    displayValue: 175,
+  });
+  let adaInitial = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState("medium_risk", "inch"),
+    "medium_risk",
+  );
+  adaInitial = setFutureMeasurementInput({
+    state: adaInitial,
+    requirement: adaChest,
+    displayValue: 40,
+  });
+  adaInitial = setFutureMeasurementInput({
+    state: adaInitial,
+    requirement: adaWaist,
+    displayValue: 32,
+  });
+  adaInitial = setFutureMeasurementInput({
+    state: adaInitial,
+    requirement: adaHeight,
+    displayValue: -1,
+  });
+  const chidiChestBefore = readEnteredCm(chidiInitial, "chest_bust_circumference");
+  const chidiWaistBefore = readEnteredCm(chidiInitial, "waist_circumference");
+  assert.equal(chidiChestBefore, 82);
+  assert.equal(chidiWaistBefore, 82);
+  let latestSlices: Record<"wearer-1" | "wearer-2", FutureMeasurementStateV1> = {
+    "wearer-1": chidiInitial,
+    "wearer-2": adaInitial,
+  };
+  const WearerFields = () => {
+    const [activeId, setActiveId] = useState<"wearer-1" | "wearer-2">("wearer-1");
+    const [slices, setSlices] = useState(latestSlices);
+    latestSlices = slices;
+    const adaActive = activeId === "wearer-2";
+    return createElement(DormantFutureMeasurementStep, {
+      plan: adaActive ? adaPlan : chidiPlan,
+      state: slices[activeId],
+      physicalGarments: bodyGarments,
+      activeWearerId: activeId,
+      activeWearerLabel: adaActive ? "Ada" : "Chidi",
+      activeWearerGarmentLabels: ["Standard Shirt"],
+      wearerChips: [
+        { wearerId: "wearer-1", label: "Chidi" },
+        { wearerId: "wearer-2", label: "Ada" },
+      ],
+      onSelectWearer: (wearerId: string) => {
+        if (wearerId === "wearer-1" || wearerId === "wearer-2") setActiveId(wearerId);
+      },
+      orderMeasurementsComplete: false,
+      multiPersonAssignmentActive: true,
+      onChange: (next) => {
+        setSlices((current) => {
+          const updated = { ...current, [activeId]: next };
+          latestSlices = updated;
+          return updated;
+        });
+      },
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    });
+  };
+  let fields!: ReactTestRenderer;
+  act(() => {
+    fields = create(createElement(WearerFields));
+  });
+  assert.equal(fieldInput(fields, "chest_bust_circumference")?.props.value, 82);
+  assert.equal(fieldInput(fields, "waist_circumference")?.props.value, 82);
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-unit": "cm" }).props["data-measurement-unit"],
+    "cm",
+  );
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-risk-option": "low_risk" }).props[
+      "data-measurement-risk-selected"
+    ],
+    "true",
+  );
+  const formText = () =>
+    fields.root.children
+      .map((child) => (typeof child === "string" ? child : nodeText(child)))
+      .join("");
+  assert.equal(formText().includes("Enter a positive measurement value."), false);
+  act(() => {
+    fields.root
+      .findByProps({ "data-measurement-wearer-chip": "wearer-2" })
+      .props.onClick();
+  });
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-wearer-chip": "wearer-2" }).props[
+      "data-measurement-wearer-chip-selected"
+    ],
+    "true",
+  );
+  assert.equal(fieldInput(fields, "chest_bust_circumference")?.props.value, 40);
+  assert.equal(fieldInput(fields, "waist_circumference")?.props.value, 32);
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-unit": "inch" }).props["data-measurement-unit"],
+    "inch",
+  );
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-risk-option": "medium_risk" }).props[
+      "data-measurement-risk-selected"
+    ],
+    "true",
+  );
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-risk-option": "low_risk" }).props[
+      "data-measurement-risk-selected"
+    ],
+    "false",
+  );
+  assert.equal(
+    formText().includes("Enter a positive measurement value."),
+    true,
+    "Ada's invalid height stays on Ada's form",
+  );
+  act(() => {
+    fieldInput(fields, "chest_bust_circumference")?.props.onChange({ target: { value: "41" } });
+  });
+  act(() => {
+    fieldInput(fields, "waist_circumference")?.props.onChange({ target: { value: "30" } });
+  });
+  assert.equal(readEnteredCm(latestSlices["wearer-1"], "chest_bust_circumference"), chidiChestBefore);
+  assert.equal(readEnteredCm(latestSlices["wearer-1"], "waist_circumference"), chidiWaistBefore);
+  assert.equal(readEnteredCm(latestSlices["wearer-2"], "chest_bust_circumference"), 41 * 2.54);
+  assert.equal(readEnteredCm(latestSlices["wearer-2"], "waist_circumference"), 30 * 2.54);
+  act(() => {
+    fields.root
+      .findByProps({ "data-measurement-wearer-chip": "wearer-1" })
+      .props.onClick();
+  });
+  assert.equal(fieldInput(fields, "chest_bust_circumference")?.props.value, 82);
+  assert.equal(fieldInput(fields, "waist_circumference")?.props.value, 82);
+  assert.equal(
+    fields.root.findByProps({ "data-measurement-unit": "cm" }).props["data-measurement-unit"],
+    "cm",
+  );
+  assert.equal(
+    formText().includes("Enter a positive measurement value."),
+    false,
+    "Ada's validation error does not leak onto Chidi",
+  );
+  assert.equal(
+    JSON.stringify(multiOrderIncompleteSecondary.assignmentByGarmentKey),
+    assignmentBefore,
+    "switching the active wearer does not reassign garments",
+  );
+  act(() => fields.unmount());
+}
+
+console.log("PASS: wearer selectors stay in sync and measurement fields stay isolated");

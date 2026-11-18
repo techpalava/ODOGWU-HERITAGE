@@ -652,7 +652,8 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
 }
 
 {
-  // "Whose measurements?" is a separate single-select. It only changes the
+  // "Who's this for?" and "Whose measurements?" stay on one wearer.
+  // Either chip selects that person for the photo, the garments and the
   // fit hints Generate sends. One wearer has no row. Empty hints omit the
   // block. Model mode still sends none.
   const adaHints = [{ id: "total_height" as const, valueCm: 170 }];
@@ -732,7 +733,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   );
   assert.equal(measurementGroup.props["aria-label"], "Whose measurements?");
   assert.match(textOf(renderer.root), /Whose measurements\?/);
-  assert.match(textOf(renderer.root), /This does not change the photo or the garment/);
+  assert.match(textOf(renderer.root), /The photo and garments follow that person/);
   assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-ada");
   assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-ada", "defaults to Who's this for?");
   assert.equal(measurementChips(renderer)[0].props.type, "button");
@@ -751,16 +752,17 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   const thumb = () =>
     renderer.root.findAll((node) => node.type === "img" && /Photo chosen for/.test(node.props.alt || ""));
   assert.equal(thumb().length, 1);
-  act(() => {
-    measurementChips(renderer)
-      .find((node) => node.props["data-ai-try-on-measurement-wearer"] === "w-obi")!
-      .props.onClick();
-  });
-  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-ada", "photo wearer stays");
-  assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-obi");
-  assert.equal(garmentButtons()[1].props["aria-checked"], true, "garment choice stays");
-  assert.equal(thumb().length, 1, "photo stays");
   assert.equal(thumb()[0].props.alt, "Photo chosen for Ada");
+  act(() => wearerChips(renderer)[1].props.onClick());
+  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-obi", "Who's this for? selects Obi");
+  assert.equal(
+    checkedWearer(renderer, "data-ai-try-on-measurement-wearer"),
+    "w-obi",
+    "Whose measurements? follows Who's this for?",
+  );
+  assert.equal(garmentButtons().length, 0, "the garment picker swaps to Obi's single garment");
+  assert.equal(thumb().length, 0, "Ada's photo does not leak onto Obi");
+  await choosePhoto(renderer);
   await act(async () => {
     await generateButton(renderer).props.onClick();
   });
@@ -772,29 +774,41 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     orderDetails?: { garments: Array<{ optionIds: string[] }> };
     defaultModelId?: string;
   };
-  assert.equal(sent.wearerKey, aiTryOnPreviewTargets([ada])[1].wearerId);
+  assert.equal(sent.wearerKey, "w-obi");
   assert.equal(
     sent.inputFingerprint,
-    aiTryOnWearerPreviewFingerprint(aiTryOnPreviewTargets([ada])[1].inputFingerprint, { kind: "customer_photo" }),
-    "fingerprint stays with the photo wearer and that garment",
+    aiTryOnWearerPreviewFingerprint("tryon-v1-fedcba9876543210", { kind: "customer_photo" }),
+    "fingerprint follows the selected wearer",
   );
-  assert.equal(sent.garmentImageUrl, "https://example.test/ada-trouser.jpg");
-  assert.deepEqual(sent.orderDetails?.garments[0].optionIds, ["wide-leg"], "garment details stay");
-  assert.deepEqual(sent.fitHints, obiHints, "Generate uses the measurement wearer's hints");
+  assert.equal(sent.garmentImageUrl, "https://example.test/obi.jpg");
+  assert.deepEqual(sent.orderDetails?.garments[0].optionIds, ["obi-shirt"], "Obi's garment details");
+  assert.deepEqual(sent.fitHints, obiHints, "Generate uses Obi's measurements");
   assert.equal(sent.defaultModelId, undefined);
 
-  act(() => wearerChips(renderer)[1].props.onClick());
-  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-obi");
+  act(() => {
+    measurementChips(renderer)
+      .find((node) => node.props["data-ai-try-on-measurement-wearer"] === "w-ada")!
+      .props.onClick();
+  });
+  assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-ada");
   assert.equal(
-    checkedWearer(renderer, "data-ai-try-on-measurement-wearer"),
-    "w-obi",
-    "Who's this for? resets measurements to that person",
+    checkedWearer(renderer, "data-wearer-chip"),
+    "w-ada",
+    "Whose measurements? selects the same person in Who's this for?",
   );
-  assert.equal(thumb().length, 0, "the photo still belongs to one person");
-  act(() => wearerChips(renderer)[0].props.onClick());
-  assert.equal(checkedWearer(renderer, "data-wearer-chip"), "w-ada");
-  assert.equal(checkedWearer(renderer, "data-ai-try-on-measurement-wearer"), "w-ada", "reset again, not the earlier choice");
+  assert.equal(thumb().length, 0, "Obi's photo does not leak onto Ada");
   assert.equal(garmentButtons()[1].props["aria-checked"], true, "Ada's garment choice is kept");
+  await choosePhoto(renderer);
+  await act(async () => {
+    await generateButton(renderer).props.onClick();
+  });
+  const sentAda = requests[1] as typeof sent;
+  assert.equal(sentAda.wearerKey, aiTryOnPreviewTargets([ada])[1].wearerId);
+  assert.equal(sentAda.garmentImageUrl, "https://example.test/ada-trouser.jpg");
+  assert.deepEqual(sentAda.orderDetails?.garments[0].optionIds, ["wide-leg"]);
+  assert.deepEqual(sentAda.fitHints, adaHints, "fields swap back to Ada's measurements");
+  assert.deepEqual(ada.fitHints, adaHints, "switching does not mutate Ada's stored hints");
+  assert.deepEqual(obi.fitHints, obiHints, "switching does not mutate Obi's stored hints");
 
   const emptyAda = renderPanel({
     targets: [
@@ -812,20 +826,21 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     await generateButton(emptyAda.renderer).props.onClick();
   });
   assert.equal("fitHints" in (emptyAda.requests[0] as object), false, "empty hints omit the block");
-  await choosePhoto(emptyAda.renderer);
   act(() => {
     measurementChips(emptyAda.renderer)
       .find((node) => node.props["data-ai-try-on-measurement-wearer"] === "w-obi")!
       .props.onClick();
   });
+  assert.equal(checkedWearer(emptyAda.renderer, "data-wearer-chip"), "w-obi");
+  await choosePhoto(emptyAda.renderer);
   await act(async () => {
     await generateButton(emptyAda.renderer).props.onClick();
   });
   const withObi = emptyAda.requests[1] as { wearerKey: string; fitHints?: unknown; inputFingerprint: string };
-  assert.equal(withObi.wearerKey, "w-ada");
+  assert.equal(withObi.wearerKey, "w-obi");
   assert.equal(
     withObi.inputFingerprint,
-    aiTryOnWearerPreviewFingerprint("tryon-v1-0123456789abcdef", { kind: "customer_photo" }),
+    aiTryOnWearerPreviewFingerprint("tryon-v1-fedcba9876543210", { kind: "customer_photo" }),
   );
   assert.deepEqual(withObi.fitHints, obiHints, "hints are sent when that wearer has them");
 
@@ -839,7 +854,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     await generateButton(emptyAda.renderer).props.onClick();
   });
   const modeled = emptyAda.requests[2] as { wearerKey: string; defaultModelId?: string };
-  assert.equal(modeled.wearerKey, "w-ada");
+  assert.equal(modeled.wearerKey, "w-obi");
   assert.equal(modeled.defaultModelId, "male-1-light");
   assert.equal("fitHints" in modeled, false, "model mode sends no customer fit hints");
   assert.equal(
@@ -847,6 +862,7 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     "w-obi",
     "model mode does not clear the measurement choice",
   );
+  assert.equal(checkedWearer(emptyAda.renderer, "data-wearer-chip"), "w-obi");
 }
 
 {
@@ -920,12 +936,12 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
   const wearer = renderer.root
     .findAll((node) => node.type === "button" && node.props["data-wearer-chip"])
     .find((node) => node.props["aria-checked"] === true);
-  assert.equal(wearer?.props["data-wearer-chip"], "w-ada", "the photo wearer is unchanged");
-  assert.equal(
-    renderer.root.findAll((node) => node.type === "img" && /Photo chosen for/.test(node.props.alt || "")).length,
-    1,
-    "the photo is still there",
+  assert.equal(wearer?.props["data-wearer-chip"], "w-obi", "Who's this for? stays on that person");
+  const keptPhoto = renderer.root.findAll(
+    (node) => node.type === "img" && /Photo chosen for/.test(node.props.alt || ""),
   );
+  assert.equal(keptPhoto.length, 1, "the photo is still there");
+  assert.equal(keptPhoto[0].props.alt, "Photo chosen for Obi");
 }
 
 {
