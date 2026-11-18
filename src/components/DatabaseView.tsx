@@ -144,6 +144,18 @@ import {
 } from "../utils/designStyleAuthority";
 import { DesignStylePublicationError } from "../utils/designStylePublication";
 import { getNextDesignStyleId } from "../utils/designStyleId";
+import { customerCatalogueLabel } from "../utils/customerCatalogueLabel";
+import { DEFAULT_BUSINESS_SETTINGS } from "../data/mockData";
+import {
+  buildNormalizedStyleSelectOptions,
+  createDefaultDesignStyleDraft,
+  DEFAULT_ADMIN_STYLE_COMPOSITION,
+  DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY,
+  DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+  parseDesignStyleCommaList,
+  resolveDesignStyleGenderOptions,
+  resolveOutfitTypeOptions,
+} from "../utils/designStyleAdminDefaults";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
@@ -422,6 +434,15 @@ export default function DatabaseView({
   >(null);
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
   const [isNewRecord, setIsNewRecord] = useState(false);
+  const [styleCategoriesInput, setStyleCategoriesInput] = useState("");
+  const [styleOptionsInput, setStyleOptionsInput] = useState("");
+  const openStyleEditor = (styleItem: DesignStyleAdminProjection, isNew: boolean) => {
+    setIsNewRecord(isNew);
+    setEditingItem(styleItem);
+    setStyleCategoriesInput((styleItem.designCategories || []).join(", "));
+    setStyleOptionsInput((styleItem.options || []).join(", "));
+    setEditingType("style");
+  };
   useEffect(() => {
     if (editingType !== "catalog_option") return;
     catalogEditorRef.current?.scrollIntoView?.({ block: "start" });
@@ -1174,9 +1195,7 @@ export default function DatabaseView({
           : { status: "legacy_unresolved", garmentTypes: [] },
       },
     };
-    setIsNewRecord(true);
-    setEditingItem(newStyle);
-    setEditingType("style");
+    openStyleEditor(newStyle, true);
     triggerStatus(`Prepared ${newName} as a new draft. Save to persist it.`, "info");
   };
 
@@ -2332,6 +2351,163 @@ export default function DatabaseView({
                         placeholder="e.g. Royal Senator"
                       />
                     </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Collection Audience
+                      </label>
+                      <select
+                        aria-label="Collection Audience"
+                        value={editingItem.gender || "male"}
+                        onChange={(event) =>
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            gender: event.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {resolveDesignStyleGenderOptions(genderOptionsCollection).map(
+                          (option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Outfit Type
+                      </label>
+                      <select
+                        aria-label="Outfit Type"
+                        value={
+                          editingItem.outfitType
+                            ? customerCatalogueLabel(editingItem.outfitType)
+                            : DEFAULT_ADMIN_STYLE_OUTFIT_TYPE
+                        }
+                        onChange={(event) =>
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            outfitType: event.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {resolveOutfitTypeOptions(
+                          businessSettings,
+                          DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
+                          editingItem.outfitType,
+                        ).map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Garment Composition
+                      </label>
+                      <select
+                        aria-label="Garment Composition"
+                        value={
+                          editingItem.garmentComposition
+                            ? customerCatalogueLabel(editingItem.garmentComposition)
+                            : DEFAULT_ADMIN_STYLE_COMPOSITION
+                        }
+                        onChange={(event) =>
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            garmentComposition: event.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {buildNormalizedStyleSelectOptions({
+                          configured: businessSettings.garmentCompositions,
+                          fallback:
+                            DEFAULT_BUSINESS_SETTINGS.garmentCompositions || [],
+                          currentValue: editingItem.garmentComposition,
+                        }).map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Fabric Category
+                      </label>
+                      <select
+                        aria-label="Style Fabric Category"
+                        value={
+                          editingItem.fabricCategory ||
+                          DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY
+                        }
+                        onChange={(event) =>
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            fabricCategory: event.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {buildNormalizedStyleSelectOptions({
+                          configured: [
+                            ...fabricCategoryOptions.map((opt) => opt.value),
+                            "Any",
+                          ],
+                          fallback: [DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY, "Any"],
+                          currentValue: editingItem.fabricCategory,
+                        }).map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Design Categories (Comma-separated)
+                      </label>
+                      <input
+                        type="text"
+                        aria-label="Design Categories"
+                        value={styleCategoriesInput}
+                        onChange={(event) => {
+                          const raw = event.target.value;
+                          setStyleCategoriesInput(raw);
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            designCategories: parseDesignStyleCommaList(raw),
+                          }));
+                        }}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                        placeholder="e.g. Standard Length Shirt, Short Sleeve"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Style Feature Options (Comma-separated)
+                      </label>
+                      <input
+                        type="text"
+                        aria-label="Style Feature Options"
+                        value={styleOptionsInput}
+                        onChange={(event) => {
+                          const raw = event.target.value;
+                          setStyleOptionsInput(raw);
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            options: parseDesignStyleCommaList(raw),
+                          }));
+                        }}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                        placeholder="e.g. Mandarin Collar, Short Sleeve"
+                      />
+                    </div>
                     <div className="col-span-1 sm:col-span-2">
                       <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-heritage-gold/20 bg-white px-3 py-2">
                         <input
@@ -2457,6 +2633,50 @@ export default function DatabaseView({
                             </label>
                           );
                         })}
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 border-t border-heritage-gold/15 pt-3 sm:grid-cols-2">
+                        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-150 bg-white px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            aria-label="Monogram on sleeve cuff eligible"
+                            checked={editingItem.monogramCuffEligible === true}
+                            onChange={(event) =>
+                              setEditingItem({
+                                ...editingItem,
+                                monogramCuffEligible: event.target.checked,
+                              })
+                            }
+                            className="h-4 w-4 rounded text-heritage-green"
+                          />
+                          <span className="font-bold text-heritage-green">
+                            Monogram on Sleeve Cuff Eligible
+                          </span>
+                        </label>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-heritage-green">
+                            Embroidery Prominence
+                          </label>
+                          <select
+                            aria-label="Embroidery Prominence"
+                            value={
+                              editingItem.embroideryProminence === "heavy"
+                                ? "heavy"
+                                : "standard"
+                            }
+                            onChange={(event) =>
+                              setEditingItem({
+                                ...editingItem,
+                                embroideryProminence: event.target.value as
+                                  | "standard"
+                                  | "heavy",
+                              })
+                            }
+                            className="w-full rounded-lg border border-heritage-gold/20 bg-white px-3 py-1.5 text-xs"
+                          >
+                            <option value="standard">Standard</option>
+                            <option value="heavy">Heavy</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-4 col-span-1 sm:col-span-2 bg-heritage-cream/10 p-4 rounded-xl border border-heritage-gold/20">
@@ -4791,49 +5011,13 @@ export default function DatabaseView({
                         );
                         return;
                       }
-                      setIsNewRecord(true);
-                      setEditingItem({
-                        id: nextStyleId,
-                        name: "",
-                        description: "",
-                        gender: "unisex",
-                        options: [
-                          "Standard Collar",
-                          "Agbada Over-shirt",
-                          "Embroidery Work",
-                        ],
-                        outfitType: "Senator Set",
-                        garmentComposition: "2-Piece Set",
-                        fabricCapacityComposition: [
-                          createStyleBaseGarmentSpec("shirt"),
-                          createStyleBaseGarmentSpec("trouser"),
-                        ],
-                        customDetailConfig: {
-                          representedGenders: ["male", "female"],
-                          featuresMaleAndFemale: true,
-                          supportedGarmentGroups: [
-                            "shirt",
-                            "dress",
-                            "neck",
-                            "trousers",
-                          ],
-                          requiredSelectionGroups: [
-                            "shirt_construction",
-                            "shirt_pockets",
-                            "dress_construction",
-                            "dress_pockets",
-                            "neck_design",
-                            "trouser_fastening",
-                            "trouser_pockets",
-                          ],
-                          enabled: true,
-                        },
-                        designStyleAuthority:
-                          createDefaultDesignStyleAuthorityMetadata(
-                            adminStyles.length,
-                          ),
-                      });
-                      setEditingType("style");
+                      openStyleEditor(
+                        createDefaultDesignStyleDraft(
+                          nextStyleId,
+                          adminStyles.length,
+                        ),
+                        true,
+                      );
                     }}
                     className="flex items-center gap-1.5 px-4 py-2 bg-heritage-green text-heritage-gold text-xs font-bold rounded-xl border border-heritage-gold/20 shadow-sm cursor-pointer select-none uppercase tracking-wider shrink-0"
                   >
@@ -4904,10 +5088,15 @@ export default function DatabaseView({
                               {s.gender}
                             </span>
                             <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
-                              {s.outfitType || "Senator Set"}
+                              {customerCatalogueLabel(
+                                s.outfitType || DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+                              )}
                             </span>
                             <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green text-heritage-gold border border-heritage-gold/20">
-                              {s.garmentComposition || "2-Piece Set"}
+                              {customerCatalogueLabel(
+                                s.garmentComposition ||
+                                  DEFAULT_ADMIN_STYLE_COMPOSITION,
+                              )}
                             </span>
                             {s.fabricCategory && s.fabricCategory !== "Any" && (
                               <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-gold bg-heritage-gold/5">
@@ -4964,11 +5153,7 @@ export default function DatabaseView({
                       </div>
                       <div className="flex justify-end gap-2 pt-3 border-t border-gray-50">
                         <button
-                          onClick={() => {
-                            setIsNewRecord(false);
-                            setEditingItem(s);
-                            setEditingType("style");
-                          }}
+                          onClick={() => openStyleEditor(s, false)}
                           className="px-2.5 py-1 text-[10px] font-bold bg-heritage-forest/10 hover:bg-heritage-green hover:text-heritage-gold text-heritage-green rounded-lg transition flex items-center gap-1"
                         >
                           <Edit2 size={10} /> Edit Garment Option
