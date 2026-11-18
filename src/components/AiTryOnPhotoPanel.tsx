@@ -399,8 +399,8 @@ export interface AiTryOnPhotoPanelProps {
   sessionWearerId?: string | null;
   onSessionWearerIdChange?: (wearerId: string) => void;
   /**
-   * Whose measurements Generate sends. Independent of the photo wearer.
-   * Null follows the photo wearer until the customer chooses someone else.
+   * Whose measurements Generate sends. Always the same person as the photo
+   * wearer. Null follows that person until a selector writes the id.
    */
   sessionMeasurementWearerId?: string | null;
   onSessionMeasurementWearerIdChange?: (wearerId: string) => void;
@@ -718,18 +718,18 @@ export const AiTryOnPhotoPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, selectedWearerId]);
 
-  // Changing "Who's this for?" puts measurements back on that person.
-  // A choice made for the current photo wearer is left alone, including
-  // across unmount, so leaving Try-on does not reset it.
-  const tryOnWearerIdRef = useRef(selectedWearerId);
+  // One wearer cursor. A photo-wearer change (chip, removed wearer, restored
+  // session) pulls "Whose measurements?" onto that same id. The measurement
+  // chip uses selectWearer, which moves both ids together, so this effect
+  // never races a click back to the previous person.
   useEffect(() => {
-    const previous = tryOnWearerIdRef.current;
-    tryOnWearerIdRef.current = selectedWearerId;
-    if (!selectedWearerId || previous === selectedWearerId) return;
+    if (!selectedWearerId || !storedMeasurementWearerId) return;
+    if (storedMeasurementWearerId === selectedWearerId) return;
+    if (!targets.some((entry) => entry.wearerId === selectedWearerId)) return;
     commitMeasurementWearerId(selectedWearerId);
     // commitMeasurementWearerId only writes the matching wearer id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWearerId]);
+  }, [selectedWearerId, storedMeasurementWearerId, targets]);
 
   useEffect(() => {
     if (!storedMeasurementWearerId || !selectedWearerId) return;
@@ -1522,17 +1522,21 @@ export const AiTryOnPhotoPanel = ({
   };
 
   const selectWearer = (wearerId: string) => {
-    if (wearerId === selectedWearerId) return;
-    // A photo belongs to one person; never carry it to another wearer.
-    clearPhoto();
-    setPhotoError(null);
-    setMessage(left === 0 ? outOfPreviews : null);
-    commitWearerId(wearerId);
-    // Measurements follow the photo person again. They do not travel with
-    // the previous person, and this click does not touch the garment choice.
+    const known = targets.some((entry) => entry.wearerId === wearerId);
+    if (!wearerId || !known) return;
+    if (wearerId === selectedWearerId && wearerId === storedMeasurementWearerId) return;
+    if (wearerId !== selectedWearerId) {
+      // A photo belongs to one person; never carry it to another wearer.
+      clearPhoto();
+      setPhotoError(null);
+      setMessage(left === 0 ? outOfPreviews : null);
+      commitWearerId(wearerId);
+      const nextChoice = sourceByWearer[wearerId];
+      setModelPickerOpen(nextChoice !== "customer_photo" && nextChoice !== "style_photo" && nextChoice !== "cleared");
+    }
+    // Same person for the photo and the fit measurements. Garment assignment
+    // is untouched: each wearer's saved garment choice stays on that wearer.
     commitMeasurementWearerId(wearerId);
-    const nextChoice = sourceByWearer[wearerId];
-    setModelPickerOpen(nextChoice !== "customer_photo" && nextChoice !== "style_photo" && nextChoice !== "cleared");
   };
 
   const chooseModel = (modelId: string) => {
@@ -2030,8 +2034,8 @@ export const AiTryOnPhotoPanel = ({
             Whose measurements?
           </legend>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            Choose whose fit measurements to send with a photo preview. This does not change the
-            photo or the garment.
+            Choose whose fit measurements to send with a photo preview. The photo and garments
+            follow that person.
           </p>
           <div
             className="mt-3 flex flex-wrap gap-2"
@@ -2046,7 +2050,7 @@ export const AiTryOnPhotoPanel = ({
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  onClick={() => commitMeasurementWearerId(entry.wearerId)}
+                  onClick={() => selectWearer(entry.wearerId)}
                   data-ai-try-on-measurement-wearer={entry.wearerId}
                   className={tryOnChoiceChipClass(selected)}
                 >

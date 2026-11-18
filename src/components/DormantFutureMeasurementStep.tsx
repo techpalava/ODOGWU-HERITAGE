@@ -1819,6 +1819,7 @@ export const DormantFutureMeasurementStep = ({
       {selectedMethod && !hydrationInvalid && (
         <>
       <section
+        key={activeWearerId || "measurement-wearer"}
         aria-live="polite"
         data-measurement-form={selectedMethod}
         ref={measurementGuideRef}
