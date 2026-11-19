@@ -112,13 +112,16 @@ assert.match(
   studioSource,
   /getActiveWearerId:\s*\(\) => activeWearerIdRef\.current/,
 );
-assert.match(
-  studioSource,
-  /setLiveForm:\s*\(measurement\) =>\s*setFutureMeasurementState\(/,
+assert.equal(
+  studioSource.includes("setFutureMeasurementState"),
+  false,
+  "per-wearer measurements live solely in wearerOrder (no independent live form state)",
 );
+assert.match(studioSource, /const commitWearerMeasurement = \(/);
+assert.match(studioSource, /const selectWearer = \(/);
 assert.match(
   studioSource,
-  /onCollapseToSolo[\s\S]*setFutureMeasurementState\(\s*sole\?\.measurement/,
+  /onCollapseToSolo[\s\S]*activeWearerIdRef\.current = soleWearerId;\s*setActiveWearerId\(soleWearerId\)/,
 );
 assert.match(measurementSource, /data-measurement-garment-chip/);
 assert.match(measurementSource, /data-measurement-garment-remaining/);
