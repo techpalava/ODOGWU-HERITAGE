@@ -60,9 +60,6 @@ const isValidIsoDate = (value: string): boolean => {
   );
 };
 
-const resolveMinDeliveryDate = (todayLocalDate: string, closingDate: string): string =>
-  isValidIsoDate(closingDate) && closingDate > todayLocalDate ? closingDate : todayLocalDate;
-
 export const PrivateBatchSetupView = ({
   businessSettings,
   settingsLoaded,
@@ -86,7 +83,6 @@ export const PrivateBatchSetupView = ({
   const [city, setCity] = useState("");
   const [preferredDeliveryDate, setPreferredDeliveryDate] = useState("");
   const [participantsDraft, setParticipantsDraft] = useState<number | null>(null);
-  const [closingDate, setClosingDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
@@ -97,7 +93,7 @@ export const PrivateBatchSetupView = ({
 
   const minParticipants = businessSettings.batchSettings.minParticipantsRequired;
   const maxParticipants = businessSettings.batchSettings.maxGarmentsPerBatch;
-  const minDeliveryDate = resolveMinDeliveryDate(getTodayLocalDateString(), closingDate);
+  const minDeliveryDate = getTodayLocalDateString();
   const displayedError = error || externalError;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -116,20 +112,13 @@ export const PrivateBatchSetupView = ({
       setError("Please enter the delivery country and city.");
       return;
     }
-    const currentMinDeliveryDate = resolveMinDeliveryDate(
-      getTodayLocalDateString(),
-      closingDate,
-    );
+    const todayLocalDate = getTodayLocalDateString();
     if (
       !preferredDeliveryDate ||
       !isValidIsoDate(preferredDeliveryDate) ||
-      preferredDeliveryDate < currentMinDeliveryDate
+      preferredDeliveryDate < todayLocalDate
     ) {
       setError("Please choose your delivery target date.");
-      return;
-    }
-    if (!closingDate) {
-      setError("Please choose when member ordering should close.");
       return;
     }
     if (
@@ -156,7 +145,7 @@ export const PrivateBatchSetupView = ({
         city: city.trim(),
         preferredDeliveryMonth,
         expectedParticipants,
-        closingDate,
+        closingDate: preferredDeliveryDate,
       });
       if (result.status === "error") setError(result.message);
     } catch {
@@ -231,10 +220,6 @@ export const PrivateBatchSetupView = ({
               Expected Participants <span aria-hidden="true">*</span>
               <input data-testid="private-batch-participants" type="number" min={minParticipants} max={maxParticipants} value={expectedParticipants} onChange={(event) => setParticipantsDraft(Number(event.target.value))} disabled={isSubmitting} className={fieldClassName} />
               <span className="mt-1 block text-xs font-normal text-heritage-ink/60">{minParticipants}–{maxParticipants} participants</span>
-            </label>
-            <label className="block min-w-0 text-sm font-semibold text-heritage-green sm:col-span-2">
-              Ordering Closes <span aria-hidden="true">*</span>
-              <input data-testid="private-batch-closing-date" type="date" value={closingDate} onChange={(event) => setClosingDate(event.target.value)} disabled={isSubmitting} className={fieldClassName} />
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green sm:col-span-2">
               Description <span className="font-normal text-heritage-ink/55">(Optional)</span>
