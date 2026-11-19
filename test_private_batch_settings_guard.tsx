@@ -60,7 +60,7 @@ const fillRequired = async (renderer: ReactTestRenderer) => {
   await change(renderer, "private-batch-name", "Family Wedding 2026");
   await change(renderer, "private-batch-occasion", "Wedding");
   await change(renderer, "private-batch-city", "Accra");
-  await change(renderer, "private-batch-delivery-target", "2027-06");
+  await change(renderer, "private-batch-delivery-target", "2027-06-15");
   await change(renderer, "private-batch-closing-date", "2027-04-01");
 };
 
