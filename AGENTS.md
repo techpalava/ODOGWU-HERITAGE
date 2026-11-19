@@ -1,6 +1,7 @@
 # Agent Instructions
 
 Remaining pre-launch tasks: `docs/PRE_LAUNCH_CHECKLIST.md`.
+Workflow, release, and domain rules: `FAST_EXECUTOR_GUIDE.md` and `LIVING_PROJECT_STATE.md`.
 
 ## Universal Fabric Import via AI Prompt
 
