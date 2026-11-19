@@ -28,10 +28,11 @@ import {
 import { aiTryOnOrderHasWaistbandShowcase } from "../utils/aiTryOnOrderDetails";
 import { readOwnAiTryOnAdminStatus, resetOwnAiTryOnTries } from "../services/aiTryOnAdminReset";
 import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type RefObject } from "react";
 import {
   CheckCircle2,
   ChevronDown,
+  Eye,
   ImagePlus,
   Loader2,
   Sparkles,
@@ -90,6 +91,10 @@ import {
   type AiTryOnPreviewGalleryState,
 } from "../services/aiTryOnPreviewGalleryStorage";
 import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
+import {
+  CataloguePhotoPreviewDialog,
+  type CataloguePhotoPreviewFabricSwatch,
+} from "./CataloguePhotoPreviewDialog";
 import type {
   AiTryOnGenerationRequest,
   AiTryOnStoredPreviewSummary,
@@ -323,6 +328,26 @@ const FabricMark = ({
     );
   }
   return null;
+};
+
+const buildGarmentFabricSwatch = (
+  garment: AiTryOnPreviewableGarment,
+): CataloguePhotoPreviewFabricSwatch | undefined => {
+  const imageUrl = garment.fabricSwatchImageUrl?.trim() || null;
+  const colorHex =
+    garment.fabricColorHex?.trim() || garment.orderDetails?.fabric?.colourHex?.trim() || null;
+  if (!imageUrl && !colorHex) return undefined;
+  const labelParts = [
+    garment.orderDetails?.fabric?.colour,
+    garment.orderDetails?.fabric?.category,
+  ]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  return {
+    imageUrl,
+    colorHex,
+    label: labelParts.length > 0 ? labelParts.join(" · ") : null,
+  };
 };
 const deleteNoStoredPreview = async (): Promise<boolean> => false;
 
@@ -892,6 +917,14 @@ export const AiTryOnPhotoPanel = ({
   const garmentPickerRef = useRef<HTMLFieldSetElement | null>(null);
   const modelPickerRef = useRef<HTMLFieldSetElement | null>(null);
   const pendingModelPickerFocusRef = useRef(false);
+  const [garmentPhotoPreview, setGarmentPhotoPreview] = useState<{
+    src: string;
+    name: string;
+    alt: string;
+    fabricSwatch?: CataloguePhotoPreviewFabricSwatch;
+    returnFocusRef: RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+  const garmentPhotoPreviewButtonRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const focusModelPicker = () => {
     const picker = modelPickerRef.current;
@@ -2239,43 +2272,70 @@ export const AiTryOnPhotoPanel = ({
             {previewableGarments.map((garment) => {
               const selected = garment.garmentKey === selectedPreview?.garmentKey;
               return (
-                <button
-                  key={garment.garmentKey}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => {
-                    setSelectedGarmentKeyByWearer((current) =>
-                      current[target.wearerId] === garment.garmentKey
-                        ? current
-                        : { ...current, [target.wearerId]: garment.garmentKey },
-                    );
-                    const targetSlotKey =
-                      previewableGarments.length > 1
-                        ? aiTryOnGarmentPreviewKey(target.wearerId, garment.garmentKey)
-                        : target.wearerId;
-                    const matches = wearerGalleryItems.filter((item) => item.previewKey === targetSlotKey);
-                    const preferred = matches[matches.length - 1];
-                    if (preferred) {
-                      commitGallery((current) =>
-                        selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
+                <div key={garment.garmentKey} className="inline-flex max-w-full items-center gap-1.5">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => {
+                      setSelectedGarmentKeyByWearer((current) =>
+                        current[target.wearerId] === garment.garmentKey
+                          ? current
+                          : { ...current, [target.wearerId]: garment.garmentKey },
                       );
-                    }
-                  }}
-                  data-ai-try-on-garment={garment.garmentKey}
-                  data-ai-try-on-design-choice="garment"
-                  className={`inline-flex min-h-16 max-w-full items-center gap-2 rounded-2xl border py-1 pl-1 pr-4 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
-                    selected
-                      ? "border-heritage-green bg-heritage-green text-white"
-                      : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
-                  }`}
-                >
-                  <DesignReferenceImage url={garment.garmentImageUrl} alt={`Design reference for ${garment.label}`} />
-                  <span className="min-w-0">
-                    <span className="block truncate">{garment.label}</span>
-                    <FabricMark url={garment.fabricSwatchImageUrl} color={garment.fabricColorHex} />
-                  </span>
-                </button>
+                      const targetSlotKey =
+                        previewableGarments.length > 1
+                          ? aiTryOnGarmentPreviewKey(target.wearerId, garment.garmentKey)
+                          : target.wearerId;
+                      const matches = wearerGalleryItems.filter((item) => item.previewKey === targetSlotKey);
+                      const preferred = matches[matches.length - 1];
+                      if (preferred) {
+                        commitGallery((current) =>
+                          selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
+                        );
+                      }
+                    }}
+                    data-ai-try-on-garment={garment.garmentKey}
+                    data-ai-try-on-design-choice="garment"
+                    className={`inline-flex min-h-16 max-w-full items-center gap-2 rounded-2xl border py-1 pl-1 pr-4 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                      selected
+                        ? "border-heritage-green bg-heritage-green text-white"
+                        : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                    }`}
+                  >
+                    <DesignReferenceImage url={garment.garmentImageUrl} alt={`Design reference for ${garment.label}`} />
+                    <span className="min-w-0">
+                      <span className="block truncate">{garment.label}</span>
+                      <FabricMark url={garment.fabricSwatchImageUrl} color={garment.fabricColorHex} />
+                    </span>
+                  </button>
+                  {garment.garmentImageUrl && (
+                    <button
+                      type="button"
+                      ref={(el) => {
+                        if (el) garmentPhotoPreviewButtonRefs.current.set(garment.garmentKey, el);
+                        else garmentPhotoPreviewButtonRefs.current.delete(garment.garmentKey);
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!garment.garmentImageUrl) return;
+                        setGarmentPhotoPreview({
+                          src: garment.garmentImageUrl,
+                          name: garment.label,
+                          alt: `Design reference for ${garment.label}`,
+                          fabricSwatch: buildGarmentFabricSwatch(garment),
+                          returnFocusRef: {
+                            current: garmentPhotoPreviewButtonRefs.current.get(garment.garmentKey) ?? null,
+                          },
+                        });
+                      }}
+                      aria-label={`View larger photo of ${garment.label}`}
+                      className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-heritage-green/25 bg-white text-heritage-green transition-colors hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                    >
+                      <Eye aria-hidden="true" size={16} />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -2285,10 +2345,35 @@ export const AiTryOnPhotoPanel = ({
       {!outfitMode && !showGarmentPicker && selectedPreview && !uploadedDesign && (
         <div className="flex items-center gap-3 rounded-2xl border border-heritage-green/15 bg-white p-3" data-ai-try-on-design-reference={selectedPreview.garmentKey}>
           <DesignReferenceImage url={selectedPreview.garmentImageUrl} alt={`Design reference for ${selectedPreview.label}`} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-heritage-green">{selectedPreview.label}</p>
             <FabricMark url={selectedPreview.fabricSwatchImageUrl} color={selectedPreview.fabricColorHex} />
           </div>
+          {selectedPreview.garmentImageUrl && (
+            <button
+              type="button"
+              ref={(el) => {
+                if (el) garmentPhotoPreviewButtonRefs.current.set(selectedPreview.garmentKey, el);
+                else garmentPhotoPreviewButtonRefs.current.delete(selectedPreview.garmentKey);
+              }}
+              onClick={() => {
+                if (!selectedPreview.garmentImageUrl) return;
+                setGarmentPhotoPreview({
+                  src: selectedPreview.garmentImageUrl,
+                  name: selectedPreview.label,
+                  alt: `Design reference for ${selectedPreview.label}`,
+                  fabricSwatch: buildGarmentFabricSwatch(selectedPreview),
+                  returnFocusRef: {
+                    current: garmentPhotoPreviewButtonRefs.current.get(selectedPreview.garmentKey) ?? null,
+                  },
+                });
+              }}
+              aria-label={`View larger photo of ${selectedPreview.label}`}
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-heritage-green/25 bg-white text-heritage-green transition-colors hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            >
+              <Eye aria-hidden="true" size={16} />
+            </button>
+          )}
         </div>
       )}
 
@@ -2732,6 +2817,16 @@ export const AiTryOnPhotoPanel = ({
             </button>
           )}
         </figure>
+      )}
+      {garmentPhotoPreview && (
+        <CataloguePhotoPreviewDialog
+          src={garmentPhotoPreview.src}
+          name={garmentPhotoPreview.name}
+          alt={garmentPhotoPreview.alt}
+          fabricSwatch={garmentPhotoPreview.fabricSwatch}
+          onClose={() => setGarmentPhotoPreview(null)}
+          returnFocusRef={garmentPhotoPreview.returnFocusRef}
+        />
       )}
     </div>
   );
