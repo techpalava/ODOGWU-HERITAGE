@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Download, Ruler, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { BookOpen, Check, Copy, Download, RotateCcw, Ruler, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
@@ -67,13 +67,32 @@ import {
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
-  setFutureMeasurementRoute,
   setFutureMeasurementUnit,
   type MeasurementGarmentChipState,
   type MeasurementPhysicalGarment,
   type MeasurementRequirementPlan,
   type PlannedMeasurementRequirement,
 } from "../utils/measurementBlueprint";
+
+export interface MeasurementWearerChip {
+  readonly wearerId: string;
+  readonly label: string;
+  readonly completedCount?: number;
+  readonly requiredCount?: number;
+  readonly complete?: boolean;
+  readonly hasAssignedGarments?: boolean;
+}
+
+export interface CopyableBodyMeasurementWearer {
+  readonly wearerId: string;
+  readonly label: string;
+  readonly sharedCount: number;
+}
+
+export interface CopySharedBodyMeasurementsFeedback {
+  readonly copiedCount: number;
+  readonly previousMeasurement: FutureMeasurementStateV1;
+}
 
 interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
@@ -108,9 +127,15 @@ interface DormantFutureMeasurementStepProps {
    * Every person in the order (card / assignment labels), shown as Measuring-for
    * chips when activeWearerLabel is shown. Clicking one switches the person.
    */
-  wearerChips?: readonly { wearerId: string; label: string }[];
+  wearerChips?: readonly MeasurementWearerChip[];
   activeWearerId?: string | null;
   onSelectWearer?: (wearerId: string) => void;
+  /** Other wearers who have entered shared body measurements that can be explicitly copied. */
+  copyableBodyMeasurementWearers?: readonly CopyableBodyMeasurementWearer[];
+  /** Explicitly copies ONLY shared body fields from `sourceWearerId` onto the active wearer. */
+  onCopySharedBodyMeasurements?: (
+    sourceWearerId: string,
+  ) => CopySharedBodyMeasurementsFeedback | null | void;
   /** Assign an unassigned garment directly from the Step 5 assignment modal. */
   onAssignUnassignedGarment?: (garmentKey: string, wearerId: string) => void;
   /** Add a new person and assign an unassigned garment to them from the Step 5 assignment modal. */
@@ -701,6 +726,20 @@ const isTypingIntoField = (): boolean => {
   return active.tagName === "INPUT" && (active as HTMLInputElement).type !== "radio";
 };
 
+const toScopedGarmentPick = (
+  wearerScopeKey: string,
+  garmentKey: string | null,
+): string | null => (garmentKey ? `${wearerScopeKey}:${garmentKey}` : null);
+
+const parseScopedGarmentPick = (
+  scopedPick: string | null,
+  wearerScopeKey: string,
+): string | null => {
+  if (!scopedPick) return null;
+  const prefix = `${wearerScopeKey}:`;
+  return scopedPick.startsWith(prefix) ? scopedPick.slice(prefix.length) : null;
+};
+
 export const DormantFutureMeasurementStep = ({
   plan,
   state,
@@ -721,6 +760,8 @@ export const DormantFutureMeasurementStep = ({
   wearerChips = [],
   activeWearerId = null,
   onSelectWearer,
+  copyableBodyMeasurementWearers = [],
+  onCopySharedBodyMeasurements,
   onAssignUnassignedGarment,
   onAddPersonAndAssignGarment,
   groupFocusRequest = null,
@@ -740,12 +781,7 @@ export const DormantFutureMeasurementStep = ({
     }
     return formatGarmentLabel(occurrenceLabels, garmentType, garmentKey);
   };
-  const [localAssignedByGarmentKey, setLocalAssignedByGarmentKey] = useState<
-    Record<string, string>
-  >({});
-  const [localAddedWearers, setLocalAddedWearers] = useState<
-    Array<{ wearerId: string; label: string }>
-  >([]);
+  const activeWearerScopeKey = activeWearerId ?? "__sole__";
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [guideModalOpen, setGuideModalOpen] = useState(false);
   useReportDesignStudioBlockingOverlay("step7-measurement-guide-modal", guideModalOpen);
@@ -754,32 +790,61 @@ export const DormantFutureMeasurementStep = ({
   );
   const [assignModalNewPersonName, setAssignModalNewPersonName] = useState("");
   const [assignModalError, setAssignModalError] = useState<string | null>(null);
-  const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
-    restoredGarmentKey ?? state.activeGarmentKey ?? null,
+  const [selectedCopySourceId, setSelectedCopySourceId] = useState<string>("");
+  const [pendingCopyConfirmation, setPendingCopyConfirmation] = useState<{
+    wearerScopeKey: string;
+    sourceWearerId: string;
+    sourceLabel: string;
+    sharedCount: number;
+  } | null>(null);
+  const [undoCopyByWearerScope, setUndoCopyByWearerScope] = useState<
+    Record<
+      string,
+      {
+        sourceLabel: string;
+        copiedCount: number;
+        previousMeasurement: FutureMeasurementStateV1;
+      }
+    >
+  >({});
+  const incomingGarmentKey = restoredGarmentKey ?? state.activeGarmentKey ?? null;
+  const incomingScopedPick = toScopedGarmentPick(
+    activeWearerScopeKey,
+    incomingGarmentKey,
   );
-  const lastExternalGarmentKeyRef = useRef<string | null>(
-    restoredGarmentKey ?? state.activeGarmentKey ?? null,
+  const [pickedGarmentScopedKey, setPickedGarmentScopedKey] = useState<string | null>(
+    () => incomingScopedPick,
   );
-  const lastExternalWearerIdRef = useRef<string | null>(activeWearerId);
+  const lastExternalPickRef = useRef<string | null>(incomingScopedPick);
+  const setPickedGarmentKeyForActiveWearer = (garmentKey: string | null) => {
+    setPickedGarmentScopedKey(toScopedGarmentPick(activeWearerScopeKey, garmentKey));
+  };
+  const pickedGarmentKey =
+    parseScopedGarmentPick(pickedGarmentScopedKey, activeWearerScopeKey) ??
+    incomingGarmentKey;
   useEffect(() => {
-    const incoming = restoredGarmentKey ?? state.activeGarmentKey ?? null;
-    if (
-      incoming === lastExternalGarmentKeyRef.current &&
-      activeWearerId === lastExternalWearerIdRef.current
-    ) {
+    if (incomingScopedPick === lastExternalPickRef.current) {
       return;
     }
-    lastExternalGarmentKeyRef.current = incoming;
-    lastExternalWearerIdRef.current = activeWearerId;
-    setPickedGarmentKey(incoming);
-  }, [activeWearerId, restoredGarmentKey, state.activeGarmentKey]);
-  const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
+    lastExternalPickRef.current = incomingScopedPick;
+    setPickedGarmentScopedKey(incomingScopedPick);
+  }, [incomingScopedPick]);
+  const [pendingChipSelectionScope, setPendingChipSelectionScope] = useState<string | null>(
+    null,
+  );
+  const allowPendingChipSelection = pendingChipSelectionScope === activeWearerScopeKey;
+  const setAllowPendingChipSelection = (allow: boolean) => {
+    setPendingChipSelectionScope(allow ? activeWearerScopeKey : null);
+  };
   const previousSelectedGarmentKeyRef = useRef<string | null>(null);
   const previousActiveWearerIdRef = useRef<string | null>(activeWearerId);
   const previousSelectedRemainingRef = useRef<number | null>(null);
   const previousSharedRemainingRef = useRef<number | null>(null);
   const focusedFieldKeyRef = useRef<string | null>(null);
   const isFieldInputChangeRef = useRef(false);
+  useEffect(() => {
+    focusedFieldKeyRef.current = null;
+  }, [activeWearerId]);
   // Guide cue: only a customer click on an Option 1 / Option 2 radio requests it (never mount/restore).
   const [guideCueRequest, setGuideCueRequest] = useState(0);
   const [guideCuePhase, setGuideCuePhase] = useState<"idle" | "flash" | "beam">("idle");
@@ -880,9 +945,7 @@ export const DormantFutureMeasurementStep = ({
   const rawAssignmentPendingGarments = multiPersonAssignmentActive
     ? (unassignedGarments ?? setupPendingGarments)
     : [];
-  const assignmentPendingGarments = rawAssignmentPendingGarments.filter(
-    (garment) => !localAssignedByGarmentKey[garment.garmentKey],
-  );
+  const assignmentPendingGarments = rawAssignmentPendingGarments;
   const hasUnassignedGarments = assignmentPendingGarments.length > 0;
   useReportDesignStudioBlockingOverlay(
     "step5-unassigned-garment-dialog",
@@ -901,7 +964,6 @@ export const DormantFutureMeasurementStep = ({
     .filter(
       (garment) =>
         !unassignedGarmentKeySet.has(garment.garmentKey) &&
-        !localAssignedByGarmentKey[garment.garmentKey] &&
         (
           unsupportedGarments.some(
             (diagnostic) => diagnostic.garmentKey === garment.garmentKey,
@@ -950,17 +1012,17 @@ export const DormantFutureMeasurementStep = ({
   const selectedGarmentProfilePending = selectedChip?.kind === "profile";
   const selectedGarmentPending =
     selectedGarmentUnassigned || selectedGarmentProfilePending;
-  const effectiveWearerChips = [
-    ...(wearerChips.length > 0
+  const effectiveWearerChips: readonly MeasurementWearerChip[] =
+    wearerChips.length > 0
       ? wearerChips
-      : [
-          {
-            wearerId: activeWearerId || "wearer-1",
-            label: activeWearerLabel || "Person 1",
-          },
-        ]),
-    ...localAddedWearers,
-  ];
+      : activeWearerId
+        ? [
+            {
+              wearerId: activeWearerId,
+              label: activeWearerLabel || "Person 1",
+            },
+          ]
+        : [];
   const activeModalGarment =
     assignmentPendingGarments.find(
       (garment) => garment.garmentKey === assignModalGarmentKey,
@@ -992,32 +1054,17 @@ export const DormantFutureMeasurementStep = ({
   const handleAssignToExistingPerson = (wearerId: string) => {
     const targetGarment = activeModalGarment;
     if (!targetGarment) return;
+    if (!onAssignUnassignedGarment) {
+      setAssignModalError("Unable to assign this garment right now.");
+      return;
+    }
     const remainingAfter = assignmentPendingGarments.filter(
       (garment) => garment.garmentKey !== targetGarment.garmentKey,
     );
     setAssignModalError(null);
-    if (onAssignUnassignedGarment) {
-      onAssignUnassignedGarment(targetGarment.garmentKey, wearerId);
-    } else {
-      setLocalAssignedByGarmentKey((current) => ({
-        ...current,
-        [targetGarment.garmentKey]: wearerId,
-      }));
-      onSelectWearer?.(wearerId);
-      const nextState = state.route
-        ? { ...state, activeGarmentKey: targetGarment.garmentKey }
-        : {
-            ...setFutureMeasurementRoute(state, "medium_risk"),
-            activeGarmentKey: targetGarment.garmentKey,
-          };
-      if (!state.route) {
-        onRouteChange("medium_risk");
-      }
-      onChange(nextState);
-    }
+    onAssignUnassignedGarment(targetGarment.garmentKey, wearerId);
     setAllowPendingChipSelection(false);
-    lastExternalGarmentKeyRef.current = targetGarment.garmentKey;
-    setPickedGarmentKey(targetGarment.garmentKey);
+    setPickedGarmentScopedKey(toScopedGarmentPick(wearerId, targetGarment.garmentKey));
     if (remainingAfter.length === 0) {
       setAssignModalOpen(false);
       setAssignModalNewPersonName("");
@@ -1033,43 +1080,71 @@ export const DormantFutureMeasurementStep = ({
       setAssignModalError("Enter a name or nickname to add a new person.");
       return;
     }
+    if (!onAddPersonAndAssignGarment) {
+      setAssignModalError("Unable to add a new person right now.");
+      return;
+    }
     const remainingAfter = assignmentPendingGarments.filter(
       (garment) => garment.garmentKey !== targetGarment.garmentKey,
     );
     setAssignModalError(null);
     setAssignModalNewPersonName("");
-    if (onAddPersonAndAssignGarment) {
-      onAddPersonAndAssignGarment(trimmedName, targetGarment.garmentKey);
-    } else {
-      const newWearerId = `wearer-added-${localAddedWearers.length + 1}`;
-      setLocalAddedWearers((current) => [
-        ...current,
-        { wearerId: newWearerId, label: trimmedName },
-      ]);
-      setLocalAssignedByGarmentKey((current) => ({
-        ...current,
-        [targetGarment.garmentKey]: newWearerId,
-      }));
-      onSelectWearer?.(newWearerId);
-      const nextState = state.route
-        ? { ...state, activeGarmentKey: targetGarment.garmentKey }
-        : {
-            ...setFutureMeasurementRoute(state, "medium_risk"),
-            activeGarmentKey: targetGarment.garmentKey,
-          };
-      if (!state.route) {
-        onRouteChange("medium_risk");
-      }
-      onChange(nextState);
-    }
+    onAddPersonAndAssignGarment(trimmedName, targetGarment.garmentKey);
     setAllowPendingChipSelection(false);
-    lastExternalGarmentKeyRef.current = targetGarment.garmentKey;
-    setPickedGarmentKey(targetGarment.garmentKey);
     if (remainingAfter.length === 0) {
       setAssignModalOpen(false);
     } else {
       setAssignModalGarmentKey(remainingAfter[0]?.garmentKey ?? null);
     }
+  };
+  const activeCopySources = copyableBodyMeasurementWearers.filter(
+    (source) => source.wearerId !== activeWearerId && source.sharedCount > 0,
+  );
+  const selectedCopySource =
+    activeCopySources.find((source) => source.wearerId === selectedCopySourceId) ??
+    activeCopySources[0] ??
+    null;
+  const activePendingCopyConfirmation =
+    pendingCopyConfirmation &&
+    pendingCopyConfirmation.wearerScopeKey === activeWearerScopeKey
+      ? pendingCopyConfirmation
+      : null;
+  const activeUndoCopy = undoCopyByWearerScope[activeWearerScopeKey] ?? null;
+  const clearUndoCopyForActiveWearer = () => {
+    setUndoCopyByWearerScope((current) => {
+      if (!(activeWearerScopeKey in current)) return current;
+      const next = { ...current };
+      delete next[activeWearerScopeKey];
+      return next;
+    });
+  };
+  const handleConfirmCopySharedBodyMeasurements = () => {
+    if (!activePendingCopyConfirmation || !onCopySharedBodyMeasurements) return;
+    const fallbackPrevious = structuredClone(state);
+    const result = onCopySharedBodyMeasurements(
+      activePendingCopyConfirmation.sourceWearerId,
+    );
+    if (result !== null) {
+      const feedback =
+        result && typeof result === "object" ? result : null;
+      setUndoCopyByWearerScope((current) => ({
+        ...current,
+        [activeWearerScopeKey]: {
+          sourceLabel: activePendingCopyConfirmation.sourceLabel,
+          copiedCount:
+            feedback?.copiedCount ?? activePendingCopyConfirmation.sharedCount,
+          previousMeasurement:
+            feedback?.previousMeasurement ?? fallbackPrevious,
+        },
+      }));
+    }
+    setPendingCopyConfirmation(null);
+  };
+  const handleUndoCopySharedBodyMeasurements = () => {
+    if (!activeUndoCopy) return;
+    const snapshot = structuredClone(activeUndoCopy.previousMeasurement);
+    clearUndoCopyForActiveWearer();
+    onChange(snapshot);
   };
   const projectionNextKey = chipProjection.nextIncompleteGarmentKey;
   const projectionNextChip = projectionNextKey
@@ -1110,8 +1185,7 @@ export const DormantFutureMeasurementStep = ({
           : null;
     previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
     setAllowPendingChipSelection(kind === "assignment" || kind === "profile");
-    lastExternalGarmentKeyRef.current = garmentKey;
-    setPickedGarmentKey(garmentKey);
+    setPickedGarmentKeyForActiveWearer(garmentKey);
     if (state.activeGarmentKey !== garmentKey) {
       onChange({ ...state, activeGarmentKey: garmentKey });
     }
@@ -1122,8 +1196,7 @@ export const DormantFutureMeasurementStep = ({
   const handleFieldFocus = (fieldKey: string) => {
     focusedFieldKeyRef.current = fieldKey;
     if (selectedGarmentKey && pickedGarmentKey !== selectedGarmentKey) {
-      lastExternalGarmentKeyRef.current = selectedGarmentKey;
-      setPickedGarmentKey(selectedGarmentKey);
+      setPickedGarmentKeyForActiveWearer(selectedGarmentKey);
     }
   };
   const handleFieldBlur = (fieldKey: string) => {
@@ -1133,11 +1206,9 @@ export const DormantFutureMeasurementStep = ({
   };
   const handleFieldChange = (nextState: FutureMeasurementStateV1) => {
     isFieldInputChangeRef.current = true;
-    if (selectedGarmentKey) {
-      lastExternalGarmentKeyRef.current = selectedGarmentKey;
-      if (pickedGarmentKey !== selectedGarmentKey) {
-        setPickedGarmentKey(selectedGarmentKey);
-      }
+    clearUndoCopyForActiveWearer();
+    if (selectedGarmentKey && pickedGarmentKey !== selectedGarmentKey) {
+      setPickedGarmentKeyForActiveWearer(selectedGarmentKey);
     }
     onChange(
       selectedGarmentKey && nextState.activeGarmentKey !== selectedGarmentKey
@@ -1190,8 +1261,7 @@ export const DormantFutureMeasurementStep = ({
       return;
     }
     setAllowPendingChipSelection(false);
-    lastExternalGarmentKeyRef.current = nextIncompleteGarmentKey;
-    setPickedGarmentKey(nextIncompleteGarmentKey);
+    setPickedGarmentKeyForActiveWearer(nextIncompleteGarmentKey);
     if (state.activeGarmentKey !== nextIncompleteGarmentKey) {
       onChange({ ...state, activeGarmentKey: nextIncompleteGarmentKey });
     }
@@ -1487,24 +1557,71 @@ export const DormantFutureMeasurementStep = ({
                 >
                   {wearerChips.map((chip) => {
                     const selected = chip.wearerId === activeWearerId;
+                    const hasProgressMetadata =
+                      typeof chip.requiredCount === "number" ||
+                      typeof chip.complete === "boolean" ||
+                      chip.hasAssignedGarments === false;
+                    const progressText =
+                      typeof chip.requiredCount === "number" && chip.requiredCount > 0
+                        ? `${chip.completedCount ?? 0}/${chip.requiredCount}`
+                        : null;
                     return (
                       <button
                         key={chip.wearerId}
                         type="button"
                         data-measurement-wearer-chip={chip.wearerId}
                         data-measurement-wearer-chip-selected={selected ? "true" : "false"}
+                        data-measurement-wearer-chip-complete={
+                          hasProgressMetadata
+                            ? chip.complete
+                              ? "true"
+                              : "false"
+                            : undefined
+                        }
+                        data-measurement-wearer-chip-progress={progressText ?? undefined}
                         data-measurement-active-wearer={selected ? chip.label : undefined}
                         aria-pressed={selected}
-                        className={`inline-flex min-h-9 items-center rounded-xl border px-3 text-sm font-bold ${
+                        className={`inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
                           selected
                             ? "border-heritage-green bg-heritage-green text-white"
-                            : "border-heritage-green/30 bg-white text-heritage-green"
+                            : "border-heritage-green/30 bg-white text-heritage-green hover:border-heritage-green/60 hover:bg-heritage-cream/30"
                         }`}
                         onClick={() => {
                           if (!selected) onSelectWearer(chip.wearerId);
                         }}
                       >
-                        {chip.label}
+                        <span>{chip.label}</span>
+                        {hasProgressMetadata && (
+                          <span
+                            data-measurement-wearer-chip-badge={
+                              chip.complete
+                                ? "complete"
+                                : chip.hasAssignedGarments === false
+                                  ? "unassigned"
+                                  : "progress"
+                            }
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold leading-none ${
+                              selected
+                                ? "bg-white/20 text-white"
+                                : chip.complete
+                                  ? "bg-heritage-green/12 text-heritage-green"
+                                  : "bg-heritage-gold/20 text-heritage-bronze"
+                            }`}
+                          >
+                            {chip.complete ? (
+                              <>
+                                <Check size={11} aria-hidden="true" />
+                                <span>{progressText ?? "Done"}</span>
+                              </>
+                            ) : chip.hasAssignedGarments === false ? (
+                              <span>No garments</span>
+                            ) : progressText ? (
+                              <span>{progressText}</span>
+                            ) : (
+                              <span>Not started</span>
+                            )}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -2170,6 +2287,146 @@ export const DormantFutureMeasurementStep = ({
             {blockerMessages.map((message) => <li key={message}>{message}</li>)}
           </ul>
         </DesignStudioStepGuide>
+      )}
+
+      {activeWearerLabel && (
+        <div
+          data-measurement-active-wearer-banner="true"
+          data-measurement-active-wearer-banner-id={activeWearerId || undefined}
+          className="sticky top-2 z-20 rounded-2xl border border-heritage-green/30 bg-heritage-cream/95 px-4 py-3 shadow-md backdrop-blur-sm"
+        >
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-heritage-green px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-white">
+                  Measuring for {activeWearerLabel}
+                </span>
+                <span
+                  data-measurement-active-wearer-banner-progress="true"
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${
+                    activeWearerComplete
+                      ? "border-heritage-green/30 bg-heritage-green/10 text-heritage-green"
+                      : "border-heritage-gold/40 bg-white text-heritage-bronze"
+                  }`}
+                >
+                  {activeWearerComplete && <Check size={11} aria-hidden="true" />}
+                  {completedManualInputCount}/{requiredUnitCount} saved
+                </span>
+              </div>
+              <p className="mt-1 truncate text-xs font-medium text-heritage-ink/80">
+                {activeWearerGarmentLabels.length > 0
+                  ? `Garments: ${activeWearerGarmentLabels.join(", ")}`
+                  : `No garments assigned to ${activeWearerLabel} yet.`}
+              </p>
+            </div>
+            {selectedRoute &&
+              activeCopySources.length > 0 &&
+              onCopySharedBodyMeasurements &&
+              selectedCopySource && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {activeCopySources.length > 1 && (
+                    <select
+                      aria-label="Choose person to copy body measurements from"
+                      data-measurement-copy-source-select="true"
+                      value={selectedCopySource.wearerId}
+                      onChange={(event) => {
+                        setSelectedCopySourceId(event.target.value);
+                        setPendingCopyConfirmation(null);
+                      }}
+                      className="min-h-9 rounded-xl border border-heritage-green/25 bg-white px-2.5 text-xs font-semibold text-heritage-green outline-none focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+                    >
+                      {activeCopySources.map((source) => (
+                        <option key={source.wearerId} value={source.wearerId}>
+                          {source.label} ({source.sharedCount})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    type="button"
+                    data-measurement-copy-trigger={selectedCopySource.wearerId}
+                    onClick={() =>
+                      setPendingCopyConfirmation({
+                        wearerScopeKey: activeWearerScopeKey,
+                        sourceWearerId: selectedCopySource.wearerId,
+                        sourceLabel: selectedCopySource.label,
+                        sharedCount: selectedCopySource.sharedCount,
+                      })
+                    }
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-heritage-green/30 bg-white px-3 py-1.5 text-xs font-bold text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                  >
+                    <Copy size={13} aria-hidden="true" />
+                    <span>Copy body measurements from {selectedCopySource.label}</span>
+                  </button>
+                </div>
+              )}
+          </div>
+          {activePendingCopyConfirmation && (
+            <div
+              role="alertdialog"
+              aria-label={`Confirm copying body measurements from ${activePendingCopyConfirmation.sourceLabel}`}
+              data-measurement-copy-confirmation="true"
+              className="mt-3 flex flex-col gap-2 rounded-xl border border-heritage-gold/45 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p className="text-xs font-medium leading-relaxed text-heritage-ink/85">
+                Copy {activePendingCopyConfirmation.sharedCount} shared body{" "}
+                {activePendingCopyConfirmation.sharedCount === 1
+                  ? "measurement"
+                  : "measurements"}{" "}
+                from{" "}
+                <strong className="font-bold text-heritage-green">
+                  {activePendingCopyConfirmation.sourceLabel}
+                </strong>{" "}
+                to{" "}
+                <strong className="font-bold text-heritage-green">
+                  {activeWearerLabel}
+                </strong>
+                ? Only shared body fields are copied; garment-specific measurements stay
+                separate.
+              </p>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-measurement-copy-confirm="true"
+                  onClick={handleConfirmCopySharedBodyMeasurements}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl bg-heritage-green px-3.5 text-xs font-bold text-white transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                >
+                  Confirm copy
+                </button>
+                <button
+                  type="button"
+                  data-measurement-copy-cancel="true"
+                  onClick={() => setPendingCopyConfirmation(null)}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/25 bg-white px-3 text-xs font-semibold text-heritage-green transition hover:bg-heritage-cream/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {activeUndoCopy && !activePendingCopyConfirmation && (
+            <div
+              role="status"
+              data-measurement-copy-undo-banner="true"
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-heritage-green/25 bg-white px-3 py-2"
+            >
+              <p className="text-xs font-semibold text-heritage-green">
+                Copied {activeUndoCopy.copiedCount} shared body{" "}
+                {activeUndoCopy.copiedCount === 1 ? "measurement" : "measurements"} from{" "}
+                {activeUndoCopy.sourceLabel} to {activeWearerLabel}.
+              </p>
+              <button
+                type="button"
+                data-measurement-copy-undo="true"
+                onClick={handleUndoCopySharedBodyMeasurements}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-heritage-green/35 bg-heritage-cream/40 px-3 text-xs font-bold text-heritage-green transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+              >
+                <RotateCcw size={12} aria-hidden="true" />
+                <span>Undo</span>
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
