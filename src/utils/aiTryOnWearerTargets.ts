@@ -447,7 +447,8 @@ export type AiTryOnOutfitIneligibilityReason =
   | "single_garment"
   | "missing_top"
   | "missing_bottom"
-  | "dresses_only";
+  | "dresses_only"
+  | "standalone_only";
 
 export interface AiTryOnOutfitEligibility {
   readonly eligible: boolean;
@@ -461,6 +462,8 @@ const aiTryOnMissingBottomMessage = (label: string) =>
   `Combined outfit previews require 1 top and 1 bottom. Add a bottom for ${label} to unlock combined previews.`;
 const AI_TRY_ON_DRESSES_ONLY_MESSAGE =
   "Combined outfit previews pair a separate top and bottom. Dresses are standalone full outfits.";
+const AI_TRY_ON_STANDALONE_ONLY_MESSAGE =
+  "Combined outfit previews pair a separate top and bottom. Full-outfit garments are previewed on their own.";
 
 /**
  * Combined outfit needs one catalogue top and one catalogue bottom.
@@ -488,7 +491,7 @@ export const getAiTryOnOutfitEligibility = (target: AiTryOnWearerTarget): AiTryO
   if (parts.some((part) => part === "top")) {
     return { eligible: false, reason: "missing_bottom", helperMessage: aiTryOnMissingBottomMessage(target.label) };
   }
-  return { eligible: false, reason: "dresses_only", helperMessage: AI_TRY_ON_DRESSES_ONLY_MESSAGE };
+  return { eligible: false, reason: "standalone_only", helperMessage: AI_TRY_ON_STANDALONE_ONLY_MESSAGE };
 };
 
 export const aiTryOnOutfitChoices = (target: AiTryOnWearerTarget) => {

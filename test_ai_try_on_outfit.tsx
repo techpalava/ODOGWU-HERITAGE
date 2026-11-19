@@ -425,6 +425,11 @@ assert.equal(getAiTryOnOutfitEligibility(wearer("w-obi", "Obi", [garment("shirt-
 assert.match(getAiTryOnOutfitEligibility(wearer("w-obi", "Obi", [garment("shirt-a", "shirt"), garment("shirt-b", "kaftan")])).helperMessage || "", /Add a bottom for Obi/);
 assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("dress-a", "dress"), garment("gown", "full_length_gown")])).reason, "dresses_only");
 assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("dress-a", "dress"), garment("gown", "full_length_gown")])).helperMessage, "Combined outfit previews pair a separate top and bottom. Dresses are standalone full outfits.");
+assert.deepEqual(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("agbada-a", "agbada"), garment("agbada-b", "agbada")])), {
+  eligible: false,
+  reason: "standalone_only",
+  helperMessage: "Combined outfit previews pair a separate top and bottom. Full-outfit garments are previewed on their own.",
+});
 assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garments[0]])).reason, "single_garment");
 assert.equal(getAiTryOnOutfitEligibility(target).eligible, true);
 assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garments[3], garments[2]])).reason, "missing_top");
