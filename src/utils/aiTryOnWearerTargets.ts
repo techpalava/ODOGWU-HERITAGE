@@ -439,6 +439,58 @@ export interface AiTryOnOutfitChoice extends AiTryOnPreviewableGarment {
   readonly garmentType: CanonicalPhysicalGarmentType;
   readonly garmentImageUrl: string;
 }
+const AI_TRY_ON_DRESS_TYPES = new Set<CanonicalPhysicalGarmentType>(["dress", "full_length_gown"]);
+const aiTryOnPreviewableGarmentType = (garment: AiTryOnPreviewableGarment) =>
+  garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;
+
+export type AiTryOnOutfitIneligibilityReason =
+  | "single_garment"
+  | "missing_top"
+  | "missing_bottom"
+  | "dresses_only";
+
+export interface AiTryOnOutfitEligibility {
+  readonly eligible: boolean;
+  readonly reason?: AiTryOnOutfitIneligibilityReason;
+  readonly helperMessage?: string;
+}
+
+const aiTryOnMissingTopMessage = (label: string) =>
+  `Combined outfit previews require 1 top and 1 bottom. Add a top for ${label} to unlock combined previews.`;
+const aiTryOnMissingBottomMessage = (label: string) =>
+  `Combined outfit previews require 1 top and 1 bottom. Add a bottom for ${label} to unlock combined previews.`;
+const AI_TRY_ON_DRESSES_ONLY_MESSAGE =
+  "Combined outfit previews pair a separate top and bottom. Dresses are standalone full outfits.";
+
+/**
+ * Combined outfit needs one catalogue top and one catalogue bottom.
+ * Two or more garments that cannot make that pair stay on screen with a reason.
+ */
+export const getAiTryOnOutfitEligibility = (target: AiTryOnWearerTarget): AiTryOnOutfitEligibility => {
+  const garments = target.previewableGarments ?? [];
+  if (garments.length < 2) return { eligible: false, reason: "single_garment" };
+  const { tops, bottoms } = aiTryOnOutfitChoices(target);
+  if (tops.length >= 1 && bottoms.length >= 1) return { eligible: true };
+  if (bottoms.length >= 1) {
+    return { eligible: false, reason: "missing_top", helperMessage: aiTryOnMissingTopMessage(target.label) };
+  }
+  if (tops.length >= 1) {
+    return { eligible: false, reason: "missing_bottom", helperMessage: aiTryOnMissingBottomMessage(target.label) };
+  }
+  const types = garments.map(aiTryOnPreviewableGarmentType);
+  if (types.every((type) => type !== undefined && AI_TRY_ON_DRESS_TYPES.has(type))) {
+    return { eligible: false, reason: "dresses_only", helperMessage: AI_TRY_ON_DRESSES_ONLY_MESSAGE };
+  }
+  const parts = types.map((type) => aiTryOnOutfitPart(type));
+  if (parts.some((part) => part === "bottom")) {
+    return { eligible: false, reason: "missing_top", helperMessage: aiTryOnMissingTopMessage(target.label) };
+  }
+  if (parts.some((part) => part === "top")) {
+    return { eligible: false, reason: "missing_bottom", helperMessage: aiTryOnMissingBottomMessage(target.label) };
+  }
+  return { eligible: false, reason: "dresses_only", helperMessage: AI_TRY_ON_DRESSES_ONLY_MESSAGE };
+};
+
 export const aiTryOnOutfitChoices = (target: AiTryOnWearerTarget) => {
   const garments: AiTryOnOutfitChoice[] = (target.previewableGarments ?? []).flatMap((garment) => {
     const type = garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;

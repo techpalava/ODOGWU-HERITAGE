@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { AiTryOnPhotoPanel, type AiTryOnPhotoPanelProps } from "./src/components/AiTryOnPhotoPanel";
 import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
-import { aiTryOnOutfitChoices, aiTryOnOutfitTarget, aiTryOnOrderPreviewTargets, type AiTryOnPreviewableGarment, type AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
+import { aiTryOnOutfitChoices, aiTryOnOutfitTarget, aiTryOnOrderPreviewTargets, getAiTryOnOutfitEligibility, type AiTryOnPreviewableGarment, type AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_OUTFIT_PROMPT_VERSION, type AiTryOnGenerationRequest, type AiTryOnOutfitGarmentRequest } from "./src/utils/aiTryOnGatewayContract";
 import { aiTryOnOutfitFingerprint, aiTryOnOutfitPreviewKey } from "./src/utils/aiTryOnWorkflow";
 import { buildAiTryOnOutfitPrompt, buildAiTryOnOutfitImageLabels } from "./src/server/aiTryOnPrompt";
@@ -139,9 +139,9 @@ assert.equal(requests.length, 4, "switching model does not generate");
 assert.equal(data("data-ai-try-on-outfit-preview-stale").length, 1, "the previous model's outfit preview is out of date");
 assert.equal(panel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:")).length, 0);
 await act(async () => { panel.unmount(); });
-for (const list of [[garments[0]], [garment("dress", "dress")], [garments[3], garments[2]]]) {
+for (const list of [[garments[0]], [garment("dress", "dress")]]) {
   await act(async () => { panel = create(createElement(AiTryOnPhotoPanel, { ...props, targets: [{ ...target, previewableGarments: list }], jobStore: createAiTryOnBackgroundJobs({ storage: null }) })); });
-  assert.equal(data("data-ai-try-on-outfit-controls").length, 0);
+  assert.equal(data("data-ai-try-on-outfit-controls").length, 0, "a single garment keeps the switcher hidden");
   await act(async () => { panel.unmount(); });
 }
 // Integration: a separate uploaded design never supplies the combined base or disables a valid pair.
@@ -410,6 +410,71 @@ assert.equal(/Kaftan/.test(shortOutfitPrompt), false);
   assert.equal(tData("data-ai-try-on-top-tuck", "tucked")[0].props["aria-checked"], true, "reload restores tucked selection");
   assert.equal(tPanel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:")).length, 1, "reload restores tucked preview");
   await act(async () => { tPanel.unmount(); });
+}
+
+const wearer = (id: string, label: string, list: AiTryOnPreviewableGarment[]): AiTryOnWearerTarget => ({
+  ...target, wearerId: id, label, previewableGarments: list,
+});
+const janeBottoms = wearer("w-jane", "Jane", [garment("skirt", "skirt"), garment("shorts", "standard_shorts"), garment("gown", "dress")]);
+assert.deepEqual(getAiTryOnOutfitEligibility(janeBottoms), {
+  eligible: false,
+  reason: "missing_top",
+  helperMessage: "Combined outfit previews require 1 top and 1 bottom. Add a top for Jane to unlock combined previews.",
+});
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-obi", "Obi", [garment("shirt-a", "shirt"), garment("shirt-b", "kaftan")])).reason, "missing_bottom");
+assert.match(getAiTryOnOutfitEligibility(wearer("w-obi", "Obi", [garment("shirt-a", "shirt"), garment("shirt-b", "kaftan")])).helperMessage || "", /Add a bottom for Obi/);
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("dress-a", "dress"), garment("gown", "full_length_gown")])).reason, "dresses_only");
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("dress-a", "dress"), garment("gown", "full_length_gown")])).helperMessage, "Combined outfit previews pair a separate top and bottom. Dresses are standalone full outfits.");
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garments[0]])).reason, "single_garment");
+assert.equal(getAiTryOnOutfitEligibility(target).eligible, true);
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garments[3], garments[2]])).reason, "missing_top");
+
+const mountWearers = async (wearers: AiTryOnWearerTarget[]) => {
+  let view!: ReturnType<typeof create>;
+  await act(async () => {
+    view = create(createElement(AiTryOnPhotoPanel, {
+      ...props,
+      targets: wearers,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+    }));
+  });
+  const find = (attribute: string, value?: string) => view.root.findAll((node) =>
+    typeof node.type === "string" && node.props[attribute] !== undefined && (value === undefined || node.props[attribute] === value));
+  return { view, find };
+};
+{
+  const { view, find } = await mountWearers([target, janeBottoms]);
+  assert.equal(find("data-ai-try-on-outfit-mode")[0].props.disabled, undefined);
+  assert.match(text(find("data-ai-try-on-outfit-mode")[0]), /Combined outfit · 1 try/);
+  await act(async () => { find("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  assert.equal(find("data-ai-try-on-outfit-mode")[0].props["aria-pressed"], true);
+  await act(async () => { find("data-wearer-chip", "w-jane")[0].props.onClick(); });
+  const combined = find("data-ai-try-on-outfit-mode")[0];
+  const callout = find("data-ai-try-on-outfit-eligibility", "missing_top")[0];
+  assert.equal(combined.props.disabled, true);
+  assert.equal(combined.props["aria-pressed"], false);
+  assert.equal(text(combined), "Combined outfit");
+  assert.match(combined.props.className, /cursor-not-allowed/);
+  assert.match(combined.props.className, /opacity-60/);
+  assert.equal(combined.props["aria-describedby"], callout.props.id);
+  assert.equal(text(callout), "Combined outfit previews require 1 top and 1 bottom. Add a top for Jane to unlock combined previews.");
+  assert.equal(find("data-ai-try-on-single-mode")[0].props["aria-pressed"], true);
+  assert.equal(find("data-ai-try-on-outfit-choice").length, 0);
+  await act(async () => { view.unmount(); });
+}
+for (const [list, reason, message] of [
+  [[garment("shirt-a", "shirt"), garment("shirt-b", "shirt")], "missing_bottom", "Add a bottom for Ada"],
+  [[garment("dress-a", "dress"), garment("dress-b", "dress")], "dresses_only", "Dresses are standalone full outfits."],
+] as const) {
+  const { view, find } = await mountWearers([wearer("w-ada", "Ada", [...list])]);
+  const combined = find("data-ai-try-on-outfit-mode")[0];
+  const callout = find("data-ai-try-on-outfit-eligibility", reason)[0];
+  assert.equal(find("data-ai-try-on-outfit-controls").length, 1);
+  assert.equal(combined.props.disabled, true);
+  assert.equal(find("data-ai-try-on-single-mode")[0].props["aria-pressed"], true);
+  assert.equal(combined.props["aria-describedby"], callout.props.id);
+  assert.match(text(callout), new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  await act(async () => { view.unmount(); });
 }
 
 console.log("Combined outfit: snapshots, explicit choices, slot isolation, downstream selection and reload passed");
