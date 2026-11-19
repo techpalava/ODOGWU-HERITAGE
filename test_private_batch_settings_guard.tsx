@@ -60,8 +60,7 @@ const fillRequired = async (renderer: ReactTestRenderer) => {
   await change(renderer, "private-batch-name", "Family Wedding 2026");
   await change(renderer, "private-batch-occasion", "Wedding");
   await change(renderer, "private-batch-city", "Accra");
-  await change(renderer, "private-batch-delivery-target", "2027-06");
-  await change(renderer, "private-batch-closing-date", "2027-04-01");
+  await change(renderer, "private-batch-delivery-target", "2027-06-15");
 };
 
 let submissions: PrivateBatchSetupValues[] = [];
@@ -124,6 +123,8 @@ await submit(blocked);
 assert.equal(submissions.length, 1);
 assert.equal(submissions[0]?.country, "Ghana");
 assert.equal(submissions[0]?.expectedParticipants, 15);
+assert.equal(submissions[0]?.preferredDeliveryMonth, "2027-06");
+assert.equal(submissions[0]?.closingDate, "2027-06-15");
 await act(async () => {
   blocked.unmount();
 });
