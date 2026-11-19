@@ -62,14 +62,17 @@ export function CataloguePhotoPreviewDialog({
   const swatchColorHex = fabricSwatch?.colorHex?.trim() || null;
   const swatchLabel = fabricSwatch?.label?.trim() || null;
   const [swatchImageFailed, setSwatchImageFailed] = useState(false);
+  const [activeView, setActiveView] = useState<"main" | "fabric">("main");
 
   useEffect(() => {
     setSwatchImageFailed(false);
-  }, [swatchImageUrl]);
+    setActiveView("main");
+  }, [src, swatchImageUrl]);
 
   const showSwatchImage = Boolean(swatchImageUrl) && !swatchImageFailed;
   const showSwatchColor = !showSwatchImage && Boolean(swatchColorHex);
   const showFabricSwatch = showSwatchImage || showSwatchColor;
+  const showingFabricView = activeView === "fabric" && showSwatchImage;
 
   useEffect(() => {
     const returnTarget = returnFocusRef.current;
@@ -143,7 +146,23 @@ export function CataloguePhotoPreviewDialog({
         >
           <X aria-hidden="true" size={18} />
         </button>
-        {unavailable || !src ? (
+        {showingFabricView ? (
+          <img
+            src={swatchImageUrl!}
+            alt={
+              swatchLabel
+                ? `${swatchLabel} fabric swatch`
+                : `Selected fabric swatch for ${name}`
+            }
+            onError={() => {
+              setSwatchImageFailed(true);
+              setActiveView("main");
+            }}
+            data-catalogue-photo-preview-image="true"
+            data-catalogue-photo-preview-active-view="fabric"
+            className="max-h-[calc(90vh-11rem)] max-w-[90vw] rounded-lg object-contain"
+          />
+        ) : unavailable || !src ? (
           <p role="status" className="px-6 text-center text-sm font-semibold text-white" data-catalogue-photo-preview-unavailable="true">
             Photo unavailable
           </p>
@@ -155,30 +174,81 @@ export function CataloguePhotoPreviewDialog({
             alt={alt}
             onError={onImageError}
             data-catalogue-photo-preview-image="true"
-            className={`${showFabricSwatch ? "max-h-[calc(90vh-8.5rem)]" : "max-h-[calc(90vh-3.5rem)]"} max-w-[90vw] object-contain`}
+            data-catalogue-photo-preview-active-view={showFabricSwatch ? "garment" : undefined}
+            className={`${showFabricSwatch ? "max-h-[calc(90vh-11rem)]" : "max-h-[calc(90vh-3.5rem)]"} max-w-[90vw] object-contain`}
           />
         )}
         <p id={titleId} className="mt-3 max-w-[90vw] text-center font-serif text-lg font-bold text-white">
           {name}
         </p>
-        {showFabricSwatch && (
-          <div
-            data-catalogue-photo-preview-fabric-swatch="true"
-            className="mt-2.5 inline-flex max-w-[90vw] items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-3 py-2 backdrop-blur-sm"
-          >
-            {showSwatchImage ? (
-              <img
-                src={swatchImageUrl!}
-                alt={
-                  swatchLabel
-                    ? `Selected fabric swatch: ${swatchLabel}`
-                    : `Selected fabric swatch for ${name}`
-                }
-                onError={() => setSwatchImageFailed(true)}
-                data-catalogue-photo-preview-fabric-swatch-image="true"
-                className="h-12 w-12 shrink-0 rounded-xl border border-white/30 object-cover shadow-sm"
-              />
-            ) : (
+        {showFabricSwatch &&
+          (showSwatchImage ? (
+            <button
+              type="button"
+              onClick={() => setActiveView((current) => (current === "fabric" ? "main" : "fabric"))}
+              aria-pressed={showingFabricView}
+              aria-label={
+                showingFabricView
+                  ? `Show garment style photo of ${name}`
+                  : swatchLabel
+                    ? `Inspect full-size fabric swatch: ${swatchLabel}`
+                    : `Inspect full-size fabric swatch for ${name}`
+              }
+              data-catalogue-photo-preview-fabric-swatch="true"
+              data-catalogue-photo-preview-fabric-toggle="true"
+              data-catalogue-photo-preview-fabric-active={showingFabricView ? "true" : "false"}
+              className={`mt-3 inline-flex max-w-[90vw] items-center gap-3.5 rounded-2xl border px-3.5 py-2.5 text-left backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                showingFabricView
+                  ? "border-heritage-gold bg-heritage-gold/20 ring-2 ring-heritage-gold"
+                  : "border-white/25 bg-white/10 hover:border-heritage-gold/70 hover:bg-white/15"
+              }`}
+            >
+              <span className="inline-flex size-16 sm:size-20 shrink-0 overflow-hidden rounded-xl border border-white/35 bg-white/10 shadow-sm">
+                <img
+                  src={swatchImageUrl!}
+                  alt={
+                    swatchLabel
+                      ? `Selected fabric swatch: ${swatchLabel}`
+                      : `Selected fabric swatch for ${name}`
+                  }
+                  onError={() => {
+                    setSwatchImageFailed(true);
+                    setActiveView("main");
+                  }}
+                  data-catalogue-photo-preview-fabric-swatch-image="true"
+                  className="h-full w-full scale-125 object-cover"
+                />
+              </span>
+              <span className="min-w-0 text-left">
+                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-heritage-gold">
+                  <span>Selected fabric</span>
+                  {showingFabricView && (
+                    <span
+                      data-catalogue-photo-preview-fabric-active-badge="true"
+                      className="rounded-full bg-heritage-gold px-2 py-0.5 text-[10px] font-bold tracking-wider text-heritage-green"
+                    >
+                      Viewing
+                    </span>
+                  )}
+                </span>
+                {swatchLabel && (
+                  <span
+                    data-catalogue-photo-preview-fabric-swatch-label="true"
+                    className="mt-0.5 block truncate text-sm font-semibold text-white"
+                  >
+                    {swatchLabel}
+                  </span>
+                )}
+                <span className="mt-0.5 block text-xs text-white/80">
+                  {showingFabricView ? "Tap to return to garment photo" : "Tap to view fabric full size"}
+                </span>
+              </span>
+            </button>
+          ) : (
+            <div
+              data-catalogue-photo-preview-fabric-swatch="true"
+              className="mt-3 inline-flex max-w-[90vw] items-center gap-3.5 rounded-2xl border border-white/20 bg-white/10 px-3.5 py-2.5 backdrop-blur-sm"
+            >
               <span
                 role="img"
                 aria-label={
@@ -187,25 +257,24 @@ export function CataloguePhotoPreviewDialog({
                     : `Selected fabric colour for ${name}`
                 }
                 data-catalogue-photo-preview-fabric-swatch-color="true"
-                className="inline-block h-12 w-12 shrink-0 rounded-xl border border-white/30 shadow-sm"
+                className="inline-block size-16 sm:size-20 shrink-0 rounded-xl border border-white/30 shadow-sm"
                 style={{ backgroundColor: swatchColorHex! }}
               />
-            )}
-            <div className="min-w-0 text-left">
-              <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-heritage-gold">
-                Selected fabric
-              </span>
-              {swatchLabel && (
-                <span
-                  data-catalogue-photo-preview-fabric-swatch-label="true"
-                  className="block truncate text-sm font-medium text-white"
-                >
-                  {swatchLabel}
+              <div className="min-w-0 text-left">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-heritage-gold">
+                  Selected fabric
                 </span>
-              )}
+                {swatchLabel && (
+                  <span
+                    data-catalogue-photo-preview-fabric-swatch-label="true"
+                    className="mt-0.5 block truncate text-sm font-semibold text-white"
+                  >
+                    {swatchLabel}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          ))}
       </div>
     </div>
   );

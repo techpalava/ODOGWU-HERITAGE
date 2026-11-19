@@ -1119,15 +1119,15 @@ assert.match(
   studioSource,
   /getActiveWearerId:\s*\(\) => activeWearerIdRef\.current/,
 );
-assert.match(
-  studioSource,
-  /setLiveForm:\s*\(measurement\) =>\s*setFutureMeasurementState\(/,
-  "assign garment must sync live measurement form after strip",
+assert.equal(
+  studioSource.includes("setFutureMeasurementState"),
+  false,
+  "per-wearer measurements live solely in wearerOrder (no independent live form state)",
 );
 assert.match(
   studioSource,
-  /onCollapseToSolo[\s\S]*setFutureMeasurementState\(\s*sole\?\.measurement/,
-  "Only for me must sync sole measurement form after reconcile",
+  /onCollapseToSolo[\s\S]*activeWearerIdRef\.current = soleWearerId;\s*setActiveWearerId\(soleWearerId\)/,
+  "Only for me must synchronously update activeWearerIdRef and activeWearerId after reconcile",
 );
 const legacyOnly = projectAuthoritativeOrderMeasurements({
   measurementState: completeShirt,

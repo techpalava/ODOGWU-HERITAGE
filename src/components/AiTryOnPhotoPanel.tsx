@@ -303,31 +303,74 @@ const DesignReferenceImage = ({ url, alt }: { url: string | null; alt: string })
 const FabricMark = ({
   url,
   color,
+  label,
+  size = "compact",
+  selected = false,
 }: {
   url: string | null;
   color: string | null;
+  label?: string | null;
+  size?: "compact" | "summary";
+  selected?: boolean;
 }) => {
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt=""
-        data-ai-try-on-fabric-swatch="image"
-        className="h-7 w-7 shrink-0 rounded-full border border-heritage-gold/40 object-cover"
-      />
-    );
-  }
-  if (color) {
-    return (
-      <span
-        aria-hidden="true"
-        data-ai-try-on-garment-swatch="color"
-        className="inline-block h-7 w-7 shrink-0 rounded-full border border-heritage-gold/40"
-        style={{ backgroundColor: color }}
-      />
-    );
-  }
-  return null;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const trimmedUrl = url?.trim() || null;
+  const trimmedColor = color?.trim() || null;
+  const trimmedLabel = label?.trim() || null;
+
+  const showImage = Boolean(trimmedUrl) && failedUrl !== trimmedUrl;
+  const showColor = !showImage && Boolean(trimmedColor);
+  if (!showImage && !showColor && !trimmedLabel) return null;
+
+  const displayLabel = trimmedLabel || (showImage || showColor ? "Selected fabric" : null);
+  const swatchBoxClass =
+    size === "summary"
+      ? "inline-flex size-10 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/50 bg-heritage-cream/40 shadow-xs"
+      : "inline-flex size-8 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/50 bg-heritage-cream/40 shadow-xs";
+  const labelClass = selected
+    ? "min-w-0 truncate text-xs font-medium text-white/90"
+    : "min-w-0 truncate text-xs font-medium text-heritage-ink/80";
+
+  return (
+    <span
+      data-ai-try-on-fabric-mark={size}
+      className="mt-1 inline-flex max-w-full items-center gap-2"
+    >
+      {showImage ? (
+        <span className={swatchBoxClass}>
+          <img
+            src={trimmedUrl!}
+            alt=""
+            onError={() => setFailedUrl(trimmedUrl)}
+            data-ai-try-on-fabric-swatch="image"
+            className="h-full w-full scale-125 object-cover"
+          />
+        </span>
+      ) : showColor ? (
+        <span
+          aria-hidden="true"
+          data-ai-try-on-garment-swatch="color"
+          className={swatchBoxClass}
+          style={{ backgroundColor: trimmedColor! }}
+        />
+      ) : null}
+      {displayLabel && (
+        <span data-ai-try-on-fabric-label="true" className={labelClass}>
+          {displayLabel}
+        </span>
+      )}
+    </span>
+  );
+};
+
+const formatGarmentFabricLabel = (garment: AiTryOnPreviewableGarment): string | null => {
+  const labelParts = [
+    garment.orderDetails?.fabric?.colour,
+    garment.orderDetails?.fabric?.category,
+  ]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean);
+  return labelParts.length > 0 ? labelParts.join(" · ") : null;
 };
 
 const buildGarmentFabricSwatch = (
@@ -337,16 +380,10 @@ const buildGarmentFabricSwatch = (
   const colorHex =
     garment.fabricColorHex?.trim() || garment.orderDetails?.fabric?.colourHex?.trim() || null;
   if (!imageUrl && !colorHex) return undefined;
-  const labelParts = [
-    garment.orderDetails?.fabric?.colour,
-    garment.orderDetails?.fabric?.category,
-  ]
-    .map((part) => (typeof part === "string" ? part.trim() : ""))
-    .filter(Boolean);
   return {
     imageUrl,
     colorHex,
-    label: labelParts.length > 0 ? labelParts.join(" · ") : null,
+    label: formatGarmentFabricLabel(garment),
   };
 };
 const deleteNoStoredPreview = async (): Promise<boolean> => false;
@@ -2218,7 +2255,13 @@ export const AiTryOnPhotoPanel = ({
                         <DesignReferenceImage url={garment.garmentImageUrl} alt={`Design reference for ${garment.label}`} />
                         <span className="min-w-0">
                           <span className="block truncate">{garment.label}</span>
-                          <FabricMark url={garment.fabricSwatchImageUrl} color={garment.fabricColorHex} />
+                          <FabricMark
+                            url={garment.fabricSwatchImageUrl}
+                            color={garment.fabricColorHex ?? garment.orderDetails?.fabric?.colourHex ?? null}
+                            label={formatGarmentFabricLabel(garment)}
+                            size="compact"
+                            selected={selected}
+                          />
                         </span>
                       </button>
                     );
@@ -2306,7 +2349,13 @@ export const AiTryOnPhotoPanel = ({
                     <DesignReferenceImage url={garment.garmentImageUrl} alt={`Design reference for ${garment.label}`} />
                     <span className="min-w-0">
                       <span className="block truncate">{garment.label}</span>
-                      <FabricMark url={garment.fabricSwatchImageUrl} color={garment.fabricColorHex} />
+                      <FabricMark
+                        url={garment.fabricSwatchImageUrl}
+                        color={garment.fabricColorHex ?? garment.orderDetails?.fabric?.colourHex ?? null}
+                        label={formatGarmentFabricLabel(garment)}
+                        size="compact"
+                        selected={selected}
+                      />
                     </span>
                   </button>
                   {garment.garmentImageUrl && (
@@ -2347,7 +2396,12 @@ export const AiTryOnPhotoPanel = ({
           <DesignReferenceImage url={selectedPreview.garmentImageUrl} alt={`Design reference for ${selectedPreview.label}`} />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-heritage-green">{selectedPreview.label}</p>
-            <FabricMark url={selectedPreview.fabricSwatchImageUrl} color={selectedPreview.fabricColorHex} />
+            <FabricMark
+              url={selectedPreview.fabricSwatchImageUrl}
+              color={selectedPreview.fabricColorHex ?? selectedPreview.orderDetails?.fabric?.colourHex ?? null}
+              label={formatGarmentFabricLabel(selectedPreview)}
+              size="summary"
+            />
           </div>
           {selectedPreview.garmentImageUrl && (
             <button
