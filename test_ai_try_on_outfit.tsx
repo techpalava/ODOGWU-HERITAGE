@@ -32,7 +32,7 @@ const promptGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmen
   { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/top", fabricSwatchImageUrl: "https://example.test/swatch", orderDetails: garments[1].orderDetails },
   { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/bottom", orderDetails: garments[2].orderDetails },
 ];
-assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v3");
+assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v4");
 const snapshots = JSON.parse(readFileSync("test_ai_try_on_outfit.snap.json", "utf8"));
 for (const onModel of [false, true]) {
   const key = onModel ? "model" : "photo";
@@ -50,7 +50,13 @@ for (const onModel of [false, true]) {
   assert.equal(buildAiTryOnOutfitImageLabels(promptGarments, onModel).length, 4);
   assert.match(buildAiTryOnOutfitImageLabels(promptGarments, onModel)[3], /IMAGE 4: Trouser/);
 }
-assert.match(buildAiTryOnOutfitPrompt({ garments: [{ ...promptGarments[0], garmentType: "kaftan" }, promptGarments[1]], onModel: false }), /Chosen top: Long Shirt/);
+{
+  const kaftanOutfit = buildAiTryOnOutfitPrompt({ garments: [{ ...promptGarments[0], garmentType: "kaftan" }, promptGarments[1]], onModel: false });
+  assert.match(kaftanOutfit, /Chosen top: Long Shirt/);
+  assert.match(kaftanOutfit, /A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee/);
+  assert.match(kaftanOutfit, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband/);
+  assert.doesNotMatch(kaftanOutfit, /\bKaftan\b/);
+}
 const withFingerprint = (garmentKey: string) => ({ garmentKey, inputFingerprint: fp });
 const photoFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[1].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "customer_photo" });
 const lightModelFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[0].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "studio_model", modelId: "male-1-light" });

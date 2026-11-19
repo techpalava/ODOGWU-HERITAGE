@@ -53,7 +53,7 @@ const KEEP_PERSON =
  * names: a Long Shirt order stays a Long Shirt.
  */
 const ORDERED_TYPE =
-  "When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
+  "When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a waist-length button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.";
 
 const buildSingleTopTuckInstruction = (
   orderDetails: AiTryOnOrderDetails | null | undefined,
@@ -67,7 +67,7 @@ const buildSingleTopTuckInstruction = (
     return "Top styling: wear the Standard Shirt completely untucked, draping naturally outside and over the waistband of trousers or shorts. Never tuck the shirt in, even if a reference photo shows a tucked-in shirt.";
   }
   if (types.includes("kaftan")) {
-    return "Top styling: wear the Long Shirt completely untucked, draping naturally outside over trousers or shorts. Never tuck it in.";
+    return "Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem. Never tuck it in.";
   }
   if (types.length === 0) {
     if (topTuckPreference === "tucked") {
@@ -86,7 +86,7 @@ const buildOutfitTopTuckInstruction = (
   topTuckPreference: AiTryOnTopTuckPreference = "auto",
 ): string => {
   if (top.garmentType !== "shirt") {
-    return "Top styling: wear the Long Shirt completely untucked, draping naturally outside and over the waistband of the bottom garment. Never tuck it in.";
+    return "Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband of the bottom garment with only the lower trouser legs visible below the hem. Never tuck it in.";
   }
   if (topTuckPreference === "tucked") {
     return "Top styling: tuck the Standard Shirt cleanly into the waistband of the bottom garment all the way around so the full waistband, fastening and any belt loops are clearly visible.";
