@@ -3,6 +3,7 @@ import {
   aiTryOnOrderPreviewTargets,
   aiTryOnOutfitTarget,
   aiTryOnOutfitChoices,
+  getAiTryOnOutfitEligibility,
   aiTryOnOutfitPairFor,
   aiTryOnPreviewFingerprintIsCurrent,
   aiTryOnTargetHasDesign,
@@ -771,7 +772,11 @@ export const AiTryOnPhotoPanel = ({
       : null;
   const outfitSlot = target ? aiTryOnOutfitTarget(target) : null;
   const outfitChoices = target ? aiTryOnOutfitChoices(target) : { tops: [], bottoms: [] };
-  const outfitMode = Boolean(outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
+  const outfitEligibility = target ? getAiTryOnOutfitEligibility(target) : { eligible: false as const, reason: "single_garment" as const };
+  const outfitEligible = outfitEligibility.eligible;
+  const showOutfitSwitcher = previewableGarments.length >= 2;
+  const outfitMode = Boolean(outfitEligible && outfitSlot && outfitModeByWearer[target?.wearerId || ""]);
+  const outfitEligibilityId = `${idPrefix}-outfit-eligibility`;
   const stylePhotoOffered = Boolean(
     target &&
       !outfitMode &&
@@ -926,6 +931,13 @@ export const AiTryOnPhotoPanel = ({
 
   // Tell the job store who is on screen: a request that ends while its
   // wearer is shown here reports inline, otherwise with a toast.
+  const outfitWearerId = target?.wearerId ?? "";
+  useEffect(() => {
+    if (!outfitWearerId || outfitEligible) return;
+    setOutfitModeByWearer((current) =>
+      current[outfitWearerId] ? { ...current, [outfitWearerId]: false } : current,
+    );
+  }, [outfitWearerId, outfitEligible]);
   useEffect(() => {
     jobStore.setVisibleWearer(previewKey || null);
   }, [jobStore, previewKey]);
@@ -2062,7 +2074,7 @@ export const AiTryOnPhotoPanel = ({
         </fieldset>
       )}
 
-      {outfitSlot && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
+      {showOutfitSwitcher && target && <fieldset className="space-y-3 rounded-xl border border-heritage-gold/30 p-4" data-ai-try-on-outfit-controls>
         <legend className="px-1 font-serif text-lg font-bold text-heritage-green">What would you like to preview?</legend>
         <div className="flex flex-wrap gap-2">
           <button
@@ -2091,27 +2103,49 @@ export const AiTryOnPhotoPanel = ({
           >
             One garment
           </button>
-          <button
-            type="button"
-            aria-pressed={outfitMode}
-            onClick={() => {
-              setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: true }));
-              const outfitKey = aiTryOnOutfitPreviewKey(target.wearerId);
-              const matches = wearerGalleryItems.filter((item) => item.previewKey === outfitKey);
-              const preferred = matches[matches.length - 1];
-              if (preferred) {
-                commitGallery((current) =>
-                  selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
-                );
-              }
-            }}
-            className={tryOnChoiceChipClass(outfitMode)}
-            data-ai-try-on-outfit-mode
-          >
-            Combined outfit · 1 try
-          </button>
+          {outfitEligible ? (
+            <button
+              type="button"
+              aria-pressed={outfitMode}
+              onClick={() => {
+                setOutfitModeByWearer((current) => ({ ...current, [target.wearerId]: true }));
+                const outfitKey = aiTryOnOutfitPreviewKey(target.wearerId);
+                const matches = wearerGalleryItems.filter((item) => item.previewKey === outfitKey);
+                const preferred = matches[matches.length - 1];
+                if (preferred) {
+                  commitGallery((current) =>
+                    selectAiTryOnActiveGalleryPreview(current, target.wearerId, preferred.id),
+                  );
+                }
+              }}
+              className={tryOnChoiceChipClass(outfitMode)}
+              data-ai-try-on-outfit-mode
+            >
+              Combined outfit · 1 try
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-pressed={false}
+              aria-describedby={outfitEligibilityId}
+              className={`${tryOnChoiceChipClass(false)} cursor-not-allowed opacity-60`}
+              data-ai-try-on-outfit-mode
+            >
+              Combined outfit
+            </button>
+          )}
         </div>
-        {outfitMode && <>
+        {!outfitEligible && outfitEligibility.helperMessage ? (
+          <p
+            id={outfitEligibilityId}
+            data-ai-try-on-outfit-eligibility={outfitEligibility.reason}
+            className="rounded-xl border border-heritage-gold/40 bg-heritage-gold/10 px-3 py-2 text-sm leading-relaxed text-heritage-ink"
+          >
+            {outfitEligibility.helperMessage}
+          </p>
+        ) : null}
+        {outfitMode && outfitSlot && <>
           <p className="text-sm leading-relaxed text-heritage-ink/75">Choose exactly one top and one bottom for this wearer, using the same photo or studio model. Only your chosen garments are included. One combined picture uses 1 try from this order’s shared tries. Your individual previews stay saved separately.</p>
           {(["top", "bottom"] as const).map((part) => {
             const choices = part === "top" ? outfitChoices.tops : outfitChoices.bottoms;
