@@ -2,7 +2,9 @@ import { resolveActiveWearerCap } from "../config/WearerPolicy.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   CustomDetailDemographic,
+  FutureMeasurementEnteredBagV1,
   FutureMeasurementStateV1,
+  FutureMeasurementValueV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
   MeasurementMethodId,
@@ -13,9 +15,15 @@ import type {
 import {
   classifyFutureMeasurementHydration,
   countRemainingCustomerRequiredMeasurementUnits,
+  countRequiredMeasurementUnits,
+  countSatisfiedRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
+  getActiveFutureMeasurementEntered,
   isFutureMeasurementStageComplete,
+  isSelectedMeasurementMethod,
+  isSelectedMeasurementRiskRoute,
   planPersonMeasurementRequirements,
+  projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
   resolveMeasurementPlanningDemographic,
   type MeasurementPhysicalGarment,
@@ -561,7 +569,9 @@ export const assignGarmentToWearer = ({
     if (candidate.wearerId === wearerId) {
       return {
         ...candidate,
-        measurement: markMeasurementIncomplete(candidate.measurement),
+        measurement: markMeasurementIncomplete(
+          stripGarmentFromMeasurement(candidate.measurement, garmentKey),
+        ),
       };
     }
     return candidate;
@@ -641,16 +651,24 @@ export const addPersonAndAssignGarment = ({
       ),
     };
   } else {
-    const newWearer = createWearerProfile({
+    const added = addWearer({
+      order,
+      physicalGarmentCount: garments.length,
       displayName: name,
       fitContext: null,
-      presentationOrder: order.wearers.length,
     });
-    targetWearerId = newWearer.wearerId;
-    baseOrder = {
-      ...order,
-      wearers: sortWearers([...order.wearers, newWearer]),
-    };
+    if (added.status !== "updated") {
+      return added;
+    }
+    const previousIds = new Set(order.wearers.map((wearer) => wearer.wearerId));
+    const createdWearer = added.order.wearers.find(
+      (wearer) => !previousIds.has(wearer.wearerId),
+    );
+    if (!createdWearer) {
+      return { status: "blocked", code: "WEARER_CREATE_FAILED", order };
+    }
+    targetWearerId = createdWearer.wearerId;
+    baseOrder = added.order;
   }
 
   const assigned = assignGarmentToWearer({
@@ -1077,9 +1095,19 @@ export const isWearerOrderMeasurementComplete = ({
   );
 };
 
+export interface WearerMeasurementCompletionSummary {
+  wearerId: string;
+  requiredCount: number;
+  completedCount: number;
+  remainingCount: number;
+  hasAssignedGarments: boolean;
+  complete: boolean;
+}
+
 export interface WearerOrderMeasurementCompletion {
   complete: boolean;
   remainingRequiredCount: number;
+  byWearerId?: Readonly<Record<string, WearerMeasurementCompletionSummary>>;
 }
 
 /** Order-wide measurement gate. The selected wearer is not an input. */
@@ -1091,22 +1119,185 @@ export const summarizeWearerOrderMeasurementCompletion = ({
   order: WearerOrderStateV2;
   runtimes: readonly WearerMeasurementRuntime[];
   physicalGarmentKeys: readonly string[];
-}): WearerOrderMeasurementCompletion => ({
-  complete: isWearerOrderMeasurementComplete({
-    order,
-    runtimes,
-    physicalGarmentKeys,
-  }),
-  remainingRequiredCount: runtimes.reduce(
-    (total, runtime) =>
-      total +
-      countRemainingCustomerRequiredMeasurementUnits({
-        plan: runtime.plan,
+}): WearerOrderMeasurementCompletion => {
+  const byWearerId: Record<string, WearerMeasurementCompletionSummary> = {};
+  for (const runtime of runtimes) {
+    const hasAssignedGarments = runtime.garmentKeys.length > 0;
+    const selectedMethod = isSelectedMeasurementMethod(runtime.measurement.route);
+    let requiredCount = 0;
+    let completedCount = 0;
+    if (hasAssignedGarments && selectedMethod) {
+      const presentationRequirements = projectMeasurementRequirementsForPresentation({
+        requirements: runtime.plan.requirements,
         state: runtime.measurement,
-      }),
-    0,
-  ),
-});
+      });
+      const requiredRequirements = presentationRequirements.filter(
+        (requirement) => requirement.section === "required",
+      );
+      requiredCount = countRequiredMeasurementUnits(requiredRequirements);
+      completedCount = countSatisfiedRequiredMeasurementUnits({
+        requirements: requiredRequirements,
+        entered: runtime.measurement.entered,
+        invalidInputKeys: runtime.measurement.invalidInputKeys,
+      });
+    }
+    const remainingCount = countRemainingCustomerRequiredMeasurementUnits({
+      plan: runtime.plan,
+      state: runtime.measurement,
+    });
+    byWearerId[runtime.wearerId] = {
+      wearerId: runtime.wearerId,
+      requiredCount,
+      completedCount,
+      remainingCount,
+      hasAssignedGarments,
+      complete:
+        hasAssignedGarments && isFutureMeasurementStageComplete(runtime.measurement),
+    };
+  }
+  return {
+    complete: isWearerOrderMeasurementComplete({
+      order,
+      runtimes,
+      physicalGarmentKeys,
+    }),
+    remainingRequiredCount: runtimes.reduce(
+      (total, runtime) =>
+        total + (byWearerId[runtime.wearerId]?.remainingCount ?? 0),
+      0,
+    ),
+    byWearerId,
+  };
+};
+
+export const getWearerCopyableSharedBodyMeasurements = (
+  measurement: FutureMeasurementStateV1,
+): Record<string, FutureMeasurementValueV1> => {
+  if (!isSelectedMeasurementRiskRoute(measurement.route)) return {};
+  const activeEntered = getActiveFutureMeasurementEntered(measurement);
+  const copyable: Record<string, FutureMeasurementValueV1> = {};
+  for (const [measurementId, entry] of Object.entries(activeEntered.shared)) {
+    if (
+      entry &&
+      entry.provenance === "customer_entered" &&
+      typeof entry.valueCm === "number" &&
+      Number.isFinite(entry.valueCm) &&
+      entry.valueCm > 0
+    ) {
+      copyable[measurementId] = {
+        valueCm: entry.valueCm,
+        provenance: "customer_entered",
+      };
+    }
+  }
+  return copyable;
+};
+
+export interface CopySharedBodyMeasurementsResult {
+  readonly status: "copied" | "noop";
+  readonly order: WearerOrderStateV2;
+  readonly copiedCount: number;
+  readonly copiedMeasurementIds: readonly string[];
+  readonly previousTargetMeasurement: FutureMeasurementStateV1 | null;
+}
+
+/**
+ * Explicitly copy ONLY shared body measurements (height, chest/bust, waist,
+ * hip, shoulder, etc.) from one wearer to another. Never copies garment-specific
+ * (`byGarmentKey`) entries and returns the target's prior measurement snapshot
+ * so the caller can provide a one-click Undo.
+ */
+export const copySharedBodyMeasurementsBetweenWearers = ({
+  order,
+  sourceWearerId,
+  targetWearerId,
+}: {
+  order: WearerOrderStateV2;
+  sourceWearerId: string;
+  targetWearerId: string;
+}): CopySharedBodyMeasurementsResult => {
+  if (!sourceWearerId || !targetWearerId || sourceWearerId === targetWearerId) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const source = order.wearers.find(
+    (wearer) => wearer.wearerId === sourceWearerId,
+  );
+  const target = order.wearers.find(
+    (wearer) => wearer.wearerId === targetWearerId,
+  );
+  if (!source || !target) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const targetRoute = target.measurement.route;
+  if (!isSelectedMeasurementRiskRoute(targetRoute)) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const copyableShared = getWearerCopyableSharedBodyMeasurements(
+    source.measurement,
+  );
+  const copiedMeasurementIds = Object.keys(copyableShared);
+  if (copiedMeasurementIds.length === 0) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const previousTargetMeasurement = cloneMeasurement(target.measurement);
+  const nextTarget = cloneMeasurement(target.measurement);
+  const currentActiveBag = getActiveFutureMeasurementEntered(nextTarget);
+  const nextActiveBag: FutureMeasurementEnteredBagV1 = {
+    shared: {
+      ...structuredClone(currentActiveBag.shared),
+      ...structuredClone(copyableShared),
+    },
+    byGarmentKey: structuredClone(currentActiveBag.byGarmentKey),
+  };
+  nextTarget.entered = nextActiveBag;
+  if (nextTarget.enteredByRoute) {
+    nextTarget.enteredByRoute[targetRoute] = structuredClone(nextActiveBag);
+  }
+  const copiedInvalidKeys = new Set(
+    copiedMeasurementIds.map((id) => `shared:${id}`),
+  );
+  nextTarget.invalidInputKeys = nextTarget.invalidInputKeys.filter(
+    (key) => !copiedInvalidKeys.has(key),
+  );
+  if (nextTarget.invalidInputKeysByRoute) {
+    nextTarget.invalidInputKeysByRoute[targetRoute] =
+      nextTarget.invalidInputKeysByRoute[targetRoute].filter(
+        (key) => !copiedInvalidKeys.has(key),
+      );
+  }
+  const nextOrder = updateWearerMeasurement(order, targetWearerId, nextTarget);
+  return {
+    status: "copied",
+    order: nextOrder,
+    copiedCount: copiedMeasurementIds.length,
+    copiedMeasurementIds,
+    previousTargetMeasurement,
+  };
+};
 
 export const projectActiveWearerMeasurements = (
   runtimes: readonly WearerMeasurementRuntime[],

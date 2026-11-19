@@ -429,8 +429,10 @@ import {
   applyWearerMeasurementUpdate,
   assignGarmentToWearer,
   classifyPersistedMeasurement,
+  copySharedBodyMeasurementsBetweenWearers,
   createEmptyWearerOrder,
   deleteWearer,
+  getWearerCopyableSharedBodyMeasurements,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
   resolveWearerAssignmentPresentation,
@@ -1314,8 +1316,6 @@ export default function DesignStudioView({
     useState<AiTryOnWorkflowStateV1>(createEmptyAiTryOnWorkflowState);
   /** A Try-on preview is generating; the step hides its skip button. */
   const [aiTryOnGenerating, setAiTryOnGenerating] = useState(false);
-  const [futureMeasurementState, setFutureMeasurementState] =
-    useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
   /** Step 7 people panel: wearers whose name is typed but not yet saved (Save / blur). */
   const [unsavedWearerNameIds, setUnsavedWearerNameIds] = useState<readonly string[]>(
@@ -3800,6 +3800,78 @@ export default function DesignStudioView({
   );
   const isFuturePersonalizedAdditionsNavigationReady =
     isFutureCustomDetailsStageReady && monogramNamesReady;
+  const futureMeasurementPhysicalGarments = useMemo(
+    () =>
+      getMeasurementPhysicalGarments({
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        physicalOccurrences:
+          authoritativePhysicalOrder.status === "resolved"
+            ? authoritativePhysicalOrder.physicalOccurrences
+            : undefined,
+      }),
+    [authoritativePhysicalOrder, effectiveJourneyGarmentTypeSelection],
+  );
+  const reconciledWearerOrder = useMemo(
+    () =>
+      reconcileWearerOrder({
+        order: wearerOrder,
+        garmentKeys: futureMeasurementPhysicalGarments.map(
+          (garment) => garment.garmentKey,
+        ),
+        compatibilityDemographic: effectiveJourneyGarmentTypeSelection.demographic,
+        garments: futureMeasurementPhysicalGarments,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        additionalGarmentConstructions:
+          designSelections.additionalGarmentConstructions,
+      }),
+    [
+      wearerOrder,
+      futureMeasurementPhysicalGarments,
+      effectiveJourneyGarmentTypeSelection,
+      designSelections.additionalGarmentConstructions,
+    ],
+  );
+  // Single source of truth: per-wearer measurements live solely inside wearerOrder.
+  const wearerOrderForPlan = reconciledWearerOrder;
+  const wearerOrderForPlanRef = useRef(wearerOrderForPlan);
+  wearerOrderForPlanRef.current = wearerOrderForPlan;
+  const activeWearer =
+    (activeWearerId
+      ? wearerOrderForPlan.wearers.find(
+          (wearer) => wearer.wearerId === activeWearerId,
+        )
+      : null) ||
+    wearerOrderForPlan.wearers[0] ||
+    null;
+  /**
+   * Latest selected person, written on render and synchronously on select/mutation,
+   * so handlers running later in the same event always target the current wearer.
+   */
+  const activeWearerIdRef = useRef<string | null>(activeWearer?.wearerId || null);
+  activeWearerIdRef.current = activeWearer?.wearerId || null;
+  useEffect(() => {
+    if (wearerOrderForPlan.wearers.length === 0) {
+      if (activeWearerId !== null) {
+        activeWearerIdRef.current = null;
+        setActiveWearerId(null);
+      }
+      return;
+    }
+    const hasValidActive =
+      activeWearerId !== null &&
+      wearerOrderForPlan.wearers.some(
+        (wearer) => wearer.wearerId === activeWearerId,
+      );
+    if (!hasValidActive) {
+      const firstWearerId = wearerOrderForPlan.wearers[0]!.wearerId;
+      activeWearerIdRef.current = firstWearerId;
+      setActiveWearerId(firstWearerId);
+    }
+  }, [activeWearerId, wearerOrderForPlan.wearers]);
+  const futureMeasurementState = useMemo<FutureMeasurementStateV1>(
+    () => activeWearer?.measurement || createEmptyFutureMeasurementState(),
+    [activeWearer],
+  );
   // Tier-1 fit hints come only from the customer's own Measurement step.
   // They join the fingerprint only once Measurement precedes AI Try-on (#1181).
   const futureAiTryOnFitHints = useMemo(
@@ -3860,56 +3932,6 @@ export default function DesignStudioView({
         },
       })
     : null;
-  const futureMeasurementPhysicalGarments = useMemo(
-    () =>
-      getMeasurementPhysicalGarments({
-        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-        physicalOccurrences:
-          authoritativePhysicalOrder.status === "resolved"
-            ? authoritativePhysicalOrder.physicalOccurrences
-            : undefined,
-      }),
-    [authoritativePhysicalOrder, effectiveJourneyGarmentTypeSelection],
-  );
-  const reconciledWearerOrder = useMemo(
-    () =>
-      reconcileWearerOrder({
-        order: wearerOrder,
-        garmentKeys: futureMeasurementPhysicalGarments.map(
-          (garment) => garment.garmentKey,
-        ),
-        compatibilityDemographic: effectiveJourneyGarmentTypeSelection.demographic,
-        garments: futureMeasurementPhysicalGarments,
-        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-        additionalGarmentConstructions:
-          designSelections.additionalGarmentConstructions,
-      }),
-    [
-      wearerOrder,
-      futureMeasurementPhysicalGarments,
-      effectiveJourneyGarmentTypeSelection,
-      designSelections.additionalGarmentConstructions,
-    ],
-  );
-  const activeWearer =
-    reconciledWearerOrder.wearers.find(
-      (wearer) => wearer.wearerId === activeWearerId,
-    ) ||
-    reconciledWearerOrder.wearers[0] ||
-    null;
-  const wearerOrderForPlan = useMemo(
-    () =>
-      activeWearer
-        ? updateWearerMeasurement(
-            reconciledWearerOrder,
-            activeWearer.wearerId,
-            futureMeasurementState,
-          )
-        : reconciledWearerOrder,
-    [activeWearer, reconciledWearerOrder, futureMeasurementState],
-  );
-  const wearerOrderForPlanRef = useRef(wearerOrderForPlan);
-  wearerOrderForPlanRef.current = wearerOrderForPlan;
   // AI Try-on (Step 5): one target per wearer, each with its own garments,
   // swatch, order details, fit hints and fingerprint. 5 tries per order.
   // Step 7: the server issues the session; these are the caller's
@@ -4125,13 +4147,6 @@ export default function DesignStudioView({
       giveUpBusy: (wearerId, jobId) => releaseAiTryOnBusyJob({ credentials, jobId, wearerKey: wearerId }),
     });
   }, [guestDraftHydrated, futureDraftIdentityKey]);
-  /**
-   * Latest selected person, written on render and synchronously on select, so
-   * handlers that run later in the same event never sync the live form to a
-   * person selected in an earlier render (B1).
-   */
-  const activeWearerIdRef = useRef<string | null>(activeWearer?.wearerId || null);
-  activeWearerIdRef.current = activeWearer?.wearerId || null;
   const wearerMeasurementRuntimes = useMemo(
     () =>
       planWearerOrderMeasurements({
@@ -4247,28 +4262,87 @@ export default function DesignStudioView({
       (garment ? getStep1GarmentDisplayLabel(garment.garmentType) : garmentKey)
     );
   });
-  // Measuring-for chips: every person, in card order, with the card labels.
+  // Measuring-for chips: every person, in card order, with card labels and per-wearer completion.
   const measurementWearerChips = measurementActiveWearerLabel
     ? [...wearerOrderForPlan.wearers]
         .sort((left, right) => left.presentationOrder - right.presentationOrder)
+        .map((wearer) => {
+          const completion =
+            wearerOrderMeasurementCompletion.byWearerId?.[wearer.wearerId];
+          return {
+            wearerId: wearer.wearerId,
+            label: labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
+            ...(completion
+              ? {
+                  completedCount: completion.completedCount,
+                  requiredCount: completion.requiredCount,
+                  complete: completion.complete,
+                  hasAssignedGarments: completion.hasAssignedGarments,
+                }
+              : {}),
+          };
+        })
+    : [];
+  const copyableBodyMeasurementWearers = activeWearer
+    ? [...wearerOrderForPlan.wearers]
+        .sort((left, right) => left.presentationOrder - right.presentationOrder)
+        .filter((wearer) => wearer.wearerId !== activeWearer.wearerId)
         .map((wearer) => ({
           wearerId: wearer.wearerId,
           label: labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
+          sharedCount: Object.keys(
+            getWearerCopyableSharedBodyMeasurements(wearer.measurement),
+          ).length,
         }))
+        .filter((candidate) => candidate.sharedCount > 0)
     : [];
-  /** One select-wearer path for the people panel, Measuring-for chips, and Go to person. */
-  const handleSelectMeasurementWearer = (wearerId: string) => {
-    const next = wearerOrderForPlan.wearers.find(
-      (wearer) => wearer.wearerId === wearerId,
+  const commitWearerMeasurement = (
+    wearerId: string | null | undefined,
+    updater:
+      | FutureMeasurementStateV1
+      | ((current: FutureMeasurementStateV1) => FutureMeasurementStateV1),
+  ) => {
+    const baseOrder = wearerOrderForPlanRef.current;
+    const targetWearerId = wearerId || activeWearerIdRef.current || null;
+    if (!targetWearerId) return null;
+    const targetWearer = baseOrder.wearers.find(
+      (wearer) => wearer.wearerId === targetWearerId,
+    );
+    if (!targetWearer) return null;
+    const nextMeasurement =
+      typeof updater === "function"
+        ? updater(targetWearer.measurement)
+        : updater;
+    const nextOrder = applyWearerMeasurementUpdate(
+      baseOrder,
+      baseOrder,
+      targetWearerId,
+      nextMeasurement,
+    );
+    wearerOrderForPlanRef.current = nextOrder;
+    setWearerOrder((stored) =>
+      applyWearerMeasurementUpdate(
+        stored,
+        nextOrder,
+        targetWearerId,
+        nextMeasurement,
+      ),
+    );
+    return nextOrder;
+  };
+  /** One atomic select-wearer path for the people panel, Measuring-for chips, and Go to person. */
+  const selectWearer = (nextWearerId: string) => {
+    const currentOrder = wearerOrderForPlanRef.current;
+    const next = currentOrder.wearers.find(
+      (wearer) => wearer.wearerId === nextWearerId,
     );
     if (!next) return;
-    setWearerOrder(wearerOrderForPlan);
-    activeWearerIdRef.current = wearerId;
-    setActiveWearerId(wearerId);
+    activeWearerIdRef.current = nextWearerId;
+    setActiveWearerId(nextWearerId);
     setHydratedMeasurementGarmentKey(null);
-    setFutureMeasurementState(next.measurement);
   };
-  /** Person-card garment tick / untick: assignment only, live form re-synced to the current selection. */
+  const handleSelectMeasurementWearer = selectWearer;
+  /** Person-card garment tick / untick: assignment only; measurements live per wearer in wearerOrder. */
   const measurementGarmentToggleHandlers = createWearerGarmentToggleHandlers({
     getOrder: () => wearerOrderForPlanRef.current,
     getActiveWearerId: () => activeWearerIdRef.current,
@@ -4279,8 +4353,6 @@ export default function DesignStudioView({
       wearerOrderForPlanRef.current = order;
       setWearerOrder(order);
     },
-    setLiveForm: (measurement) =>
-      setFutureMeasurementState(measurement || createEmptyFutureMeasurementState()),
     reconcileOrder: (order) =>
       reconcileWearerOrder({
         order,
@@ -5087,8 +5159,10 @@ export default function DesignStudioView({
     setHighestUnlockedStageIndex(0);
     setFutureAiTryOnWorkflow(createEmptyAiTryOnWorkflowState());
     clearAiTryOnSessionMemory();
-    setFutureMeasurementState(createEmptyFutureMeasurementState());
-    setWearerOrder(createEmptyWearerOrder());
+    const emptyWearerOrder = createEmptyWearerOrder();
+    wearerOrderForPlanRef.current = emptyWearerOrder;
+    setWearerOrder(emptyWearerOrder);
+    activeWearerIdRef.current = null;
     setActiveWearerId(null);
     setHydratedMeasurementGarmentKey(null);
     pendingResumeScrollYRef.current = null;
@@ -5853,7 +5927,6 @@ export default function DesignStudioView({
                         : "garment_type";
       setFutureStageId(restoredStageId);
       setFutureAiTryOnWorkflow(restoredAiTryOnWorkflow);
-      setWearerOrder(restoredWearerOrder);
       const restoredResumeLocus = resolveDesignStudioResumeLocus({
         locus: storedDraft?.resumeLocus,
         wearerIds: restoredWearerOrder.wearers.map((wearer) => wearer.wearerId),
@@ -5865,24 +5938,28 @@ export default function DesignStudioView({
         restoredResumeLocus.activeWearerId ||
         restoredWearerOrder.wearers[0]?.wearerId ||
         null;
-      const restoredWearerMeasurement =
-        restoredWearerOrder.wearers.find(
-          (wearer) => wearer.wearerId === restoredWearerId,
-        )?.measurement || restoredReconciledMeasurementState;
+      const hydratedWearerOrder =
+        restoredWearerId && restoredResumeLocus.measurementGarmentKey
+          ? updateWearerMeasurement(
+              restoredWearerOrder,
+              restoredWearerId,
+              {
+                ...(restoredWearerOrder.wearers.find(
+                  (wearer) => wearer.wearerId === restoredWearerId,
+                )?.measurement || restoredReconciledMeasurementState),
+                activeGarmentKey: restoredResumeLocus.measurementGarmentKey,
+              },
+            )
+          : restoredWearerOrder;
+      wearerOrderForPlanRef.current = hydratedWearerOrder;
+      setWearerOrder(hydratedWearerOrder);
+      activeWearerIdRef.current = restoredWearerId;
       setActiveWearerId(restoredWearerId);
       setHydratedMeasurementGarmentKey(
         restoredResumeLocus.measurementGarmentKey,
       );
       pendingResumeScrollYRef.current = restoredResumeLocus.scrollY;
       pendingRestoreStageAnchorRef.current = Boolean(storedDraft);
-      setFutureMeasurementState(
-        restoredResumeLocus.measurementGarmentKey
-          ? {
-              ...restoredWearerMeasurement,
-              activeGarmentKey: restoredResumeLocus.measurementGarmentKey,
-            }
-          : restoredWearerMeasurement,
-      );
       setFutureShippingState(restoredShippingResolution.state);
       setFutureSelectedStyleId(restoredStyleId);
       setFutureDesignSource(restoredDesignSource);
@@ -6879,7 +6956,7 @@ export default function DesignStudioView({
           : // Draft stores canonical (trimmed) names; the live field keeps the raw value.
             canonicalizeWearerOrderNames(wearerOrderForPlanRef.current),
         resumeLocus: createDesignStudioResumeLocus({
-          activeWearerId,
+          activeWearerId: activeWearerIdRef.current || activeWearer?.wearerId || null,
           measurementGarmentKey:
             futureMeasurementState.activeGarmentKey ||
             hydratedMeasurementGarmentKey,
@@ -9733,19 +9810,16 @@ export default function DesignStudioView({
     if (route === "critical_risk" && !futureMeasurementPlan.criticalRiskSupported) {
       return;
     }
-    const next = setFutureMeasurementRoute(reconciledFutureMeasurementState, route);
-    setFutureMeasurementState(next);
     const currentWearerId = activeWearerIdRef.current || activeWearer?.wearerId;
-    if (currentWearerId) {
-      setWearerOrder((order) =>
-        applyWearerMeasurementUpdate(
-          order,
-          wearerOrderForPlanRef.current,
-          currentWearerId,
-          next,
-        ),
-      );
-    }
+    if (!currentWearerId) return;
+    commitWearerMeasurement(currentWearerId, (current) =>
+      setFutureMeasurementRoute(
+        currentWearerId === activeWearer?.wearerId
+          ? reconciledFutureMeasurementState
+          : current,
+        route,
+      ),
+    );
   };
   const updateFutureScopedCustomDetails = (
     update: (current: DesignSelections) => DesignSelections,
@@ -10724,8 +10798,12 @@ export default function DesignStudioView({
         setUploadedDesignAdditionalGarmentTypes([...garmentTypes]),
       setFabricAllocationState,
       setDesignSelections,
-      setMeasurementState: (state) => {
-        setFutureMeasurementState(state);
+      setMeasurementState: () => {
+        const nextOrder = removeGarmentFromWearerOrder(
+          wearerOrderForPlanRef.current,
+          garmentKey,
+        );
+        wearerOrderForPlanRef.current = nextOrder;
         setWearerOrder((order) => removeGarmentFromWearerOrder(order, garmentKey));
       },
       setAiTryOnWorkflowState: setFutureAiTryOnWorkflow,
@@ -11530,7 +11608,7 @@ export default function DesignStudioView({
         savedStage: futureStageId,
         savedStep: getDesignStudioStepCounter(futureStageId).step,
         resumeLocus: createDesignStudioResumeLocus({
-          activeWearerId,
+          activeWearerId: activeWearerIdRef.current || activeWearer?.wearerId || null,
           measurementGarmentKey:
             futureMeasurementState.activeGarmentKey ||
             hydratedMeasurementGarmentKey,
@@ -12245,8 +12323,9 @@ export default function DesignStudioView({
           additionalGarmentConstructions={designSelections.additionalGarmentConstructions}
           onSelectWearer={handleSelectMeasurementWearer}
           onAddWearer={(displayName, fitContext) => {
+            const currentOrder = wearerOrderForPlanRef.current;
             const result = addWearer({
-              order: wearerOrderForPlan,
+              order: currentOrder,
               physicalGarmentCount: futureMeasurementPhysicalGarments.length,
               displayName,
               fitContext,
@@ -12254,17 +12333,23 @@ export default function DesignStudioView({
             if (result.status !== "updated") return;
             wearerOrderForPlanRef.current = result.order;
             setWearerOrder(result.order);
-            if (wearerOrderForPlan.wearers.length === 1) {
-              // Sole -> Split cleared the assignments and stripped those garments'
-              // fields; keep the live form bag aligned so they cannot re-inject.
-              const activeId = activeWearer?.wearerId;
-              const synced =
-                result.order.wearers.find((wearer) => wearer.wearerId === activeId) ||
-                result.order.wearers[0];
-              setFutureMeasurementState(
-                synced?.measurement || createEmptyFutureMeasurementState(),
-              );
-            }
+            const previousIds = new Set(
+              currentOrder.wearers.map((wearer) => wearer.wearerId),
+            );
+            const addedWearer = result.order.wearers.find(
+              (wearer) => !previousIds.has(wearer.wearerId),
+            );
+            const nextActiveId =
+              addedWearer?.wearerId ||
+              (activeWearerIdRef.current &&
+              result.order.wearers.some(
+                (wearer) => wearer.wearerId === activeWearerIdRef.current,
+              )
+                ? activeWearerIdRef.current
+                : result.order.wearers[0]?.wearerId || null);
+            activeWearerIdRef.current = nextActiveId;
+            setActiveWearerId(nextActiveId);
+            setHydratedMeasurementGarmentKey(null);
           }}
           onRenameWearer={(wearerId, displayName) => {
             const result = renameWearer(wearerOrderForPlanRef.current, wearerId, displayName);
@@ -12300,12 +12385,14 @@ export default function DesignStudioView({
                   : result.order;
               wearerOrderForPlanRef.current = nextOrder;
               setWearerOrder(nextOrder);
-              if (activeWearer?.wearerId === wearerId) {
-                setActiveWearerId(nextOrder.wearers[0]?.wearerId || null);
-                setFutureMeasurementState(
-                  nextOrder.wearers[0]?.measurement ||
-                    createEmptyFutureMeasurementState(),
-                );
+              if (
+                activeWearerIdRef.current === wearerId ||
+                activeWearer?.wearerId === wearerId
+              ) {
+                const nextActiveId = nextOrder.wearers[0]?.wearerId || null;
+                activeWearerIdRef.current = nextActiveId;
+                setActiveWearerId(nextActiveId);
+                setHydratedMeasurementGarmentKey(null);
               }
             }
             return result.status === "updated"
@@ -12341,11 +12428,10 @@ export default function DesignStudioView({
             });
             wearerOrderForPlanRef.current = nextOrder;
             setWearerOrder(nextOrder);
-            const sole = nextOrder.wearers[0];
-            setActiveWearerId(sole?.wearerId || null);
-            setFutureMeasurementState(
-              sole?.measurement || createEmptyFutureMeasurementState(),
-            );
+            const soleWearerId = nextOrder.wearers[0]?.wearerId || null;
+            activeWearerIdRef.current = soleWearerId;
+            setActiveWearerId(soleWearerId);
+            setHydratedMeasurementGarmentKey(null);
           }}
           onUnsavedNameWearerIdsChange={(wearerIds) => {
             setUnsavedWearerNameIds((current) =>
@@ -12381,6 +12467,30 @@ export default function DesignStudioView({
           wearerChips={measurementWearerChips}
           activeWearerId={activeWearer?.wearerId || null}
           onSelectWearer={handleSelectMeasurementWearer}
+          copyableBodyMeasurementWearers={copyableBodyMeasurementWearers}
+          onCopySharedBodyMeasurements={(sourceWearerId) => {
+            if (futureMeasurementHydrationInvalid) return null;
+            const targetWearerId =
+              activeWearerIdRef.current || activeWearer?.wearerId;
+            if (!targetWearerId) return null;
+            const copied = copySharedBodyMeasurementsBetweenWearers({
+              order: wearerOrderForPlanRef.current,
+              sourceWearerId,
+              targetWearerId,
+            });
+            if (
+              copied.status !== "copied" ||
+              !copied.previousTargetMeasurement
+            ) {
+              return null;
+            }
+            wearerOrderForPlanRef.current = copied.order;
+            setWearerOrder(copied.order);
+            return {
+              copiedCount: copied.copiedCount,
+              previousMeasurement: copied.previousTargetMeasurement,
+            };
+          }}
           onAssignUnassignedGarment={(garmentKey, wearerId) => {
             const garment = futureMeasurementPhysicalGarments.find(
               (candidate) => candidate.garmentKey === garmentKey,
@@ -12422,12 +12532,6 @@ export default function DesignStudioView({
             activeWearerIdRef.current = wearerId;
             setActiveWearerId(wearerId);
             setHydratedMeasurementGarmentKey(garmentKey);
-            const targetWearer = nextOrder.wearers.find(
-              (wearer) => wearer.wearerId === wearerId,
-            );
-            if (targetWearer) {
-              setFutureMeasurementState(targetWearer.measurement);
-            }
           }}
           onAddPersonAndAssignGarment={(displayName, garmentKey) => {
             const defaultRoute =
@@ -12470,12 +12574,6 @@ export default function DesignStudioView({
             activeWearerIdRef.current = result.wearerId;
             setActiveWearerId(result.wearerId);
             setHydratedMeasurementGarmentKey(garmentKey);
-            const targetWearer = nextOrder.wearers.find(
-              (wearer) => wearer.wearerId === result.wearerId,
-            );
-            if (targetWearer) {
-              setFutureMeasurementState(targetWearer.measurement);
-            }
           }}
           groupFocusRequest={measurementGroupFocusRequest}
           onGroupFocusHandled={(requestId, found) => {
@@ -12498,8 +12596,15 @@ export default function DesignStudioView({
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
             if (futureMeasurementHydrationInvalid) return;
+            const currentWearerId =
+              activeWearerIdRef.current || activeWearer?.wearerId;
+            if (!currentWearerId) return;
+            const previousMeasurement =
+              wearerOrderForPlanRef.current.wearers.find(
+                (wearer) => wearer.wearerId === currentWearerId,
+              )?.measurement ?? futureMeasurementState;
             const previousBagFilled = !isFutureMeasurementEnteredBagEmpty(
-              getActiveFutureMeasurementEntered(futureMeasurementState),
+              getActiveFutureMeasurementEntered(previousMeasurement),
             );
             const nextBagEmpty = isFutureMeasurementEnteredBagEmpty(
               getActiveFutureMeasurementEntered(state),
@@ -12511,17 +12616,7 @@ export default function DesignStudioView({
             ) {
               setHydratedMeasurementGarmentKey(null);
             }
-            setFutureMeasurementState(state);
-            if (activeWearer) {
-              setWearerOrder((order) =>
-                applyWearerMeasurementUpdate(
-                  order,
-                  reconciledWearerOrder,
-                  activeWearer.wearerId,
-                  state,
-                ),
-              );
-            }
+            commitWearerMeasurement(currentWearerId, state);
             if (previousBagFilled && nextBagEmpty) {
               futureDraftAutosaveDelayMsRef.current = 0;
               setMeasurementPersistFlushNonce((current) => current + 1);
