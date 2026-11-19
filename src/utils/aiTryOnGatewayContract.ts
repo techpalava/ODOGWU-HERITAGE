@@ -54,7 +54,8 @@ export type AiTryOnMode = "garment" | "fabric";
 // are applied exactly, and front placket buttons plus long-sleeve wrist
 // cuffs stay with the design-style reference.
 // v11: top tuck styling (untucked by default; optional tucked/untucked override).
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v11" as const;
+// v12: Long Shirt length fidelity (mid-thigh/knee tunic, untucked, covers hips and trouser waistband).
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v12" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -74,7 +75,8 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v11" as const;
 // v8: a short studio base (bum shorts or short knickers) is replaced by the
 // ordered skirt, shorts or dress. Lower legs stay bare. No trouser legs.
 // v9: share photo v11 top tuck styling rules.
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v9" as const;
+// v10: share photo v12 Long Shirt length fidelity and hip/waistband coverage.
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v10" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
@@ -107,7 +109,8 @@ export const AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION = "tryon-style-photo-prompt-v1
 // keeps front placket buttons and long-sleeve wrist cuffs from its design reference.
 // v3: top tuck styling (auto front-tuck when bottom has belt holder / rope;
 // untucked otherwise, or explicit untucked / tucked override).
-export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v3" as const;
+// v4: Long Shirt combined outfit length fidelity (mid-thigh/knee tunic, untucked, covers hips and trouser waistband, lower legs only).
+export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v4" as const;
 
 export const AI_TRY_ON_TOP_TUCK_PREFERENCES = ["auto", "untucked", "tucked"] as const;
 export type AiTryOnTopTuckPreference = (typeof AI_TRY_ON_TOP_TUCK_PREFERENCES)[number];
