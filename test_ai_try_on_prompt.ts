@@ -45,7 +45,7 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment.
 Edit image 1 so this same customer wears only the ordered garment from image 2.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a waist-length button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
@@ -59,7 +59,7 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment'
 Edit image 1 so this same customer wears only the ordered garment from image 2, made only from the fabric in image 3.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a waist-length button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
@@ -100,7 +100,8 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v11": createHash("sha256")
+  "tryon-prompt-v11": "2d8f95c47fe8f1a8c96291a1367098e9fc76d9a9ba42d8fa315d18d45ca1f435",
+  "tryon-prompt-v12": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -113,7 +114,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v11");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v12");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -171,8 +172,9 @@ for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
 // v11 adds untucked-by-default shirt rule while keeping the prompt bounded.
-assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 505, "garment prompt stays short");
-assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 635, "fabric prompt stays short");
+// v12 adds Long Shirt length fidelity while keeping the prompt bounded.
+assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 545, "garment prompt stays short");
+assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 675, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
   8,
@@ -485,7 +487,8 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v11": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v11": "469046f4949e29a9ee3c379a25b306bce839e94bf2945a05b38f8cfcb9b11910",
+  "tryon-prompt-v12": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
@@ -716,5 +719,70 @@ assert.equal(
   }).ok,
   false,
 );
+
+// ---------------------------------------------------------------- Long Shirt fidelity
+// Item 1 from Fred's review: Long Shirt length fidelity in standalone and combined outfit prompts.
+{
+  const kaftanDetails: AiTryOnOrderDetails = {
+    garments: [{
+      garmentType: "kaftan",
+      optionIds: ["shirt_long_short", "neck_vert_round"],
+      decorations: ["embroidery"],
+    }],
+  };
+  for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+    const prompt = builder({ mode: "garment", orderDetails: kaftanDetails });
+    assert.match(prompt, /A named Standard Shirt must be a waist-length button-front shirt with a shirt hem/);
+    assert.match(prompt, /A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee/);
+    assert.match(prompt, /completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt/);
+    assert.match(prompt, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem\. Never tuck it in\./);
+    assert.match(prompt, /Garment: Long Shirt/);
+    assert.doesNotMatch(prompt, /\bKaftan\b/, "wording convention: customer/admin visible never says Kaftan");
+  }
+
+  // Combined outfit: Long Shirt + Trousers
+  const kaftanOutfitPrompt = buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/kaftan", orderDetails: kaftanDetails },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser", orderDetails: { garments: [{ garmentType: "trouser", optionIds: ["trouser_belt"], decorations: [] }] } },
+    ],
+  });
+  assert.match(kaftanOutfitPrompt, /Chosen top: Long Shirt/);
+  assert.match(kaftanOutfitPrompt, /Chosen bottom: Trouser/);
+  assert.match(kaftanOutfitPrompt, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband of the bottom garment with only the lower trouser legs visible below the hem\. Never tuck it in\./);
+  assert.match(kaftanOutfitPrompt, /A named Standard Shirt must be a waist-length button-front shirt/);
+  assert.match(kaftanOutfitPrompt, /A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee/);
+  assert.doesNotMatch(kaftanOutfitPrompt, /\bKaftan\b/, "combined outfit prompt never says Kaftan");
+
+  // Contrast with Standard Shirt:
+  // Standard Shirt with belt loops front-tucks on auto, or untucks completely on untucked
+  const standardShirtOutfitPrompt = buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "untucked",
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser", orderDetails: { garments: [{ garmentType: "trouser", optionIds: ["trouser_belt"], decorations: [] }] } },
+    ],
+  });
+  assert.match(standardShirtOutfitPrompt, /Chosen top: Standard Shirt/);
+  assert.match(standardShirtOutfitPrompt, /Top styling: wear the Standard Shirt completely untucked, hanging naturally outside and over the waistband/);
+
+  // Even with belt loops, Long Shirt NEVER front-tucks and always stays untucked covering waistband
+  const kaftanWithBeltPrompt = buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/kaftan", orderDetails: kaftanDetails },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser", orderDetails: { garments: [{ garmentType: "trouser", optionIds: ["trouser_belt"], decorations: [] }] } },
+    ],
+  });
+  assert.match(kaftanWithBeltPrompt, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband/);
+  assert.doesNotMatch(kaftanWithBeltPrompt, /front-tuck|French tuck/);
+
+  // Line cap compliance: multi-garment order with kaftan options never truncated
+  const orderBlock = buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: kaftanDetails });
+  assert.ok(orderBlock.split("\n").length <= AI_TRY_ON_ORDER_DETAILS_MAX_LINES);
+  assert.match(orderBlock, /Garment: Long Shirt/);
+}
 
 console.log(`PASS: AI Try-on prompt ${AI_TRY_ON_PROMPT_VERSION} snapshots, determinism, budget, mode choice, per-wearer hints`);
