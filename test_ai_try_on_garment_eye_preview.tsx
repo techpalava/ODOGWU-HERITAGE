@@ -1,6 +1,8 @@
 /**
- * AI Try-on garment-card eye preview: larger garment photo + optional selected
- * fabric swatch without changing garment selection.
+ * AI Try-on garment-card eye preview & fabric swatch visibility:
+ * - Inline Step 7 fabric rounded-square swatch + label on multi- and single-garment selectors
+ * - Larger garment photo + enlarged selected fabric swatch with click-to-toggle full-size view
+ *   without changing garment selection.
  * No network, Firestore, or Storage calls.
  */
 import assert from "node:assert/strict";
@@ -141,9 +143,10 @@ const closeDialog = async () => {
 };
 
 // ============================================================================
-// Test 1: Multi-garment picker renders an <Eye /> button per garment and
-// clicking an unselected garment's eye button opens the dialog without
-// changing the active garment selection.
+// Test 1: Multi-garment picker renders inline rounded-square swatches + labels,
+// renders an <Eye /> button per garment, and clicking an unselected garment's
+// eye button opens the dialog without changing the active garment selection.
+// Also tests toggling between garment style photo and full-size fabric swatch.
 // ============================================================================
 await renderPanel();
 
@@ -160,6 +163,30 @@ const garmentButtons = getGarmentButtons();
 assert.equal(garmentButtons.length, 2, "two garment buttons rendered");
 assert.equal(garmentButtons[0]!.props["aria-checked"], true, "first garment starts selected");
 assert.equal(garmentButtons[1]!.props["aria-checked"], false, "second garment starts unselected");
+
+// Inline fabric swatch + label checks for multi-garment compact pills
+{
+  const shirtMark = garmentButtons[0]!.findByProps({ "data-ai-try-on-fabric-mark": "compact" });
+  const shirtImg = shirtMark.findByProps({ "data-ai-try-on-fabric-swatch": "image" });
+  assert.equal(shirtImg.props.src, "https://example.com/swatches/burgundy.jpg");
+  assert.match(String(shirtImg.props.className), /scale-125/);
+  assert.match(String(shirtImg.props.className), /object-cover/);
+  const shirtSwatchFrameClass = String(shirtImg.parent?.props.className);
+  assert.match(shirtSwatchFrameClass, /\bsize-8\b/);
+  assert.match(shirtSwatchFrameClass, /\brounded-lg\b/);
+  assert.doesNotMatch(shirtSwatchFrameClass, /\brounded-full\b/);
+  const shirtLabel = shirtMark.findByProps({ "data-ai-try-on-fabric-label": "true" });
+  assert.equal(textContent(shirtLabel), "Burgundy · Senator");
+
+  const trouserMark = garmentButtons[1]!.findByProps({ "data-ai-try-on-fabric-mark": "compact" });
+  const trouserColor = trouserMark.findByProps({ "data-ai-try-on-garment-swatch": "color" });
+  assert.equal(trouserColor.props.style.backgroundColor, "#1E3A5F");
+  assert.match(String(trouserColor.props.className), /\bsize-8\b/);
+  assert.match(String(trouserColor.props.className), /\brounded-lg\b/);
+  assert.doesNotMatch(String(trouserColor.props.className), /\brounded-full\b/);
+  const trouserLabel = trouserMark.findByProps({ "data-ai-try-on-fabric-label": "true" });
+  assert.equal(textContent(trouserLabel), "Navy");
+}
 
 const eyeButtons = renderer!.root.findAll((node) => {
   const props = node.props as { "aria-label"?: string };
@@ -195,7 +222,7 @@ const garmentButtonsAfter = getGarmentButtons();
 assert.equal(garmentButtonsAfter[0]!.props["aria-checked"], true, "first garment remains selected");
 assert.equal(garmentButtonsAfter[1]!.props["aria-checked"], false, "unselected garment stays unselected");
 
-// Dialog opens with Trouser photo + colorHex fabric swatch
+// Dialog opens with Trouser photo + enlarged colorHex fabric swatch (non-toggleable)
 assert.equal(getDialogs().length, 1, "dialog opens for unselected garment");
 {
   const dialog = getDialogs()[0]!;
@@ -205,11 +232,18 @@ assert.equal(getDialogs().length, 1, "dialog opens for unselected garment");
 
   const swatchContainer = dialog.findAllByProps({ "data-catalogue-photo-preview-fabric-swatch": "true" });
   assert.equal(swatchContainer.length, 1, "fabric swatch badge renders for colorHex-only fabric");
+  assert.equal(
+    dialog.findAllByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" }).length,
+    0,
+    "color-only swatch does not render an image toggle button",
+  );
 
   const swatchColor = dialog.findByProps({ "data-catalogue-photo-preview-fabric-swatch-color": "true" });
   assert.equal(swatchColor.props.role, "img");
   assert.equal(swatchColor.props["aria-label"], "Selected fabric colour: Navy");
   assert.equal(swatchColor.props.style.backgroundColor, "#1E3A5F");
+  assert.match(String(swatchColor.props.className), /\bsize-16\b/);
+  assert.match(String(swatchColor.props.className), /\brounded-xl\b/);
 
   const swatchLabel = dialog.findByProps({ "data-catalogue-photo-preview-fabric-swatch-label": "true" });
   assert.equal(textContent(swatchLabel), "Navy");
@@ -218,7 +252,7 @@ assert.equal(getDialogs().length, 1, "dialog opens for unselected garment");
 await closeDialog();
 assert.equal(getDialogs().length, 0, "dialog closes cleanly");
 
-// Open first garment's eye button (Shirt - image swatch + colorHex fallback + colour/category label)
+// Open first garment's eye button (Shirt - image swatch + toggle to full-size fabric + onError fallback)
 await act(async () => {
   eyeButtons[0]!.props.onClick({
     stopPropagation() {},
@@ -229,38 +263,96 @@ assert.equal(getDialogs().length, 1, "dialog opens for first garment");
   const dialog = getDialogs()[0]!;
   const mainImg = dialog.findByProps({ "data-catalogue-photo-preview-image": "true" });
   assert.equal(mainImg.props.src, "https://example.com/shirt.jpg");
+  assert.equal(mainImg.props["data-catalogue-photo-preview-active-view"], "garment");
+
+  const toggleBtn = dialog.findByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" });
+  assert.equal(toggleBtn.props["aria-pressed"], false);
+  assert.equal(toggleBtn.props["data-catalogue-photo-preview-fabric-active"], "false");
+  assert.equal(
+    dialog.findAllByProps({ "data-catalogue-photo-preview-fabric-active-badge": "true" }).length,
+    0,
+    "Viewing badge hidden while viewing garment style photo",
+  );
 
   const swatchImg = dialog.findByProps({ "data-catalogue-photo-preview-fabric-swatch-image": "true" });
   assert.equal(swatchImg.props.src, "https://example.com/swatches/burgundy.jpg");
   assert.equal(swatchImg.props.alt, "Selected fabric swatch: Burgundy · Senator");
+  assert.match(String(swatchImg.props.className), /scale-125/);
+  assert.match(String(swatchImg.parent?.props.className), /\bsize-16\b/);
+  assert.match(String(swatchImg.parent?.props.className), /\brounded-xl\b/);
 
   const swatchLabel = dialog.findByProps({ "data-catalogue-photo-preview-fabric-swatch-label": "true" });
   assert.equal(textContent(swatchLabel), "Burgundy · Senator");
 
-  // Simulate swatch image load failure -> graceful fallback to colorHex swatch
+  // Click fabric swatch button -> switches main photo to full-size fabric swatch
   await act(async () => {
-    swatchImg.props.onError();
+    toggleBtn.props.onClick();
+  });
+
+  const fabricViewDialog = getDialogs()[0]!;
+  const toggledMainImg = fabricViewDialog.findByProps({ "data-catalogue-photo-preview-image": "true" });
+  assert.equal(toggledMainImg.props.src, "https://example.com/swatches/burgundy.jpg");
+  assert.equal(toggledMainImg.props["data-catalogue-photo-preview-active-view"], "fabric");
+
+  const activeToggle = fabricViewDialog.findByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" });
+  assert.equal(activeToggle.props["aria-pressed"], true);
+  assert.equal(activeToggle.props["data-catalogue-photo-preview-fabric-active"], "true");
+  const viewingBadge = fabricViewDialog.findByProps({ "data-catalogue-photo-preview-fabric-active-badge": "true" });
+  assert.equal(textContent(viewingBadge), "Viewing");
+
+  // Click again -> switches back to garment style photo
+  await act(async () => {
+    activeToggle.props.onClick();
+  });
+
+  const backToGarmentDialog = getDialogs()[0]!;
+  const restoredMainImg = backToGarmentDialog.findByProps({ "data-catalogue-photo-preview-image": "true" });
+  assert.equal(restoredMainImg.props.src, "https://example.com/shirt.jpg");
+  assert.equal(restoredMainImg.props["data-catalogue-photo-preview-active-view"], "garment");
+  assert.equal(
+    backToGarmentDialog.findByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" }).props["aria-pressed"],
+    false,
+  );
+
+  // Toggle back to fabric view, then simulate swatch image load failure ->
+  // gracefully reverts main photo to garment style photo and shows colorHex fallback
+  await act(async () => {
+    backToGarmentDialog.findByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" }).props.onClick();
+  });
+  await act(async () => {
+    getDialogs()[0]!
+      .findByProps({ "data-catalogue-photo-preview-fabric-swatch-image": "true" })
+      .props.onError();
   });
 
   const dialogAfterError = getDialogs()[0]!;
+  const revertedMainImg = dialogAfterError.findByProps({ "data-catalogue-photo-preview-image": "true" });
+  assert.equal(revertedMainImg.props.src, "https://example.com/shirt.jpg");
   assert.equal(
     dialogAfterError.findAllByProps({ "data-catalogue-photo-preview-fabric-swatch-image": "true" }).length,
     0,
     "failed swatch image is replaced",
+  );
+  assert.equal(
+    dialogAfterError.findAllByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" }).length,
+    0,
+    "toggle button is replaced with static color swatch after image failure",
   );
   const fallbackColor = dialogAfterError.findByProps({
     "data-catalogue-photo-preview-fabric-swatch-color": "true",
   });
   assert.equal(fallbackColor.props.style.backgroundColor, "#5C1A1B");
   assert.equal(fallbackColor.props["aria-label"], "Selected fabric colour: Burgundy · Senator");
+  assert.match(String(fallbackColor.props.className), /\bsize-16\b/);
 }
 await closeDialog();
 
 console.log("PASS: AI Try-on multi-garment eye preview & fabric swatch tests");
 
 // ============================================================================
-// Test 2: Single-garment banner renders its <Eye /> button and opens
-// CataloguePhotoPreviewDialog with fabric swatch when present.
+// Test 2: Single-garment banner renders larger rounded-square swatch + inline
+// fabric label (`Blue · Lace`), renders its <Eye /> button, and opens
+// CataloguePhotoPreviewDialog with enlarged toggleable fabric swatch.
 // ============================================================================
 await renderPanel({
   targets: [
@@ -270,8 +362,8 @@ await renderPanel({
           garmentKey: "base:single-shirt",
           label: "Single Shirt",
           garmentImageUrl: "https://example.com/single-shirt.jpg",
-          fabricSwatchImageUrl: "https://example.com/swatches/emerald.jpg",
-          fabricColorHex: "#0B4F3A",
+          fabricSwatchImageUrl: "https://example.com/swatches/blue-lace.jpg",
+          fabricColorHex: "#1E40AF",
           garmentType: undefined,
           sourceKind: undefined,
           uploadedDesign: undefined,
@@ -280,8 +372,9 @@ await renderPanel({
           orderDetails: {
             garments: [],
             fabric: {
-              colour: "Emerald",
-              colourHex: "#0B4F3A",
+              colour: "Blue",
+              colourHex: "#1E40AF",
+              category: "Lace",
             },
           },
           inputFingerprint: null,
@@ -293,6 +386,20 @@ await renderPanel({
 
 const singleDesignRefs = renderer!.root.findAllByProps({ "data-ai-try-on-design-reference": "base:single-shirt" });
 assert.equal(singleDesignRefs.length, 1, "single garment design reference banner exists");
+
+{
+  const summaryMark = singleDesignRefs[0]!.findByProps({ "data-ai-try-on-fabric-mark": "summary" });
+  const summarySwatchImg = summaryMark.findByProps({ "data-ai-try-on-fabric-swatch": "image" });
+  assert.equal(summarySwatchImg.props.src, "https://example.com/swatches/blue-lace.jpg");
+  assert.match(String(summarySwatchImg.props.className), /scale-125/);
+  assert.match(String(summarySwatchImg.props.className), /object-cover/);
+  const summarySwatchFrameClass = String(summarySwatchImg.parent?.props.className);
+  assert.match(summarySwatchFrameClass, /\bsize-10\b/);
+  assert.match(summarySwatchFrameClass, /\brounded-lg\b/);
+  assert.doesNotMatch(summarySwatchFrameClass, /\brounded-full\b/);
+  const summaryLabel = summaryMark.findByProps({ "data-ai-try-on-fabric-label": "true" });
+  assert.equal(textContent(summaryLabel), "Blue · Lace");
+}
 
 const singleEyeButtons = renderer!.root.findAll((node) => {
   const props = node.props as { "aria-label"?: string };
@@ -316,14 +423,50 @@ assert.equal(getDialogs().length, 1, "single garment eye button opens preview di
   const mainImg = dialog.findByProps({ "data-catalogue-photo-preview-image": "true" });
   assert.equal(mainImg.props.src, "https://example.com/single-shirt.jpg");
   const swatchImg = dialog.findByProps({ "data-catalogue-photo-preview-fabric-swatch-image": "true" });
-  assert.equal(swatchImg.props.src, "https://example.com/swatches/emerald.jpg");
-  assert.equal(swatchImg.props.alt, "Selected fabric swatch: Emerald");
+  assert.equal(swatchImg.props.src, "https://example.com/swatches/blue-lace.jpg");
+  assert.equal(swatchImg.props.alt, "Selected fabric swatch: Blue · Lace");
+
+  // Click swatch toggle to view full-size Blue · Lace swatch
+  await act(async () => {
+    dialog.findByProps({ "data-catalogue-photo-preview-fabric-toggle": "true" }).props.onClick();
+  });
+  const enlargedSwatchView = getDialogs()[0]!.findByProps({ "data-catalogue-photo-preview-image": "true" });
+  assert.equal(enlargedSwatchView.props.src, "https://example.com/swatches/blue-lace.jpg");
+  assert.equal(enlargedSwatchView.props["data-catalogue-photo-preview-active-view"], "fabric");
 }
 await closeDialog();
 
+// Fallback inline label when fabricSwatchImageUrl is set without orderDetails.fabric
+await renderPanel({
+  targets: [
+    target({
+      previewableGarments: [
+        {
+          garmentKey: "base:image-only-fabric",
+          label: "Image Only Shirt",
+          garmentImageUrl: "https://example.com/image-only-shirt.jpg",
+          fabricSwatchImageUrl: "https://example.com/swatches/pattern.jpg",
+          fabricColorHex: null,
+          garmentType: undefined,
+          sourceKind: undefined,
+          uploadedDesign: undefined,
+          styleShowsWearer: undefined,
+          styleGender: null,
+          orderDetails: null,
+          inputFingerprint: null,
+        },
+      ],
+    }),
+  ],
+});
+{
+  const fallbackLabel = renderer!.root.findByProps({ "data-ai-try-on-fabric-label": "true" });
+  assert.equal(textContent(fallbackLabel), "Selected fabric");
+}
+
 // ============================================================================
 // Test 3: When neither fabricSwatchImageUrl nor fabricColorHex is present,
-// CataloguePhotoPreviewDialog omits the fabric swatch block cleanly.
+// both inline FabricMark and CataloguePhotoPreviewDialog omit the fabric swatch block.
 // ============================================================================
 await renderPanel({
   targets: [
@@ -347,6 +490,12 @@ await renderPanel({
     }),
   ],
 });
+
+assert.equal(
+  renderer!.root.findAllByProps({ "data-ai-try-on-fabric-mark": "summary" }).length,
+  0,
+  "inline fabric mark is omitted when neither swatch image nor color hex is present",
+);
 
 const plainEyeButton = renderer!.root.findByProps({ "aria-label": "View larger photo of Plain Shirt" });
 await act(async () => {
