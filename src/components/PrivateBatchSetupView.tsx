@@ -37,6 +37,29 @@ export const resolvePrivateBatchSubmitLimits = (
 const fieldClassName =
   "mt-1 min-h-11 w-full rounded-xl border border-heritage-green/20 bg-white px-3 py-2 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30 disabled:cursor-wait disabled:opacity-60";
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const getTodayLocalDateString = (now = new Date()): string => {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const isValidIsoDate = (value: string): boolean => {
+  if (!ISO_DATE_PATTERN.test(value)) return false;
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const parsed = new Date(year, month - 1, day);
+  return (
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
+};
+
 export const PrivateBatchSetupView = ({
   businessSettings,
   settingsLoaded,
@@ -58,9 +81,8 @@ export const PrivateBatchSetupView = ({
   // snapshot may replace the value. A string or number, including empty, is theirs.
   const [countryDraft, setCountryDraft] = useState<string | null>(null);
   const [city, setCity] = useState("");
-  const [preferredDeliveryMonth, setPreferredDeliveryMonth] = useState("");
+  const [preferredDeliveryDate, setPreferredDeliveryDate] = useState("");
   const [participantsDraft, setParticipantsDraft] = useState<number | null>(null);
-  const [closingDate, setClosingDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
@@ -71,6 +93,7 @@ export const PrivateBatchSetupView = ({
 
   const minParticipants = businessSettings.batchSettings.minParticipantsRequired;
   const maxParticipants = businessSettings.batchSettings.maxGarmentsPerBatch;
+  const minDeliveryDate = getTodayLocalDateString();
   const displayedError = error || externalError;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -89,12 +112,13 @@ export const PrivateBatchSetupView = ({
       setError("Please enter the delivery country and city.");
       return;
     }
-    if (!preferredDeliveryMonth) {
-      setError("Please choose your delivery target month.");
-      return;
-    }
-    if (!closingDate) {
-      setError("Please choose when member ordering should close.");
+    const todayLocalDate = getTodayLocalDateString();
+    if (
+      !preferredDeliveryDate ||
+      !isValidIsoDate(preferredDeliveryDate) ||
+      preferredDeliveryDate < todayLocalDate
+    ) {
+      setError("Please choose your delivery target date.");
       return;
     }
     if (
@@ -108,6 +132,8 @@ export const PrivateBatchSetupView = ({
       return;
     }
 
+    const preferredDeliveryMonth = preferredDeliveryDate.slice(0, 7);
+
     submissionInFlight.current = true;
     setIsSubmitting(true);
     try {
@@ -119,7 +145,7 @@ export const PrivateBatchSetupView = ({
         city: city.trim(),
         preferredDeliveryMonth,
         expectedParticipants,
-        closingDate,
+        closingDate: preferredDeliveryDate,
       });
       if (result.status === "error") setError(result.message);
     } catch {
@@ -187,17 +213,13 @@ export const PrivateBatchSetupView = ({
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
               Delivery Target (Need Date) <span aria-hidden="true">*</span>
-              <input data-testid="private-batch-delivery-target" type="month" value={preferredDeliveryMonth} onChange={(event) => setPreferredDeliveryMonth(event.target.value)} disabled={isSubmitting} className={fieldClassName} />
+              <input data-testid="private-batch-delivery-target" type="date" min={minDeliveryDate} value={preferredDeliveryDate} onChange={(event) => setPreferredDeliveryDate(event.target.value)} disabled={isSubmitting} className={fieldClassName} />
               <span className="mt-1 block text-xs font-normal text-heritage-ink/60">Delivery period: 3 to 4 weeks</span>
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green">
               Expected Participants <span aria-hidden="true">*</span>
               <input data-testid="private-batch-participants" type="number" min={minParticipants} max={maxParticipants} value={expectedParticipants} onChange={(event) => setParticipantsDraft(Number(event.target.value))} disabled={isSubmitting} className={fieldClassName} />
               <span className="mt-1 block text-xs font-normal text-heritage-ink/60">{minParticipants}–{maxParticipants} participants</span>
-            </label>
-            <label className="block min-w-0 text-sm font-semibold text-heritage-green sm:col-span-2">
-              Ordering Closes <span aria-hidden="true">*</span>
-              <input data-testid="private-batch-closing-date" type="date" value={closingDate} onChange={(event) => setClosingDate(event.target.value)} disabled={isSubmitting} className={fieldClassName} />
             </label>
             <label className="block min-w-0 text-sm font-semibold text-heritage-green sm:col-span-2">
               Description <span className="font-normal text-heritage-ink/55">(Optional)</span>

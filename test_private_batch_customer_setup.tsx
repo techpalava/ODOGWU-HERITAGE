@@ -33,8 +33,10 @@ assert.match(setupMarkup, /Description/);
 assert.match(setupMarkup, /\(Optional\)/);
 assert.match(setupMarkup, /data-private-batch-create-empty-description-ok="v1"/);
 assert.match(setupMarkup, /Delivery Target \(Need Date\) <span aria-hidden="true">\*<\/span>/);
+assert.match(setupMarkup, /data-testid="private-batch-delivery-target"[^>]*type="date"/);
 assert.match(setupMarkup, /Delivery period: 3 to 4 weeks/);
-assert.match(setupMarkup, /Ordering Closes <span aria-hidden="true">\*<\/span>/);
+assert.doesNotMatch(setupMarkup, /Ordering Closes/i);
+assert.doesNotMatch(setupMarkup, /private-batch-closing-date/);
 assert.doesNotMatch(setupMarkup, /Delivery Target(?! \(Need Date\))/);
 assert.doesNotMatch(setupMarkup, /Public \/ Private|Save as Draft|ownerUid|organizer ID/i);
 
@@ -72,6 +74,8 @@ await act(async () => {
         assert.equal(values.batchName, "Family Wedding 2026");
         assert.equal(values.occasion, "Wedding");
         assert.equal(values.description, "", "Optional description must submit empty when left blank");
+        assert.equal(values.preferredDeliveryMonth, "2027-06");
+        assert.equal(values.closingDate, "2027-06-15");
         await pendingSubmission;
         return { status: "created" as const };
       },
@@ -86,6 +90,13 @@ await act(async () => {
 });
 assert.match(root.findByProps({ role: "alert" }).children.join(""), /name for your Private Batch/);
 
+const now = new Date();
+const expectedTodayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+assert.equal(root.findAllByProps({ "data-testid": "private-batch-closing-date" }).length, 0);
+const deliveryTargetInput = root.findByProps({ "data-testid": "private-batch-delivery-target" });
+assert.equal(deliveryTargetInput.props.type, "date");
+assert.equal(deliveryTargetInput.props.min, expectedTodayLocal);
+
 const change = async (testId: string, value: string) => {
   await act(async () => {
     root.findByProps({ "data-testid": testId }).props.onChange({ target: { value } });
@@ -95,9 +106,48 @@ await change("private-batch-name", "Family Wedding 2026");
 await change("private-batch-occasion", "Wedding");
 await change("private-batch-country", "Netherlands");
 await change("private-batch-city", "Eindhoven");
-await change("private-batch-delivery-target", "2027-06");
 await change("private-batch-participants", "12");
-await change("private-batch-closing-date", "2027-04-01");
+
+// Empty delivery target date is rejected
+await act(async () => {
+  form.props.onSubmit({ preventDefault: () => undefined });
+});
+assert.equal(
+  root.findByProps({ role: "alert" }).children.join(""),
+  "Please choose your delivery target date.",
+);
+
+// Past delivery target date is rejected
+await change("private-batch-delivery-target", "2025-11-15");
+await act(async () => {
+  form.props.onSubmit({ preventDefault: () => undefined });
+});
+assert.equal(
+  root.findByProps({ role: "alert" }).children.join(""),
+  "Please choose your delivery target date.",
+);
+
+// Non-date / invalid calendar date is rejected
+await change("private-batch-delivery-target", "2027-06");
+await act(async () => {
+  form.props.onSubmit({ preventDefault: () => undefined });
+});
+assert.equal(
+  root.findByProps({ role: "alert" }).children.join(""),
+  "Please choose your delivery target date.",
+);
+
+await change("private-batch-delivery-target", "2027-02-30");
+await act(async () => {
+  form.props.onSubmit({ preventDefault: () => undefined });
+});
+assert.equal(
+  root.findByProps({ role: "alert" }).children.join(""),
+  "Please choose your delivery target date.",
+);
+
+// Valid future delivery target date submits without any closing-date input
+await change("private-batch-delivery-target", "2027-06-15");
 
 await act(async () => {
   void form.props.onSubmit({ preventDefault: () => undefined });
