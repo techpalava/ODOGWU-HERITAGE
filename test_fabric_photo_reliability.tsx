@@ -26,6 +26,7 @@ import {
   buildOptimizedImageSources,
   buildVercelImageUrl,
   FABRIC_CARD_IMAGE_PRESET,
+  FABRIC_PHOTO_PREVIEW_IMAGE_PRESET,
   FABRIC_PREVIEW_IMAGE_PRESET,
   FABRIC_THUMB_IMAGE_PRESET,
   isImageOptimizationEnabled,
@@ -130,7 +131,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
   assert.deepEqual(vercel.images.sizes, [...VERCEL_IMAGE_SIZES]);
   assert.ok(vercel.images.qualities.includes(VERCEL_IMAGE_QUALITY));
   assert.deepEqual(vercel.images.formats, ["image/webp"]);
-  for (const preset of [FABRIC_CARD_IMAGE_PRESET, FABRIC_PREVIEW_IMAGE_PRESET, FABRIC_THUMB_IMAGE_PRESET]) {
+  for (const preset of [FABRIC_CARD_IMAGE_PRESET, FABRIC_PHOTO_PREVIEW_IMAGE_PRESET, FABRIC_PREVIEW_IMAGE_PRESET, FABRIC_THUMB_IMAGE_PRESET]) {
     for (const width of [...preset.widths, preset.fallbackWidth]) {
       assert.ok(vercel.images.sizes.includes(width), `width ${width} must be in vercel.json sizes`);
     }
