@@ -9,7 +9,7 @@
 
 1. **Remote is `github` — never `origin`.**
 2. **Never edit on `main` or `production`.** Never reset, restore, clean, stash, rebase, force-push, delete a branch/worktree, or switch away from dirty work. Never expose secrets, tokens, env values, or real customer data.
-3. **Parallel-agent isolation:** If the checkout is dirty or shared by another chat, create a sibling worktree off `github/main`:
+3. **Parallel-agent isolation:** Always run `git fetch github main` first and never branch off local `main` (which can be stale). If the checkout is dirty or shared by another chat, create a sibling worktree off `github/main`:
    `git worktree add ../ODOGWU-HERITAGE-<slug> -b <branch> github/main`
    Prune/remove merged worktrees periodically. For inherited WIP, inspect staged/unstaged/untracked changes and preserve unrelated work.
 4. **Wording hard rule:** Customer- and admin-visible text must NEVER say `"Kaftan"` — always `"Long Shirt"` (internal key `kaftan` stays unchanged).
