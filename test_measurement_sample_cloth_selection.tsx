@@ -239,19 +239,50 @@ assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" 
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "sample_cloth" }).length, 0);
 
 selectMethod(renderer, "low_risk");
-// Single garment: unit block fills the card (no empty garment column, no divider).
+// Single garment: measurement unit is its own full-width row, with a prominent pill.
 const unitRow = renderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
 assert.equal(unitRow.props["data-measurement-unit-garment-layout"], "unit-only");
 assert.equal(unitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 0);
+const unitWrapper = unitRow.children[0] as ReactTestInstance;
+assert.match(unitWrapper.props.className, /flex-col/);
+assert.doesNotMatch(unitWrapper.props.className, /sm:flex-row|justify-between/);
 const unitFieldset = unitRow.find((node) => node.type === "fieldset");
-assert.doesNotMatch(unitFieldset.props.className, /border-l|border-t|max-w-xs|ml-auto/);
 assert.match(unitFieldset.props.className, /w-full/);
-assert.match(unitFieldset.props.className, /sm:grid-cols-\[minmax\(0,1fr\)_auto\]/);
-assert.doesNotMatch((unitRow.children[0] as ReactTestInstance).props.className, /sm:flex-row|justify-between/);
+assert.doesNotMatch(unitFieldset.props.className, /sm:border-l|max-w-xs|ml-auto|sm:grid-cols-/);
 const unitToggle = unitRow.findByProps({ "data-measurement-unit-toggle": "true" });
-assert.match(unitToggle.props.className, /sm:justify-self-end/);
+assert.match(unitToggle.props.className, /mt-3/);
+assert.doesNotMatch(unitToggle.props.className, /sm:justify-self-end|sm:row-span-2/);
+const unitButtons = unitToggle.findAll((node) => node.type === "button");
+assert.equal(unitButtons.length, 2);
+for (const button of unitButtons) {
+  assert.match(button.props.className, /min-h-12/);
+  assert.match(button.props.className, /text-sm/);
+  assert.match(button.props.className, /font-bold/);
+}
+assert.equal(unitFieldset.props["data-measurement-unit"], "cm");
+const inchesButton = unitButtons.find((node) => collectText(node) === "Inches");
+assert.ok(inchesButton);
+act(() => {
+  inchesButton.props.onClick();
+});
 assert.equal(
-  unitRow.find((node) => node.type === "fieldset").props["data-measurement-unit"],
+  renderer.root
+    .findByProps({ "data-measurement-unit-garment-row": "true" })
+    .find((node) => node.type === "fieldset").props["data-measurement-unit"],
+  "inch",
+);
+const centimetresButton = renderer.root
+  .findByProps({ "data-measurement-unit-toggle": "true" })
+  .findAll((node) => node.type === "button")
+  .find((node) => collectText(node) === "Centimetres");
+assert.ok(centimetresButton);
+act(() => {
+  centimetresButton.props.onClick();
+});
+assert.equal(
+  renderer.root
+    .findByProps({ "data-measurement-unit-garment-row": "true" })
+    .find((node) => node.type === "fieldset").props["data-measurement-unit"],
   "cm",
 );
 for (const buttonRow of renderer.root.findAllByProps({ "data-studio-step-actions-buttons": "true" })) {
@@ -495,11 +526,20 @@ act(() => {
 });
 selectMethod(twoRenderer, "low_risk");
 const splitRow = twoRenderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
-assert.equal(splitRow.props["data-measurement-unit-garment-layout"], "split");
+assert.equal(splitRow.props["data-measurement-unit-garment-layout"], "stacked");
 assert.equal(splitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 1);
+const stackedWrapper = splitRow.children[0] as ReactTestInstance;
+assert.match(stackedWrapper.props.className, /flex-col/);
+assert.doesNotMatch(stackedWrapper.props.className, /sm:flex-row/);
 const splitFieldset = splitRow.find((node) => node.type === "fieldset");
-assert.match(splitFieldset.props.className, /sm:border-l/);
-assert.match(splitFieldset.props.className, /sm:max-w-xs/);
+assert.match(String(splitFieldset.parent?.props.className ?? ""), /border-t/);
+assert.match(splitFieldset.props.className, /w-full/);
+assert.doesNotMatch(splitFieldset.props.className, /sm:border-l|sm:max-w-xs/);
+const splitToggle = splitRow.findByProps({ "data-measurement-unit-toggle": "true" });
+for (const button of splitToggle.findAll((node) => node.type === "button")) {
+  assert.match(button.props.className, /min-h-12/);
+  assert.match(button.props.className, /text-sm/);
+}
 assert.equal(
   splitFieldset.props["data-measurement-unit"],
   "cm",
