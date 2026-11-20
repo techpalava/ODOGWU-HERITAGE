@@ -2068,17 +2068,11 @@ export const DormantFutureMeasurementStep = ({
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
-        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "split" : "unit-only"}
+        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "stacked" : "unit-only"}
       >
-        <div
-          className={
-            measurementGarments.length > 1
-              ? "flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
-              : "min-w-0"
-          }
-        >
+        <div className="flex min-w-0 flex-col gap-5">
       {measurementGarments.length > 1 && (
-        <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
+        <div className="min-w-0" data-measurement-garment-picker="true">
           <h3 className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
             Choose a garment
           </h3>
@@ -2175,30 +2169,24 @@ export const DormantFutureMeasurementStep = ({
           )}
         </div>
       )}
+        <div className={measurementGarments.length > 1 ? "border-t border-heritage-gold/25 pt-5" : undefined}>
         <fieldset
           data-measurement-unit={state.unit}
-          className={
-            measurementGarments.length > 1
-              ? "min-w-0 shrink-0 border-t border-heritage-green/10 pt-4 sm:ml-auto sm:max-w-xs sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
-              : "grid min-w-0 w-full grid-cols-1 gap-x-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-          }
+          className="min-w-0 w-full rounded-xl border border-heritage-gold/30 bg-heritage-cream/45 p-4"
         >
-          <legend className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
+          <legend className="text-sm font-extrabold uppercase tracking-wide text-heritage-green">
             Measurement unit
           </legend>
           <p
             data-measurement-entry-unit={state.unit}
-            className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
+            className="mt-1 text-sm leading-snug font-medium text-heritage-ink/85"
             title="Each field shows that unit. Switching units converts what you already saved."
           >
-            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
-            <span className="sr-only"> Each field shows that unit.</span> Switching converts saved values.
+            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.<span className="sr-only"> Each field shows that unit.</span> Tap below to switch — saved values convert automatically.
           </p>
           <div
             data-measurement-unit-toggle="true"
-            className={`inline-flex max-w-full justify-self-start rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5 ${
-              measurementGarments.length > 1 ? "mt-3" : "mt-3 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:justify-self-end"
-            }`}
+            className="mt-3 inline-flex w-full max-w-md rounded-full border-2 border-heritage-green/35 bg-white p-1 shadow-sm sm:w-auto"
           >
             {(["cm", "inch"] as const).map((unit) => (
               <button
@@ -2206,10 +2194,10 @@ export const DormantFutureMeasurementStep = ({
                 type="button"
                 aria-pressed={state.unit === unit}
                 onClick={() => onChange(setFutureMeasurementUnit(resolvedState, unit))}
-                className={`min-h-9 rounded-full px-4 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                className={`min-h-12 flex-1 rounded-full px-6 text-sm font-bold tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1 sm:min-w-[164px] sm:flex-initial ${
                   state.unit === unit
                     ? "bg-heritage-green text-white shadow-sm"
-                    : "text-heritage-green hover:bg-white"
+                    : "text-heritage-green hover:bg-heritage-cream/70"
                 }`}
               >
                 {unit === "inch" ? "Inches" : "Centimetres"}
@@ -2217,6 +2205,7 @@ export const DormantFutureMeasurementStep = ({
             ))}
           </div>
         </fieldset>
+        </div>
         </div>
       </section>
 
