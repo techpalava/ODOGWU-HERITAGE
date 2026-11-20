@@ -1,0 +1,63 @@
+name: E2E checkout (manual)
+
+# Manual only. Never runs on push or pull_request.
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployment to test (E2E_BASE_URL), e.g. https://odogwu-heritage.vercel.app or a Vercel preview URL"
+        required: true
+        type: string
+      grep:
+        description: "Optional Playwright --grep filter (e.g. guest)"
+        required: false
+        type: string
+        default: ""
+      expect_wallet:
+        description: "Require Express Checkout to report a wallet (E2E_EXPECT_WALLET=1)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-checkout
+  cancel-in-progress: false
+
+jobs:
+  e2e-checkout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run checkout E2E
+        env:
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PIN: ${{ secrets.E2E_PIN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          E2E_EXPECT_WALLET: ${{ inputs.expect_wallet && '1' || '' }}
+          E2E_GREP: ${{ inputs.grep }}
+        run: |
+          if [ -n "$E2E_GREP" ]; then
+            npm run test:e2e:checkout -- --grep "$E2E_GREP"
+          else
+            npm run test:e2e:checkout
+          fi
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-checkout-report
+          path: |
+            playwright-report/e2e-checkout
+            test-results/e2e-checkout
+          retention-days: 7
