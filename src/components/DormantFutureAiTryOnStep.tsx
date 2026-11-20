@@ -16,7 +16,6 @@ import {
 import type { AiTryOnWorkflowStateV1 } from "../types";
 import { getAiTryOnWorkflowAllowedActions } from "../utils/aiTryOnWorkflow";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
-import { X } from "lucide-react";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import {
   AI_TRY_ON_ACCURACY_DISCLAIMER_BODY,
@@ -133,6 +132,7 @@ export const DormantFutureAiTryOnStep = ({
 
   useEffect(() => {
     if (forceShowDisclaimerModal) return;
+    if (typeof window === "undefined") return;
     try {
       if (
         Boolean(livePanel) &&
@@ -143,9 +143,10 @@ export const DormantFutureAiTryOnStep = ({
     } catch {}
   }, [livePanel, forceShowDisclaimerModal]);
 
-  useReportDesignStudioBlockingOverlay(disclaimerModalOpen);
+  useReportDesignStudioBlockingOverlay("ai-try-on-disclaimer-modal", disclaimerModalOpen);
 
   const closeDisclaimer = useCallback(() => {
+    if (typeof window === "undefined") return;
     try {
       window.sessionStorage.setItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY, "1");
     } catch {}
@@ -160,6 +161,7 @@ export const DormantFutureAiTryOnStep = ({
   }, [disclaimerModalOpen]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && disclaimerModalOpen) closeDisclaimer();
     };
@@ -262,6 +264,7 @@ export const DormantFutureAiTryOnStep = ({
           />
           <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
             <button
+              type="button"
               onClick={closeDisclaimer}
               className="absolute right-4 top-4 rounded-full p-2 text-heritage-ink/50 hover:bg-heritage-cream hover:text-heritage-green"
               aria-label="Close AI preview disclaimer"
@@ -275,6 +278,7 @@ export const DormantFutureAiTryOnStep = ({
               {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
             </p>
             <button
+              type="button"
               onClick={closeDisclaimer}
               className="mt-6 w-full rounded-xl bg-heritage-green py-3 text-sm font-bold text-white hover:bg-heritage-green/90"
             >

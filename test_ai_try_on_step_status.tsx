@@ -70,3 +70,52 @@ assert.ok(!panelSource.includes("AI_TRY_ON_RETENTION_NOTICE"), "retention merged
 const summarySource = readFileSync("src/utils/designStudioFutureSummary.ts", "utf8");
 assert.match(summarySource, /skipOrigin === "continued_while_generating"\) \{\s+return \{ status: "skipped", label: "No preview yet" \}/);
 console.log("AI Try-on step status tests passed");
+
+// 6. Accuracy disclaimer banner (data-ai-try-on-accuracy-disclaimer="true") renders when isLive or availability === "available"
+const completed: AiTryOnWorkflowStateV1 = { schemaVersion: 1, status: "completed", inputFingerprint: fp };
+const withLivePanel = render(completed, { isLive: true, availability: "available" });
+assert.ok(withLivePanel.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner renders when isLive=true");
+assert.ok(withLivePanel.includes("AI preview is a visual guide only"), "banner title renders");
+assert.ok(withLivePanel.includes("AI-generated previews can make mistakes"), "banner body renders");
+
+const withAvailableOnly = render(unavailable, { availability: "available" });
+assert.ok(withAvailableOnly.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner renders when availability=available");
+
+const withCheckingOnly = render(unavailable, { availability: "checking" });
+assert.ok(!withCheckingOnly.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner does NOT render when availability=checking");
+
+const noLiveOrAvailable = render(unavailable, { availability: "unavailable" });
+assert.ok(!noLiveOrAvailable.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner does NOT render when unavailable");
+
+// 7. Accuracy disclaimer modal (data-ai-try-on-accuracy-modal="true") renders with forceShowDisclaimerModal
+const modalHtml = render(completed, { forceShowDisclaimerModal: true });
+assert.ok(modalHtml.includes('data-ai-try-on-accuracy-modal="true"'), "modal renders with forceShowDisclaimerModal");
+assert.ok(modalHtml.includes('aria-modal="true"'), "modal has aria-modal");
+assert.ok(modalHtml.includes('role="dialog"'), "modal has role=dialog");
+assert.ok(modalHtml.includes('aria-labelledby="accuracy-modal-title"'), "modal has aria-labelledby");
+assert.ok(modalHtml.includes('aria-label="Close AI preview disclaimer"'), "close button has aria-label");
+assert.ok(modalHtml.includes("Got it, continue to AI Try-on"), "CTA button renders");
+assert.ok(modalHtml.includes("AI preview is a visual guide only"), "modal title renders");
+assert.ok(modalHtml.includes("AI-generated previews can make mistakes"), "modal body renders");
+
+// 8. Preview guide note (data-ai-try-on-preview-guide-note="true") renders in AiTryOnPhotoPanel
+// We can't fully render the photo panel without complex setup, so we verify the source contains the pattern
+const photoPanelSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
+assert.ok(
+  photoPanelSource.includes('data-ai-try-on-preview-guide-note="true"'),
+  "preview guide note attribute exists in AiTryOnPhotoPanel"
+);
+assert.ok(
+  photoPanelSource.includes("AI_TRY_ON_PREVIEW_GUIDE_NOTE"),
+  "preview guide note constant is used in AiTryOnPhotoPanel"
+);
+
+// 9. AI_TRY_ON_CONSENT_NOTICE is untouched and no "Kaftan" in new copy
+const orderImageCopySource = readFileSync("src/utils/aiTryOnOrderImageCopy.ts", "utf8");
+assert.ok(!orderImageCopySource.includes("Kaftan"), "no Kaftan in aiTryOnOrderImageCopy.ts");
+const dormantSource = readFileSync("src/components/DormantFutureAiTryOnStep.tsx", "utf8");
+assert.ok(!dormantSource.includes("Kaftan"), "no Kaftan in DormantFutureAiTryOnStep.tsx");
+const aiTryOnPhotoPanelSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
+assert.ok(!aiTryOnPhotoPanelSource.includes("Kaftan"), "no Kaftan in AiTryOnPhotoPanel.tsx");
+
+console.log("AI Try-on step status tests passed");
