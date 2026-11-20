@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   RefreshCw,
   ShieldCheck,
   SkipForward,
+  X,
 } from "lucide-react";
 import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
 import {
@@ -15,6 +16,14 @@ import {
 import type { AiTryOnWorkflowStateV1 } from "../types";
 import { getAiTryOnWorkflowAllowedActions } from "../utils/aiTryOnWorkflow";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { X } from "lucide-react";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
+import {
+  AI_TRY_ON_ACCURACY_DISCLAIMER_BODY,
+  AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE,
+  AI_TRY_ON_PREVIEW_GUIDE_NOTE,
+  AI_TRY_ON_ACCURACY_MODAL_CTA,
+} from "../utils/aiTryOnOrderImageCopy";
 
 interface DormantFutureAiTryOnStepProps {
   workflow: AiTryOnWorkflowStateV1;
@@ -42,6 +51,8 @@ interface DormantFutureAiTryOnStepProps {
   availability?: "checking" | "available" | "unavailable";
   /** Step names still incomplete, e.g. ["Custom Details"]. */
   missingInputs?: readonly string[];
+  /** Force open the disclaimer modal. */
+  forceShowDisclaimerModal?: boolean;
 }
 
 /** "A", "A and B", "A, B and C". */
@@ -102,6 +113,8 @@ const STATUS_PRESENTATION: Readonly<
   },
 };
 
+const AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY = "odogwu_ai_try_on_accuracy_disclaimer_seen_v1";
+
 export const DormantFutureAiTryOnStep = ({
   workflow,
   skipAllowed,
@@ -113,7 +126,47 @@ export const DormantFutureAiTryOnStep = ({
   generating = false,
   availability,
   missingInputs,
+  forceShowDisclaimerModal = false,
 }: DormantFutureAiTryOnStepProps) => {
+  const [disclaimerModalOpen, setDisclaimerModalOpen] = useState(Boolean(forceShowDisclaimerModal));
+  const lastFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (forceShowDisclaimerModal) return;
+    try {
+      if (
+        Boolean(livePanel) &&
+        window.sessionStorage.getItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY) !== "1"
+      ) {
+        setDisclaimerModalOpen(true);
+      }
+    } catch {}
+  }, [livePanel, forceShowDisclaimerModal]);
+
+  useReportDesignStudioBlockingOverlay(disclaimerModalOpen);
+
+  const closeDisclaimer = useCallback(() => {
+    try {
+      window.sessionStorage.setItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY, "1");
+    } catch {}
+    setDisclaimerModalOpen(false);
+    lastFocusedElement.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (disclaimerModalOpen) {
+      lastFocusedElement.current = document.activeElement as HTMLElement;
+    }
+  }, [disclaimerModalOpen]);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && disclaimerModalOpen) closeDisclaimer();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [disclaimerModalOpen, closeDisclaimer]);
+
   const isLive = Boolean(livePanel);
   // One honest status: "unavailable" only when the server said so, nothing
   // while still checking, and a skip only when the customer chose it.
@@ -182,7 +235,68 @@ export const DormantFutureAiTryOnStep = ({
             ? "Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."
             : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
+                <div className="mt-4 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-4">
+          <h3 className="font-serif text-base font-bold text-heritage-green">
+            {AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE}
+          </h3>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+            {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
+          </p>
+          <p className="mt-2 text-xs font-medium text-heritage-ink/60">
+            {AI_TRY_ON_PREVIEW_GUIDE_NOTE}
+          </p>
+        </div>
       </div>
+
+      {disclaimerModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-ai-try-on-accuracy-modal="true"
+          aria-labelledby="accuracy-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          <div
+            className="absolute inset-0 bg-heritage-green/50 backdrop-blur-sm"
+            onClick={closeDisclaimer}
+          />
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <button
+              onClick={closeDisclaimer}
+              className="absolute right-4 top-4 rounded-full p-2 text-heritage-ink/50 hover:bg-heritage-cream hover:text-heritage-green"
+              aria-label="Close AI preview disclaimer"
+            >
+              <X size={20} />
+            </button>
+            <h2 id="accuracy-modal-title" className="font-serif text-xl font-bold text-heritage-green">
+              {AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE}
+            </h2>
+            <p className="mt-4 text-sm leading-relaxed text-heritage-ink/70">
+              {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
+            </p>
+            <button
+              onClick={closeDisclaimer}
+              className="mt-6 w-full rounded-xl bg-heritage-green py-3 text-sm font-bold text-white hover:bg-heritage-green/90"
+            >
+              {AI_TRY_ON_ACCURACY_MODAL_CTA}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(isLive || availability === "available") && (
+        <div
+          data-ai-try-on-accuracy-disclaimer="true"
+          className="rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-4"
+        >
+          <h3 className="font-serif text-base font-bold text-heritage-green">
+            {AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE}
+          </h3>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+            {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
+          </p>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-6">
         {showStatusCard && (

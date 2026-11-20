@@ -98,3 +98,19 @@ export const AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY = {
   panelNotice:
     "we delete your photo straight after the preview is made. We keep the preview privately for up to 30 days, or until you place your order, and delete it sooner if you ask. If you order, we keep one preview per garment and the latest combined outfit preview per person with the order for 60 days so our team and tailors can see what you chose. We never share your photo with our workshop.",
 } as const;
+
+/**
+ * AI Try-on accuracy disclaimer wording (approved by Xavier).
+ * Used in the AI Try-on step and the photo panel to set expectations.
+ */
+export const AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE =
+  "AI preview is a visual guide only";
+
+export const AI_TRY_ON_ACCURACY_DISCLAIMER_BODY =
+  "AI-generated previews can make mistakes or miss fine garment details. Our Lagos tailors always sew from your selected Design Style, Fabric, Custom Details, and Measurements — your order choices always take precedence over the AI image.";
+
+export const AI_TRY_ON_PREVIEW_GUIDE_NOTE =
+  "Visual guide only — your tailor follows your chosen Design Style, Fabric, and Custom Details.";
+
+export const AI_TRY_ON_ACCURACY_MODAL_CTA =
+  "Got it, continue to AI Try-on";
