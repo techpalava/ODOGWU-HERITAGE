@@ -15,6 +15,7 @@ import {
   buildAiTryOnModelPrompt,
   buildAiTryOnOutfitPrompt,
   buildAiTryOnPrompt,
+  buildAiTryOnStylePhotoPrompt,
 } from "./src/server/aiTryOnPrompt";
 import { chooseAiTryOnMode } from "./src/utils/aiTryOnGatewayContract";
 import {
@@ -48,6 +49,7 @@ From image 1 keep only the customer's identity, face, hair, skin tone, body shap
 When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a waist-length button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details.
+Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes. Never erase, smooth, resize, reposition or flatten them into a plain garment. Apply the selected fabric's pattern, texture, weave and base colour to the main body. Render contrast patches, pockets and panels as a lighter or darker tone of that same fabric, with clear seam edges. Do not invent new colours or keep clashing reference colours.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
 Ignore everything that is not the person or the garment: app or website interface, interface buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
@@ -63,6 +65,7 @@ When the order details name garment types, make those types only, and they win o
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
+Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes. Never erase, smooth, resize, reposition or flatten them into a plain garment. Apply the selected fabric's pattern, texture, weave and base colour to the main body. Render contrast patches, pockets and panels as a lighter or darker tone of that same fabric, with clear seam edges. Do not invent new colours or keep clashing reference colours.
 From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
 Do not take any colour, pattern or texture from the clothes in image 1.
 Use only what is in image 3. Do not invent or add prints, motifs or colours.
@@ -101,7 +104,7 @@ assert.equal(
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
   "tryon-prompt-v11": "2d8f95c47fe8f1a8c96291a1367098e9fc76d9a9ba42d8fa315d18d45ca1f435",
-  "tryon-prompt-v12": createHash("sha256")
+  "tryon-prompt-v13": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -114,7 +117,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v12");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v13");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -173,8 +176,9 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
 // v11 adds untucked-by-default shirt rule while keeping the prompt bounded.
 // v12 adds Long Shirt length fidelity while keeping the prompt bounded.
-assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 545, "garment prompt stays short");
-assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 675, "fabric prompt stays short");
+// v13 adds the Design Style surface line: 83 words in both modes (545+83, 675+83).
+assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 628, "garment prompt stays short");
+assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 758, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
   8,
@@ -488,7 +492,7 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
   "tryon-prompt-v11": "469046f4949e29a9ee3c379a25b306bce839e94bf2945a05b38f8cfcb9b11910",
-  "tryon-prompt-v12": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v13": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
@@ -783,6 +787,42 @@ assert.equal(
   const orderBlock = buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: kaftanDetails });
   assert.ok(orderBlock.split("\n").length <= AI_TRY_ON_ORDER_DETAILS_MAX_LINES);
   assert.match(orderBlock, /Garment: Long Shirt/);
+}
+
+const SURFACE = /Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes\. Never erase, smooth, resize, reposition or flatten them into a plain garment\. Apply the selected fabric's pattern, texture, weave and base colour to the main body\. Render contrast patches, pockets and panels as a lighter or darker tone of that same fabric, with clear seam edges\. Do not invent new colours or keep clashing reference colours\./;
+for (const prompt of [
+  buildAiTryOnPrompt({ mode: "garment" }),
+  buildAiTryOnPrompt({ mode: "fabric" }),
+  buildAiTryOnModelPrompt({ mode: "garment" }),
+  buildAiTryOnModelPrompt({ mode: "fabric" }),
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+    ],
+  }),
+  buildAiTryOnStylePhotoPrompt(),
+]) {
+  assert.match(prompt, SURFACE, "a Design Style photo keeps patch geometry and same-fabric contrast");
+}
+assert.doesNotMatch(buildAiTryOnUploadedDesignPrompt("shirt"), /Design Style surface/, "uploaded design has no catalogue Design Style photo");
+for (const prompt of [
+  buildAiTryOnPrompt({ mode: "garment" }),
+  buildAiTryOnPrompt({ mode: "fabric" }),
+  buildAiTryOnModelPrompt({ mode: "garment" }),
+  buildAiTryOnModelPrompt({ mode: "fabric" }),
+  buildAiTryOnStylePhotoPrompt(),
+  buildAiTryOnUploadedDesignPrompt("kaftan"),
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/top" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/bottom" },
+    ],
+  }),
+]) {
+  assert.equal(/kaftan/i.test(prompt), false);
 }
 
 console.log(`PASS: AI Try-on prompt ${AI_TRY_ON_PROMPT_VERSION} snapshots, determinism, budget, mode choice, per-wearer hints`);

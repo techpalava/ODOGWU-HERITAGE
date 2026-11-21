@@ -149,8 +149,8 @@ const DAY = 24 * 60 * 60 * 1000;
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
   // v6: explicit order choices win over either reference photo.
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v10");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v12");
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v11");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v13");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -727,7 +727,7 @@ for (const onModel of [false, true]) {
   assert.equal(result.body.orderTriesRemaining, 4, "a style-photo preview uses one try");
   assert.equal("modelId" in result.body, false, "style photo is not a studio-model cache result");
   assert.equal(result.body.cacheHit, undefined);
-  assert.equal(result.body.promptVersion, "tryon-style-photo-prompt-v1");
+  assert.equal(result.body.promptVersion, "tryon-style-photo-prompt-v2");
   assert.equal(loads.length, 2, "the style photograph and the swatch are loaded once each");
   assert.equal(loads[0], GARMENT_URL);
   assert.equal(loads[1], FABRIC_URL);

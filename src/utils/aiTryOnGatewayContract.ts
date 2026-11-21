@@ -55,7 +55,8 @@ export type AiTryOnMode = "garment" | "fabric";
 // cuffs stay with the design-style reference.
 // v11: top tuck styling (untucked by default; optional tucked/untucked override).
 // v12: Long Shirt length fidelity (mid-thigh/knee tunic, untucked, covers hips and trouser waistband).
-export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v12" as const;
+// v13: Design Style surface shapes stay; contrast patches use a lighter or darker tone of the selected fabric.
+export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v13" as const;
 
 /**
  * Version of the model-mode prompt text (default try-on models). Separate
@@ -76,7 +77,8 @@ export const AI_TRY_ON_PROMPT_VERSION = "tryon-prompt-v12" as const;
 // ordered skirt, shorts or dress. Lower legs stay bare. No trouser legs.
 // v9: share photo v11 top tuck styling rules.
 // v10: share photo v12 Long Shirt length fidelity and hip/waistband coverage.
-export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v10" as const;
+// v11: share photo v13 Design Style surface shapes and same-fabric contrast tones.
+export const AI_TRY_ON_MODEL_PROMPT_VERSION = "tryon-model-prompt-v11" as const;
 
 /**
  * Mode choice (Xavier): fabric mode when the garment has an assigned fabric
@@ -103,14 +105,15 @@ export const AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION = "tryon-uploaded-design-p
  * catalogue style photograph and changes only the fabric. Separate from the
  * photo and model prompt versions so those fingerprints stay put.
  */
-export const AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION = "tryon-style-photo-prompt-v1" as const;
+export const AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION = "tryon-style-photo-prompt-v2" as const;
 
 // v2: each garment applies its custom-details sleeve and Neck Design, and
 // keeps front placket buttons and long-sleeve wrist cuffs from its design reference.
 // v3: top tuck styling (auto front-tuck when bottom has belt holder / rope;
 // untucked otherwise, or explicit untucked / tucked override).
 // v4: Long Shirt combined outfit length fidelity (mid-thigh/knee tunic, untucked, covers hips and trouser waistband, lower legs only).
-export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v4" as const;
+// v5: Design Style surface shapes stay; contrast patches use a lighter or darker tone of the selected fabric.
+export const AI_TRY_ON_OUTFIT_PROMPT_VERSION = "tryon-outfit-prompt-v5" as const;
 
 export const AI_TRY_ON_TOP_TUCK_PREFERENCES = ["auto", "untucked", "tucked"] as const;
 export type AiTryOnTopTuckPreference = (typeof AI_TRY_ON_TOP_TUCK_PREFERENCES)[number];
