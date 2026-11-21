@@ -27,7 +27,7 @@ import {
 } from "../utils/aiTryOnGatewayContract";
 import { aiTryOnOrderHasWaistbandShowcase } from "../utils/aiTryOnOrderDetails";
 import { readOwnAiTryOnAdminStatus, resetOwnAiTryOnTries } from "../services/aiTryOnAdminReset";
-import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY } from "../utils/aiTryOnOrderImageCopy";
+import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY, AI_TRY_ON_PREVIEW_GUIDE_NOTE } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type RefObject } from "react";
 import {
   CheckCircle2,
@@ -2853,6 +2853,7 @@ export const AiTryOnPhotoPanel = ({
               </span>
             )}
             <span className="block">{AI_TRY_ON_PREVIEW_DISCLAIMER}</span>
+            <p data-ai-try-on-preview-guide-note="true" className="mt-2 text-xs text-stone-600">{AI_TRY_ON_PREVIEW_GUIDE_NOTE}</p>
           </figcaption>
           {mainView.storedPreviewId && (
             <button
