@@ -169,12 +169,12 @@ const DAY = 24 * 60 * 60 * 1000;
       mode: "fabric",
       orderDetails: { garments: [{ garmentType: "shirt", optionIds: [], decorations: [] }], fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } as never,
     });
-    assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen\. Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
+    assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, print, motif scale, texture, weave and sheen\. Image 3 always decides these for the main garment body; nothing in image 2 or in this text overrides that\./);
     assert.match(fabricPrompt, /The named garment type and explicitly chosen order details win over image 2/);
-    assert.match(fabricPrompt, /Order details\. Keep the named garment type\. Explicit choices below override both photos.*They never change the fabric from image 3\./);
+    assert.match(fabricPrompt, /Order details\. Keep the named garment type\. Explicit choices below override both photos.*They never change the main garment body's fabric from image 3\./);
     assert.equal(fabricPrompt.includes("where they differ from image 2, follow these"), false);
     assert.equal(fabricPrompt.includes("for the garment style only"), false);
-    assert.match(fabricPrompt, /\nFabric: exactly as in image 3\n/);
+    assert.match(fabricPrompt, /\nFabric for the main garment body: exactly as in image 3\n/);
     assert.match(fabricPrompt, /Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image\./);
     assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("printed on the swatch"), false);
     for (const label of ["Brown", "#724137", "Lace"]) assert.equal(fabricPrompt.includes(label), false, `model mode: no "${label}" text`);
