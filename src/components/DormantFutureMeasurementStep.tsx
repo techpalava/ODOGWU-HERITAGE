@@ -147,6 +147,7 @@ interface DormantFutureMeasurementStepProps {
   groupFocusRequest?: MeasurementGroupFocusRequest | null;
   /** Called once per request; found=false means fall back to the top of Step 7. */
   onGroupFocusHandled?: (requestId: number, found: boolean) => void;
+  wearerAssignmentPanel?: React.ReactNode;
   /**
    * @deprecated Ignored. Step 7 no longer shows a fit control or a fit
    * conflict; measurement fields follow the Studio garment demographic.
@@ -766,6 +767,7 @@ export const DormantFutureMeasurementStep = ({
   onAddPersonAndAssignGarment,
   groupFocusRequest = null,
   onGroupFocusHandled,
+  wearerAssignmentPanel,
   onChange,
   onRouteChange,
   onBack,
@@ -1542,8 +1544,13 @@ export const DormantFutureMeasurementStep = ({
           use the unit selected below. Switching between centimetres and inches
           converts saved values.
         </p>
-        {activeWearerLabel ? (
-          <div className="mt-3 space-y-2">
+      </header>
+
+      {wearerAssignmentPanel}
+
+      {activeWearerLabel ? (
+        <section className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
+          <div className="space-y-2">
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                 Measuring for
@@ -1667,55 +1674,8 @@ export const DormantFutureMeasurementStep = ({
               )}
             </div>
           </div>
-        ) : null}
-      </header>
-
-      <section
-        aria-label="Measurement guide and PDF download"
-        data-measurement-guide-banner="true"
-        className="rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
-      >
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
-              <BookOpen size={19} aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
-                Illustrated 25-Page Guide
-              </p>
-              <h3 className="mt-0.5 font-serif text-base font-bold text-heritage-green sm:text-lg">
-                Need help taking accurate measurements?
-              </h3>
-              <p className="mt-1 text-xs font-medium leading-relaxed text-heritage-ink/80 sm:text-sm">
-                Open our close-to-body checklists and photo diagrams in this
-                window without losing any values you have typed, or download the
-                full PDF guide.
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-measurement-guide-open="true"
-              onClick={() => setGuideModalOpen(true)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              <BookOpen size={15} aria-hidden="true" />
-              <span>View Measurement Guide</span>
-            </button>
-            <a
-              href={MEASUREMENT_GUIDE_PDF_HREF}
-              download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
-              data-measurement-guide-download="true"
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              <Download size={15} aria-hidden="true" />
-              <span>Download PDF Guide</span>
-            </a>
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <section
         ref={measurementOptionsRef}
@@ -1756,6 +1716,54 @@ export const DormantFutureMeasurementStep = ({
             Measurement by Risk Level
           </p>
         </header>
+        {!sampleSelected && (
+          <section
+            aria-label="Measurement guide and PDF download"
+            data-measurement-guide-banner="true"
+            className="mt-3 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
+          >
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
+                  <BookOpen size={19} aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
+                    Measurement guide
+                  </p>
+                  <h3 className="mt-0.5 font-serif text-base font-bold text-heritage-green sm:text-lg">
+                    Need help taking accurate measurements?
+                  </h3>
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-heritage-ink/80 sm:text-sm">
+                    Open our close-to-body checklists and photo diagrams in this
+                    window without losing any values you have typed, or download the
+                    full PDF guide.
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-measurement-guide-open="true"
+                  onClick={() => setGuideModalOpen(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <BookOpen size={15} aria-hidden="true" />
+                  <span>View Measurement Guide</span>
+                </button>
+                <a
+                  href={MEASUREMENT_GUIDE_PDF_HREF}
+                  download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
+                  data-measurement-guide-download="true"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <Download size={15} aria-hidden="true" />
+                  <span>Download PDF Guide</span>
+                </a>
+              </div>
+            </div>
+          </section>
+        )}
         <fieldset data-measurement-risk-selector="true" className="mt-3">
           <legend className="sr-only">Option 1: Close-to-Body Measurements</legend>
           <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">

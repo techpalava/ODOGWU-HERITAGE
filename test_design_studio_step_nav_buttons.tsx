@@ -434,6 +434,43 @@ for (const [sourcePath, backLabel, forwardLabel] of labeledSteps) {
     );
   }
 }
+
+// Verify DormantFutureMeasurementStep.tsx self-contained header/footer Continue unlock condition and locked-click behavior
+const measurementStepSource = readFileSync("src/components/DormantFutureMeasurementStep.tsx", "utf8");
+assert.equal(
+  count(measurementStepSource, /disabled: !canContinueToTryOn/g),
+  2,
+  "Measurement step header and footer Continue must both be disabled when !canContinueToTryOn",
+);
+assert.equal(
+  count(measurementStepSource, /locked: !canContinueToTryOn/g),
+  2,
+  "Measurement step header and footer Continue must both be locked when !canContinueToTryOn",
+);
+assert.equal(
+  count(measurementStepSource, /openAssignModal\(\)/g) >= 2,
+  true,
+  "Measurement step header and footer locked Continue click must invoke openAssignModal when unassigned garments exist",
+);
+// Verify DesignStudioView.tsx does not duplicate the Measurement step header block,
+// omits FutureRemainingFabricCapacityOfferPrompt on the measurement branch only,
+// and passes WearerAssignmentPanel into DormantFutureMeasurementStep right after the header.
+const measurementStudioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+assert.equal(
+  count(measurementStudioSource, /backDestination="Personalized Additions"/g),
+  0,
+  "DesignStudioView must not duplicate the Measurement step header",
+);
+assert.match(
+  measurementStudioSource,
+  /futureStageId === "measurement"\s*\?\s*\(\s*<DormantFutureMeasurementStep\s+wearerAssignmentPanel=/,
+  "Measurement stage renders DormantFutureMeasurementStep directly with wearerAssignmentPanel and no unused-fabric-capacity banner above it",
+);
+assert.match(
+  measurementStepSource,
+  /<\/header>\s*\{wearerAssignmentPanel\}/,
+  "DormantFutureMeasurementStep renders wearerAssignmentPanel immediately after its header",
+);
 const shippingSource = readFileSync("src/components/DormantFutureShippingStep.tsx", "utf8");
 assert.equal(count(shippingSource, /label: "Review Order"/g), 2);
 assert.equal(count(garmentSource, /destination: "Fabric"/g), 2);

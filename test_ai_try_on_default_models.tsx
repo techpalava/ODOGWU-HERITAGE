@@ -149,8 +149,8 @@ const DAY = 24 * 60 * 60 * 1000;
 {
   // v2 / v4: swatch decides the fabric. v3: swatch text ignored. v4: swatch cropped.
   // v6: explicit order choices win over either reference photo.
-  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v10");
-  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v12");
+  assert.equal(AI_TRY_ON_MODEL_PROMPT_VERSION, "tryon-model-prompt-v11");
+  assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v13");
   for (const mode of ["garment", "fabric"] as const) {
     const prompt = buildAiTryOnModelPrompt({ mode });
     assert.match(prompt, /Image 1: our studio model\./);
@@ -169,12 +169,12 @@ const DAY = 24 * 60 * 60 * 1000;
       mode: "fabric",
       orderDetails: { garments: [{ garmentType: "shirt", optionIds: [], decorations: [] }], fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } as never,
     });
-    assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen\. Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
+    assert.match(fabricPrompt, /From image 3 take only the fabric: colour, pattern, print, motif scale, texture, weave and sheen\. Image 3 always decides these for the main garment body; nothing in image 2 or in this text overrides that\./);
     assert.match(fabricPrompt, /The named garment type and explicitly chosen order details win over image 2/);
-    assert.match(fabricPrompt, /Order details\. Keep the named garment type\. Explicit choices below override both photos.*They never change the fabric from image 3\./);
+    assert.match(fabricPrompt, /Order details\. Keep the named garment type\. Explicit choices below override both photos.*They never change the main garment body's fabric from image 3\./);
     assert.equal(fabricPrompt.includes("where they differ from image 2, follow these"), false);
     assert.equal(fabricPrompt.includes("for the garment style only"), false);
-    assert.match(fabricPrompt, /\nFabric: exactly as in image 3\n/);
+    assert.match(fabricPrompt, /\nFabric for the main garment body: exactly as in image 3\n/);
     assert.match(fabricPrompt, /Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image\./);
     assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("printed on the swatch"), false);
     for (const label of ["Brown", "#724137", "Lace"]) assert.equal(fabricPrompt.includes(label), false, `model mode: no "${label}" text`);
@@ -727,7 +727,7 @@ for (const onModel of [false, true]) {
   assert.equal(result.body.orderTriesRemaining, 4, "a style-photo preview uses one try");
   assert.equal("modelId" in result.body, false, "style photo is not a studio-model cache result");
   assert.equal(result.body.cacheHit, undefined);
-  assert.equal(result.body.promptVersion, "tryon-style-photo-prompt-v1");
+  assert.equal(result.body.promptVersion, "tryon-style-photo-prompt-v2");
   assert.equal(loads.length, 2, "the style photograph and the swatch are loaded once each");
   assert.equal(loads[0], GARMENT_URL);
   assert.equal(loads[1], FABRIC_URL);

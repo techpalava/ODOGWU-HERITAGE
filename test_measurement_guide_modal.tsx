@@ -14,10 +14,12 @@ import {
   MEASUREMENT_GUIDE_PDF_IFRAME_SRC,
   MeasurementGuideModal,
 } from "./src/components/MeasurementGuideModal";
+import { WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import type {
   CustomDetailSelectionGroup,
   FutureMeasurementStateV1,
   GarmentTypeStepSelection,
+  WearerOrderStateV2,
 } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
@@ -44,10 +46,10 @@ const collectText = (
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (typeof node !== "object") return "";
   const children =
-    "props" in node && node.props?.children != null
-      ? node.props.children
-      : "children" in node
-        ? node.children
+    "children" in node && node.children != null
+      ? node.children
+      : "props" in node && node.props?.children != null
+        ? node.props.children
         : undefined;
   const list = Array.isArray(children)
     ? children
@@ -449,5 +451,230 @@ act(() => {
   );
 });
 assert.equal(closedRenderer.toJSON(), null);
+
+// 7. Verify "Measurement guide" is hidden when Option 2 (Sample Cloth) is selected.
+const sampleClothState = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "sample_cloth");
+const sampleClothPlan = planMeasurementRequirements({
+  route: sampleClothState.route,
+  garmentTypeSelection: shirtSelection,
+  physicalGarments,
+});
+const sampleClothReconciled = reconcileFutureMeasurementState({ state: sampleClothState, plan: sampleClothPlan });
+
+let sampleClothRenderer!: ReactTestRenderer;
+act(() => {
+  sampleClothRenderer = create(
+    createElement(
+      DesignStudioBlockingOverlayProvider,
+      null,
+      createElement(OverlayProbe),
+      createElement(DormantFutureMeasurementStep, {
+        plan: sampleClothPlan,
+        state: sampleClothReconciled,
+        physicalGarments,
+        onChange: () => {},
+        onRouteChange: () => {},
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    ),
+  );
+});
+
+const guideBannerInSampleCloth = sampleClothRenderer.root.findAllByProps({
+  "data-measurement-guide-banner": "true",
+});
+assert.equal(guideBannerInSampleCloth.length, 0, "Measurement guide banner is hidden when Sample Cloth is selected");
+
+// 9. Verify "Measurement guide" is visible when Option 1 (medium_risk) is selected.
+const mediumRiskState = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "medium_risk");
+const mediumRiskPlan = planMeasurementRequirements({
+  route: mediumRiskState.route,
+  garmentTypeSelection: shirtSelection,
+  physicalGarments,
+});
+const mediumRiskReconciled = reconcileFutureMeasurementState({ state: mediumRiskState, plan: mediumRiskPlan });
+
+// Create a minimal wearer assignment for testing
+const testWearerOrder: WearerOrderStateV2 = {
+  schemaVersion: 2,
+  wearers: [
+    { wearerId: "wearer-1", displayName: "You", fitContext: "male" as const, measurement: createEmptyFutureMeasurementState(), presentationOrder: 0 },
+  ],
+  assignmentByGarmentKey: { "base:shirt": "wearer-1" },
+};
+
+let mediumRiskRenderer!: ReactTestRenderer;
+act(() => {
+  mediumRiskRenderer = create(
+    createElement(
+      DesignStudioBlockingOverlayProvider,
+      null,
+      createElement(OverlayProbe),
+      createElement(DormantFutureMeasurementStep, {
+        plan: mediumRiskPlan,
+        state: mediumRiskReconciled,
+        physicalGarments,
+        onChange: () => {},
+        onRouteChange: () => {},
+        onBack: () => undefined,
+        onContinue: () => undefined,
+        activeWearerLabel: "You",
+        wearerChips: [{ wearerId: "wearer-1", label: "You", requiredCount: 0, completedCount: 0, complete: false, hasAssignedGarments: true }],
+        wearerAssignmentPanel: (
+          <WearerAssignmentPanel
+            order={testWearerOrder}
+            presentation="solo"
+            activeWearerId="wearer-1"
+            garments={physicalGarments}
+            garmentLabels={{ "base:shirt": "Standard Shirt" }}
+            onSelectWearer={() => {}}
+            onAddWearer={() => {}}
+            onRenameWearer={() => {}}
+            onReorderWearers={() => {}}
+            onDeleteWearer={() => ({ status: "blocked", code: "TEST", order: testWearerOrder })}
+            onAssignGarment={() => ({ status: "blocked", code: "TEST", order: testWearerOrder })}
+            onUnassignGarment={() => {}}
+            onCollapseToSolo={() => {}}
+            onPeopleUiChange={() => {}}
+            onUnsavedNameWearerIdsChange={() => {}}
+            onAddGarment={() => {}}
+          />
+        ),
+      }),
+    ),
+  );
+});
+
+const guideBannerInMediumRisk = mediumRiskRenderer.root.findAllByProps({
+  "data-measurement-guide-banner": "true",
+});
+assert.ok(guideBannerInMediumRisk.length > 0, "Measurement guide banner is visible when Option 1 is selected");
+
+// Verify guide banner has no mb-3 (to avoid double-stacking with mt-3 on fieldset below)
+assert.ok(
+  !guideBannerInMediumRisk[0].props.className?.includes("mb-3"),
+  "Guide banner must not have mb-3 class",
+);
+
+// Verify guide banner sits inside Option 1 (data-measurement-option-section="risk") above the risk radio fieldset
+const option1Section = mediumRiskRenderer.root.findByProps({
+  "data-measurement-option-section": "risk",
+});
+assert.equal(
+  option1Section.findAllByProps({ "data-measurement-guide-banner": "true" }).length,
+  1,
+  "Measurement guide banner renders inside Option 1 section",
+);
+const option1Text = collectText(option1Section);
+assert.ok(
+  option1Text.indexOf("Option 1: Close-to-Body Measurements") <
+    option1Text.indexOf("Need help taking accurate measurements?"),
+  "Option 1 heading precedes Measurement guide card",
+);
+assert.ok(
+  option1Text.indexOf("Need help taking accurate measurements?") <
+    option1Text.indexOf("Medium Risk"),
+  "Measurement guide card is the first card inside Option 1 before the risk radio cards",
+);
+const guideBannerText = collectText(guideBannerInMediumRisk[0]);
+assert.ok(
+  guideBannerText.includes("Measurement guide"),
+  "Option 1 guide banner kicker reads Measurement guide",
+);
+assert.ok(
+  !guideBannerText.includes("Illustrated 25-Page Guide"),
+  "Option 1 guide banner no longer uses the old Illustrated 25-Page Guide kicker",
+);
+assert.equal(
+  guideBannerInMediumRisk[0].type,
+  "section",
+  "Measurement guide banner is a labelled section landmark",
+);
+
+// 8. Verify "Who are these measurements for?" appears above "These clothes are for you..." in solo and multi-person views,
+// and that WearerAssignmentPanel renders right after the Dimension / Measurement header.
+const soloPanel = mediumRiskRenderer.root.findByProps({
+  "data-wearer-solo-first": "true",
+});
+const soloPanelText = collectText(soloPanel);
+assert.ok(
+  soloPanelText.includes("Who are these measurements for?"),
+  "Solo WearerAssignmentPanel displays 'Who are these measurements for?'",
+);
+assert.ok(
+  soloPanelText.indexOf("Who are these measurements for?") <
+    soloPanelText.indexOf("These clothes are for you."),
+  "'Who are these measurements for?' appears above 'These clothes are for you.' in solo view",
+);
+
+const measurementStageSection = mediumRiskRenderer.root.findByProps({
+  "data-stage-id": "measurement",
+});
+const fullStepText = collectText(measurementStageSection);
+assert.ok(
+  fullStepText.indexOf("Dimension / Measurement") <
+    fullStepText.indexOf("Who are these measurements for?"),
+  "Dimension / Measurement header precedes WearerAssignmentPanel",
+);
+assert.ok(
+  fullStepText.indexOf("Who are these measurements for?") <
+    fullStepText.indexOf("Option 1: Close-to-Body Measurements"),
+  "WearerAssignmentPanel precedes Option 1 section",
+);
+
+let peoplePanelRenderer!: ReactTestRenderer;
+act(() => {
+  peoplePanelRenderer = create(
+    createElement(WearerAssignmentPanel, {
+      order: {
+        schemaVersion: 2,
+        wearers: [
+          {
+            wearerId: "wearer-1",
+            displayName: "You",
+            fitContext: "male",
+            measurement: createEmptyFutureMeasurementState(),
+            presentationOrder: 0,
+          },
+          {
+            wearerId: "wearer-2",
+            displayName: "Ada",
+            fitContext: "female",
+            measurement: createEmptyFutureMeasurementState(),
+            presentationOrder: 1,
+          },
+        ],
+        assignmentByGarmentKey: { "base:shirt": "wearer-1" },
+      },
+      presentation: "people",
+      activeWearerId: "wearer-1",
+      garments: physicalGarments,
+      garmentLabels: { "base:shirt": "Standard Shirt" },
+      onSelectWearer: () => {},
+      onAddWearer: () => {},
+      onRenameWearer: () => {},
+      onReorderWearers: () => {},
+      onDeleteWearer: () => ({ status: "blocked" as const, code: "TEST", order: testWearerOrder }),
+      onAssignGarment: () => ({ status: "blocked" as const, code: "TEST", order: testWearerOrder }),
+    }),
+  );
+});
+const multiPeoplePanel = peoplePanelRenderer.root.findByProps({
+  "data-wearer-people": "true",
+});
+const multiPeopleText = collectText(multiPeoplePanel);
+assert.ok(
+  multiPeopleText.includes("Who are these measurements for?"),
+  "Multi-person WearerAssignmentPanel displays 'Who are these measurements for?'",
+);
+assert.ok(
+  multiPeopleText.indexOf("Who are these measurements for?") <
+    multiPeopleText.indexOf("These clothes are for you."),
+  "'Who are these measurements for?' appears above 'These clothes are for you.' in multi-person view",
+);
+
+// Verify Option 2 (sample_cloth) hides the guide banner
+assert.equal(guideBannerInSampleCloth.length, 0, "Measurement guide banner is hidden when Sample Cloth is selected");
 
 console.log("Measurement guide modal and download checks passed.");
