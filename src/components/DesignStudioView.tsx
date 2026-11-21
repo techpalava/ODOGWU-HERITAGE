@@ -12302,19 +12302,10 @@ export default function DesignStudioView({
         />
         </>
       ) : futureStageId === "measurement" ? (
-        <>
-        {showLaterStageRemainingFabricCapacityPrompt ? (
-          <FutureRemainingFabricCapacityOfferPrompt
-            offers={remainingFabricCapacityOffers}
-            fabrics={fabrics}
-            onAddGarment={(allocationId) => {
-              setRemainingFabricCapacityOfferRequestedAllocationId(allocationId);
-              setRemainingFabricCapacityOfferRequested(true);
-            }}
-          />
-        ) : null}
-        <WearerAssignmentPanel
-          order={wearerOrderForPlan}
+        <DormantFutureMeasurementStep
+          wearerAssignmentPanel={(
+            <WearerAssignmentPanel
+              order={wearerOrderForPlan}
           presentation={measurementWearerAssignmentPresentation}
           activeWearerId={activeWearer?.wearerId || null}
           garments={futureMeasurementPhysicalGarments}
@@ -12446,10 +12437,10 @@ export default function DesignStudioView({
             if (open) setMeasurementResumePeopleExpanded(false);
           }}
           onAddGarment={handleMeasurementAddGarment}
-          spareFabricCapacityAvailable={Boolean(remainingFabricCapacityOfferSignature)}
-          initialPeopleExpanded={measurementResumePeopleExpanded}
-        />
-        <DormantFutureMeasurementStep
+              spareFabricCapacityAvailable={Boolean(remainingFabricCapacityOfferSignature)}
+              initialPeopleExpanded={measurementResumePeopleExpanded}
+            />
+          )}
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
           restoredGarmentKey={hydratedMeasurementGarmentKey}
@@ -12626,7 +12617,6 @@ export default function DesignStudioView({
           onBack={() => handleBackDuringSummaryEdit("personalized_additions")}
           onContinue={handleOpenDormantAiTryOnStage}
         />
-        </>
       ) : futureStageId === "summary" ? (
         <>
         {showLaterStageRemainingFabricCapacityPrompt ? (

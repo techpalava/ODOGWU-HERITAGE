@@ -387,7 +387,10 @@ export const WearerAssignmentPanel = ({
         className="mb-4 rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm"
         data-wearer-solo-first="true"
       >
-        <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
+        <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
+          Who are these measurements for?
+        </p>
+        <p className="mt-2 text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
         <div className="mt-3 flex flex-wrap items-start gap-2">
           {/* The caption sits under For me and is part of its description. */}
           <div className="flex flex-col items-stretch gap-1" data-wearer-for-me-group="true">
@@ -436,7 +439,10 @@ export const WearerAssignmentPanel = ({
       className="mb-4 rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm"
       data-wearer-people="true"
     >
-      <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
+      <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
+        Who are these measurements for?
+      </p>
+      <p className="mt-2 text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
       <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <h3 className="font-serif text-base font-bold text-heritage-green">
           People in this order
