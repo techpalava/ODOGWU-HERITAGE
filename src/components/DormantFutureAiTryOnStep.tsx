@@ -20,7 +20,6 @@ import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOver
 import {
   AI_TRY_ON_ACCURACY_DISCLAIMER_BODY,
   AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE,
-  AI_TRY_ON_PREVIEW_GUIDE_NOTE,
   AI_TRY_ON_ACCURACY_MODAL_CTA,
 } from "../utils/aiTryOnOrderImageCopy";
 
@@ -129,19 +128,22 @@ export const DormantFutureAiTryOnStep = ({
 }: DormantFutureAiTryOnStepProps) => {
   const [disclaimerModalOpen, setDisclaimerModalOpen] = useState(Boolean(forceShowDisclaimerModal));
   const lastFocusedElement = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const ctaRef = useRef<HTMLButtonElement | null>(null);
+  const isLive = Boolean(livePanel);
 
   useEffect(() => {
     if (forceShowDisclaimerModal) return;
     if (typeof window === "undefined") return;
+    if (!isLive && availability !== "available") return;
     try {
-      if (
-        Boolean(livePanel) &&
-        window.sessionStorage.getItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY) !== "1"
-      ) {
+      if (window.sessionStorage.getItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY) !== "1") {
         setDisclaimerModalOpen(true);
       }
-    } catch {}
-  }, [livePanel, forceShowDisclaimerModal]);
+    } catch {
+      // sessionStorage can be blocked; the banner still shows.
+    }
+  }, [isLive, availability, forceShowDisclaimerModal]);
 
   useReportDesignStudioBlockingOverlay("ai-try-on-disclaimer-modal", disclaimerModalOpen);
 
@@ -149,27 +151,49 @@ export const DormantFutureAiTryOnStep = ({
     if (typeof window === "undefined") return;
     try {
       window.sessionStorage.setItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY, "1");
-    } catch {}
+    } catch {
+      // Closing still dismisses the dialog when storage is blocked.
+    }
     setDisclaimerModalOpen(false);
     lastFocusedElement.current?.focus();
   }, []);
 
   useEffect(() => {
-    if (disclaimerModalOpen) {
-      lastFocusedElement.current = document.activeElement as HTMLElement;
+    if (!disclaimerModalOpen || typeof document === "undefined") return;
+    const dialog = dialogRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog?.contains(previouslyFocused)) {
+      lastFocusedElement.current = previouslyFocused;
     }
-  }, [disclaimerModalOpen]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && disclaimerModalOpen) closeDisclaimer();
+    ctaRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeDisclaimer();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      const outside = !(active instanceof Node) || !dialog.contains(active);
+      if (event.shiftKey && (active === first || outside)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || outside)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [disclaimerModalOpen, closeDisclaimer]);
-
-  const isLive = Boolean(livePanel);
   // One honest status: "unavailable" only when the server said so, nothing
   // while still checking, and a skip only when the customer chose it.
   const continuedWhileGenerating =
@@ -237,21 +261,11 @@ export const DormantFutureAiTryOnStep = ({
             ? "Upload a photo or pick a model to preview your selected garments, fabrics, and visual details on you."
             : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
-                <div className="mt-4 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-4">
-          <h3 className="font-serif text-base font-bold text-heritage-green">
-            {AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE}
-          </h3>
-          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-            {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
-          </p>
-          <p className="mt-2 text-xs font-medium text-heritage-ink/60">
-            {AI_TRY_ON_PREVIEW_GUIDE_NOTE}
-          </p>
-        </div>
       </div>
 
       {disclaimerModalOpen && (
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           data-ai-try-on-accuracy-modal="true"
@@ -278,6 +292,7 @@ export const DormantFutureAiTryOnStep = ({
               {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
             </p>
             <button
+              ref={ctaRef}
               type="button"
               onClick={closeDisclaimer}
               className="mt-6 w-full rounded-xl bg-heritage-green py-3 text-sm font-bold text-white hover:bg-heritage-green/90"

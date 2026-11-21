@@ -10,6 +10,7 @@ import {
   transitionAiTryOnWorkflow,
 } from "./src/utils/aiTryOnWorkflow";
 import { AI_TRY_ON_CONSENT_NOTICE } from "./src/components/AiTryOnPhotoPanel";
+import { AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE } from "./src/utils/aiTryOnOrderImageCopy";
 import type { AiTryOnWorkflowStateV1 } from "./src/types";
 
 const fp = "tryon-v1-0123456789abcdef";
@@ -69,23 +70,31 @@ const panelSource = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8")
 assert.ok(!panelSource.includes("AI_TRY_ON_RETENTION_NOTICE"), "retention merged into the consent, not repeated");
 const summarySource = readFileSync("src/utils/designStudioFutureSummary.ts", "utf8");
 assert.match(summarySource, /skipOrigin === "continued_while_generating"\) \{\s+return \{ status: "skipped", label: "No preview yet" \}/);
-console.log("AI Try-on step status tests passed");
 
-// 6. Accuracy disclaimer banner (data-ai-try-on-accuracy-disclaimer="true") renders when isLive or availability === "available"
+const disclaimerCount = (html: string) =>
+  html.split('data-ai-try-on-accuracy-disclaimer="true"').length - 1;
+
+// 6. The gated accuracy banner is the only disclaimer, and only when the step is live or available.
 const completed: AiTryOnWorkflowStateV1 = { schemaVersion: 1, status: "completed", inputFingerprint: fp };
-const withLivePanel = render(completed, { isLive: true, availability: "available" });
-assert.ok(withLivePanel.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner renders when isLive=true");
-assert.ok(withLivePanel.includes("AI preview is a visual guide only"), "banner title renders");
+const withLivePanel = render(completed, {
+  livePanel: createElement("div", null, "live preview"),
+  availability: "available",
+});
+assert.equal(disclaimerCount(withLivePanel), 1, "live panel shows exactly one disclaimer");
+assert.equal(withLivePanel.split(AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE).length - 1, 1, "live panel shows the disclaimer title once");
 assert.ok(withLivePanel.includes("AI-generated previews can make mistakes"), "banner body renders");
+assert.ok(withLivePanel.includes("live preview"), "live panel is the real panel path");
 
 const withAvailableOnly = render(unavailable, { availability: "available" });
-assert.ok(withAvailableOnly.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner renders when availability=available");
+assert.equal(disclaimerCount(withAvailableOnly), 1, "available step shows exactly one disclaimer");
 
 const withCheckingOnly = render(unavailable, { availability: "checking" });
-assert.ok(!withCheckingOnly.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner does NOT render when availability=checking");
+assert.equal(disclaimerCount(withCheckingOnly), 0, "banner is absent while availability is checking");
+assert.ok(!withCheckingOnly.includes(AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE), "disclaimer title is absent while checking");
 
 const noLiveOrAvailable = render(unavailable, { availability: "unavailable" });
-assert.ok(!noLiveOrAvailable.includes('data-ai-try-on-accuracy-disclaimer="true"'), "banner does NOT render when unavailable");
+assert.equal(disclaimerCount(noLiveOrAvailable), 0, "banner is absent when unavailable");
+assert.ok(!noLiveOrAvailable.includes(AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE), "disclaimer title is absent when unavailable");
 
 // 7. Accuracy disclaimer modal (data-ai-try-on-accuracy-modal="true") renders with forceShowDisclaimerModal
 const modalHtml = render(completed, { forceShowDisclaimerModal: true });
