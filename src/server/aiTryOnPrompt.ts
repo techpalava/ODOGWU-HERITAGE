@@ -127,11 +127,11 @@ const sleeveNeckAndConstructionDetails = (reference: string): string =>
   `Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from ${reference}, and wrist cuffs when the sleeve is Long Sleeve.`;
 
 /**
- * Catalogue Design Style photos only. Contrast patches stay the same
- * fabric, lighter or darker, so a swatch still decides the colour.
+ * Catalogue Design Style photos only. Contrast patches take harmonizing
+ * tones or complementary accents of the selected fabric.
  */
 const DESIGN_STYLE_SURFACE =
-  "Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes. Never erase, smooth, resize, reposition or flatten them into a plain garment. Apply the selected fabric's pattern, texture, weave and base colour to the main body. Render contrast patches, pockets and panels as a lighter or darker tone of that same fabric, with clear seam edges. Do not invent new colours or keep clashing reference colours.";
+  "Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes. Never erase, smooth, resize, reposition or flatten them into a plain garment. Apply the selected fabric's pattern, texture, weave and base colour to the main body. Adapt contrast patches, pockets and panels into harmonizing contrast tones or complementary accents that pair naturally with the selected fabric, keeping clear seam edges and distinct visual separation. Do not keep clashing reference colours.";
 const GARMENT_IGNORE_NOISE = `Ignore everything that is not the person or the garment: ${NOISE}`;
 const FABRIC_IGNORE_NOISE = `Ignore everything that is not the person, the garment or the fabric: ${NOISE}`;
 
