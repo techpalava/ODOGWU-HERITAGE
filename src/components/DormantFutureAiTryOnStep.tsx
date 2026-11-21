@@ -135,7 +135,7 @@ export const DormantFutureAiTryOnStep = ({
   useEffect(() => {
     if (forceShowDisclaimerModal) return;
     if (typeof window === "undefined") return;
-    if (!isLive && availability !== "available") return;
+    if (!isLive) return;
     try {
       if (window.sessionStorage.getItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY) !== "1") {
         setDisclaimerModalOpen(true);
@@ -143,7 +143,7 @@ export const DormantFutureAiTryOnStep = ({
     } catch {
       // sessionStorage can be blocked; the banner still shows.
     }
-  }, [isLive, availability, forceShowDisclaimerModal]);
+  }, [isLive, forceShowDisclaimerModal]);
 
   useReportDesignStudioBlockingOverlay("ai-try-on-disclaimer-modal", disclaimerModalOpen);
 

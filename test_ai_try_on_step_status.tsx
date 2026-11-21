@@ -95,6 +95,13 @@ assert.ok(!withCheckingOnly.includes(AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE), "disc
 const noLiveOrAvailable = render(unavailable, { availability: "unavailable" });
 assert.equal(disclaimerCount(noLiveOrAvailable), 0, "banner is absent when unavailable");
 assert.ok(!noLiveOrAvailable.includes(AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE), "disclaimer title is absent when unavailable");
+const modalOpenEffect = readFileSync("src/components/DormantFutureAiTryOnStep.tsx", "utf8");
+const modalOpenStart = modalOpenEffect.indexOf("if (forceShowDisclaimerModal) return;");
+const modalOpenEnd = modalOpenEffect.indexOf("useReportDesignStudioBlockingOverlay", modalOpenStart);
+const modalOpenSource = modalOpenEffect.slice(modalOpenStart, modalOpenEnd);
+assert.ok(modalOpenSource.includes("if (!isLive) return;"), "modal opens only for a live panel");
+assert.equal(modalOpenSource.includes("availability"), false, "availability alone does not open the modal");
+assert.match(modalOpenSource, /\[isLive, forceShowDisclaimerModal\]/);
 
 // 7. Accuracy disclaimer modal (data-ai-try-on-accuracy-modal="true") renders with forceShowDisclaimerModal
 const modalHtml = render(completed, { forceShowDisclaimerModal: true });
