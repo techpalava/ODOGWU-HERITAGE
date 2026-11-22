@@ -8,10 +8,12 @@ import {
   createLegacyDesignStyleMigrationDraft,
   parseAuthoritativeDesignStyleRecord,
   prepareAuthoritativeDesignStyleRecord,
+  projectDesignStyleRecordForAdmin,
   projectPublishedDesignStyleRecord,
   type AuthoritativeDesignStyleRecordV1,
   type DesignStyleLifecycle,
 } from "./src/utils/designStyleAuthority";
+import { resolveStyleApplicability } from "./src/utils/designStudioFutureDesignStyle";
 
 const baseStyle = (overrides: Partial<StyleCategory> = {}): StyleCategory => ({
   id: "authority-style-1",
@@ -343,6 +345,82 @@ if (historicalThreeFlags.status === "valid") {
   assert.equal(historicalProjection?.hasLining, false);
   assert.equal(historicalProjection?.hasNet, false);
 }
+
+// Zero-drift unchanged round-trip from Admin projection back to authoritative record
+const adminProjected = projectDesignStyleRecordForAdmin(published);
+const unchangedRoundTrip = prepareAuthoritativeDesignStyleRecord({
+  style: adminProjected,
+  lifecycle: adminProjected.designStyleAuthority.lifecycle,
+  displayOrder: adminProjected.designStyleAuthority.displayOrder,
+  referenceComposition: adminProjected.designStyleAuthority.referenceComposition,
+  currentRecord: published,
+});
+assert.deepEqual(unchangedRoundTrip.presentation, published.presentation);
+assert.deepEqual(unchangedRoundTrip.eligibility, published.eligibility);
+assert.equal(
+  unchangedRoundTrip.eligibilityRevision,
+  published.eligibilityRevision,
+);
+assert.equal(
+  unchangedRoundTrip.eligibilityFingerprint,
+  published.eligibilityFingerprint,
+);
+assert.deepEqual(
+  unchangedRoundTrip.referenceComposition,
+  published.referenceComposition,
+);
+assert.equal(unchangedRoundTrip.publicRevision, published.publicRevision + 1);
+
+// Adaptable style with empty demographics omits empty array in projection so customer
+// resolveStyleApplicability does not fail closed to exact_only.
+const adaptableNoDemographicsRecord = createRecord(
+  "published",
+  null,
+  baseStyle({
+    styleApplicability: {
+      mode: "adaptable",
+      garmentTypes: ["dress"],
+    },
+  }),
+);
+assert.deepEqual(adaptableNoDemographicsRecord.eligibility.adaptability, {
+  mode: "adaptable",
+  garmentTypes: ["dress"],
+  demographics: [],
+});
+const adaptableNoDemographicsProjection = projectPublishedDesignStyleRecord(
+  adaptableNoDemographicsRecord,
+);
+assert.ok(adaptableNoDemographicsProjection);
+assert.equal(
+  "demographics" in (adaptableNoDemographicsProjection.styleApplicability || {}),
+  false,
+);
+assert.deepEqual(
+  resolveStyleApplicability(adaptableNoDemographicsProjection),
+  {
+    mode: "adaptable",
+    garmentTypes: ["dress"],
+    demographics: null,
+  },
+);
+const adaptableRePrepared = createRecord(
+  "published",
+  adaptableNoDemographicsRecord,
+  adaptableNoDemographicsProjection,
+);
+assert.deepEqual(
+  adaptableRePrepared.eligibility,
+  adaptableNoDemographicsRecord.eligibility,
+);
+assert.equal(
+  adaptableRePrepared.eligibilityFingerprint,
+  adaptableNoDemographicsRecord.eligibilityFingerprint,
+);
+assert.equal(
+  adaptableRePrepared.eligibilityRevision,
+  adaptableNoDemographicsRecord.eligibilityRevision,
+);
 
 console.log(
   "PASS: strict Design Style authority schema, lifecycle, revisions, projection, and legacy boundary",

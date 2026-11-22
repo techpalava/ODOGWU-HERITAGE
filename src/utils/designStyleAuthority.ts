@@ -906,9 +906,13 @@ export const projectDesignStyleRecordForAdmin = (
             garmentTypes: [
               ...record.eligibility.adaptability.garmentTypes,
             ],
-            demographics: [
-              ...record.eligibility.adaptability.demographics,
-            ],
+            ...(record.eligibility.adaptability.demographics.length > 0
+              ? {
+                  demographics: [
+                    ...record.eligibility.adaptability.demographics,
+                  ],
+                }
+              : {}),
           }
         : { mode: "exact_only" },
     designStyleAuthority: metadataFor(record, "authoritative"),
