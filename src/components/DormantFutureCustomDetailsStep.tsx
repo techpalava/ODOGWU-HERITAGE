@@ -46,9 +46,12 @@ import type { FuturePaymentReviewGarmentPicture } from "../utils/futurePaymentRe
 import {
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
+  getStep1GarmentSecondaryReferenceImage,
+  isStep1DualImageGarmentType,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import {
+  findStep1CardPresetForResolution,
   getAllowedStep4ConstructionOptionIdsForBaseGarment,
   getStep1GarmentDisplayLabel,
   getStep1GarmentPlainDescription,
@@ -369,11 +372,12 @@ const getOptionPriceLabel = (
   option: CustomDetailOption,
   isConstruction: boolean,
   selected: boolean,
+  allOptionsIncluded = false,
 ): string =>
   option.requiresEvaluation
     ? "Price requires evaluation."
     : isConstruction
-      ? selected
+      ? selected || allOptionsIncluded
         ? "Included"
         : money(option.priceCents / 100)
       : option.priceCents === 0
@@ -501,10 +505,11 @@ const getConstructionPresentationPrefix = (
     getGarmentLengthFamilyForSelectionGroup(selectionGroup)?.id === lengthFamily?.id &&
     lengthFamily
   ) {
-    // Standard Dress and Long Dress: the length picked in Step 1 is locked. Only the options of
-    // that length are offered (sleeve choices), so Step 4 can never switch one dress into the
-    // other. A saved draft that already holds the other length keeps showing that length.
-    if (lengthFamily.id === "dress") {
+    // Standard/Long Dress and Standard/Long Shirt: the length picked in Step 1 (or via the
+    // Step 5 Add button) is locked. Only the options of that length are offered (sleeve choices),
+    // so Step 4 / Step 5 cannot switch one length into the other. A saved draft that already holds
+    // the other length keeps showing that length.
+    if (lengthFamily.id === "dress" || lengthFamily.id === "shirt") {
       const selectedOptionId = getSelectedConstructionId(occurrence, selectionGroup);
       const lockedLength =
         (selectedOptionId
@@ -567,15 +572,23 @@ const optionalGroupHelper = (selectionGroup: CustomDetailSelectionGroup) =>
     ? "Select an option, or keep None to match the design photo."
     : "Select an option or keep None for this category.";
 
+const isWaistbandFasteningGroup = (
+  selectionGroup: CustomDetailSelectionGroup,
+): boolean =>
+  selectionGroup === "trouser_fastening" ||
+  selectionGroup === "standard_shorts_fastening" ||
+  selectionGroup === "bum_shorts_fastening";
+
 const getGarmentFirstDetailLabel = (
   selectionGroup: CustomDetailSelectionGroup,
 ): string => {
   switch (selectionGroup) {
-    case "shirt_construction":
-    case "dress_construction":
     case "standard_shorts_fastening":
     case "bum_shorts_fastening":
     case "trouser_fastening":
+      return "Waistband Fastening";
+    case "shirt_construction":
+    case "dress_construction":
     case "skirt_length":
       return "Main Garment";
     case "neck_design":
@@ -1147,6 +1160,21 @@ export const DormantFutureCustomDetailsStep = ({
       selectionIndex: selectionIndex > 0 ? selectionIndex : null,
     };
   };
+  const baseConstructionByParentGarmentKey = useMemo(() => {
+    const map = new Map<string, GarmentConstructionPricingResolution>();
+    catalogue.coreGroups.forEach((group) => {
+      group.occurrences.forEach((occurrence) => {
+        if (
+          occurrence.role === "main" &&
+          occurrence.construction?.status === "resolved" &&
+          !map.has(occurrence.subject.parentGarmentKey)
+        ) {
+          map.set(occurrence.subject.parentGarmentKey, occurrence.construction);
+        }
+      });
+    });
+    return map;
+  }, [catalogue.coreGroups]);
   const additionalGarmentKeys = new Set(
     additionalGarments
       .filter((garment) => garment.sourceRole === "additional")
@@ -1283,6 +1311,10 @@ export const DormantFutureCustomDetailsStep = ({
       group.selectionGroup,
       group.isConstruction,
     );
+    const isNarrowedDressSleeveGroup =
+      group.selectionGroup === "dress_construction" &&
+      allowedStep4OptionIds !== null &&
+      allowedStep4OptionIds.length > 1;
     const constructionPresentationPrefix =
       allowedStep4OptionIds !== null
         ? null
@@ -1337,7 +1369,7 @@ export const DormantFutureCustomDetailsStep = ({
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-start justify-between gap-x-3">
                 <span className="min-w-0 flex-1 break-words text-sm font-bold leading-5 text-heritage-green">{canonicalSleeveConstructionLabel(option.id, option.label)}</span>
-                <span className="shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked)}</span>
+                <span className="shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked, isNarrowedDressSleeveGroup)}</span>
               </span>
               {!isPersonalizedRequirement && option.description && <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">{option.description}</span>}
               {!isPersonalizedRequirement && option.requiresEvaluation && <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
@@ -1635,9 +1667,11 @@ export const DormantFutureCustomDetailsStep = ({
           </legend>
           <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
             {helperText ??
-              (group.isConstruction
-                ? "Select the all-inclusive construction that applies to this garment."
-                : optionalGroupHelper(group.selectionGroup))}
+              (isWaistbandFasteningGroup(group.selectionGroup)
+                ? "Choose your preferred waistband fastening for this garment."
+                : group.isConstruction
+                  ? "Select the all-inclusive construction that applies to this garment."
+                  : optionalGroupHelper(group.selectionGroup))}
           </p>
         </>
       ) : (
@@ -1815,8 +1849,13 @@ export const DormantFutureCustomDetailsStep = ({
       );
       const isNarrowedDressSleeveGroup = Boolean(
         constructionGroup &&
+          constructionGroup.selectionGroup === "dress_construction" &&
           allowedStep4OptionIds !== null &&
           allowedStep4OptionIds.length > 1,
+      );
+      const isWaistbandFasteningConstructionGroup = Boolean(
+        constructionGroup &&
+          isWaistbandFasteningGroup(constructionGroup.selectionGroup),
       );
       const showOccurrenceTitle =
         headingMode === "added" || !hideDuplicateOccurrenceTitle;
@@ -1830,12 +1869,18 @@ export const DormantFutureCustomDetailsStep = ({
           renderOccurrenceGroup(
             constructionGroup,
             occurrence,
-            isNarrowedDressSleeveGroup ? "Sleeve Style" : "Main Garment",
+            isNarrowedDressSleeveGroup
+              ? "Sleeve Style"
+              : isWaistbandFasteningConstructionGroup
+                ? "Waistband Fastening"
+                : "Main Garment",
             headingMode,
             "",
             isNarrowedDressSleeveGroup
               ? "Choose your sleeve style. Both options are included at the same price."
-              : undefined,
+              : isWaistbandFasteningConstructionGroup
+                ? "Choose your preferred waistband fastening for this garment."
+                : undefined,
           ),
         );
       }
@@ -2226,7 +2271,7 @@ export const DormantFutureCustomDetailsStep = ({
             ? traditionalAccessoriesVisible
               ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record."
               : "Add personalized requirements, monogram or embroidery, and any additional garment details. These choices stay in the same garment-scoped Custom Details record."
-            : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}
+            : "Customize the details for your selected garments. Garment length and base sleeve tier were chosen in Garment Type and are already included in your price."}
         </p>
       </div>
 
@@ -2249,12 +2294,32 @@ export const DormantFutureCustomDetailsStep = ({
           className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2"
         >
           {garmentFabricContexts.map((context) => {
-            const garmentLabel = getCustomDetailsGarmentLabel(context.garmentType);
+            const baseGarmentLabel = getCustomDetailsGarmentLabel(
+              context.garmentType,
+            );
+            const activeBaseConstruction =
+              context.sourceRole === "main"
+                ? (baseConstructionByParentGarmentKey.get(context.garmentKey) ??
+                  null)
+                : null;
+            const activePreset =
+              context.sourceRole === "main" &&
+              activeBaseConstruction?.status === "resolved"
+                ? findStep1CardPresetForResolution(
+                    context.garmentType,
+                    activeBaseConstruction,
+                  )
+                : null;
+            const garmentLabel = activePreset?.label ?? baseGarmentLabel;
             const plainDescription = getStep1GarmentPlainDescription(
               context.garmentType,
             );
             const referenceImage = isStep1GarmentReferenceType(context.garmentType)
-              ? getStep1GarmentReferenceImage(context.garmentType)
+              ? activePreset?.referenceImageVariant === "secondary" &&
+                isStep1DualImageGarmentType(context.garmentType)
+                ? (getStep1GarmentSecondaryReferenceImage(context.garmentType) ??
+                  getStep1GarmentReferenceImage(context.garmentType))
+                : getStep1GarmentReferenceImage(context.garmentType)
               : null;
             const assigned = getAssignedFabricForGarment(context.garmentKey);
             const design =
@@ -2282,7 +2347,7 @@ export const DormantFutureCustomDetailsStep = ({
                 ) : (
                   <div
                     role="img"
-                    aria-label={`Garment preview unavailable for ${garmentLabel}`}
+                    aria-label={`Garment preview unavailable for ${baseGarmentLabel}`}
                     data-step4-garment-reference={context.garmentKey}
                     className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-heritage-gold/10 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
                   >
@@ -2293,7 +2358,7 @@ export const DormantFutureCustomDetailsStep = ({
                   <AssignedFabricPreview
                     fabric={assigned.fabric}
                     garmentKey={context.garmentKey}
-                    garmentLabel={garmentLabel}
+                    garmentLabel={baseGarmentLabel}
                     fabricCode={assigned.fabricCode}
                     className="size-11 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40"
                     size="thumb"
@@ -2301,7 +2366,7 @@ export const DormantFutureCustomDetailsStep = ({
                 ) : (
                   <div
                     role="img"
-                    aria-label={`No Fabric assigned to ${garmentLabel}`}
+                    aria-label={`No Fabric assigned to ${baseGarmentLabel}`}
                     data-step4-assigned-fabric={context.garmentKey}
                     className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/35 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
                   >
@@ -2310,7 +2375,7 @@ export const DormantFutureCustomDetailsStep = ({
                 )}
                 <GarmentContextDesignThumb
                   garmentKey={context.garmentKey}
-                  garmentLabel={garmentLabel}
+                  garmentLabel={baseGarmentLabel}
                   imageUrl={design?.imageUrl ?? null}
                 />
                 <div className="min-w-0 text-xs leading-snug">
