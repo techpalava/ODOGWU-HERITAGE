@@ -53,7 +53,7 @@ import {
   getMonogramPlacementLabel,
   getMonogramTextForGarment,
 } from "./decorativePricing.js";
-import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, isMeasurementOutsideUsualRange, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, isSharedPresentationRequirement, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
+import { formatDualUnitMeasurementDisplay, fromCanonicalCentimetres, getDualUnitMeasurementParts, type DualUnitMeasurementParts, isMeasurementOutsideUsualRange, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isOnsitePhysicalMeasurementMethod, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, isSharedPresentationRequirement, MEASUREMENT_METHOD_LABELS, MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint.js";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -198,6 +198,7 @@ export interface FutureSummaryWearerMeasurements {
   routeLabel: string;
   unit: FutureMeasurementStateV1["unit"];
   status: FutureMeasurementStateV1["calculationStatus"];
+  onsiteBookingAcknowledged?: boolean;
   /**
    * 2+ wearers only: garmentKey -> label inside this person's group, without the
    * order-wide " 2" suffix unless the person has two garments of the same name.
@@ -215,6 +216,7 @@ export interface FutureSummaryMeasurements {
   route: FutureMeasurementStateV1["route"];
   routeLabel: string;
   unit: FutureMeasurementStateV1["unit"];
+  onsiteBookingAcknowledged?: boolean;
   shared: FutureSummaryMeasurementValue[];
   byGarment: Array<{
     garmentKey: string;
@@ -909,7 +911,9 @@ const mapMeasurements = ({
           ? "MEASUREMENT_INVALID"
           : "MEASUREMENT_INCOMPLETE",
       section: "measurements",
-      message: "Complete every required measurement before reviewing Summary.",
+      message: isOnsitePhysicalMeasurementMethod(measurementState.route)
+        ? MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE
+        : "Complete every required measurement before reviewing Summary.",
     });
   }
   const values = projectMeasurementRequirementsForPresentation({
@@ -995,6 +999,9 @@ const mapMeasurements = ({
     route: measurementState.route,
     routeLabel: getMeasurementRouteLabel(measurementState.route),
     unit: measurementState.unit,
+    ...(isOnsitePhysicalMeasurementMethod(measurementState.route)
+      ? { onsiteBookingAcknowledged: measurementState.onsiteBookingAcknowledged === true }
+      : {}),
     shared: values.filter((value) => !value.garmentKey),
     byGarment: [...byGarment.entries()].map(([garmentKey, garmentValues]) => ({
       garmentKey,
@@ -1126,6 +1133,9 @@ const summarizeOrderMeasurements = ({
           routeLabel: summary.routeLabel,
           unit: summary.unit,
           status: wearer.measurement.calculationStatus,
+          ...(isOnsitePhysicalMeasurementMethod(summary.route)
+            ? { onsiteBookingAcknowledged: wearer.measurement.onsiteBookingAcknowledged === true }
+            : {}),
           shared: summary.shared,
           byGarment: summary.byGarment,
         },
@@ -1162,6 +1172,9 @@ const summarizeOrderMeasurements = ({
       routeLabel: summary.routeLabel,
       unit: summary.unit,
       status: wearer.measurement.calculationStatus,
+      ...(isOnsitePhysicalMeasurementMethod(summary.route)
+        ? { onsiteBookingAcknowledged: wearer.measurement.onsiteBookingAcknowledged === true }
+        : {}),
       personGarmentLabels: Object.fromEntries(personGarmentLabels),
       shared: summary.shared,
       byGarment: summary.byGarment,

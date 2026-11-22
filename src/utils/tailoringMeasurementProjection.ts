@@ -14,9 +14,11 @@ import {
   getSampleClothCustomerLabel,
   getSampleClothProductionEquivalentCm,
   isFutureMeasurementStateV1,
+  isOnsitePhysicalMeasurementMethod,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
   MEASUREMENT_METHOD_STAFF_LABELS,
+  MEASUREMENT_ONSITE_STAFF_METHOD_NOTE,
   resolveMeasurementLabelDemographic,
   resolveMeasurementLabelDemographicForGarments,
   resolveMeasurementPlanningDemographic,
@@ -385,6 +387,18 @@ const readoutFromBag = ({
 }): TailoringWearerReadout => {
   const header = { wearerId, displayName, methodLabel: methodLabel(measurement) };
   const garmentLabel = (garmentKey: string) => conciseLabels.get(garmentKey) || garmentKey;
+  if (isOnsitePhysicalMeasurementMethod(measurement.route)) {
+    return {
+      ...header,
+      methodNote: MEASUREMENT_ONSITE_STAFF_METHOD_NOTE,
+      shared: [],
+      garments: garmentKeys.map((garmentKey) => ({
+        garmentKey,
+        label: garmentLabel(garmentKey),
+        values: [],
+      })),
+    };
+  }
   if (isSampleClothMeasurementMethod(measurement.route)) {
     return {
       ...header,
@@ -503,12 +517,16 @@ export const projectTailoringMeasurementReadout = (
       });
   }
   if (!isFutureMeasurementStateV1(measurements)) return null;
-  const garmentKeys = [
+  const bagGarmentKeys = [
     ...new Set([
       ...Object.keys(measurements.entered.byGarmentKey),
       ...Object.keys(measurements.derived.byGarmentKey),
     ]),
   ].sort((left, right) => left.localeCompare(right));
+  const garmentKeys =
+    bagGarmentKeys.length > 0
+      ? bagGarmentKeys
+      : Object.keys(garmentTypeByKey).sort((left, right) => left.localeCompare(right));
   return [
     readoutFromBag({
       wearerId: "wearer-legacy",

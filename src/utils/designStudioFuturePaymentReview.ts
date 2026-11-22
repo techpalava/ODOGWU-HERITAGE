@@ -33,10 +33,12 @@ import {
   type DualUnitMeasurementParts,
   isMeasurementOutsideUsualRange,
   fromCanonicalCentimetres,
+  isOnsitePhysicalMeasurementMethod,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   MEASUREMENT_METHOD_LABELS,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
   roundMeasurementDisplayValue,
   getMeasurementCustomerLabel,
   getMeasurementDefinition,
@@ -200,10 +202,22 @@ export interface FuturePaymentReviewMeasurementGroup {
 export interface FuturePaymentReviewWearerMeasurementSection {
   readonly wearerId: string;
   readonly displayName: string;
+  readonly route?: SelectedMeasurementMethod;
+  readonly onsiteBookingAcknowledged?: boolean;
   readonly routeLabel: string;
   readonly statusLabel: string;
   readonly assignedGarmentLabels: readonly string[];
   readonly groups: readonly FuturePaymentReviewMeasurementGroup[];
+}
+
+export interface FuturePaymentReviewOnsiteWearerSummary {
+  readonly wearerId: string;
+  readonly wearerLabel: string | null;
+  readonly displayName: string;
+  readonly routeLabel: string;
+  readonly statusLabel: string;
+  readonly acknowledged: boolean;
+  readonly assignedGarmentLabels: readonly string[];
 }
 
 export interface FuturePaymentReviewPricingRow {
@@ -379,7 +393,11 @@ const toMeasurementItem = ({
 });
 
 const formatMeasurementRoute = (route: SelectedMeasurementMethod): string =>
-  route ? route.replaceAll("_", " ") : "method not selected";
+  isOnsitePhysicalMeasurementMethod(route)
+    ? MEASUREMENT_ONSITE_PHYSICAL_LABEL
+    : route
+      ? route.replaceAll("_", " ")
+      : "method not selected";
 
 const formatMeasurementStatus = (
   status: FutureMeasurementStateV1["calculationStatus"],
@@ -734,6 +752,8 @@ const buildWearerMeasurementSections = (
       return {
         wearerId: wearer.wearerId,
         displayName,
+        route: wearer.measurement.route,
+        onsiteBookingAcknowledged: wearer.measurement.onsiteBookingAcknowledged === true,
         routeLabel: formatMeasurementRoute(wearer.measurement.route),
         statusLabel: formatMeasurementStatus(wearer.measurement.calculationStatus),
         assignedGarmentLabels,
@@ -753,6 +773,75 @@ export const getFuturePaymentReviewWearerMeasurementSections = (
   } = {},
 ): readonly FuturePaymentReviewWearerMeasurementSection[] =>
   buildWearerMeasurementSections(candidate, options);
+
+/**
+ * Returns onsite measurement summaries for each wearer (or sole wearer) who selected
+ * Option 3 (`onsite_physical`), including covered garment labels and acknowledgement state.
+ */
+export const getFuturePaymentReviewOnsiteWearers = (
+  candidate: {
+    readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
+    readonly garments: readonly MeasurementReviewGarment[];
+  },
+  options: {
+    readonly plainPersonGarmentLabels?: boolean;
+  } = {},
+): readonly FuturePaymentReviewOnsiteWearerSummary[] => {
+  const measurements = candidate.measurements;
+  if (isWearerOrderStateV2(measurements)) {
+    if (measurements.wearers.length === 1) {
+      const sole = measurements.wearers[0];
+      if (!isOnsitePhysicalMeasurementMethod(sole.measurement.route)) return [];
+      const garmentLabels = new Map(
+        candidate.garments.map((garment) => [garment.garmentKey, garment.label]),
+      );
+      const ownedKeys = Object.entries(measurements.assignmentByGarmentKey)
+        .filter(([, wearerId]) => wearerId === sole.wearerId)
+        .map(([garmentKey]) => garmentKey)
+        .sort((left, right) => left.localeCompare(right));
+      const assignedGarmentLabels =
+        ownedKeys.length > 0
+          ? ownedKeys.map((key) => garmentLabels.get(key) || key)
+          : candidate.garments.map((garment) => garment.label);
+      const soleLabel = namedSoleWearerLabel(sole.displayName);
+      return [
+        {
+          wearerId: sole.wearerId,
+          wearerLabel: soleLabel,
+          displayName: soleLabel ?? wearerPublicLabel(sole.displayName, sole.presentationOrder),
+          routeLabel: formatMeasurementRoute(sole.measurement.route),
+          statusLabel: formatMeasurementStatus(sole.measurement.calculationStatus),
+          acknowledged: sole.measurement.onsiteBookingAcknowledged === true,
+          assignedGarmentLabels,
+        },
+      ];
+    }
+    return buildWearerMeasurementSections(candidate, options)
+      .filter((section) => isOnsitePhysicalMeasurementMethod(section.route))
+      .map((section) => ({
+        wearerId: section.wearerId,
+        wearerLabel: section.displayName,
+        displayName: section.displayName,
+        routeLabel: section.routeLabel,
+        statusLabel: section.statusLabel,
+        acknowledged: section.onsiteBookingAcknowledged === true,
+        assignedGarmentLabels: section.assignedGarmentLabels,
+      }));
+  }
+  if (!isFutureMeasurementStateV1(measurements)) return [];
+  if (!isOnsitePhysicalMeasurementMethod(measurements.route)) return [];
+  return [
+    {
+      wearerId: "wearer-1",
+      wearerLabel: null,
+      displayName: "You",
+      routeLabel: formatMeasurementRoute(measurements.route),
+      statusLabel: formatMeasurementStatus(measurements.calculationStatus),
+      acknowledged: measurements.onsiteBookingAcknowledged === true,
+      assignedGarmentLabels: candidate.garments.map((garment) => garment.label),
+    },
+  ];
+};
 
 export const getFuturePaymentReviewMeasurementGroups = (
   candidate: {

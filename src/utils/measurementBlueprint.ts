@@ -113,6 +113,16 @@ export const MEASUREMENT_ONSITE_COMPLETE_MESSAGE =
   "Onsite physical measurement confirmed. Contact us on WhatsApp within 3 days of placing your order to arrange your appointment.";
 export const MEASUREMENT_ONSITE_INCOMPLETE_MESSAGE =
   "Tick the 3-day WhatsApp booking confirmation above to complete this step.";
+export const MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL =
+  "Book appointment on WhatsApp within 3 days of placing your order";
+export const MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL =
+  "Confirm 3-day WhatsApp booking requirement";
+export const MEASUREMENT_ONSITE_SUMMARY_CONFIRMED_NOTE =
+  "3-day WhatsApp booking requirement acknowledged. No online measurements needed.";
+export const MEASUREMENT_ONSITE_SUMMARY_UNCONFIRMED_NOTE =
+  "3-day WhatsApp booking confirmation required before continuing.";
+export const MEASUREMENT_ONSITE_STAFF_METHOD_NOTE =
+  "No online measurements submitted — appointment must be confirmed within 3 days via WhatsApp (+31 6 44533190).";
 
 const SAMPLE_CLOTH_OMITTED_IDS = new Set<CanonicalMeasurementId>([
   "total_height",
@@ -418,6 +428,34 @@ export const isOnsitePhysicalMeasurementMethod = (
   route: SelectedMeasurementMethod | undefined,
 ): route is typeof MEASUREMENT_ONSITE_PHYSICAL_METHOD =>
   route === MEASUREMENT_ONSITE_PHYSICAL_METHOD;
+
+/**
+ * Pure check for whether a single-wearer measurement state, multi-wearer order,
+ * or raw persisted order/candidate measurement payload uses `onsite_physical`.
+ * Never throws on malformed or absent inputs.
+ */
+export const hasOnsitePhysicalMeasurements = (measurements: unknown): boolean => {
+  if (!measurements || typeof measurements !== "object" || Array.isArray(measurements)) {
+    return false;
+  }
+  const record = measurements as Record<string, unknown>;
+  if (record.route === MEASUREMENT_ONSITE_PHYSICAL_METHOD) {
+    return true;
+  }
+  if (Array.isArray(record.wearers)) {
+    return record.wearers.some((wearer) => {
+      if (!wearer || typeof wearer !== "object" || Array.isArray(wearer)) return false;
+      const measurement = (wearer as { measurement?: unknown }).measurement;
+      return (
+        Boolean(measurement) &&
+        typeof measurement === "object" &&
+        !Array.isArray(measurement) &&
+        (measurement as { route?: unknown }).route === MEASUREMENT_ONSITE_PHYSICAL_METHOD
+      );
+    });
+  }
+  return false;
+};
 
 export const isSelectedMeasurementMethod = (
   route: SelectedMeasurementMethod | undefined,
