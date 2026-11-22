@@ -11,6 +11,7 @@ import {
   Database,
   MessageCircle,
   Star,
+  Sparkles,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
@@ -108,6 +109,7 @@ export function MobileMenu() {
                 {[
                   { id: "home", label: "Home", icon: Home },
                   { id: "design", label: "Design Studio", icon: Shirt },
+                  { id: "accessories", label: "Accessories", icon: Sparkles },
                   {
                     id: "custom-order",
                     label: "Custom Order",

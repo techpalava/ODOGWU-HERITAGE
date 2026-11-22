@@ -69,6 +69,7 @@ export interface AppState {
   activeTab:
     | "home"
     | "design"
+    | "accessories"
     | "dashboard"
     | "about"
     | "gallery"
@@ -81,6 +82,7 @@ export interface AppState {
     tab:
       | "home"
       | "design"
+      | "accessories"
       | "dashboard"
       | "about"
       | "gallery"
@@ -401,6 +403,11 @@ export const useAppStore = create<AppState>((set, get) => {
   activeTab:
     (typeof window !== "undefined" &&
       (legalPageTabFromPath(window.location.pathname) ||
+        (window.location.hash.toLowerCase() === "#accessories" ||
+        window.location.pathname.replace(/\/+$/, "").toLowerCase() ===
+          "/accessories"
+          ? "accessories"
+          : null) ||
         (sessionStorage.getItem("asml_active_tab") as any))) ||
     "home",
   setActiveTab: (tab) => {
