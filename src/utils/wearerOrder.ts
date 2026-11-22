@@ -106,6 +106,9 @@ const stripGarmentFromMeasurement = (
         high_risk: stripBag(state.enteredByRoute.high_risk),
         critical_risk: stripBag(state.enteredByRoute.critical_risk),
         sample_cloth: stripBag(state.enteredByRoute.sample_cloth),
+        onsite_physical: stripBag(
+          state.enteredByRoute.onsite_physical ?? { shared: {}, byGarmentKey: {} },
+        ),
       }
     : undefined;
   const invalidInputKeysByRoute = state.invalidInputKeysByRoute
@@ -115,6 +118,9 @@ const stripGarmentFromMeasurement = (
         high_risk: state.invalidInputKeysByRoute.high_risk.filter((key) => !keyMatches(key)),
         critical_risk: state.invalidInputKeysByRoute.critical_risk.filter((key) => !keyMatches(key)),
         sample_cloth: state.invalidInputKeysByRoute.sample_cloth.filter((key) => !keyMatches(key)),
+        onsite_physical: (state.invalidInputKeysByRoute.onsite_physical ?? []).filter(
+          (key) => !keyMatches(key),
+        ),
       }
     : undefined;
   return {
