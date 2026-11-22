@@ -1746,13 +1746,13 @@ export const DormantFutureMeasurementStep = ({
                   <BookOpen size={19} aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                     Measurement guide
                   </p>
-                  <h3 className="mt-0.5 font-serif text-base font-bold text-heritage-green sm:text-lg">
+                  <h3 className="mt-0.5 font-serif text-base font-extrabold text-heritage-green sm:text-lg">
                     Need help taking accurate measurements?
                   </h3>
-                  <p className="mt-1 text-xs font-medium leading-relaxed text-heritage-ink/80 sm:text-sm">
+                  <p className="mt-1 text-xs font-bold leading-relaxed text-heritage-ink sm:text-sm">
                     Open our close-to-body checklists and photo diagrams in this
                     window without losing any values you have typed, or download the
                     full PDF guide.
@@ -1764,7 +1764,7 @@ export const DormantFutureMeasurementStep = ({
                   type="button"
                   data-measurement-guide-open="true"
                   onClick={() => setGuideModalOpen(true)}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
                   <BookOpen size={15} aria-hidden="true" />
                   <span>View Measurement Guide</span>
@@ -1773,7 +1773,7 @@ export const DormantFutureMeasurementStep = ({
                   href={MEASUREMENT_GUIDE_PDF_HREF}
                   download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
                   data-measurement-guide-download="true"
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
                   <Download size={15} aria-hidden="true" />
                   <span>Download PDF Guide</span>
