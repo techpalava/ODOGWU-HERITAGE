@@ -4,6 +4,7 @@ import {
   AI_TRY_ON_MODEL_PROMPT_VERSION,
   type AiTryOnInlineImage,
   type AiTryOnMode,
+  type AiTryOnTopTuckPreference,
 } from "../utils/aiTryOnGatewayContract.js";
 import {
   orderDetailsFingerprintIdentity,
@@ -52,6 +53,7 @@ export const createAiTryOnModelResultKey = ({
   garmentImage,
   fabricImage,
   orderDetails,
+  topTuckPreference = "auto",
 }: {
   modelId: string;
   modelImage: AiTryOnInlineImage;
@@ -59,6 +61,7 @@ export const createAiTryOnModelResultKey = ({
   garmentImage: AiTryOnInlineImage;
   fabricImage: AiTryOnInlineImage | null;
   orderDetails: AiTryOnOrderDetails | null;
+  topTuckPreference?: AiTryOnTopTuckPreference;
 }): string =>
   sha256(
     JSON.stringify([
@@ -71,6 +74,7 @@ export const createAiTryOnModelResultKey = ({
       fabricImage ? imageHash(fabricImage) : null,
       // Sorted, ids-only identity (same as the browser fingerprint uses).
       JSON.stringify(orderDetailsFingerprintIdentity(orderDetails) ?? null),
+      ...(topTuckPreference !== "auto" ? [topTuckPreference] : []),
     ]),
   );
 

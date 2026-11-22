@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   RefreshCw,
   ShieldCheck,
   SkipForward,
+  X,
 } from "lucide-react";
 import { AI_TRY_ON_BACKGROUND_COPY } from "../utils/aiTryOnBackgroundCopy";
 import {
@@ -15,6 +16,12 @@ import {
 import type { AiTryOnWorkflowStateV1 } from "../types";
 import { getAiTryOnWorkflowAllowedActions } from "../utils/aiTryOnWorkflow";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
+import {
+  AI_TRY_ON_ACCURACY_DISCLAIMER_BODY,
+  AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE,
+  AI_TRY_ON_ACCURACY_MODAL_CTA,
+} from "../utils/aiTryOnOrderImageCopy";
 
 interface DormantFutureAiTryOnStepProps {
   workflow: AiTryOnWorkflowStateV1;
@@ -42,6 +49,8 @@ interface DormantFutureAiTryOnStepProps {
   availability?: "checking" | "available" | "unavailable";
   /** Step names still incomplete, e.g. ["Custom Details"]. */
   missingInputs?: readonly string[];
+  /** Force open the disclaimer modal. */
+  forceShowDisclaimerModal?: boolean;
 }
 
 /** "A", "A and B", "A, B and C". */
@@ -102,6 +111,8 @@ const STATUS_PRESENTATION: Readonly<
   },
 };
 
+const AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY = "odogwu_ai_try_on_accuracy_disclaimer_seen_v1";
+
 export const DormantFutureAiTryOnStep = ({
   workflow,
   skipAllowed,
@@ -113,8 +124,76 @@ export const DormantFutureAiTryOnStep = ({
   generating = false,
   availability,
   missingInputs,
+  forceShowDisclaimerModal = false,
 }: DormantFutureAiTryOnStepProps) => {
+  const [disclaimerModalOpen, setDisclaimerModalOpen] = useState(Boolean(forceShowDisclaimerModal));
+  const lastFocusedElement = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const ctaRef = useRef<HTMLButtonElement | null>(null);
   const isLive = Boolean(livePanel);
+
+  useEffect(() => {
+    if (forceShowDisclaimerModal) return;
+    if (typeof window === "undefined") return;
+    if (!isLive) return;
+    try {
+      if (window.sessionStorage.getItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY) !== "1") {
+        setDisclaimerModalOpen(true);
+      }
+    } catch {
+      // sessionStorage can be blocked; the banner still shows.
+    }
+  }, [isLive, forceShowDisclaimerModal]);
+
+  useReportDesignStudioBlockingOverlay("ai-try-on-disclaimer-modal", disclaimerModalOpen);
+
+  const closeDisclaimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(AI_TRY_ON_ACCURACY_DISCLAIMER_SESSION_KEY, "1");
+    } catch {
+      // Closing still dismisses the dialog when storage is blocked.
+    }
+    setDisclaimerModalOpen(false);
+    lastFocusedElement.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!disclaimerModalOpen || typeof document === "undefined") return;
+    const dialog = dialogRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog?.contains(previouslyFocused)) {
+      lastFocusedElement.current = previouslyFocused;
+    }
+    ctaRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeDisclaimer();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      const outside = !(active instanceof Node) || !dialog.contains(active);
+      if (event.shiftKey && (active === first || outside)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || outside)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [disclaimerModalOpen, closeDisclaimer]);
   // One honest status: "unavailable" only when the server said so, nothing
   // while still checking, and a skip only when the customer chose it.
   const continuedWhileGenerating =
@@ -183,6 +262,60 @@ export const DormantFutureAiTryOnStep = ({
             : "AI Try-on will let you preview your selected garments, fabrics, and visual details when secure private-photo processing is available."}
         </p>
       </div>
+
+      {disclaimerModalOpen && (
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          data-ai-try-on-accuracy-modal="true"
+          aria-labelledby="accuracy-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          <div
+            className="absolute inset-0 bg-heritage-green/50 backdrop-blur-sm"
+            onClick={closeDisclaimer}
+          />
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={closeDisclaimer}
+              className="absolute right-4 top-4 rounded-full p-2 text-heritage-ink/50 hover:bg-heritage-cream hover:text-heritage-green"
+              aria-label="Close AI preview disclaimer"
+            >
+              <X size={20} />
+            </button>
+            <h2 id="accuracy-modal-title" className="font-serif text-xl font-bold text-heritage-green">
+              {AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE}
+            </h2>
+            <p className="mt-4 text-sm leading-relaxed text-heritage-ink/70">
+              {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
+            </p>
+            <button
+              ref={ctaRef}
+              type="button"
+              onClick={closeDisclaimer}
+              className="mt-6 w-full rounded-xl bg-heritage-green py-3 text-sm font-bold text-white hover:bg-heritage-green/90"
+            >
+              {AI_TRY_ON_ACCURACY_MODAL_CTA}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(isLive || availability === "available") && (
+        <div
+          data-ai-try-on-accuracy-disclaimer="true"
+          className="rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-4"
+        >
+          <h3 className="font-serif text-base font-bold text-heritage-green">
+            {AI_TRY_ON_ACCURACY_DISCLAIMER_TITLE}
+          </h3>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+            {AI_TRY_ON_ACCURACY_DISCLAIMER_BODY}
+          </p>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-6">
         {showStatusCard && (

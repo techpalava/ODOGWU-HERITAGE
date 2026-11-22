@@ -1,9 +1,9 @@
 import { AlertTriangle, X } from "lucide-react";
 import { useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type { CanonicalPhysicalGarmentType } from "../types";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
+import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 
 export interface FutureGarmentRemovalTarget {
   garmentKey: string;
@@ -58,7 +58,10 @@ export const projectFutureGarmentRemovalTargets = ({
         (totalByType.get(occurrence.garmentType) || 0) > 1)
         ? `${roleBase} ${roleOrdinal}`
         : roleBase;
-    const occurrenceLabel = getFabricGarmentLabel(occurrence.garmentType);
+    // Customer-facing removal labels normalize Fabric-domain shorts names to
+    // "Standard Nikka Shorts" / "Standard Bum Shorts" for screen readers
+    // and modal headings while leaving Fabric-domain labels untouched.
+    const occurrenceLabel = getCustomDetailsGarmentLabel(occurrence.garmentType);
     return {
       garmentKey: occurrence.garmentKey,
       occurrenceLabel,

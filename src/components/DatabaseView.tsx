@@ -61,6 +61,7 @@ import {
   DiscountSettings,
   DiscountPlanningRule,
   CanonicalPhysicalGarmentType,
+  DesignStyleCategory,
   FabricGarmentType,
   OutfitType,
 } from "../types";
@@ -135,6 +136,17 @@ import {
   DesignStyleAuthorityService,
   type AdminDesignStyleSnapshot,
 } from "../services/designStyleAuthorityService";
+import { DesignStyleCategoryService } from "../services/designStyleCategoryService";
+import {
+  DESIGN_STYLE_CATEGORY_MAX_PER_STYLE,
+  getCategoryUsageCountById,
+  normalizeDesignStyleCategoryLookupKey,
+  normalizeDesignStyleCategoryName,
+  resolveMirroredDesignCategories,
+  slugifyDesignStyleCategoryId,
+  sortDesignStyleCategories,
+  validateDesignStyleCategoryName,
+} from "../utils/designStyleCategories";
 import {
   cloneReferenceComposition,
   createDefaultDesignStyleAuthorityMetadata,
@@ -144,6 +156,18 @@ import {
 } from "../utils/designStyleAuthority";
 import { DesignStylePublicationError } from "../utils/designStylePublication";
 import { getNextDesignStyleId } from "../utils/designStyleId";
+import { customerCatalogueLabel } from "../utils/customerCatalogueLabel";
+import { DEFAULT_BUSINESS_SETTINGS } from "../data/mockData";
+import {
+  ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES,
+  createDefaultDesignStyleDraft,
+  DEFAULT_ADMIN_STYLE_COMPOSITION,
+  DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+  deriveFeaturesMaleAndFemale,
+  formatDerivedGarmentCompositionLabel,
+  resolveDesignStyleGenderOptions,
+  resolveOutfitTypeOptions,
+} from "../utils/designStyleAdminDefaults";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
@@ -352,8 +376,22 @@ export default function DatabaseView({
 
   // Search states for each table
   const [userSearch, setUserSearch] = useState("");
-  const [styleSubTab, setStyleSubTab] = useState<"styles" | "catalogue">("styles");
+  const [styleSubTab, setStyleSubTab] = useState<
+    "styles" | "categories" | "catalogue"
+  >("styles");
   const [styleSearch, setStyleSearch] = useState("");
+  const [styleCategoryFilter, setStyleCategoryFilter] = useState<string>("all");
+  const [adminDesignStyleCategories, setAdminDesignStyleCategories] = useState<
+    DesignStyleCategory[]
+  >([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryDescription, setNewCategoryDescription] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
+    null,
+  );
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingCategoryDescription, setEditingCategoryDescription] =
+    useState("");
   const [adminStyles, setAdminStyles] = useState<DesignStyleAdminProjection[]>([]);
   const [adminStylesLoadState, setAdminStylesLoadState] = useState<
     "loading" | "ready" | "error"
@@ -402,12 +440,27 @@ export default function DatabaseView({
     );
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser || !AuthorizationEngine.canManageReferenceData(currentUser)) {
+      setAdminDesignStyleCategories([]);
+      return;
+    }
+    return DesignStyleCategoryService.subscribe(
+      (categories) => {
+        setAdminDesignStyleCategories([...categories]);
+      },
+      (error) => {
+        console.error("Failed to load Design Style categories", error);
+      },
+    );
+  }, [currentUser]);
+
   const communityPhotos = Array.isArray(_communityPhotos)
     ? _communityPhotos
     : [];
 
   // Editing modal/form states
-  const [editingType, setEditingType] = useState<
+  const [editingType, setEditingTypeState] = useState<
     | "user"
     | "style"
     | "fabric"
@@ -420,12 +473,27 @@ export default function DatabaseView({
     | "v2-personalized-price"
     | null
   >(null);
+  const [editorFocusRequestCount, setEditorFocusRequestCount] = useState(0);
+  const setEditingType = (nextType: typeof editingType) => {
+    setEditingTypeState(nextType);
+    if (nextType !== null) {
+      setEditorFocusRequestCount((count) => count + 1);
+    }
+  };
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
   const [isNewRecord, setIsNewRecord] = useState(false);
+  const openStyleEditor = (styleItem: DesignStyleAdminProjection, isNew: boolean) => {
+    setIsNewRecord(isNew);
+    setEditingItem(styleItem);
+    setEditingType("style");
+  };
   useEffect(() => {
-    if (editingType !== "catalog_option") return;
-    catalogEditorRef.current?.scrollIntoView?.({ block: "start" });
-  }, [editingType, isNewCatalogOption, editingCatalogOption?.id]);
+    if (!editingType || editorFocusRequestCount === 0) return;
+    const editorEl = catalogEditorRef.current;
+    if (!editorEl) return;
+    editorEl.scrollIntoView?.({ behavior: "auto", block: "start" });
+    editorEl.focus?.({ preventScroll: true });
+  }, [editingType, editorFocusRequestCount]);
   const [fabricNameSuggestions, setFabricNameSuggestions] = useState<string[]>([]);
   const [suggestionHistory, setSuggestionHistory] = useState<string[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
@@ -1082,19 +1150,38 @@ export default function DatabaseView({
         alert("Represented genders must be assigned.");
         return;
       }
-      if (conf.featuresMaleAndFemale && (!conf.representedGenders.includes('male') || !conf.representedGenders.includes('female'))) {
-        alert("Features both male and female requires both male and female to be represented.");
-        return;
-      }
     }
 
-    const authority = getDesignStyleAuthorityMetadata(item);
+    if (
+      item.styleApplicability?.mode === "adaptable" &&
+      (!Array.isArray(item.styleApplicability.garmentTypes) ||
+        item.styleApplicability.garmentTypes.length === 0)
+    ) {
+      alert(
+        "Select at least one adaptable garment type or switch Style Applicability to Exact Match Only.",
+      );
+      return;
+    }
+
+    const styleToPublish: StyleCategory = item.customDetailConfig
+      ? {
+          ...item,
+          customDetailConfig: {
+            ...item.customDetailConfig,
+            featuresMaleAndFemale: deriveFeaturesMaleAndFemale(
+              item.customDetailConfig.representedGenders,
+            ),
+          },
+        }
+      : item;
+
+    const authority = getDesignStyleAuthorityMetadata(styleToPublish);
     if (!authority) {
       triggerStatus("This Design Style has no valid publication authority.", "error");
       return;
     }
     if (isNewRecord) {
-      if (adminStyles.some((s) => s.id === item.id)) {
+      if (adminStyles.some((s) => s.id === styleToPublish.id)) {
         alert("A style with this ID already exists.");
         return;
       }
@@ -1102,16 +1189,17 @@ export default function DatabaseView({
 
     try {
       await DesignStyleAuthorityService.publish({
-        style: item,
+        style: styleToPublish,
         lifecycle: authority.lifecycle,
         displayOrder: authority.displayOrder,
         referenceComposition: cloneReferenceComposition(
           authority.referenceComposition,
         ),
         expectedPublicRevision: authority.publicRevision,
+        categories: adminDesignStyleCategories,
       });
       triggerStatus(
-        `${isNewRecord ? "Created" : "Updated"} ${authority.lifecycle} style ${item.name} successfully!`,
+        `${isNewRecord ? "Created" : "Updated"} ${authority.lifecycle} style ${styleToPublish.name} successfully!`,
       );
       setEditingType(null);
     } catch (error) {
@@ -1141,11 +1229,170 @@ export default function DatabaseView({
           authority.referenceComposition,
         ),
         expectedPublicRevision: authority.publicRevision,
+        categories: adminDesignStyleCategories,
       });
       triggerStatus("Style archived. Its stable identity was retained.", "info");
     } catch (error) {
       console.error("Failed to archive Design Style", error);
       triggerStatus("Failed to archive the style. No change was applied.", "error");
+    }
+  };
+
+  const handleAddStyleCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const validation = validateDesignStyleCategoryName(newCategoryName);
+    if (!validation.valid) {
+      triggerStatus(validation.reason, "error");
+      return;
+    }
+    const id = slugifyDesignStyleCategoryId(validation.normalizedName);
+    if (!id) {
+      triggerStatus("Category name must include letters or numbers.", "error");
+      return;
+    }
+    const lookupKey = normalizeDesignStyleCategoryLookupKey(
+      validation.normalizedName,
+    );
+    if (
+      adminDesignStyleCategories.some(
+        (cat) =>
+          cat.id === id ||
+          normalizeDesignStyleCategoryLookupKey(cat.name) === lookupKey,
+      )
+    ) {
+      triggerStatus(
+        "A Design Style category with that name or ID already exists.",
+        "error",
+      );
+      return;
+    }
+    const nextOrder =
+      adminDesignStyleCategories.length > 0
+        ? Math.max(...adminDesignStyleCategories.map((c) => c.displayOrder)) + 1
+        : 0;
+    try {
+      const saved = await DesignStyleCategoryService.saveCategory({
+        id,
+        name: validation.normalizedName,
+        displayOrder: nextOrder,
+        enabled: true,
+        description: newCategoryDescription,
+      });
+      setNewCategoryName("");
+      setNewCategoryDescription("");
+      triggerStatus(
+        validation.replacedKaftan
+          ? `Added category "${saved.name}" (legacy wording normalized to Long Shirt).`
+          : `Added category "${saved.name}".`,
+      );
+    } catch (error) {
+      console.error("Failed to add Design Style category", error);
+      triggerStatus("Failed to save category.", "error");
+    }
+  };
+
+  const handleSaveEditedStyleCategory = async (
+    target: DesignStyleCategory,
+  ) => {
+    const validation = validateDesignStyleCategoryName(editingCategoryName);
+    if (!validation.valid) {
+      triggerStatus(validation.reason, "error");
+      return;
+    }
+    const lookupKey = normalizeDesignStyleCategoryLookupKey(
+      validation.normalizedName,
+    );
+    if (
+      adminDesignStyleCategories.some(
+        (cat) =>
+          cat.id !== target.id &&
+          normalizeDesignStyleCategoryLookupKey(cat.name) === lookupKey,
+      )
+    ) {
+      triggerStatus("Another category already uses that name.", "error");
+      return;
+    }
+    try {
+      const saved = await DesignStyleCategoryService.saveCategory({
+        ...target,
+        name: validation.normalizedName,
+        description: editingCategoryDescription,
+      });
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+      setEditingCategoryDescription("");
+      triggerStatus(`Updated category "${saved.name}".`);
+    } catch (error) {
+      console.error("Failed to update Design Style category", error);
+      triggerStatus("Failed to update category.", "error");
+    }
+  };
+
+  const handleReorderStyleCategory = async (
+    index: number,
+    direction: -1 | 1,
+  ) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= sortedAdminCategories.length) return;
+    const reordered = [...sortedAdminCategories];
+    const current = reordered[index];
+    const swap = reordered[targetIndex];
+    if (!current || !swap) return;
+    reordered[index] = swap;
+    reordered[targetIndex] = current;
+    try {
+      await DesignStyleCategoryService.reorderCategories(reordered);
+      triggerStatus("Updated category order.");
+    } catch (error) {
+      console.error("Failed to reorder Design Style categories", error);
+      triggerStatus("Failed to reorder categories.", "error");
+    }
+  };
+
+  const handleToggleStyleCategoryEnabled = async (
+    category: DesignStyleCategory,
+  ) => {
+    try {
+      const saved = await DesignStyleCategoryService.setCategoryEnabled(
+        category,
+        !category.enabled,
+      );
+      triggerStatus(
+        saved.enabled
+          ? `Restored category "${saved.name}".`
+          : `Archived category "${saved.name}".`,
+        "info",
+      );
+    } catch (error) {
+      console.error("Failed to update category lifecycle", error);
+      triggerStatus("Failed to update category status.", "error");
+    }
+  };
+
+  const handleDeleteUnusedStyleCategory = async (
+    category: DesignStyleCategory,
+  ) => {
+    if ((categoryUsageCountById[category.id] || 0) > 0) {
+      triggerStatus(
+        "Categories in use by Design Styles cannot be deleted. Archive it instead.",
+        "error",
+      );
+      return;
+    }
+    try {
+      await DesignStyleCategoryService.deleteUnusedCategory(
+        category.id,
+        adminStyles,
+      );
+      triggerStatus(`Deleted unused category "${category.name}".`, "info");
+    } catch (error) {
+      console.error("Failed to delete unused category", error);
+      triggerStatus(
+        error instanceof Error && error.message.includes("CATEGORY_IN_USE")
+          ? "Categories in use by Design Styles cannot be deleted. Archive it instead."
+          : "Failed to delete category.",
+        "error",
+      );
     }
   };
 
@@ -1174,9 +1421,7 @@ export default function DatabaseView({
           : { status: "legacy_unresolved", garmentTypes: [] },
       },
     };
-    setIsNewRecord(true);
-    setEditingItem(newStyle);
-    setEditingType("style");
+    openStyleEditor(newStyle, true);
     triggerStatus(`Prepared ${newName} as a new draft. Save to persist it.`, "info");
   };
 
@@ -1549,12 +1794,27 @@ export default function DatabaseView({
       (c.role && c.role.toLowerCase().includes(userSearch.toLowerCase())),
   );
 
-  const filteredStyles = adminStyles.filter(
-    (s) =>
-      s.name.toLowerCase().includes(styleSearch.toLowerCase()) ||
-      s.id.toLowerCase().includes(styleSearch.toLowerCase()) ||
-      s.description.toLowerCase().includes(styleSearch.toLowerCase()),
+  const sortedAdminCategories = sortDesignStyleCategories(
+    adminDesignStyleCategories,
   );
+  const adminCategoryById = new Map<string, DesignStyleCategory>(
+    sortedAdminCategories.map((category) => [category.id, category]),
+  );
+  const categoryUsageCountById = getCategoryUsageCountById(adminStyles);
+
+  const filteredStyles = adminStyles.filter((s) => {
+    const query = styleSearch.toLowerCase();
+    const matchesSearch =
+      s.name.toLowerCase().includes(query) ||
+      s.id.toLowerCase().includes(query) ||
+      s.description.toLowerCase().includes(query);
+    if (!matchesSearch) return false;
+    if (styleCategoryFilter === "all") return true;
+    if (styleCategoryFilter === "uncategorized") {
+      return !s.categoryIds || s.categoryIds.length === 0;
+    }
+    return Boolean(s.categoryIds?.includes(styleCategoryFilter));
+  });
   const editingStyleAuthority =
     editingType === "style" && editingItem
       ? getDesignStyleAuthorityMetadata(editingItem as StyleCategory)
@@ -1763,7 +2023,9 @@ export default function DatabaseView({
             {editingType && (editingItem || editingType === "catalog_option") && (
               <div
                 ref={catalogEditorRef}
-                className="mb-8 p-6 bg-heritage-forest/5 border-2 border-heritage-gold/20 rounded-2xl text-left space-y-4"
+                tabIndex={-1}
+                data-testid="admin-record-editor"
+                className="scroll-mt-28 mb-8 p-6 bg-heritage-forest/5 border-2 border-heritage-gold/20 rounded-2xl text-left space-y-4 focus:outline-none"
               >
                 <div className="flex items-center justify-between border-b border-heritage-gold/10 pb-3">
                   <h3 className="text-sm font-bold font-serif text-heritage-green uppercase tracking-wider">
@@ -2332,6 +2594,228 @@ export default function DatabaseView({
                         placeholder="e.g. Royal Senator"
                       />
                     </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Collection Audience
+                      </label>
+                      <select
+                        aria-label="Collection Audience"
+                        value={editingItem.gender || "male"}
+                        onChange={(event) =>
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            gender: event.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {resolveDesignStyleGenderOptions(genderOptionsCollection).map(
+                          (option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Outfit Type
+                      </label>
+                      <select
+                        aria-label="Outfit Type"
+                        value={
+                          editingItem.outfitType
+                            ? customerCatalogueLabel(editingItem.outfitType)
+                            : DEFAULT_ADMIN_STYLE_OUTFIT_TYPE
+                        }
+                        onChange={(event) =>
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            outfitType: event.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {resolveOutfitTypeOptions(
+                          businessSettings,
+                          DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
+                          editingItem.outfitType,
+                        ).map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Garment Composition (Derived)
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        aria-label="Garment Composition"
+                        value={formatDerivedGarmentCompositionLabel(
+                          editingItem.fabricCapacityComposition,
+                          editingItem.garmentComposition,
+                        )}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-gray-50 text-heritage-ink/75 rounded-lg"
+                      />
+                      <p className="text-[10px] text-heritage-ink/60">
+                        Derived from the selected garment types below. Stored legacy composition value is preserved on save.
+                      </p>
+                    </div>
+                    <div
+                      className="space-y-2 col-span-1 sm:col-span-2"
+                      data-testid="admin-style-category-picker"
+                    >
+                      {(() => {
+                        const selectedCategoryIds: string[] = Array.isArray(
+                          editingItem.categoryIds,
+                        )
+                          ? editingItem.categoryIds
+                          : [];
+                        const activeCategories = sortedAdminCategories.filter(
+                          (cat) => cat.enabled,
+                        );
+                        const orphanedOrArchivedSelectedIds =
+                          selectedCategoryIds.filter(
+                            (id) => !activeCategories.some((cat) => cat.id === id),
+                          );
+                        const toggleCategoryId = (categoryId: string) => {
+                          const currentlySelected =
+                            selectedCategoryIds.includes(categoryId);
+                          if (
+                            !currentlySelected &&
+                            selectedCategoryIds.length >=
+                              DESIGN_STYLE_CATEGORY_MAX_PER_STYLE
+                          ) {
+                            return;
+                          }
+                          const nextCategoryIds = currentlySelected
+                            ? selectedCategoryIds.filter((id) => id !== categoryId)
+                            : [...selectedCategoryIds, categoryId];
+                          const nextDesignCategories =
+                            resolveMirroredDesignCategories({
+                              categoryIds: nextCategoryIds,
+                              categories: adminDesignStyleCategories,
+                            });
+                          setEditingItem((prev: any) => ({
+                            ...prev,
+                            categoryIds: nextCategoryIds,
+                            designCategories: nextDesignCategories,
+                          }));
+                        };
+
+                        return (
+                          <>
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="font-bold text-heritage-green">
+                                Design Categories (Select up to{" "}
+                                {DESIGN_STYLE_CATEGORY_MAX_PER_STYLE})
+                              </label>
+                              <span className="text-[11px] font-mono text-heritage-ink/60">
+                                {selectedCategoryIds.length}/
+                                {DESIGN_STYLE_CATEGORY_MAX_PER_STYLE} selected
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {activeCategories.map((cat) => {
+                                const isSelected = selectedCategoryIds.includes(
+                                  cat.id,
+                                );
+                                const disabled =
+                                  !isSelected &&
+                                  selectedCategoryIds.length >=
+                                    DESIGN_STYLE_CATEGORY_MAX_PER_STYLE;
+                                return (
+                                  <button
+                                    key={cat.id}
+                                    type="button"
+                                    aria-label={`Category ${cat.name}`}
+                                    aria-pressed={isSelected}
+                                    disabled={disabled}
+                                    onClick={() => toggleCategoryId(cat.id)}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
+                                      isSelected
+                                        ? "bg-heritage-green text-heritage-gold border-heritage-green"
+                                        : "bg-white text-heritage-green border-heritage-gold/30 hover:border-heritage-green/50"
+                                    } ${
+                                      disabled
+                                        ? "opacity-45 cursor-not-allowed"
+                                        : "cursor-pointer"
+                                    }`}
+                                  >
+                                    {cat.name}
+                                  </button>
+                                );
+                              })}
+                              {orphanedOrArchivedSelectedIds.map((id) => {
+                                const archived = adminCategoryById.get(id);
+                                const label = archived
+                                  ? `${archived.name} (Archived)`
+                                  : `${id} (Unavailable)`;
+                                return (
+                                  <button
+                                    key={`archived-${id}`}
+                                    type="button"
+                                    aria-label={`Category ${label}`}
+                                    aria-pressed={true}
+                                    onClick={() => toggleCategoryId(id)}
+                                    className="px-3 py-1.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-900 border-amber-300 cursor-pointer"
+                                  >
+                                    {label} &times;
+                                  </button>
+                                );
+                              })}
+                              {activeCategories.length === 0 &&
+                                orphanedOrArchivedSelectedIds.length === 0 && (
+                                  <p className="text-xs text-heritage-ink/60">
+                                    No active categories yet. Create categories under the Categories tab.
+                                  </p>
+                                )}
+                            </div>
+                            {selectedCategoryIds.length === 0 &&
+                              Array.isArray(editingItem.designCategories) &&
+                              editingItem.designCategories.length > 0 && (
+                                <p className="text-[10px] text-heritage-ink/60">
+                                  Legacy tags preserved until assigned:{" "}
+                                  {editingItem.designCategories
+                                    .map((tag: string) =>
+                                      normalizeDesignStyleCategoryName(tag),
+                                    )
+                                    .filter(Boolean)
+                                    .join(", ")}
+                                </p>
+                              )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div className="col-span-1 sm:col-span-2">
+                      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-heritage-gold/20 bg-white px-3 py-2">
+                        <input
+                          type="checkbox"
+                          aria-label="Style photo shows a wearer"
+                          data-design-style-shows-wearer="true"
+                          checked={editingItem.showsWearer === true}
+                          onChange={(event) =>
+                            setEditingItem({
+                              ...editingItem,
+                              showsWearer: event.target.checked,
+                            })
+                          }
+                          className="mt-0.5 h-4 w-4 rounded text-heritage-green"
+                        />
+                        <span>
+                          <span className="block font-bold text-heritage-green">Style photo shows a wearer</span>
+                          <span className="mt-1 block text-[11px] leading-relaxed text-heritage-ink/60">
+                            Off by default. Turn this on only when this design’s photo shows a person wearing the style. AI Try-on can then offer “Use the style photo”, which keeps that person and changes only the customer’s fabric. It uses one try.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
                     <div className="space-y-2 col-span-1 sm:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-4">
                       <div>
                         <h4 className="font-bold text-heritage-green">
@@ -2434,6 +2918,50 @@ export default function DatabaseView({
                             </label>
                           );
                         })}
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 border-t border-heritage-gold/15 pt-3 sm:grid-cols-2">
+                        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-150 bg-white px-3 py-2 text-xs">
+                          <input
+                            type="checkbox"
+                            aria-label="Monogram on sleeve cuff eligible"
+                            checked={editingItem.monogramCuffEligible === true}
+                            onChange={(event) =>
+                              setEditingItem({
+                                ...editingItem,
+                                monogramCuffEligible: event.target.checked,
+                              })
+                            }
+                            className="h-4 w-4 rounded text-heritage-green"
+                          />
+                          <span className="font-bold text-heritage-green">
+                            Monogram on Sleeve Cuff Eligible
+                          </span>
+                        </label>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-heritage-green">
+                            Embroidery Prominence
+                          </label>
+                          <select
+                            aria-label="Embroidery Prominence"
+                            value={
+                              editingItem.embroideryProminence === "heavy"
+                                ? "heavy"
+                                : "standard"
+                            }
+                            onChange={(event) =>
+                              setEditingItem({
+                                ...editingItem,
+                                embroideryProminence: event.target.value as
+                                  | "standard"
+                                  | "heavy",
+                              })
+                            }
+                            className="w-full rounded-lg border border-heritage-gold/20 bg-white px-3 py-1.5 text-xs"
+                          >
+                            <option value="standard">Standard</option>
+                            <option value="heavy">Heavy</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-4 col-span-1 sm:col-span-2 bg-heritage-cream/10 p-4 rounded-xl border border-heritage-gold/20">
@@ -2588,8 +3116,9 @@ export default function DatabaseView({
                                         ...conf,
                                         representedGenders,
                                         featuresMaleAndFemale:
-                                          representedGenders.includes("male") &&
-                                          representedGenders.includes("female"),
+                                          deriveFeaturesMaleAndFemale(
+                                            representedGenders,
+                                          ),
                                       }
                                     });
                                   }}
@@ -2599,6 +3128,245 @@ export default function DatabaseView({
                               </label>
                             ))}
                           </div>
+                        </div>
+
+                        <div className="space-y-3 col-span-1 sm:col-span-2 rounded-lg border border-heritage-gold/20 bg-white p-3">
+                          <div className="space-y-1">
+                            <label className="font-bold text-heritage-green block">
+                              Style Applicability
+                            </label>
+                            <p className="text-[10px] text-heritage-ink/60">
+                              Controls whether customers can apply this design only to its original garments or adapt it to other selected garments in Step 3.
+                            </p>
+                            <select
+                              aria-label="Style Applicability Mode"
+                              value={
+                                editingItem.styleApplicability?.mode === "adaptable"
+                                  ? "adaptable"
+                                  : "exact_only"
+                              }
+                              onChange={(event) => {
+                                if (event.target.value !== "adaptable") {
+                                  setEditingItem({
+                                    ...editingItem,
+                                    styleApplicability: { mode: "exact_only" },
+                                  });
+                                  return;
+                                }
+                                const existingGarments: CanonicalPhysicalGarmentType[] =
+                                  Array.isArray(
+                                    editingItem.styleApplicability?.garmentTypes,
+                                  )
+                                    ? editingItem.styleApplicability.garmentTypes.filter(
+                                        (g: CanonicalPhysicalGarmentType) =>
+                                          ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
+                                            g,
+                                          ),
+                                      )
+                                    : [];
+                                const fallbackGarments: CanonicalPhysicalGarmentType[] =
+                                  Array.isArray(editingItem.fabricCapacityComposition)
+                                    ? [
+                                        ...new Set<CanonicalPhysicalGarmentType>(
+                                          editingItem.fabricCapacityComposition
+                                            .map((spec: any): unknown => spec?.garmentType)
+                                            .filter(
+                                              (
+                                                g: unknown,
+                                              ): g is CanonicalPhysicalGarmentType =>
+                                                typeof g === "string" &&
+                                                ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
+                                                  g as CanonicalPhysicalGarmentType,
+                                                ),
+                                            ),
+                                        ),
+                                      ]
+                                    : [];
+                                const garmentTypes =
+                                  existingGarments.length > 0
+                                    ? existingGarments
+                                    : fallbackGarments;
+                                const existingDemographics: Array<"male" | "female"> =
+                                  Array.isArray(
+                                    editingItem.styleApplicability?.demographics,
+                                  )
+                                    ? editingItem.styleApplicability.demographics.filter(
+                                        (d: unknown): d is "male" | "female" =>
+                                          d === "male" || d === "female",
+                                      )
+                                    : [];
+                                setEditingItem({
+                                  ...editingItem,
+                                  styleApplicability: {
+                                    mode: "adaptable",
+                                    garmentTypes,
+                                    ...(existingDemographics.length > 0
+                                      ? { demographics: existingDemographics }
+                                      : {}),
+                                  },
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg text-xs"
+                            >
+                              <option value="exact_only">
+                                Exact Match Only (Default)
+                              </option>
+                              <option value="adaptable">
+                                Adaptable to Selected Garments
+                              </option>
+                            </select>
+                          </div>
+
+                          {editingItem.styleApplicability?.mode === "adaptable" && (
+                            <div className="space-y-3 border-t border-heritage-gold/15 pt-3">
+                              <div className="space-y-1.5">
+                                <label className="font-bold text-heritage-green block text-xs">
+                                  Adaptable Garment Types
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                  {ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.map(
+                                    (garmentType) => {
+                                      const garmentLabel =
+                                        getFabricGarmentLabel(garmentType);
+                                      const checked = Boolean(
+                                        editingItem.styleApplicability?.garmentTypes?.includes(
+                                          garmentType,
+                                        ),
+                                      );
+                                      return (
+                                        <label
+                                          key={`adaptable-${garmentType}`}
+                                          className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-heritage-cream/10 px-3 py-1.5 text-xs"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            aria-label={`Adaptable garment ${garmentLabel}`}
+                                            checked={checked}
+                                            onChange={(event) => {
+                                              const current: CanonicalPhysicalGarmentType[] =
+                                                Array.isArray(
+                                                  editingItem.styleApplicability
+                                                    ?.garmentTypes,
+                                                )
+                                                  ? editingItem.styleApplicability
+                                                      .garmentTypes
+                                                  : [];
+                                              const garmentTypes = event.target
+                                                .checked
+                                                ? [
+                                                    ...new Set([
+                                                      ...current,
+                                                      garmentType,
+                                                    ]),
+                                                  ]
+                                                : current.filter(
+                                                    (item) => item !== garmentType,
+                                                  );
+                                              const existingDemographics: Array<
+                                                "male" | "female"
+                                              > = Array.isArray(
+                                                editingItem.styleApplicability
+                                                  ?.demographics,
+                                              )
+                                                ? editingItem.styleApplicability.demographics.filter(
+                                                    (
+                                                      d: unknown,
+                                                    ): d is "male" | "female" =>
+                                                      d === "male" || d === "female",
+                                                  )
+                                                : [];
+                                              setEditingItem({
+                                                ...editingItem,
+                                                styleApplicability: {
+                                                  mode: "adaptable",
+                                                  garmentTypes,
+                                                  ...(existingDemographics.length > 0
+                                                    ? {
+                                                        demographics:
+                                                          existingDemographics,
+                                                      }
+                                                    : {}),
+                                                },
+                                              });
+                                            }}
+                                            className="h-4 w-4 rounded text-heritage-green"
+                                          />
+                                          <span>{garmentLabel}</span>
+                                        </label>
+                                      );
+                                    },
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="font-bold text-heritage-green block text-xs">
+                                  Optional Adaptable Audiences
+                                </label>
+                                <p className="text-[10px] text-heritage-ink/60">
+                                  Leave unchecked to use the style&apos;s Design audience. Check audiences only to allow adapting this design across additional audiences.
+                                </p>
+                                <div className="flex gap-4">
+                                  {(["male", "female"] as const).map((g) => (
+                                    <label
+                                      key={`adaptable-audience-${g}`}
+                                      className="flex cursor-pointer items-center gap-2 text-xs"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Adaptable audience ${g}`}
+                                        checked={Boolean(
+                                          editingItem.styleApplicability?.demographics?.includes(
+                                            g,
+                                          ),
+                                        )}
+                                        onChange={(event) => {
+                                          const currentGarments: CanonicalPhysicalGarmentType[] =
+                                            Array.isArray(
+                                              editingItem.styleApplicability
+                                                ?.garmentTypes,
+                                            )
+                                              ? editingItem.styleApplicability
+                                                  .garmentTypes
+                                              : [];
+                                          const currentDemographics: Array<
+                                            "male" | "female"
+                                          > = Array.isArray(
+                                            editingItem.styleApplicability
+                                              ?.demographics,
+                                          )
+                                            ? editingItem.styleApplicability.demographics.filter(
+                                                (
+                                                  d: unknown,
+                                                ): d is "male" | "female" =>
+                                                  d === "male" || d === "female",
+                                              )
+                                            : [];
+                                          const demographics = event.target.checked
+                                            ? [...new Set([...currentDemographics, g])]
+                                            : currentDemographics.filter(
+                                                (d) => d !== g,
+                                              );
+                                          setEditingItem({
+                                            ...editingItem,
+                                            styleApplicability: {
+                                              mode: "adaptable",
+                                              garmentTypes: currentGarments,
+                                              ...(demographics.length > 0
+                                                ? { demographics }
+                                                : {}),
+                                            },
+                                          });
+                                        }}
+                                        className="h-4 w-4 rounded text-heritage-green"
+                                      />
+                                      <span className="capitalize">{g}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="space-y-2 col-span-1 sm:col-span-2">
@@ -2614,7 +3382,7 @@ export default function DatabaseView({
                                   type="checkbox"
                                   checked={editingItem.customDetailConfig?.supportedGarmentGroups?.includes(g) || false}
                                   onChange={(e) => {
-                                    const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
+                                    const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: deriveFeaturesMaleAndFemale([]), supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
                                     const list = conf.supportedGarmentGroups || [];
                                     const supportedGarmentGroups = e.target.checked
                                       ? [...list, g]
@@ -2680,7 +3448,7 @@ export default function DatabaseView({
                                   onChange={(e) => {
                                     const conf = editingItem.customDetailConfig || {
                                       representedGenders: [],
-                                      featuresMaleAndFemale: false,
+                                      featuresMaleAndFemale: deriveFeaturesMaleAndFemale([]),
                                       supportedGarmentGroups: [],
                                       requiredSelectionGroups: [],
                                       enabled: true,
@@ -4727,6 +5495,16 @@ export default function DatabaseView({
                     Style Configuration
                   </div>
                   <div
+                    onClick={() => { setStyleSubTab("categories"); setEditingType(null); }}
+                    className={`px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-t-xl select-none cursor-pointer flex items-center gap-1.5 ${
+                      styleSubTab === "categories"
+                        ? "bg-white text-heritage-green border-t border-l border-r border-heritage-gold/20 -mb-[1px]"
+                        : "text-heritage-ink/40 hover:text-heritage-green hover:bg-white/50"
+                    }`}
+                  >
+                    Categories
+                  </div>
+                  <div
                     onClick={() => { setStyleSubTab("catalogue"); setEditingType(null); }}
                     className={`px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-t-xl select-none cursor-pointer flex items-center gap-1.5 ${
                       styleSubTab === "catalogue"
@@ -4741,17 +5519,34 @@ export default function DatabaseView({
                 {styleSubTab === "styles" && (
                   <div className="space-y-6">
                     <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                  <div className="relative w-full sm:w-80">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-heritage-beige">
-                      <Search size={14} />
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Search styles..."
-                      value={styleSearch}
-                      onChange={(e) => setStyleSearch(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 border border-heritage-gold/20 rounded-xl text-xs"
-                    />
+                  <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto flex-grow">
+                    <div className="relative w-full sm:w-72">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-heritage-beige">
+                        <Search size={14} />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="Search styles..."
+                        value={styleSearch}
+                        onChange={(e) => setStyleSearch(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 border border-heritage-gold/20 rounded-xl text-xs"
+                      />
+                    </div>
+                    <select
+                      aria-label="Filter styles by category"
+                      value={styleCategoryFilter}
+                      onChange={(e) => setStyleCategoryFilter(e.target.value)}
+                      className="px-3 py-2 border border-heritage-gold/20 rounded-xl text-xs bg-white text-heritage-green font-medium"
+                    >
+                      <option value="all">All Categories</option>
+                      {sortedAdminCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                          {cat.enabled ? "" : " (Archived)"}
+                        </option>
+                      ))}
+                      <option value="uncategorized">Uncategorized</option>
+                    </select>
                   </div>
                   <button
                     onClick={() => {
@@ -4768,49 +5563,13 @@ export default function DatabaseView({
                         );
                         return;
                       }
-                      setIsNewRecord(true);
-                      setEditingItem({
-                        id: nextStyleId,
-                        name: "",
-                        description: "",
-                        gender: "unisex",
-                        options: [
-                          "Standard Collar",
-                          "Agbada Over-shirt",
-                          "Embroidery Work",
-                        ],
-                        outfitType: "Senator Set",
-                        garmentComposition: "2-Piece Set",
-                        fabricCapacityComposition: [
-                          createStyleBaseGarmentSpec("shirt"),
-                          createStyleBaseGarmentSpec("trouser"),
-                        ],
-                        customDetailConfig: {
-                          representedGenders: ["male", "female"],
-                          featuresMaleAndFemale: true,
-                          supportedGarmentGroups: [
-                            "shirt",
-                            "dress",
-                            "neck",
-                            "trousers",
-                          ],
-                          requiredSelectionGroups: [
-                            "shirt_construction",
-                            "shirt_pockets",
-                            "dress_construction",
-                            "dress_pockets",
-                            "neck_design",
-                            "trouser_fastening",
-                            "trouser_pockets",
-                          ],
-                          enabled: true,
-                        },
-                        designStyleAuthority:
-                          createDefaultDesignStyleAuthorityMetadata(
-                            adminStyles.length,
-                          ),
-                      });
-                      setEditingType("style");
+                      openStyleEditor(
+                        createDefaultDesignStyleDraft(
+                          nextStyleId,
+                          adminStyles.length,
+                        ),
+                        true,
+                      );
                     }}
                     className="flex items-center gap-1.5 px-4 py-2 bg-heritage-green text-heritage-gold text-xs font-bold rounded-xl border border-heritage-gold/20 shadow-sm cursor-pointer select-none uppercase tracking-wider shrink-0"
                   >
@@ -4881,16 +5640,36 @@ export default function DatabaseView({
                               {s.gender}
                             </span>
                             <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
-                              {s.outfitType || "Senator Set"}
+                              {customerCatalogueLabel(
+                                s.outfitType || DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+                              )}
                             </span>
                             <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green text-heritage-gold border border-heritage-gold/20">
-                              {s.garmentComposition || "2-Piece Set"}
+                              {customerCatalogueLabel(
+                                s.garmentComposition ||
+                                  DEFAULT_ADMIN_STYLE_COMPOSITION,
+                              )}
                             </span>
-                            {s.fabricCategory && s.fabricCategory !== "Any" && (
-                              <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-gold bg-heritage-gold/5">
-                                {s.fabricCategory}
-                              </span>
-                            )}
+                            {(s.categoryIds && s.categoryIds.length > 0
+                              ? s.categoryIds.map((id) => {
+                                  const cat = adminCategoryById.get(id);
+                                  return cat
+                                    ? `${cat.name}${cat.enabled ? "" : " (Archived)"}`
+                                    : id;
+                                })
+                              : (s.designCategories || []).map((entry) =>
+                                  normalizeDesignStyleCategoryName(entry),
+                                )
+                            )
+                              .filter(Boolean)
+                              .map((categoryLabel) => (
+                                <span
+                                  key={`${s.id}-${categoryLabel}`}
+                                  className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-green bg-heritage-cream/40"
+                                >
+                                  {categoryLabel}
+                                </span>
+                              ))}
                           </div>
                           {s.detectedColors && (
                             <div className="flex items-center gap-2 pt-1">
@@ -4941,11 +5720,7 @@ export default function DatabaseView({
                       </div>
                       <div className="flex justify-end gap-2 pt-3 border-t border-gray-50">
                         <button
-                          onClick={() => {
-                            setIsNewRecord(false);
-                            setEditingItem(s);
-                            setEditingType("style");
-                          }}
+                          onClick={() => openStyleEditor(s, false)}
                           className="px-2.5 py-1 text-[10px] font-bold bg-heritage-forest/10 hover:bg-heritage-green hover:text-heritage-gold text-heritage-green rounded-lg transition flex items-center gap-1"
                         >
                           <Edit2 size={10} /> Edit Garment Option
@@ -4969,6 +5744,226 @@ export default function DatabaseView({
                   ))}
                 </div>
                 </div>
+                )}
+
+                {styleSubTab === "categories" && (
+                  <div
+                    className="space-y-6"
+                    data-testid="admin-categories-manager"
+                  >
+                    <form
+                      onSubmit={handleAddStyleCategory}
+                      className="bg-heritage-cream/20 border border-heritage-gold/20 rounded-2xl p-5 space-y-4"
+                    >
+                      <div>
+                        <h4 className="font-bold text-sm text-heritage-green">
+                          Add Design Style Category
+                        </h4>
+                        <p className="text-[11px] text-heritage-ink/65 mt-0.5">
+                          Categories organize styles for Admin curation and customer filters. Use &quot;Long Shirt&quot; wording (legacy wording is normalized automatically).
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          aria-label="New category name"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          placeholder="e.g. Ceremonial, Long Shirt Classics"
+                          className="px-3 py-2 border border-heritage-gold/20 bg-white rounded-xl text-xs"
+                        />
+                        <input
+                          type="text"
+                          aria-label="New category description"
+                          value={newCategoryDescription}
+                          onChange={(e) =>
+                            setNewCategoryDescription(e.target.value)
+                          }
+                          placeholder="Optional description"
+                          className="px-3 py-2 border border-heritage-gold/20 bg-white rounded-xl text-xs"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-heritage-green text-heritage-gold text-xs font-bold rounded-xl uppercase tracking-wider cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Category
+                      </button>
+                    </form>
+
+                    {sortedAdminCategories.length === 0 ? (
+                      <div className="rounded-xl border border-heritage-gold/20 bg-white p-5 text-xs text-heritage-ink/60">
+                        No Design Style categories configured yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {sortedAdminCategories.map((cat, index) => {
+                          const usageCount =
+                            categoryUsageCountById[cat.id] || 0;
+                          const isEditingCat = editingCategoryId === cat.id;
+                          return (
+                            <div
+                              key={cat.id}
+                              data-testid={`admin-category-row-${cat.id}`}
+                              className="bg-white border border-heritage-gold/20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm"
+                            >
+                              <div className="space-y-1.5 flex-grow min-w-0">
+                                {isEditingCat ? (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <input
+                                      type="text"
+                                      aria-label="Edit category name"
+                                      value={editingCategoryName}
+                                      onChange={(e) =>
+                                        setEditingCategoryName(e.target.value)
+                                      }
+                                      className="px-3 py-1.5 border border-heritage-gold/30 rounded-lg text-xs"
+                                    />
+                                    <input
+                                      type="text"
+                                      aria-label="Edit category description"
+                                      value={editingCategoryDescription}
+                                      onChange={(e) =>
+                                        setEditingCategoryDescription(
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder="Optional description"
+                                      className="px-3 py-1.5 border border-heritage-gold/30 rounded-lg text-xs"
+                                    />
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-serif font-bold text-sm text-heritage-green">
+                                        {cat.name}
+                                      </span>
+                                      <span className="font-mono text-[10px] text-gray-400">
+                                        #{cat.displayOrder + 1} · {cat.id}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded ${
+                                          cat.enabled
+                                            ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                            : "bg-amber-50 text-amber-800 border border-amber-200"
+                                        }`}
+                                      >
+                                        {cat.enabled ? "Active" : "Archived"}
+                                      </span>
+                                      <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-heritage-cream/60 text-heritage-green border border-heritage-gold/20">
+                                        Used by {usageCount} style
+                                        {usageCount === 1 ? "" : "s"}
+                                      </span>
+                                    </div>
+                                    {cat.description && (
+                                      <p className="text-xs text-gray-600">
+                                        {cat.description}
+                                      </p>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                {isEditingCat ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleSaveEditedStyleCategory(cat)
+                                      }
+                                      className="px-3 py-1.5 text-[11px] font-bold bg-heritage-green text-heritage-gold rounded-lg"
+                                    >
+                                      Save Category
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCategoryId(null);
+                                        setEditingCategoryName("");
+                                        setEditingCategoryDescription("");
+                                      }}
+                                      className="px-3 py-1.5 text-[11px] font-bold bg-gray-100 text-gray-700 rounded-lg"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      aria-label={`Move ${cat.name} up`}
+                                      disabled={index === 0}
+                                      onClick={() =>
+                                        handleReorderStyleCategory(index, -1)
+                                      }
+                                      className="px-2.5 py-1 text-[10px] font-bold bg-gray-100 text-heritage-green rounded-lg disabled:opacity-40"
+                                    >
+                                      Move up
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={`Move ${cat.name} down`}
+                                      disabled={
+                                        index ===
+                                        sortedAdminCategories.length - 1
+                                      }
+                                      onClick={() =>
+                                        handleReorderStyleCategory(index, 1)
+                                      }
+                                      className="px-2.5 py-1 text-[10px] font-bold bg-gray-100 text-heritage-green rounded-lg disabled:opacity-40"
+                                    >
+                                      Move down
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={`Rename ${cat.name}`}
+                                      onClick={() => {
+                                        setEditingCategoryId(cat.id);
+                                        setEditingCategoryName(cat.name);
+                                        setEditingCategoryDescription(
+                                          cat.description || "",
+                                        );
+                                      }}
+                                      className="px-2.5 py-1 text-[10px] font-bold bg-heritage-forest/10 text-heritage-green rounded-lg"
+                                    >
+                                      Rename
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label={`${cat.enabled ? "Archive" : "Restore"} ${cat.name}`}
+                                      onClick={() =>
+                                        handleToggleStyleCategoryEnabled(cat)
+                                      }
+                                      className="px-2.5 py-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 rounded-lg"
+                                    >
+                                      {cat.enabled ? "Archive" : "Restore"}
+                                    </button>
+                                    {usageCount > 0 ? (
+                                      <span className="text-[10px] font-semibold text-amber-800 px-1">
+                                        In use — archive instead
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        aria-label={`Delete ${cat.name}`}
+                                        onClick={() =>
+                                          handleDeleteUnusedStyleCategory(cat)
+                                        }
+                                        className="px-2.5 py-1 text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 rounded-lg"
+                                      >
+                                        Delete
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {styleSubTab === "catalogue" && (

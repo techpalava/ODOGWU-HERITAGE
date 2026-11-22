@@ -500,6 +500,7 @@ const isolatedMeasurementDraft = makeDraft("measurement", {
       high_risk: { shared: {}, byGarmentKey: {} },
       critical_risk: { shared: {}, byGarmentKey: {} },
       sample_cloth: { shared: {}, byGarmentKey: {} },
+      onsite_physical: { shared: {}, byGarmentKey: {} },
     },
     derived: { shared: {}, byGarmentKey: {} },
     blueprintVersion: "measurement-blueprint-v1",

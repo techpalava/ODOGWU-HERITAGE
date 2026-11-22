@@ -1,3 +1,5 @@
+import { customerFacingPickupWording } from "./designStudioFutureShipping.js";
+
 export const CUSTOMER_WORKSHOP_DELIVERY_UNSCHEDULED = "Not scheduled yet";
 
 export interface CustomerWorkshopProgress {
@@ -52,7 +54,7 @@ export const presentCustomerWorkshopProgress = (
     : 1;
   const dated = text(shipment.estimatedDeliveryDate) || text(shipment.estimatedDelivery);
   return {
-    statusLabel: status || "In production",
+    statusLabel: customerFacingPickupWording(status) || "In production",
     stageLabel: `Stage ${stage} of 6`,
     deliveryLabel: dated
       ? formatIsoDate(dated) ?? dated

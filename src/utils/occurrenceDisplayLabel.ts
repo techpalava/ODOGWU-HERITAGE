@@ -4,6 +4,7 @@ import {
   getStep1GarmentDisplayLabel,
   STEP_1_GARMENT_DISPLAY_LABELS,
 } from "./garmentConstructionPricing.js";
+import { formatCustomDetailsGarmentLabel } from "./optionalShortsPresentation.js";
 
 export interface OccurrenceFamilyLabels {
   readonly broadLabel: string;
@@ -62,14 +63,15 @@ export const projectPersonGarmentLabels = (
   }[],
 ): ReadonlyMap<string, string> => {
   const plainLabelOf = (garment: (typeof garments)[number]): string => {
+    const normalizedLabel = formatCustomDetailsGarmentLabel(garment.label);
     const family = garment.garmentType
       ? (STEP_1_GARMENT_DISPLAY_LABELS as Readonly<Record<string, string>>)[
           garment.garmentType
         ]
       : undefined;
-    if (!family || !garment.label.startsWith(family)) return garment.label;
-    const rest = garment.label.slice(family.length);
-    return rest === "" || /^ \d+$/.test(rest) ? family : garment.label;
+    if (!family || !normalizedLabel.startsWith(family)) return normalizedLabel;
+    const rest = normalizedLabel.slice(family.length);
+    return rest === "" || /^ \d+$/.test(rest) ? family : normalizedLabel;
   };
   const plainByKey = new Map(
     garments.map((garment) => [garment.garmentKey, plainLabelOf(garment)]),
@@ -81,7 +83,9 @@ export const projectPersonGarmentLabels = (
       const plain = plainByKey.get(garment.garmentKey)!;
       return [
         garment.garmentKey,
-        (plainCounts.get(plain) || 0) > 1 ? garment.label : plain,
+        (plainCounts.get(plain) || 0) > 1
+          ? formatCustomDetailsGarmentLabel(garment.label)
+          : plain,
       ];
     }),
   );

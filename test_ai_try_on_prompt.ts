@@ -12,7 +12,10 @@ import {
   AI_TRY_ON_PROMPT_VERSION,
   buildAiTryOnFitBlock,
   buildAiTryOnImageLabels,
+  buildAiTryOnModelPrompt,
+  buildAiTryOnOutfitPrompt,
   buildAiTryOnPrompt,
+  buildAiTryOnStylePhotoPrompt,
 } from "./src/server/aiTryOnPrompt";
 import { chooseAiTryOnMode } from "./src/utils/aiTryOnGatewayContract";
 import {
@@ -33,7 +36,7 @@ import {
   AI_TRY_ON_ORDER_DETAILS_MAX_LINES,
   buildAiTryOnOrderDetailsBlock,
 } from "./src/server/aiTryOnPrompt";
-import { createAiTryOnVisualInputFingerprint } from "./src/utils/aiTryOnWorkflow";
+import { aiTryOnOutfitFingerprint, createAiTryOnVisualInputFingerprint } from "./src/utils/aiTryOnWorkflow";
 import { parseAiTryOnGenerationRequest } from "./src/server/aiTryOnHttp";
 
 // ---------------------------------------------------------------- snapshots
@@ -43,30 +46,32 @@ Image 1: the customer, for identity and pose only. Image 2: the ordered garment.
 Edit image 1 so this same customer wears only the ordered garment from image 2.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a waist-length button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
-From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details.
+From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus colour, pattern, embroidery and trims. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details.
+Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes. Never erase, smooth, resize, reposition or flatten them into a plain garment. Apply the selected fabric's pattern, texture, weave and base colour to the main body. Adapt contrast patches, pockets and panels into harmonizing contrast tones or complementary accents that pair naturally with the selected fabric, keeping clear seam edges and distinct visual separation. Do not keep clashing reference colours.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
-Ignore everything that is not the person or the garment: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
+Ignore everything that is not the person or the garment: app or website interface, interface buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
 Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.
 Check: the face, body and background must be the customer's from image 1, not the model's.`;
 
 const FABRIC_SNAPSHOT = `Virtual try-on photo edit with a fabric change.
 Image 1: the customer, for identity and pose only. Image 2: the ordered garment's construction. Image 3: the fabric swatch.
-Edit image 1 so this same customer wears only the ordered garment from image 2, made only from the fabric in image 3.
+Edit image 1 so this same customer wears only the ordered garment from image 2, its main body made only from the fabric in image 3.
 The person in image 2 is only a stand-in model. Never use their face, body, pose or background, and never return image 2.
 From image 1 keep only the customer's identity, face, hair, skin tone, body shape, pose, hands and background. Their clothes are not part of what you keep.
-When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
+When the order details name garment types, make those types only, and they win over the clothes in both images. A named Standard Shirt must be a waist-length button-front shirt with a shirt hem, never a polo, tunic or Long Shirt. A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt. Use a shirt collar unless the order explicitly chooses another neckline or collar. Wear ordered shirts and Long Shirts untucked unless tucked styling is requested below. A named Standard Dress must stay a Standard Dress: never a Long Shirt, tunic, senator style, or any other style. Do not turn any other named type into a different one.
 Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt.
 Replace every garment in image 1 that the ordered garment covers. A dress or other full-coverage garment covers the whole outfit region, so remove the photo's dress and trousers there. Keep shoes and any clothing outside the covered region.
-From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
-From image 3 take only the fabric: colour, pattern, motif scale, texture and sheen. Image 3 always decides these; nothing in image 2 or in this text overrides it. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
+From image 2 take the silhouette: cut, length, neckline, sleeves and shape, plus seams, embroidery and trim placement. The named garment type and explicitly chosen order details win over image 2, including neckline, collar, tuck in or out, sleeves and length. Apply a named sleeve: Sleeveless, Short Sleeve, Mid Sleeve, or Long Sleeve. Sleeveless has no sleeve, Mid Sleeve ends on the forearm, and Long Sleeve reaches the wrist. Apply a named Neck Design. Keep front placket buttons from image 2, and wrist cuffs when the sleeve is Long Sleeve. Use image 2 only for details the order does not specify. Keep all other design details. Ignore its original fabric colour and print.
+Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes. Never erase, smooth, resize, reposition or flatten them into a plain garment. Apply the selected fabric's pattern, texture, weave and base colour to the main body. Adapt contrast patches, pockets and panels into harmonizing contrast tones or complementary accents that pair naturally with the selected fabric, keeping clear seam edges and distinct visual separation. Do not keep clashing reference colours.
+From image 3 take only the fabric: colour, pattern, print, motif scale, texture, weave and sheen. Image 3 always decides these for the main garment body; nothing in image 2 or in this text overrides that. Design Style contrast patches, pockets and panels may use complementary accents. The swatch is a close-up, so scale the pattern to real size on the body and keep it continuous across seams.
 Do not take any colour, pattern or texture from the clothes in image 1.
-Use only what is in image 3. Do not invent or add prints, motifs or colours.
+Use only what is in image 3 for the main garment body. Do not invent or add prints or motifs.
 Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image.
 Make it look real: natural drape, folds and fit on this body, with lighting and shadows that match image 1.
-Ignore everything that is not the person, the garment or the fabric: app or website interface, buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
+Ignore everything that is not the person, the garment or the fabric: app or website interface, interface buttons, screens, text, logos, watermarks, mannequins, hangers, and any other person or model.
 Output one photorealistic photo of this one person only, full body in frame when image 1 shows it; never crop a visible head or feet. No text, labels, numbers, logos, watermarks or borders anywhere in the image.
 Check: the face, body and background must be the customer's from image 1, not the model's.`;
 
@@ -98,7 +103,8 @@ assert.equal(
 
 // Any wording change must bump AI_TRY_ON_PROMPT_VERSION (and this pin).
 const PINNED: Record<string, string> = {
-  "tryon-prompt-v9": createHash("sha256")
+  "tryon-prompt-v11": "2d8f95c47fe8f1a8c96291a1367098e9fc76d9a9ba42d8fa315d18d45ca1f435",
+  "tryon-prompt-v13": createHash("sha256")
     .update([GARMENT_SNAPSHOT, FABRIC_SNAPSHOT, FIT_SNAPSHOT].join("\u0000"))
     .digest("hex"),
 };
@@ -111,7 +117,7 @@ const liveDigest = createHash("sha256")
     ].join("\u0000"),
   )
   .digest("hex");
-assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v9");
+assert.equal(AI_TRY_ON_PROMPT_VERSION, "tryon-prompt-v13");
 assert.equal(liveDigest, PINNED[AI_TRY_ON_PROMPT_VERSION], "prompt text changed: bump AI_TRY_ON_PROMPT_VERSION");
 
 // ---------------------------------------------------------------- properties
@@ -140,14 +146,14 @@ assert.deepEqual(buildAiTryOnImageLabels("garment"), [
 assert.deepEqual(buildAiTryOnImageLabels("fabric"), [
   "Image 1, the customer to edit. Keep this person and pose only, not their clothes:",
   "Image 2, design-style construction only. Follow the named garment type and explicit order choices first; fill only unspecified details from this image. The person wearing it is a stand-in model; do not use them:",
-  "Image 3, fabric swatch, for colour and pattern only. No other image may set the fabric:",
+  "Image 3, fabric swatch, for the main garment body's colour and pattern only. No other image may set that fabric. Design Style contrast patches, pockets and panels may use complementary accents:",
 ]);
 assert.match(FABRIC_SNAPSHOT, /person in image 2 is only a stand-in model/);
 assert.match(FABRIC_SNAPSHOT, /never return image 2/);
 assert.match(FABRIC_SNAPSHOT, /Ignore any labels, tags, stickers, codes or text printed on the swatch in image 3, and never put them in the image\./);
-assert.match(FABRIC_SNAPSHOT, /Image 3 always decides these/, "swatch-wins rule kept");
+assert.match(FABRIC_SNAPSHOT, /Image 3 always decides these for the main garment body/, "swatch still decides the main garment body");
 assert.match(FABRIC_SNAPSHOT.split("\n").at(-1)!, /^Check: .*customer's from image 1, not the model's\.$/, "fabric identity check is the last line");
-assert.match(FABRIC_SNAPSHOT, /Do not invent or add prints/);
+assert.match(FABRIC_SNAPSHOT, /Do not invent or add prints or motifs/);
 assert.match(FABRIC_SNAPSHOT, /Copy only the ordered garment, not other clothing in image 2 such as trousers with a shirt\./);
 assert.match(FABRIC_SNAPSHOT, /Do not take any colour, pattern or texture from the clothes in image 1\./);
 assert.match(FABRIC_SNAPSHOT, /Keep all other design details\. Ignore its original fabric colour and print\./);
@@ -168,9 +174,12 @@ for (const prompt of [GARMENT_SNAPSHOT, FABRIC_SNAPSHOT]) {
 }
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const allHints: AiTryOnFitHint[] = AI_TRY_ON_FIT_HINT_IDS.map((id) => ({ id, valueCm: 30 }));
-// v9 adds explicit construction priority while keeping the prompt bounded.
-assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 490, "garment prompt stays short");
-assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 620, "fabric prompt stays short");
+// v11 adds untucked-by-default shirt rule while keeping the prompt bounded.
+// v12 adds Long Shirt length fidelity while keeping the prompt bounded.
+// v13 surface line is 87 words (caps were 545+87=632 and 675+87=762).
+// Scoping the swatch rules to the main body adds 0 garment words and 25 fabric words: 762+25=787.
+assert.ok(words(buildAiTryOnPrompt({ mode: "garment", fitHints: allHints })) <= 632, "garment prompt stays short");
+assert.ok(words(buildAiTryOnPrompt({ mode: "fabric", fitHints: allHints })) <= 787, "fabric prompt stays short");
 assert.equal(
   buildAiTryOnFitBlock(allHints).split("\n").length - 1,
   8,
@@ -185,9 +194,9 @@ assert.match(
 // The photo flow's response reports AI_TRY_ON_PROMPT_VERSION; model mode reports its own.
 assert.match(
   readFileSync("src/server/aiTryOnHttp.ts", "utf8"),
-  /const promptVersion = parsed\.uploadedDesign \? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed\.outfitGarments \? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel \? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;/,
+  /const promptVersion = parsed\.stylePhoto \? AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION : parsed\.uploadedDesign \? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed\.outfitGarments \? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel \? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;/,
 );
-assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /\n {4}promptVersion,\n {4}\.\.\.\(defaultModel/);
+assert.match(readFileSync("src/server/aiTryOnHttp.ts", "utf8"), /\r?\n {4}promptVersion,\r?\n {4}\.\.\.\(defaultModel/);
 
 // ---------------------------------------------------------------- mode choice
 
@@ -309,17 +318,17 @@ Garment 2: Trouser
 // v9: explicit length, sleeves and neckline choices reach the prompt.
 const ORDER_BLOCK_FABRIC = ORDER_BLOCK_GARMENT.replace(
   "Order details. Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details. Never write any of it on the image:\n",
-  "Order details. Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details. They never change the fabric from image 3. Never write any of it on the image:\nFabric: exactly as in image 3\n",
+  "Order details. Keep the named garment type. Explicit choices below override both photos, including neckline, collar, tuck in or out, sleeves and length. Image 2 fills only unspecified details. They never change the main garment body's fabric from image 3. Never write any of it on the image:\nFabric for the main garment body: exactly as in image 3\n",
 );
 {
   const fabricPrompt = buildAiTryOnPrompt({ mode: "fabric", orderDetails: { ...built!, fabric: { colour: "Brown", colourHex: "#724137", category: "Lace" } } });
   for (const label of ["Brown", "#724137", "Lace", "Royal Blue", "#1F3A93", "Aso-Oke"]) {
     assert.equal(fabricPrompt.includes(label), false, `fabric label "${label}" never reaches the prompt`);
   }
-  assert.match(fabricPrompt, /Image 3 always decides these; nothing in image 2 or in this text overrides it\./);
-  assert.match(fabricPrompt, /colour, pattern, motif scale, texture and sheen/);
+  assert.match(fabricPrompt, /Image 3 always decides these for the main garment body; nothing in image 2 or in this text overrides that\./);
+  assert.match(fabricPrompt, /colour, pattern, print, motif scale, texture, weave and sheen/);
   assert.match(fabricPrompt, /Explicit choices below override both photos/);
-  assert.match(fabricPrompt, /They never change the fabric from image 3\./);
+  assert.match(fabricPrompt, /They never change the main garment body's fabric from image 3\./);
   assert.equal(fabricPrompt.includes("where they differ from image 2, follow these"), false);
   assert.equal(fabricPrompt.includes("for the garment style only"), false);
   assert.equal(fabricPrompt.includes("Standard Length Shirt, Short Sleeve"), true, "chosen sleeves reach the prompt");
@@ -332,7 +341,7 @@ assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built
 assert.equal(buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: null }), "");
 assert.equal(
   buildAiTryOnPrompt({ mode: "fabric", orderDetails: built, fitHints: shuffledHints }),
-  `${FABRIC_SNAPSHOT}\n\n${ORDER_BLOCK_FABRIC}\n\n${FIT_SNAPSHOT}`,
+  `${FABRIC_SNAPSHOT}\n\nTop styling: wear the Standard Shirt completely untucked, draping naturally outside and over the waistband of trousers or shorts. Never tuck the shirt in, even if a reference photo shows a tucked-in shirt.\n\n${ORDER_BLOCK_FABRIC}\n\n${FIT_SNAPSHOT}`,
 );
 const many: AiTryOnOrderDetails = {
   garments: Array.from({ length: 4 }, () => ({
@@ -483,7 +492,8 @@ assert.match(readFileSync("src/components/DesignStudioView.tsx", "utf8"), /order
 
 // Order-block wording is part of the version pin too.
 const ORDER_PIN: Record<string, string> = {
-  "tryon-prompt-v9": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
+  "tryon-prompt-v11": "469046f4949e29a9ee3c379a25b306bce839e94bf2945a05b38f8cfcb9b11910",
+  "tryon-prompt-v13": createHash("sha256").update(ORDER_BLOCK_FABRIC).digest("hex"),
 };
 assert.equal(
   createHash("sha256").update(buildAiTryOnOrderDetailsBlock({ mode: "fabric", orderDetails: built })).digest("hex"),
@@ -502,4 +512,349 @@ assert.match(UPLOADED_DESIGN_SNAPSHOT, /No text, labels, numbers, logos, waterma
 
 assert.match(buildAiTryOnUploadedDesignPrompt("kaftan"), /Fabric edit target: Long Shirt/);
 assert.doesNotMatch(buildAiTryOnUploadedDesignPrompt("kaftan"), /Kaftan/);
+
+const SLEEVE_CASES = [
+  ["dress_std_sleeveless", "Sleeveless"],
+  ["dress_std_short", "Short Sleeve"],
+  ["dress_std_mid", "Mid Sleeve"],
+  ["dress_std_long", "Long Sleeve"],
+] as const;
+const sleeveOrder = (optionId: string): AiTryOnOrderDetails => ({
+  garments: [{ garmentType: "dress", optionIds: [optionId, "neck_no_v"], decorations: [] }],
+});
+for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+  for (const [optionId, sleeve] of SLEEVE_CASES) {
+    const prompt = builder({ mode: "garment", orderDetails: sleeveOrder(optionId) });
+    assert.match(prompt, new RegExp(sleeve), `${sleeve} is applied`);
+    assert.match(prompt, /Neck Design/);
+    assert.match(prompt, /No Collar, V-Shaped Neck/);
+    assert.match(prompt, /front placket buttons/);
+    assert.match(prompt, /wrist cuffs when the sleeve is Long Sleeve/);
+  }
+}
+const outfitPrompt = buildAiTryOnOutfitPrompt({
+  onModel: false,
+  garments: [
+    { garmentKey: "top", garmentType: "dress", garmentImageUrl: "https://example.test/dress", orderDetails: sleeveOrder("dress_std_long") },
+    { garmentKey: "bottom", garmentType: "skirt", garmentImageUrl: "https://example.test/skirt", orderDetails: { garments: [{ garmentType: "skirt", optionIds: ["skirt_std"], decorations: [] }] } },
+  ],
+});
+assert.match(outfitPrompt, /Long Sleeve reaches the wrist/);
+assert.match(outfitPrompt, /Neck Design/);
+assert.match(outfitPrompt, /front placket buttons/);
+assert.match(outfitPrompt, /the design-style reference photo/);
+assert.match(outfitPrompt, /Standard Length, Long Sleeve/);
+
+const sleeveFingerprint = (optionId: string) => createAiTryOnVisualInputFingerprint({
+  garmentTypeSelection: {
+    garmentTypes: ["dress"],
+    demographic: "female",
+    constructionByGarment: {
+      dress: {
+        status: "resolved",
+        garmentType: "dress",
+        components: [{ selectionGroup: "dress_construction", optionId, componentKey: optionId, priceCents: 7500, price: 75 }],
+        totalPriceCents: 7500,
+        totalPrice: 75,
+      },
+    },
+  } as never,
+  fabricAllocations: [],
+  selectedStyleId: "style-1",
+  orderDetails: sleeveOrder(optionId),
+});
+const midFingerprint = sleeveFingerprint("dress_std_mid");
+const longFingerprint = sleeveFingerprint("dress_std_long");
+assert.notEqual(midFingerprint, longFingerprint, "Mid Sleeve and Long Sleeve invalidate the cached preview");
+assert.equal(midFingerprint, sleeveFingerprint("dress_std_mid"));
+const outfitOf = (topFingerprint: string) => aiTryOnOutfitFingerprint(
+  { garmentKey: "base:dress", inputFingerprint: topFingerprint },
+  { garmentKey: "base:skirt", inputFingerprint: "tryon-bottom-stable" },
+  { kind: "customer_photo" },
+);
+assert.notEqual(outfitOf(midFingerprint), outfitOf(longFingerprint), "switching Mid Sleeve and Long Sleeve changes the outfit fingerprint");
+assert.equal(outfitOf(midFingerprint), outfitOf(midFingerprint));
+
+const shortModelPrompt = buildAiTryOnModelPrompt({
+  mode: "garment",
+  baseLength: "short",
+  orderDetails: { garments: [{ garmentType: "skirt", optionIds: [], decorations: [] }] },
+});
+assert.match(shortModelPrompt, /Replace the base bum shorts or short knickers in image 1 with the target skirt, shorts or dress\./);
+assert.match(shortModelPrompt, /The lower legs stay bare\. No trouser legs may be visible\./);
+assert.equal(shortModelPrompt.includes("Kaftan"), false);
+assert.equal(buildAiTryOnModelPrompt({ mode: "garment" }).includes("base bum shorts"), false, "long bases stay on the trouser prompt");
+assert.match(buildAiTryOnModelPrompt({ mode: "fabric", baseLength: "short" }), /No trouser legs may be visible/);
+const shortOutfitPrompt = buildAiTryOnOutfitPrompt({
+  onModel: true,
+  baseLength: "short",
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+    { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts" },
+  ],
+});
+assert.match(shortOutfitPrompt, /Replace the base bum shorts or short knickers in image 1 with the target skirt, shorts or dress\./);
+assert.match(shortOutfitPrompt, /No trouser legs may be visible/);
+assert.equal(buildAiTryOnOutfitPrompt({
+  onModel: true,
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+    { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+  ],
+}).includes("base bum shorts"), false, "a long outfit base is unchanged");
+assert.equal(buildAiTryOnOutfitPrompt({
+  onModel: false,
+  baseLength: "short",
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+    { garmentKey: "bottom", garmentType: "skirt", garmentImageUrl: "https://example.test/skirt" },
+  ],
+}).includes("base bum shorts"), false, "a customer photo is not a short studio base");
+const shortModelFingerprint = aiTryOnOutfitFingerprint(
+  { garmentKey: "base:shirt", inputFingerprint: "tryon-top" },
+  { garmentKey: "base:standard_shorts", inputFingerprint: "tryon-bottom" },
+  { kind: "studio_model", modelId: "female-1-light-short" },
+);
+const longModelFingerprint = aiTryOnOutfitFingerprint(
+  { garmentKey: "base:shirt", inputFingerprint: "tryon-top" },
+  { garmentKey: "base:standard_shorts", inputFingerprint: "tryon-bottom" },
+  { kind: "studio_model", modelId: "female-1-light" },
+);
+assert.ok(shortModelFingerprint && longModelFingerprint);
+assert.notEqual(shortModelFingerprint, longModelFingerprint, "the outfit fingerprint follows the short or long studio model id");
+
+// Top tuck styling rules across single garment & outfit prompts
+const shirtDetails: AiTryOnOrderDetails = {
+  garments: [{ garmentType: "shirt", optionIds: ["shirt_std_short", "neck_flat_collar"], decorations: [] }],
+};
+const shortsWithBelt: AiTryOnOrderDetails = {
+  garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_belt"], decorations: [] }],
+};
+const shortsElasticOnly: AiTryOnOrderDetails = {
+  garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_elastic"], decorations: [] }],
+};
+for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+  assert.match(
+    builder({ mode: "garment", orderDetails: shirtDetails }),
+    /wear the Standard Shirt completely untucked, draping naturally outside and over the waistband/,
+  );
+  assert.match(
+    builder({ mode: "garment", orderDetails: shirtDetails, topTuckPreference: "untucked" }),
+    /wear the Standard Shirt completely untucked, draping naturally outside and over the waistband/,
+  );
+  assert.match(
+    builder({ mode: "garment", orderDetails: shirtDetails, topTuckPreference: "tucked" }),
+    /tuck the Standard Shirt cleanly into the waistband of the trousers or shorts all the way around/,
+  );
+  assert.equal(
+    builder({ mode: "garment", orderDetails: shortsWithBelt }).includes("Top styling:"),
+    false,
+    "bottom-only preview does not inject top tucking rule",
+  );
+}
+// Outfit: Option A fallback when auto vs explicit untucked / tucked
+const beltAutoOutfit = buildAiTryOnOutfitPrompt({
+  onModel: false,
+  garments: [
+    { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+    { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsWithBelt },
+  ],
+});
+assert.match(beltAutoOutfit, /relaxed front-tuck \(French tuck\)/);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "untucked",
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsWithBelt },
+    ],
+  }),
+  /wear the Standard Shirt completely untucked/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "tucked",
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsElasticOnly },
+    ],
+  }),
+  /tuck the Standard Shirt cleanly into the waistband of the bottom garment all the way around/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts", orderDetails: shortsElasticOnly },
+    ],
+  }),
+  /wear the Standard Shirt completely untucked/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "tucked",
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/kaftan" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+    ],
+  }),
+  /wear the Long Shirt completely untucked/,
+);
+assert.equal(
+  parseAiTryOnGenerationRequest({
+    mode: "garment",
+    inputFingerprint: "tryon-v1-0123456789abcdef",
+    defaultModelId: "male-1-light",
+    garmentImageUrl: "https://example.test/shirt.jpg",
+    topTuckPreference: "tucked",
+  }).ok,
+  true,
+);
+assert.equal(
+  parseAiTryOnGenerationRequest({
+    mode: "garment",
+    inputFingerprint: "tryon-v1-0123456789abcdef",
+    defaultModelId: "male-1-light",
+    garmentImageUrl: "https://example.test/shirt.jpg",
+    topTuckPreference: "bogus",
+  }).ok,
+  false,
+);
+
+// ---------------------------------------------------------------- Long Shirt fidelity
+// Item 1 from Fred's review: Long Shirt length fidelity in standalone and combined outfit prompts.
+{
+  const kaftanDetails: AiTryOnOrderDetails = {
+    garments: [{
+      garmentType: "kaftan",
+      optionIds: ["shirt_long_short", "neck_vert_round"],
+      decorations: ["embroidery"],
+    }],
+  };
+  for (const builder of [buildAiTryOnPrompt, buildAiTryOnModelPrompt]) {
+    const prompt = builder({ mode: "garment", orderDetails: kaftanDetails });
+    assert.match(prompt, /A named Standard Shirt must be a waist-length button-front shirt with a shirt hem/);
+    assert.match(prompt, /A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee/);
+    assert.match(prompt, /completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem, never a waist-length shirt/);
+    assert.match(prompt, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband with only the lower trouser legs visible below the hem\. Never tuck it in\./);
+    assert.match(prompt, /Garment: Long Shirt/);
+    assert.doesNotMatch(prompt, /\bKaftan\b/, "wording convention: customer/admin visible never says Kaftan");
+  }
+
+  // Combined outfit: Long Shirt + Trousers
+  const kaftanOutfitPrompt = buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/kaftan", orderDetails: kaftanDetails },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser", orderDetails: { garments: [{ garmentType: "trouser", optionIds: ["trouser_belt"], decorations: [] }] } },
+    ],
+  });
+  assert.match(kaftanOutfitPrompt, /Chosen top: Long Shirt/);
+  assert.match(kaftanOutfitPrompt, /Chosen bottom: Trouser/);
+  assert.match(kaftanOutfitPrompt, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband of the bottom garment with only the lower trouser legs visible below the hem\. Never tuck it in\./);
+  assert.match(kaftanOutfitPrompt, /A named Standard Shirt must be a waist-length button-front shirt/);
+  assert.match(kaftanOutfitPrompt, /A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee/);
+  assert.doesNotMatch(kaftanOutfitPrompt, /\bKaftan\b/, "combined outfit prompt never says Kaftan");
+
+  // Contrast with Standard Shirt:
+  // Standard Shirt with belt loops front-tucks on auto, or untucks completely on untucked
+  const standardShirtOutfitPrompt = buildAiTryOnOutfitPrompt({
+    onModel: false,
+    topTuckPreference: "untucked",
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", orderDetails: shirtDetails },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser", orderDetails: { garments: [{ garmentType: "trouser", optionIds: ["trouser_belt"], decorations: [] }] } },
+    ],
+  });
+  assert.match(standardShirtOutfitPrompt, /Chosen top: Standard Shirt/);
+  assert.match(standardShirtOutfitPrompt, /Top styling: wear the Standard Shirt completely untucked, hanging naturally outside and over the waistband/);
+
+  // Even with belt loops, Long Shirt NEVER front-tucks and always stays untucked covering waistband
+  const kaftanWithBeltPrompt = buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/kaftan", orderDetails: kaftanDetails },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser", orderDetails: { garments: [{ garmentType: "trouser", optionIds: ["trouser_belt"], decorations: [] }] } },
+    ],
+  });
+  assert.match(kaftanWithBeltPrompt, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband/);
+  assert.doesNotMatch(kaftanWithBeltPrompt, /front-tuck|French tuck/);
+
+  // Line cap compliance: multi-garment order with kaftan options never truncated
+  const orderBlock = buildAiTryOnOrderDetailsBlock({ mode: "garment", orderDetails: kaftanDetails });
+  assert.ok(orderBlock.split("\n").length <= AI_TRY_ON_ORDER_DETAILS_MAX_LINES);
+  assert.match(orderBlock, /Garment: Long Shirt/);
+}
+
+const SURFACE = /Design Style surface: keep the exact geometry, boundaries, proportions, placement, seams, flaps, buttons and layering of colour-block patches, contrast pockets, panels, plackets, piping, trim and embroidery shapes\. Never erase, smooth, resize, reposition or flatten them into a plain garment\. Apply the selected fabric's pattern, texture, weave and base colour to the main body\. Adapt contrast patches, pockets and panels into harmonizing contrast tones or complementary accents that pair naturally with the selected fabric, keeping clear seam edges and distinct visual separation\. Do not keep clashing reference colours\./;
+for (const prompt of [
+  buildAiTryOnPrompt({ mode: "garment" }),
+  buildAiTryOnPrompt({ mode: "fabric" }),
+  buildAiTryOnModelPrompt({ mode: "garment" }),
+  buildAiTryOnModelPrompt({ mode: "fabric" }),
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+    ],
+  }),
+  buildAiTryOnStylePhotoPrompt(),
+]) {
+  assert.match(prompt, SURFACE, "a Design Style photo keeps patch geometry and uses harmonizing or complementary accents");
+}
+assert.doesNotMatch(buildAiTryOnUploadedDesignPrompt("shirt"), /Design Style surface/, "uploaded design has no catalogue Design Style photo");
+const contrastAccents = /Design Style contrast patches, pockets and panels may use complementary accents/;
+assert.match(buildAiTryOnPrompt({ mode: "fabric" }), /Image 3 always decides these for the main garment body/);
+assert.match(buildAiTryOnPrompt({ mode: "fabric" }), /Do not invent or add prints or motifs/);
+assert.match(buildAiTryOnPrompt({ mode: "fabric" }), contrastAccents);
+assert.doesNotMatch(buildAiTryOnPrompt({ mode: "garment" }), contrastAccents);
+assert.match(buildAiTryOnModelPrompt({ mode: "fabric" }), /Image 3 always decides these for the main garment body/);
+assert.match(buildAiTryOnModelPrompt({ mode: "fabric" }), contrastAccents);
+assert.match(buildAiTryOnStylePhotoPrompt(), /Change only the fabric/);
+assert.match(buildAiTryOnStylePhotoPrompt(), /on the main garment body/);
+assert.match(buildAiTryOnStylePhotoPrompt(), contrastAccents);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", fabricSwatchImageUrl: "https://example.test/swatch" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+    ],
+  }),
+  /decides the main garment body's fabric colour, pattern, print, motif scale, texture, weave and sheen/,
+);
+assert.match(
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt", fabricSwatchImageUrl: "https://example.test/swatch" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/trouser" },
+    ],
+  }),
+  contrastAccents,
+);
+assert.doesNotMatch(buildAiTryOnUploadedDesignPrompt("shirt"), contrastAccents);
+for (const prompt of [
+  buildAiTryOnPrompt({ mode: "garment" }),
+  buildAiTryOnPrompt({ mode: "fabric" }),
+  buildAiTryOnModelPrompt({ mode: "garment" }),
+  buildAiTryOnModelPrompt({ mode: "fabric" }),
+  buildAiTryOnStylePhotoPrompt(),
+  buildAiTryOnUploadedDesignPrompt("kaftan"),
+  buildAiTryOnOutfitPrompt({
+    onModel: false,
+    garments: [
+      { garmentKey: "top", garmentType: "kaftan", garmentImageUrl: "https://example.test/top" },
+      { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/bottom" },
+    ],
+  }),
+]) {
+  assert.equal(/kaftan/i.test(prompt), false);
+}
+
 console.log(`PASS: AI Try-on prompt ${AI_TRY_ON_PROMPT_VERSION} snapshots, determinism, budget, mode choice, per-wearer hints`);

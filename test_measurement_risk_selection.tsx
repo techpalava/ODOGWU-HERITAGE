@@ -136,12 +136,14 @@ const radios = renderer.root.findAllByProps({
   type: "radio",
   name: "future-measurement-route",
 });
-assert.equal(radios.length, 5);
+assert.equal(radios.length, 6);
 assert.deepEqual(
   radios.map((radio) => radio.props.value),
-  ["low_risk", "medium_risk", "high_risk", "critical_risk", "sample_cloth"],
+  ["low_risk", "medium_risk", "high_risk", "critical_risk", "sample_cloth", "onsite_physical"],
 );
-const riskRadios = radios.filter((radio) => radio.props.value !== "sample_cloth");
+const riskRadios = radios.filter(
+  (radio) => radio.props.value !== "sample_cloth" && radio.props.value !== "onsite_physical",
+);
 assert.equal(riskRadios.length, 4);
 assert.deepEqual(
   riskRadios.map((radio) => radio.props.value),
@@ -203,16 +205,19 @@ const sampleOption = renderer.root.findByProps({
 });
 assert.equal(sampleOption.props["data-measurement-guide-beam"], "true");
 assert.match(sampleOption.props.className, /motion-safe:animate-step-guide-beam/);
-for (const sectionId of ["alternate_contact", "ai_measurements"]) {
-  const section = renderer.root.findByProps({
-    "data-measurement-option-section": sectionId,
-  });
-  assert.equal(
-    section.findAll((node) => node.props?.["data-measurement-guide-beam"] === "true").length,
-    0,
-    `${sectionId} stays unlit`,
-  );
-}
+const onsiteOption = renderer.root.findByProps({
+  "data-measurement-onsite-option": "onsite_physical",
+});
+assert.equal(onsiteOption.props["data-measurement-guide-beam"], "true");
+assert.match(onsiteOption.props.className, /motion-safe:animate-step-guide-beam/);
+const aiSection = renderer.root.findByProps({
+  "data-measurement-option-section": "ai_measurements",
+});
+assert.equal(
+  aiSection.findAll((node) => node.props?.["data-measurement-guide-beam"] === "true").length,
+  0,
+  "ai_measurements stays unlit",
+);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "high_risk" }).length, 0);
@@ -231,7 +236,8 @@ assert.equal(
     (node) =>
       node.props?.["data-measurement-guide-beam"] === "true" &&
       (node.props["data-measurement-risk-option"] ||
-        node.props["data-measurement-sample-option"]),
+        node.props["data-measurement-sample-option"] ||
+        node.props["data-measurement-onsite-option"]),
   ).length,
   0,
   "choosing a method clears the method-choice beams",

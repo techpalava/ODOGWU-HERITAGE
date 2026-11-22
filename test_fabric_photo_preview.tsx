@@ -317,7 +317,5 @@ const stepSource = readFileSync("src/components/DormantFutureFabricStep.tsx", "u
 assert.match(stepSource, /showPhotoPreview/);
 const additionalPicker = readFileSync("src/components/FutureAdditionalGarmentFabricDialog.tsx", "utf8");
 assert.doesNotMatch(additionalPicker, /showPhotoPreview|CataloguePhotoPreviewDialog/);
-const tryOn = readFileSync("src/components/AiTryOnPhotoPanel.tsx", "utf8");
-assert.doesNotMatch(tryOn, /CataloguePhotoPreviewDialog/, "garment cards are not wired yet");
 
 console.log("PASS: fabric card photo preview");

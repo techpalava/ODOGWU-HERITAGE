@@ -7,6 +7,12 @@ import { Edit2, Users, User, Share2, Trash2, CheckCircle2, FileText, Check, Shie
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
+import { customerFacingPickupLocationLabel } from "../utils/designStudioFutureShipping";
+import {
+  formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
 import { StorageService } from "../services/storageService";
 import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
@@ -25,7 +31,10 @@ import { resumeFutureOrderV2PixReturn } from "../utils/futureOrderV2Pix";
 import { retireStudioFutureDesignDraft } from "../services/retirePaidStudioDraft";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
-import { presentCustomerDashboardBanner } from "../utils/customerDashboardBanner";
+import {
+  isCustomerDashboardBannerSettled,
+  presentCustomerDashboardBanner,
+} from "../utils/customerDashboardBanner";
 import type { FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
 import type { FutureOrderV2PersonalizedPriceRecord } from "../utils/futureOrderV2PersonalizedPrice";
 import { decideFutureOrderV2PersonalizedPrice } from "../services/futureOrderV2PersonalizedPriceClient";
@@ -35,6 +44,11 @@ import {
   stashFutureOrderV2OpenOrderId,
 } from "../utils/futureOrderV2StripeReturn";
 import { loadStripe } from "@stripe/stripe-js";
+
+const EMPTY_PAYMENTS_MAP: ReadonlyMap<string, FutureOrderV2PaymentRecord> = new Map();
+const EMPTY_WORKSHOP_MAP: ReadonlyMap<string, FutureOrderV2WorkshopProgress> = new Map();
+const EMPTY_PERSONALIZED_PRICES_MAP: ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord> =
+  new Map();
 
 const futureOrderV2DashboardPaymentActions: FutureOrderV2DashboardPaymentActions = {
   authorize: authorizeFutureOrderV2Payment,
@@ -90,13 +104,27 @@ export default function DashboardView({
   });
 
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
-  const [futureOrderV2PaymentsByOrderId, setFutureOrderV2PaymentsByOrderId] =
-    useState<ReadonlyMap<string, FutureOrderV2PaymentRecord>>(new Map());
+  const { businessSettings } = useAppStore();
+  const fabrics = useAppStore((state) => state.fabrics);
+  const hasLoadedOrders = useAppStore((state) => state.hasLoadedOrders);
+  const storeOwnerUid = useAppStore((state) => state.currentUser?.ownerUid ?? null);
+  const subscriptionKey = `${storeOwnerUid ?? ""}|${currentUser?.email ?? ""}`;
+  const [paymentsSubscription, setPaymentsSubscription] = useState<{
+    key: string | null;
+    settled: boolean;
+    records: ReadonlyMap<string, FutureOrderV2PaymentRecord>;
+  }>({ key: null, settled: false, records: EMPTY_PAYMENTS_MAP });
   const [openV2OrderId, setOpenV2OrderId] = useState<string | null>(null);
-  const [futureOrderV2WorkshopByOrderId, setFutureOrderV2WorkshopByOrderId] =
-    useState<ReadonlyMap<string, FutureOrderV2WorkshopProgress>>(new Map());
-  const [futureOrderV2PersonalizedPricesByOrderId, setFutureOrderV2PersonalizedPricesByOrderId] =
-    useState<ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>>(new Map());
+  const [workshopSubscription, setWorkshopSubscription] = useState<{
+    key: string | null;
+    settled: boolean;
+    records: ReadonlyMap<string, FutureOrderV2WorkshopProgress>;
+  }>({ key: null, settled: false, records: EMPTY_WORKSHOP_MAP });
+  const [personalizedPricesSubscription, setPersonalizedPricesSubscription] = useState<{
+    key: string | null;
+    settled: boolean;
+    records: ReadonlyMap<string, FutureOrderV2PersonalizedPriceRecord>;
+  }>({ key: null, settled: false, records: EMPTY_PERSONALIZED_PRICES_MAP });
   useEffect(() => {
     const pendingOpen = consumeFutureOrderV2OpenOrderId();
     const params = new URLSearchParams(window.location.search);
@@ -173,28 +201,92 @@ export default function DashboardView({
       setOpenV2OrderId(result.orderId);
     })();
   }, []);
-  useEffect(
-    () => StorageService.subscribeToCustomerFutureOrderV2Workshop(setFutureOrderV2WorkshopByOrderId),
-    [currentUser?.email],
-  );
-  useEffect(
-    () =>
+  useEffect(() => {
+    let cancelled = false;
+    setWorkshopSubscription({
+      key: subscriptionKey,
+      settled: false,
+      records: EMPTY_WORKSHOP_MAP,
+    });
+    const unsubscribe = StorageService.subscribeToCustomerFutureOrderV2Workshop(
+      (records) => {
+        if (cancelled) return;
+        setWorkshopSubscription({ key: subscriptionKey, settled: true, records });
+      },
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [subscriptionKey]);
+  useEffect(() => {
+    let cancelled = false;
+    setPersonalizedPricesSubscription({
+      key: subscriptionKey,
+      settled: false,
+      records: EMPTY_PERSONALIZED_PRICES_MAP,
+    });
+    const unsubscribe =
       StorageService.subscribeToCustomerFutureOrderV2PersonalizedPrices(
-        setFutureOrderV2PersonalizedPricesByOrderId,
-      ),
-    [currentUser?.email],
-  );
+        (records) => {
+          if (cancelled) return;
+          setPersonalizedPricesSubscription({
+            key: subscriptionKey,
+            settled: true,
+            records,
+          });
+        },
+      );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [subscriptionKey]);
+  useEffect(() => {
+    let cancelled = false;
+    setPaymentsSubscription({
+      key: subscriptionKey,
+      settled: false,
+      records: EMPTY_PAYMENTS_MAP,
+    });
+    const unsubscribe = StorageService.subscribeToCustomerFutureOrderV2Payments(
+      (records) => {
+        if (cancelled) return;
+        setPaymentsSubscription({ key: subscriptionKey, settled: true, records });
+      },
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [subscriptionKey]);
+
+  const futureOrderV2PaymentsByOrderId =
+    paymentsSubscription.key === subscriptionKey
+      ? paymentsSubscription.records
+      : EMPTY_PAYMENTS_MAP;
+  const futureOrderV2WorkshopByOrderId =
+    workshopSubscription.key === subscriptionKey
+      ? workshopSubscription.records
+      : EMPTY_WORKSHOP_MAP;
+  const futureOrderV2PersonalizedPricesByOrderId =
+    personalizedPricesSubscription.key === subscriptionKey
+      ? personalizedPricesSubscription.records
+      : EMPTY_PERSONALIZED_PRICES_MAP;
+
+  const v2BannerSettled = isCustomerDashboardBannerSettled({
+    ordersLoaded: hasLoadedOrders || activeOrders.length > 0,
+    paymentsLoaded:
+      paymentsSubscription.key === subscriptionKey && paymentsSubscription.settled,
+    workshopLoaded:
+      workshopSubscription.key === subscriptionKey && workshopSubscription.settled,
+  });
   const v2Banner = presentCustomerDashboardBanner(
     activeOrders,
     futureOrderV2PaymentsByOrderId,
     futureOrderV2WorkshopByOrderId,
+    { settled: v2BannerSettled },
   );
-  useEffect(
-    () => StorageService.subscribeToCustomerFutureOrderV2Payments(setFutureOrderV2PaymentsByOrderId),
-    [currentUser?.email],
-  );
-  const { businessSettings } = useAppStore();
-  const fabrics = useAppStore((state) => state.fabrics);
   const profileName = currentUser?.name || "Guest";
   const profileEmail = currentUser?.email || "guest@example.com";
   const profilePhone = currentUser?.phone || "+1234567890";
@@ -239,7 +331,7 @@ export default function DashboardView({
           <div className="lg:col-span-7 space-y-4 font-sans">
             <h2 className="text-xl font-serif mb-2">Welcome, {currentUser?.name || 'Guest'}</h2>
             
-            {v2Banner ? (
+            {!v2BannerSettled ? null : v2Banner ? (
               <>
                 <p data-customer-dashboard-banner className="text-sm opacity-80 mb-4">{v2Banner.message}</p>
                 {v2Banner.action && (
@@ -631,7 +723,11 @@ export default function DashboardView({
               </p>
               <p>
                 <strong>2. Locker Location:</strong> The lockers are in{" "}
-                <strong>{businessSettings.productionSettings.defaultPickupLocation}</strong>.
+                <strong>
+                  {customerFacingPickupLocationLabel(
+                    businessSettings.productionSettings.defaultPickupLocation,
+                  )}
+                </strong>.
               </p>
               <p>
                 <strong>3. Fitting & Adjustments:</strong> You can try on your
@@ -724,7 +820,10 @@ export default function DashboardView({
                     {selectedReceipt.customer?.phone || profilePhone}
                   </span>
                   <span className="text-heritage-ink/50 block italic">
-                    {businessSettings.productionSettings.defaultPickupLocation} Delivery
+                    {customerFacingPickupLocationLabel(
+                      businessSettings.productionSettings.defaultPickupLocation,
+                    )}{" "}
+                    Delivery
                   </span>
                 </div>
                 <div className="space-y-1 text-right">
@@ -748,7 +847,9 @@ export default function DashboardView({
                     <strong>Locker Location:</strong>{" "}
                     {selectedReceipt.batchType === "alone"
                       ? "Direct priority home shipping"
-                      : businessSettings.productionSettings.defaultPickupLocation}
+                      : customerFacingPickupLocationLabel(
+                          businessSettings.productionSettings.defaultPickupLocation,
+                        )}
                   </span>
                 </div>
               </div>
@@ -762,9 +863,13 @@ export default function DashboardView({
                   <div className="flex justify-between border-b border-gray-100 pb-2">
                     <div>
                       <strong className="text-heritage-green text-sm font-serif">
-                        {selectedReceipt.styleName ||
-                          selectedReceipt.style?.name ||
-                          "Traditional Senator Suit"}
+                        {formatSavedNikkaDisplayText(
+                          formatCustomerVisibleKaftanText(
+                            selectedReceipt.styleName ||
+                              selectedReceipt.style?.name ||
+                              "Traditional Senator Suit",
+                          ),
+                        )}
                       </strong>
                       <span className="text-[10px] text-heritage-ink/50 block font-mono mt-0.5">
                         Fabric:{" "}
@@ -777,9 +882,11 @@ export default function DashboardView({
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] font-mono bg-heritage-green/10 text-heritage-green px-2 py-0.5 rounded-md font-semibold">
-                        {selectedReceipt.garmentType ||
-                          selectedReceipt.garment?.type ||
-                          "Full 2-Piece Set"}
+                        {formatCustomDetailsGarmentLabel(
+                          selectedReceipt.garmentType ||
+                            selectedReceipt.garment?.type ||
+                            "Full 2-Piece Set",
+                        )}
                       </span>
                     </div>
                   </div>
@@ -852,7 +959,7 @@ export default function DashboardView({
                           <strong className="text-heritage-green">
                             {selectedReceipt.finalMileShipping.method ===
                             "PICKUP"
-                              ? `${selectedReceipt.finalMileShipping.pickupLocation} pickup (€0.00)`
+                              ? `${customerFacingPickupLocationLabel(selectedReceipt.finalMileShipping.pickupLocation)} pickup (€0.00)`
                               : selectedReceipt.finalMileShipping.status ===
                                   "READY"
                                 ? `${selectedReceipt.finalMileShipping.zoneLabel} (${selectedReceipt.finalMileShipping.weightBand}) · €${(
@@ -1025,7 +1132,7 @@ export default function DashboardView({
                   to source raw fibers and spool loom threads. The remaining 50%
                   balance is stored in escrow and will be unlocked for our
                   tailors in Lagos upon the successful fitting session on-site
-                  at Veldhoven.
+                  at Eindhoven.
                 </p>
                 <p className="font-mono text-[8px]">
                   Authorized by Coordinator: Fredrick Ezeh | NTCC Veldhoven

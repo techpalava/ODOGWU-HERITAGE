@@ -20,7 +20,6 @@ import {
   OrderContext,
   Customer,
   Batch,
-  ImmutableUploadedOrderDesignReference,
 } from "./types";
 import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
@@ -31,6 +30,7 @@ import {
   classifyHomepageDraftEntry,
   createHomepageDraftReplacementService,
   executeHomepageDraftReplacementDiscard,
+  executeHomepageDraftReplacementRecoveryDiscard,
   type LoadedHomepageMutableDraft,
 } from "./services/homepageDraftReplacement";
 import {
@@ -61,9 +61,7 @@ import {
 import { resolveHomepageCommunityBatchEntry } from "./utils/homepageOrderGateway";
 import {
   BATCH_MINIMUM_GARMENTS,
-  calculateCartPaymentAllocations,
   calculateCartPricing,
-  getFinalMileShipmentGroupId,
   stampCurrentCartShippingItem,
 } from "./utils/shippingPricing";
 import {
@@ -71,21 +69,10 @@ import {
   getDepositRatio,
   PRICING_CURRENCY_SYMBOL,
 } from "./utils/money";
-import {
-  getPersistableCartItemFabricAllocationsForOrder,
-} from "./utils/fabricAllocationPersistence";
 import { getCartDesignLabel } from "./utils/cartDesignDomain";
 import { presentFutureOrderV2History } from "./utils/futureOrderV2History";
 import { revalidateCartForCheckout } from "./utils/checkoutValidation";
 import { isBatchPricingRoute } from "./utils/designPricing";
-import {
-  customerDesignOrderTransferClient,
-  UploadedDesignTransferClientError,
-} from "./services/customerDesignOrderTransfer";
-import {
-  clearUploadedDesignCheckoutPreparation,
-  prepareUploadedDesignOrderReferences,
-} from "./utils/uploadedDesignCheckoutPreparation";
 
 // Lazy load modular view components for performance optimization
 // Each view retries a failed chunk import once; light tabs prefetch on idle.
@@ -155,7 +142,8 @@ import { stashFutureOrderV2OpenOrderId } from "./utils/futureOrderV2StripeReturn
 
 type HomepageDraftReplacementRequest = Readonly<{
   decisionGeneration: number;
-  existing: LoadedHomepageMutableDraft;
+  existing: LoadedHomepageMutableDraft | null;
+  recoveryMode?: "invalid" | "unavailable";
   existingOrderContext: OrderContext | null;
   clickedBatchId: string;
   clickedBatchName: string;
@@ -165,7 +153,8 @@ type HomepageDraftReplacementRequest = Readonly<{
 
 type IndividualOrderStartRequest = Readonly<{
   decisionGeneration: number;
-  existing: LoadedHomepageMutableDraft;
+  existing: LoadedHomepageMutableDraft | null;
+  recoveryMode?: "invalid" | "unavailable";
   label: string;
   canResume: boolean;
   resumeContext: OrderContext | null;
@@ -175,7 +164,8 @@ type IndividualOrderStartRequest = Readonly<{
 
 type PrivateBatchDraftReplacementRequest = Readonly<{
   decisionGeneration: number;
-  existing: LoadedHomepageMutableDraft;
+  existing: LoadedHomepageMutableDraft | null;
+  recoveryMode?: "invalid" | "unavailable";
   existingOrderContext: OrderContext | null;
   values: PrivateBatchSetupValues;
 }>;
@@ -437,9 +427,7 @@ export default function App() {
   );
   const [checkoutCardExpiry, setCheckoutCardExpiry] = useState<string>("12/28");
   const [checkoutCardCvc, setCheckoutCardCvc] = useState<string>("315");
-  const [isPaymentProcessing, setIsPaymentProcessing] =
-    useState<boolean>(false);
-  const checkoutSubmissionInProgress = React.useRef(false);
+  const [isPaymentProcessing] = useState<boolean>(false);
   const homepageDraftEntryRequestInFlight = React.useRef(false);
   const homepageAuthEpochRef = React.useRef(0);
   const homepageDraftDecisionGenerationRef = React.useRef(0);
@@ -660,6 +648,31 @@ export default function App() {
     (state) => state.designStudioNavRequest,
   );
 
+  const discardParkedStudioDraftForFreshOrder = async (
+    authority: ReturnType<typeof getHomepageDraftReplacementService>,
+    failureMessage: string,
+  ): Promise<boolean> => {
+    const inspected = await authority.inspect();
+    if (inspected.status === "valid") {
+      const discarded = await authority.discard(inspected.existing);
+      if (discarded.status !== "discarded") {
+        triggerNotification(failureMessage, "info");
+        return false;
+      }
+    } else if (inspected.status !== "empty") {
+      const discarded = await authority.discardUnrecoverable();
+      if (discarded.status !== "discarded") {
+        triggerNotification(failureMessage, "info");
+        return false;
+      }
+    } else {
+      GuestOrderSessionService.clearFutureDesignDraft();
+    }
+    useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+    setUnfinishedOrderLabel(null);
+    return true;
+  };
+
   const handleRequestDesignStudioFromNav = () => {
     void (async () => {
       if (useAppStore.getState().activeTab === "design") return;
@@ -675,28 +688,11 @@ export default function App() {
         if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
           // The bag already holds this design. Clear only the Studio copy so
           // Design Studio does not reopen it, and leave the bag intact.
-          const inspected = await authority.inspect();
-          if (inspected.status === "valid") {
-            const discarded = await authority.discard(inspected.existing);
-            if (discarded.status !== "discarded") {
-              triggerNotification(
-                "We could not open Design Studio without touching your bagged design. Please try again.",
-                "info",
-              );
-              return;
-            }
-          } else if (inspected.status !== "empty") {
-            triggerNotification(
-              "We could not safely check your unfinished order. Please try again.",
-              "info",
-            );
-            return;
-          } else {
-            GuestOrderSessionService.clearFutureDesignDraft();
-          }
-          useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
-          setUnfinishedOrderLabel(null);
-          openDesignStudioForOrder(freshIndividualOrderContext());
+          const cleared = await discardParkedStudioDraftForFreshOrder(
+            authority,
+            "We could not open Design Studio without touching your bagged design. Please try again.",
+          );
+          if (cleared) openDesignStudioForOrder(freshIndividualOrderContext());
           return;
         }
 
@@ -715,11 +711,17 @@ export default function App() {
           openDesignStudioForOrder(freshIndividualOrderContext());
           return;
         }
-        if (decision.kind === "blocked") {
-          triggerNotification(
-            "We could not safely check your unfinished order. Please try again.",
-            "info",
-          );
+        if (decision.kind === "confirm_recovery") {
+          setUnfinishedOrderLabel(null);
+          setIndividualOrderStartRequest({
+            decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+            existing: null,
+            recoveryMode: decision.inspectionStatus,
+            label: "",
+            canResume: false,
+            resumeContext: null,
+            entry: "design-studio",
+          });
           return;
         }
         const resumeContext = resolvePersistedDraftOrderContext(
@@ -766,28 +768,11 @@ export default function App() {
         if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
           // The bag already holds this design. Clear only the Studio copy so a
           // new Individual Order does not resume it, and leave the bag intact.
-          const inspected = await authority.inspect();
-          if (inspected.status === "valid") {
-            const discarded = await authority.discard(inspected.existing);
-            if (discarded.status !== "discarded") {
-              triggerNotification(
-                "We could not start a new order without touching your bagged design. Please try again.",
-                "info",
-              );
-              return;
-            }
-          } else if (inspected.status !== "empty") {
-            triggerNotification(
-              "We could not safely check your unfinished order. Please try again.",
-              "info",
-            );
-            return;
-          } else {
-            GuestOrderSessionService.clearFutureDesignDraft();
-          }
-          useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
-          setUnfinishedOrderLabel(null);
-          openDesignStudioForOrder(freshIndividualOrderContext());
+          const cleared = await discardParkedStudioDraftForFreshOrder(
+            authority,
+            "We could not start a new order without touching your bagged design. Please try again.",
+          );
+          if (cleared) openDesignStudioForOrder(freshIndividualOrderContext());
           return;
         }
 
@@ -806,11 +791,17 @@ export default function App() {
           openDesignStudioForOrder(freshIndividualOrderContext());
           return;
         }
-        if (decision.kind === "blocked") {
-          triggerNotification(
-            "We could not safely check your unfinished order. Please try again.",
-            "info",
-          );
+        if (decision.kind === "confirm_recovery") {
+          setUnfinishedOrderLabel(null);
+          setIndividualOrderStartRequest({
+            decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+            existing: null,
+            recoveryMode: decision.inspectionStatus,
+            label: "",
+            canResume: false,
+            resumeContext: null,
+            entry: "individual",
+          });
           return;
         }
         const resumeContext = resolvePersistedDraftOrderContext(
@@ -909,6 +900,7 @@ export default function App() {
       homepageDraftDecisionGenerationRef.current === decisionGeneration &&
       homepageDraftOperationGenerationRef.current === operationGeneration;
     try {
+      if (!request.canResume || !request.existing) return;
       const verification = await getHomepageDraftReplacementService().revalidate(
         request.existing,
       );
@@ -948,11 +940,14 @@ export default function App() {
       request.decisionGeneration === homepageDraftDecisionGenerationRef.current &&
       operationGeneration === homepageDraftOperationGenerationRef.current;
     try {
-      const discarded = await getHomepageDraftReplacementService().discard(
-        request.existing,
-        () =>
-          isOperationCurrent() ? { status: "authorized" } : { status: "stale" },
-      );
+      const authority = getHomepageDraftReplacementService();
+      const authorize = () =>
+        isOperationCurrent()
+          ? ({ status: "authorized" } as const)
+          : ({ status: "stale" } as const);
+      const discarded = request.existing
+        ? await authority.discard(request.existing, authorize)
+        : await authority.discardUnrecoverable(authorize);
       if (!isOperationCurrent()) return;
       if (discarded.status !== "discarded") {
         setIndividualOrderStartRequest(null);
@@ -1043,10 +1038,14 @@ export default function App() {
         return { status: "error", message: "Your sign-in state changed. Please try again." };
       }
       if (inspected.status === "invalid" || inspected.status === "unavailable") {
-        return {
-          status: "error",
-          message: "We could not safely check your unfinished order. Please try again.",
-        };
+        setPrivateBatchDraftReplacement({
+          decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+          existing: null,
+          recoveryMode: inspected.status,
+          existingOrderContext: null,
+          values,
+        });
+        return { status: "requires_draft_resolution" };
       }
       if (inspected.status === "empty") {
         return createPrivateBatchFromSetup(values);
@@ -1091,9 +1090,13 @@ export default function App() {
       operationGeneration === homepageDraftOperationGenerationRef.current;
     try {
       const authority = getHomepageDraftReplacementService();
-      const discarded = await authority.discard(request.existing, () =>
-        isOperationCurrent() ? { status: "authorized" } : { status: "stale" },
-      );
+      const authorize = () =>
+        isOperationCurrent()
+          ? ({ status: "authorized" } as const)
+          : ({ status: "stale" } as const);
+      const discarded = request.existing
+        ? await authority.discard(request.existing, authorize)
+        : await authority.discardUnrecoverable(authorize);
       if (!isOperationCurrent()) return;
       if (discarded.status !== "discarded") {
         setPrivateBatchDraftReplacement(null);
@@ -1146,10 +1149,42 @@ export default function App() {
         return;
       }
       if (inspected.status === "invalid" || inspected.status === "unavailable") {
-        triggerNotification(
-          "We could not safely check your unfinished order. Please try again.",
-          "info",
-        );
+        if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
+          const cleared = await discardParkedStudioDraftForFreshOrder(
+            draftAuthority,
+            "We could not start a new order without touching your bagged design. Please try again.",
+          );
+          if (!cleared) return;
+          const parkedEntry = resolveCurrentHomepageCommunityEntry(selectedBatch.id);
+          if (!parkedEntry) {
+            triggerNotification(
+              "This batch is no longer accepting orders. Your bagged order is unchanged.",
+              "info",
+            );
+            return;
+          }
+          openFreshCommunityStudio(parkedEntry.orderContext);
+          return;
+        }
+        const recoveryEntry = resolveCurrentHomepageCommunityEntry(selectedBatch.id);
+        if (!recoveryEntry) {
+          triggerNotification(
+            "This batch is no longer accepting orders. Please check back soon.",
+            "info",
+          );
+          return;
+        }
+        const decisionGeneration = ++homepageDraftDecisionGenerationRef.current;
+        setHomepageDraftReplacement({
+          decisionGeneration,
+          existing: null,
+          recoveryMode: inspected.status,
+          existingOrderContext: null,
+          clickedBatchId: recoveryEntry.batch.id,
+          clickedBatchName: recoveryEntry.batch.name,
+          isIndividualDraft: false,
+          canContinueExisting: false,
+        });
         return;
       }
       if (inspected.status === "empty") {
@@ -1263,6 +1298,7 @@ export default function App() {
       homepageDraftDecisionGenerationRef.current === decisionGeneration &&
       homepageDraftOperationGenerationRef.current === operationGeneration;
     try {
+      if (!request.canContinueExisting || !request.existing) return;
       const verification = await getHomepageDraftReplacementService().revalidate(
         request.existing,
       );
@@ -1325,16 +1361,25 @@ export default function App() {
     homepageDraftOperationInFlightRef.current = true;
     setIsHomepageDraftOperationBusy(true);
     try {
-      const result = await executeHomepageDraftReplacementDiscard({
-        existing: request.existing,
-        authority: getHomepageDraftReplacementService(),
-        isOperationCurrent: () =>
-          homepageDraftDecisionGenerationRef.current ===
-            request.decisionGeneration &&
-          homepageDraftOperationGenerationRef.current === operationGeneration,
-        getCurrentTarget: () =>
-          resolveCurrentHomepageCommunityEntry(request.clickedBatchId),
-      });
+      const authority = getHomepageDraftReplacementService();
+      const isOperationCurrent = () =>
+        homepageDraftDecisionGenerationRef.current ===
+          request.decisionGeneration &&
+        homepageDraftOperationGenerationRef.current === operationGeneration;
+      const getCurrentTarget = () =>
+        resolveCurrentHomepageCommunityEntry(request.clickedBatchId);
+      const result = request.existing
+        ? await executeHomepageDraftReplacementDiscard({
+            existing: request.existing,
+            authority,
+            isOperationCurrent,
+            getCurrentTarget,
+          })
+        : await executeHomepageDraftReplacementRecoveryDiscard({
+            authority,
+            isOperationCurrent,
+            getCurrentTarget,
+          });
       const operationIsCurrent =
         homepageDraftDecisionGenerationRef.current === request.decisionGeneration &&
         homepageDraftOperationGenerationRef.current === operationGeneration;
@@ -1466,300 +1511,15 @@ export default function App() {
     );
   };
 
-  const handleExecuteDepositPayment = async () => {
-    if (checkoutSubmissionInProgress.current) {
-      return;
-    }
-    if (!currentUser) {
-      setIsCheckoutPaymentOpen(false);
-      setCheckoutIntent(true);
-      setActiveTab("login");
-      triggerNotification(
-        "Sign in or create an account to securely complete your order.",
-        "info",
-      );
-      return;
-    }
-
-    const validation = revalidateCartForCheckout(cartItems, {
-      fabrics,
-      styles,
-      batches,
-      customDetailCatalog: store.customDetailCatalog,
-      businessSettings,
-      depositRatio: checkoutDepositRatio,
-      allowPendingUploadedDesignTransfer: true,
-    });
-    if (validation.changed) {
-      setCartItems(validation.items);
-    }
-    if (
-      !validation.canProceed ||
-      validation.pricing.total === null ||
-      validation.pricing.depositDueNow === null
-    ) {
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        validation.blockers[0] ||
-          "Review the latest pricing and shipping details before payment.",
-        "info",
-      );
-      return;
-    }
-
-    const checkoutIdentity = auth.currentUser;
-    if (!checkoutIdentity) {
-      setIsCheckoutPaymentOpen(false);
-      setCheckoutIntent(true);
-      setActiveTab("login");
-      triggerNotification(
-        "Sign in or create an account to securely complete your order.",
-        "info",
-      );
-      return;
-    }
-
-    checkoutSubmissionInProgress.current = true;
-    setIsPaymentProcessing(true);
-    let immutableReferencesByItemId: Record<
-      string,
-      {
-        sourceKey: string;
-        designReferenceId: string;
-        orderReference: ImmutableUploadedOrderDesignReference;
-      }
-    >;
-    let preparedCheckoutId: string;
-    try {
-      const prepared = await prepareUploadedDesignOrderReferences({
-        items: validation.items,
-        identity: checkoutIdentity,
-        client: customerDesignOrderTransferClient,
-      });
-      immutableReferencesByItemId = prepared.preparedByItemId;
-      preparedCheckoutId = prepared.checkoutId;
-    } catch (error) {
-      checkoutSubmissionInProgress.current = false;
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        error instanceof UploadedDesignTransferClientError &&
-          (error.code === "CLAIM_EXPIRED" || error.code === "CLAIM_INVALID")
-          ? "Your secure design authorization needs to be refreshed. Your cart is still saved."
-          : "We couldn't securely prepare your uploaded design for checkout. Please try again.",
-        "info",
-      );
-      return;
-    }
-
-    const preparedValidation = revalidateCartForCheckout(validation.items, {
-      fabrics,
-      styles,
-      batches,
-      customDetailCatalog: store.customDetailCatalog,
-      businessSettings,
-      depositRatio: checkoutDepositRatio,
-      preparedUploadedDesignReferences: immutableReferencesByItemId,
-    });
-    if (preparedValidation.changed) {
-      setCartItems(preparedValidation.items);
-    }
-    if (
-      !preparedValidation.canProceed ||
-      preparedValidation.pricing.total === null ||
-      preparedValidation.pricing.depositDueNow === null
-    ) {
-      checkoutSubmissionInProgress.current = false;
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        preparedValidation.blockers[0] ||
-          "Review the latest pricing and shipping details before payment.",
-        "info",
-      );
-      return;
-    }
-
-    const checkoutItems = [...preparedValidation.items];
-    const pricingSnapshot = preparedValidation.pricing;
-    let paymentAllocations: ReturnType<
-      typeof calculateCartPaymentAllocations
-    >;
-    try {
-      paymentAllocations = calculateCartPaymentAllocations(
-        checkoutItems,
-        pricingSnapshot,
-        checkoutDepositRatio,
-      );
-    } catch (error) {
-      console.error("Payment allocation failed:", error);
-      checkoutSubmissionInProgress.current = false;
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        "The checkout totals could not be reconciled. Please review the cart before payment.",
-        "info",
-      );
-      return;
-    }
-    const paymentAllocationByItem = new Map(
-      paymentAllocations.map((allocation) => [
-        allocation.itemId,
-        allocation,
-      ]),
+  const handleExecuteDepositPayment = () => {
+    // Restored legacy carts stay visible. This button no longer writes an
+    // order or records a payment.
+    setIsCheckoutPaymentOpen(false);
+    setIsCartOpen(true);
+    triggerNotification(
+      "This cart can no longer take a payment here. Your items are still in the cart. Continue in Design Studio, or contact us and we will help you place the order.",
+      "info",
     );
-    const checkoutId = preparedCheckoutId;
-    const transactionId = `TXN-${Date.now()}`;
-    const paymentDate = new Date().toISOString();
-    const finalMileQuoteByGroup = new Map(
-      pricingSnapshot.finalMileShippingQuotes.map((quote) => [
-        quote.shipmentGroupId,
-        quote,
-      ]),
-    );
-
-    const completedOrders: MasterOrder[] = checkoutItems.map((item) => {
-      const allocation = paymentAllocationByItem.get(item.id);
-      if (!allocation) {
-        throw new Error(`Missing payment allocation for ${item.id}.`);
-      }
-      const immutableReference = immutableReferencesByItemId[item.id];
-      if (item.cartDesignSource?.kind === "uploaded" && !immutableReference) {
-        throw new Error("Uploaded design transfer preparation is missing.");
-      }
-      const shipmentGroupId = getFinalMileShipmentGroupId(item);
-      const finalMileShipping =
-        finalMileQuoteByGroup.get(shipmentGroupId);
-      const persistableFabricAllocations =
-        getPersistableCartItemFabricAllocationsForOrder(item);
-
-      return {
-        ownerUid: checkoutIdentity.uid,
-        customer: item.customer,
-        ...(item.style ? { style: item.style } : {}),
-        ...(item.cartDesignSource?.kind === "uploaded"
-          ? {
-              orderDesignSource: {
-                kind: "uploaded" as const,
-                sourceKey: item.cartDesignSource.sourceKey,
-                displayLabel: item.cartDesignSource.displayLabel,
-                fabricCapacityComposition:
-                  item.cartDesignSource.fabricCapacityComposition.map((spec) => ({
-                    ...spec,
-                  })),
-                demographic: item.cartDesignSource.demographic,
-                imageState: {
-                  kind: "immutable_order_asset" as const,
-                  orderReference: {
-                    ...immutableReference!.orderReference,
-                  },
-                },
-              },
-            }
-          : item.cartDesignSource?.kind === "catalog"
-            ? {
-                orderDesignSource: {
-                  kind: "catalog" as const,
-                  sourceKey: item.cartDesignSource.sourceKey,
-                  styleId: item.cartDesignSource.styleId,
-                },
-              }
-            : {}),
-        fabric: item.fabric,
-        ...(persistableFabricAllocations !== undefined
-          ? { fabricAllocations: persistableFabricAllocations }
-          : {}),
-        design: item.design,
-        garment: {
-          ...item.garment,
-          checkoutTotal: allocation.orderSubtotal,
-        },
-        measurements: item.measurements,
-        payment: {
-          subtotal: allocation.orderSubtotal,
-          deposit: allocation.dueNow,
-          remaining: allocation.remainingGarmentBalance,
-          method:
-            checkoutPaymentMethod === "ideal"
-              ? "iDEAL Bank Transfer"
-              : "Stripe Credit Card",
-          date: paymentDate,
-          isPaid: true,
-          paymentMethod:
-            checkoutPaymentMethod === "ideal" ? "iDEAL" : "Stripe",
-          idealBank:
-            checkoutPaymentMethod === "ideal"
-              ? checkoutIdealBank
-              : undefined,
-          transactionId,
-          secondPaymentStatus: "unpaid",
-        },
-        shipment: {
-          trackingId: `${checkoutId}-${item.id}`,
-          status: "Deposit Paid",
-          currentStage: 1,
-          estimatedDeliveryDate: "TBD",
-        },
-        specialInstructions: item.specialInstructions,
-        notesAboutLeftoverFabric: item.notesAboutLeftoverFabric,
-        batchType: item.batchType,
-        batchName: item.batchName,
-        customGroupCode: item.customGroupCode,
-        checkoutId,
-        deliverySelection: item.deliverySelection,
-        finalMileShipping,
-        shippingBreakdown: {
-          lagosToEindhovenShipping:
-            allocation.lagosToEindhovenShipping,
-          eindhovenToDestinationShipping:
-            allocation.eindhovenToDestinationShipping,
-          totalShipping: allocation.totalShipping,
-          status: "READY",
-        },
-      };
-    });
-
-    // Simulate payment processing...
-    setTimeout(async () => {
-      try {
-        // The immutable asset already exists. Persist the order reference before
-        // declaring the simulated payment flow successful or clearing the cart.
-        await Promise.all(completedOrders.map((order) => StorageService.saveOrder(order)));
-        setOrders((previous) => [...previous, ...completedOrders]);
-        checkoutSubmissionInProgress.current = false;
-        setIsPaymentProcessing(false);
-        setIsCheckoutPaymentOpen(false);
-        setIsCartOpen(false);
-        setCartItems([]);
-        clearUploadedDesignCheckoutPreparation();
-        triggerNotification(
-          "Deposit authorized securely! Atelier notified.",
-          "success"
-        );
-        // Re-evaluate journey to determine post-checkout destination
-        const nextJourney = CustomerJourneyEngine.getCurrentJourney({
-          currentUser: store.currentUser as any,
-          drafts: [],
-          activeOrders: [...store.orders, ...completedOrders],
-          historicalOrders: store.historicalOrders,
-          allBatches: store.batches,
-        });
-        setActiveTab(nextJourney.destination as any);
-      } catch {
-        checkoutSubmissionInProgress.current = false;
-        setIsPaymentProcessing(false);
-        setIsCheckoutPaymentOpen(false);
-        setIsCartOpen(true);
-        triggerNotification(
-          "We couldn't save your prepared order. Your cart is still available to retry.",
-          "info",
-        );
-      }
-    }, 2000);
   };
 
   const handleReorder = () => {
@@ -2308,6 +2068,7 @@ export default function App() {
           busy={isHomepageDraftOperationBusy}
           entry={individualOrderStartRequest.entry}
           resumeLabel={individualOrderStartRequest.resumeActionLabel}
+          recoveryMode={individualOrderStartRequest.recoveryMode}
           onResume={handleResumeIndividualOrderFromDialog}
           onStartNew={handleConfirmFreshIndividualOrder}
           onCancel={() => {
@@ -2322,13 +2083,14 @@ export default function App() {
         <HomepageDraftReplacementDialog
           existingOrderLabel={
             homepageDraftReplacement.existingOrderContext?.batchName ||
-            homepageDraftReplacement.existing.draft.batchName ||
+            homepageDraftReplacement.existing?.draft.batchName ||
             "saved Community"
           }
           clickedBatchName={homepageDraftReplacement.clickedBatchName}
           isIndividualDraft={homepageDraftReplacement.isIndividualDraft}
           canContinueExisting={homepageDraftReplacement.canContinueExisting}
           busy={isHomepageDraftOperationBusy}
+          recoveryMode={homepageDraftReplacement.recoveryMode}
           onContinueExisting={handleContinueHomepageDraft}
           onDiscardAndJoin={handleDiscardAndJoinHomepageBatch}
           onCancel={() => {
@@ -2343,17 +2105,22 @@ export default function App() {
         <HomepageDraftReplacementDialog
           existingOrderLabel={
             privateBatchDraftReplacement.existingOrderContext?.batchName ||
-            privateBatchDraftReplacement.existing.draft.batchName ||
+            privateBatchDraftReplacement.existing?.draft.batchName ||
             "saved"
           }
           clickedBatchName="this new Private Batch"
           isIndividualDraft={
-            privateBatchDraftReplacement.existing.orderIdentity.orderType === "Individual"
+            privateBatchDraftReplacement.existing?.orderIdentity.orderType === "Individual"
           }
           canContinueExisting={false}
           busy={isHomepageDraftOperationBusy}
           targetAction="create"
-          unavailableMessage="This saved order cannot be reopened from this screen. You can cancel to leave it unchanged."
+          recoveryMode={privateBatchDraftReplacement.recoveryMode}
+          unavailableMessage={
+            privateBatchDraftReplacement.recoveryMode
+              ? undefined
+              : "This saved order cannot be reopened from this screen. You can cancel to leave it unchanged."
+          }
           onContinueExisting={() => undefined}
           onDiscardAndJoin={handleDiscardAndCreatePrivateBatch}
           onCancel={() => {

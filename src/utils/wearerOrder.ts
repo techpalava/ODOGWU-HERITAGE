@@ -2,7 +2,9 @@ import { resolveActiveWearerCap } from "../config/WearerPolicy.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   CustomDetailDemographic,
+  FutureMeasurementEnteredBagV1,
   FutureMeasurementStateV1,
+  FutureMeasurementValueV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
   MeasurementMethodId,
@@ -13,9 +15,15 @@ import type {
 import {
   classifyFutureMeasurementHydration,
   countRemainingCustomerRequiredMeasurementUnits,
+  countRequiredMeasurementUnits,
+  countSatisfiedRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
+  getActiveFutureMeasurementEntered,
   isFutureMeasurementStageComplete,
+  isSelectedMeasurementMethod,
+  isSelectedMeasurementRiskRoute,
   planPersonMeasurementRequirements,
+  projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
   resolveMeasurementPlanningDemographic,
   type MeasurementPhysicalGarment,
@@ -98,6 +106,9 @@ const stripGarmentFromMeasurement = (
         high_risk: stripBag(state.enteredByRoute.high_risk),
         critical_risk: stripBag(state.enteredByRoute.critical_risk),
         sample_cloth: stripBag(state.enteredByRoute.sample_cloth),
+        onsite_physical: stripBag(
+          state.enteredByRoute.onsite_physical ?? { shared: {}, byGarmentKey: {} },
+        ),
       }
     : undefined;
   const invalidInputKeysByRoute = state.invalidInputKeysByRoute
@@ -107,6 +118,9 @@ const stripGarmentFromMeasurement = (
         high_risk: state.invalidInputKeysByRoute.high_risk.filter((key) => !keyMatches(key)),
         critical_risk: state.invalidInputKeysByRoute.critical_risk.filter((key) => !keyMatches(key)),
         sample_cloth: state.invalidInputKeysByRoute.sample_cloth.filter((key) => !keyMatches(key)),
+        onsite_physical: (state.invalidInputKeysByRoute.onsite_physical ?? []).filter(
+          (key) => !keyMatches(key),
+        ),
       }
     : undefined;
   return {
@@ -122,6 +136,7 @@ const stripGarmentFromMeasurement = (
     ),
     invalidInputKeys: state.invalidInputKeys.filter((key) => !keyMatches(key)),
     ...(invalidInputKeysByRoute ? { invalidInputKeysByRoute } : {}),
+    ...(state.activeGarmentKey === garmentKey ? { activeGarmentKey: undefined } : {}),
   };
 };
 
@@ -560,7 +575,9 @@ export const assignGarmentToWearer = ({
     if (candidate.wearerId === wearerId) {
       return {
         ...candidate,
-        measurement: markMeasurementIncomplete(candidate.measurement),
+        measurement: markMeasurementIncomplete(
+          stripGarmentFromMeasurement(candidate.measurement, garmentKey),
+        ),
       };
     }
     return candidate;
@@ -573,6 +590,126 @@ export const assignGarmentToWearer = ({
       [garmentKey]: wearerId,
     },
   });
+};
+
+export type AddPersonAndAssignGarmentResult =
+  | {
+      readonly status: "updated";
+      readonly order: WearerOrderStateV2;
+      readonly wearerId: string;
+    }
+  | {
+      readonly status: "blocked";
+      readonly code: string;
+      readonly order: WearerOrderStateV2;
+    };
+
+export const addPersonAndAssignGarment = ({
+  order,
+  garments,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+  displayName,
+  garmentKey,
+  defaultRoute = null,
+}: {
+  order: WearerOrderStateV2;
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  displayName: string;
+  garmentKey: string;
+  defaultRoute?: MeasurementMethodId | null;
+}): AddPersonAndAssignGarmentResult => {
+  const name = canonicalWearerDisplayName(displayName);
+  if (!name) {
+    return { status: "blocked", code: "EMPTY_DISPLAY_NAME", order };
+  }
+  const garment = garments.find((candidate) => candidate.garmentKey === garmentKey);
+  if (!garment) {
+    return { status: "blocked", code: "GARMENT_NOT_FOUND", order };
+  }
+  const cap = resolveActiveWearerCap(garments.length);
+  const sortedWearers = sortWearers(order.wearers);
+  const unnamedEmptyAdditionalWearer = sortedWearers.find(
+    (wearer) =>
+      wearer.presentationOrder > 0 &&
+      wearer.displayName.trim() === "" &&
+      !wearerOwnsGarment(order, wearer.wearerId),
+  );
+  const capReachedEmptyWearer =
+    order.wearers.length >= cap
+      ? sortedWearers.find((wearer) => !wearerOwnsGarment(order, wearer.wearerId))
+      : undefined;
+  const reusableWearer = unnamedEmptyAdditionalWearer ?? capReachedEmptyWearer;
+
+  let baseOrder = order;
+  let targetWearerId: string;
+
+  if (reusableWearer) {
+    targetWearerId = reusableWearer.wearerId;
+    baseOrder = {
+      ...order,
+      wearers: order.wearers.map((wearer) =>
+        wearer.wearerId === targetWearerId
+          ? { ...wearer, displayName: name }
+          : wearer,
+      ),
+    };
+  } else {
+    const added = addWearer({
+      order,
+      physicalGarmentCount: garments.length,
+      displayName: name,
+      fitContext: null,
+    });
+    if (added.status !== "updated") {
+      return added;
+    }
+    const previousIds = new Set(order.wearers.map((wearer) => wearer.wearerId));
+    const createdWearer = added.order.wearers.find(
+      (wearer) => !previousIds.has(wearer.wearerId),
+    );
+    if (!createdWearer) {
+      return { status: "blocked", code: "WEARER_CREATE_FAILED", order };
+    }
+    targetWearerId = createdWearer.wearerId;
+    baseOrder = added.order;
+  }
+
+  const assigned = assignGarmentToWearer({
+    order: baseOrder,
+    garmentKey,
+    wearerId: targetWearerId,
+    garment,
+    garmentTypeSelection,
+    additionalGarmentConstructions,
+  });
+  if (assigned.status !== "updated") {
+    return assigned;
+  }
+
+  const withTargetMeasurement: WearerOrderStateV2 = {
+    ...assigned.order,
+    wearers: assigned.order.wearers.map((wearer) =>
+      wearer.wearerId === targetWearerId
+        ? {
+            ...wearer,
+            measurement: {
+              ...wearer.measurement,
+              route: wearer.measurement.route ?? defaultRoute ?? null,
+              activeGarmentKey: garmentKey,
+            },
+          }
+        : wearer,
+    ),
+  };
+
+  return {
+    status: "updated",
+    order: withTargetMeasurement,
+    wearerId: targetWearerId,
+  };
 };
 
 export const removeGarmentFromWearerOrder = (
@@ -964,9 +1101,19 @@ export const isWearerOrderMeasurementComplete = ({
   );
 };
 
+export interface WearerMeasurementCompletionSummary {
+  wearerId: string;
+  requiredCount: number;
+  completedCount: number;
+  remainingCount: number;
+  hasAssignedGarments: boolean;
+  complete: boolean;
+}
+
 export interface WearerOrderMeasurementCompletion {
   complete: boolean;
   remainingRequiredCount: number;
+  byWearerId?: Readonly<Record<string, WearerMeasurementCompletionSummary>>;
 }
 
 /** Order-wide measurement gate. The selected wearer is not an input. */
@@ -978,22 +1125,185 @@ export const summarizeWearerOrderMeasurementCompletion = ({
   order: WearerOrderStateV2;
   runtimes: readonly WearerMeasurementRuntime[];
   physicalGarmentKeys: readonly string[];
-}): WearerOrderMeasurementCompletion => ({
-  complete: isWearerOrderMeasurementComplete({
-    order,
-    runtimes,
-    physicalGarmentKeys,
-  }),
-  remainingRequiredCount: runtimes.reduce(
-    (total, runtime) =>
-      total +
-      countRemainingCustomerRequiredMeasurementUnits({
-        plan: runtime.plan,
+}): WearerOrderMeasurementCompletion => {
+  const byWearerId: Record<string, WearerMeasurementCompletionSummary> = {};
+  for (const runtime of runtimes) {
+    const hasAssignedGarments = runtime.garmentKeys.length > 0;
+    const selectedMethod = isSelectedMeasurementMethod(runtime.measurement.route);
+    let requiredCount = 0;
+    let completedCount = 0;
+    if (hasAssignedGarments && selectedMethod) {
+      const presentationRequirements = projectMeasurementRequirementsForPresentation({
+        requirements: runtime.plan.requirements,
         state: runtime.measurement,
-      }),
-    0,
-  ),
-});
+      });
+      const requiredRequirements = presentationRequirements.filter(
+        (requirement) => requirement.section === "required",
+      );
+      requiredCount = countRequiredMeasurementUnits(requiredRequirements);
+      completedCount = countSatisfiedRequiredMeasurementUnits({
+        requirements: requiredRequirements,
+        entered: runtime.measurement.entered,
+        invalidInputKeys: runtime.measurement.invalidInputKeys,
+      });
+    }
+    const remainingCount = countRemainingCustomerRequiredMeasurementUnits({
+      plan: runtime.plan,
+      state: runtime.measurement,
+    });
+    byWearerId[runtime.wearerId] = {
+      wearerId: runtime.wearerId,
+      requiredCount,
+      completedCount,
+      remainingCount,
+      hasAssignedGarments,
+      complete:
+        hasAssignedGarments && isFutureMeasurementStageComplete(runtime.measurement),
+    };
+  }
+  return {
+    complete: isWearerOrderMeasurementComplete({
+      order,
+      runtimes,
+      physicalGarmentKeys,
+    }),
+    remainingRequiredCount: runtimes.reduce(
+      (total, runtime) =>
+        total + (byWearerId[runtime.wearerId]?.remainingCount ?? 0),
+      0,
+    ),
+    byWearerId,
+  };
+};
+
+export const getWearerCopyableSharedBodyMeasurements = (
+  measurement: FutureMeasurementStateV1,
+): Record<string, FutureMeasurementValueV1> => {
+  if (!isSelectedMeasurementRiskRoute(measurement.route)) return {};
+  const activeEntered = getActiveFutureMeasurementEntered(measurement);
+  const copyable: Record<string, FutureMeasurementValueV1> = {};
+  for (const [measurementId, entry] of Object.entries(activeEntered.shared)) {
+    if (
+      entry &&
+      entry.provenance === "customer_entered" &&
+      typeof entry.valueCm === "number" &&
+      Number.isFinite(entry.valueCm) &&
+      entry.valueCm > 0
+    ) {
+      copyable[measurementId] = {
+        valueCm: entry.valueCm,
+        provenance: "customer_entered",
+      };
+    }
+  }
+  return copyable;
+};
+
+export interface CopySharedBodyMeasurementsResult {
+  readonly status: "copied" | "noop";
+  readonly order: WearerOrderStateV2;
+  readonly copiedCount: number;
+  readonly copiedMeasurementIds: readonly string[];
+  readonly previousTargetMeasurement: FutureMeasurementStateV1 | null;
+}
+
+/**
+ * Explicitly copy ONLY shared body measurements (height, chest/bust, waist,
+ * hip, shoulder, etc.) from one wearer to another. Never copies garment-specific
+ * (`byGarmentKey`) entries and returns the target's prior measurement snapshot
+ * so the caller can provide a one-click Undo.
+ */
+export const copySharedBodyMeasurementsBetweenWearers = ({
+  order,
+  sourceWearerId,
+  targetWearerId,
+}: {
+  order: WearerOrderStateV2;
+  sourceWearerId: string;
+  targetWearerId: string;
+}): CopySharedBodyMeasurementsResult => {
+  if (!sourceWearerId || !targetWearerId || sourceWearerId === targetWearerId) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const source = order.wearers.find(
+    (wearer) => wearer.wearerId === sourceWearerId,
+  );
+  const target = order.wearers.find(
+    (wearer) => wearer.wearerId === targetWearerId,
+  );
+  if (!source || !target) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const targetRoute = target.measurement.route;
+  if (!isSelectedMeasurementRiskRoute(targetRoute)) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const copyableShared = getWearerCopyableSharedBodyMeasurements(
+    source.measurement,
+  );
+  const copiedMeasurementIds = Object.keys(copyableShared);
+  if (copiedMeasurementIds.length === 0) {
+    return {
+      status: "noop",
+      order,
+      copiedCount: 0,
+      copiedMeasurementIds: [],
+      previousTargetMeasurement: null,
+    };
+  }
+  const previousTargetMeasurement = cloneMeasurement(target.measurement);
+  const nextTarget = cloneMeasurement(target.measurement);
+  const currentActiveBag = getActiveFutureMeasurementEntered(nextTarget);
+  const nextActiveBag: FutureMeasurementEnteredBagV1 = {
+    shared: {
+      ...structuredClone(currentActiveBag.shared),
+      ...structuredClone(copyableShared),
+    },
+    byGarmentKey: structuredClone(currentActiveBag.byGarmentKey),
+  };
+  nextTarget.entered = nextActiveBag;
+  if (nextTarget.enteredByRoute) {
+    nextTarget.enteredByRoute[targetRoute] = structuredClone(nextActiveBag);
+  }
+  const copiedInvalidKeys = new Set(
+    copiedMeasurementIds.map((id) => `shared:${id}`),
+  );
+  nextTarget.invalidInputKeys = nextTarget.invalidInputKeys.filter(
+    (key) => !copiedInvalidKeys.has(key),
+  );
+  if (nextTarget.invalidInputKeysByRoute) {
+    nextTarget.invalidInputKeysByRoute[targetRoute] =
+      nextTarget.invalidInputKeysByRoute[targetRoute].filter(
+        (key) => !copiedInvalidKeys.has(key),
+      );
+  }
+  const nextOrder = updateWearerMeasurement(order, targetWearerId, nextTarget);
+  return {
+    status: "copied",
+    order: nextOrder,
+    copiedCount: copiedMeasurementIds.length,
+    copiedMeasurementIds,
+    previousTargetMeasurement,
+  };
+};
 
 export const projectActiveWearerMeasurements = (
   runtimes: readonly WearerMeasurementRuntime[],

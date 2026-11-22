@@ -382,21 +382,51 @@ const shortsTargets = projectFutureGarmentRemovalTargets({
   provisionalGarmentKey: null,
 });
 const shortsBefore = JSON.stringify({ shortsOccurrences, shortsTargets });
-// The approved standalone labels were checked on the removed Step 4 list. The
-// shared target accessibleName still uses the Fabric capacity labels
-// ("Nikka / Standard Shorts", "Bum Shorts"); that app gap is tracked outside
-// this test-only change, so only identity and role are asserted here.
+const expectedShortsLabels = ["Standard Nikka Shorts", "Standard Bum Shorts"];
 for (const index of [0, 1]) {
   const occurrence = shortsOccurrences[index];
+  const expectedLabel = expectedShortsLabels[index];
   assert.equal(shortsTargets[index].garmentKey, occurrence.garmentKey);
+  assert.equal(shortsTargets[index].occurrenceLabel, expectedLabel);
   assert.equal(shortsTargets[index].roleLabel, "base garment");
-  assert.match(shortsTargets[index].accessibleName, /^Remove .*Shorts, base garment$/);
+  assert.equal(
+    shortsTargets[index].accessibleName,
+    `Remove ${expectedLabel}, base garment`,
+  );
+  assert.doesNotMatch(shortsTargets[index].accessibleName, /Nikka \/ Standard Shorts|Knicker/i);
   assert.ok(!shortsTargets[index].accessibleName.includes(occurrence.garmentKey));
   assert.equal(FABRIC_GARMENT_CAPACITY_UNITS[occurrence.garmentType], 1);
   const price = resolveGarmentConstructionPricing(occurrence.garmentType, SEED_CUSTOM_DETAIL_CATALOG);
   assert.equal(price.status, "resolved");
   if (price.status === "resolved") assert.equal(price.totalPriceCents, 7000);
 }
+const additionalShortsTargets = projectFutureGarmentRemovalTargets({
+  occurrences: [
+    ...shortsOccurrences,
+    {
+      garmentKey: "additional:standard_shorts:1",
+      garmentType: "standard_shorts",
+      sourceRole: "additional",
+      fabricUnits: 1,
+    },
+    {
+      garmentKey: "additional:bum_shorts:1",
+      garmentType: "bum_shorts",
+      sourceRole: "additional",
+      fabricUnits: 1,
+    },
+  ],
+  provisionalGarmentKey: null,
+});
+assert.deepEqual(
+  additionalShortsTargets.map((target) => target.accessibleName),
+  [
+    "Remove Standard Nikka Shorts, base garment",
+    "Remove Standard Bum Shorts, base garment",
+    "Remove Standard Nikka Shorts, additional garment 1",
+    "Remove Standard Bum Shorts, additional garment 1",
+  ],
+);
 assert.deepEqual(shortsOccurrences.map((item) => item.garmentType), ["standard_shorts", "bum_shorts"]);
 assert.equal(JSON.stringify({ shortsOccurrences, shortsTargets }), shortsBefore);
 

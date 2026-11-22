@@ -1,5 +1,6 @@
 import { Bookmark, Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { formatSavedNikkaDisplayText } from "../utils/optionalShortsPresentation";
 import {
   formatSavedStudioOrderDate,
   getSavedStudioOrderStageTitle,
@@ -25,11 +26,39 @@ export const SavedOrdersSection = ({
   const [pendingDelete, setPendingDelete] = useState<SavedStudioOrderItemV1 | null>(
     null,
   );
+  const cancelDeleteRef = useRef<HTMLButtonElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const shouldRestoreDeleteFocusRef = useRef(false);
+
+  const dismissPendingDelete = (restoreFocus: boolean) => {
+    shouldRestoreDeleteFocusRef.current = restoreFocus;
+    setPendingDelete(null);
+  };
+
+  useLayoutEffect(() => {
+    if (pendingDelete) {
+      cancelDeleteRef.current?.focus?.({ preventScroll: true });
+      return;
+    }
+    if (!shouldRestoreDeleteFocusRef.current) return;
+    shouldRestoreDeleteFocusRef.current = false;
+    const trigger = deleteTriggerRef.current;
+    deleteTriggerRef.current = null;
+    if (trigger && trigger.isConnected !== false) {
+      trigger.focus?.({ preventScroll: true });
+    }
+  }, [pendingDelete]);
 
   return (
     <section
       id={SAVED_STUDIO_ORDER_DASHBOARD_HASH}
       data-testid="saved-orders-section"
+      onKeyDown={(event) => {
+        if (!pendingDelete || event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        dismissPendingDelete(true);
+      }}
       className="space-y-4 rounded-3xl border border-heritage-gold/15 bg-white p-6 shadow-sm sm:p-8"
     >
       <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
@@ -90,10 +119,10 @@ export const SavedOrdersSection = ({
               ) : (
                 <>
                   <h5 className="font-serif text-sm font-bold text-heritage-green">
-                    {item.name}
+                    {formatSavedNikkaDisplayText(item.name)}
                   </h5>
                   <p className="text-[10px] font-medium leading-relaxed text-heritage-ink/70">
-                    {item.garmentSummary || "Saved order"}
+                    {formatSavedNikkaDisplayText(item.garmentSummary || "Saved order")}
                   </p>
                   <p className="text-[10px] font-medium text-heritage-ink/70">
                     Saved at {getSavedStudioOrderStageTitle(item.savedStage)}
@@ -130,7 +159,11 @@ export const SavedOrdersSection = ({
                 <button
                   type="button"
                   data-testid="saved-order-delete"
-                  onClick={() => setPendingDelete(item)}
+                  onClick={(event) => {
+                    deleteTriggerRef.current = event?.currentTarget ?? null;
+                    shouldRestoreDeleteFocusRef.current = false;
+                    setPendingDelete(item);
+                  }}
                   className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 text-red-600"
                   aria-label="Delete"
                 >
@@ -145,6 +178,12 @@ export const SavedOrdersSection = ({
         <div
           className="rounded-2xl border border-red-200 bg-red-50 p-4"
           data-testid="saved-order-delete-confirm"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            dismissPendingDelete(true);
+          }}
         >
           <p className="text-sm font-medium text-red-800">
             Delete “{pendingDelete.name}”? It will leave your dashboard and cart.
@@ -155,15 +194,17 @@ export const SavedOrdersSection = ({
               data-testid="saved-order-delete-confirm-yes"
               onClick={() => {
                 onDelete(pendingDelete);
-                setPendingDelete(null);
+                dismissPendingDelete(false);
               }}
               className="min-h-11 rounded-lg bg-red-600 px-4 text-xs font-bold uppercase text-white"
             >
               Delete
             </button>
             <button
+              ref={cancelDeleteRef}
               type="button"
-              onClick={() => setPendingDelete(null)}
+              data-testid="saved-order-delete-confirm-cancel"
+              onClick={() => dismissPendingDelete(true)}
               className="min-h-11 rounded-lg border border-heritage-green/20 px-4 text-xs font-bold uppercase text-heritage-green"
             >
               Cancel

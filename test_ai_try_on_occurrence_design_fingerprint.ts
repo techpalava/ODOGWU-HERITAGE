@@ -238,8 +238,12 @@ assert.match(
 );
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-const fingerprintStart = studioSource.indexOf("const futureAiTryOnInputFingerprint");
-const fingerprintEnd = studioSource.indexOf("const futureMeasurementPhysicalGarments");
+const fingerprintStart = studioSource.indexOf("const futureAiTryOnInputFingerprint =");
+// Measurement garments are declared earlier. End at the next statement.
+const fingerprintEnd = studioSource.indexOf(
+  "// AI Try-on (Step 5): one target per wearer",
+  fingerprintStart,
+);
 assert.ok(fingerprintStart >= 0 && fingerprintEnd > fingerprintStart);
 const fingerprintBlock = studioSource.slice(fingerprintStart, fingerprintEnd);
 assert.equal(fingerprintBlock.includes("activeFutureDesignSource"), false);

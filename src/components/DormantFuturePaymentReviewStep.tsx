@@ -48,16 +48,34 @@ import {
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewMeasurementGroups,
   getFuturePaymentReviewMeasurementHeader,
+  getFuturePaymentReviewOnsiteWearers,
+  getFuturePaymentReviewWearerMeasurementSections,
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
   isAwaitingPersonalizedPriceEvaluation,
   isFuturePaymentReviewStageUnlocked,
   type FuturePaymentReviewCandidate,
+  type FuturePaymentReviewMeasurementGroup,
   type FuturePaymentReviewResult,
   type FutureOrderV2PreparationPresentation,
   type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
+import {
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
+} from "../utils/designStudioFutureShipping";
+import {
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
+} from "../utils/measurementBlueprint";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import {
+  formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
 import {
   PERSONALIZED_BASE_PAYMENT_NOTICE,
   readFutureOrderV2ChargeableCents,
@@ -356,7 +374,7 @@ const GarmentReview = ({
                     data-garment-removal-row-heading={garment.garmentKey}
                     className="min-w-0 break-words font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                   >
-                    {garment.label}
+                    {formatCustomDetailsGarmentLabel(garment.label)}
                   </h4>
                   <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
                     {garment.role}
@@ -443,7 +461,7 @@ const GarmentReview = ({
                   )}
                 </div>
                 <EditButton
-                  label={`Edit ${garment.label} fabric`}
+                  label={`Edit ${formatCustomDetailsGarmentLabel(garment.label)} fabric`}
                   onClick={() => onEditStage("fabric")}
                 />
               </div>
@@ -455,7 +473,7 @@ const GarmentReview = ({
                   Custom Details
                 </p>
                 <EditButton
-                  label={`Edit ${garment.label} Custom Details`}
+                  label={`Edit ${formatCustomDetailsGarmentLabel(garment.label)} Custom Details`}
                   onClick={() => onEditStage("custom_details")}
                 />
               </div>
@@ -481,7 +499,7 @@ const GarmentReview = ({
                             {detail.optionLabel}
                           </p>
                           <p className="mt-0.5 break-words text-xs text-heritage-ink/55">
-                            {detail.selectionGroupTitle}
+                            {formatSavedNikkaDisplayText(detail.selectionGroupTitle)}
                           </p>
                         </div>
                         <span className="min-w-0 max-w-full break-words text-right font-mono text-sm font-bold text-heritage-green">
@@ -572,7 +590,7 @@ const RetainedGarmentReview = ({
                   data-garment-removal-row-heading={garment.garmentKey}
                   className="min-w-0 break-words font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
-                  {garment.label}
+                  {formatCustomDetailsGarmentLabel(garment.label)}
                 </h4>
                 <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
                   {garment.role}
@@ -698,6 +716,16 @@ export const DormantFuturePaymentReviewStep = ({
   );
   const measurementGroups = candidate
     ? getFuturePaymentReviewMeasurementGroups(candidate, {
+        plainPersonGarmentLabels: true,
+      })
+    : [];
+  const measurementWearerSections = candidate
+    ? getFuturePaymentReviewWearerMeasurementSections(candidate, {
+        plainPersonGarmentLabels: true,
+      })
+    : [];
+  const onsiteWearers = candidate
+    ? getFuturePaymentReviewOnsiteWearers(candidate, {
         plainPersonGarmentLabels: true,
       })
     : [];
@@ -942,18 +970,24 @@ export const DormantFuturePaymentReviewStep = ({
                   >
                     <div className="min-w-0">
                       <p className="break-words text-sm font-bold text-heritage-green">
-                        {snapshot.occurrence.label}
+                        {formatCustomDetailsGarmentLabel(snapshot.occurrence.label)}
                       </p>
                       <p className="break-words text-xs text-heritage-ink/60">
                         {snapshot.sourceKind === "catalogue"
-                          ? `Catalogue style: ${snapshot.catalogue?.styleId}${snapshot.catalogue ? ` · Eligibility revision ${snapshot.catalogue.eligibilityRevision}` : ""}`
+                          ? snapshot.catalogue
+                            ? `Catalogue style · Eligibility revision ${snapshot.catalogue.eligibilityRevision}`
+                            : "Catalogue style"
                           : "Confirmed uploaded design"}
                       </p>
                     </div>
                     <p className="min-w-0 break-words text-sm font-semibold text-heritage-green sm:text-right">
                       {snapshot.sourceKind === "catalogue"
                         ? snapshot.catalogue?.name
-                        : snapshot.uploaded?.displayLabel}
+                          ? formatCustomerVisibleKaftanText(snapshot.catalogue.name)
+                          : undefined
+                        : snapshot.uploaded?.displayLabel
+                          ? formatCustomerVisibleKaftanText(snapshot.uploaded.displayLabel)
+                          : undefined}
                     </p>
                   </li>
                 ))}
@@ -964,7 +998,7 @@ export const DormantFuturePaymentReviewStep = ({
                   {candidate.design.image ? (
                     <img
                       src={candidate.design.image}
-                      alt={`${candidate.design.name} design`}
+                      alt={`${formatCustomerVisibleKaftanText(candidate.design.name)} design`}
                       className="h-full w-full object-contain"
                       referrerPolicy="no-referrer"
                     />
@@ -979,7 +1013,7 @@ export const DormantFuturePaymentReviewStep = ({
                     Design Style
                   </p>
                   <h2 className="mt-1 break-words font-serif text-lg font-bold text-heritage-green">
-                    {candidate.design.name}
+                    {formatCustomerVisibleKaftanText(candidate.design.name)}
                   </h2>
                   <p className="mt-1 break-words text-sm text-heritage-ink/70">
                     {candidate.design.compositionLabel}
@@ -987,8 +1021,8 @@ export const DormantFuturePaymentReviewStep = ({
                   <p className="mt-1 text-xs capitalize text-heritage-ink/55">
                     For: {candidate.design.demographic}
                   </p>
-                  <p className="mt-1 break-words font-mono text-xs text-heritage-ink/50">
-                    Catalog style: {candidate.source.styleId}
+                  <p className="mt-1 break-words text-xs text-heritage-ink/50">
+                    Catalogue style
                   </p>
                   <p className="mt-1 text-xs font-semibold text-heritage-green">
                     Status: {getFuturePaymentReviewContentStatusLabel(candidate)}
@@ -1031,8 +1065,10 @@ export const DormantFuturePaymentReviewStep = ({
                   <p className="mt-2 break-words text-xs text-heritage-ink/65">
                     Assigned to: {allocation.garmentAssignments.map(
                       (assignment) =>
-                        garmentLabelByKey.get(assignment.garmentKey) ||
-                        "Garment",
+                        formatCustomDetailsGarmentLabel(
+                          garmentLabelByKey.get(assignment.garmentKey) ||
+                            "Garment",
+                        ),
                     ).join(", ")}
                   </p>
                   <dl className="mt-3 space-y-2 text-sm">
@@ -1097,6 +1133,8 @@ export const DormantFuturePaymentReviewStep = ({
                     candidate.measurements,
                   );
                   if (measurementHeader.kind === "single") {
+                    const isOnsiteRoute =
+                      measurementHeader.routeLabel === MEASUREMENT_ONSITE_PHYSICAL_LABEL;
                     return (
                       <>
                         {measurementHeader.wearerLabel ? (
@@ -1104,8 +1142,10 @@ export const DormantFuturePaymentReviewStep = ({
                             {measurementHeader.wearerLabel}
                           </p>
                         ) : null}
-                        <p className="font-bold capitalize text-heritage-green">
-                          {measurementHeader.routeLabel} route
+                        <p className={`font-bold text-heritage-green ${isOnsiteRoute ? "" : "capitalize"}`}>
+                          {isOnsiteRoute
+                            ? measurementHeader.routeLabel
+                            : `${measurementHeader.routeLabel} route`}
                         </p>
                         <p className="mt-1 text-xs text-heritage-ink/60">
                           Status: {measurementHeader.statusLabel}
@@ -1113,30 +1153,92 @@ export const DormantFuturePaymentReviewStep = ({
                       </>
                     );
                   }
+                  const wearerSectionById = new Map(
+                    measurementWearerSections.map((section) => [section.wearerId, section]),
+                  );
                   return (
                     <div className="space-y-2">
-                      {measurementHeader.wearers.map((wearer) => (
+                      {measurementHeader.wearers.map((wearer) => {
+                        const assignedGarmentLabels =
+                          wearerSectionById.get(wearer.wearerId)?.assignedGarmentLabels || [];
+                        const isOnsiteRoute =
+                          wearer.routeLabel === MEASUREMENT_ONSITE_PHYSICAL_LABEL;
+                        return (
                         <div key={wearer.wearerId}>
                           <p className="font-bold text-heritage-green">
                             {wearer.displayName}
                           </p>
-                          <p className="text-xs capitalize text-heritage-ink/70">
-                            {wearer.routeLabel} route
+                          {assignedGarmentLabels.length > 0 ? (
+                            <p className="text-xs text-heritage-ink/75">
+                              Garments: {assignedGarmentLabels.join(", ")}
+                            </p>
+                          ) : null}
+                          <p className={`text-xs text-heritage-ink/70 ${isOnsiteRoute ? "font-semibold text-heritage-green" : "capitalize"}`}>
+                            {isOnsiteRoute ? wearer.routeLabel : `${wearer.routeLabel} route`}
                           </p>
                           <p className="text-xs text-heritage-ink/60">
                             Status: {wearer.statusLabel}
                           </p>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   );
                 })()}
               </div>
             </div>
+            {onsiteWearers.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {onsiteWearers.map((onsiteWearer) => (
+                  <div
+                    key={onsiteWearer.wearerId}
+                    data-payment-review-measurement-onsite-info="true"
+                    data-payment-review-measurement-onsite-wearer={onsiteWearer.wearerId}
+                    className="rounded-xl border border-heritage-gold/35 bg-heritage-cream/30 p-3.5 sm:p-4"
+                  >
+                    <p className="text-xs font-bold uppercase tracking-wider text-heritage-gold">
+                      {onsiteWearer.wearerLabel
+                        ? `${onsiteWearer.wearerLabel} · ${MEASUREMENT_ONSITE_PHYSICAL_LABEL}`
+                        : MEASUREMENT_ONSITE_PHYSICAL_LABEL}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold leading-snug text-heritage-green">
+                      {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
+                    </p>
+                    {onsiteWearer.assignedGarmentLabels.length > 0 && (
+                      <p
+                        data-payment-review-measurement-onsite-garments={onsiteWearer.wearerId}
+                        className="mt-1.5 text-xs font-medium text-heritage-ink/75"
+                      >
+                        Covered garments:{" "}
+                        {onsiteWearer.assignedGarmentLabels
+                          .map((label) => formatCustomDetailsGarmentLabel(label))
+                          .join(", ")}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs leading-relaxed text-heritage-ink/75">
+                      {MEASUREMENT_ONSITE_BOOKING_REASON}
+                    </p>
+                    <div className="mt-2.5">
+                      <a
+                        href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-payment-review-measurement-onsite-whatsapp="true"
+                        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                      >
+                        {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL} ({FUTURE_PICKUP_ATELIER_PHONE_DISPLAY})
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {measurementGroups.length === 0 ? (
-              <p className="mt-3 text-sm text-heritage-ink/60">
-                Measurement values are pending.
-              </p>
+              onsiteWearers.length > 0 ? null : (
+                <p className="mt-3 text-sm text-heritage-ink/60">
+                  Measurement values are pending.
+                </p>
+              )
             ) : (
               <PaymentReviewDisclosure
                 id="measurements"
@@ -1144,15 +1246,21 @@ export const DormantFuturePaymentReviewStep = ({
                 hideLabel="Hide measurements"
                 className="mt-4"
               >
-              <div className="grid min-w-0 gap-4 md:grid-cols-2">
-                {measurementGroups.map((group) => (
+              {(() => {
+                const renderMeasurementGroupCard = (
+                  group: FuturePaymentReviewMeasurementGroup,
+                  keyPrefix = "",
+                  headingLevel: "h4" | "h5" = "h4",
+                ) => {
+                  const GroupHeading = headingLevel;
+                  return (
                   <article
-                    key={group.garmentKey || "shared"}
+                    key={`${keyPrefix}${group.garmentKey ?? "shared"}:${group.title}`}
                     className="min-w-0 rounded-xl border border-heritage-green/12 p-4"
                   >
-                    <h4 className="break-words font-bold text-heritage-green">
+                    <GroupHeading className="break-words font-bold text-heritage-green">
                       {group.title}
-                    </h4>
+                    </GroupHeading>
                     <dl className="mt-3 space-y-2 text-sm">
                       {group.items.map((item) => (
                         <div
@@ -1175,8 +1283,56 @@ export const DormantFuturePaymentReviewStep = ({
                       ))}
                     </dl>
                   </article>
-                ))}
-              </div>
+                  );
+                };
+                if (measurementWearerSections.length > 1) {
+                  return (
+                    <div className="space-y-4">
+                      {measurementWearerSections.map((wearerSection) => (
+                        <section
+                          key={wearerSection.wearerId}
+                          data-payment-review-measurement-wearer={wearerSection.wearerId}
+                          className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/10 p-4"
+                        >
+                          <div className="mb-3 flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                            <h4 className="font-serif text-base font-bold text-heritage-green">
+                              {wearerSection.displayName}
+                            </h4>
+                            {wearerSection.assignedGarmentLabels.length > 0 ? (
+                              <p
+                                data-payment-review-measurement-wearer-garments={wearerSection.wearerId}
+                                className="text-xs text-heritage-ink/70"
+                              >
+                                {wearerSection.assignedGarmentLabels.join(", ")}
+                              </p>
+                            ) : null}
+                          </div>
+                          {wearerSection.groups.length > 0 ? (
+                            <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                              {wearerSection.groups.map((group) =>
+                                renderMeasurementGroupCard(
+                                  group,
+                                  `${wearerSection.wearerId}:`,
+                                  "h5",
+                                ),
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-heritage-ink/70">
+                              {wearerSection.routeLabel}: {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
+                            </p>
+                          )}
+                        </section>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                    {measurementGroups.map((group) => renderMeasurementGroupCard(group))}
+                  </div>
+                );
+              })()}
               </PaymentReviewDisclosure>
             )}
           </ReviewSection>

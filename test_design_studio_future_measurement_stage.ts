@@ -5,10 +5,15 @@ import { act, create } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 import { WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import {
+  addPersonAndAssignGarment,
+  addWearer,
+  assignGarmentToWearer,
   createEmptyWearerOrder,
   deleteWearer,
+  planWearerOrderMeasurements,
   reconcileWearerOrder,
   resolveWearerAssignmentPresentation,
+  wearerAssignmentLabel,
 } from "./src/utils/wearerOrder";
 import type { GarmentTypeStepSelection } from "./src/types";
 import {
@@ -19,6 +24,7 @@ import {
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
   setFutureMeasurementRoute,
+  type MeasurementPhysicalGarment,
 } from "./src/utils/measurementBlueprint";
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
@@ -106,13 +112,16 @@ assert.match(
   studioSource,
   /getActiveWearerId:\s*\(\) => activeWearerIdRef\.current/,
 );
-assert.match(
-  studioSource,
-  /setLiveForm:\s*\(measurement\) =>\s*setFutureMeasurementState\(/,
+assert.equal(
+  studioSource.includes("setFutureMeasurementState"),
+  false,
+  "per-wearer measurements live solely in wearerOrder (no independent live form state)",
 );
+assert.match(studioSource, /const commitWearerMeasurement = \(/);
+assert.match(studioSource, /const selectWearer = \(/);
 assert.match(
   studioSource,
-  /onCollapseToSolo[\s\S]*setFutureMeasurementState\(\s*sole\?\.measurement/,
+  /onCollapseToSolo[\s\S]*activeWearerIdRef\.current = soleWearerId;\s*setActiveWearerId\(soleWearerId\)/,
 );
 assert.match(measurementSource, /data-measurement-garment-chip/);
 assert.match(measurementSource, /data-measurement-garment-remaining/);
@@ -627,8 +636,8 @@ const renderPickerHarness = ({
 }: {
   state: ReturnType<typeof createEmptyFutureMeasurementState>;
   plan: ReturnType<typeof planMeasurementRequirements>;
-  physicalGarments: Array<{ garmentKey: string; garmentType: "shirt" | "bum_shorts" | "trouser" }>;
-  unassignedGarments?: Array<{ garmentKey: string; garmentType: "shirt" | "bum_shorts" | "trouser" }>;
+  physicalGarments: readonly MeasurementPhysicalGarment[];
+  unassignedGarments?: readonly MeasurementPhysicalGarment[];
   orderMeasurementsComplete?: boolean;
 }) => {
   let liveState = state;
@@ -1484,3 +1493,476 @@ console.log("PASS: measurement Measuring-for person chips switch the active wear
 }
 
 console.log("PASS: measurement calculated-from-height fills from height alone");
+
+// Regression: typing the first digit (and subsequent digits) into an initially
+// empty measurement field on a newly assigned Sleeveless Standard Dress keeps
+// the current garment form open and preserves the input instance without jumping
+// or switching away.
+{
+  const dressSleevelessConstruction = {
+    status: "resolved" as const,
+    garmentType: "dress" as const,
+    components: [{
+      componentKey: "dress:dress_construction:dress_std_sleeveless",
+      optionId: "dress_std_sleeveless",
+      selectionGroup: "dress_construction" as const,
+      priceCents: 1,
+      price: 0.01,
+    }],
+    totalPriceCents: 1,
+    totalPrice: 0.01,
+  };
+  const twoGarments: readonly MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:dress:1", garmentType: "dress" },
+  ];
+  const dressPlan = planMeasurementRequirements({
+    route: "medium_risk",
+    garmentTypeSelection: {
+      ...shirtSelection,
+      demographic: "female",
+    },
+    physicalGarments: twoGarments,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:dress:1": dressSleevelessConstruction },
+    },
+  });
+
+  // Case 1: The customer picks the newly assigned Sleeveless Standard Dress chip while
+  // the shirt still has remaining fields (no activeGarmentKey from the store yet, shared
+  // measurements still open). Typing the first digit "2" into sleeve_length_sleeveless
+  // satisfies minCm=1 and flips the dress chip from "remaining" to "shared", but must
+  // NOT jump back to base:shirt. (The default pick is the first chip with remaining
+  // fields, i.e. the shirt, so the dress is reached by a chip click like in the app.)
+  const firstDigitHarness = renderPickerHarness({
+    state: reconcileFutureMeasurementState({
+      state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "medium_risk"),
+      plan: dressPlan,
+    }),
+    plan: dressPlan,
+    physicalGarments: twoGarments,
+    orderMeasurementsComplete: false,
+  });
+
+  act(() => {
+    firstDigitHarness.renderer.root
+      .findByProps({ "data-measurement-garment": "additional:dress:1" })
+      .props.onClick();
+  });
+  firstDigitHarness.sync();
+  assert.equal(
+    firstDigitHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "picked Sleeveless Standard Dress is selected before typing",
+  );
+  const findSleevelessInput = () =>
+    firstDigitHarness.renderer.root
+      .findByProps({ "data-measurement-field": "sleeve_length_sleeveless" })
+      .findByType("input");
+
+  const inputBeforeFirstDigit = findSleevelessInput();
+  act(() => {
+    inputBeforeFirstDigit.props.onFocus?.();
+    inputBeforeFirstDigit.props.onChange({ target: { value: "2" } });
+  });
+  firstDigitHarness.sync();
+
+  assert.equal(
+    firstDigitHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "typing first digit '2' must keep Sleeveless Standard Dress selected",
+  );
+  assert.equal(
+    firstDigitHarness.state.activeGarmentKey,
+    "additional:dress:1",
+    "typing first digit locks activeGarmentKey to the current garment",
+  );
+  const inputAfterFirstDigit = findSleevelessInput();
+  assert.equal(
+    inputAfterFirstDigit,
+    inputBeforeFirstDigit,
+    "input element instance must stay mounted (preserving focus) after first digit",
+  );
+  assert.equal(inputAfterFirstDigit.props.value, 2);
+
+  act(() => {
+    inputAfterFirstDigit.props.onChange({ target: { value: "25" } });
+  });
+  firstDigitHarness.sync();
+  assert.equal(
+    firstDigitHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "typing subsequent digits keeps Sleeveless Standard Dress selected",
+  );
+  assert.equal(findSleevelessInput().props.value, 25);
+
+  // Case 2: Low-risk order where another garment still has remaining fields and
+  // shared fields are already filled; typing the first digit into the last
+  // remaining field of the active garment must NOT auto-advance away mid-typing.
+  const lowRiskPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: {
+      ...shirtSelection,
+      demographic: "female",
+    },
+    physicalGarments: twoGarments,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:dress:1": dressSleevelessConstruction },
+    },
+  });
+  let lowRiskInitial = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState(),
+    "low_risk",
+  );
+  const lowRiskRequired = projectMeasurementRequirementsForPresentation({
+    requirements: lowRiskPlan.requirements,
+    state: lowRiskInitial,
+  }).filter((requirement) => requirement.section === "required");
+  for (const requirement of lowRiskRequired) {
+    if (requirement.scope === "shared" && requirement.directInput) {
+      lowRiskInitial = setFutureMeasurementInput({
+        state: lowRiskInitial,
+        requirement,
+        displayValue: requirement.measurementId === "total_height" ? 170 : 85,
+      });
+    }
+    // Fill every other required dress field so the sleeveless field is the LAST one
+    // remaining: typing its first digit completes the dress, which is exactly the
+    // transition that used to auto-advance away mid-typing.
+    if (
+      requirement.garmentKey === "additional:dress:1" &&
+      requirement.measurementId !== "sleeve_length_sleeveless"
+    ) {
+      lowRiskInitial = setFutureMeasurementInput({
+        state: lowRiskInitial,
+        requirement,
+        displayValue: requirement.measurementId === "dress_length_standard" ? 95 : 60,
+      });
+    }
+  }
+  lowRiskInitial = reconcileFutureMeasurementState({
+    state: { ...lowRiskInitial, activeGarmentKey: "additional:dress:1" },
+    plan: lowRiskPlan,
+  });
+  const lowRiskHarness = renderPickerHarness({
+    state: lowRiskInitial,
+    plan: lowRiskPlan,
+    physicalGarments: twoGarments,
+    orderMeasurementsComplete: false,
+  });
+  const findLowRiskSleevelessInput = () =>
+    lowRiskHarness.renderer.root
+      .findByProps({ "data-measurement-field": "sleeve_length_sleeveless" })
+      .findByType("input");
+  const lowRiskInputBefore = findLowRiskSleevelessInput();
+  act(() => {
+    lowRiskInputBefore.props.onFocus?.();
+    lowRiskInputBefore.props.onChange({ target: { value: "1" } });
+  });
+  lowRiskHarness.sync();
+  assert.equal(
+    lowRiskHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:dress:1",
+    }).props["aria-pressed"],
+    true,
+    "typing first digit into last required garment field must not auto-switch away mid-typing",
+  );
+  assert.equal(
+    findLowRiskSleevelessInput(),
+    lowRiskInputBefore,
+    "input element remains mounted on first digit in low_risk",
+  );
+  act(() => {
+    lowRiskInputBefore.props.onChange({ target: { value: "18" } });
+    lowRiskInputBefore.props.onBlur?.();
+  });
+  lowRiskHarness.sync();
+  assert.equal(findLowRiskSleevelessInput().props.value, 18);
+}
+
+console.log("PASS: measurement first-digit typing keeps garment form open and preserves input focus");
+
+// Step 5 "Assign in order to continue" pop-up modal for unassigned garments:
+// 1. Opens when clicking an unassigned garment chip, unassigned measurement area, or Continue.
+// 2. Supports assigning to an existing person or adding a new person.
+// 3. Auto-closes and transitions into the assigned person's measurement fields once all garments are assigned.
+{
+  const twoGarments: readonly MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "base:bum_shorts", garmentType: "bum_shorts" },
+  ];
+  let order = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: twoGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: twoGarments,
+    garmentTypeSelection: { ...shirtSelection, demographic: "female" },
+  });
+  const split = addWearer({
+    order,
+    physicalGarmentCount: twoGarments.length,
+    displayName: "",
+    fitContext: null,
+  });
+  assert.equal(split.status, "updated");
+  order = split.order;
+  // Both base:shirt and base:bum_shorts are now unassigned across Person 1 and Person 2.
+  let activeWearerId = order.wearers[0]!.wearerId;
+  let hydratedGarmentKey: string | null = null;
+  let renderer!: ReturnType<typeof create>;
+
+  const buildProps = () => {
+    const runtimes = planWearerOrderMeasurements({
+      order,
+      garmentTypeSelection: { ...shirtSelection, demographic: "female" },
+      physicalGarments: twoGarments,
+    });
+    const activeRuntime =
+      runtimes.find((runtime) => runtime.wearerId === activeWearerId) ||
+      runtimes[0]!;
+    const unassigned = twoGarments.filter(
+      (garment) => !order.assignmentByGarmentKey[garment.garmentKey],
+    );
+    const activeWearer =
+      order.wearers.find((wearer) => wearer.wearerId === activeWearerId) ||
+      order.wearers[0]!;
+    return {
+      plan: activeRuntime.plan,
+      state: activeRuntime.measurement,
+      restoredGarmentKey: hydratedGarmentKey,
+      physicalGarments: twoGarments,
+      unassignedGarments: unassigned,
+      multiPersonAssignmentActive: order.wearers.length > 1,
+      orderMeasurementsComplete: false,
+      activeWearerLabel: wearerAssignmentLabel(
+        activeWearer.displayName,
+        activeWearer.presentationOrder,
+      ),
+      activeWearerGarmentLabels: activeRuntime.garmentKeys,
+      wearerChips: order.wearers.map((wearer) => ({
+        wearerId: wearer.wearerId,
+        label: wearerAssignmentLabel(wearer.displayName, wearer.presentationOrder),
+      })),
+      activeWearerId,
+      onSelectWearer: (wearerId: string) => {
+        activeWearerId = wearerId;
+      },
+      onAssignUnassignedGarment: (garmentKey: string, wearerId: string) => {
+        const garment = twoGarments.find(
+          (candidate) => candidate.garmentKey === garmentKey,
+        )!;
+        const assigned = assignGarmentToWearer({
+          order,
+          garmentKey,
+          wearerId,
+          garment,
+          garmentTypeSelection: { ...shirtSelection, demographic: "female" },
+        });
+        assert.equal(assigned.status, "updated");
+        order = {
+          ...assigned.order,
+          wearers: assigned.order.wearers.map((wearer) =>
+            wearer.wearerId === wearerId
+              ? {
+                  ...wearer,
+                  measurement: {
+                    ...(wearer.measurement.route
+                      ? wearer.measurement
+                      : setFutureMeasurementRoute(
+                          wearer.measurement,
+                          "medium_risk",
+                        )),
+                    activeGarmentKey: garmentKey,
+                  },
+                }
+              : wearer,
+          ),
+        };
+        activeWearerId = wearerId;
+        hydratedGarmentKey = garmentKey;
+      },
+      onAddPersonAndAssignGarment: (displayName: string, garmentKey: string) => {
+        const result = addPersonAndAssignGarment({
+          order,
+          garments: twoGarments,
+          garmentTypeSelection: { ...shirtSelection, demographic: "female" },
+          displayName,
+          garmentKey,
+          defaultRoute: "medium_risk",
+        });
+        assert.equal(result.status, "updated");
+        if (result.status === "updated") {
+          order = result.order;
+          activeWearerId = result.wearerId;
+          hydratedGarmentKey = garmentKey;
+        }
+      },
+      onChange: (nextState: ReturnType<typeof createEmptyFutureMeasurementState>) => {
+        order = {
+          ...order,
+          wearers: order.wearers.map((wearer) =>
+            wearer.wearerId === activeWearerId
+              ? { ...wearer, measurement: nextState }
+              : wearer,
+          ),
+        };
+      },
+      onRouteChange: (route: "low_risk" | "medium_risk" | "high_risk" | "critical_risk" | "sample_cloth") => {
+        order = {
+          ...order,
+          wearers: order.wearers.map((wearer) =>
+            wearer.wearerId === activeWearerId
+              ? {
+                  ...wearer,
+                  measurement: setFutureMeasurementRoute(wearer.measurement, route),
+                }
+              : wearer,
+          ),
+        };
+      },
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    };
+  };
+
+  act(() => {
+    renderer = create(createElement(DormantFutureMeasurementStep, buildProps()));
+  });
+  const syncModalHarness = () => {
+    act(() => {
+      renderer.update(createElement(DormantFutureMeasurementStep, buildProps()));
+    });
+  };
+
+  // Modal is initially closed.
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-testid": "step5-unassigned-garment-assignment-dialog",
+    }).length,
+    0,
+  );
+
+  // Trigger 1: Clicking locked "Continue to AI Try-on" opens the "Assign in order to continue" modal.
+  const lockedContinueButtons = renderer.root.findAllByProps({
+    "aria-label": "Continue to AI Try-on",
+  });
+  assert.ok(lockedContinueButtons.length > 0);
+  act(() => {
+    lockedContinueButtons[0]!.props.onClick();
+  });
+  syncModalHarness();
+
+  const dialogAfterContinue = renderer.root.findByProps({
+    "data-testid": "step5-unassigned-garment-assignment-dialog",
+  });
+  assert.match(headingText(dialogAfterContinue), /Assign in order to continue/);
+  assert.match(headingText(dialogAfterContinue), /2 garments still need assignment/);
+
+  // Close the modal and verify Trigger 2: clicking the empty-wearer or measurement option opens it again.
+  act(() => {
+    renderer.root
+      .findByProps({ "data-measurement-assign-modal-close": "true" })
+      .props.onClick();
+  });
+  syncModalHarness();
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-testid": "step5-unassigned-garment-assignment-dialog",
+    }).length,
+    0,
+  );
+
+  act(() => {
+    renderer.root
+      .findByProps({ "data-measurement-empty-wearer-assign-trigger": "true" })
+      .props.onClick();
+  });
+  syncModalHarness();
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-testid": "step5-unassigned-garment-assignment-dialog",
+    }).length,
+    1,
+  );
+
+  // Action A: Assign the first unassigned garment (base:shirt) to an already-added person (You / wearer[0]).
+  const firstWearerId = order.wearers[0]!.wearerId;
+  act(() => {
+    renderer.root
+      .findByProps({ "data-measurement-assign-modal-wearer": firstWearerId })
+      .props.onClick();
+  });
+  syncModalHarness();
+
+  assert.equal(order.assignmentByGarmentKey["base:shirt"], firstWearerId);
+  // 1 garment (base:bum_shorts) is still unassigned, so modal stays open for base:bum_shorts.
+  const dialogWithOneRemaining = renderer.root.findByProps({
+    "data-testid": "step5-unassigned-garment-assignment-dialog",
+  });
+  assert.match(
+    headingText(dialogWithOneRemaining),
+    /1 garment still needs assignment/,
+  );
+
+  // Blank name validation when adding a new person.
+  act(() => {
+    renderer.root
+      .findByProps({ "data-measurement-assign-modal-add-person-button": "true" })
+      .props.onClick();
+  });
+  syncModalHarness();
+  assert.match(
+    headingText(
+      renderer.root.findByProps({
+        "data-measurement-assign-modal-error": "true",
+      }),
+    ),
+    /Enter a name or nickname to add a new person/,
+  );
+
+  // Action B: Add a new person ("Ada") and assign the remaining garment (base:bum_shorts) to them.
+  act(() => {
+    renderer.root
+      .findByProps({ "data-measurement-assign-modal-new-person-input": "true" })
+      .props.onChange({ target: { value: "Ada" } });
+  });
+  syncModalHarness();
+  act(() => {
+    renderer.root
+      .findByProps({ "data-measurement-assign-modal-add-person-button": "true" })
+      .props.onClick();
+  });
+  syncModalHarness();
+
+  // All garments are now assigned: modal closes automatically and transitions into Ada's measurement fields!
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-testid": "step5-unassigned-garment-assignment-dialog",
+    }).length,
+    0,
+    "modal closes automatically once all garments are assigned",
+  );
+  const adaWearer = order.wearers.find((wearer) => wearer.displayName === "Ada");
+  assert.ok(adaWearer, "new person 'Ada' is created/named in the order");
+  assert.equal(
+    order.assignmentByGarmentKey["base:bum_shorts"],
+    adaWearer!.wearerId,
+  );
+  assert.equal(activeWearerId, adaWearer!.wearerId);
+  assert.ok(
+    renderer.root.findAll(
+      (node) => typeof node.props?.["data-measurement-field"] === "string",
+    ).length > 0,
+    "measurement fields are immediately visible after all garments are assigned",
+  );
+}
+
+console.log("PASS: Step 5 'Assign in order to continue' modal assigns to existing or new person and auto-closes");

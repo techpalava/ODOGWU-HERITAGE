@@ -56,11 +56,23 @@ const paidProgressSentence = (order: BannerOrder): string => {
   return `${placed} ${card.statusLabel}. Stage ${order.progress.currentStage} of 6. Delivery ${card.deliveryLabel}.${pin}`;
 };
 
+export const isCustomerDashboardBannerSettled = ({
+  ordersLoaded,
+  paymentsLoaded,
+  workshopLoaded,
+}: {
+  readonly ordersLoaded: boolean;
+  readonly paymentsLoaded: boolean;
+  readonly workshopLoaded: boolean;
+}): boolean => ordersLoaded && paymentsLoaded && workshopLoaded;
+
 export const presentCustomerDashboardBanner = (
   orders: readonly unknown[],
   paymentsByOrderId: ReadonlyMap<string, unknown>,
   workshopByOrderId: ReadonlyMap<string, FutureOrderV2WorkshopProgress> = new Map(),
+  options: { readonly settled?: boolean } = {},
 ): CustomerDashboardBanner | null => {
+  if (options.settled === false) return null;
   const listed = bannerOrders(orders, paymentsByOrderId, workshopByOrderId);
   if (listed.length === 0) return null;
   if (listed.length === 1) {

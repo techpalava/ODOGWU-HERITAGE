@@ -61,6 +61,8 @@ import {
   buildAiTryOnPrompt,
   buildAiTryOnUploadedDesignPrompt,
   buildAiTryOnUploadedDesignImageLabels,
+  buildAiTryOnStylePhotoPrompt,
+  buildAiTryOnStylePhotoImageLabels,
   buildAiTryOnOutfitPrompt,
   buildAiTryOnOutfitImageLabels,
 } from "./aiTryOnPrompt.js";
@@ -109,12 +111,14 @@ import {
 import {
   AI_TRY_ON_MAX_IMAGE_BYTES,
   AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION,
+  AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION,
   AI_TRY_ON_OUTFIT_PROMPT_VERSION,
   type AiTryOnOutfitGarmentRequest,
   AI_TRY_ON_MODEL_PROMPT_VERSION,
   AI_TRY_ON_MAX_TOTAL_IMAGE_BYTES,
   AI_TRY_ON_PROMPT_VERSION,
   AI_TRY_ON_ROUTE,
+  AI_TRY_ON_TOP_TUCK_PREFERENCES,
   AI_TRY_ON_TRIES_PER_ORDER,
   AI_TRY_ON_ACCOUNT_TRIES_PER_WINDOW,
   type AiTryOnAvailabilityResponse,
@@ -124,6 +128,7 @@ import {
   type AiTryOnImageMimeType,
   type AiTryOnInlineImage,
   type AiTryOnMode,
+  type AiTryOnTopTuckPreference,
 } from "../utils/aiTryOnGatewayContract.js";
 
 /**
@@ -296,7 +301,9 @@ const ALLOWED_KEYS = new Set([
   "wearerKey",
   "fitHints",
   "orderDetails",
+  "topTuckPreference",
   "busyJobId",
+  "wearerSource",
 ]);
 const WEARER_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 const PREVIEW_ID_PATTERN = /^tryon-[0-9a-f-]{36}$/;
@@ -356,11 +363,14 @@ type ParsedRequest =
       personImage: AiTryOnInlineImage | null;
       uploadedDesign: { image: AiTryOnInlineImage; garmentType: CanonicalPhysicalGarmentType } | null;
       defaultModel: AiTryOnDefaultModel | null;
+      /** The catalogue style photograph is the wearer. No uploaded person image. */
+      stylePhoto: boolean;
       garment: AiTryOnReferenceSource | null;
       outfitGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmentRequest] | null;
       fabric: AiTryOnReferenceSource | null;
       fitHints: AiTryOnFitHint[];
       orderDetails: AiTryOnOrderDetails | null;
+      topTuckPreference: AiTryOnTopTuckPreference;
       /** A busy retry of a held try. */
       busyJobId: string | null;
     }
@@ -416,18 +426,36 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
   let uploadedGarmentType: CanonicalPhysicalGarmentType | null = null;
   if (parsedBody.uploadedDesignImage === undefined && parsedBody.uploadedGarmentType !== undefined) return invalid("Uploaded garment type requires an uploaded design.");
   let defaultModel: AiTryOnDefaultModel | null = null;
+  let stylePhoto = false;
+  if (parsedBody.wearerSource !== undefined && parsedBody.wearerSource !== "style_photo") {
+    return invalid("Unknown wearer source.");
+  }
   if (parsedBody.uploadedDesignImage !== undefined) {
     if (mode !== "fabric") return invalid("Uploaded-design preview needs the chosen fabric swatch.");
     const uploadedType = CANONICAL_PHYSICAL_GARMENT_TYPES.find((value) => value === parsedBody.uploadedGarmentType);
     if (!uploadedType) return invalid("A valid uploaded garment type is required.");
     uploadedGarmentType = uploadedType;
-    if (["personImage", "defaultModelId", "garmentImage", "garmentImageUrl", "fitHints", "orderDetails"].some((key) => parsedBody[key] !== undefined)) {
+    if (parsedBody.wearerSource !== undefined) return invalid("Uploaded-design preview does not use the style photo.");
+    if (["personImage", "defaultModelId", "garmentImage", "garmentImageUrl", "fitHints", "orderDetails", "topTuckPreference"].some((key) => parsedBody[key] !== undefined)) {
       return invalid("Uploaded-design preview uses only the uploaded design and chosen fabric, not a customer photo, model or garment details.");
     }
     const uploaded = parseImage(parsedBody.uploadedDesignImage);
     if (uploaded.ok === false) return uploaded.tooLarge ? tooLarge : invalid("Images must be JPEG, PNG, or WebP.");
     uploadedDesignImage = uploaded.image;
     totalBytes += uploaded.bytes;
+  } else if (parsedBody.wearerSource === "style_photo") {
+    if (mode !== "fabric") return invalid("Style-photo try-on needs the chosen fabric swatch.");
+    if (
+      ["personImage", "defaultModelId", "fitHints", "orderDetails", "topTuckPreference", "garmentImage", "fabricSwatchImage", "uploadedDesignImage"].some(
+        (key) => parsedBody[key] !== undefined,
+      )
+    ) {
+      return invalid("Style-photo try-on sends only the style picture and fabric URLs, with no photo, model, or measurements.");
+    }
+    if (parsedBody.garmentImageUrl === undefined || parsedBody.fabricSwatchImageUrl === undefined) {
+      return invalid("Style-photo try-on needs the style picture and fabric URLs.");
+    }
+    stylePhoto = true;
   } else if (parsedBody.defaultModelId !== undefined) {
     // Model mode: no customer photo, catalogue pictures only (so the shared
     // cache never holds customer content) and no fit hints (they describe
@@ -505,6 +533,16 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
   if (!fitHints) return invalid("Fit hints are not valid.");
   const orderDetails = normalizeAiTryOnOrderDetails(parsedBody.orderDetails);
   if (orderDetails === "invalid") return invalid("Order details are not valid.");
+  const rawTopTuckPreference = parsedBody.topTuckPreference;
+  if (
+    rawTopTuckPreference !== undefined &&
+    (typeof rawTopTuckPreference !== "string" ||
+      !(AI_TRY_ON_TOP_TUCK_PREFERENCES as readonly string[]).includes(rawTopTuckPreference))
+  ) {
+    return invalid("Top tuck preference is not valid.");
+  }
+  const topTuckPreference: AiTryOnTopTuckPreference =
+    (rawTopTuckPreference as AiTryOnTopTuckPreference | undefined) ?? "auto";
   const busyJobId = parsedBody.busyJobId === undefined ? null : parsedBody.busyJobId;
   if (busyJobId !== null && (typeof busyJobId !== "string" || !AI_TRY_ON_BUSY_JOB_ID_PATTERN.test(busyJobId))) {
     return invalid("A valid busy job id is required.");
@@ -517,11 +555,13 @@ export const parseAiTryOnGenerationRequest = (body: unknown): ParsedRequest => {
     personImage,
     uploadedDesign: uploadedDesignImage && uploadedGarmentType ? { image: uploadedDesignImage, garmentType: uploadedGarmentType } : null,
     defaultModel,
+    stylePhoto,
     garment,
     outfitGarments,
     fabric,
     fitHints,
     orderDetails,
+    topTuckPreference,
     busyJobId: busyJobId as string | null,
   };
 };
@@ -1146,7 +1186,12 @@ async function handleAiTryOnRequest(
     source.kind === "inline" ? source.image : loadReference(source.url);
   let images: AiTryOnInlineImage[];
   try {
-    images = [
+    if (parsed.stylePhoto && parsed.garment && parsed.fabric) {
+      // One load of the style photograph. It is the wearer. The fabric
+      // swatch is the only other picture. Nothing is uploaded or stored.
+      const styleImage = await resolveReference(parsed.garment);
+      images = [styleImage, await resolveReference(parsed.fabric)];
+    } else images = [
       defaultModel
         ? await (dependencies.loadDefaultModelImage ?? loadAiTryOnDefaultModelImage)(defaultModel)
         : parsed.uploadedDesign?.image ?? parsed.personImage!,
@@ -1199,7 +1244,7 @@ async function handleAiTryOnRequest(
   // v6: drop the swatch's edges (printed codes, selvedge text) and match
   // the output shape to the customer photo. Neither step may block a try:
   // an undecodable picture falls back to what was sent before v6.
-  const fabricImageIndex = parsed.uploadedDesign ? 1 : 2;
+  const fabricImageIndex = parsed.uploadedDesign || parsed.stylePhoto ? 1 : 2;
   if (!parsed.outfitGarments && images[fabricImageIndex]) {
     try {
       images[fabricImageIndex] = await (dependencies.cropFabricSwatch ?? cropAiTryOnFabricSwatch)(images[fabricImageIndex]);
@@ -1216,7 +1261,8 @@ async function handleAiTryOnRequest(
     }
   }
 
-  const promptVersion = parsed.uploadedDesign ? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed.outfitGarments ? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
+  const promptVersion = parsed.stylePhoto ? AI_TRY_ON_STYLE_PHOTO_PROMPT_VERSION : parsed.uploadedDesign ? AI_TRY_ON_UPLOADED_DESIGN_PROMPT_VERSION : parsed.outfitGarments ? AI_TRY_ON_OUTFIT_PROMPT_VERSION : defaultModel ? AI_TRY_ON_MODEL_PROMPT_VERSION : AI_TRY_ON_PROMPT_VERSION;
+  const wearerSource = parsed.stylePhoto ? "style_photo" : parsed.uploadedDesign ? "uploaded_design" : defaultModel ? "studio_model" : "customer_photo";
   const saveWearerPreview = async (previewId: string, image: { mimeType: string; data: string }) => {
     let saved: Awaited<ReturnType<AiTryOnPreviewStore["save"]>> | null;
     try {
@@ -1263,6 +1309,7 @@ async function handleAiTryOnRequest(
       garmentImage: images[1],
       fabricImage: images[2] ?? null,
       orderDetails: parsed.orderDetails,
+      topTuckPreference: parsed.topTuckPreference,
     });
     try {
       modelCache = (dependencies.createModelResultCache ?? defaultModelResultCache)(db);
@@ -1361,16 +1408,17 @@ async function handleAiTryOnRequest(
   );
   const outcome = await runAiTryOnGemini({
     generateContent: (dependencies.createGenerateContent ?? createGeminiGenerateContent)(apiKey),
-    prompt: parsed.uploadedDesign ? buildAiTryOnUploadedDesignPrompt(parsed.uploadedDesign.garmentType) : parsed.outfitGarments ? buildAiTryOnOutfitPrompt({ garments: parsed.outfitGarments, onModel: Boolean(defaultModel), fitHints: parsed.fitHints }) : defaultModel
+    prompt: parsed.stylePhoto ? buildAiTryOnStylePhotoPrompt() : parsed.uploadedDesign ? buildAiTryOnUploadedDesignPrompt(parsed.uploadedDesign.garmentType) : parsed.outfitGarments ? buildAiTryOnOutfitPrompt({ garments: parsed.outfitGarments, onModel: Boolean(defaultModel), fitHints: parsed.fitHints, baseLength: defaultModel?.lengthCategory ?? null, topTuckPreference: parsed.topTuckPreference }) : defaultModel
 
-      ? buildAiTryOnModelPrompt({ mode: parsed.mode, orderDetails: parsed.orderDetails })
+      ? buildAiTryOnModelPrompt({ mode: parsed.mode, orderDetails: parsed.orderDetails, baseLength: defaultModel.lengthCategory, topTuckPreference: parsed.topTuckPreference })
       : buildAiTryOnPrompt({
           mode: parsed.mode,
           fitHints: parsed.fitHints,
           orderDetails: parsed.orderDetails,
+          topTuckPreference: parsed.topTuckPreference,
         }),
     images,
-    imageLabels: parsed.uploadedDesign ? buildAiTryOnUploadedDesignImageLabels() : parsed.outfitGarments ? buildAiTryOnOutfitImageLabels(parsed.outfitGarments, Boolean(defaultModel)) : defaultModel
+    imageLabels: parsed.stylePhoto ? buildAiTryOnStylePhotoImageLabels() : parsed.uploadedDesign ? buildAiTryOnUploadedDesignImageLabels() : parsed.outfitGarments ? buildAiTryOnOutfitImageLabels(parsed.outfitGarments, Boolean(defaultModel)) : defaultModel
 
       ? buildAiTryOnModelImageLabels(parsed.mode)
       : buildAiTryOnImageLabels(parsed.mode),
@@ -1444,6 +1492,7 @@ async function handleAiTryOnRequest(
           outcome: outcome.kind,
           mode: parsed.mode,
           promptVersion,
+          wearerSource,
           fitHints: parsed.fitHints.length,
           latencyMs,
           attempts: outcome.attempts ?? 1,
@@ -1614,6 +1663,7 @@ async function handleAiTryOnRequest(
       outcome: "completed",
       mode: parsed.mode,
       promptVersion,
+      wearerSource,
       fitHints: parsed.fitHints.length,
       latencyMs,
       attempts: outcome.attempts ?? 1,

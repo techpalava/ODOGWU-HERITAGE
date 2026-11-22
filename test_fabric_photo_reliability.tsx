@@ -212,7 +212,7 @@ const goOnline = () => fakeWindow.dispatchEvent(new Event("online"));
   const optimized = buildOptimizedImageSources(STORAGE_URL, FABRIC_CARD_IMAGE_PRESET, { enabled: true })!;
   let latest: ImageLoadRetryState | null = null;
   const Probe = () => {
-    latest = useImageLoadRetry(STORAGE_URL, { optimized, retryDelaysMs: [10, 20, 40, 80] });
+    latest = useImageLoadRetry(STORAGE_URL, { optimized, retryDelaysMs: [120, 20, 40, 80] });
     return null;
   };
   let renderer!: ReactTestRenderer;
@@ -239,10 +239,10 @@ const goOnline = () => fakeWindow.dispatchEvent(new Event("online"));
   assert.equal(latest!.retryPending, true);
   assert.equal(latest!.failed, false);
 
-  // Gap 1 (10 ms) not elapsed yet at 3 ms.
-  await act(async () => sleep(3));
+  // Gap 1 (120 ms) not elapsed yet at 5 ms.
+  await act(async () => sleep(5));
   assert.equal(latest!.source, "original");
-  await act(async () => sleep(25));
+  await act(async () => sleep(150));
   assert.equal(latest!.source, "optimized", "each retry starts again from the resized URL");
   assert.equal(latest!.src, optimized.src);
   assert.equal(latest!.retryPending, false);

@@ -19,10 +19,7 @@ import {
   reconcileFutureMeasurementState,
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
-import {
-  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
-  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
-} from "./src/utils/designStudioFutureShipping";
+import { FUTURE_PICKUP_ATELIER_WHATSAPP_URL } from "./src/utils/designStudioFutureShipping";
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -122,46 +119,54 @@ assert.deepEqual(
   ["sample_cloth", "alternate_contact", "ai_measurements"],
 );
 
-// Onsite / AI sections are display-only: no radio, no route, shared atelier WhatsApp contact.
+// Option 3 (Onsite) is selectable with a radio + standalone WhatsApp button; Option 4 (AI) remains Coming soon display-only.
 const alternateSection = renderer.root.findByProps({
   "data-measurement-option-section": "alternate_contact",
 });
 const aiSection = renderer.root.findByProps({
   "data-measurement-option-section": "ai_measurements",
 });
-for (const infoSection of [alternateSection, aiSection]) {
-  assert.equal(infoSection.findAll((node) => node.type === "input").length, 0);
-  assert.equal(
-    infoSection.findAll((node) => typeof node.props?.onClick === "function").length,
-    0,
-  );
-}
+assert.equal(aiSection.findAll((node) => node.type === "input").length, 0);
+assert.equal(
+  aiSection.findAll((node) => typeof node.props?.onClick === "function").length,
+  0,
+);
 assert.equal(alternateSection.findAllByProps({ "data-measurement-ai-coming-soon": "true" }).length, 0);
-assert.match(collectText(alternateSection), /Information only\. These do not complete your measurements\./);
+assert.doesNotMatch(collectText(alternateSection), /Information only\. These do not complete your measurements\./);
 assert.doesNotMatch(collectText(aiSection), /Information only/);
-const onsiteCard = alternateSection.findByProps({ "data-measurement-onsite-info": "true" });
 const onsiteHeading = alternateSection.findByProps({ "data-measurement-option-heading": "onsite" });
-assert.equal(onsiteHeading.type, "h3");
-assert.equal(onsiteHeading.props.className, "font-serif text-lg font-bold leading-snug text-heritage-green");
+assert.equal(onsiteHeading.type, "legend");
+assert.equal(onsiteHeading.props.className, "block w-full font-serif text-lg font-bold leading-snug text-heritage-green");
 assert.equal(collectText(onsiteHeading), "Option 3: Onsite Physical Measurements");
-assert.equal(onsiteCard.findAll((node) => node.type === "h3").length, 0);
-assert.match(collectText(onsiteCard), /Reach out to the contact to arrange a measurement/);
-const onsiteBookingWindow = onsiteCard.findByProps({
+assert.match(
+  collectText(alternateSection),
+  /Contact us on WhatsApp within 3 days of placing your order to arrange your measurement appointment\. Our team will confirm the time and location\./,
+);
+const onsiteBookingWindow = alternateSection.findByProps({
   "data-measurement-onsite-booking-window": "true",
 });
 assert.equal(
   collectText(onsiteBookingWindow),
-  "Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.",
+  "So we can keep your tailoring slot and deliver on time.",
 );
-const onsiteLink = onsiteCard.findByType("a");
+const onsiteLink = alternateSection.findByProps({ "data-measurement-onsite-whatsapp": "true" });
+assert.equal(onsiteLink.type, "a");
 assert.equal(onsiteLink.props.href, FUTURE_PICKUP_ATELIER_WHATSAPP_URL);
+assert.equal(onsiteLink.props.href, "https://wa.me/31644533190");
 assert.equal(onsiteLink.props.target, "_blank");
 assert.equal(onsiteLink.props.rel, "noopener noreferrer");
-assert.match(onsiteLink.props["aria-label"], /WhatsApp/);
-assert.equal(
-  collectText(onsiteLink),
-  `${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)`,
-);
+assert.equal(onsiteLink.props.onClick, undefined);
+assert.equal(collectText(onsiteLink), "Arrange measurements on WhatsApp");
+assert.match(String(onsiteLink.props.className), /min-h-11/);
+assert.match(String(onsiteLink.props.className), /focus-visible:ring-2/);
+assert.match(String(onsiteLink.props.className), /break-words/);
+const onsiteRadio = alternateSection.findByProps({
+  type: "radio",
+  name: "future-measurement-route",
+  value: "onsite_physical",
+});
+assert.equal(onsiteRadio.props.checked, false);
+assert.equal(alternateSection.findAllByProps({ "data-measurement-onsite-ack": "true" }).length, 0);
 const aiCard = aiSection.findByProps({ "data-measurement-ai-coming-soon": "true" });
 assert.equal(aiCard.props["aria-disabled"], "true");
 const aiHeading = aiSection.findByProps({ "data-measurement-option-heading": "ai_measurements" });
@@ -239,19 +244,50 @@ assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" 
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "sample_cloth" }).length, 0);
 
 selectMethod(renderer, "low_risk");
-// Single garment: unit block fills the card (no empty garment column, no divider).
+// Single garment: measurement unit is its own full-width row, with a prominent pill.
 const unitRow = renderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
 assert.equal(unitRow.props["data-measurement-unit-garment-layout"], "unit-only");
 assert.equal(unitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 0);
+const unitWrapper = unitRow.children[0] as ReactTestInstance;
+assert.match(unitWrapper.props.className, /flex-col/);
+assert.doesNotMatch(unitWrapper.props.className, /sm:flex-row|justify-between/);
 const unitFieldset = unitRow.find((node) => node.type === "fieldset");
-assert.doesNotMatch(unitFieldset.props.className, /border-l|border-t|max-w-xs|ml-auto/);
 assert.match(unitFieldset.props.className, /w-full/);
-assert.match(unitFieldset.props.className, /sm:grid-cols-\[minmax\(0,1fr\)_auto\]/);
-assert.doesNotMatch((unitRow.children[0] as ReactTestInstance).props.className, /sm:flex-row|justify-between/);
+assert.doesNotMatch(unitFieldset.props.className, /sm:border-l|max-w-xs|ml-auto|sm:grid-cols-/);
 const unitToggle = unitRow.findByProps({ "data-measurement-unit-toggle": "true" });
-assert.match(unitToggle.props.className, /sm:justify-self-end/);
+assert.match(unitToggle.props.className, /mt-3/);
+assert.doesNotMatch(unitToggle.props.className, /sm:justify-self-end|sm:row-span-2/);
+const unitButtons = unitToggle.findAll((node) => node.type === "button");
+assert.equal(unitButtons.length, 2);
+for (const button of unitButtons) {
+  assert.match(button.props.className, /min-h-12/);
+  assert.match(button.props.className, /text-sm/);
+  assert.match(button.props.className, /font-bold/);
+}
+assert.equal(unitFieldset.props["data-measurement-unit"], "cm");
+const inchesButton = unitButtons.find((node) => collectText(node) === "Inches");
+assert.ok(inchesButton);
+act(() => {
+  inchesButton.props.onClick();
+});
 assert.equal(
-  unitRow.find((node) => node.type === "fieldset").props["data-measurement-unit"],
+  renderer.root
+    .findByProps({ "data-measurement-unit-garment-row": "true" })
+    .find((node) => node.type === "fieldset").props["data-measurement-unit"],
+  "inch",
+);
+const centimetresButton = renderer.root
+  .findByProps({ "data-measurement-unit-toggle": "true" })
+  .findAll((node) => node.type === "button")
+  .find((node) => collectText(node) === "Centimetres");
+assert.ok(centimetresButton);
+act(() => {
+  centimetresButton.props.onClick();
+});
+assert.equal(
+  renderer.root
+    .findByProps({ "data-measurement-unit-garment-row": "true" })
+    .find((node) => node.type === "fieldset").props["data-measurement-unit"],
   "cm",
 );
 for (const buttonRow of renderer.root.findAllByProps({ "data-studio-step-actions-buttons": "true" })) {
@@ -495,11 +531,20 @@ act(() => {
 });
 selectMethod(twoRenderer, "low_risk");
 const splitRow = twoRenderer.root.findByProps({ "data-measurement-unit-garment-row": "true" });
-assert.equal(splitRow.props["data-measurement-unit-garment-layout"], "split");
+assert.equal(splitRow.props["data-measurement-unit-garment-layout"], "stacked");
 assert.equal(splitRow.findAllByProps({ "data-measurement-garment-picker": "true" }).length, 1);
+const stackedWrapper = splitRow.children[0] as ReactTestInstance;
+assert.match(stackedWrapper.props.className, /flex-col/);
+assert.doesNotMatch(stackedWrapper.props.className, /sm:flex-row/);
 const splitFieldset = splitRow.find((node) => node.type === "fieldset");
-assert.match(splitFieldset.props.className, /sm:border-l/);
-assert.match(splitFieldset.props.className, /sm:max-w-xs/);
+assert.match(String(splitFieldset.parent?.props.className ?? ""), /border-t/);
+assert.match(splitFieldset.props.className, /w-full/);
+assert.doesNotMatch(splitFieldset.props.className, /sm:border-l|sm:max-w-xs/);
+const splitToggle = splitRow.findByProps({ "data-measurement-unit-toggle": "true" });
+for (const button of splitToggle.findAll((node) => node.type === "button")) {
+  assert.match(button.props.className, /min-h-12/);
+  assert.match(button.props.className, /text-sm/);
+}
 assert.equal(
   splitFieldset.props["data-measurement-unit"],
   "cm",

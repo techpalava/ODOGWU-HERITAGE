@@ -13,7 +13,10 @@ import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepSt
 import {
   createEmptyFutureMeasurementState,
   getMeasurementPhysicalGarments,
+  isOnsitePhysicalMeasurementMethod,
+  MEASUREMENT_ONSITE_STAFF_METHOD_NOTE,
   setFutureMeasurementInput,
+  setFutureMeasurementOnsiteAcknowledged,
   type PlannedMeasurementRequirement,
 } from "./src/utils/measurementBlueprint";
 import {
@@ -105,11 +108,15 @@ const v2OrderDocument = (
     order = updateWearerMeasurement(order, wearerId, createEmptyFutureMeasurementState(person.route, "cm"));
     const runtime = plan(order).find((candidate) => candidate.wearerId === wearerId)!;
     let state: FutureMeasurementStateV1 = runtime.measurement;
-    runtime.plan.requirements
-      .filter((requirement) => requirement.directInput)
-      .forEach((requirement) => {
-        state = setFutureMeasurementInput({ state, requirement, displayValue: valueFor(requirement) });
-      });
+    if (isOnsitePhysicalMeasurementMethod(person.route)) {
+      state = setFutureMeasurementOnsiteAcknowledged(state, true);
+    } else {
+      runtime.plan.requirements
+        .filter((requirement) => requirement.directInput)
+        .forEach((requirement) => {
+          state = setFutureMeasurementInput({ state, requirement, displayValue: valueFor(requirement) });
+        });
+    }
     order = updateWearerMeasurement(order, wearerId, state);
     order = updateWearerMeasurement(order, wearerId, plan(order).find((candidate) => candidate.wearerId === wearerId)!.measurement);
   });
@@ -286,6 +293,22 @@ orders.forEach((order, index) => {
   assert.ok(bola.startsWith("Bola — Method:") && bola.includes("Dress: "));
   assert.equal(bola.includes("Shirt"), false, "Bola's part has no shirt fields");
   assert.equal(row[column("Chest Dimension")], "", "two people: no single chest value");
+}
+
+// Onsite Physical Measurements: 0 online numeric values, shows method + staff 3-day WhatsApp booking note + garments.
+{
+  const onsiteOrder = v2OrderDocument("future-csv-onsite", ["shirt", "kaftan"], "male", [
+    { name: "Chidi", route: "onsite_physical" },
+  ]);
+  const onsiteRows = parseCsv(buildProductionManifestCsv([onsiteOrder]));
+  const row = onsiteRows[1];
+  const text = row[MEASUREMENTS_TEXT];
+  assert.match(text, /Method: Onsite Physical Measurements/);
+  assert.ok(text.includes(MEASUREMENT_ONSITE_STAFF_METHOD_NOTE));
+  assert.match(text, /Garments: Long Shirt, Standard Shirt/);
+  assert.doesNotMatch(text, /onsite_physical/);
+  assert.doesNotMatch(text, /Kaftan/i);
+  assert.equal(row[column("Chest Dimension")], "");
 }
 
 console.log("production manifest V2 measurements tests passed");

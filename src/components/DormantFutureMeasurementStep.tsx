@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Ruler, ShieldAlert } from "lucide-react";
+import { BookOpen, Check, Copy, Download, RotateCcw, Ruler, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
+import {
+  MeasurementGuideModal,
+  MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME,
+  MEASUREMENT_GUIDE_PDF_HREF,
+} from "./MeasurementGuideModal";
 import {
   DESIGN_STUDIO_STEP_GUIDE_BEAM_CLASS,
   DesignStudioStepGuide,
@@ -15,10 +21,7 @@ import type {
 } from "../types";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
-import {
-  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
-  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
-} from "../utils/designStudioFutureShipping";
+import { FUTURE_PICKUP_ATELIER_WHATSAPP_URL } from "../utils/designStudioFutureShipping";
 import {
   clearActiveFutureMeasurementEntered,
   collectRequiredAlternativeGroups,
@@ -41,11 +44,19 @@ import {
   getSampleClothProductionEquivalentCm,
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
+  isOnsitePhysicalMeasurementMethod,
   isTryOnUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
   isValidHeightForEstimates,
+  MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL,
+  MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE,
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_PHYSICAL_METHOD,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
   MEASUREMENT_RISK_ROUTE_DESCRIPTIONS,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
@@ -61,6 +72,7 @@ import {
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
+  setFutureMeasurementOnsiteAcknowledged,
   setFutureMeasurementUnit,
   type MeasurementGarmentChipState,
   type MeasurementPhysicalGarment,
@@ -68,10 +80,32 @@ import {
   type PlannedMeasurementRequirement,
 } from "../utils/measurementBlueprint";
 
+export interface MeasurementWearerChip {
+  readonly wearerId: string;
+  readonly label: string;
+  readonly completedCount?: number;
+  readonly requiredCount?: number;
+  readonly complete?: boolean;
+  readonly hasAssignedGarments?: boolean;
+}
+
+export interface CopyableBodyMeasurementWearer {
+  readonly wearerId: string;
+  readonly label: string;
+  readonly sharedCount: number;
+}
+
+export interface CopySharedBodyMeasurementsFeedback {
+  readonly copiedCount: number;
+  readonly previousMeasurement: FutureMeasurementStateV1;
+}
+
 interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
   state: FutureMeasurementStateV1;
   physicalGarments?: readonly MeasurementPhysicalGarment[];
+  /** Construction-specific labels by garment key (e.g., "Sleeveless Standard Dress"). */
+  garmentLabels?: Readonly<Record<string, string>>;
   /** Garments not yet assigned to a wearer; blocks order-wide Summary unlock. */
   unassignedGarments?: readonly MeasurementPhysicalGarment[];
   /**
@@ -99,9 +133,19 @@ interface DormantFutureMeasurementStepProps {
    * Every person in the order (card / assignment labels), shown as Measuring-for
    * chips when activeWearerLabel is shown. Clicking one switches the person.
    */
-  wearerChips?: readonly { wearerId: string; label: string }[];
+  wearerChips?: readonly MeasurementWearerChip[];
   activeWearerId?: string | null;
   onSelectWearer?: (wearerId: string) => void;
+  /** Other wearers who have entered shared body measurements that can be explicitly copied. */
+  copyableBodyMeasurementWearers?: readonly CopyableBodyMeasurementWearer[];
+  /** Explicitly copies ONLY shared body fields from `sourceWearerId` onto the active wearer. */
+  onCopySharedBodyMeasurements?: (
+    sourceWearerId: string,
+  ) => CopySharedBodyMeasurementsFeedback | null | void;
+  /** Assign an unassigned garment directly from the Step 5 assignment modal. */
+  onAssignUnassignedGarment?: (garmentKey: string, wearerId: string) => void;
+  /** Add a new person and assign an unassigned garment to them from the Step 5 assignment modal. */
+  onAddPersonAndAssignGarment?: (displayName: string, garmentKey: string) => void;
   /**
    * Transient Summary section-Edit jump: show this person and garment, then
    * scroll to and focus that group's heading. Never persisted.
@@ -109,6 +153,7 @@ interface DormantFutureMeasurementStepProps {
   groupFocusRequest?: MeasurementGroupFocusRequest | null;
   /** Called once per request; found=false means fall back to the top of Step 7. */
   onGroupFocusHandled?: (requestId: number, found: boolean) => void;
+  wearerAssignmentPanel?: React.ReactNode;
   /**
    * @deprecated Ignored. Step 7 no longer shows a fit control or a fit
    * conflict; measurement fields follow the Studio garment demographic.
@@ -203,6 +248,8 @@ const getBlockerMessage = (
       return "Complete every required measurement shown below.";
     case "invalid_measurement_value":
       return "Correct the highlighted measurement before continuing.";
+    case "onsite_booking_acknowledgement_required":
+      return MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE;
     default:
       return "Review the measurements shown below before this step can be completed.";
   }
@@ -247,11 +294,15 @@ const MeasurementField = ({
   requirement,
   state,
   onChange,
+  onFieldFocus,
+  onFieldBlur,
   rangeRecheck,
 }: {
   requirement: PlannedMeasurementRequirement;
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
+  onFieldFocus?: (fieldKey: string) => void;
+  onFieldBlur?: (fieldKey: string) => void;
   rangeRecheck: boolean;
 }) => {
   const stored = getResolvedMeasurementValue(state, requirement);
@@ -385,6 +436,8 @@ const MeasurementField = ({
             aria-describedby={hasInvalidValue || implausible ? errorId : undefined}
             aria-label={`${fieldLabel} in ${unitWord}`}
             value={displayValue}
+            onFocus={() => onFieldFocus?.(requirement.key)}
+            onBlur={() => onFieldBlur?.(requirement.key)}
             onChange={(event) => {
               const raw = event.target.value;
               onChange(setFutureMeasurementInput({
@@ -469,6 +522,8 @@ const MeasurementSection = ({
   requirements,
   state,
   onChange,
+  onFieldFocus,
+  onFieldBlur,
   section,
   sampleMode,
   occurrenceLabels,
@@ -480,6 +535,8 @@ const MeasurementSection = ({
   requirements: PlannedMeasurementRequirement[];
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
+  onFieldFocus?: (fieldKey: string) => void;
+  onFieldBlur?: (fieldKey: string) => void;
   section: MeasurementSectionKind;
   sampleMode: boolean;
   occurrenceLabels: ReadonlyMap<string, { conciseLabel: string }>;
@@ -512,6 +569,8 @@ const MeasurementSection = ({
         requirement={requirement}
         state={state}
         onChange={onChange}
+        onFieldFocus={onFieldFocus}
+        onFieldBlur={onFieldBlur}
         rangeRecheck={state.diagnostics.some(
           (diagnostic) =>
             diagnostic.code === "measurement_range_recheck" &&
@@ -676,10 +735,25 @@ const isTypingIntoField = (): boolean => {
   return active.tagName === "INPUT" && (active as HTMLInputElement).type !== "radio";
 };
 
+const toScopedGarmentPick = (
+  wearerScopeKey: string,
+  garmentKey: string | null,
+): string | null => (garmentKey ? `${wearerScopeKey}:${garmentKey}` : null);
+
+const parseScopedGarmentPick = (
+  scopedPick: string | null,
+  wearerScopeKey: string,
+): string | null => {
+  if (!scopedPick) return null;
+  const prefix = `${wearerScopeKey}:`;
+  return scopedPick.startsWith(prefix) ? scopedPick.slice(prefix.length) : null;
+};
+
 export const DormantFutureMeasurementStep = ({
   plan,
   state,
   physicalGarments = [],
+  garmentLabels,
   unassignedGarments,
   multiPersonAssignmentActive = true,
   setupPendingGarments = [],
@@ -695,23 +769,92 @@ export const DormantFutureMeasurementStep = ({
   wearerChips = [],
   activeWearerId = null,
   onSelectWearer,
+  copyableBodyMeasurementWearers = [],
+  onCopySharedBodyMeasurements,
+  onAssignUnassignedGarment,
+  onAddPersonAndAssignGarment,
   groupFocusRequest = null,
   onGroupFocusHandled,
+  wearerAssignmentPanel,
   onChange,
   onRouteChange,
   onBack,
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const occurrenceLabels = projectOccurrenceDisplayLabels(physicalGarments);
-  const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
-    restoredGarmentKey ?? state.activeGarmentKey ?? null,
+  const resolveDisplayGarmentLabel = (
+    garmentType?: string,
+    garmentKey?: string,
+  ): string => {
+    if (garmentKey && garmentLabels?.[garmentKey]) {
+      return garmentLabels[garmentKey];
+    }
+    return formatGarmentLabel(occurrenceLabels, garmentType, garmentKey);
+  };
+  const activeWearerScopeKey = activeWearerId ?? "__sole__";
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [guideModalOpen, setGuideModalOpen] = useState(false);
+  useReportDesignStudioBlockingOverlay("step7-measurement-guide-modal", guideModalOpen);
+  const [assignModalGarmentKey, setAssignModalGarmentKey] = useState<string | null>(
+    null,
   );
+  const [assignModalNewPersonName, setAssignModalNewPersonName] = useState("");
+  const [assignModalError, setAssignModalError] = useState<string | null>(null);
+  const [selectedCopySourceId, setSelectedCopySourceId] = useState<string>("");
+  const [pendingCopyConfirmation, setPendingCopyConfirmation] = useState<{
+    wearerScopeKey: string;
+    sourceWearerId: string;
+    sourceLabel: string;
+    sharedCount: number;
+  } | null>(null);
+  const [undoCopyByWearerScope, setUndoCopyByWearerScope] = useState<
+    Record<
+      string,
+      {
+        sourceLabel: string;
+        copiedCount: number;
+        previousMeasurement: FutureMeasurementStateV1;
+      }
+    >
+  >({});
+  const incomingGarmentKey = restoredGarmentKey ?? state.activeGarmentKey ?? null;
+  const incomingScopedPick = toScopedGarmentPick(
+    activeWearerScopeKey,
+    incomingGarmentKey,
+  );
+  const [pickedGarmentScopedKey, setPickedGarmentScopedKey] = useState<string | null>(
+    () => incomingScopedPick,
+  );
+  const lastExternalPickRef = useRef<string | null>(incomingScopedPick);
+  const setPickedGarmentKeyForActiveWearer = (garmentKey: string | null) => {
+    setPickedGarmentScopedKey(toScopedGarmentPick(activeWearerScopeKey, garmentKey));
+  };
+  const pickedGarmentKey =
+    parseScopedGarmentPick(pickedGarmentScopedKey, activeWearerScopeKey) ??
+    incomingGarmentKey;
   useEffect(() => {
-    setPickedGarmentKey(restoredGarmentKey ?? state.activeGarmentKey ?? null);
-  }, [restoredGarmentKey, state.activeGarmentKey]);
-  const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
+    if (incomingScopedPick === lastExternalPickRef.current) {
+      return;
+    }
+    lastExternalPickRef.current = incomingScopedPick;
+    setPickedGarmentScopedKey(incomingScopedPick);
+  }, [incomingScopedPick]);
+  const [pendingChipSelectionScope, setPendingChipSelectionScope] = useState<string | null>(
+    null,
+  );
+  const allowPendingChipSelection = pendingChipSelectionScope === activeWearerScopeKey;
+  const setAllowPendingChipSelection = (allow: boolean) => {
+    setPendingChipSelectionScope(allow ? activeWearerScopeKey : null);
+  };
+  const previousSelectedGarmentKeyRef = useRef<string | null>(null);
+  const previousActiveWearerIdRef = useRef<string | null>(activeWearerId);
   const previousSelectedRemainingRef = useRef<number | null>(null);
   const previousSharedRemainingRef = useRef<number | null>(null);
+  const focusedFieldKeyRef = useRef<string | null>(null);
+  const isFieldInputChangeRef = useRef(false);
+  useEffect(() => {
+    focusedFieldKeyRef.current = null;
+  }, [activeWearerId]);
   // Guide cue: only a customer click on an Option 1 / Option 2 radio requests it (never mount/restore).
   const [guideCueRequest, setGuideCueRequest] = useState(0);
   const [guideCuePhase, setGuideCuePhase] = useState<"idle" | "flash" | "beam">("idle");
@@ -753,6 +896,7 @@ export const DormantFutureMeasurementStep = ({
     ? resolvedState.route
     : null;
   const sampleSelected = isSampleClothMeasurementMethod(selectedMethod);
+  const onsiteSelected = isOnsitePhysicalMeasurementMethod(selectedMethod);
   const presentationRequirements = projectMeasurementRequirementsForPresentation({
     requirements: plan.requirements,
     state: resolvedState,
@@ -809,9 +953,15 @@ export const DormantFutureMeasurementStep = ({
       ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
     ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
-  const assignmentPendingGarments = multiPersonAssignmentActive
+  const rawAssignmentPendingGarments = multiPersonAssignmentActive
     ? (unassignedGarments ?? setupPendingGarments)
     : [];
+  const assignmentPendingGarments = rawAssignmentPendingGarments;
+  const hasUnassignedGarments = assignmentPendingGarments.length > 0;
+  useReportDesignStudioBlockingOverlay(
+    "step5-unassigned-garment-dialog",
+    assignModalOpen && hasUnassignedGarments,
+  );
   const unassignedGarmentKeySet = new Set(
     assignmentPendingGarments.map((garment) => garment.garmentKey),
   );
@@ -851,6 +1001,7 @@ export const DormantFutureMeasurementStep = ({
     chipProjection.chips.find((chip) => chip.kind === "done")?.garmentKey ??
     measurementGarments.find((garment) => measurableGarmentKeys.has(garment.garmentKey))
       ?.garmentKey ??
+    chipProjection.chips.find((chip) => chip.kind === "assignment")?.garmentKey ??
     null;
   const pickExists = Boolean(
     pickedGarmentKey &&
@@ -872,6 +1023,140 @@ export const DormantFutureMeasurementStep = ({
   const selectedGarmentProfilePending = selectedChip?.kind === "profile";
   const selectedGarmentPending =
     selectedGarmentUnassigned || selectedGarmentProfilePending;
+  const effectiveWearerChips: readonly MeasurementWearerChip[] =
+    wearerChips.length > 0
+      ? wearerChips
+      : activeWearerId
+        ? [
+            {
+              wearerId: activeWearerId,
+              label: activeWearerLabel || "Person 1",
+            },
+          ]
+        : [];
+  const activeModalGarment =
+    assignmentPendingGarments.find(
+      (garment) => garment.garmentKey === assignModalGarmentKey,
+    ) ??
+    assignmentPendingGarments[0] ??
+    null;
+  const openAssignModal = (preferredGarmentKey?: string | null) => {
+    if (!hasUnassignedGarments) return;
+    const targetKey =
+      preferredGarmentKey &&
+      assignmentPendingGarments.some(
+        (garment) => garment.garmentKey === preferredGarmentKey,
+      )
+        ? preferredGarmentKey
+        : selectedGarmentUnassigned && selectedGarmentKey
+          ? selectedGarmentKey
+          : assignmentPendingGarments[0]?.garmentKey ?? null;
+    setAssignModalGarmentKey(targetKey);
+    setAssignModalError(null);
+    setAssignModalOpen(true);
+  };
+  useEffect(() => {
+    if (!hasUnassignedGarments && assignModalOpen) {
+      setAssignModalOpen(false);
+      setAssignModalError(null);
+      setAssignModalNewPersonName("");
+    }
+  }, [hasUnassignedGarments, assignModalOpen]);
+  const handleAssignToExistingPerson = (wearerId: string) => {
+    const targetGarment = activeModalGarment;
+    if (!targetGarment) return;
+    if (!onAssignUnassignedGarment) {
+      setAssignModalError("Unable to assign this garment right now.");
+      return;
+    }
+    const remainingAfter = assignmentPendingGarments.filter(
+      (garment) => garment.garmentKey !== targetGarment.garmentKey,
+    );
+    setAssignModalError(null);
+    onAssignUnassignedGarment(targetGarment.garmentKey, wearerId);
+    setAllowPendingChipSelection(false);
+    setPickedGarmentScopedKey(toScopedGarmentPick(wearerId, targetGarment.garmentKey));
+    if (remainingAfter.length === 0) {
+      setAssignModalOpen(false);
+      setAssignModalNewPersonName("");
+    } else {
+      setAssignModalGarmentKey(remainingAfter[0]?.garmentKey ?? null);
+    }
+  };
+  const handleAddNewPersonAndAssign = () => {
+    const targetGarment = activeModalGarment;
+    if (!targetGarment) return;
+    const trimmedName = assignModalNewPersonName.trim().slice(0, 40).trim();
+    if (!trimmedName) {
+      setAssignModalError("Enter a name or nickname to add a new person.");
+      return;
+    }
+    if (!onAddPersonAndAssignGarment) {
+      setAssignModalError("Unable to add a new person right now.");
+      return;
+    }
+    const remainingAfter = assignmentPendingGarments.filter(
+      (garment) => garment.garmentKey !== targetGarment.garmentKey,
+    );
+    setAssignModalError(null);
+    setAssignModalNewPersonName("");
+    onAddPersonAndAssignGarment(trimmedName, targetGarment.garmentKey);
+    setAllowPendingChipSelection(false);
+    if (remainingAfter.length === 0) {
+      setAssignModalOpen(false);
+    } else {
+      setAssignModalGarmentKey(remainingAfter[0]?.garmentKey ?? null);
+    }
+  };
+  const activeCopySources = copyableBodyMeasurementWearers.filter(
+    (source) => source.wearerId !== activeWearerId && source.sharedCount > 0,
+  );
+  const selectedCopySource =
+    activeCopySources.find((source) => source.wearerId === selectedCopySourceId) ??
+    activeCopySources[0] ??
+    null;
+  const activePendingCopyConfirmation =
+    pendingCopyConfirmation &&
+    pendingCopyConfirmation.wearerScopeKey === activeWearerScopeKey
+      ? pendingCopyConfirmation
+      : null;
+  const activeUndoCopy = undoCopyByWearerScope[activeWearerScopeKey] ?? null;
+  const clearUndoCopyForActiveWearer = () => {
+    setUndoCopyByWearerScope((current) => {
+      if (!(activeWearerScopeKey in current)) return current;
+      const next = { ...current };
+      delete next[activeWearerScopeKey];
+      return next;
+    });
+  };
+  const handleConfirmCopySharedBodyMeasurements = () => {
+    if (!activePendingCopyConfirmation || !onCopySharedBodyMeasurements) return;
+    const fallbackPrevious = structuredClone(state);
+    const result = onCopySharedBodyMeasurements(
+      activePendingCopyConfirmation.sourceWearerId,
+    );
+    if (result !== null) {
+      const feedback =
+        result && typeof result === "object" ? result : null;
+      setUndoCopyByWearerScope((current) => ({
+        ...current,
+        [activeWearerScopeKey]: {
+          sourceLabel: activePendingCopyConfirmation.sourceLabel,
+          copiedCount:
+            feedback?.copiedCount ?? activePendingCopyConfirmation.sharedCount,
+          previousMeasurement:
+            feedback?.previousMeasurement ?? fallbackPrevious,
+        },
+      }));
+    }
+    setPendingCopyConfirmation(null);
+  };
+  const handleUndoCopySharedBodyMeasurements = () => {
+    if (!activeUndoCopy) return;
+    const snapshot = structuredClone(activeUndoCopy.previousMeasurement);
+    clearUndoCopyForActiveWearer();
+    onChange(snapshot);
+  };
   const projectionNextKey = chipProjection.nextIncompleteGarmentKey;
   const projectionNextChip = projectionNextKey
     ? chipByGarmentKey.get(projectionNextKey) || null
@@ -901,6 +1186,8 @@ export const DormantFutureMeasurementStep = ({
   const selectGarmentKey = (garmentKey: string) => {
     const chip = chipByGarmentKey.get(garmentKey);
     const kind = chip?.kind || "profile";
+    previousSelectedGarmentKeyRef.current = garmentKey;
+    previousActiveWearerIdRef.current = activeWearerId;
     previousSelectedRemainingRef.current =
       kind === "remaining"
         ? chip?.remainingCount ?? 0
@@ -909,16 +1196,66 @@ export const DormantFutureMeasurementStep = ({
           : null;
     previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
     setAllowPendingChipSelection(kind === "assignment" || kind === "profile");
-    setPickedGarmentKey(garmentKey);
+    setPickedGarmentKeyForActiveWearer(garmentKey);
     if (state.activeGarmentKey !== garmentKey) {
       onChange({ ...state, activeGarmentKey: garmentKey });
     }
+    if (kind === "assignment") {
+      openAssignModal(garmentKey);
+    }
+  };
+  const handleFieldFocus = (fieldKey: string) => {
+    focusedFieldKeyRef.current = fieldKey;
+    if (selectedGarmentKey && pickedGarmentKey !== selectedGarmentKey) {
+      setPickedGarmentKeyForActiveWearer(selectedGarmentKey);
+    }
+  };
+  const handleFieldBlur = (fieldKey: string) => {
+    if (focusedFieldKeyRef.current === fieldKey) {
+      focusedFieldKeyRef.current = null;
+    }
+  };
+  const handleFieldChange = (nextState: FutureMeasurementStateV1) => {
+    isFieldInputChangeRef.current = true;
+    clearUndoCopyForActiveWearer();
+    if (selectedGarmentKey && pickedGarmentKey !== selectedGarmentKey) {
+      setPickedGarmentKeyForActiveWearer(selectedGarmentKey);
+    }
+    onChange(
+      selectedGarmentKey && nextState.activeGarmentKey !== selectedGarmentKey
+        ? { ...nextState, activeGarmentKey: selectedGarmentKey }
+        : nextState,
+    );
   };
   useEffect(() => {
+    const previousGarmentKey = previousSelectedGarmentKeyRef.current;
+    const previousWearerId = previousActiveWearerIdRef.current;
     const previousRemaining = previousSelectedRemainingRef.current;
     const previousShared = previousSharedRemainingRef.current;
+    const wasFieldInputChange = isFieldInputChangeRef.current;
+    isFieldInputChangeRef.current = false;
+    previousSelectedGarmentKeyRef.current = selectedGarmentKey;
+    previousActiveWearerIdRef.current = activeWearerId;
     previousSelectedRemainingRef.current = selectedGarmentRemaining;
     previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
+
+    // Never yank the active garment away while the customer is actively typing
+    // into a measurement field (even when the first digit satisfies minCm).
+    if (
+      wasFieldInputChange ||
+      focusedFieldKeyRef.current !== null ||
+      isTypingIntoField()
+    ) {
+      return;
+    }
+
+    // Only auto-advance when the same wearer's same selected garment transitions
+    // from incomplete (> 0 remaining) to complete (0 remaining), never when a newly
+    // assigned garment replaces an unassigned/other garment on the first keystroke.
+    const sameGarmentAndWearer =
+      previousGarmentKey === selectedGarmentKey &&
+      previousWearerId === activeWearerId;
+    if (!sameGarmentAndWearer) return;
 
     const garmentJustCompleted =
       selectedGarmentRemaining === 0 &&
@@ -935,11 +1272,12 @@ export const DormantFutureMeasurementStep = ({
       return;
     }
     setAllowPendingChipSelection(false);
-    setPickedGarmentKey(nextIncompleteGarmentKey);
+    setPickedGarmentKeyForActiveWearer(nextIncompleteGarmentKey);
     if (state.activeGarmentKey !== nextIncompleteGarmentKey) {
       onChange({ ...state, activeGarmentKey: nextIncompleteGarmentKey });
     }
   }, [
+    activeWearerId,
     selectedGarmentRemaining,
     chipProjection.sharedRemainingCount,
     nextIncompleteGarmentKey,
@@ -1080,9 +1418,11 @@ export const DormantFutureMeasurementStep = ({
     : [];
   const canContinueToTryOn =
     !hydrationInvalid &&
-    (orderMeasurementsComplete !== undefined
-      ? orderMeasurementsComplete
-      : isTryOnUnlockedByMeasurements(resolvedState));
+    !hasUnassignedGarments &&
+    otherWearerIncompleteLabels.length === 0 &&
+    emptyWearerLabels.length === 0 &&
+    isTryOnUnlockedByMeasurements(resolvedState) &&
+    (orderMeasurementsComplete ?? true);
   const activeWearerComplete = isFutureMeasurementStageComplete(resolvedState);
   const unassignedLabels = assignmentPendingGarments.map((garment) =>
     formatGarmentLabel(occurrenceLabels, garment.garmentType, garment.garmentKey),
@@ -1163,6 +1503,15 @@ export const DormantFutureMeasurementStep = ({
         ? "incomplete"
         : resolvedState.calculationStatus,
   );
+  const onsiteStatus = getStatusLabel(
+    MEASUREMENT_ONSITE_PHYSICAL_METHOD,
+    selectedMethod,
+    canContinueToTryOn && resolvedState.calculationStatus === "complete"
+      ? "complete"
+      : resolvedState.calculationStatus === "complete"
+        ? "incomplete"
+        : resolvedState.calculationStatus,
+  );
 
   return (
     <section
@@ -1190,8 +1539,12 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToTryOn,
             locked: !canContinueToTryOn,
-            onLockedClick: () =>
-              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
+            onLockedClick: () => {
+              if (hasUnassignedGarments) {
+                openAssignModal();
+              }
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options");
+            },
             ariaLabel: "Continue to AI Try-on",
           }}
         />
@@ -1209,8 +1562,13 @@ export const DormantFutureMeasurementStep = ({
           use the unit selected below. Switching between centimetres and inches
           converts saved values.
         </p>
-        {activeWearerLabel ? (
-          <div className="mt-3 space-y-2">
+      </header>
+
+      {wearerAssignmentPanel}
+
+      {activeWearerLabel ? (
+        <section className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
+          <div className="space-y-2">
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                 Measuring for
@@ -1224,24 +1582,71 @@ export const DormantFutureMeasurementStep = ({
                 >
                   {wearerChips.map((chip) => {
                     const selected = chip.wearerId === activeWearerId;
+                    const hasProgressMetadata =
+                      typeof chip.requiredCount === "number" ||
+                      typeof chip.complete === "boolean" ||
+                      chip.hasAssignedGarments === false;
+                    const progressText =
+                      typeof chip.requiredCount === "number" && chip.requiredCount > 0
+                        ? `${chip.completedCount ?? 0}/${chip.requiredCount}`
+                        : null;
                     return (
                       <button
                         key={chip.wearerId}
                         type="button"
                         data-measurement-wearer-chip={chip.wearerId}
                         data-measurement-wearer-chip-selected={selected ? "true" : "false"}
+                        data-measurement-wearer-chip-complete={
+                          hasProgressMetadata
+                            ? chip.complete
+                              ? "true"
+                              : "false"
+                            : undefined
+                        }
+                        data-measurement-wearer-chip-progress={progressText ?? undefined}
                         data-measurement-active-wearer={selected ? chip.label : undefined}
                         aria-pressed={selected}
-                        className={`inline-flex min-h-9 items-center rounded-xl border px-3 text-sm font-bold ${
+                        className={`inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition ${
                           selected
                             ? "border-heritage-green bg-heritage-green text-white"
-                            : "border-heritage-green/30 bg-white text-heritage-green"
+                            : "border-heritage-green/30 bg-white text-heritage-green hover:border-heritage-green/60 hover:bg-heritage-cream/30"
                         }`}
                         onClick={() => {
                           if (!selected) onSelectWearer(chip.wearerId);
                         }}
                       >
-                        {chip.label}
+                        <span>{chip.label}</span>
+                        {hasProgressMetadata && (
+                          <span
+                            data-measurement-wearer-chip-badge={
+                              chip.complete
+                                ? "complete"
+                                : chip.hasAssignedGarments === false
+                                  ? "unassigned"
+                                  : "progress"
+                            }
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold leading-none ${
+                              selected
+                                ? "bg-white/20 text-white"
+                                : chip.complete
+                                  ? "bg-heritage-green/12 text-heritage-green"
+                                  : "bg-heritage-gold/20 text-heritage-bronze"
+                            }`}
+                          >
+                            {chip.complete ? (
+                              <>
+                                <Check size={11} aria-hidden="true" />
+                                <span>{progressText ?? "Done"}</span>
+                              </>
+                            ) : chip.hasAssignedGarments === false ? (
+                              <span>No garments</span>
+                            ) : progressText ? (
+                              <span>{progressText}</span>
+                            ) : (
+                              <span>Not started</span>
+                            )}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -1269,14 +1674,26 @@ export const DormantFutureMeasurementStep = ({
                   ))}
                 </div>
               ) : (
-                <p className="text-sm leading-relaxed font-medium text-heritage-ink/80">
-                  No garments assigned to {activeWearerLabel} yet.
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm leading-relaxed font-medium text-heritage-ink/80">
+                    No garments assigned to {activeWearerLabel} yet.
+                  </p>
+                  {hasUnassignedGarments && (
+                    <button
+                      type="button"
+                      data-measurement-empty-wearer-assign-trigger="true"
+                      onClick={() => openAssignModal()}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-gold/45 bg-heritage-gold/10 px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                    >
+                      Assign in order to continue
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
-        ) : null}
-      </header>
+        </section>
+      ) : null}
 
       <section
         ref={measurementOptionsRef}
@@ -1317,6 +1734,54 @@ export const DormantFutureMeasurementStep = ({
             Measurement by Risk Level
           </p>
         </header>
+        {!sampleSelected && (
+          <section
+            aria-label="Measurement guide and PDF download"
+            data-measurement-guide-banner="true"
+            className="mt-3 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
+          >
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
+                  <BookOpen size={19} aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
+                    Measurement guide
+                  </p>
+                  <h3 className="mt-0.5 font-serif text-base font-extrabold text-heritage-green sm:text-lg">
+                    Need help taking accurate measurements?
+                  </h3>
+                  <p className="mt-1 text-xs font-bold leading-relaxed text-heritage-ink sm:text-sm">
+                    Open our close-to-body checklists and photo diagrams in this
+                    window without losing any values you have typed, or download the
+                    full PDF guide.
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-measurement-guide-open="true"
+                  onClick={() => setGuideModalOpen(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <BookOpen size={15} aria-hidden="true" />
+                  <span>View Measurement Guide</span>
+                </button>
+                <a
+                  href={MEASUREMENT_GUIDE_PDF_HREF}
+                  download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
+                  data-measurement-guide-download="true"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <Download size={15} aria-hidden="true" />
+                  <span>Download PDF Guide</span>
+                </a>
+              </div>
+            </div>
+          </section>
+        )}
         <fieldset data-measurement-risk-selector="true" className="mt-3">
           <legend className="sr-only">Option 1: Close-to-Body Measurements</legend>
           <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
@@ -1363,6 +1828,12 @@ export const DormantFutureMeasurementStep = ({
                       if (hydrationInvalid || unavailable) return;
                       onRouteChange(route.id);
                       requestGuideCue("form");
+                      if (
+                        hasUnassignedGarments &&
+                        (selectedGarmentUnassigned || measurableGarmentKeys.size === 0)
+                      ) {
+                        openAssignModal();
+                      }
                     }}
                     className="mt-1 size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                   />
@@ -1440,6 +1911,12 @@ export const DormantFutureMeasurementStep = ({
                   if (hydrationInvalid) return;
                   onRouteChange(MEASUREMENT_SAMPLE_CLOTH_METHOD);
                   requestGuideCue("form");
+                  if (
+                    hasUnassignedGarments &&
+                    (selectedGarmentUnassigned || measurableGarmentKeys.size === 0)
+                  ) {
+                    openAssignModal();
+                  }
                 }}
                 className="mt-1 size-4 shrink-0 accent-heritage-green"
               />
@@ -1465,38 +1942,118 @@ export const DormantFutureMeasurementStep = ({
         data-measurement-option-section="alternate_contact"
         aria-label="Option 3: Onsite Physical Measurements"
       >
-        <h3
-          data-measurement-option-heading="onsite"
-          className="font-serif text-lg font-bold leading-snug text-heritage-green"
-        >
-          Option 3: Onsite Physical Measurements
-        </h3>
-        <p className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80">
-          Information only. These do not complete your measurements.
-        </p>
-        <div
-          data-measurement-onsite-info="true"
-          className="mt-4 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
-        >
-          <p className="break-words text-sm leading-relaxed font-medium text-heritage-ink/80">
-            Reach out to the contact to arrange a measurement
+        <fieldset data-measurement-onsite-selector="true">
+          <legend
+            data-measurement-option-heading="onsite"
+            className="block w-full font-serif text-lg font-bold leading-snug text-heritage-green"
+          >
+            Option 3: Onsite Physical Measurements
+          </legend>
+          <p
+            data-measurement-onsite-instruction="true"
+            className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80"
+          >
+            {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
           </p>
           <p
             data-measurement-onsite-booking-window="true"
-            className="mt-1 break-words text-sm leading-relaxed font-medium text-heritage-ink/80"
+            className="mt-1 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80"
           >
-            Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
+            {MEASUREMENT_ONSITE_BOOKING_REASON}
           </p>
-          <a
-            href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-            className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
+          <div className="mt-4">
+            <label
+              data-measurement-onsite-option={MEASUREMENT_ONSITE_PHYSICAL_METHOD}
+              data-measurement-onsite-selected={onsiteSelected ? "true" : "false"}
+              data-measurement-guide-beam={beamMethodChoices ? "true" : undefined}
+              className={withMeasurementGuideBeam(
+                `flex min-w-0 cursor-pointer gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  onsiteSelected
+                    ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                    : "border-heritage-green/15 hover:border-heritage-gold/45"
+                }`,
+                beamMethodChoices,
+              )}
+            >
+              <input
+                type="radio"
+                name="future-measurement-route"
+                value={MEASUREMENT_ONSITE_PHYSICAL_METHOD}
+                checked={onsiteSelected}
+                disabled={hydrationInvalid}
+                onChange={() => {
+                  if (hydrationInvalid) return;
+                  onRouteChange(MEASUREMENT_ONSITE_PHYSICAL_METHOD);
+                  if (hasUnassignedGarments && physicalGarments.length === 0) {
+                    openAssignModal();
+                  }
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="min-w-0">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="break-words text-sm font-semibold text-heritage-green">
+                    {MEASUREMENT_ONSITE_PHYSICAL_LABEL}
+                  </span>
+                  {onsiteStatus && (
+                    <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-bold tracking-wide text-heritage-ink/85">
+                      {onsiteStatus}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+        <a
+          href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-measurement-onsite-whatsapp="true"
+          className="mt-3 inline-flex min-h-11 w-full max-w-full items-center justify-center break-words rounded-xl bg-heritage-green px-4 py-2.5 text-center text-sm font-bold leading-snug text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
+          {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL}
+        </a>
+        {onsiteSelected && (
+          <div
+            data-measurement-onsite-info="true"
+            className="mt-3 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
           >
-            {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
-          </a>
-        </div>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                data-measurement-onsite-ack="true"
+                checked={Boolean(resolvedState.onsiteBookingAcknowledged)}
+                disabled={hydrationInvalid}
+                onChange={(event) => {
+                  if (hydrationInvalid) return;
+                  onChange(
+                    setFutureMeasurementOnsiteAcknowledged(
+                      resolvedState,
+                      event.target.checked,
+                    ),
+                  );
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="break-words text-sm leading-relaxed font-medium text-heritage-ink/85">
+                {MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL}
+              </span>
+            </label>
+            <div className="mt-3" data-measurement-onsite-ack-status={resolvedState.onsiteBookingAcknowledged ? "complete" : "incomplete"}>
+              {resolvedState.onsiteBookingAcknowledged ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-heritage-green/30 bg-heritage-green/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-heritage-green">
+                  <Check size={11} aria-hidden="true" />
+                  Confirmed
+                </span>
+              ) : (
+                <p className="text-xs font-semibold text-heritage-bronze">
+                  {MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       <section
@@ -1539,6 +2096,7 @@ export const DormantFutureMeasurementStep = ({
       {selectedMethod && !hydrationInvalid && (
         <>
       <section
+        key={activeWearerId || "measurement-wearer"}
         aria-live="polite"
         data-measurement-form={selectedMethod}
         ref={measurementGuideRef}
@@ -1549,6 +2107,14 @@ export const DormantFutureMeasurementStep = ({
         data-measurement-guide-beam={
           guideCueTarget === "form" && guideCuePhase === "beam" ? "true" : undefined
         }
+        onClick={() => {
+          if (
+            hasUnassignedGarments &&
+            (selectedGarmentUnassigned || measurableGarmentKeys.size === 0)
+          ) {
+            openAssignModal();
+          }
+        }}
         className={withMeasurementGuideBeam(
           `scroll-mt-24 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 outline-none transition sm:p-5${
             guideCueTarget === "form" && guideCuePhase === "flash" ? ` ${MEASUREMENT_GUIDE_FLASH_CLASS}` : ""
@@ -1559,7 +2125,11 @@ export const DormantFutureMeasurementStep = ({
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
-              {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
+              {sampleSelected
+                ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE
+                : onsiteSelected
+                  ? MEASUREMENT_ONSITE_PHYSICAL_LABEL
+                  : "Current route status"}
             </p>
             <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
               {routeStatusLabel}
@@ -1569,9 +2139,28 @@ export const DormantFutureMeasurementStep = ({
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-heritage-green/15 bg-white px-3 py-2 text-xs font-semibold text-heritage-green">
-            {completedManualInputCount} / {requiredUnitCount} saved
+            {onsiteSelected
+              ? resolvedState.onsiteBookingAcknowledged
+                ? "Confirmed"
+                : "Confirmation required"
+              : `${completedManualInputCount} / ${requiredUnitCount} saved`}
           </div>
         </div>
+        {hasUnassignedGarments && (
+          <div className="mt-4">
+            <button
+              type="button"
+              data-measurement-status-assign-trigger="true"
+              onClick={(event) => {
+                event.stopPropagation?.();
+                openAssignModal();
+              }}
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Assign in order to continue
+            </button>
+          </div>
+        )}
         {showGoToNextWearer && nextIncompleteWearer && onGoToWearer && (
           <div className="mt-4">
             <button
@@ -1590,20 +2179,15 @@ export const DormantFutureMeasurementStep = ({
         )}
       </section>
 
+      {!onsiteSelected && (
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
-        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "split" : "unit-only"}
+        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "stacked" : "unit-only"}
       >
-        <div
-          className={
-            measurementGarments.length > 1
-              ? "flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
-              : "min-w-0"
-          }
-        >
+        <div className="flex min-w-0 flex-col gap-5">
       {measurementGarments.length > 1 && (
-        <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
+        <div className="min-w-0" data-measurement-garment-picker="true">
           <h3 className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
             Choose a garment
           </h3>
@@ -1700,30 +2284,24 @@ export const DormantFutureMeasurementStep = ({
           )}
         </div>
       )}
+        <div className={measurementGarments.length > 1 ? "border-t border-heritage-gold/25 pt-5" : undefined}>
         <fieldset
           data-measurement-unit={state.unit}
-          className={
-            measurementGarments.length > 1
-              ? "min-w-0 shrink-0 border-t border-heritage-green/10 pt-4 sm:ml-auto sm:max-w-xs sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
-              : "grid min-w-0 w-full grid-cols-1 gap-x-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-          }
+          className="min-w-0 w-full rounded-xl border border-heritage-gold/30 bg-heritage-cream/45 p-4"
         >
-          <legend className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
+          <legend className="text-sm font-extrabold uppercase tracking-wide text-heritage-green">
             Measurement unit
           </legend>
           <p
             data-measurement-entry-unit={state.unit}
-            className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
+            className="mt-1 text-sm leading-snug font-medium text-heritage-ink/85"
             title="Each field shows that unit. Switching units converts what you already saved."
           >
-            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
-            <span className="sr-only"> Each field shows that unit.</span> Switching converts saved values.
+            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.<span className="sr-only"> Each field shows that unit.</span> Tap below to switch — saved values convert automatically.
           </p>
           <div
             data-measurement-unit-toggle="true"
-            className={`inline-flex max-w-full justify-self-start rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5 ${
-              measurementGarments.length > 1 ? "mt-3" : "mt-3 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:justify-self-end"
-            }`}
+            className="mt-3 inline-flex w-full max-w-md rounded-full border-2 border-heritage-green/35 bg-white p-1 shadow-sm sm:w-auto"
           >
             {(["cm", "inch"] as const).map((unit) => (
               <button
@@ -1731,10 +2309,10 @@ export const DormantFutureMeasurementStep = ({
                 type="button"
                 aria-pressed={state.unit === unit}
                 onClick={() => onChange(setFutureMeasurementUnit(resolvedState, unit))}
-                className={`min-h-9 rounded-full px-4 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                className={`min-h-12 flex-1 rounded-full px-6 text-sm font-bold tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1 sm:min-w-[164px] sm:flex-initial ${
                   state.unit === unit
                     ? "bg-heritage-green text-white shadow-sm"
-                    : "text-heritage-green hover:bg-white"
+                    : "text-heritage-green hover:bg-heritage-cream/70"
                 }`}
               >
                 {unit === "inch" ? "Inches" : "Centimetres"}
@@ -1743,13 +2321,19 @@ export const DormantFutureMeasurementStep = ({
           </div>
         </fieldset>
         </div>
+        </div>
       </section>
+      )}
 
       {selectedGarmentUnassigned && (
-        <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5">
+        <section
+          data-measurement-unassigned-banner="true"
+          onClick={() => openAssignModal(selectedGarmentKey)}
+          className="cursor-pointer rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 transition hover:border-heritage-gold/60 sm:p-5"
+        >
           <div className="flex min-w-0 items-start gap-3">
             <ShieldAlert aria-hidden="true" size={19} className="mt-0.5 shrink-0 text-heritage-gold" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h3 className="font-serif text-lg font-bold text-heritage-green">
                 Assign this garment to a person
               </h3>
@@ -1757,9 +2341,22 @@ export const DormantFutureMeasurementStep = ({
                 Assign {selectedGarmentLabel} above before its measurements can unlock Summary.
                 You can keep measuring other assigned garments.
               </p>
-              <p className="mt-2 inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
-                {selectedGarmentLabel}
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <p className="inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
+                  {selectedGarmentLabel}
+                </p>
+                <button
+                  type="button"
+                  data-measurement-assign-unassigned-trigger="true"
+                  onClick={(event) => {
+                    event.stopPropagation?.();
+                    openAssignModal(selectedGarmentKey);
+                  }}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green bg-heritage-green px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  Assign in order to continue
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1797,7 +2394,151 @@ export const DormantFutureMeasurementStep = ({
         </DesignStudioStepGuide>
       )}
 
-      {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
+      {activeWearerLabel && (
+        <div
+          data-measurement-active-wearer-banner="true"
+          data-measurement-active-wearer-banner-id={activeWearerId || undefined}
+          className="sticky top-2 z-20 rounded-2xl border border-heritage-green/30 bg-heritage-cream/95 px-4 py-3 shadow-md backdrop-blur-sm"
+        >
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-heritage-green px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-white">
+                  Measuring for {activeWearerLabel}
+                </span>
+                <span
+                  data-measurement-active-wearer-banner-progress="true"
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${
+                    activeWearerComplete
+                      ? "border-heritage-green/30 bg-heritage-green/10 text-heritage-green"
+                      : "border-heritage-gold/40 bg-white text-heritage-bronze"
+                  }`}
+                >
+                  {activeWearerComplete && <Check size={11} aria-hidden="true" />}
+                  {onsiteSelected
+                    ? resolvedState.onsiteBookingAcknowledged
+                      ? "Onsite confirmed"
+                      : "Confirmation needed"
+                    : `${completedManualInputCount}/${requiredUnitCount} saved`}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-xs font-medium text-heritage-ink/80">
+                {activeWearerGarmentLabels.length > 0
+                  ? `Garments: ${activeWearerGarmentLabels.join(", ")}`
+                  : `No garments assigned to ${activeWearerLabel} yet.`}
+              </p>
+            </div>
+            {selectedRoute &&
+              activeCopySources.length > 0 &&
+              onCopySharedBodyMeasurements &&
+              selectedCopySource && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {activeCopySources.length > 1 && (
+                    <select
+                      aria-label="Choose person to copy body measurements from"
+                      data-measurement-copy-source-select="true"
+                      value={selectedCopySource.wearerId}
+                      onChange={(event) => {
+                        setSelectedCopySourceId(event.target.value);
+                        setPendingCopyConfirmation(null);
+                      }}
+                      className="min-h-9 rounded-xl border border-heritage-green/25 bg-white px-2.5 text-xs font-semibold text-heritage-green outline-none focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+                    >
+                      {activeCopySources.map((source) => (
+                        <option key={source.wearerId} value={source.wearerId}>
+                          {source.label} ({source.sharedCount})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    type="button"
+                    data-measurement-copy-trigger={selectedCopySource.wearerId}
+                    onClick={() =>
+                      setPendingCopyConfirmation({
+                        wearerScopeKey: activeWearerScopeKey,
+                        sourceWearerId: selectedCopySource.wearerId,
+                        sourceLabel: selectedCopySource.label,
+                        sharedCount: selectedCopySource.sharedCount,
+                      })
+                    }
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-heritage-green/30 bg-white px-3 py-1.5 text-xs font-bold text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                  >
+                    <Copy size={13} aria-hidden="true" />
+                    <span>Copy body measurements from {selectedCopySource.label}</span>
+                  </button>
+                </div>
+              )}
+          </div>
+          {activePendingCopyConfirmation && (
+            <div
+              role="alertdialog"
+              aria-label={`Confirm copying body measurements from ${activePendingCopyConfirmation.sourceLabel}`}
+              data-measurement-copy-confirmation="true"
+              className="mt-3 flex flex-col gap-2 rounded-xl border border-heritage-gold/45 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p className="text-xs font-medium leading-relaxed text-heritage-ink/85">
+                Copy {activePendingCopyConfirmation.sharedCount} shared body{" "}
+                {activePendingCopyConfirmation.sharedCount === 1
+                  ? "measurement"
+                  : "measurements"}{" "}
+                from{" "}
+                <strong className="font-bold text-heritage-green">
+                  {activePendingCopyConfirmation.sourceLabel}
+                </strong>{" "}
+                to{" "}
+                <strong className="font-bold text-heritage-green">
+                  {activeWearerLabel}
+                </strong>
+                ? Only shared body fields are copied; garment-specific measurements stay
+                separate.
+              </p>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-measurement-copy-confirm="true"
+                  onClick={handleConfirmCopySharedBodyMeasurements}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl bg-heritage-green px-3.5 text-xs font-bold text-white transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                >
+                  Confirm copy
+                </button>
+                <button
+                  type="button"
+                  data-measurement-copy-cancel="true"
+                  onClick={() => setPendingCopyConfirmation(null)}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/25 bg-white px-3 text-xs font-semibold text-heritage-green transition hover:bg-heritage-cream/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {activeUndoCopy && !activePendingCopyConfirmation && (
+            <div
+              role="status"
+              data-measurement-copy-undo-banner="true"
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-heritage-green/25 bg-white px-3 py-2"
+            >
+              <p className="text-xs font-semibold text-heritage-green">
+                Copied {activeUndoCopy.copiedCount} shared body{" "}
+                {activeUndoCopy.copiedCount === 1 ? "measurement" : "measurements"} from{" "}
+                {activeUndoCopy.sourceLabel} to {activeWearerLabel}.
+              </p>
+              <button
+                type="button"
+                data-measurement-copy-undo="true"
+                onClick={handleUndoCopySharedBodyMeasurements}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-heritage-green/35 bg-heritage-cream/40 px-3 text-xs font-bold text-heritage-green transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+              >
+                <RotateCcw size={12} aria-hidden="true" />
+                <span>Undo</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!onsiteSelected && !selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
       <MeasurementSection
         title="Required Measurements"
         description={
@@ -1809,7 +2550,9 @@ export const DormantFutureMeasurementStep = ({
         }
         requirements={visibleRequiredRequirements}
         state={resolvedState}
-        onChange={onChange}
+        onChange={handleFieldChange}
+        onFieldFocus={handleFieldFocus}
+        onFieldBlur={handleFieldBlur}
         section="required"
         registerGroupHeading={registerGroupHeading}
         sampleMode={sampleSelected}
@@ -1817,13 +2560,15 @@ export const DormantFutureMeasurementStep = ({
       />
       )}
 
-      {!selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
+      {!onsiteSelected && !selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
         <MeasurementSection
           title={CALCULATED_FROM_HEIGHT_LABEL}
           description={CALCULATED_FROM_HEIGHT_DESCRIPTION}
           requirements={visibleCalculatedRequirements}
           state={resolvedState}
-          onChange={onChange}
+          onChange={handleFieldChange}
+          onFieldFocus={handleFieldFocus}
+          onFieldBlur={handleFieldBlur}
           section="calculated"
         registerGroupHeading={registerGroupHeading}
           sampleMode={false}
@@ -1832,13 +2577,15 @@ export const DormantFutureMeasurementStep = ({
         />
       )}
 
-      {!selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
+      {!onsiteSelected && !selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
         <MeasurementSection
           title="Optional Measurements"
           description="Add any of these if you want. They are not required."
           requirements={visibleOptionalRequirements}
           state={resolvedState}
-          onChange={onChange}
+          onChange={handleFieldChange}
+          onFieldFocus={handleFieldFocus}
+          onFieldBlur={handleFieldBlur}
           section="optional"
         registerGroupHeading={registerGroupHeading}
           sampleMode={sampleSelected}
@@ -1846,6 +2593,197 @@ export const DormantFutureMeasurementStep = ({
         />
       )}
         </>
+      )}
+
+      {assignModalOpen && hasUnassignedGarments && activeModalGarment && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/40 p-3 sm:items-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="step5-unassigned-garment-dialog-title"
+          aria-describedby="step5-unassigned-garment-dialog-description"
+          data-testid="step5-unassigned-garment-assignment-dialog"
+        >
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-heritage-gold/40 bg-white p-5 shadow-xl sm:p-7">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-heritage-gold/15 text-heritage-green">
+                  <Users size={20} aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-heritage-bronze">
+                    Garment Assignment Required
+                  </p>
+                  <h3
+                    id="step5-unassigned-garment-dialog-title"
+                    className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
+                  >
+                    Assign in order to continue
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close assignment dialog"
+                data-measurement-assign-modal-close="true"
+                onClick={() => {
+                  setAssignModalOpen(false);
+                  setAssignModalError(null);
+                }}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-heritage-green/15 text-heritage-ink/65 transition hover:border-heritage-green/35 hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <p
+              id="step5-unassigned-garment-dialog-description"
+              className="mt-3 text-sm leading-relaxed text-heritage-ink/80"
+            >
+              Every garment must be assigned to a person before you can enter its
+              measurements or continue to AI Try-on.
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/55 p-4">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-bronze">
+                {assignmentPendingGarments.length === 1
+                  ? "1 garment still needs assignment"
+                  : `${assignmentPendingGarments.length} garments still need assignment`}
+              </p>
+              <div
+                className="mt-2.5 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Unassigned garments"
+              >
+                {assignmentPendingGarments.map((garment) => {
+                  const isTarget =
+                    garment.garmentKey === activeModalGarment.garmentKey;
+                  const label = resolveDisplayGarmentLabel(
+                    garment.garmentType,
+                    garment.garmentKey,
+                  );
+                  return (
+                    <button
+                      key={garment.garmentKey}
+                      type="button"
+                      aria-pressed={isTarget}
+                      data-measurement-assign-modal-garment={garment.garmentKey}
+                      onClick={() => {
+                        setAssignModalGarmentKey(garment.garmentKey);
+                        setAssignModalError(null);
+                      }}
+                      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                        isTarget
+                          ? "border-heritage-green bg-heritage-green text-white shadow-sm"
+                          : "border-heritage-gold/40 bg-white text-heritage-green hover:border-heritage-green/50"
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${
+                          isTarget
+                            ? "bg-white/20 text-white"
+                            : "bg-heritage-gold/15 text-heritage-bronze"
+                        }`}
+                      >
+                        Unassigned
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-heritage-green/15 bg-white p-4">
+                <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-green">
+                  Assign{" "}
+                  <span className="underline decoration-heritage-gold/60 underline-offset-2">
+                    {resolveDisplayGarmentLabel(
+                      activeModalGarment.garmentType,
+                      activeModalGarment.garmentKey,
+                    )}
+                  </span>{" "}
+                  to an existing person
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/75">
+                  Select a person below to assign this garment and open their
+                  measurements.
+                </p>
+                <div
+                  className="mt-3 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Assign to an existing person"
+                >
+                  {effectiveWearerChips.map((chip) => (
+                    <button
+                      key={chip.wearerId}
+                      type="button"
+                      data-measurement-assign-modal-wearer={chip.wearerId}
+                      onClick={() => handleAssignToExistingPerson(chip.wearerId)}
+                      className="inline-flex min-h-10 items-center justify-center rounded-xl border border-heritage-green/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                    >
+                      Assign to {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-heritage-green/15 bg-white p-4">
+                <div className="flex items-center gap-2">
+                  <UserPlus
+                    size={16}
+                    aria-hidden="true"
+                    className="shrink-0 text-heritage-bronze"
+                  />
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-green">
+                    Or add a new person
+                  </p>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/75">
+                  Enter a name or nickname to create a new person and assign{" "}
+                  {resolveDisplayGarmentLabel(
+                    activeModalGarment.garmentType,
+                    activeModalGarment.garmentKey,
+                  )}{" "}
+                  to them.
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    maxLength={40}
+                    aria-label="New person name or nickname"
+                    placeholder="e.g., Ada, Chidi, Partner"
+                    data-measurement-assign-modal-new-person-input="true"
+                    value={assignModalNewPersonName}
+                    onChange={(event) => {
+                      setAssignModalNewPersonName(event.target.value);
+                      if (assignModalError) setAssignModalError(null);
+                    }}
+                    className="min-h-11 flex-1 rounded-xl border border-heritage-green/25 bg-white px-3.5 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+                  />
+                  <button
+                    type="button"
+                    data-measurement-assign-modal-add-person-button="true"
+                    onClick={handleAddNewPersonAndAssign}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  >
+                    Add person & assign
+                  </button>
+                </div>
+                {assignModalError && (
+                  <p
+                    role="alert"
+                    data-measurement-assign-modal-error="true"
+                    className="mt-2 text-xs font-semibold text-red-700"
+                  >
+                    {assignModalError}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
@@ -1869,13 +2807,22 @@ export const DormantFutureMeasurementStep = ({
             onClick: onContinue,
             disabled: !canContinueToTryOn,
             locked: !canContinueToTryOn,
-            onLockedClick: () =>
-              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options"),
+            onLockedClick: () => {
+              if (hasUnassignedGarments) {
+                openAssignModal();
+              }
+              requestGuideCue(selectedMethod && !hydrationInvalid ? "form" : "options");
+            },
             ariaLabel: "Continue to AI Try-on",
             "aria-describedby": "measurement-risk-selection-notice",
           }}
         />
       </footer>
+
+      <MeasurementGuideModal
+        open={guideModalOpen}
+        onClose={() => setGuideModalOpen(false)}
+      />
     </section>
   );
 };

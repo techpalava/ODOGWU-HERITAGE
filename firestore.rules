@@ -112,6 +112,7 @@ service cloud.firestore {
           "garmentComposition",
           "fabricCategory",
           "options",
+          "categoryIds",
           "designCategories",
           "detectedColors",
           "constructionDetails",
@@ -119,7 +120,8 @@ service cloud.firestore {
           "includedDesignFeatures",
           "monogramCuffEligible",
           "embroideryProminence",
-          "defaultGarmentDetails"
+          "defaultGarmentDetails",
+          "showsWearer"
         ])
         && data.keys().hasAll([
           "name",
@@ -204,7 +206,55 @@ service cloud.firestore {
         )
         && data.monogramCuffEligible is bool
         && data.embroideryProminence in ["standard", "heavy"]
-        && data.defaultGarmentDetails is map;
+        && data.defaultGarmentDetails is map
+        && (
+          !data.keys().hasAny(["categoryIds"])
+          || (
+            data.categoryIds is list
+            && data.categoryIds.size() <= 3
+          )
+        )
+        && (
+          !data.keys().hasAny(["showsWearer"])
+          || data.showsWearer is bool
+        );
+    }
+
+    function hasValidDesignStyleCategory(categoryId, data) {
+      return data is map
+        && data.keys().hasOnly([
+          "id",
+          "name",
+          "displayOrder",
+          "enabled",
+          "description"
+        ])
+        && data.keys().hasAll([
+          "id",
+          "name",
+          "displayOrder",
+          "enabled"
+        ])
+        && data.id is string
+        && data.id == categoryId
+        && data.id.size() > 0
+        && data.id.size() <= 64
+        && data.id.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && !data.name.lower().matches('.*kaftan.*')
+        && data.displayOrder is int
+        && data.displayOrder >= 0
+        && data.enabled is bool
+        && (
+          !data.keys().hasAny(["description"])
+          || (
+            data.description is string
+            && data.description.size() <= 240
+            && !data.description.lower().matches('.*kaftan.*')
+          )
+        );
     }
 
     function hasValidDesignStyleEligibility(data) {
@@ -224,6 +274,7 @@ service cloud.firestore {
           "shirt",
           "trouser",
           "skirt",
+          "long_skirt",
           "standard_shorts",
           "bum_shorts",
           "dress",
@@ -250,6 +301,7 @@ service cloud.firestore {
           "shirt",
           "trouser",
           "skirt",
+          "long_skirt",
           "standard_shorts",
           "bum_shorts",
           "dress",
@@ -282,6 +334,7 @@ service cloud.firestore {
           "shirt",
           "trouser",
           "skirt",
+          "long_skirt",
           "standard_shorts",
           "bum_shorts",
           "dress",
@@ -446,6 +499,12 @@ service cloud.firestore {
       allow create: if isAdmin() && hasValidDesignStyleCreate(styleId);
       allow update: if isAdmin() && hasValidDesignStyleUpdate(styleId);
       allow delete: if false;
+    }
+
+    match /design_style_categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && hasValidDesignStyleCategory(categoryId, request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /batches/{batchId} {
@@ -831,17 +890,9 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isAdmin() || ownsExistingDocument();
-      // New canonical V2 orders are only persisted through the authenticated
-      // server/Admin SDK boundary, which checks private-batch membership in
-      // the same transaction. Retain only the legacy client path here.
-      allow create: if !isFutureOrderV2(request.resource.data)
-        && (
-          isAdmin()
-          || (
-          ownsIncomingDocument()
-          && request.resource.data.customer.ownerUid == request.auth.uid
-          )
-        );
+      // V2 orders are persisted only through the Admin SDK. Legacy orders are
+      // staff-created. A signed-in customer cannot insert a legacy order.
+      allow create: if !isFutureOrderV2(request.resource.data) && isAdmin();
       allow update: if !isFutureOrderV2(resource.data)
         && !isFutureOrderV2(request.resource.data)
         && (

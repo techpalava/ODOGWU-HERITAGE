@@ -76,8 +76,8 @@ const textContent = (node: ReactTestInstance | string | null): string =>
 const snapshot = (value: unknown): string => JSON.stringify(value);
 
 assert.equal(SHORT_LABEL, "Standard Length Shirt, Short Sleeve");
-assert.equal(MIDLONG_LABEL, "Standard Length Shirt, Mid-Long Sleeve");
-assert.equal(LONG_MIDLONG_LABEL, "Long Length Shirt, Mid-Long Sleeve");
+assert.equal(MIDLONG_LABEL, "Standard Length Shirt, Long Sleeve");
+assert.equal(LONG_MIDLONG_LABEL, "Long Length Shirt, Long Sleeve");
 assert.equal(STANDARD_SHIRT, "Standard Shirt");
 assert.equal(LONG_SHIRT, "Long Shirt");
 

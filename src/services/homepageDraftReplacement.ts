@@ -75,7 +75,11 @@ export interface HomepageGuestDraftAuthority {
 }
 
 export interface HomepageAuthenticatedDraftAuthority {
-  readonly repository: Pick<AuthenticatedFutureDraftRepository, "load" | "clear">;
+  readonly repository: Pick<
+    AuthenticatedFutureDraftRepository,
+    "load" | "clear"
+  > &
+    Partial<Pick<AuthenticatedFutureDraftRepository, "clearUnrecoverable">>;
   readonly ownerUid: string;
   readonly authEpoch: number;
   readonly inspectionSession: HomepageDraftInspectionSession;
@@ -466,7 +470,128 @@ export const createHomepageDraftReplacementService = ({
     return { status: "discarded" };
   };
 
-  return { inspect, revalidate, discard };
+  /**
+   * Explicit fresh-start recovery when inspection returned invalid or unavailable
+   * (e.g. a corrupt draft payload or blocked ownership transfer).
+   */
+  const discardUnrecoverable = async (
+    getAuthorization: () => HomepageDraftDiscardAuthorization = () => ({
+      status: "authorized",
+    }),
+  ): Promise<HomepageDraftDiscardResult> => {
+    const initialAuth = getAuthorization();
+    if (initialAuth.status !== "authorized") {
+      return authorizationFailure(initialAuth);
+    }
+
+    let clearCompleted = false;
+    try {
+      if (authenticated) {
+        if (!authenticated.inspectionSession.isCurrent() || !authenticated.isCurrent()) {
+          return { status: "blocked", reason: "authenticated_draft_handle_changed" };
+        }
+        const cleared = authenticated.repository.clearUnrecoverable
+          ? await authenticated.repository.clearUnrecoverable()
+          : await (async () => {
+              const loaded = await authenticated.repository.load();
+              if (loaded.status === "absent") {
+                return { status: "saved" as const, record: { lifecycleStatus: "cleared" as const } };
+              }
+              if (loaded.status === "loaded") {
+                return authenticated.repository.clear(loaded.record.revision);
+              }
+              return {
+                status: loaded.status,
+                record: null,
+                reason: loaded.reason,
+              };
+            })();
+        clearCompleted =
+          cleared.status === "saved" &&
+          cleared.record.lifecycleStatus === "cleared";
+        const authAfterCloud = getAuthorization();
+        if (authAfterCloud.status !== "authorized") {
+          return authorizationFailure(authAfterCloud, clearCompleted);
+        }
+        if (!authenticated.inspectionSession.isCurrent() || !authenticated.isCurrent()) {
+          return {
+            status: "blocked",
+            reason: "authenticated_draft_handle_changed",
+            ...(clearCompleted ? { clearCompleted: true } : {}),
+          };
+        }
+        if (
+          cleared.status !== "saved" ||
+          cleared.record.lifecycleStatus !== "cleared"
+        ) {
+          return {
+            status: "blocked",
+            reason:
+              cleared.status === "blocked" || cleared.status === "invalid"
+                ? cleared.reason
+                : "authenticated_draft_clear_conflict",
+          };
+        }
+      }
+
+      const authBeforeGuest = getAuthorization();
+      if (authBeforeGuest.status !== "authorized") {
+        return authorizationFailure(authBeforeGuest, clearCompleted);
+      }
+      if (!guest.inspectionSession.isCurrent()) {
+        return {
+          status: "blocked",
+          reason: "inspection_session_changed",
+          ...(clearCompleted ? { clearCompleted: true } : {}),
+        };
+      }
+      guest.clear();
+      clearCompleted = true;
+      const authAfterGuest = getAuthorization();
+      if (authAfterGuest.status !== "authorized") {
+        return authorizationFailure(authAfterGuest, clearCompleted);
+      }
+      if (!guest.inspectionSession.isCurrent()) {
+        return {
+          status: "blocked",
+          reason: "inspection_session_changed",
+          clearCompleted,
+        };
+      }
+    } catch {
+      return {
+        status: "blocked",
+        reason: "draft_clear_failed",
+        ...(clearCompleted ? { clearCompleted: true } : {}),
+      };
+    }
+
+    let guestAfterClear: FutureDesignStudioDraftInspectionResult;
+    try {
+      guestAfterClear = guest.inspect();
+    } catch {
+      return {
+        status: "blocked",
+        reason: "guest_draft_clear_unconfirmed",
+        ...(clearCompleted ? { clearCompleted: true } : {}),
+      };
+    }
+    const authAfterInspect = getAuthorization();
+    if (authAfterInspect.status !== "authorized") {
+      return authorizationFailure(authAfterInspect, clearCompleted);
+    }
+    if (guestAfterClear.status !== "empty") {
+      return {
+        status: "blocked",
+        reason: "guest_draft_clear_unconfirmed",
+        ...(clearCompleted ? { clearCompleted: true } : {}),
+      };
+    }
+
+    return { status: "discarded" };
+  };
+
+  return { inspect, revalidate, discard, discardUnrecoverable };
 };
 
 export type HomepageDraftReplacementDiscardExecution =
@@ -480,6 +605,33 @@ export type HomepageDraftReplacementDiscardExecution =
         | "clear_failed";
       reason?: string;
     }>;
+
+const createDiscardAuthorizationHelpers = ({
+  isOperationCurrent,
+  getCurrentTarget,
+}: {
+  isOperationCurrent: () => boolean;
+  getCurrentTarget: () => Readonly<{ orderContext: OrderContext }> | null;
+}) => {
+  const getAuthorization = (): HomepageDraftDiscardAuthorization => {
+    if (!isOperationCurrent()) return { status: "stale" };
+    return getCurrentTarget()
+      ? { status: "authorized" }
+      : { status: "target_unavailable" };
+  };
+  const authorizationToExecution = (
+    authorization: Exclude<HomepageDraftDiscardAuthorization, { status: "authorized" }>,
+    clearCompleted = false,
+  ): HomepageDraftReplacementDiscardExecution =>
+    authorization.status === "stale"
+      ? { status: "stale" }
+      : {
+          status: clearCompleted
+            ? "target_unavailable_after_clear"
+            : "target_unavailable",
+        };
+  return { getAuthorization, authorizationToExecution };
+};
 
 /**
  * The App's destructive transition. The caller supplies a current-state target
@@ -498,23 +650,8 @@ export const executeHomepageDraftReplacementDiscard = async ({
   isOperationCurrent: () => boolean;
   getCurrentTarget: () => Readonly<{ orderContext: OrderContext }> | null;
 }): Promise<HomepageDraftReplacementDiscardExecution> => {
-  const getAuthorization = (): HomepageDraftDiscardAuthorization => {
-    if (!isOperationCurrent()) return { status: "stale" };
-    return getCurrentTarget()
-      ? { status: "authorized" }
-      : { status: "target_unavailable" };
-  };
-  const authorizationToExecution = (
-    authorization: Exclude<HomepageDraftDiscardAuthorization, { status: "authorized" }>,
-    clearCompleted = false,
-  ): HomepageDraftReplacementDiscardExecution =>
-    authorization.status === "stale"
-      ? { status: "stale" }
-      : {
-          status: clearCompleted
-            ? "target_unavailable_after_clear"
-            : "target_unavailable",
-        };
+  const { getAuthorization, authorizationToExecution } =
+    createDiscardAuthorizationHelpers({ isOperationCurrent, getCurrentTarget });
 
   const initialAuthorization = getAuthorization();
   if (initialAuthorization.status !== "authorized") {
@@ -542,6 +679,41 @@ export const executeHomepageDraftReplacementDiscard = async ({
   }
 
   const cleared = await authority.discard(existing, getAuthorization);
+  const authorizationAfterClear = getAuthorization();
+  if (authorizationAfterClear.status !== "authorized") {
+    return authorizationToExecution(
+      authorizationAfterClear,
+      cleared.status === "blocked" && Boolean(cleared.clearCompleted),
+    );
+  }
+  if (cleared.status !== "discarded") {
+    return { status: "clear_failed", reason: cleared.reason };
+  }
+
+  const targetAfterClear = getCurrentTarget();
+  if (!isOperationCurrent()) return { status: "stale" };
+  if (!targetAfterClear) return { status: "target_unavailable_after_clear" };
+  return { status: "discarded", orderContext: targetAfterClear.orderContext };
+};
+
+export const executeHomepageDraftReplacementRecoveryDiscard = async ({
+  authority,
+  isOperationCurrent,
+  getCurrentTarget,
+}: {
+  authority: ReturnType<typeof createHomepageDraftReplacementService>;
+  isOperationCurrent: () => boolean;
+  getCurrentTarget: () => Readonly<{ orderContext: OrderContext }> | null;
+}): Promise<HomepageDraftReplacementDiscardExecution> => {
+  const { getAuthorization, authorizationToExecution } =
+    createDiscardAuthorizationHelpers({ isOperationCurrent, getCurrentTarget });
+
+  const initialAuthorization = getAuthorization();
+  if (initialAuthorization.status !== "authorized") {
+    return authorizationToExecution(initialAuthorization);
+  }
+
+  const cleared = await authority.discardUnrecoverable(getAuthorization);
   const authorizationAfterClear = getAuthorization();
   if (authorizationAfterClear.status !== "authorized") {
     return authorizationToExecution(

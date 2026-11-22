@@ -155,6 +155,7 @@ export interface AuthenticatedFutureDraftPersistenceAdapter {
     expectedRevision: number | null;
     lifecycleStatus: "active" | "cleared";
     draft?: GuestDesignDraft;
+    allowReplaceUnrecoverable?: boolean;
   }): Promise<
     | { status: "saved"; value: unknown }
     | { status: "conflict"; currentValue: unknown | null }
@@ -507,10 +508,12 @@ export const createAuthenticatedFutureDraftRepository = ({
     expectedRevision,
     lifecycleStatus,
     draft,
+    allowReplaceUnrecoverable = false,
   }: {
     expectedRevision: number | null;
     lifecycleStatus: "active" | "cleared";
     draft?: GuestDesignDraft;
+    allowReplaceUnrecoverable?: boolean;
   }): Promise<AuthenticatedFutureDraftWriteResult> => {
     const owner = requireOwner();
     if (!owner.ownerUid) {
@@ -544,6 +547,7 @@ export const createAuthenticatedFutureDraftRepository = ({
       expectedRevision,
       lifecycleStatus,
       ...(normalizedDraft ? { draft: normalizedDraft } : {}),
+      ...(allowReplaceUnrecoverable ? { allowReplaceUnrecoverable: true } : {}),
     });
     if (committed.status === "conflict") {
       const current = normalizeLoadedValue(
@@ -573,6 +577,33 @@ export const createAuthenticatedFutureDraftRepository = ({
 
   const clear = (expectedRevision: number | null) =>
     write({ expectedRevision, lifecycleStatus: "cleared" });
+
+  /**
+   * Explicitly requested fresh-start recovery for an invalid or blocked cloud
+   * draft whose payload could not be loaded normally.
+   */
+  const clearUnrecoverable = async () => {
+    const owner = requireOwner();
+    if (!owner.ownerUid) {
+      return {
+        status: "blocked" as const,
+        record: null,
+        reason: owner.reason!,
+      };
+    }
+    const raw = await adapter.load(owner.ownerUid);
+    const rawRevision =
+      isRecord(raw) &&
+      Number.isSafeInteger(raw.revision) &&
+      (raw.revision as number) >= 1
+        ? (raw.revision as number)
+        : null;
+    return write({
+      expectedRevision: rawRevision,
+      lifecycleStatus: "cleared",
+      allowReplaceUnrecoverable: true,
+    });
+  };
 
   const synchronize = async (
     guestDraftValue: unknown | null,
@@ -734,12 +765,18 @@ export const createAuthenticatedFutureDraftRepository = ({
     return resolved;
   };
 
-  return { load, save, clear, synchronize };
+  return { load, save, clear, clearUnrecoverable, synchronize };
 };
 
-export type AuthenticatedFutureDraftRepository = ReturnType<
+type BaseAuthenticatedFutureDraftRepository = ReturnType<
   typeof createAuthenticatedFutureDraftRepository
 >;
+
+export type AuthenticatedFutureDraftRepository = Omit<
+  BaseAuthenticatedFutureDraftRepository,
+  "clearUnrecoverable"
+> &
+  Partial<Pick<BaseAuthenticatedFutureDraftRepository, "clearUnrecoverable">>;
 
 const createFirestoreAdapter = (
   firestore: Firestore,
@@ -756,6 +793,7 @@ const createFirestoreAdapter = (
     expectedRevision,
     lifecycleStatus,
     draft,
+    allowReplaceUnrecoverable = false,
   }) {
     const reference = doc(
       firestore,
@@ -766,12 +804,35 @@ const createFirestoreAdapter = (
       const snapshot = await transaction.get(reference);
       const currentValue = snapshot.exists() ? snapshot.data() : null;
       const current = normalizeLoadedValue(currentValue, ownerUid);
-      if (snapshot.exists() && current.status !== "loaded") {
+      const canRecoverClear =
+        allowReplaceUnrecoverable && lifecycleStatus === "cleared";
+      if (snapshot.exists() && current.status !== "loaded" && !canRecoverClear) {
         return { status: "conflict" as const, currentValue };
       }
+      const rawRevision =
+        isRecord(currentValue) &&
+        Number.isSafeInteger(currentValue.revision) &&
+        (currentValue.revision as number) >= 1
+          ? (currentValue.revision as number)
+          : null;
       const currentRevision =
-        current.status === "loaded" ? current.record.revision : null;
-      if (currentRevision !== expectedRevision) {
+        current.status === "loaded"
+          ? current.record.revision
+          : canRecoverClear
+            ? rawRevision
+            : null;
+      if (snapshot.exists() && currentRevision === null) {
+        return { status: "conflict" as const, currentValue };
+      }
+      if (!canRecoverClear && currentRevision !== expectedRevision) {
+        return { status: "conflict" as const, currentValue };
+      }
+      const hasExistingCreatedAt =
+        snapshot.exists() &&
+        isRecord(currentValue) &&
+        currentValue.createdAt !== undefined &&
+        currentValue.createdAt !== null;
+      if (snapshot.exists() && !hasExistingCreatedAt) {
         return { status: "conflict" as const, currentValue };
       }
       const revision = (currentRevision || 0) + 1;
@@ -781,8 +842,8 @@ const createFirestoreAdapter = (
         lifecycleStatus,
         revision,
         createdAt:
-          current.status === "loaded"
-            ? (currentValue as DocumentData).createdAt
+          snapshot.exists() && isRecord(currentValue)
+            ? currentValue.createdAt
             : serverTimestamp(),
         updatedAt: serverTimestamp(),
         ...(lifecycleStatus === "active" ? { draft } : {}),
@@ -800,6 +861,29 @@ const createFirestoreAdapter = (
     });
   },
 });
+
+export const loadAuthenticatedCloudDraftForOwner = async (
+  ownerUid: string,
+  firestore: Firestore = db,
+): Promise<AuthenticatedFutureDraftLoadResult> => {
+  if (!ownerUid) {
+    return {
+      status: "blocked",
+      record: null,
+      reason: "application_customer_without_firebase_user",
+    };
+  }
+  try {
+    const raw = await createFirestoreAdapter(firestore).load(ownerUid);
+    return normalizeLoadedValue(raw, ownerUid);
+  } catch {
+    return {
+      status: "blocked",
+      record: null,
+      reason: "cloud_draft_load_failed",
+    };
+  }
+};
 
 export const createFirebaseAuthenticatedFutureDraftRepository = ({
   customer,

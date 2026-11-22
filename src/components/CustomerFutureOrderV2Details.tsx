@@ -17,6 +17,17 @@ import {
   presentWorkshopStageLines,
   workshopDispatchLabel,
 } from "../utils/futureOrderV2WorkshopProgress";
+import {
+  customerFacingPickupLocationLabel,
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
+} from "../utils/designStudioFutureShipping";
+import {
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
+} from "../utils/measurementBlueprint";
 import { WorkshopStageList } from "./WorkshopStageList";
 import type { Fabric } from "../types";
 import { getOrderGarmentPictures } from "../utils/orderGarmentPictures";
@@ -31,6 +42,7 @@ import {
   futureOrderV2RedirectingPayLabel,
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewMeasurementGroups,
+  getFuturePaymentReviewOnsiteWearers,
   getFuturePaymentReviewPricingRows,
 } from "../utils/designStudioFuturePaymentReview";
 import type { FutureOrderV2PaymentMethod } from "../utils/futureOrderV2Payment";
@@ -40,6 +52,11 @@ import {
   getFutureOrderV2ProviderTransactionId,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import {
+  formatCustomDetailsGarmentLabel,
+  formatCustomerVisibleKaftanText,
+  formatSavedNikkaDisplayText,
+} from "../utils/optionalShortsPresentation";
 import {
   formatPersonalizedPriceEuros,
   PERSONALIZED_BASE_PAYMENT_NOTICE,
@@ -141,7 +158,9 @@ export const CustomerFutureOrderV2Details = ({
   const styleByGarmentKey = new Map(
     candidate.occurrenceStyleSnapshots.map((snapshot) => [
       snapshot.occurrence.garmentKey,
-      snapshot.sourceKind === "catalogue" ? snapshot.catalogue!.name : "Uploaded design",
+      snapshot.sourceKind === "catalogue"
+        ? formatSavedNikkaDisplayText(formatCustomerVisibleKaftanText(snapshot.catalogue!.name))
+        : "Uploaded design",
     ]),
   );
   const garments = getFuturePaymentReviewGarments(candidate);
@@ -152,6 +171,7 @@ export const CustomerFutureOrderV2Details = ({
     ]),
   );
   const measurementGroups = getFuturePaymentReviewMeasurementGroups(candidate);
+  const onsiteWearers = getFuturePaymentReviewOnsiteWearers(candidate);
   const pricingRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
     orderType: candidate.orderIdentity?.orderType ?? null,
     physicalGarmentCount: candidate.garments.length,
@@ -414,7 +434,9 @@ export const CustomerFutureOrderV2Details = ({
                         />
                       </div>
                     ) : null}
-                    <p className="font-serif font-bold text-heritage-green">{garment.label}</p>
+                    <p className="font-serif font-bold text-heritage-green">
+                      {formatCustomDetailsGarmentLabel(garment.label)}
+                    </p>
                     <p className="text-xs">Style: {styleByGarmentKey.get(garment.garmentKey) || "Not recorded"}</p>
                     {fabricAllocations.map((allocation) => (
                       <p key={allocation.allocationId} className="text-xs">
@@ -426,7 +448,7 @@ export const CustomerFutureOrderV2Details = ({
                       <ul className="mt-1 space-y-0.5 text-xs">
                         {customDetails.map((detail) => (
                           <li key={detail.occurrenceKey}>
-                            {detail.selectionGroupTitle}: {detail.optionLabel}
+                            {formatSavedNikkaDisplayText(formatCustomerVisibleKaftanText(detail.selectionGroupTitle))}: {detail.optionLabel}
                             {detail.personalizedText ? ` "${detail.personalizedText}"` : ""}
                           </li>
                         ))}
@@ -438,12 +460,52 @@ export const CustomerFutureOrderV2Details = ({
               </ul>
             </DetailsSection>
 
-            {measurementGroups.length > 0 && (
+            {(measurementGroups.length > 0 || onsiteWearers.length > 0) && (
               <DetailsSection title="Measurements">
                 <div className="space-y-3">
+                  {onsiteWearers.map((onsiteWearer) => (
+                    <div
+                      key={`onsite:${onsiteWearer.wearerId}`}
+                      data-customer-v2-order-measurement-onsite={onsiteWearer.wearerId}
+                      className="rounded-xl border border-heritage-gold/30 bg-heritage-cream/30 p-3 text-xs"
+                    >
+                      <p className="font-semibold text-heritage-green">
+                        {onsiteWearer.wearerLabel
+                          ? `${onsiteWearer.wearerLabel} — ${MEASUREMENT_ONSITE_PHYSICAL_LABEL}`
+                          : MEASUREMENT_ONSITE_PHYSICAL_LABEL}
+                      </p>
+                      {onsiteWearer.assignedGarmentLabels.length > 0 && (
+                        <p className="mt-0.5 text-heritage-ink/75">
+                          Covered garments:{" "}
+                          {onsiteWearer.assignedGarmentLabels
+                            .map((label) => formatCustomDetailsGarmentLabel(label))
+                            .join(", ")}
+                        </p>
+                      )}
+                      <p className="mt-1 font-medium text-heritage-green">
+                        {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
+                      </p>
+                      <p className="mt-0.5 text-heritage-ink/70">
+                        {MEASUREMENT_ONSITE_BOOKING_REASON}
+                      </p>
+                      <div className="mt-2 print:hidden">
+                        <a
+                          href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-customer-v2-order-measurement-onsite-whatsapp="true"
+                          className="inline-flex min-h-9 items-center justify-center rounded-lg bg-heritage-green px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white transition hover:bg-heritage-bronze"
+                        >
+                          {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL} ({FUTURE_PICKUP_ATELIER_PHONE_DISPLAY})
+                        </a>
+                      </div>
+                    </div>
+                  ))}
                   {measurementGroups.map((group) => (
                     <div key={`${group.garmentKey ?? "shared"}:${group.title}`}>
-                      <p className="font-semibold text-heritage-green">{group.title}</p>
+                      <p className="font-semibold text-heritage-green">
+                        {formatCustomDetailsGarmentLabel(group.title)}
+                      </p>
                       <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
                         {group.items.map((item) => (
                           <div key={item.measurementId} className="flex justify-between gap-2">
@@ -471,7 +533,8 @@ export const CustomerFutureOrderV2Details = ({
               {shipping.fulfilmentMethod === "eindhoven_pickup" &&
                 shipping.pickupLocation.trim() && (
                   <p data-customer-v2-order-pickup-location>
-                    Pickup location: {shipping.pickupLocation.trim()}
+                    Pickup location:{" "}
+                    {customerFacingPickupLocationLabel(shipping.pickupLocation)}
                   </p>
                 )}
               {workshop ? (

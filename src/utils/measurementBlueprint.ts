@@ -72,6 +72,7 @@ const VALID_METHODS = new Set<MeasurementMethodId>([
   "high_risk",
   "critical_risk",
   "sample_cloth",
+  "onsite_physical",
 ]);
 
 export const MEASUREMENT_RISK_ROUTE_ORDER = [
@@ -95,6 +96,33 @@ export const MEASUREMENT_SAMPLE_CLOTH_LENGTH_INSTRUCTION =
 export const MEASUREMENT_SAMPLE_CLOTH_HALF_WIDTH_INSTRUCTION =
   "Measure across the sample garment laid flat.";
 export const SAMPLE_CLOTH_PRODUCTION_SCALE = 2;
+
+export const MEASUREMENT_ONSITE_PHYSICAL_METHOD = "onsite_physical" as const;
+export const MEASUREMENT_ONSITE_PHYSICAL_LABEL = "Onsite Physical Measurements";
+export const MEASUREMENT_ONSITE_BOOKING_INSTRUCTION =
+  "Contact us on WhatsApp within 3 days of placing your order to arrange your measurement appointment. Our team will confirm the time and location.";
+export const MEASUREMENT_ONSITE_BOOKING_REASON =
+  "So we can keep your tailoring slot and deliver on time.";
+export const MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL =
+  "Arrange measurements on WhatsApp";
+export const MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL =
+  "I understand I need to contact ODOGWU HERITAGE on WhatsApp within 3 days of placing my order to arrange my onsite physical measurement.";
+export const MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE =
+  "Confirm the 3-day WhatsApp booking acknowledgement above to continue.";
+export const MEASUREMENT_ONSITE_COMPLETE_MESSAGE =
+  "Onsite physical measurement confirmed. Contact us on WhatsApp within 3 days of placing your order to arrange your appointment.";
+export const MEASUREMENT_ONSITE_INCOMPLETE_MESSAGE =
+  "Tick the 3-day WhatsApp booking confirmation above to complete this step.";
+export const MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL =
+  "Book appointment on WhatsApp within 3 days of placing your order";
+export const MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL =
+  "Confirm 3-day WhatsApp booking requirement";
+export const MEASUREMENT_ONSITE_SUMMARY_CONFIRMED_NOTE =
+  "3-day WhatsApp booking requirement acknowledged. No online measurements needed.";
+export const MEASUREMENT_ONSITE_SUMMARY_UNCONFIRMED_NOTE =
+  "3-day WhatsApp booking confirmation required before continuing.";
+export const MEASUREMENT_ONSITE_STAFF_METHOD_NOTE =
+  "No online measurements submitted — appointment must be confirmed within 3 days via WhatsApp (+31 6 44533190).";
 
 const SAMPLE_CLOTH_OMITTED_IDS = new Set<CanonicalMeasurementId>([
   "total_height",
@@ -265,6 +293,7 @@ export const getSampleClothProductionEquivalentCm = (valueCm: number): number =>
 export const MEASUREMENT_METHOD_ORDER = [
   ...MEASUREMENT_RISK_ROUTE_ORDER,
   MEASUREMENT_SAMPLE_CLOTH_METHOD,
+  MEASUREMENT_ONSITE_PHYSICAL_METHOD,
 ] as const satisfies ReadonlyArray<MeasurementMethodId>;
 
 /**
@@ -290,6 +319,7 @@ export const MEASUREMENT_RISK_ROUTE_DESCRIPTIONS: Record<MeasurementRiskRoute, s
 export const MEASUREMENT_METHOD_LABELS: Record<MeasurementMethodId, string> = {
   ...MEASUREMENT_RISK_ROUTE_LABELS,
   sample_cloth: MEASUREMENT_SAMPLE_CLOTH_LABEL,
+  onsite_physical: MEASUREMENT_ONSITE_PHYSICAL_LABEL,
 };
 
 /**
@@ -306,6 +336,7 @@ export const MEASUREMENT_RISK_ROUTE_STAFF_LABELS: Record<MeasurementRiskRoute, s
 export const MEASUREMENT_METHOD_STAFF_LABELS: Record<MeasurementMethodId, string> = {
   ...MEASUREMENT_RISK_ROUTE_STAFF_LABELS,
   sample_cloth: MEASUREMENT_SAMPLE_CLOTH_LABEL,
+  onsite_physical: MEASUREMENT_ONSITE_PHYSICAL_LABEL,
 };
 
 export const CRITICAL_RISK_AVAILABLE_COPY = MEASUREMENT_RISK_ROUTE_DESCRIPTIONS.critical_risk;
@@ -376,6 +407,7 @@ const PATH_INPUT_BLOCKING_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
   "invalid_measurement_id",
   "invalid_route",
   "invalid_unit",
+  "onsite_booking_acknowledgement_required",
 ]);
 
 const NON_BLOCKING_DIAGNOSTIC_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
@@ -392,6 +424,39 @@ export const isSampleClothMeasurementMethod = (
 ): route is typeof MEASUREMENT_SAMPLE_CLOTH_METHOD =>
   route === MEASUREMENT_SAMPLE_CLOTH_METHOD;
 
+export const isOnsitePhysicalMeasurementMethod = (
+  route: SelectedMeasurementMethod | undefined,
+): route is typeof MEASUREMENT_ONSITE_PHYSICAL_METHOD =>
+  route === MEASUREMENT_ONSITE_PHYSICAL_METHOD;
+
+/**
+ * Pure check for whether a single-wearer measurement state, multi-wearer order,
+ * or raw persisted order/candidate measurement payload uses `onsite_physical`.
+ * Never throws on malformed or absent inputs.
+ */
+export const hasOnsitePhysicalMeasurements = (measurements: unknown): boolean => {
+  if (!measurements || typeof measurements !== "object" || Array.isArray(measurements)) {
+    return false;
+  }
+  const record = measurements as Record<string, unknown>;
+  if (record.route === MEASUREMENT_ONSITE_PHYSICAL_METHOD) {
+    return true;
+  }
+  if (Array.isArray(record.wearers)) {
+    return record.wearers.some((wearer) => {
+      if (!wearer || typeof wearer !== "object" || Array.isArray(wearer)) return false;
+      const measurement = (wearer as { measurement?: unknown }).measurement;
+      return (
+        Boolean(measurement) &&
+        typeof measurement === "object" &&
+        !Array.isArray(measurement) &&
+        (measurement as { route?: unknown }).route === MEASUREMENT_ONSITE_PHYSICAL_METHOD
+      );
+    });
+  }
+  return false;
+};
+
 export const isSelectedMeasurementMethod = (
   route: SelectedMeasurementMethod | undefined,
 ): route is MeasurementMethodId =>
@@ -400,7 +465,9 @@ export const isSelectedMeasurementMethod = (
 export const getMeasurementPlanningRiskRoute = (
   method: MeasurementMethodId,
 ): MeasurementRiskRoute =>
-  isSampleClothMeasurementMethod(method) ? "low_risk" : method;
+  isSampleClothMeasurementMethod(method) || isOnsitePhysicalMeasurementMethod(method)
+    ? "low_risk"
+    : method;
 const VALID_UNITS = new Set<MeasurementUnit>(["inch", "cm"]);
 const SQUARE_NECK_OPTION_ID_SET = new Set<string>(SQUARE_NECK_OPTION_IDS);
 
@@ -1143,6 +1210,27 @@ export const planMeasurementRequirements = ({
       criticalRiskBlockingGarmentKeys,
     };
   }
+  if (isOnsitePhysicalMeasurementMethod(route)) {
+    const fingerprintInput = {
+      blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
+      formulaVersion: MEASUREMENT_FORMULA_VERSION,
+      route,
+      garmentKeys: physicalGarments
+        .map((garment) => `${garment.garmentKey}:${garment.garmentType}`)
+        .sort(),
+    };
+    return {
+      blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
+      route,
+      profiles: [],
+      requirements: [],
+      diagnostics: [],
+      inputFingerprint: `measurement_${stableHash(fingerprintInput)}`,
+      canCalculate: false,
+      criticalRiskSupported,
+      criticalRiskBlockingGarmentKeys,
+    };
+  }
   const planningRoute = getMeasurementPlanningRiskRoute(route);
   const profiles = physicalGarments
     .map((garment) =>
@@ -1603,6 +1691,7 @@ const createEmptyEnteredByRoute = (): FutureMeasurementEnteredByRouteV1 => ({
   high_risk: createEmptyEnteredBag(),
   critical_risk: createEmptyEnteredBag(),
   sample_cloth: createEmptyEnteredBag(),
+  onsite_physical: createEmptyEnteredBag(),
 });
 
 const createEmptyInvalidKeysByRoute = (): Record<MeasurementMethodId, string[]> => ({
@@ -1611,6 +1700,7 @@ const createEmptyInvalidKeysByRoute = (): Record<MeasurementMethodId, string[]> 
   high_risk: [],
   critical_risk: [],
   sample_cloth: [],
+  onsite_physical: [],
 });
 
 export const cloneFutureMeasurementEnteredBag = (
@@ -1630,6 +1720,7 @@ const cloneEnteredByRoute = (
   high_risk: cloneFutureMeasurementEnteredBag(byRoute?.high_risk),
   critical_risk: cloneFutureMeasurementEnteredBag(byRoute?.critical_risk),
   sample_cloth: cloneFutureMeasurementEnteredBag(byRoute?.sample_cloth),
+  onsite_physical: cloneFutureMeasurementEnteredBag(byRoute?.onsite_physical),
 });
 
 export const isFutureMeasurementEnteredBagEmpty = (
@@ -1694,6 +1785,7 @@ export const createEmptyFutureMeasurementState = (
   diagnostics: [],
   invalidInputKeys: [],
   invalidInputKeysByRoute: createEmptyInvalidKeysByRoute(),
+  onsiteBookingAcknowledged: false,
 });
 
 const normalizeValueMap = (
@@ -1767,13 +1859,15 @@ export const normalizeFutureMeasurementState = (
         high_risk: normalizeEnteredBag(enteredByRouteSource.high_risk),
         critical_risk: normalizeEnteredBag(enteredByRouteSource.critical_risk),
         sample_cloth: normalizeEnteredBag(enteredByRouteSource.sample_cloth),
+        onsite_physical: normalizeEnteredBag(enteredByRouteSource.onsite_physical),
       }
     : createEmptyEnteredByRoute();
-  if (!hasEnteredByRouteField && route) {
+  if (!hasEnteredByRouteField && route && !isOnsitePhysicalMeasurementMethod(route)) {
     enteredByRoute[route] = cloneFutureMeasurementEnteredBag(legacyEntered);
   } else if (
     hasEnteredByRouteField &&
     route &&
+    !isOnsitePhysicalMeasurementMethod(route) &&
     // Present-but-empty active bags are intentional (e.g. Clear all). Only
     // lift legacy `entered` when that route key was omitted from the map.
     !Object.prototype.hasOwnProperty.call(enteredByRouteSource, route) &&
@@ -1786,9 +1880,10 @@ export const normalizeFutureMeasurementState = (
     : !route
       ? normalizeEnteredBag(value.unassignedEntered)
       : undefined;
-  const entered = route
-    ? cloneFutureMeasurementEnteredBag(enteredByRoute[route])
-    : createEmptyEnteredBag();
+  const entered =
+    route && !isOnsitePhysicalMeasurementMethod(route)
+      ? cloneFutureMeasurementEnteredBag(enteredByRoute[route])
+      : createEmptyEnteredBag();
   const invalidInputKeysByRoute = createEmptyInvalidKeysByRoute();
   const normalizeKeys = (keys: unknown): string[] =>
     Array.isArray(keys)
@@ -1801,9 +1896,17 @@ export const normalizeFutureMeasurementState = (
     MEASUREMENT_METHOD_ORDER.forEach((riskRoute) => {
       invalidInputKeysByRoute[riskRoute] = normalizeKeys(invalidKeysSource[riskRoute]);
     });
-  } else if (route) {
+  } else if (route && !isOnsitePhysicalMeasurementMethod(route)) {
     invalidInputKeysByRoute[route] = normalizeKeys(value.invalidInputKeys);
   }
+  if (
+    Object.prototype.hasOwnProperty.call(value, "onsiteBookingAcknowledged") &&
+    value.onsiteBookingAcknowledged !== undefined &&
+    typeof value.onsiteBookingAcknowledged !== "boolean"
+  ) {
+    return null;
+  }
+  const onsiteBookingAcknowledged = value.onsiteBookingAcknowledged === true;
   const derived = { shared: {}, byGarmentKey: {} };
   return {
     schemaVersion: 1,
@@ -1820,8 +1923,12 @@ export const normalizeFutureMeasurementState = (
     inputFingerprint: typeof value.inputFingerprint === "string" ? value.inputFingerprint : "",
     calculationStatus: "incomplete",
     diagnostics: [],
-    invalidInputKeys: route ? invalidInputKeysByRoute[route] : [],
+    invalidInputKeys:
+      route && !isOnsitePhysicalMeasurementMethod(route)
+        ? invalidInputKeysByRoute[route]
+        : [],
     invalidInputKeysByRoute,
+    onsiteBookingAcknowledged,
     ...(typeof value.activeGarmentKey === "string" && value.activeGarmentKey.trim()
       ? { activeGarmentKey: value.activeGarmentKey }
       : {}),
@@ -1922,6 +2029,7 @@ export const setFutureMeasurementInput = ({
   displayValue: number | null;
 }): FutureMeasurementStateV1 => {
   if (!isSelectedMeasurementMethod(state.route)) return state;
+  if (isOnsitePhysicalMeasurementMethod(state.route)) return state;
   if (requirement.inputSource === "calculated_average_factor") return state;
   const enteredByRoute = ensureEnteredByRoute(state);
   const entered = cloneFutureMeasurementEnteredBag(enteredByRoute[state.route]);
@@ -1970,18 +2078,30 @@ export const setFutureMeasurementRoute = (
 ): FutureMeasurementStateV1 => {
   const enteredByRoute = ensureEnteredByRoute(state);
   const invalidInputKeysByRoute = ensureInvalidKeysByRoute(state);
+  const onsite = isOnsitePhysicalMeasurementMethod(route);
   return {
     ...state,
     route,
-    entered: cloneFutureMeasurementEnteredBag(enteredByRoute[route]),
+    entered: onsite
+      ? createEmptyEnteredBag()
+      : cloneFutureMeasurementEnteredBag(enteredByRoute[route]),
     enteredByRoute,
     derived: { shared: {}, byGarmentKey: {} },
     calculationStatus: "incomplete",
     diagnostics: [],
-    invalidInputKeys: [...invalidInputKeysByRoute[route]],
+    invalidInputKeys: onsite ? [] : [...invalidInputKeysByRoute[route]],
     invalidInputKeysByRoute,
   };
 };
+
+export const setFutureMeasurementOnsiteAcknowledged = (
+  state: FutureMeasurementStateV1,
+  acknowledged: boolean,
+): FutureMeasurementStateV1 => ({
+  ...state,
+  onsiteBookingAcknowledged: acknowledged,
+  calculationStatus: "incomplete",
+});
 
 /** Clears only the active method bag. Other routes, route selection, unit, and garment focus stay. */
 export const clearActiveFutureMeasurementEntered = (
@@ -2212,6 +2332,7 @@ export const deriveActiveCalculatedMeasurements = ({
     shared: {},
     byGarmentKey: {},
   };
+  if (isOnsitePhysicalMeasurementMethod(route)) return derived;
   if (route === "sample_cloth") {
     if (!requiredComplete) return derived;
     plan.requirements.forEach((requirement) => {
@@ -2295,6 +2416,27 @@ export const reconcileFutureMeasurementState = ({
       diagnostics: [],
       invalidInputKeys: [],
       invalidInputKeysByRoute,
+    };
+  }
+  if (isOnsitePhysicalMeasurementMethod(route)) {
+    const acknowledged = state.onsiteBookingAcknowledged === true;
+    const diagnostics: FutureMeasurementDiagnostic[] = acknowledged
+      ? []
+      : [{ code: "onsite_booking_acknowledgement_required" }];
+    return {
+      ...state,
+      route,
+      entered: createEmptyEnteredBag(),
+      enteredByRoute,
+      blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
+      formulaVersion: MEASUREMENT_FORMULA_VERSION,
+      inputFingerprint: plan.inputFingerprint,
+      derived: { shared: {}, byGarmentKey: {} },
+      calculationStatus: acknowledged ? "complete" : "incomplete",
+      diagnostics,
+      invalidInputKeys: [],
+      invalidInputKeysByRoute,
+      onsiteBookingAcknowledged: acknowledged,
     };
   }
   const entered = cloneFutureMeasurementEnteredBag(enteredByRoute[route]);
@@ -2648,7 +2790,9 @@ export const projectMeasurementStepProgressPresentation = ({
   if (orderComplete) {
     return {
       statusLabel: sampleSelected ? sampleFormTitle : "Complete",
-      statusMessage: "All required measurements are saved.",
+      statusMessage: isOnsitePhysicalMeasurementMethod(selectedMethod)
+        ? MEASUREMENT_ONSITE_COMPLETE_MESSAGE
+        : "All required measurements are saved.",
       blockedByAssignment: false,
       blockedByProfileSetup: false,
     };
@@ -2727,6 +2871,14 @@ export const projectMeasurementStepProgressPresentation = ({
       statusLabel: "Incomplete",
       statusMessage:
         "Finish measurements for every person and garment before Summary unlocks.",
+      blockedByAssignment: false,
+      blockedByProfileSetup: false,
+    };
+  }
+  if (isOnsitePhysicalMeasurementMethod(selectedMethod)) {
+    return {
+      statusLabel: "Incomplete",
+      statusMessage: MEASUREMENT_ONSITE_INCOMPLETE_MESSAGE,
       blockedByAssignment: false,
       blockedByProfileSetup: false,
     };

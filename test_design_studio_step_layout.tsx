@@ -94,7 +94,7 @@ for (const path of [
 // The one-row rule from #749-751 is unchanged.
 {
   const source = read("src/components/DesignStudioBackButton.tsx");
-  assert.match(source, /data-studio-step-actions-buttons="true"\s*className="flex w-full min-w-0 flex-row flex-nowrap/);
+  assert.match(source, /data-studio-step-actions-buttons="true"\s*className=(?:"|\{`)flex w-full min-w-0 flex-row flex-nowrap/);
 }
 
 console.log("PASS: Design Studio step actions share one main-column placement");

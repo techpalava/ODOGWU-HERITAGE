@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { AiTryOnPhotoPanel, type AiTryOnPhotoPanelProps } from "./src/components/AiTryOnPhotoPanel";
 import { createAiTryOnBackgroundJobs } from "./src/services/aiTryOnBackgroundJobs";
-import { aiTryOnOutfitChoices, aiTryOnOutfitTarget, aiTryOnOrderPreviewTargets, type AiTryOnPreviewableGarment, type AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
+import { aiTryOnOutfitChoices, aiTryOnOutfitTarget, aiTryOnOrderPreviewTargets, getAiTryOnOutfitEligibility, type AiTryOnPreviewableGarment, type AiTryOnWearerTarget } from "./src/utils/aiTryOnWearerTargets";
 import { AI_TRY_ON_OUTFIT_PROMPT_VERSION, type AiTryOnGenerationRequest, type AiTryOnOutfitGarmentRequest } from "./src/utils/aiTryOnGatewayContract";
 import { aiTryOnOutfitFingerprint, aiTryOnOutfitPreviewKey } from "./src/utils/aiTryOnWorkflow";
 import { buildAiTryOnOutfitPrompt, buildAiTryOnOutfitImageLabels } from "./src/server/aiTryOnPrompt";
@@ -32,7 +32,7 @@ const promptGarments: readonly [AiTryOnOutfitGarmentRequest, AiTryOnOutfitGarmen
   { garmentKey: "top", garmentType: "shirt", garmentImageUrl: "https://example.test/top", fabricSwatchImageUrl: "https://example.test/swatch", orderDetails: garments[1].orderDetails },
   { garmentKey: "bottom", garmentType: "trouser", garmentImageUrl: "https://example.test/bottom", orderDetails: garments[2].orderDetails },
 ];
-assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v1");
+assert.equal(AI_TRY_ON_OUTFIT_PROMPT_VERSION, "tryon-outfit-prompt-v5");
 const snapshots = JSON.parse(readFileSync("test_ai_try_on_outfit.snap.json", "utf8"));
 for (const onModel of [false, true]) {
   const key = onModel ? "model" : "photo";
@@ -50,7 +50,13 @@ for (const onModel of [false, true]) {
   assert.equal(buildAiTryOnOutfitImageLabels(promptGarments, onModel).length, 4);
   assert.match(buildAiTryOnOutfitImageLabels(promptGarments, onModel)[3], /IMAGE 4: Trouser/);
 }
-assert.match(buildAiTryOnOutfitPrompt({ garments: [{ ...promptGarments[0], garmentType: "kaftan" }, promptGarments[1]], onModel: false }), /Chosen top: Long Shirt/);
+{
+  const kaftanOutfit = buildAiTryOnOutfitPrompt({ garments: [{ ...promptGarments[0], garmentType: "kaftan" }, promptGarments[1]], onModel: false });
+  assert.match(kaftanOutfit, /Chosen top: Long Shirt/);
+  assert.match(kaftanOutfit, /A named Long Shirt must be a long tunic silhouette extending to mid-thigh or near the knee/);
+  assert.match(kaftanOutfit, /Top styling: wear the Long Shirt completely untucked as a long tunic extending to mid-thigh or near the knee, completely covering the hips and trouser waistband/);
+  assert.doesNotMatch(kaftanOutfit, /\bKaftan\b/);
+}
 const withFingerprint = (garmentKey: string) => ({ garmentKey, inputFingerprint: fp });
 const photoFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[1].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "customer_photo" });
 const lightModelFingerprint = aiTryOnOutfitFingerprint(withFingerprint(garments[0].garmentKey), withFingerprint(garments[2].garmentKey), { kind: "studio_model", modelId: "male-1-light" });
@@ -139,9 +145,9 @@ assert.equal(requests.length, 4, "switching model does not generate");
 assert.equal(data("data-ai-try-on-outfit-preview-stale").length, 1, "the previous model's outfit preview is out of date");
 assert.equal(panel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:")).length, 0);
 await act(async () => { panel.unmount(); });
-for (const list of [[garments[0]], [garment("dress", "dress")], [garments[3], garments[2]]]) {
+for (const list of [[garments[0]], [garment("dress", "dress")]]) {
   await act(async () => { panel = create(createElement(AiTryOnPhotoPanel, { ...props, targets: [{ ...target, previewableGarments: list }], jobStore: createAiTryOnBackgroundJobs({ storage: null }) })); });
-  assert.equal(data("data-ai-try-on-outfit-controls").length, 0);
+  assert.equal(data("data-ai-try-on-outfit-controls").length, 0, "a single garment keeps the switcher hidden");
   await act(async () => { panel.unmount(); });
 }
 // Integration: a separate uploaded design never supplies the combined base or disables a valid pair.
@@ -165,4 +171,390 @@ await click(generate());
 assert.equal(requests[4].outfitGarments?.length, 2);
 assert.equal(requests[4].uploadedDesignImage, undefined);
 await act(async () => { panel.unmount(); });
+// Short bottoms use only short studio bases. Long bottoms use only long bases.
+// Switching the bottom keeps the persona and changes the outfit fingerprint.
+const shorts = garment("shorts", "standard_shorts");
+const bumShorts = garment("bum-shorts", "bum_shorts");
+const skirt = garment("skirt", "skirt");
+const longSkirt = garment("long-skirt", "long_skirt");
+const lengthTarget: AiTryOnWearerTarget = {
+  ...target,
+  previewableGarments: [garments[0], shorts, bumShorts, skirt, longSkirt, garments[2]],
+};
+const shownModels = () => data("data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
+const lengthRequests: AiTryOnGenerationRequest[] = [];
+await act(async () => {
+  panel = create(createElement(AiTryOnPhotoPanel, {
+    ...props,
+    targets: [lengthTarget],
+    triesPerOrder: 20,
+    initialTriesRemaining: 20,
+    jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+    requestPreview: async (request) => {
+      lengthRequests.push(request);
+      return {
+        kind: "completed",
+        resultReference: { kind: "verified_private_try_on_result", assetId: `len-${lengthRequests.length}`, ownerBindingId: "order" },
+        previewStored: true,
+        preview: { mimeType: "image/webp", data: Buffer.from(`len-${lengthRequests.length}`).toString("base64") },
+        orderTriesRemaining: 20 - lengthRequests.length,
+      };
+    },
+  }));
+});
+assert.equal(data("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long", "a standalone shirt uses the long base");
+assert.ok(shownModels().every((id) => !id.endsWith("-short")));
+assert.equal(data("data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true);
+await click(data("data-ai-try-on-outfit-mode")[0]);
+for (const [bottom, expectedModelCount, expectedDefaultModel] of [
+  ["shorts", 10, "male-1-light-short"],
+  ["bum-shorts", 10, "male-1-light-short"],
+  ["skirt", 5, "female-1-light-short"],
+] as const) {
+  await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: bottom } }); });
+  assert.equal(data("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short", bottom);
+  assert.equal(shownModels().length, expectedModelCount, bottom);
+  assert.ok(shownModels().every((id) => id.endsWith("-short")), `${bottom} hides trouser bases`);
+  assert.equal(data("data-ai-try-on-model", expectedDefaultModel)[0].props["aria-checked"], true, bottom);
+}
+assert.equal(lengthRequests.length, 0, "choosing a short bottom does not generate");
+await click(data("data-ai-try-on-model", "female-plus-short")[0]);
+assert.equal(lengthRequests.length, 0, "picking the short persona does not generate");
+await act(async () => { data("data-ai-try-on-outfit-choice", "top")[0].props.onChange({ target: { value: "shirt-first" } }); });
+await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "long-skirt" } }); });
+assert.equal(data("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
+assert.ok(shownModels().every((id) => !id.endsWith("-short")), "Long Skirt hides the short bases");
+assert.equal(data("data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "same persona, long base");
+assert.equal(lengthRequests.length, 0, "switching to a long bottom does not generate");
+const longSkirtFingerprint = aiTryOnOutfitFingerprint(withFingerprint("shirt-first"), withFingerprint("long-skirt"), { kind: "studio_model", modelId: "female-plus" });
+await click(generate());
+await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+assert.equal(lengthRequests[0].defaultModelId, "female-plus");
+assert.equal(lengthRequests[0].inputFingerprint, longSkirtFingerprint, "the long studio model id is in the outfit fingerprint");
+await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "shorts" } }); });
+assert.equal(data("data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true, "shorts return to the short base");
+assert.equal(lengthRequests.length, 1, "switching back to shorts does not generate");
+const shortsFingerprint = aiTryOnOutfitFingerprint(withFingerprint("shirt-first"), withFingerprint("shorts"), { kind: "studio_model", modelId: "female-plus-short" });
+assert.notEqual(shortsFingerprint, longSkirtFingerprint);
+await click(generate());
+assert.equal(lengthRequests[1].defaultModelId, "female-plus-short");
+assert.equal(lengthRequests[1].inputFingerprint, shortsFingerprint, "the short studio model id changes the outfit fingerprint");
+await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "trouser" } }); });
+assert.equal(data("data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "trousers stay on the long base");
+assert.ok(shownModels().every((id) => !id.endsWith("-short")));
+await choosePhoto();
+await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "shorts" } }); });
+assert.equal(data("data-ai-try-on-model-picker").length, 0, "an uploaded photo stays the wearer when the bottom becomes short");
+await act(async () => { panel.unmount(); });
+const shortOutfitPrompt = buildAiTryOnOutfitPrompt({
+  garments: [
+    { garmentKey: "shirt-first", garmentType: "shirt", garmentImageUrl: "https://example.test/shirt-first.jpg" },
+    { garmentKey: "shorts", garmentType: "standard_shorts", garmentImageUrl: "https://example.test/shorts.jpg" },
+  ],
+  onModel: true,
+  baseLength: "short",
+});
+assert.match(shortOutfitPrompt, /base bum shorts or short knickers/);
+assert.match(shortOutfitPrompt, /No trouser legs may be visible/);
+assert.equal(/Kaftan/.test(shortOutfitPrompt), false);
+// Verify gallery retention & click-to-swap between combined outfit and single garment previews.
+{
+  const outfitGalleryStore = new Map<string, string>();
+  const mockStore = {
+    getItem: (key: string) => outfitGalleryStore.get(key) ?? null,
+    setItem: (key: string, value: string) => void outfitGalleryStore.set(key, value),
+    removeItem: (key: string) => void outfitGalleryStore.delete(key),
+  };
+  let outfitReq = 0;
+  let gPanel!: ReturnType<typeof create>;
+  await act(async () => {
+    gPanel = create(createElement(AiTryOnPhotoPanel, {
+      ...props,
+      galleryStore: mockStore,
+      jobScope: "outfit-switcher-test",
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      requestPreview: async (request) => {
+        requests.push(request);
+        outfitReq += 1;
+        const previewId = `out-sw-${outfitReq}`;
+        return {
+          kind: "completed",
+          resultReference: { kind: "verified_private_try_on_result", assetId: previewId, ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp", data: Buffer.from(previewId).toString("base64") },
+          storedPreviewId: previewId,
+          orderTriesRemaining: 5 - outfitReq,
+        };
+      },
+    }));
+  });
+  const gData = (attr: string, value?: string) =>
+    gPanel.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined && (value === undefined || node.props[attr] === value));
+  const gGenerate = () => gPanel.root.find((node) => node.type === "button" && /Generate preview|Generate combined outfit|Make a new preview/.test(text(node)));
+  await act(async () => { await gPanel.root.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ target: { files: [file] } }); });
+  await act(async () => { await gGenerate().props.onClick(); });
+  assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 1 — shirt-first");
+  await act(async () => { await gData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  for (const [part, value] of [["top", "shirt-chosen"], ["bottom", "trouser"]]) {
+    await act(async () => { gData("data-ai-try-on-outfit-choice", part)[0].props.onChange({ target: { value } }); });
+  }
+  await act(async () => { await gPanel.root.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ target: { files: [file] } }); });
+  await act(async () => { await gGenerate().props.onClick(); });
+  assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 2 — shirt-chosen & trouser");
+  assert.equal(gData("data-ai-try-on-side-preview").length, 1);
+  const reqBeforeSwap = requests.length;
+  await act(async () => { gData("data-ai-try-on-side-preview")[0].props.onClick(); });
+  assert.equal(requests.length, reqBeforeSwap, "side preview swap never calls requestPreview");
+  assert.equal(text(gData("data-ai-try-on-main-caption")[0]), "Preview 1 — shirt-first");
+  await act(async () => { gPanel.unmount(); });
+}
+
+// Option D + Option A fallback: top tuck toggle UI, prompt wiring, waistband helper copy, and reload persistence.
+{
+  const shirtItem: AiTryOnPreviewableGarment = {
+    ...garment("top-shirt", "shirt"),
+    label: "Standard Shirt",
+    orderDetails: { garments: [{ garmentType: "shirt", optionIds: ["shirt_std_short"], decorations: [] }] },
+  };
+  const kaftanItem: AiTryOnPreviewableGarment = {
+    ...garment("top-kaftan", "kaftan"),
+    label: "Long Shirt",
+    orderDetails: { garments: [{ garmentType: "kaftan", optionIds: [], decorations: [] }] },
+  };
+  const beltShortsItem: AiTryOnPreviewableGarment = {
+    ...garment("bottom-belt-shorts", "standard_shorts"),
+    label: "Shorts (Belt)",
+    orderDetails: { garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_belt"], decorations: [] }] },
+  };
+  const elasticShortsItem: AiTryOnPreviewableGarment = {
+    ...garment("bottom-elastic-shorts", "standard_shorts"),
+    label: "Shorts (Elastic)",
+    orderDetails: { garments: [{ garmentType: "standard_shorts", optionIds: ["shorts_std_elastic"], decorations: [] }] },
+  };
+  const tuckTarget: AiTryOnWearerTarget = {
+    wearerId: "w-tuck",
+    label: "Tuck Tester",
+    inputFingerprint: fp,
+    mode: "fabric",
+    garmentImageUrl: shirtItem.garmentImageUrl,
+    fabricSwatchImageUrl: shirtItem.fabricSwatchImageUrl,
+    fitHints: [],
+    orderDetails: null,
+    previewableGarments: [shirtItem, kaftanItem, beltShortsItem, elasticShortsItem],
+  };
+  const tuckRequests: AiTryOnGenerationRequest[] = [];
+  const tuckSaved = new Map<string, { previewId: string; wearerKey: string; inputFingerprint: string; modelId?: string }>();
+  let tPanel!: ReturnType<typeof create>;
+  const mountTuckPanel = async (storedList: Array<{ previewId: string; wearerKey: string; inputFingerprint: string; expiresAt: string; modelId?: string }> = []) => {
+    tPanel = create(createElement(AiTryOnPhotoPanel, {
+      targets: [tuckTarget],
+      triesPerOrder: 5,
+      initialTriesRemaining: 5,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      onPreviewCreated: () => undefined,
+      onUnavailable: () => undefined,
+      storedPreviews: storedList,
+      loadStoredPreview: async (id) => ({ mimeType: "image/webp" as const, data: Buffer.from(id).toString("base64") }),
+      requestPreview: async (req) => {
+        tuckRequests.push(req);
+        const previewId = `tuck-${tuckRequests.length}`;
+        tuckSaved.set(req.wearerKey ?? "", { previewId, wearerKey: req.wearerKey ?? "", inputFingerprint: req.inputFingerprint, ...(req.defaultModelId ? { modelId: req.defaultModelId } : {}) });
+        return {
+          kind: "completed",
+          resultReference: { kind: "verified_private_try_on_result", assetId: previewId, ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp", data: Buffer.from(previewId).toString("base64") },
+          orderTriesRemaining: 5 - tuckRequests.length,
+        };
+      },
+      preparePhoto: async () => ({ mimeType: "image/jpeg" as const, data: "/9j/4AAQ" }),
+      createThumbnailUrl: () => null,
+      revokeThumbnailUrl: () => undefined,
+    }));
+  };
+  await act(async () => { await mountTuckPanel(); });
+  const tData = (attr: string, value?: string) =>
+    tPanel.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined && (value === undefined || node.props[attr] === value));
+  const tGenerate = () => tPanel.root.find((node) => node.type === "button" && /Generate preview|Generate combined outfit|Make a new preview/.test(text(node)));
+  // Single garment: Standard Shirt shows toggle; Long Shirt & Shorts hide toggle.
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 1);
+  assert.equal(tData("data-ai-try-on-top-tuck", "auto")[0].props["aria-checked"], true);
+  await act(async () => { tData("data-ai-try-on-garment", "top-kaftan")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 0, "Long Shirt hides tuck toggle");
+  await act(async () => { tData("data-ai-try-on-garment", "bottom-belt-shorts")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 0, "Shorts alone hides tuck toggle");
+
+  // Outfit mode: Shirt + Belt-holder shorts shows Option A helper copy on Auto
+  await act(async () => { tData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  for (const [part, value] of [["top", "top-shirt"], ["bottom", "bottom-belt-shorts"]]) {
+    await act(async () => { tData("data-ai-try-on-outfit-choice", part)[0].props.onChange({ target: { value } }); });
+  }
+  assert.equal(tData("data-ai-try-on-top-tuck-controls").length, 1);
+  assert.match(text(tData("data-ai-try-on-top-tuck-note")[0]), /Front-tucked lightly at the waist/);
+
+  // Switching to elastic shorts changes Auto helper copy to untucked signature style
+  await act(async () => { tData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "bottom-elastic-shorts" } }); });
+  assert.match(text(tData("data-ai-try-on-top-tuck-note")[0]), /Worn untucked outside and over bottoms/);
+
+  // Explicit Tucked override sends topTuckPreference: "tucked"
+  await act(async () => { tData("data-ai-try-on-top-tuck", "tucked")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-top-tuck", "tucked")[0].props["aria-checked"], true);
+  await act(async () => { await tPanel.root.find((node) => node.type === "input" && node.props.type === "file").props.onChange({ target: { files: [file] } }); });
+  await act(async () => { await tGenerate().props.onClick(); });
+  assert.equal(tuckRequests[0].topTuckPreference, "tucked");
+  // Summary keeps tucked outfit preview
+  assert.equal(selectAiTryOnOrderPreviews(aiTryOnOrderPreviewTargets([tuckTarget]), [...tuckSaved.values()]).length, 1);
+
+  // Toggling to Untucked marks preview stale
+  await act(async () => { tData("data-ai-try-on-top-tuck", "untucked")[0].props.onClick(); });
+  assert.equal(tData("data-ai-try-on-outfit-preview-stale").length, 1);
+
+  await act(async () => { tPanel.unmount(); });
+
+  // Reloading restores the tucked preference & preview cleanly
+  await act(async () => {
+    await mountTuckPanel([...tuckSaved.values()].map((e) => ({ ...e, expiresAt: "2026-12-01T00:00:00Z" })));
+  });
+  await act(async () => { tData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.equal(tData("data-ai-try-on-top-tuck", "tucked")[0].props["aria-checked"], true, "reload restores tucked selection");
+  assert.equal(tPanel.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("data:")).length, 1, "reload restores tucked preview");
+  await act(async () => { tPanel.unmount(); });
+}
+
+const wearer = (id: string, label: string, list: AiTryOnPreviewableGarment[]): AiTryOnWearerTarget => ({
+  ...target, wearerId: id, label, previewableGarments: list,
+});
+const janeBottoms = wearer("w-jane", "Jane", [garment("skirt", "skirt"), garment("shorts", "standard_shorts"), garment("gown", "dress")]);
+assert.deepEqual(getAiTryOnOutfitEligibility(janeBottoms), {
+  eligible: false,
+  reason: "missing_top",
+  helperMessage: "Combined outfit previews require 1 top and 1 bottom. Add a top for Jane to unlock combined previews.",
+});
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-obi", "Obi", [garment("shirt-a", "shirt"), garment("shirt-b", "kaftan")])).reason, "missing_bottom");
+assert.match(getAiTryOnOutfitEligibility(wearer("w-obi", "Obi", [garment("shirt-a", "shirt"), garment("shirt-b", "kaftan")])).helperMessage || "", /Add a bottom for Obi/);
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("dress-a", "dress"), garment("gown", "full_length_gown")])).reason, "dresses_only");
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("dress-a", "dress"), garment("gown", "full_length_gown")])).helperMessage, "Combined outfit previews pair a separate top and bottom. Dresses are standalone full outfits.");
+assert.deepEqual(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garment("agbada-a", "agbada"), garment("agbada-b", "agbada")])), {
+  eligible: false,
+  reason: "standalone_only",
+  helperMessage: "Combined outfit previews pair a separate top and bottom. Full-outfit garments are previewed on their own.",
+});
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garments[0]])).reason, "single_garment");
+assert.equal(getAiTryOnOutfitEligibility(target).eligible, true);
+assert.equal(getAiTryOnOutfitEligibility(wearer("w-ada", "Ada", [garments[3], garments[2]])).reason, "missing_top");
+
+const mountWearers = async (wearers: AiTryOnWearerTarget[]) => {
+  let view!: ReturnType<typeof create>;
+  await act(async () => {
+    view = create(createElement(AiTryOnPhotoPanel, {
+      ...props,
+      targets: wearers,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+    }));
+  });
+  const find = (attribute: string, value?: string) => view.root.findAll((node) =>
+    typeof node.type === "string" && node.props[attribute] !== undefined && (value === undefined || node.props[attribute] === value));
+  return { view, find };
+};
+{
+  const { view, find } = await mountWearers([target, janeBottoms]);
+  assert.equal(find("data-ai-try-on-outfit-mode")[0].props.disabled, undefined);
+  assert.match(text(find("data-ai-try-on-outfit-mode")[0]), /Combined outfit · 1 try/);
+  await act(async () => { find("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  assert.equal(find("data-ai-try-on-outfit-mode")[0].props["aria-pressed"], true);
+  await act(async () => { find("data-wearer-chip", "w-jane")[0].props.onClick(); });
+  const combined = find("data-ai-try-on-outfit-mode")[0];
+  const callout = find("data-ai-try-on-outfit-eligibility", "missing_top")[0];
+  assert.equal(combined.props.disabled, true);
+  assert.equal(combined.props["aria-pressed"], false);
+  assert.equal(text(combined), "Combined outfit");
+  assert.match(combined.props.className, /cursor-not-allowed/);
+  assert.match(combined.props.className, /opacity-60/);
+  assert.equal(combined.props["aria-describedby"], callout.props.id);
+  assert.equal(text(callout), "Combined outfit previews require 1 top and 1 bottom. Add a top for Jane to unlock combined previews.");
+  assert.equal(find("data-ai-try-on-single-mode")[0].props["aria-pressed"], true);
+  assert.equal(find("data-ai-try-on-outfit-choice").length, 0);
+  await act(async () => { view.unmount(); });
+}
+for (const [list, reason, message] of [
+  [[garment("shirt-a", "shirt"), garment("shirt-b", "shirt")], "missing_bottom", "Add a bottom for Ada"],
+  [[garment("dress-a", "dress"), garment("dress-b", "dress")], "dresses_only", "Dresses are standalone full outfits."],
+] as const) {
+  const { view, find } = await mountWearers([wearer("w-ada", "Ada", [...list])]);
+  const combined = find("data-ai-try-on-outfit-mode")[0];
+  const callout = find("data-ai-try-on-outfit-eligibility", reason)[0];
+  assert.equal(find("data-ai-try-on-outfit-controls").length, 1);
+  assert.equal(combined.props.disabled, true);
+  assert.equal(find("data-ai-try-on-single-mode")[0].props["aria-pressed"], true);
+  assert.equal(combined.props["aria-describedby"], callout.props.id);
+  assert.match(text(callout), new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  await act(async () => { view.unmount(); });
+}
+
+// Combined outfit without bottom selected yet: picker stays usable, then
+// narrows + auto-switches twin + hides filter chips + shows inline notice
+// the instant Standard Skirt is picked, and resets cleanly on Trouser.
+{
+  const outfitFilterRequests: AiTryOnGenerationRequest[] = [];
+  let fPanel!: ReturnType<typeof create>;
+  await act(async () => {
+    fPanel = create(createElement(AiTryOnPhotoPanel, {
+      ...props,
+      targets: [lengthTarget],
+      triesPerOrder: 10,
+      initialTriesRemaining: 10,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      requestPreview: async (request) => {
+        outfitFilterRequests.push(request);
+        return {
+          kind: "completed",
+          resultReference: { kind: "verified_private_try_on_result", assetId: `flt-${outfitFilterRequests.length}`, ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp", data: Buffer.from(`flt-${outfitFilterRequests.length}`).toString("base64") },
+          orderTriesRemaining: 10 - outfitFilterRequests.length,
+        };
+      },
+    }));
+  });
+  const fData = (attr: string, value?: string) =>
+    fPanel.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined && (value === undefined || node.props[attr] === value));
+  const fModels = () => fData("data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
+  const fGenerate = () => fPanel.root.find((node) => node.type === "button" && /Generate preview|Generate combined outfit|Make a new preview/.test(text(node)));
+
+  // Pick male-plus and Men filter chip on standalone Standard Shirt.
+  await act(async () => { fData("data-ai-try-on-model-filter", "men")[0].props.onClick(); });
+  await act(async () => { fData("data-ai-try-on-model", "male-plus")[0].props.onClick(); });
+
+  // Enter Combined outfit before choosing any bottom: picker remains usable.
+  await act(async () => { fData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  assert.equal(fData("data-ai-try-on-model-filter").length, 3, "filter chips stay available before bottom narrows group");
+  assert.equal(fData("data-ai-try-on-model", "male-plus")[0].props["aria-checked"], true);
+  assert.equal(fData("data-ai-try-on-model-auto-switched").length, 0);
+
+  // Pick Standard Shirt top + Standard Skirt bottom: narrows to Women-only + short,
+  // hides filter chips, never renders empty list despite stale Men chip,
+  // auto-switches male-plus -> female-plus-short, and shows persistent inline notice.
+  await act(async () => { fData("data-ai-try-on-outfit-choice", "top")[0].props.onChange({ target: { value: "shirt-first" } }); });
+  await act(async () => { fData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "skirt" } }); });
+  assert.equal(fData("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short");
+  assert.equal(fData("data-ai-try-on-model-filter").length, 0, "filter chips hidden for Women-only outfit");
+  assert.equal(fModels().length, 5, "all 5 short Women models shown even after stale Men filter");
+  assert.ok(fModels().every((id) => id.startsWith("female-") && id.endsWith("-short")));
+  assert.equal(fData("data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
+  assert.equal(fData("data-ai-try-on-model-auto-switched").length, 1, "inline notice shown for outfit auto-switch");
+  assert.match(text(fData("data-ai-try-on-model-auto-switched")[0]), /Women.*this outfit/);
+  assert.equal(outfitFilterRequests.length, 0);
+  await act(async () => { await fGenerate().props.onClick(); });
+  assert.equal(outfitFilterRequests[0].defaultModelId, "female-plus-short");
+
+  // Switch bottom to Trouser: restores Both Men & Women + long base + All filter active, clears notice.
+  await act(async () => { fData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "trouser" } }); });
+  assert.equal(fData("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
+  assert.equal(fData("data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true, "filter resets to All on flexible outfit");
+  assert.equal(fModels().length, 10, "both Men and Women long models visible for Shirt + Trouser");
+  assert.equal(fData("data-ai-try-on-model-auto-switched").length, 0, "compatible outfit clears notice");
+  await act(async () => { fPanel.unmount(); });
+}
+
 console.log("Combined outfit: snapshots, explicit choices, slot isolation, downstream selection and reload passed");

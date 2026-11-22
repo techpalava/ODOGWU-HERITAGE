@@ -83,8 +83,10 @@ const chooseModel = async (renderer: ReactTestRenderer) => {
   await act(async () => {
     renderer.root.findByProps({ "data-ai-try-on-model-option": true }).props.onClick();
   });
+  const length = renderer.root.findByProps({ "data-ai-try-on-model-picker": true }).props["data-ai-try-on-model-length"];
+  const modelId = length === "short" ? "male-1-light-short" : "male-1-light";
   await act(async () => {
-    renderer.root.findByProps({ "data-ai-try-on-model": "male-1-light" }).props.onClick();
+    renderer.root.findByProps({ "data-ai-try-on-model": modelId }).props.onClick();
   });
 };
 const designButtons = (renderer: ReactTestRenderer, part: string) =>

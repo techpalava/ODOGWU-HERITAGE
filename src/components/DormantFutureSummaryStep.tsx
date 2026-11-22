@@ -26,11 +26,21 @@ import {
   type FutureSummaryMeasurementValue,
 } from "../utils/designStudioFutureSummary";
 import {
+  isOnsitePhysicalMeasurementMethod,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   MEASUREMENT_METHOD_LABELS,
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_SUMMARY_CONFIRMED_NOTE,
+  MEASUREMENT_ONSITE_SUMMARY_UNCONFIRMED_NOTE,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
 } from "../utils/measurementBlueprint";
-import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
+import {
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
+  type FutureShippingStageResolution,
+} from "../utils/designStudioFutureShipping";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   formatCustomerFacingFabricCapacityAmount,
@@ -416,6 +426,7 @@ const MEASUREMENT_METHOD_BADGE_TONES: Record<
   high_risk: "border-red-200 bg-red-50 text-red-700",
   critical_risk: "border-red-300 bg-red-100 text-red-800",
   sample_cloth: "border-heritage-gold/30 bg-heritage-cream text-heritage-green",
+  onsite_physical: "border-heritage-green/25 bg-heritage-green/10 text-heritage-green",
 };
 
 /** Measurement method (risk level) as a small coloured badge. Display only. */
@@ -500,6 +511,78 @@ const SummaryMeasurementGroup = ({
     </div>
   );
 };
+
+const SummaryOnsiteMeasurementCard = ({
+  acknowledged,
+  garmentLines,
+  editLabel,
+  onEdit,
+}: {
+  acknowledged: boolean;
+  garmentLines: readonly string[];
+  editLabel: string;
+  onEdit: () => void;
+}) => (
+  <div
+    data-summary-measurement-onsite-info="true"
+    data-summary-measurement-onsite-acknowledged={acknowledged ? "true" : "false"}
+    className="mt-4 rounded-xl border border-heritage-gold/35 bg-heritage-cream/30 p-3.5 sm:p-4"
+  >
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0">
+        <p className="text-xs font-bold uppercase tracking-wider text-heritage-gold">
+          3-day appointment window
+        </p>
+        <p className="mt-1 text-sm font-semibold leading-snug text-heritage-green">
+          {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
+        </p>
+      </div>
+      <span
+        className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+          acknowledged
+            ? "border-heritage-green/25 bg-heritage-green/10 text-heritage-green"
+            : "border-heritage-gold/55 bg-heritage-gold/15 text-heritage-bronze"
+        }`}
+      >
+        {acknowledged
+          ? MEASUREMENT_ONSITE_SUMMARY_CONFIRMED_NOTE
+          : MEASUREMENT_ONSITE_SUMMARY_UNCONFIRMED_NOTE}
+      </span>
+    </div>
+    {garmentLines.length > 0 && (
+      <p
+        data-summary-measurement-onsite-garments="true"
+        className="mt-2 text-xs font-medium text-heritage-ink/75"
+      >
+        Covered garments: {garmentLines.join(", ")}
+      </p>
+    )}
+    <p className="mt-1.5 text-xs leading-relaxed text-heritage-ink/75">
+      {MEASUREMENT_ONSITE_BOOKING_REASON}
+    </p>
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <a
+        href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-summary-measurement-onsite-whatsapp="true"
+        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+      >
+        {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL} ({FUTURE_PICKUP_ATELIER_PHONE_DISPLAY})
+      </a>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={editLabel}
+        data-summary-measurement-onsite-edit="true"
+        className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded px-1.5 text-xs font-semibold text-heritage-green underline underline-offset-2 transition hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+      >
+        <Pencil aria-hidden="true" size={12} />
+        Edit
+      </button>
+    </div>
+  </div>
+);
 
 export const DormantFutureSummaryStep = ({
   summary,
@@ -1311,6 +1394,14 @@ export const DormantFutureSummaryStep = ({
                     <p className="text-xs text-heritage-ink/60">
                       Status: {wearer.status}.
                     </p>
+                    {isOnsitePhysicalMeasurementMethod(wearer.route) && (
+                      <SummaryOnsiteMeasurementCard
+                        acknowledged={wearer.onsiteBookingAcknowledged === true}
+                        garmentLines={garmentLines}
+                        editLabel={`Edit ${wearer.displayName}'s measurements`}
+                        onEdit={editMeasurementGroup(wearer.wearerId, "shared")}
+                      />
+                    )}
                     {wearer.shared.length > 0 && (
                       <SummaryMeasurementGroup
                         title={
@@ -1383,6 +1474,29 @@ export const DormantFutureSummaryStep = ({
                   },
                 )
               : null}
+            {isOnsitePhysicalMeasurementMethod(summary.measurementSummary.route) && (
+              <SummaryOnsiteMeasurementCard
+                acknowledged={summary.measurementSummary.onsiteBookingAcknowledged === true}
+                garmentLines={
+                  summary.measurementSummary.wearerGroups?.length === 1
+                    ? summary.measurementSummary.wearerGroups[0].garmentKeys.flatMap(
+                        (garmentKey) => {
+                          const garmentLabel =
+                            summary.garmentSummary.find(
+                              (garment) => garment.garmentKey === garmentKey,
+                            )?.label ||
+                            summary.measurementSummary.wearerGroups?.[0].byGarment.find(
+                              (garment) => garment.garmentKey === garmentKey,
+                            )?.garmentLabel;
+                          return garmentLabel ? [garmentLabel] : [];
+                        },
+                      )
+                    : summary.garmentSummary.map((garment) => garment.label)
+                }
+                editLabel="Edit Measurements"
+                onEdit={onEditMeasurements}
+              />
+            )}
           </div>
           )}
           {summary.measurementSummary.shared.length > 0 && (

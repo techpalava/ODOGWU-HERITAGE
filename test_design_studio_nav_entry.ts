@@ -19,7 +19,11 @@ const unavailable = classifyDesignStudioNavEntry({
   status: "unavailable",
   reason: "guest_draft_read_failed",
 });
-assert.equal(unavailable.kind, "blocked");
+assert.equal(unavailable.kind, "confirm_recovery");
+assert.equal(
+  unavailable.kind === "confirm_recovery" && unavailable.inspectionStatus,
+  "unavailable",
+);
 
 const communityDraft = {
   batchType: "community",
@@ -113,7 +117,8 @@ assert.match(navHandler, /activeTab === "design"/);
 assert.match(navHandler, /entry: "design-studio"/);
 assert.match(navHandler, /designStudioNavResumeActionLabel/);
 assert.match(navHandler, /openDesignStudioForOrder\(freshIndividualOrderContext\(\)\)/);
-assert.match(navHandler, /authority\.discard\(inspected\.existing\)/);
+assert.match(navHandler, /discardParkedStudioDraftForFreshOrder\(/);
+assert.match(appSource, /authority\.discard\(inspected\.existing\)/);
 assert.equal(
   navHandler.includes('setActiveTab("design")'),
   false,

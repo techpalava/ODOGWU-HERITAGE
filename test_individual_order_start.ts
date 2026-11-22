@@ -12,18 +12,30 @@ import {
 import type { HomepageDraftInspectionResult } from "./src/services/homepageDraftReplacement";
 import type { GuestDesignDraft } from "./src/types";
 
-const blocked = classifyIndividualOrderStart({
+const invalidRecovery = classifyIndividualOrderStart({
   status: "invalid",
   reason: "persisted_order_identity_invalid",
 });
-assert.equal(blocked.kind, "blocked");
-assert.equal(blocked.kind === "blocked" && blocked.reason, "persisted_order_identity_invalid");
+assert.equal(invalidRecovery.kind, "confirm_recovery");
+assert.equal(
+  invalidRecovery.kind === "confirm_recovery" && invalidRecovery.inspectionStatus,
+  "invalid",
+);
+assert.equal(
+  invalidRecovery.kind === "confirm_recovery" && invalidRecovery.reason,
+  "persisted_order_identity_invalid",
+);
 
-const unavailable = classifyIndividualOrderStart({
+const unavailableRecovery = classifyIndividualOrderStart({
   status: "unavailable",
   reason: "guest_draft_read_failed",
 });
-assert.equal(unavailable.kind, "blocked");
+assert.equal(unavailableRecovery.kind, "confirm_recovery");
+assert.equal(
+  unavailableRecovery.kind === "confirm_recovery" &&
+    unavailableRecovery.inspectionStatus,
+  "unavailable",
+);
 
 assert.deepEqual(classifyIndividualOrderStart({ status: "empty" }), {
   kind: "start_fresh",
@@ -66,6 +78,15 @@ assert.equal(
     appSource.includes("handleRequestFreshIndividualOrder"),
   true,
 );
+const parkedDiscardHelper = appSource.slice(
+  appSource.indexOf("const discardParkedStudioDraftForFreshOrder"),
+  appSource.indexOf("const handleRequestDesignStudioFromNav"),
+);
+assert.equal(
+  parkedDiscardHelper.includes("discard("),
+  true,
+  "Parked bag helper discards before a fresh Individual Order.",
+);
 const freshHandler = appSource.slice(
   appSource.indexOf("const handleRequestFreshIndividualOrder"),
   appSource.indexOf("const resumePersistedDraft"),
@@ -75,7 +96,7 @@ assert.equal(
   true,
 );
 assert.equal(
-  freshHandler.includes("discard("),
+  freshHandler.includes("discardParkedStudioDraftForFreshOrder"),
   true,
   "Parked bag copies are still discarded before a fresh Individual Order.",
 );
@@ -134,6 +155,36 @@ const blockedResumeMarkup = renderToStaticMarkup(
 assert.equal(blockedResumeMarkup.includes("Resume unfinished order"), false);
 assert.match(blockedResumeMarkup, /cannot be reopened from here/);
 assert.match(blockedResumeMarkup, /Start new Individual Order/);
+
+const invalidRecoveryMarkup = renderToStaticMarkup(
+  createElement(IndividualOrderStartDialog, {
+    unfinishedOrderLabel: "",
+    canResume: false,
+    busy: false,
+    recoveryMode: "invalid",
+    onResume: () => undefined,
+    onStartNew: () => undefined,
+    onCancel: () => undefined,
+  }),
+);
+assert.equal(invalidRecoveryMarkup.includes("Resume unfinished order"), false);
+assert.match(invalidRecoveryMarkup, /saved draft that could not be restored/);
+assert.match(invalidRecoveryMarkup, /Start new Individual Order/);
+
+const unavailableRecoveryMarkup = renderToStaticMarkup(
+  createElement(IndividualOrderStartDialog, {
+    unfinishedOrderLabel: "",
+    canResume: false,
+    busy: false,
+    entry: "design-studio",
+    recoveryMode: "unavailable",
+    onResume: () => undefined,
+    onStartNew: () => undefined,
+    onCancel: () => undefined,
+  }),
+);
+assert.match(unavailableRecoveryMarkup, /could not verify whether you have an unfinished saved order/);
+assert.match(unavailableRecoveryMarkup, /Start fresh/);
 
 const gateway = getHomepageOrderGatewayState([]);
 const gatewayMarkup = renderToStaticMarkup(

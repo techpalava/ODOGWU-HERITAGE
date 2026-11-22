@@ -19,13 +19,20 @@ import {
   type AiTryOnOrderDetails,
   type AiTryOnOrderDetailsSource,
 } from "./aiTryOnOrderDetails.js";
-import { chooseAiTryOnMode, type AiTryOnMode, type AiTryOnOutfitGarmentRequest } from "./aiTryOnGatewayContract.js";
+import {
+  AI_TRY_ON_TOP_TUCK_PREFERENCES,
+  chooseAiTryOnMode,
+  type AiTryOnMode,
+  type AiTryOnOutfitGarmentRequest,
+  type AiTryOnTopTuckPreference,
+} from "./aiTryOnGatewayContract.js";
 import {
   AI_TRY_ON_FIT_HINTS_IN_FINGERPRINT,
   aiTryOnGarmentPreviewKey,
   aiTryOnOutfitPreviewKey,
   aiTryOnOutfitFingerprint,
   aiTryOnOutfitVisualSources,
+  aiTryOnPreviewFingerprintMatchesDesign,
   createAiTryOnFingerprintFromOccurrenceAssignments,
   type AiTryOnOutfitVisualSource,
   type AiTryOnOccurrenceDesignSource,
@@ -72,6 +79,10 @@ export interface AiTryOnPreviewableGarment {
   readonly fabricSwatchImageUrl: string | null;
   /** Fabric colour chip when there is no swatch picture. */
   readonly fabricColorHex: string | null;
+  /** Admin flagged this catalogue style's photo as showing a wearer. */
+  readonly styleShowsWearer?: boolean;
+  /** Catalogue style audience, used only to pre-select a studio model. */
+  readonly styleGender?: string | null;
   /**
    * Prompt details for this garment alone. A Generate sends these, never
    * the wearer's other garments.
@@ -90,6 +101,7 @@ export interface AiTryOnOutfitPair {
   readonly bottom: string;
   readonly label: string;
   readonly inputFingerprint: string;
+  readonly topTuckPreference?: AiTryOnTopTuckPreference;
 }
 
 export interface AiTryOnWearerTarget {
@@ -135,6 +147,8 @@ export interface AiTryOnTargetOccurrence {
   readonly assignment: AiTryOnOccurrenceDesignSource["assignment"];
   readonly assignmentImage?: string | null;
   readonly uploadedDesignPreviewUrl?: string | null;
+  readonly styleShowsWearer?: boolean;
+  readonly styleGender?: string | null;
 }
 
 export interface BuildAiTryOnWearerTargetsInput
@@ -238,6 +252,8 @@ const buildTarget = ({
       garmentImageUrl: imageUrl,
       fabricSwatchImageUrl: garmentSwatchUrl,
       fabricColorHex: fabricColorHex(garmentFabric?.colorHex),
+      ...(occurrence.styleShowsWearer === true ? { styleShowsWearer: true } : {}),
+      ...(occurrence.styleGender ? { styleGender: occurrence.styleGender } : {}),
       orderDetails: orderDetailsForOccurrence(
         occurrence,
         garmentSwatchUrl ? garmentSwatchCode : null,
@@ -423,6 +439,61 @@ export interface AiTryOnOutfitChoice extends AiTryOnPreviewableGarment {
   readonly garmentType: CanonicalPhysicalGarmentType;
   readonly garmentImageUrl: string;
 }
+const AI_TRY_ON_DRESS_TYPES = new Set<CanonicalPhysicalGarmentType>(["dress", "full_length_gown"]);
+const aiTryOnPreviewableGarmentType = (garment: AiTryOnPreviewableGarment) =>
+  garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;
+
+export type AiTryOnOutfitIneligibilityReason =
+  | "single_garment"
+  | "missing_top"
+  | "missing_bottom"
+  | "dresses_only"
+  | "standalone_only";
+
+export interface AiTryOnOutfitEligibility {
+  readonly eligible: boolean;
+  readonly reason?: AiTryOnOutfitIneligibilityReason;
+  readonly helperMessage?: string;
+}
+
+const aiTryOnMissingTopMessage = (label: string) =>
+  `Combined outfit previews require 1 top and 1 bottom. Add a top for ${label} to unlock combined previews.`;
+const aiTryOnMissingBottomMessage = (label: string) =>
+  `Combined outfit previews require 1 top and 1 bottom. Add a bottom for ${label} to unlock combined previews.`;
+const AI_TRY_ON_DRESSES_ONLY_MESSAGE =
+  "Combined outfit previews pair a separate top and bottom. Dresses are standalone full outfits.";
+const AI_TRY_ON_STANDALONE_ONLY_MESSAGE =
+  "Combined outfit previews pair a separate top and bottom. Full-outfit garments are previewed on their own.";
+
+/**
+ * Combined outfit needs one catalogue top and one catalogue bottom.
+ * Two or more garments that cannot make that pair stay on screen with a reason.
+ */
+export const getAiTryOnOutfitEligibility = (target: AiTryOnWearerTarget): AiTryOnOutfitEligibility => {
+  const garments = target.previewableGarments ?? [];
+  if (garments.length < 2) return { eligible: false, reason: "single_garment" };
+  const { tops, bottoms } = aiTryOnOutfitChoices(target);
+  if (tops.length >= 1 && bottoms.length >= 1) return { eligible: true };
+  if (bottoms.length >= 1) {
+    return { eligible: false, reason: "missing_top", helperMessage: aiTryOnMissingTopMessage(target.label) };
+  }
+  if (tops.length >= 1) {
+    return { eligible: false, reason: "missing_bottom", helperMessage: aiTryOnMissingBottomMessage(target.label) };
+  }
+  const types = garments.map(aiTryOnPreviewableGarmentType);
+  if (types.every((type) => type !== undefined && AI_TRY_ON_DRESS_TYPES.has(type))) {
+    return { eligible: false, reason: "dresses_only", helperMessage: AI_TRY_ON_DRESSES_ONLY_MESSAGE };
+  }
+  const parts = types.map((type) => aiTryOnOutfitPart(type));
+  if (parts.some((part) => part === "bottom")) {
+    return { eligible: false, reason: "missing_top", helperMessage: aiTryOnMissingTopMessage(target.label) };
+  }
+  if (parts.some((part) => part === "top")) {
+    return { eligible: false, reason: "missing_bottom", helperMessage: aiTryOnMissingBottomMessage(target.label) };
+  }
+  return { eligible: false, reason: "standalone_only", helperMessage: AI_TRY_ON_STANDALONE_ONLY_MESSAGE };
+};
+
 export const aiTryOnOutfitChoices = (target: AiTryOnWearerTarget) => {
   const garments: AiTryOnOutfitChoice[] = (target.previewableGarments ?? []).flatMap((garment) => {
     const type = garment.garmentType ?? garment.orderDetails?.garments[0]?.garmentType;
@@ -455,6 +526,7 @@ export const aiTryOnOutfitTarget = (
    * Pass null when the panel has not chosen a photo or a model yet.
    */
   source?: AiTryOnOutfitVisualSource | null,
+  topTuckPreference: AiTryOnTopTuckPreference = "auto",
 ): AiTryOnWearerTarget | null => {
   const { tops, bottoms } = aiTryOnOutfitChoices(target);
   if (!tops.length || !bottoms.length) return null;
@@ -462,12 +534,22 @@ export const aiTryOnOutfitTarget = (
   const visualSources = source === undefined ? aiTryOnOutfitVisualSources() : [source];
   if (pair) {
     const visual = source === undefined ? { kind: "customer_photo" as const } : source;
-    return { ...base, inputFingerprint: aiTryOnOutfitFingerprint(pair.top, pair.bottom, visual), label: `${target.label} — Combined outfit (${outfitPairLabel(pair.top, pair.bottom)})` };
+    return { ...base, inputFingerprint: aiTryOnOutfitFingerprint(pair.top, pair.bottom, visual, topTuckPreference), label: `${target.label} — Combined outfit (${outfitPairLabel(pair.top, pair.bottom)})` };
   }
-  const outfitPairs = tops.flatMap((top) => bottoms.flatMap((bottom) => visualSources.flatMap((visualSource) => {
-    const fingerprint = aiTryOnOutfitFingerprint(top, bottom, visualSource);
-    return fingerprint ? [{ top: top.garmentKey, bottom: bottom.garmentKey, label: outfitPairLabel(top, bottom), inputFingerprint: fingerprint }] : [];
-  })));
+  const outfitPairs = tops.flatMap((top) => bottoms.flatMap((bottom) => visualSources.flatMap((visualSource) =>
+    AI_TRY_ON_TOP_TUCK_PREFERENCES.flatMap((tuck) => {
+      const fingerprint = aiTryOnOutfitFingerprint(top, bottom, visualSource, tuck);
+      return fingerprint
+        ? [{
+            top: top.garmentKey,
+            bottom: bottom.garmentKey,
+            label: outfitPairLabel(top, bottom),
+            inputFingerprint: fingerprint,
+            ...(tuck !== "auto" ? { topTuckPreference: tuck } : {}),
+          }]
+        : [];
+    }),
+  )));
   return { ...base, inputFingerprint: null, outfitPairs, label: `${target.label} — Combined outfit` };
 };
 /** The pair a stored outfit preview was made from, while still current. */
@@ -475,7 +557,10 @@ export const aiTryOnOutfitPairFor = (target: AiTryOnWearerTarget, fingerprint: s
   fingerprint ? target.outfitPairs?.find((pair) => pair.inputFingerprint === fingerprint) ?? null : null;
 /** A preview made with `fingerprint` still shows this target's current design. */
 export const aiTryOnPreviewFingerprintIsCurrent = (target: AiTryOnWearerTarget, fingerprint: string | null | undefined): boolean =>
-  Boolean(fingerprint) && (target.inputFingerprint === fingerprint || Boolean(aiTryOnOutfitPairFor(target, fingerprint)));
+  Boolean(fingerprint) && (
+    aiTryOnPreviewFingerprintMatchesDesign(target.inputFingerprint, fingerprint) ||
+    Boolean(aiTryOnOutfitPairFor(target, fingerprint))
+  );
 /** The target can judge a preview at all (design ready). */
 export const aiTryOnTargetHasDesign = (target: AiTryOnWearerTarget): boolean =>
   Boolean(target.inputFingerprint || target.outfitPairs?.length);

@@ -49,7 +49,7 @@ export const createWearerGarmentToggleHandlers = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   commitOrder: (order: WearerOrderStateV2) => void;
-  setLiveForm: (measurement: FutureMeasurementStateV1 | null) => void;
+  setLiveForm?: (measurement: FutureMeasurementStateV1 | null) => void;
   /** Applied after a fit change (e.g. Sole auto-assign of the still-eligible garments). */
   reconcileOrder?: (order: WearerOrderStateV2) => WearerOrderStateV2;
 }) => ({
@@ -69,14 +69,14 @@ export const createWearerGarmentToggleHandlers = ({
     });
     if (result.status === "updated") {
       commitOrder(result.order);
-      setLiveForm(resolveLiveFormAfterGarmentToggle(result.order, getActiveWearerId()));
+      setLiveForm?.(resolveLiveFormAfterGarmentToggle(result.order, getActiveWearerId()));
     }
     return result;
   },
   unassign: (garmentKey: string): void => {
     const nextOrder = removeGarmentFromWearerOrder(getOrder(), garmentKey);
     commitOrder(nextOrder);
-    setLiveForm(resolveLiveFormAfterGarmentToggle(nextOrder, getActiveWearerId()));
+    setLiveForm?.(resolveLiveFormAfterGarmentToggle(nextOrder, getActiveWearerId()));
   },
   /**
    * Fit change: garments the new fit cannot wear are unassigned like an untick
@@ -92,7 +92,7 @@ export const createWearerGarmentToggleHandlers = ({
     if (result.status !== "updated") return result;
     const nextOrder = reconcileOrder(result.order);
     commitOrder(nextOrder);
-    setLiveForm(resolveLiveFormAfterGarmentToggle(nextOrder, getActiveWearerId()));
+    setLiveForm?.(resolveLiveFormAfterGarmentToggle(nextOrder, getActiveWearerId()));
     return { status: "updated", order: nextOrder };
   },
 });

@@ -23,9 +23,13 @@ import type { FutureOrderCandidatePricingV1 } from "./futureOrderCandidate";
 import type { WearerOrderMeasurementCompletion } from "./wearerOrder";
 import {
   countRemainingCustomerRequiredMeasurementUnits,
+  isOnsitePhysicalMeasurementMethod,
   isSelectedMeasurementMethod,
+  MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL,
+  MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL,
   type MeasurementRequirementPlan,
 } from "./measurementBlueprint";
+import { getStep1GarmentPlainDescription } from "./garmentConstructionPricing.js";
 import { PRICING_CURRENCY_SYMBOL } from "./money";
 
 export const LIVE_ORDER_SUMMARY_HIDDEN_STAGES = ["summary", "payment"] as const;
@@ -73,6 +77,8 @@ export interface LiveOrderSummaryLine {
   readonly id: string;
   readonly label: string;
   readonly detail: string | null;
+  /** Approved plain description for an unfamiliar garment name. Absent for every other line. */
+  readonly plainDescription?: string | null;
   /** A second customer-facing status line, used when the primary detail is construction. */
   readonly supportingDetail?: string | null;
   /**
@@ -468,12 +474,29 @@ const measurementStatusLine = (
   orderMeasurementCompletion?: WearerOrderMeasurementCompletion | null,
 ): LiveOrderSummaryLine => {
   const routeLabel = summary.measurementSummary.routeLabel;
+  const soleOnsite = isOnsitePhysicalMeasurementMethod(
+    summary.measurementSummary.route ?? measurementState.route,
+  );
+  const anyWearerOnsite =
+    soleOnsite ||
+    (summary.measurementSummary.wearerGroups ?? []).some((wearer) =>
+      isOnsitePhysicalMeasurementMethod(wearer.route),
+    );
+  const anyOnsiteIncomplete =
+    (soleOnsite && measurementState.calculationStatus !== "complete") ||
+    (summary.measurementSummary.wearerGroups ?? []).some(
+      (wearer) =>
+        isOnsitePhysicalMeasurementMethod(wearer.route) &&
+        wearer.status !== "complete",
+    );
   if (orderMeasurementCompletion) {
     if (orderMeasurementCompletion.complete) {
       return {
         id: "measurements-complete",
         label: `${routeLabel} — Complete`,
-        detail: null,
+        detail: anyWearerOnsite
+          ? MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL
+          : null,
         amountLabel: null,
       };
     }
@@ -484,7 +507,9 @@ const measurementStatusLine = (
         remaining > 0
           ? `${routeLabel} — ${remaining} required measurements remaining`
           : `${routeLabel} — Incomplete`,
-      detail: null,
+      detail: anyOnsiteIncomplete
+        ? MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL
+        : null,
       amountLabel: null,
     };
   }
@@ -501,7 +526,17 @@ const measurementStatusLine = (
     return {
       id: "measurements-complete",
       label: `${routeLabel} — Complete`,
-      detail: null,
+      detail: isOnsitePhysicalMeasurementMethod(route)
+        ? MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL
+        : null,
+      amountLabel: null,
+    };
+  }
+  if (isOnsitePhysicalMeasurementMethod(route)) {
+    return {
+      id: "measurements-pending",
+      label: `${routeLabel} — Incomplete`,
+      detail: MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL,
       amountLabel: null,
     };
   }
@@ -813,12 +848,14 @@ export const projectDesignStudioLiveOrderSummary = ({
   const constructionLineFor = (
     garment: (typeof summary.garmentSummary)[number],
   ): LiveOrderSummaryLine => {
+    const plainDescription = getStep1GarmentPlainDescription(garment.garmentType);
     return {
       id: `construction-${garment.garmentKey}`,
       // Garment name leads (same as Stage 8 cards); the selected
       // clothing-price construction sits underneath. Null when unresolved.
       label: garmentLabels.get(garment.garmentKey) || garment.label,
       detail: mainConstructionIdentityLabel(garment),
+      ...(plainDescription ? { plainDescription } : {}),
       ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
       ...(garment.fitLabel ? { fitLabel: garment.fitLabel } : {}),
       amountLabel:

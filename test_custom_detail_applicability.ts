@@ -312,9 +312,13 @@ const expectedOptionIdsByGroup: Record<string, string[]> = {
   dress_construction: [
     "dress_std_sleeveless",
     "dress_std_short",
+    "dress_std_mid",
+    "dress_std_long",
     "dress_std_midlong",
     "dress_long_sleeveless",
     "dress_long_short",
+    "dress_long_mid",
+    "dress_long_long",
     "dress_long_midlong",
   ],
   dress_pockets: ["dress_pocket_1", "dress_pocket_multi", "dress_pocket_0"],
