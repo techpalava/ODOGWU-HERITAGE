@@ -25,7 +25,7 @@ import {
   AI_TRY_ON_TOP_TUCK_PREFERENCES,
   type AiTryOnTopTuckPreference,
 } from "../utils/aiTryOnGatewayContract";
-import { aiTryOnOrderHasWaistbandShowcase } from "../utils/aiTryOnOrderDetails";
+import { aiTryOnOrderHasWaistbandShowcase, AI_TRY_ON_GARMENT_LABELS } from "../utils/aiTryOnOrderDetails";
 import { readOwnAiTryOnAdminStatus, resetOwnAiTryOnTries } from "../services/aiTryOnAdminReset";
 import { AI_TRY_ON_ORDER_IMAGE_COPY, AI_TRY_ON_ORDER_IMAGE_PRIVACY_COPY, AI_TRY_ON_PREVIEW_GUIDE_NOTE } from "../utils/aiTryOnOrderImageCopy";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type RefObject } from "react";
@@ -41,6 +41,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { AiTryOnVerifiedPrivateResultReference } from "../types";
+import type { CanonicalPhysicalGarmentType } from "../types";
 import type { AiTryOnInlineImage } from "../utils/aiTryOnGatewayContract";
 import type {
   AiTryOnPreviewableGarment,
@@ -49,11 +50,14 @@ import type {
 import {
   AI_TRY_ON_DEFAULT_MODELS,
   AI_TRY_ON_MODEL_GROUP_LABELS,
+  aiTryOnAllowedModelGroupsForGarment,
+  aiTryOnAllowedModelGroupsForOutfit,
   aiTryOnDefaultModelImageUrl,
   aiTryOnDefaultModelLengthVariant,
   aiTryOnStudioModelLengthForGarment,
   defaultAiTryOnStudioModelId,
   findAiTryOnDefaultModel,
+  resolveAiTryOnStudioModelForGarment,
   type AiTryOnModelGroup,
   type AiTryOnModelLengthCategory,
 } from "../utils/aiTryOnDefaultModels";
@@ -709,6 +713,7 @@ export const AiTryOnPhotoPanel = ({
   const [outfitModeByWearer, setOutfitModeByWearer] = useState<Record<string, boolean>>({});
   const [outfitChoicesByWearer, setOutfitChoicesByWearer] = useState<Record<string, { top?: string; bottom?: string }>>({});
   const [modelFilter, setModelFilter] = useState<AiTryOnModelGroup | "all">("all");
+  const [autoSwitchNotice, setAutoSwitchNotice] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<PanelMessage | null>(() =>
     initialAccountTriesRemaining === 0
       ? { kind: "account_out_of_previews" }
@@ -865,6 +870,23 @@ export const AiTryOnPhotoPanel = ({
     selectedPreview?.orderDetails?.garments[0]?.garmentType ??
     target?.orderDetails?.garments[0]?.garmentType ??
     null;
+
+  // Compute allowed model groups based on garment/outfit.
+  // In outfit mode: intersect top and bottom garment allowed groups.
+  // In single-garment mode: use the garment's allowed groups.
+  const allowedModelGroups = outfitMode
+    ? aiTryOnAllowedModelGroupsForOutfit(
+        selectedTop?.garmentType,
+        selectedBottom?.garmentType,
+      )
+    : aiTryOnAllowedModelGroupsForGarment(singleGarmentType);
+
+  // Derive effectiveStyleGender for outfit mode: prefer bottom, then top, then preview.
+  const effectiveStyleGender =
+    outfitMode
+      ? selectedBottom?.styleGender ?? selectedTop?.styleGender ?? selectedPreview?.styleGender
+      : selectedPreview?.styleGender;
+
   // No chosen outfit bottom yet: keep the current base until the bottom is known.
   const explicitStudioLength: AiTryOnModelLengthCategory | null = outfitMode
     ? selectedBottom
@@ -874,8 +896,9 @@ export const AiTryOnPhotoPanel = ({
   const studioLength: AiTryOnModelLengthCategory =
     explicitStudioLength ?? currentModel?.lengthCategory ?? "long";
   const defaultModelId = defaultAiTryOnStudioModelId(
-    selectedPreview?.styleGender,
+    effectiveStyleGender,
     explicitStudioLength ?? "long",
+    allowedModelGroups,
   );
   // Combined outfit has no style-photo wearer. A style-photo choice falls
   // back to the studio model for that request only.
@@ -883,18 +906,21 @@ export const AiTryOnPhotoPanel = ({
     outfitMode && wearerChoice !== "customer_photo" && wearerChoice !== "cleared"
       ? findAiTryOnDefaultModel(defaultModelId)
       : null;
-  const outfitModel = currentModel ?? outfitFallbackModel;
+  // Ensure validModel checks that currentModel is in allowedModelGroups
+  const validCurrentModel =
+    currentModel && allowedModelGroups.includes(currentModel.group) ? currentModel : null;
+  const outfitModel = validCurrentModel ?? outfitFallbackModel;
   const visibleModel =
     stylePhotoActive || wearerChoice === "customer_photo" || wearerChoice === "cleared"
       ? null
-      : currentModel ?? (outfitMode ? outfitFallbackModel : null);
+      : validCurrentModel ?? (outfitMode ? outfitFallbackModel : null);
   const outfitVisualSource: AiTryOnOutfitVisualSource = outfitModel
     ? { kind: "studio_model", modelId: outfitModel.id }
     : { kind: "customer_photo" };
   const resolvedWearerSource: AiTryOnWearerSource = stylePhotoActive
     ? { kind: "style_photo" }
-    : currentModel
-      ? { kind: "studio_model", modelId: currentModel.id }
+    : validCurrentModel
+      ? { kind: "studio_model", modelId: validCurrentModel.id }
       : wearerChoice === "customer_photo" || wearerChoice === "cleared"
         ? { kind: "customer_photo" }
         : { kind: "studio_model", modelId: defaultModelId };
@@ -1342,6 +1368,67 @@ export const AiTryOnPhotoPanel = ({
     // updateModelByWearer is recreated each render and only writes the model id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explicitStudioLength, target?.wearerId, sourceByWearer, modelByWearer]);
+
+  // Auto-switch model group when garment/outfit changes and current model's group is not allowed.
+  // Preserves skinTone + build + studioLength via resolveAiTryOnStudioModelForGarment.
+  // Records an inline notice (autoSwitchNotice) shown inside the model picker.
+  useEffect(() => {
+    if (!target) return;
+    const wearerId = target.wearerId;
+    const choice = sourceByWearer[wearerId];
+    if (choice !== "studio_model") {
+      // Clear notice if user manually picks or source changes away from studio_model
+      if (autoSwitchNotice[wearerId]) {
+        setAutoSwitchNotice((prev) => {
+          const next = { ...prev };
+          delete next[wearerId];
+          return next;
+        });
+      }
+      return;
+    }
+    const current = findAiTryOnDefaultModel(modelByWearer[wearerId]);
+    if (!current) return;
+    const resolved = resolveAiTryOnStudioModelForGarment({
+      currentModel: current,
+      allowedGroups: allowedModelGroups,
+      lengthCategory: studioLength,
+      styleGender: effectiveStyleGender,
+    });
+    if (resolved.groupSwitched && resolved.model.id !== current.id) {
+      // Switch to the twin model in the allowed group
+      updateModelByWearer((currentMap) =>
+        currentMap[wearerId] === resolved.model.id
+          ? currentMap
+          : { ...currentMap, [wearerId]: resolved.model.id },
+      );
+      // Set inline notice for this wearer
+      const garmentLabel = outfitMode
+        ? "this outfit"
+        : AI_TRY_ON_GARMENT_LABELS[singleGarmentType as CanonicalPhysicalGarmentType] ?? "this garment";
+      setAutoSwitchNotice((prev) => ({
+        ...prev,
+        [wearerId]: `Switched to a matching ${AI_TRY_ON_MODEL_GROUP_LABELS[allowedModelGroups[0]]} studio model for ${garmentLabel}.`,
+      }));
+    } else if (!resolved.groupSwitched && autoSwitchNotice[wearerId]) {
+      // Clear notice when no switch occurred (compatible garment)
+      setAutoSwitchNotice((prev) => {
+        const next = { ...prev };
+        delete next[wearerId];
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    allowedModelGroups,
+    studioLength,
+    effectiveStyleGender,
+    modelByWearer,
+    sourceByWearer,
+    outfitMode,
+    singleGarmentType,
+    target?.wearerId,
+  ]);
 
   // Reload: restore the selected wearer's stored preview while it still
   // matches this wearer source. This reads the private server copy.
@@ -2551,31 +2638,42 @@ export const AiTryOnPhotoPanel = ({
               className="min-w-0 scroll-mt-28 rounded-xl border border-heritage-green/15 bg-white p-4 outline-none sm:scroll-mt-24"
               data-ai-try-on-model-picker
               data-ai-try-on-model-length={studioLength}
+              data-ai-try-on-model-auto-switched={autoSwitchNotice[target?.wearerId || ""] ? "true" : undefined}
             >
               <legend className="px-1 font-serif text-lg font-bold text-heritage-green">
                 {AI_TRY_ON_MODEL_COPY.heading}
               </legend>
               <p className="text-sm leading-relaxed text-heritage-ink/70">{AI_TRY_ON_MODEL_COPY.intro}</p>
-              <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: filter`}>
-                {(["all", "men", "women"] as const).map((group) => (
-                  <button
-                    key={group}
-                    type="button"
-                    role="radio"
-                    aria-checked={modelFilter === group}
-                    onClick={() => setModelFilter(group)}
-                    data-ai-try-on-model-filter={group}
-                    className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-bold uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
-                      modelFilter === group
-                        ? "border-heritage-green bg-heritage-green text-white"
-                        : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
-                    }`}
-                  >
-                    {group === "all" ? AI_TRY_ON_MODEL_COPY.filterAll : AI_TRY_ON_MODEL_GROUP_LABELS[group]}
-                  </button>
-                ))}
-              </div>
-              {(["men", "women"] as const)
+              {autoSwitchNotice[target?.wearerId || ""] && (
+                <div
+                  className="mt-2 text-xs text-heritage-ink/70 bg-heritage-gold/10 rounded-lg p-2"
+                  data-ai-try-on-model-auto-switched-notice
+                >
+                  {autoSwitchNotice[target?.wearerId || ""]}
+                </div>
+              )}
+              {allowedModelGroups.length === 2 ? (
+                <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label={`${AI_TRY_ON_MODEL_COPY.heading}: filter`}>
+                  {(["all", "men", "women"] as const).map((group) => (
+                    <button
+                      key={group}
+                      type="button"
+                      role="radio"
+                      aria-checked={modelFilter === group}
+                      onClick={() => setModelFilter(group)}
+                      data-ai-try-on-model-filter={group}
+                      className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-bold uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                        modelFilter === group
+                          ? "border-heritage-green bg-heritage-green text-white"
+                          : "border-heritage-green/25 bg-white text-heritage-green hover:border-heritage-green/50"
+                      }`}
+                    >
+                      {group === "all" ? AI_TRY_ON_MODEL_COPY.filterAll : AI_TRY_ON_MODEL_GROUP_LABELS[group]}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {allowedModelGroups
                 .filter((group) => modelFilter === "all" || modelFilter === group)
                 .map((group) => (
                   <div key={group} className="mt-4" data-ai-try-on-model-group={group}>

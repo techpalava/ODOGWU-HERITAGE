@@ -15,10 +15,13 @@ import { DormantFutureAiTryOnStep } from "./src/components/DormantFutureAiTryOnS
 import type { Firestore } from "firebase-admin/firestore";
 import {
   AI_TRY_ON_DEFAULT_MODELS,
+  aiTryOnAllowedModelGroupsForGarment,
+  aiTryOnAllowedModelGroupsForOutfit,
   aiTryOnDefaultModelImageUrl,
   aiTryOnDefaultModelLengthVariant,
   aiTryOnStudioModelLengthForGarment,
   findAiTryOnDefaultModel,
+  resolveAiTryOnStudioModelForGarment,
 } from "./src/utils/aiTryOnDefaultModels";
 import {
   aiTryOnDefaultModelImagePath,
@@ -138,6 +141,35 @@ const DAY = 24 * 60 * 60 * 1000;
     assert.equal(aiTryOnStudioModelLengthForGarment(garmentType), length, garmentType);
   }
   assert.equal(aiTryOnStudioModelLengthForGarment(null), null);
+  // Garment allowed model groups tests
+  for (const g of ["dress", "full_length_gown", "skirt", "long_skirt"] as const) {
+    assert.deepEqual(aiTryOnAllowedModelGroupsForGarment(g), ["women"], g);
+  }
+  assert.deepEqual(aiTryOnAllowedModelGroupsForGarment("agbada"), ["men"]);
+  for (const g of ["bum_shorts", "shirt", "kaftan", "trouser", "standard_shorts", null, undefined] as const) {
+    assert.deepEqual(aiTryOnAllowedModelGroupsForGarment(g), ["men", "women"], String(g));
+  }
+  // Outfit allowed model groups intersection tests
+  assert.deepEqual(aiTryOnAllowedModelGroupsForOutfit("shirt", "skirt"), ["women"]);
+  assert.deepEqual(aiTryOnAllowedModelGroupsForOutfit("kaftan", "long_skirt"), ["women"]);
+  assert.deepEqual(aiTryOnAllowedModelGroupsForOutfit("shirt", "trouser"), ["men", "women"]);
+  assert.deepEqual(aiTryOnAllowedModelGroupsForOutfit("shirt", "bum_shorts"), ["men", "women"]);
+  // resolveAiTryOnStudioModelForGarment twin-matching tests
+  const malePlus = findAiTryOnDefaultModel("male-plus");
+  assert.ok(malePlus);
+  const dressRes = resolveAiTryOnStudioModelForGarment({ currentModel: malePlus, allowedGroups: ["women"], lengthCategory: "short" });
+  assert.equal(dressRes.model.id, "female-plus-short");
+  assert.equal(dressRes.groupSwitched, true);
+  const female3DeepShort = findAiTryOnDefaultModel("female-3-deep-short");
+  assert.ok(female3DeepShort);
+  const agbadaRes = resolveAiTryOnStudioModelForGarment({ currentModel: female3DeepShort, allowedGroups: ["men"], lengthCategory: "long" });
+  assert.equal(agbadaRes.model.id, "male-3-deep");
+  assert.equal(agbadaRes.groupSwitched, true);
+  const female2Medium = findAiTryOnDefaultModel("female-2-medium");
+  assert.ok(female2Medium);
+  const shirtRes = resolveAiTryOnStudioModelForGarment({ currentModel: female2Medium, allowedGroups: ["men", "women"], lengthCategory: "long" });
+  assert.equal(shirtRes.model.id, "female-2-medium");
+  assert.equal(shirtRes.groupSwitched, false);
   // Bundled into the AI Try-on function so the server reads them from disk.
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
   assert.equal(vercel.functions["api/design-studio/transfer-uploaded-design-draft.ts"].includeFiles, "public/ai-try-on-models/**");
@@ -956,28 +988,33 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   const modelIds = (renderer: ReturnType<typeof create>) =>
     byData(renderer, "data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
   for (const garmentType of ["standard_shorts", "bum_shorts", "skirt", "dress"] as const) {
+    const isWomenOnly = ["skirt", "dress"].includes(garmentType);
+    const expectedCount = isWomenOnly ? 5 : 10;
+    const expectedDefault = garmentType === "dress" ? "female-1-light-short" : isWomenOnly ? "female-1-light-short" : "male-1-light-short";
     const { renderer, requests } = renderPanel({
-      targets: [target({ previewableGarments: [lengthGarment(garmentType, garmentType === "dress" ? "female" : undefined)] })],
+      targets: [target({ previewableGarments: [lengthGarment(garmentType, isWomenOnly ? "female" : undefined)] })],
     });
     assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short", garmentType);
     const ids = modelIds(renderer);
-    assert.equal(ids.length, 10, `${garmentType} shows the short bases only`);
+    assert.equal(ids.length, expectedCount, `${garmentType} shows the short bases only`);
     assert.ok(ids.every((id) => String(id).endsWith("-short")), garmentType);
     assert.equal(ids.some((id) => id === "male-1-light" || id === "female-1-light"), false, garmentType);
-    const expected = garmentType === "dress" ? "female-1-light-short" : "male-1-light-short";
-    assert.equal(byData(renderer, "data-ai-try-on-model", expected)[0].props["aria-checked"], true, garmentType);
+    assert.equal(byData(renderer, "data-ai-try-on-model", expectedDefault)[0].props["aria-checked"], true, garmentType);
     assert.equal(requests.length, 0, "showing a short base does not generate");
     await act(async () => { renderer.unmount(); });
   }
   for (const garmentType of ["full_length_gown", "long_skirt", "shirt", "kaftan"] as const) {
+    const isWomenOnly = ["full_length_gown", "long_skirt"].includes(garmentType);
+    const expectedCount = isWomenOnly ? 5 : 10;
+    const expectedDefault = isWomenOnly ? "female-1-light" : "male-1-light";
     const { renderer, requests } = renderPanel({
-      targets: [target({ previewableGarments: [lengthGarment(garmentType)] })],
+      targets: [target({ previewableGarments: [lengthGarment(garmentType, isWomenOnly ? "female" : undefined)] })],
     });
     assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long", garmentType);
     const ids = modelIds(renderer);
-    assert.equal(ids.length, 10, `${garmentType} shows the long bases only`);
+    assert.equal(ids.length, expectedCount, `${garmentType} shows the long bases only`);
     assert.ok(ids.every((id) => !String(id).endsWith("-short")), garmentType);
-    assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true, garmentType);
+    assert.equal(byData(renderer, "data-ai-try-on-model", expectedDefault)[0].props["aria-checked"], true, garmentType);
     assert.equal(requests.length, 0, "showing a long base does not generate");
     await act(async () => { renderer.unmount(); });
   }

@@ -206,37 +206,41 @@ assert.equal(data("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-
 assert.ok(shownModels().every((id) => !id.endsWith("-short")));
 assert.equal(data("data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true);
 await click(data("data-ai-try-on-outfit-mode")[0]);
-for (const bottom of ["shorts", "bum-shorts", "skirt"] as const) {
+for (const [bottom, expectedModelCount, expectedDefaultModel] of [
+  ["shorts", 10, "male-1-light-short"],
+  ["bum-shorts", 10, "male-1-light-short"],
+  ["skirt", 5, "female-1-light-short"],
+] as const) {
   await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: bottom } }); });
   assert.equal(data("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short", bottom);
-  assert.equal(shownModels().length, 10, bottom);
+  assert.equal(shownModels().length, expectedModelCount, bottom);
   assert.ok(shownModels().every((id) => id.endsWith("-short")), `${bottom} hides trouser bases`);
-  assert.equal(data("data-ai-try-on-model", "male-1-light-short")[0].props["aria-checked"], true, bottom);
+  assert.equal(data("data-ai-try-on-model", expectedDefaultModel)[0].props["aria-checked"], true, bottom);
 }
 assert.equal(lengthRequests.length, 0, "choosing a short bottom does not generate");
-await click(data("data-ai-try-on-model", "male-plus-short")[0]);
+await click(data("data-ai-try-on-model", "female-plus-short")[0]);
 assert.equal(lengthRequests.length, 0, "picking the short persona does not generate");
 await act(async () => { data("data-ai-try-on-outfit-choice", "top")[0].props.onChange({ target: { value: "shirt-first" } }); });
 await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "long-skirt" } }); });
 assert.equal(data("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
 assert.ok(shownModels().every((id) => !id.endsWith("-short")), "Long Skirt hides the short bases");
-assert.equal(data("data-ai-try-on-model", "male-plus")[0].props["aria-checked"], true, "same persona, long base");
+assert.equal(data("data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "same persona, long base");
 assert.equal(lengthRequests.length, 0, "switching to a long bottom does not generate");
-const longSkirtFingerprint = aiTryOnOutfitFingerprint(withFingerprint("shirt-first"), withFingerprint("long-skirt"), { kind: "studio_model", modelId: "male-plus" });
+const longSkirtFingerprint = aiTryOnOutfitFingerprint(withFingerprint("shirt-first"), withFingerprint("long-skirt"), { kind: "studio_model", modelId: "female-plus" });
 await click(generate());
 await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-assert.equal(lengthRequests[0].defaultModelId, "male-plus");
+assert.equal(lengthRequests[0].defaultModelId, "female-plus");
 assert.equal(lengthRequests[0].inputFingerprint, longSkirtFingerprint, "the long studio model id is in the outfit fingerprint");
 await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "shorts" } }); });
-assert.equal(data("data-ai-try-on-model", "male-plus-short")[0].props["aria-checked"], true, "shorts return to the short base");
+assert.equal(data("data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true, "shorts return to the short base");
 assert.equal(lengthRequests.length, 1, "switching back to shorts does not generate");
-const shortsFingerprint = aiTryOnOutfitFingerprint(withFingerprint("shirt-first"), withFingerprint("shorts"), { kind: "studio_model", modelId: "male-plus-short" });
+const shortsFingerprint = aiTryOnOutfitFingerprint(withFingerprint("shirt-first"), withFingerprint("shorts"), { kind: "studio_model", modelId: "female-plus-short" });
 assert.notEqual(shortsFingerprint, longSkirtFingerprint);
 await click(generate());
-assert.equal(lengthRequests[1].defaultModelId, "male-plus-short");
+assert.equal(lengthRequests[1].defaultModelId, "female-plus-short");
 assert.equal(lengthRequests[1].inputFingerprint, shortsFingerprint, "the short studio model id changes the outfit fingerprint");
 await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "trouser" } }); });
-assert.equal(data("data-ai-try-on-model", "male-plus")[0].props["aria-checked"], true, "trousers stay on the long base");
+assert.equal(data("data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "trousers stay on the long base");
 assert.ok(shownModels().every((id) => !id.endsWith("-short")));
 await choosePhoto();
 await act(async () => { data("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "shorts" } }); });

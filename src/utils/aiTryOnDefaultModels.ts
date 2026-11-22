@@ -97,6 +97,43 @@ const SHORT_STUDIO_GARMENT_TYPES = new Set([
   "bum_shorts",
   "dress",
 ]);
+const WOMEN_ONLY_GARMENT_TYPES = new Set([
+  "dress",
+  "full_length_gown",
+  "skirt",
+  "long_skirt",
+]);
+
+const MEN_ONLY_GARMENT_TYPES = new Set([
+  "agbada",
+]);
+
+const ALL_MODEL_GROUPS: readonly AiTryOnModelGroup[] = ["men", "women"] as const;
+const WOMEN_ONLY_MODEL_GROUPS: readonly AiTryOnModelGroup[] = ["women"] as const;
+const MEN_ONLY_MODEL_GROUPS: readonly AiTryOnModelGroup[] = ["men"] as const;
+
+export const aiTryOnAllowedModelGroupsForGarment = (
+  garmentType: string | null | undefined,
+): readonly AiTryOnModelGroup[] => {
+  if (!garmentType) return ALL_MODEL_GROUPS;
+  if (WOMEN_ONLY_GARMENT_TYPES.has(garmentType)) return WOMEN_ONLY_MODEL_GROUPS;
+  if (MEN_ONLY_GARMENT_TYPES.has(garmentType)) return MEN_ONLY_MODEL_GROUPS;
+  return ALL_MODEL_GROUPS;
+};
+
+export const aiTryOnAllowedModelGroupsForOutfit = (
+  topGarmentType: string | null | undefined,
+  bottomGarmentType: string | null | undefined,
+): readonly AiTryOnModelGroup[] => {
+  const topGroups = aiTryOnAllowedModelGroupsForGarment(topGarmentType);
+  const bottomGroups = aiTryOnAllowedModelGroupsForGarment(bottomGarmentType);
+  const intersection = topGroups.filter((g) => bottomGroups.includes(g));
+  if (intersection.length > 0) {
+    return intersection;
+  }
+  return bottomGroups.length > 0 ? bottomGroups : ALL_MODEL_GROUPS;
+};
+
 
 export const findAiTryOnDefaultModel = (id: unknown): AiTryOnDefaultModel | null =>
   typeof id === "string" ? BY_ID.get(id) ?? null : null;
@@ -123,26 +160,89 @@ export const aiTryOnStudioModelLengthForGarment = (
 };
 
 /**
- * Studio model pre-selected for a design style's audience and garment length.
+ * Studio model pre-selected for a design style's audience, garment length, and allowed model groups.
  * A women's style uses the first women's model of that length. Every other
  * audience, including unisex and unknown, uses the first men's model of that
  * length. Long stays the historical default.
+ *
+ * Backward compatibility: when allowedGroups is omitted, defaults to ["men", "women"].
+ * When allowedGroups has 1 group, ALWAYS return the first model in that allowed group for lengthCategory.
+ * When allowedGroups has both ["men", "women"], use styleGender === "female" ? "women" : "men".
  */
 export const defaultAiTryOnStudioModelId = (
   styleGender: string | null | undefined,
   lengthCategory: AiTryOnModelLengthCategory = "long",
+  allowedGroups: readonly AiTryOnModelGroup[] = ALL_MODEL_GROUPS,
 ): string => {
-  const group: AiTryOnModelGroup = styleGender === "female" ? "women" : "men";
+  const groupsToUse = allowedGroups.length > 0 ? allowedGroups : ALL_MODEL_GROUPS;
+  let targetGroup: AiTryOnModelGroup;
+  if (groupsToUse.length === 1) {
+    targetGroup = groupsToUse[0];
+  } else {
+    targetGroup = styleGender === "female" ? "women" : "men";
+    if (!groupsToUse.includes(targetGroup)) {
+      targetGroup = groupsToUse[0];
+    }
+  }
   return (
     AI_TRY_ON_DEFAULT_MODELS.find(
-      (entry) => entry.group === group && entry.lengthCategory === lengthCategory,
+      (entry) => entry.group === targetGroup && entry.lengthCategory === lengthCategory,
     )?.id ?? AI_TRY_ON_DEFAULT_MODELS[0].id
   );
+};
+
+/**
+ * Twin persona lookup: every Men persona has a 1-to-1 skinTone+build match in Women.
+ * Resolves a model persona/group switch for a garment context while preserving skinTone, build, and lengthCategory.
+ */
+export const resolveAiTryOnStudioModelForGarment = ({
+  currentModel,
+  allowedGroups = ALL_MODEL_GROUPS,
+  lengthCategory = "long",
+  styleGender,
+}: {
+  readonly currentModel: AiTryOnDefaultModel | null | undefined;
+  readonly allowedGroups?: readonly AiTryOnModelGroup[];
+  readonly lengthCategory?: AiTryOnModelLengthCategory;
+  readonly styleGender?: string | null;
+}): { readonly model: AiTryOnDefaultModel; readonly groupSwitched: boolean } => {
+  const validAllowedGroups = allowedGroups.length > 0 ? allowedGroups : ALL_MODEL_GROUPS;
+  if (!currentModel) {
+    const defaultId = defaultAiTryOnStudioModelId(styleGender, lengthCategory, validAllowedGroups);
+    const resolved = findAiTryOnDefaultModel(defaultId)!;
+    return { model: resolved, groupSwitched: false };
+  }
+
+  if (validAllowedGroups.includes(currentModel.group)) {
+    const sameLengthModel = currentModel.lengthCategory === lengthCategory
+      ? currentModel
+      : aiTryOnDefaultModelLengthVariant(currentModel.personaId, lengthCategory) ?? currentModel;
+    return { model: sameLengthModel, groupSwitched: false };
+  }
+
+  const targetGroup = validAllowedGroups[0];
+  const twinModel = AI_TRY_ON_DEFAULT_MODELS.find(
+    (m) =>
+      m.group === targetGroup &&
+      m.skinTone === currentModel.skinTone &&
+      m.build === currentModel.build &&
+      m.lengthCategory === lengthCategory,
+  );
+
+  if (twinModel) {
+    return { model: twinModel, groupSwitched: true };
+  }
+
+  const fallbackId = defaultAiTryOnStudioModelId(styleGender, lengthCategory, validAllowedGroups);
+  const fallbackModel = findAiTryOnDefaultModel(fallbackId)!;
+  return { model: fallbackModel, groupSwitched: true };
 };
 
 /** Site-relative picture URL, e.g. `/ai-try-on-models/male-plus.webp`. */
 export const aiTryOnDefaultModelImageUrl = (entry: AiTryOnDefaultModel): string =>
   `/${AI_TRY_ON_DEFAULT_MODEL_PUBLIC_DIR}/${entry.id}.webp`;
+
+/** aiTryOnDefaultModelsInGroup */
 
 export const aiTryOnDefaultModelsInGroup = (
   group: AiTryOnModelGroup,
