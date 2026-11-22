@@ -10,7 +10,11 @@ import { Showpiece, CommunityPhoto, Fabric, StyleCategory, Batch } from "../type
 import { COMMUNITY_GROUPS, type CommunityGroup } from "../data/communityStats";
 
 interface GalleryViewProps {
-  onSelectStyle: (styleId: string, fabricCode: string) => void;
+  onSelectStyle: (
+    styleId: string,
+    fabricCode: string,
+    look?: { title: string; styleName: string; fabricName: string },
+  ) => void;
   showpieces?: Showpiece[];
   communityPhotos?: CommunityPhoto[];
   fabrics: Fabric[];
@@ -340,6 +344,9 @@ export default function GalleryView({
                   <div
                     key={item.id}
                     className="group bg-white rounded-3xl border border-heritage-gold/15 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col"
+                    data-gallery-card={item.title}
+                    data-gallery-style-id={item.styleId}
+                    data-gallery-fabric-code={item.fabricCode}
                   >
                     <div className="relative h-96 w-full overflow-hidden bg-heritage-cream">
                       {item.image ? (
@@ -381,8 +388,13 @@ export default function GalleryView({
                         </div>
                         <button
                           onClick={() =>
-                            onSelectStyle(item.styleId, item.fabricCode)
+                            onSelectStyle(item.styleId, item.fabricCode, {
+                              title: item.title,
+                              styleName: item.styleName,
+                              fabricName: item.fabricName,
+                            })
                           }
+                          data-gallery-customize={item.title}
                           className="w-full py-2.5 rounded-xl border border-heritage-gold/30 text-heritage-gold text-xs font-bold uppercase tracking-wider hover:bg-heritage-gold hover:text-white transition flex items-center justify-center gap-2"
                         >
                           <Eye size={14} /> Customize This Look
