@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   applyLegacyStyleFabricCapacityConfig,
   createStyleBaseGarmentSpec,
+  STYLE_BASE_GARMENT_TYPES,
 } from "./src/config/StyleFabricCapacityConfig";
 import type { StyleCategory } from "./src/types";
 import {
@@ -421,6 +423,60 @@ assert.equal(
   adaptableRePrepared.eligibilityRevision,
   adaptableNoDemographicsRecord.eligibilityRevision,
 );
+
+const longSkirtRecord = prepareAuthoritativeDesignStyleRecord({
+  style: baseStyle({
+    id: "authority-style-long-skirt",
+    fabricCapacityComposition: [createStyleBaseGarmentSpec("long_skirt")],
+    customDetailConfig: {
+      representedGenders: ["female"],
+      featuresMaleAndFemale: false,
+      supportedGarmentGroups: ["skirt"],
+      requiredSelectionGroups: ["skirt_length"],
+      enabled: true,
+    },
+    styleApplicability: {
+      mode: "adaptable",
+      garmentTypes: ["long_skirt"],
+    },
+  }),
+  lifecycle: "published",
+  displayOrder: 4,
+  referenceComposition: {
+    status: "known",
+    garmentTypes: ["long_skirt"],
+  },
+  currentRecord: null,
+});
+assert.equal(
+  parseAuthoritativeDesignStyleRecord(longSkirtRecord.id, longSkirtRecord).status,
+  "valid",
+);
+assert.deepEqual(longSkirtRecord.eligibility.garmentTypes, ["long_skirt"]);
+assert.deepEqual(longSkirtRecord.eligibility.adaptability.garmentTypes, [
+  "long_skirt",
+]);
+assert.deepEqual(longSkirtRecord.referenceComposition, {
+  status: "known",
+  garmentTypes: ["long_skirt"],
+});
+
+const firestoreRulesSource = readFileSync(
+  new URL("./firestore.rules", import.meta.url),
+  "utf8",
+);
+const canonicalGarmentTypes = STYLE_BASE_GARMENT_TYPES.filter(
+  (garmentType) => garmentType !== "other",
+);
+const garmentTypeAllowLists = Array.from(
+  firestoreRulesSource.matchAll(/garmentTypes\.hasOnly\(\[([^\]]+)\]\)/g),
+  (match) => Array.from(match[1].matchAll(/"([^"]+)"/g), (item) => item[1]),
+);
+assert.equal(garmentTypeAllowLists.length, 3);
+for (const allowList of garmentTypeAllowLists) {
+  assert.deepEqual([...allowList].sort(), [...canonicalGarmentTypes].sort());
+  assert.equal(allowList.includes("long_skirt"), true);
+}
 
 console.log(
   "PASS: strict Design Style authority schema, lifecycle, revisions, projection, and legacy boundary",
