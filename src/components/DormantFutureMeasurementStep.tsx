@@ -21,10 +21,7 @@ import type {
 } from "../types";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
-import {
-  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
-  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
-} from "../utils/designStudioFutureShipping";
+import { FUTURE_PICKUP_ATELIER_WHATSAPP_URL } from "../utils/designStudioFutureShipping";
 import {
   clearActiveFutureMeasurementEntered,
   collectRequiredAlternativeGroups,
@@ -47,11 +44,19 @@ import {
   getSampleClothProductionEquivalentCm,
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
+  isOnsitePhysicalMeasurementMethod,
   isTryOnUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
   isValidHeightForEstimates,
+  MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL,
+  MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE,
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_PHYSICAL_METHOD,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
   MEASUREMENT_RISK_ROUTE_DESCRIPTIONS,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
@@ -67,6 +72,7 @@ import {
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
+  setFutureMeasurementOnsiteAcknowledged,
   setFutureMeasurementUnit,
   type MeasurementGarmentChipState,
   type MeasurementPhysicalGarment,
@@ -242,6 +248,8 @@ const getBlockerMessage = (
       return "Complete every required measurement shown below.";
     case "invalid_measurement_value":
       return "Correct the highlighted measurement before continuing.";
+    case "onsite_booking_acknowledgement_required":
+      return MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE;
     default:
       return "Review the measurements shown below before this step can be completed.";
   }
@@ -888,6 +896,7 @@ export const DormantFutureMeasurementStep = ({
     ? resolvedState.route
     : null;
   const sampleSelected = isSampleClothMeasurementMethod(selectedMethod);
+  const onsiteSelected = isOnsitePhysicalMeasurementMethod(selectedMethod);
   const presentationRequirements = projectMeasurementRequirementsForPresentation({
     requirements: plan.requirements,
     state: resolvedState,
@@ -1494,6 +1503,15 @@ export const DormantFutureMeasurementStep = ({
         ? "incomplete"
         : resolvedState.calculationStatus,
   );
+  const onsiteStatus = getStatusLabel(
+    MEASUREMENT_ONSITE_PHYSICAL_METHOD,
+    selectedMethod,
+    canContinueToTryOn && resolvedState.calculationStatus === "complete"
+      ? "complete"
+      : resolvedState.calculationStatus === "complete"
+        ? "incomplete"
+        : resolvedState.calculationStatus,
+  );
 
   return (
     <section
@@ -1924,38 +1942,118 @@ export const DormantFutureMeasurementStep = ({
         data-measurement-option-section="alternate_contact"
         aria-label="Option 3: Onsite Physical Measurements"
       >
-        <h3
-          data-measurement-option-heading="onsite"
-          className="font-serif text-lg font-bold leading-snug text-heritage-green"
-        >
-          Option 3: Onsite Physical Measurements
-        </h3>
-        <p className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80">
-          Information only. These do not complete your measurements.
-        </p>
-        <div
-          data-measurement-onsite-info="true"
-          className="mt-4 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
-        >
-          <p className="break-words text-sm leading-relaxed font-medium text-heritage-ink/80">
-            Reach out to the contact to arrange a measurement
+        <fieldset data-measurement-onsite-selector="true">
+          <legend
+            data-measurement-option-heading="onsite"
+            className="block w-full font-serif text-lg font-bold leading-snug text-heritage-green"
+          >
+            Option 3: Onsite Physical Measurements
+          </legend>
+          <p
+            data-measurement-onsite-instruction="true"
+            className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80"
+          >
+            {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
           </p>
           <p
             data-measurement-onsite-booking-window="true"
-            className="mt-1 break-words text-sm leading-relaxed font-medium text-heritage-ink/80"
+            className="mt-1 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80"
           >
-            Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
+            {MEASUREMENT_ONSITE_BOOKING_REASON}
           </p>
-          <a
-            href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-            className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
+          <div className="mt-4">
+            <label
+              data-measurement-onsite-option={MEASUREMENT_ONSITE_PHYSICAL_METHOD}
+              data-measurement-onsite-selected={onsiteSelected ? "true" : "false"}
+              data-measurement-guide-beam={beamMethodChoices ? "true" : undefined}
+              className={withMeasurementGuideBeam(
+                `flex min-w-0 cursor-pointer gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  onsiteSelected
+                    ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                    : "border-heritage-green/15 hover:border-heritage-gold/45"
+                }`,
+                beamMethodChoices,
+              )}
+            >
+              <input
+                type="radio"
+                name="future-measurement-route"
+                value={MEASUREMENT_ONSITE_PHYSICAL_METHOD}
+                checked={onsiteSelected}
+                disabled={hydrationInvalid}
+                onChange={() => {
+                  if (hydrationInvalid) return;
+                  onRouteChange(MEASUREMENT_ONSITE_PHYSICAL_METHOD);
+                  if (hasUnassignedGarments && physicalGarments.length === 0) {
+                    openAssignModal();
+                  }
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="min-w-0">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="break-words text-sm font-semibold text-heritage-green">
+                    {MEASUREMENT_ONSITE_PHYSICAL_LABEL}
+                  </span>
+                  {onsiteStatus && (
+                    <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-bold tracking-wide text-heritage-ink/85">
+                      {onsiteStatus}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+        <a
+          href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-measurement-onsite-whatsapp="true"
+          className="mt-3 inline-flex min-h-11 w-full max-w-full items-center justify-center break-words rounded-xl bg-heritage-green px-4 py-2.5 text-center text-sm font-bold leading-snug text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
+          {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL}
+        </a>
+        {onsiteSelected && (
+          <div
+            data-measurement-onsite-info="true"
+            className="mt-3 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
           >
-            {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
-          </a>
-        </div>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                data-measurement-onsite-ack="true"
+                checked={Boolean(resolvedState.onsiteBookingAcknowledged)}
+                disabled={hydrationInvalid}
+                onChange={(event) => {
+                  if (hydrationInvalid) return;
+                  onChange(
+                    setFutureMeasurementOnsiteAcknowledged(
+                      resolvedState,
+                      event.target.checked,
+                    ),
+                  );
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="break-words text-sm leading-relaxed font-medium text-heritage-ink/85">
+                {MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL}
+              </span>
+            </label>
+            <div className="mt-3" data-measurement-onsite-ack-status={resolvedState.onsiteBookingAcknowledged ? "complete" : "incomplete"}>
+              {resolvedState.onsiteBookingAcknowledged ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-heritage-green/30 bg-heritage-green/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-heritage-green">
+                  <Check size={11} aria-hidden="true" />
+                  Confirmed
+                </span>
+              ) : (
+                <p className="text-xs font-semibold text-heritage-bronze">
+                  {MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       <section
@@ -2027,7 +2125,11 @@ export const DormantFutureMeasurementStep = ({
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
-              {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
+              {sampleSelected
+                ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE
+                : onsiteSelected
+                  ? MEASUREMENT_ONSITE_PHYSICAL_LABEL
+                  : "Current route status"}
             </p>
             <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
               {routeStatusLabel}
@@ -2037,7 +2139,11 @@ export const DormantFutureMeasurementStep = ({
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-heritage-green/15 bg-white px-3 py-2 text-xs font-semibold text-heritage-green">
-            {completedManualInputCount} / {requiredUnitCount} saved
+            {onsiteSelected
+              ? resolvedState.onsiteBookingAcknowledged
+                ? "Confirmed"
+                : "Confirmation required"
+              : `${completedManualInputCount} / ${requiredUnitCount} saved`}
           </div>
         </div>
         {hasUnassignedGarments && (
@@ -2073,6 +2179,7 @@ export const DormantFutureMeasurementStep = ({
         )}
       </section>
 
+      {!onsiteSelected && (
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
@@ -2216,6 +2323,7 @@ export const DormantFutureMeasurementStep = ({
         </div>
         </div>
       </section>
+      )}
 
       {selectedGarmentUnassigned && (
         <section
@@ -2307,7 +2415,11 @@ export const DormantFutureMeasurementStep = ({
                   }`}
                 >
                   {activeWearerComplete && <Check size={11} aria-hidden="true" />}
-                  {completedManualInputCount}/{requiredUnitCount} saved
+                  {onsiteSelected
+                    ? resolvedState.onsiteBookingAcknowledged
+                      ? "Onsite confirmed"
+                      : "Confirmation needed"
+                    : `${completedManualInputCount}/${requiredUnitCount} saved`}
                 </span>
               </div>
               <p className="mt-1 truncate text-xs font-medium text-heritage-ink/80">
@@ -2426,7 +2538,7 @@ export const DormantFutureMeasurementStep = ({
         </div>
       )}
 
-      {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
+      {!onsiteSelected && !selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
       <MeasurementSection
         title="Required Measurements"
         description={
@@ -2448,7 +2560,7 @@ export const DormantFutureMeasurementStep = ({
       />
       )}
 
-      {!selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
+      {!onsiteSelected && !selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
         <MeasurementSection
           title={CALCULATED_FROM_HEIGHT_LABEL}
           description={CALCULATED_FROM_HEIGHT_DESCRIPTION}
@@ -2465,7 +2577,7 @@ export const DormantFutureMeasurementStep = ({
         />
       )}
 
-      {!selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
+      {!onsiteSelected && !selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
         <MeasurementSection
           title="Optional Measurements"
           description="Add any of these if you want. They are not required."

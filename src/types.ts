@@ -1104,12 +1104,15 @@ export type MeasurementRiskRoute =
   | MeasurementWorkbookRiskRoute
   | "critical_risk";
 
-export type MeasurementMethodId = MeasurementRiskRoute | "sample_cloth";
+export type MeasurementMethodId =
+  | MeasurementRiskRoute
+  | "sample_cloth"
+  | "onsite_physical";
 
 /** Persisted risk IDs are `low_risk` / `medium_risk` / `high_risk` / `critical_risk`. `null` means no risk level is selected yet. */
 export type SelectedMeasurementRiskRoute = MeasurementRiskRoute | null;
 
-/** Persisted method IDs include the four risk routes plus `sample_cloth`. `null` means no method is selected yet. */
+/** Persisted method IDs include the four risk routes, `sample_cloth`, and `onsite_physical`. `null` means no method is selected yet. */
 export type SelectedMeasurementMethod = MeasurementMethodId | null;
 
 export type MeasurementUnit = "inch" | "cm";
@@ -1146,7 +1149,8 @@ export type FutureMeasurementDiagnosticCode =
   | "required_measurement_missing"
   | "measurement_range_recheck"
   | "implausible_measurement_value"
-  | "stale_derived_value";
+  | "stale_derived_value"
+  | "onsite_booking_acknowledgement_required";
 
 export interface FutureMeasurementDiagnostic {
   code: FutureMeasurementDiagnosticCode;
@@ -1201,6 +1205,8 @@ export interface FutureMeasurementStateV1 {
   diagnostics: FutureMeasurementDiagnostic[];
   invalidInputKeys: string[];
   invalidInputKeysByRoute?: Record<MeasurementMethodId, string[]>;
+  /** Customer acknowledged the 3-day WhatsApp booking requirement for onsite physical measurements. Absent in older drafts normalizes cleanly to false. */
+  onsiteBookingAcknowledged?: boolean;
   /** Garment the customer had open. Optional so older drafts still load. */
   activeGarmentKey?: string;
 }
