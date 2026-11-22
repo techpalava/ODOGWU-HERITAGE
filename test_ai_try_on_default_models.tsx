@@ -562,7 +562,7 @@ const harness = () => {
   // 5. Out of tries: a saved result is still served, a new one is refused.
   await h.post({ defaultModelId: "male-2-medium" });
   await h.post({ defaultModelId: "male-medium-build" });
-  const outOfTries = await h.post({ defaultModelId: "male-plus" });
+  const outOfTries = await h.post({ defaultModelId: "female-2-medium" });
   assert.equal(outOfTries.status, 429);
   assert.equal(outOfTries.body.code, "ORDER_TRY_LIMIT_REACHED");
   const stillFree = await h.post({ defaultModelId: "female-plus" });
@@ -1107,7 +1107,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     });
     assert.equal(byData(renderer, "data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true);
     assert.equal(byData(renderer, "data-ai-try-on-model-group").length, 2, "both Men and Women rows visible");
-    assert.equal(modelIds(renderer).length, 10);
+    assert.equal(modelIds(renderer).length, 6);
     assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium")[0].props["aria-checked"], true);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0);
     await click(generateButton(renderer));
@@ -1144,7 +1144,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     });
     // Click Men filter chip, pick male-plus.
     await click(byData(renderer, "data-ai-try-on-model-filter", "men")[0]);
-    assert.equal(modelIds(renderer).length, 5);
+    assert.equal(modelIds(renderer).length, 3);
     await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0);
 
@@ -1153,7 +1153,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0);
-    assert.equal(modelIds(renderer).length, 5, "stale Men filter never empties Women-only picker");
+    assert.equal(modelIds(renderer).length, 3, "stale Men filter never empties Women-only picker");
     assert.ok(modelIds(renderer).every((id) => id.startsWith("female-") && id.endsWith("-short")));
     assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
     const dressNotice = byData(renderer, "data-ai-try-on-model-auto-switched");

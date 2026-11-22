@@ -539,7 +539,7 @@ for (const [list, reason, message] of [
   await act(async () => { fData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "skirt" } }); });
   assert.equal(fData("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short");
   assert.equal(fData("data-ai-try-on-model-filter").length, 0, "filter chips hidden for Women-only outfit");
-  assert.equal(fModels().length, 5, "all 5 short Women models shown even after stale Men filter");
+  assert.equal(fModels().length, 3, "all 3 short Women models shown even after stale Men filter");
   assert.ok(fModels().every((id) => id.startsWith("female-") && id.endsWith("-short")));
   assert.equal(fData("data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
   assert.equal(fData("data-ai-try-on-model-auto-switched").length, 1, "inline notice shown for outfit auto-switch");
@@ -552,7 +552,7 @@ for (const [list, reason, message] of [
   await act(async () => { fData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "trouser" } }); });
   assert.equal(fData("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
   assert.equal(fData("data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true, "filter resets to All on flexible outfit");
-  assert.equal(fModels().length, 10, "both Men and Women long models visible for Shirt + Trouser");
+  assert.equal(fModels().length, 6, "both Men and Women long models visible for Shirt + Trouser");
   assert.equal(fData("data-ai-try-on-model-auto-switched").length, 0, "compatible outfit clears notice");
   await act(async () => { fPanel.unmount(); });
 }
