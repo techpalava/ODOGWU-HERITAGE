@@ -182,6 +182,8 @@ try {
   });
 
   const noop = () => undefined;
+  const editorScrollCalls: unknown[] = [];
+  const editorFocusCalls: unknown[] = [];
   await act(async () => {
     renderer = create(
       createElement(DatabaseView, {
@@ -201,6 +203,19 @@ try {
         setBusinessSettings: noop,
         initialTab: "styles",
       }),
+      {
+        createNodeMock: (element) =>
+          element.props?.["data-testid"] === "admin-record-editor"
+            ? {
+                scrollIntoView: (options?: unknown) => {
+                  editorScrollCalls.push(options);
+                },
+                focus: (options?: unknown) => {
+                  editorFocusCalls.push(options);
+                },
+              }
+            : null,
+      },
     );
   });
 
@@ -530,18 +545,54 @@ try {
     assert.deepEqual(resolvedAdaptableFemale.demographics, ["female"]);
   }
 
+  const scrollCountBeforeOpen = editorScrollCalls.length;
+  const focusCountBeforeOpen = editorFocusCalls.length;
   await openFirstStyleInList();
+  assert.equal(editorScrollCalls.length, scrollCountBeforeOpen + 1);
+  assert.equal(editorFocusCalls.length, focusCountBeforeOpen + 1);
+  assert.deepEqual(editorScrollCalls.at(-1), {
+    behavior: "auto",
+    block: "start",
+  });
+  assert.deepEqual(editorFocusCalls.at(-1), { preventScroll: true });
+  const editorNode = renderer!.root.findByProps({
+    "data-testid": "admin-record-editor",
+  });
+  assert.equal(editorNode.props.tabIndex, -1);
+  assert.equal(
+    String(editorNode.props.className).includes("scroll-mt-28"),
+    true,
+  );
+
   await act(async () => {
     renderer!.root
       .findByProps({ "aria-label": "Style Applicability Mode" })
       .props.onChange({ target: { value: "exact_only" } });
   });
+  assert.equal(editorScrollCalls.length, scrollCountBeforeOpen + 1);
+  assert.equal(editorFocusCalls.length, focusCountBeforeOpen + 1);
+
   await submitStyleForm();
   assert.deepEqual(committedRecord.eligibility.adaptability, {
     mode: "exact_only",
     garmentTypes: [],
     demographics: [],
   });
+  assert.equal(editorScrollCalls.length, scrollCountBeforeOpen + 1);
+  assert.equal(editorFocusCalls.length, focusCountBeforeOpen + 1);
+
+  await openFirstStyleInList();
+  assert.equal(editorScrollCalls.length, scrollCountBeforeOpen + 2);
+  assert.equal(editorFocusCalls.length, focusCountBeforeOpen + 2);
+
+  await openFirstStyleInList();
+  assert.equal(editorScrollCalls.length, scrollCountBeforeOpen + 3);
+  assert.equal(editorFocusCalls.length, focusCountBeforeOpen + 3);
+  assert.deepEqual(editorScrollCalls.at(-1), {
+    behavior: "auto",
+    block: "start",
+  });
+  assert.deepEqual(editorFocusCalls.at(-1), { preventScroll: true });
 } finally {
   await act(async () => renderer?.unmount());
   DesignStyleAuthorityService.subscribeToAdminRecords = originalSubscribe;
