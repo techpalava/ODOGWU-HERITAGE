@@ -35,6 +35,7 @@ import {
 } from "./src/utils/additionalGarmentConstructionState";
 import type { TraditionalAccessory } from "./src/utils/decorativePricing";
 import {
+  SHOW_STUDIO_TRADITIONAL_ACCESSORIES,
   TRADITIONAL_ACCESSORY_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_OPTIONS,
   getTraditionalAccessoryPrice,
@@ -271,6 +272,7 @@ const createNeckStep = ({
   constructionSubtotal = 0,
   orderLevelCustomDetailsPrice = 0,
   designSelections = {},
+  showTraditionalAccessories,
   onDecorativeFeatureEnable = () => undefined,
   onDecorativeFeatureDisable = () => undefined,
   onDecorativeFeatureGarmentAssign = () => undefined,
@@ -283,6 +285,7 @@ const createNeckStep = ({
   constructionSubtotal?: number | null;
   orderLevelCustomDetailsPrice?: number;
   designSelections?: DesignSelections;
+  showTraditionalAccessories?: boolean;
   onDecorativeFeatureEnable?: (feature: DecorativeFeature) => void;
   onDecorativeFeatureDisable?: (feature: DecorativeFeature) => void;
   onDecorativeFeatureGarmentAssign?: (
@@ -305,6 +308,7 @@ const createNeckStep = ({
     constructionBreakdown,
     constructionSubtotal,
     designSelections,
+    showTraditionalAccessories,
     selectedStyle: null,
     additionalGarments: [],
     additionalGarmentConstructionOptions: [],
@@ -413,6 +417,37 @@ assert.equal(
   0,
   "Step 4 must not render accessory photos",
 );
+assert.equal(
+  SHOW_STUDIO_TRADITIONAL_ACCESSORIES,
+  false,
+  "Traditional Accessories are hidden in Design Studio Step 5 by default",
+);
+assert.equal(
+  personalizedLayoutRenderer.root.findAllByProps({
+    "data-custom-detail-section": "accessories",
+  }).length,
+  0,
+  "Step 5 hides Traditional Accessories by default when SHOW_STUDIO_TRADITIONAL_ACCESSORIES is false",
+);
+assert.equal(
+  personalizedLayoutRenderer.root.findAllByProps({
+    "data-custom-detail-section": "monogram-embroidery",
+  }).length,
+  1,
+  "Step 5 keeps Monogram and Embroidery Design when accessories are hidden",
+);
+assert.equal(
+  personalizedLayoutRenderer.root.findAllByProps({
+    "data-custom-detail-section": "add-additional-garment",
+  }).length,
+  1,
+  "Step 5 keeps Add Additional Garment when accessories are hidden",
+);
+assert.equal(
+  textContent(personalizedLayoutRenderer.root).includes("accessories"),
+  false,
+  "Step 5 intro copy does not mention accessories when Traditional Accessories are hidden",
+);
 const toggledAccessories: TraditionalAccessory[] = [];
 let clearedAccessories = 0;
 let accessoryImageRenderer!: ReturnType<typeof create>;
@@ -420,6 +455,7 @@ act(() => {
   accessoryImageRenderer = create(
     createNeckStep({
       stage: "personalized_additions",
+      showTraditionalAccessories: true,
       designSelections: { accessories: ["Traditional Bead"] },
       onAccessoryToggle: (accessory) => {
         toggledAccessories.push(accessory);

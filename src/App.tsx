@@ -78,6 +78,7 @@ import { isBatchPricingRoute } from "./utils/designPricing";
 // Each view retries a failed chunk import once; light tabs prefetch on idle.
 const homeView = lazyView(() => import("./components/HomeView"));
 const designStudioView = lazyView(() => import("./components/DesignStudioView"));
+const accessoriesView = lazyView(() => import("./components/AccessoriesView"));
 const dashboardView = lazyView(() => import("./components/DashboardView"));
 const customOrderView = lazyView(() => import("./components/CustomOrderView"));
 const aboutView = lazyView(() => import("./components/AboutView"));
@@ -89,6 +90,7 @@ const privacyPolicyView = lazyView(() => import("./components/PrivacyPolicyView"
 const termsView = lazyView(() => import("./components/TermsView"));
 const HomeView = homeView.Component;
 const DesignStudioView = designStudioView.Component;
+const AccessoriesView = accessoriesView.Component;
 const DashboardView = dashboardView.Component;
 const CustomOrderView = customOrderView.Component;
 const AboutView = aboutView.Component;
@@ -100,6 +102,7 @@ const PrivacyPolicyView = privacyPolicyView.Component;
 const TermsView = termsView.Component;
 const IDLE_PREFETCH_VIEWS = [
   homeView.prefetch,
+  accessoriesView.prefetch,
   galleryView.prefetch,
   reviewsView.prefetch,
   aboutView.prefetch,
@@ -1987,6 +1990,12 @@ export default function App() {
                       }
                     : undefined
                 }
+              />
+            )}
+
+            {activeTab === "accessories" && (
+              <AccessoriesView
+                onStartTailoredOrder={() => store.requestDesignStudioFromNav()}
               />
             )}
 

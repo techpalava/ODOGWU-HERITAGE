@@ -76,6 +76,7 @@ import {
   getMonogramTextForGarment,
   getTraditionalAccessoryPrice,
   hasGarmentScopedDecorativeFeatureSelections,
+  resolveShowStudioTraditionalAccessories,
 } from "../utils/decorativePricing";
 import {
   MONOGRAM_TEXT_MAX_LENGTH,
@@ -177,6 +178,7 @@ interface DormantFutureCustomDetailsStepProps {
   orderType?: string | null;
   designSelections: DesignSelections;
   showAdditionalClothesCosts?: boolean;
+  showTraditionalAccessories?: boolean;
   selectedStyle: StyleCategory | null;
   additionalGarments: readonly FabricGarmentAssignment[];
   additionalGarmentConstructionOptions: readonly {
@@ -711,6 +713,7 @@ export const DormantFutureCustomDetailsStep = ({
   orderType = null,
   designSelections,
   showAdditionalClothesCosts,
+  showTraditionalAccessories,
   selectedStyle,
   additionalGarments,
   additionalGarmentConstructionOptions,
@@ -752,6 +755,9 @@ export const DormantFutureCustomDetailsStep = ({
 }: DormantFutureCustomDetailsStepProps) => {
   const isPersonalizedAdditionsStage = stage === "personalized_additions";
   const isCustomDetailsStage = !isPersonalizedAdditionsStage;
+  const traditionalAccessoriesVisible = resolveShowStudioTraditionalAccessories(
+    showTraditionalAccessories,
+  );
   const canPresentAdditionalGarmentCustomDetailsPrompt =
     isCustomDetailsStage ||
     (isPersonalizedAdditionsStage && allowAdditionalGarmentCustomDetailsPrompt);
@@ -2215,7 +2221,13 @@ export const DormantFutureCustomDetailsStep = ({
         >
           {stageTitle}
         </h2>
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">{isPersonalizedAdditionsStage ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record." : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}</p>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
+          {isPersonalizedAdditionsStage
+            ? traditionalAccessoriesVisible
+              ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record."
+              : "Add personalized requirements, monogram or embroidery, and any additional garment details. These choices stay in the same garment-scoped Custom Details record."
+            : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}
+        </p>
       </div>
 
       {stageAttentionMessages.length > 0 && (
@@ -2655,7 +2667,7 @@ export const DormantFutureCustomDetailsStep = ({
           </section>
           )}
 
-          {isPersonalizedAdditionsStage && (
+          {isPersonalizedAdditionsStage && traditionalAccessoriesVisible && (
           <section data-custom-detail-section="accessories" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Select Accessories - Optional</h3>
             <p className="mt-1 text-xs text-heritage-ink/60">Optional accessories remain separate from garment construction.</p>
@@ -2935,7 +2947,7 @@ export const DormantFutureCustomDetailsStep = ({
             <p className="text-xs leading-relaxed text-heritage-ink/60">{garmentConstructionInclusionNote(orderType)}</p>
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
-            {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.detail}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
+            {[...decorativeFeatureLines, ...(traditionalAccessoriesVisible ? designSelections.accessories || [] : [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.detail}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(traditionalAccessoriesVisible ? designSelections.accessories || [] : []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
             {pricing.status === "pending" && <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">A personalized addition is reviewed after you order. The garment total today does not include it.</p>}
             {pricing.status === "invalid" && <p className="rounded-lg bg-red-50 p-2 text-xs leading-relaxed text-red-700">A saved Custom Details price needs review.</p>}
             <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green"><span className="min-w-0 break-words">Estimated total so far</span><span className="shrink-0 font-mono">{estimatedTotal === null ? "Pending" : money(estimatedTotal)}</span></div>

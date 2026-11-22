@@ -299,7 +299,10 @@ import {
 } from "../utils/garmentScopedCustomDetailsDomain";
 import { getCustomDetailsStageCompletion } from "../utils/customDetailsStageOwnership";
 import { resolveShowAdditionalClothesCosts } from "../config/GarmentDetailsConfig";
-import { projectActiveCustomerDesignSelections } from "../utils/customerAvailableDesignSelections";
+import {
+  clearHiddenStudioTraditionalAccessories,
+  projectActiveCustomerDesignSelections,
+} from "../utils/customerAvailableDesignSelections";
 import {
   advanceAdditionalGarmentSessionToCustomDetailsChoice,
   advanceAdditionalGarmentSessionToDesignStyle,
@@ -597,6 +600,7 @@ import {
   areAssignedMonogramNamesComplete,
   hasGarmentScopedDecorativeFeatureSelections,
   prefillMonogramTextForGarment,
+  resolveShowStudioTraditionalAccessories,
   setDecorativeFeatureGarmentAssignment,
   setMonogramPlacementForGarment,
   setMonogramTextForGarment,
@@ -3592,13 +3596,20 @@ export default function DesignStudioView({
 
   // STEP 3: Design Details
   const showAdditionalClothesCosts = resolveShowAdditionalClothesCosts();
+  const showStudioTraditionalAccessories =
+    resolveShowStudioTraditionalAccessories();
   const activeCustomerDesignSelections = useMemo(
     () =>
       projectActiveCustomerDesignSelections({
         designSelections,
         showAdditionalClothesCosts,
+        showTraditionalAccessories: showStudioTraditionalAccessories,
       }),
-    [designSelections, showAdditionalClothesCosts],
+    [
+      designSelections,
+      showAdditionalClothesCosts,
+      showStudioTraditionalAccessories,
+    ],
   );
   const futureAdditionalGarmentConstructionOptions =
     CATALOGUE_ADDITIONAL_GARMENT_TYPES.map((garmentType) => ({
@@ -6004,13 +6015,18 @@ export default function DesignStudioView({
           }),
         );
       }
-      setDesignSelections({
-        ...(storedDraft?.designSelections || { accessories: [] }),
-        additionalGarmentConstructions:
-          restoredAdditionalConstructions.state,
-        garmentScopedCustomDetails: restoredCustomDetails.state,
-        garmentScopedCustomDetailInputs: restoredPersonalizedInputs.state,
-      });
+      setDesignSelections(
+        clearHiddenStudioTraditionalAccessories(
+          {
+            ...(storedDraft?.designSelections || { accessories: [] }),
+            additionalGarmentConstructions:
+              restoredAdditionalConstructions.state,
+            garmentScopedCustomDetails: restoredCustomDetails.state,
+            garmentScopedCustomDetailInputs: restoredPersonalizedInputs.state,
+          },
+          showStudioTraditionalAccessories,
+        ),
+      );
       setFabricAllocationState(reconciledFabricState);
       setSelectedFabric(
         fabrics.find(
@@ -12149,6 +12165,7 @@ export default function DesignStudioView({
           orderType={futureOrderIdentity?.orderType ?? ctx.orderType}
           designSelections={activeCustomerDesignSelections}
           showAdditionalClothesCosts={showAdditionalClothesCosts}
+          showTraditionalAccessories={showStudioTraditionalAccessories}
           selectedStyle={futureDesignStyleSelection.selectedStyle}
           additionalGarments={futureAdditionalGarments}
           additionalGarmentConstructionOptions={
