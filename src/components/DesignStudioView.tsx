@@ -1060,6 +1060,9 @@ export default function DesignStudioView({
     diagnostic: InvalidPersistedFabricAllocationDiagnostic;
   } | null>(null);
   const businessSettings = useAppStore((state) => state.businessSettings);
+  const designStyleCategories = useAppStore(
+    (state) => state.designStyleCategories,
+  );
   const isLoadingData = useAppStore((state) => state.isLoadingData);
   const stylesLoadState = useAppStore((state) => state.stylesLoadState);
   const fabricsLoadState = useAppStore((state) => state.fabricsLoadState);
@@ -12011,6 +12014,7 @@ export default function DesignStudioView({
           }
           activeOccurrenceTarget={resolvedFutureActiveDesignStyleOccurrence}
           catalogueEntries={futureDesignStyleCatalogueEntries}
+          designStyleCategories={designStyleCategories}
           clearRequest={futureDesignStyleClearRequest}
           clearRequests={futureDesignStyleClearRequests}
           runtimeStatus={futureDesignStyleStepProjection.runtimeStatus}
