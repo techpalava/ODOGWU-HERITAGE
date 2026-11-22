@@ -152,6 +152,7 @@ export const buildAiTryOnFitHints = ({
 }): AiTryOnFitHint[] => {
   if (!measurement || !isRecord(measurement) || !measurement.route) return [];
   if (measurement.calculationStatus === "invalid") return [];
+  if (measurement.route === "onsite_physical") return [];
   const invalidKeys = new Set(measurement.invalidInputKeys || []);
   const sampleCloth = measurement.route === "sample_cloth";
   const keys = garmentKeys.length

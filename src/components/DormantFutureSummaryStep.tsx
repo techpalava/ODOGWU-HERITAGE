@@ -416,6 +416,7 @@ const MEASUREMENT_METHOD_BADGE_TONES: Record<
   high_risk: "border-red-200 bg-red-50 text-red-700",
   critical_risk: "border-red-300 bg-red-100 text-red-800",
   sample_cloth: "border-heritage-gold/30 bg-heritage-cream text-heritage-green",
+  onsite_physical: "border-heritage-green/25 bg-heritage-green/10 text-heritage-green",
 };
 
 /** Measurement method (risk level) as a small coloured badge. Display only. */

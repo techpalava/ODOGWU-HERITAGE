@@ -37,6 +37,7 @@ const MEASUREMENT_ROUTES: readonly MeasurementMethodId[] = [
   "high_risk",
   "critical_risk",
   "sample_cloth",
+  "onsite_physical",
 ];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
