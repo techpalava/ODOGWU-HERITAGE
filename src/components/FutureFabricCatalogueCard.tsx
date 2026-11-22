@@ -1,4 +1,5 @@
-import { Check, X } from "lucide-react";
+import { useId, useRef, useState, type RefObject } from "react";
+import { Check, Eye, X } from "lucide-react";
 import type { Fabric } from "../types";
 import {
   getFabricAvailabilityMessage,
@@ -10,10 +11,49 @@ import type { FabricStockPresentation } from "../utils/fabricStockPresentation";
 import { isUsableFabricColorHex } from "./AssignedFabricPreview";
 import { useImageLoadRetry } from "../hooks/useImageLoadRetry";
 import {
+  buildFabricPhotoPreviewSources,
   buildOptimizedImageSources,
   FABRIC_CARD_IMAGE_PRESET,
 } from "../utils/optimizedImageUrl";
 import { FabricPhotoReloadButton } from "./FabricPhotoReloadButton";
+import { CataloguePhotoPreviewDialog } from "./CataloguePhotoPreviewDialog";
+import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
+
+/**
+ * Enlarged view of one fabric photo. Loads through the same retry and
+ * resized-then-original path as the card, using the larger preview source.
+ */
+const FabricCardPhotoPreview = ({
+  imageUrl,
+  fabricName,
+  fabricCode,
+  onClose,
+  returnFocusRef,
+}: {
+  imageUrl: string;
+  fabricName: string;
+  fabricCode: string;
+  onClose: () => void;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
+}) => {
+  const image = useImageLoadRetry(imageUrl, {
+    optimized: buildFabricPhotoPreviewSources(imageUrl),
+    report: { surface: "fabric-card", fabricCode },
+  });
+  return (
+    <CataloguePhotoPreviewDialog
+      src={image.failed ? "" : image.src}
+      srcSet={image.failed ? undefined : image.srcSet}
+      sizes={image.failed ? undefined : image.sizes}
+      name={fabricName}
+      alt={`${fabricName} fabric swatch`}
+      onClose={onClose}
+      returnFocusRef={returnFocusRef}
+      onImageError={image.onError}
+      unavailable={image.failed}
+    />
+  );
+};
 
 export const FutureFabricCatalogueCard = ({
   fabric,
@@ -35,6 +75,7 @@ export const FutureFabricCatalogueCard = ({
   usedBySelectionsLabel,
   disabledActionMessage,
   preselected = false,
+  showPhotoPreview = false,
 }: {
   fabric: Fabric;
   presentation: FutureFabricCatalogueCardPresentation;
@@ -67,6 +108,11 @@ export const FutureFabricCatalogueCard = ({
   disabledActionMessage?: string;
   /** Shown as the pre-selected choice: highlighted, its Select button pressed. */
   preselected?: boolean;
+  /**
+   * Eye button that opens a larger photo. The Fabric step turns this on.
+   * Other catalogue cards leave it off.
+   */
+  showPhotoPreview?: boolean;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
   const isCancelAction =
@@ -127,6 +173,13 @@ export const FutureFabricCatalogueCard = ({
   const describedByValue =
     [describedBy, stockBadgeId].filter(Boolean).join(" ") || undefined;
   const imageUrl = hasUsableFabricImage(fabric) ? fabric.image!.trim() : null;
+  const eyeRef = useRef<HTMLButtonElement | null>(null);
+  const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
+  const photoPreviewOverlayId = useId();
+  useReportDesignStudioBlockingOverlay(
+    photoPreviewOverlayId,
+    showPhotoPreview && photoPreviewOpen,
+  );
   const colorHex = isUsableFabricColorHex(fabric.colorHex)
     ? fabric.colorHex.trim()
     : null;
@@ -172,9 +225,10 @@ export const FutureFabricCatalogueCard = ({
     </button>
   ) : null;
 
+  const canPreviewPhoto = Boolean(showPhotoPreview && imageUrl && showImage);
   return (
     <article
-      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm ${
+      className={`group flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm ${
         preselected ? "border-heritage-green ring-2 ring-heritage-gold/60" : "border-gray-200"
       }`}
       data-fabric-catalogue-card="true"
@@ -224,6 +278,33 @@ export const FutureFabricCatalogueCard = ({
               onReload={image.retry}
             />
           </div>
+        ) : null}
+        {canPreviewPhoto ? (
+          <button
+            ref={eyeRef}
+            type="button"
+            aria-label={`View larger photo of ${fabric.name}`}
+            data-fabric-photo-preview="true"
+            onClick={(event) => {
+              if (event && typeof event.stopPropagation === "function") {
+                event.stopPropagation();
+              }
+              setPhotoPreviewOpen(true);
+            }}
+            className="catalogue-photo-eye absolute bottom-2 left-2 z-10 inline-flex max-w-[calc(100%-0.5rem)] items-center gap-1 rounded-full border border-white/70 bg-white/70 py-1.5 pr-2 pl-1.5 text-[11px] font-bold leading-none whitespace-nowrap text-heritage-green shadow-sm backdrop-blur-sm hover:border-white hover:bg-white focus-visible:border-white focus-visible:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
+          >
+            <Eye aria-hidden="true" size={10} />
+            <span>Quick look</span>
+          </button>
+        ) : null}
+        {canPreviewPhoto && photoPreviewOpen ? (
+          <FabricCardPhotoPreview
+            imageUrl={imageUrl!}
+            fabricName={fabric.name}
+            fabricCode={fabric.code}
+            onClose={() => setPhotoPreviewOpen(false)}
+            returnFocusRef={eyeRef}
+          />
         ) : null}
         {stockPresentation.visible && (
           <span
