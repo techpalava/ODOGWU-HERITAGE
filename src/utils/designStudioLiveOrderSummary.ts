@@ -23,7 +23,10 @@ import type { FutureOrderCandidatePricingV1 } from "./futureOrderCandidate";
 import type { WearerOrderMeasurementCompletion } from "./wearerOrder";
 import {
   countRemainingCustomerRequiredMeasurementUnits,
+  isOnsitePhysicalMeasurementMethod,
   isSelectedMeasurementMethod,
+  MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL,
+  MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL,
   type MeasurementRequirementPlan,
 } from "./measurementBlueprint";
 import { getStep1GarmentPlainDescription } from "./garmentConstructionPricing.js";
@@ -471,12 +474,29 @@ const measurementStatusLine = (
   orderMeasurementCompletion?: WearerOrderMeasurementCompletion | null,
 ): LiveOrderSummaryLine => {
   const routeLabel = summary.measurementSummary.routeLabel;
+  const soleOnsite = isOnsitePhysicalMeasurementMethod(
+    summary.measurementSummary.route ?? measurementState.route,
+  );
+  const anyWearerOnsite =
+    soleOnsite ||
+    (summary.measurementSummary.wearerGroups ?? []).some((wearer) =>
+      isOnsitePhysicalMeasurementMethod(wearer.route),
+    );
+  const anyOnsiteIncomplete =
+    (soleOnsite && measurementState.calculationStatus !== "complete") ||
+    (summary.measurementSummary.wearerGroups ?? []).some(
+      (wearer) =>
+        isOnsitePhysicalMeasurementMethod(wearer.route) &&
+        wearer.status !== "complete",
+    );
   if (orderMeasurementCompletion) {
     if (orderMeasurementCompletion.complete) {
       return {
         id: "measurements-complete",
         label: `${routeLabel} — Complete`,
-        detail: null,
+        detail: anyWearerOnsite
+          ? MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL
+          : null,
         amountLabel: null,
       };
     }
@@ -487,7 +507,9 @@ const measurementStatusLine = (
         remaining > 0
           ? `${routeLabel} — ${remaining} required measurements remaining`
           : `${routeLabel} — Incomplete`,
-      detail: null,
+      detail: anyOnsiteIncomplete
+        ? MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL
+        : null,
       amountLabel: null,
     };
   }
@@ -504,7 +526,17 @@ const measurementStatusLine = (
     return {
       id: "measurements-complete",
       label: `${routeLabel} — Complete`,
-      detail: null,
+      detail: isOnsitePhysicalMeasurementMethod(route)
+        ? MEASUREMENT_ONSITE_LIVE_SUMMARY_COMPLETE_DETAIL
+        : null,
+      amountLabel: null,
+    };
+  }
+  if (isOnsitePhysicalMeasurementMethod(route)) {
+    return {
+      id: "measurements-pending",
+      label: `${routeLabel} — Incomplete`,
+      detail: MEASUREMENT_ONSITE_LIVE_SUMMARY_INCOMPLETE_DETAIL,
       amountLabel: null,
     };
   }
