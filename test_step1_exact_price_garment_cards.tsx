@@ -66,7 +66,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     ["skirt", "Standard Skirt", 75],
     ["long_skirt", "Long Skirt", 80],
     ["trouser", "Trouser", 75],
-    ["standard_shorts", "Standard Knicker Shorts", 70],
+    ["standard_shorts", "Standard Nikka Shorts", 70],
     ["bum_shorts", "Standard Bum Shorts", 70],
   ];
   assert.equal(STEP_1_GARMENT_CARD_PRESETS.length, 13);

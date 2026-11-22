@@ -59,7 +59,7 @@ export const projectFutureGarmentRemovalTargets = ({
         ? `${roleBase} ${roleOrdinal}`
         : roleBase;
     // Customer-facing removal labels normalize Fabric-domain shorts names to
-    // "Standard Knicker Shorts" / "Standard Bum Shorts" for screen readers
+    // "Standard Nikka Shorts" / "Standard Bum Shorts" for screen readers
     // and modal headings while leaving Fabric-domain labels untouched.
     const occurrenceLabel = getCustomDetailsGarmentLabel(occurrence.garmentType);
     return {

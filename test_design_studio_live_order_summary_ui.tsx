@@ -1389,7 +1389,7 @@ act(() => renderer.update(createElement(DesignStudioOrderSummary, {
   unlockedStages: new Set<DesignStudioStageId>(),
   currentStageId: "custom_details",
 })));
-for (const [index, label] of ["Standard Knicker Shorts", "Standard Bum Shorts"].entries()) {
+for (const [index, label] of ["Standard Nikka Shorts", "Standard Bum Shorts"].entries()) {
   for (const suffix of ["", ":2"]) {
     const row = oneByLineId(renderer.root, `${shortsLines[index].id}${suffix}`);
     assert.equal(textOf(row.findAllByType("p")[0]), `${label}${suffix ? " 2" : ""}`);
