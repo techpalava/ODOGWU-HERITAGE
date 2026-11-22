@@ -196,3 +196,34 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/*
+ * Fabric-card photo eye. Visible all the time on touch and other devices that
+ * cannot hover. On a device that can hover it stays hidden until the card is
+ * hovered or the button itself has focus (keyboard). Width is not the signal:
+ * a narrow laptop still has a pointer, and a wide tablet may not.
+ */
+.catalogue-photo-eye {
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+@media (hover: hover) {
+  .catalogue-photo-eye {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .group:hover .catalogue-photo-eye,
+  .catalogue-photo-eye:focus,
+  .catalogue-photo-eye:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: reduce) {
+  .catalogue-photo-eye {
+    transition: none;
+  }
+}
