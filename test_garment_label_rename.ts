@@ -67,6 +67,7 @@ import {
 import { projectOccurrenceDisplayLabels } from "./src/utils/occurrenceDisplayLabel";
 import {
   formatCustomDetailsGarmentLabel,
+  formatSavedNikkaDisplayText,
   getCustomDetailsGarmentLabel,
 } from "./src/utils/optionalShortsPresentation";
 
@@ -124,10 +125,10 @@ for (const [garmentType, expected] of Object.entries(EXPECTED)) {
 assert.equal(getFabricGarmentLabel("trouser"), "Trouser");
 assert.equal(getFabricGarmentLabel("long_skirt"), "Long Skirt");
 assert.equal(getFabricGarmentLabel("agbada"), "Agbada");
-assert.equal(getCustomDetailsGarmentLabel("standard_shorts"), "Standard Knicker Shorts");
+assert.equal(getCustomDetailsGarmentLabel("standard_shorts"), "Standard Nikka Shorts");
 assert.equal(getCustomDetailsGarmentLabel("bum_shorts"), "Standard Bum Shorts");
-assert.equal(getStep1GarmentDisplayLabel("standard_shorts"), "Standard Knicker Shorts");
-assert.equal(getFabricGarmentLabel("standard_shorts"), "Knicker / Standard Shorts");
+assert.equal(getStep1GarmentDisplayLabel("standard_shorts"), "Standard Nikka Shorts");
+assert.equal(getFabricGarmentLabel("standard_shorts"), "Nikka / Standard Shorts");
 assert.equal(getFabricGarmentLabel("bum_shorts"), "Bum Shorts");
 assert.deepEqual(
   projectFutureGarmentRemovalTargets({
@@ -138,28 +139,46 @@ assert.deepEqual(
     provisionalGarmentKey: null,
   }).map((target) => target.accessibleName),
   [
-    "Remove Standard Knicker Shorts, base garment",
+    "Remove Standard Nikka Shorts, base garment",
     "Remove Standard Bum Shorts, base garment",
   ],
 );
-assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts"), "Standard Knicker Shorts");
-assert.equal(formatCustomDetailsGarmentLabel("Nikka / Standard Shorts"), "Standard Knicker Shorts");
-assert.equal(formatCustomDetailsGarmentLabel("Knicker / Standard Shorts"), "Standard Knicker Shorts");
-assert.equal(formatCustomDetailsGarmentLabel("Nikka"), "Standard Knicker Shorts");
-assert.equal(formatCustomDetailsGarmentLabel("Nikka 2"), "Standard Knicker Shorts 2");
-assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts 2"), "Standard Knicker Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Standard Knicker Shorts"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Nikka / Standard Shorts"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Knicker / Standard Shorts"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Nikka"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Knicker"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("Nikka 2"), "Standard Nikka Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Knicker 2"), "Standard Nikka Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Standard Nikka Shorts 2"), "Standard Nikka Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("Standard Knicker Shorts 2"), "Standard Nikka Shorts 2");
 assert.equal(formatCustomDetailsGarmentLabel("Long_skirt"), "Long Skirt");
 assert.equal(formatCustomDetailsGarmentLabel("long_skirt 2"), "Long Skirt 2");
-assert.equal(formatCustomDetailsGarmentLabel("Standard_shorts"), "Standard Knicker Shorts");
-assert.equal(formatCustomDetailsGarmentLabel("standard_shorts 3"), "Standard Knicker Shorts 3");
+assert.equal(formatCustomDetailsGarmentLabel("Standard_shorts"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("standard_shorts 3"), "Standard Nikka Shorts 3");
 assert.equal(formatCustomDetailsGarmentLabel("Bum_shorts"), "Standard Bum Shorts");
 assert.equal(formatCustomDetailsGarmentLabel("bum_shorts 2"), "Standard Bum Shorts 2");
 assert.equal(formatCustomDetailsGarmentLabel("Full_length_gown"), "Full-Length Gown");
 assert.equal(formatCustomDetailsGarmentLabel("full_length_gown 2"), "Full-Length Gown 2");
 assert.equal(formatCustomDetailsGarmentLabel("kaftan"), "Long Shirt");
 assert.equal(formatCustomDetailsGarmentLabel("KAFTAN 2"), "Long Shirt 2");
-assert.equal(formatCustomDetailsGarmentLabel("nikka"), "Standard Knicker Shorts");
-assert.equal(formatCustomDetailsGarmentLabel("nikka 2"), "Standard Knicker Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("nikka"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("nikka 2"), "Standard Nikka Shorts 2");
+assert.equal(formatCustomDetailsGarmentLabel("knicker"), "Standard Nikka Shorts");
+assert.equal(formatCustomDetailsGarmentLabel("knicker 2"), "Standard Nikka Shorts 2");
+assert.equal(
+  formatSavedNikkaDisplayText("Standard Knicker Shorts — Knicker Pockets & Knicker/Standard Shorts Fastening"),
+  "Standard Nikka Shorts — Nikka Pockets & Nikka/Standard Shorts Fastening",
+);
+assert.equal(
+  formatSavedNikkaDisplayText("Knicker: native-style shorts that end at or just below the knee."),
+  "Nikka: native-style shorts that end at or just below the knee.",
+);
+assert.equal(
+  formatSavedNikkaDisplayText("Standard Nikka Shorts — Nikka Pockets & Nikka/Standard Shorts Fastening"),
+  "Standard Nikka Shorts — Nikka Pockets & Nikka/Standard Shorts Fastening",
+);
 
 // 2. Numbered duplicates keep their ordinal after the prefixed name.
 const occurrenceLabels = projectOccurrenceDisplayLabels([

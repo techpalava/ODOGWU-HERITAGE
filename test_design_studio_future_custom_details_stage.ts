@@ -1923,7 +1923,7 @@ assert.equal(
     "data-shorts-garment-block": "base:standard_shorts",
   }).length,
   1,
-  "Standard Knicker Shorts has its own garment block",
+  "Standard Nikka Shorts has its own garment block",
 );
 assert.equal(
   shortsOwnedSection.findAllByProps({
@@ -1950,7 +1950,7 @@ assert.equal(
   0,
   "Bum Shorts construction options do not leak into the Nikka block",
 );
-assert.match(textContent(nikkaOwnedBlock), /Standard Knicker Shorts/);
+assert.match(textContent(nikkaOwnedBlock), /Standard Nikka Shorts/);
 assert.match(textContent(nikkaOwnedConstruction), /Main Garment/);
 assert.match(textContent(nikkaOwnedConstruction), /ending just above the knee/);
 assert.doesNotMatch(textContent(nikkaOwnedConstruction), /below the crotch/);
@@ -1966,7 +1966,7 @@ const bumOwnedPockets = groupInGarmentSection(
   bumOwnedBlock,
   "bum_shorts_pockets",
 );
-assert.match(textContent(nikkaOwnedPockets), /Pocket for Standard Knicker Shorts/);
+assert.match(textContent(nikkaOwnedPockets), /Pocket for Standard Nikka Shorts/);
 assert.match(textContent(bumOwnedPockets), /Pocket for Standard Bum Shorts/);
 assert.equal(
   nikkaOwnedBlock.findAllByProps({ "data-custom-detail-group": "bum_shorts_pockets" }).length,

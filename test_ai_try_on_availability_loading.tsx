@@ -113,7 +113,7 @@ const tryOnTarget: AiTryOnWearerTarget = {
       garmentKey: "shorts:1",
       garmentType: "standard_shorts",
       sourceKind: "catalog",
-      label: "Standard Knicker Shorts",
+      label: "Standard Nikka Shorts",
       garmentImageUrl: "/ai-try-on-models/male-2-medium.webp",
       fabricSwatchImageUrl: null,
       fabricColorHex: null,

@@ -45,7 +45,7 @@ const garment = (
 
 const shirtA = garment("shirt:a", "shirt", "Standard Shirt A", "https://example.test/design-a.jpg", "https://example.test/fabric-a.jpg");
 const shirtB = garment("shirt:b", "shirt", "Standard Shirt B", "https://example.test/design-b.jpg", "https://example.test/fabric-b.jpg");
-const shorts = garment("shorts:1", "standard_shorts", "Standard Knicker Shorts", "https://example.test/design-shorts.jpg", "https://example.test/fabric-shorts.jpg");
+const shorts = garment("shorts:1", "standard_shorts", "Standard Nikka Shorts", "https://example.test/design-shorts.jpg", "https://example.test/fabric-shorts.jpg");
 
 const target: AiTryOnWearerTarget = {
   wearerId: "you",

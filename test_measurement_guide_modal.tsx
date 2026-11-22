@@ -318,14 +318,14 @@ for (const section of MEASUREMENT_GUIDE_CHECKLIST_SECTIONS) {
 }
 
 assert.ok(tab1Text.includes("Long Shirt"));
-assert.ok(tab1Text.includes("Standard Knicker Shorts"));
+assert.ok(tab1Text.includes("Standard Nikka Shorts"));
 assert.ok(tab1Text.includes("Standard Bum Shorts"));
-assert.doesNotMatch(tab1Text, /\bnikka\b/i);
+assert.doesNotMatch(tab1Text, /\bknicker\b/i);
 assert.doesNotMatch(tab1Text, /\bkaftan\b/i);
 assert.doesNotMatch(tab1Text, /\bgowns?\b/i);
 
 const fullModalText = collectText(modal);
-assert.doesNotMatch(fullModalText, /\bnikka\b/i);
+assert.doesNotMatch(fullModalText, /\bknicker\b/i);
 assert.doesNotMatch(fullModalText, /\bkaftan\b/i);
 assert.doesNotMatch(fullModalText, /\bgowns?\b/i);
 

@@ -133,7 +133,7 @@ export const STEP_1_GARMENT_DISPLAY_LABELS: Readonly<
   trouser: "Trouser",
   skirt: "Standard Skirt",
   long_skirt: "Long Skirt",
-  standard_shorts: "Standard Knicker Shorts",
+  standard_shorts: "Standard Nikka Shorts",
   bum_shorts: "Standard Bum Shorts",
   dress: "Standard Dress",
   kaftan: "Long Shirt",
@@ -142,19 +142,19 @@ export const STEP_1_GARMENT_DISPLAY_LABELS: Readonly<
 };
 
 /**
- * Approved plain description for Standard Knicker Shorts.
+ * Approved plain description for Standard Nikka Shorts.
  * Other garments have no approved description and must not gain one here.
  */
-export const KNICKER_PLAIN_DESCRIPTION =
-  "Knicker: native-style shorts that end at or just below the knee.";
+export const NIKKA_PLAIN_DESCRIPTION =
+  "Nikka: native-style shorts that end at or just below the knee.";
 
-/** @deprecated Use KNICKER_PLAIN_DESCRIPTION. */
-export const NIKKA_PLAIN_DESCRIPTION = KNICKER_PLAIN_DESCRIPTION;
+/** @deprecated Use NIKKA_PLAIN_DESCRIPTION. */
+export const KNICKER_PLAIN_DESCRIPTION = NIKKA_PLAIN_DESCRIPTION;
 
 const STEP_1_GARMENT_PLAIN_DESCRIPTIONS: Partial<
   Record<CanonicalPhysicalGarmentType, string>
 > = {
-  standard_shorts: KNICKER_PLAIN_DESCRIPTION,
+  standard_shorts: NIKKA_PLAIN_DESCRIPTION,
 };
 
 export const getStep1GarmentPlainDescription = (
@@ -443,7 +443,7 @@ export const STEP_1_GARMENT_CARD_PRESETS: readonly Step1GarmentCardPreset[] = [
   {
     id: "standard_shorts",
     garmentType: "standard_shorts",
-    label: "Standard Knicker Shorts",
+    label: "Standard Nikka Shorts",
     selectionGroup: "standard_shorts_fastening",
     optionId: "shorts_std_rope",
     step4AllowedOptionIds: null,
