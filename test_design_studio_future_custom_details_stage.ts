@@ -1845,7 +1845,11 @@ const trouserOwnedPockets = groupInGarmentSection(
   trouserOwnedBlock,
   "trouser_pockets",
 );
-assert.match(textContent(trouserOwnedConstruction), /Main Garment/);
+assert.match(textContent(trouserOwnedConstruction), /Waistband Fastening/);
+assert.match(
+  textContent(trouserOwnedConstruction),
+  /Choose your preferred waistband fastening for this garment\./,
+);
 assert.match(textContent(trouserOwnedPockets), /Pocket for Trouser/);
 assert.equal(
   trouserOwnedSection.findAllByProps({ "data-custom-detail-group": "trouser_pockets" }).length,
@@ -1987,11 +1991,19 @@ assert.equal(
   "Bum Shorts construction options do not leak into the Nikka block",
 );
 assert.match(textContent(nikkaOwnedBlock), /Standard Nikka Shorts/);
-assert.match(textContent(nikkaOwnedConstruction), /Main Garment/);
+assert.match(textContent(nikkaOwnedConstruction), /Waistband Fastening/);
+assert.match(
+  textContent(nikkaOwnedConstruction),
+  /Choose your preferred waistband fastening for this garment\./,
+);
 assert.match(textContent(nikkaOwnedConstruction), /ending just above the knee/);
 assert.doesNotMatch(textContent(nikkaOwnedConstruction), /below the crotch/);
 assert.match(textContent(bumOwnedBlock), /Standard Bum Shorts/);
-assert.match(textContent(bumOwnedConstruction), /Main Garment/);
+assert.match(textContent(bumOwnedConstruction), /Waistband Fastening/);
+assert.match(
+  textContent(bumOwnedConstruction),
+  /Choose your preferred waistband fastening for this garment\./,
+);
 assert.match(textContent(bumOwnedConstruction), /below the crotch/);
 assert.doesNotMatch(textContent(bumOwnedConstruction), /above the knee/);
 const nikkaOwnedPockets = groupInGarmentSection(
@@ -3387,7 +3399,7 @@ assert.match(componentSource, /stage = "custom_details"/);
 assert.match(componentSource, /Personalized Additions/);
 assert.match(
   componentSource,
-  /Base garment construction was selected in Garment Type and is already included in your price/,
+  /Garment length and base sleeve tier were chosen in Garment Type and are already included in your price/,
 );
 assert.match(componentSource, /Price requires evaluation\./);
 assert.match(componentSource, /Confirmed after tailoring review/);
