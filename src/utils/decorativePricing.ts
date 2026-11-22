@@ -213,6 +213,18 @@ export const TRADITIONAL_ACCESSORY_OPTIONS = [
 export type TraditionalAccessory =
   (typeof TRADITIONAL_ACCESSORY_OPTIONS)[number];
 
+/**
+ * Customer-facing Design Studio Step 5 Traditional Accessories toggle.
+ * Flip to `true` to restore Traditional Accessories inside Design Studio.
+ * Does not delete catalogue options, images, Admin overrides, or historical
+ * order / receipt pricing.
+ */
+export const SHOW_STUDIO_TRADITIONAL_ACCESSORIES = false;
+
+export const resolveShowStudioTraditionalAccessories = (
+  override?: boolean,
+): boolean => override ?? SHOW_STUDIO_TRADITIONAL_ACCESSORIES;
+
 export const TRADITIONAL_ACCESSORY_DESCRIPTIONS: Readonly<
   Record<TraditionalAccessory, string>
 > = {

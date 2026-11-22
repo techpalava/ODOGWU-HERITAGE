@@ -11,6 +11,7 @@ import {
   LogOut,
   Star,
   MessageSquare,
+  Sparkles,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
@@ -99,6 +100,7 @@ export function Header() {
               {[
                 { id: "home", label: "Home", icon: Compass },
                 { id: "design", label: "Design Studio", icon: Shirt },
+                { id: "accessories", label: "Accessories", icon: Sparkles },
                 (currentUser
                   ? {
                       id: "dashboard",

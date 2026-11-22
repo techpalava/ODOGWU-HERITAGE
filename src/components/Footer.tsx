@@ -108,6 +108,7 @@ export default function Footer({ joinBatch = null, onJoinCommunityBatch }: Foote
   }> = [
     { label: "Home", tab: "home" },
     { label: "Design Studio", tab: "design" },
+    { label: "Accessories", tab: "accessories" },
     { label: "Gallery", tab: "gallery" },
     { label: "How It Works", tab: "home" }, // Assuming it scrolls or goes to home
     { label: batchLink.label, tab: "home", onClick: handleBatchLink, id: "footer-join-current-batch" },
