@@ -404,7 +404,7 @@ assert.equal(
 assert.doesNotMatch(textContent(renderer.root), /Use Same Fabric Again|Choose Another Fabric/);
 
 for (const [garmentType, label] of [
-  ["standard_shorts", "Standard Knicker Shorts"],
+  ["standard_shorts", "Standard Nikka Shorts"],
   ["bum_shorts", "Standard Bum Shorts"],
 ] as const) {
   act(() => {

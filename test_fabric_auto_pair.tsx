@@ -345,7 +345,7 @@ assert.equal(formatFabricAutoPairToastCopy([], list), null);
   assert.equal(notices.length, 1);
   assert.match(notices[0]!, TOAST);
   assert.match(notices[0]!, /with Selection 3 — /);
-  assert.match(notices[0]!, /Knicker/i, notices[0]);
+  assert.match(notices[0]!, /Nikka/i, notices[0]);
   assert.doesNotMatch(notices[0]!, /Bum|Dress|Gown/i, "only the paired garment is named");
   act(() => renderer.unmount());
 }

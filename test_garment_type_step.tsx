@@ -39,7 +39,7 @@ const expectedGarmentLabels = [
   "Long Shirt",
   "Standard Dress",
   "Long Dress",
-  "Standard Knicker Shorts",
+  "Standard Nikka Shorts",
   "Standard Bum Shorts",
   "Trouser",
   "Standard Skirt",
@@ -103,7 +103,7 @@ const expectedPresetLabels = [
   "Standard Skirt",
   "Long Skirt",
   "Trouser",
-  "Standard Knicker Shorts",
+  "Standard Nikka Shorts",
   "Standard Bum Shorts",
 ] as const;
 const expectedPresetPrices = [65, 70, 70, 75, 70, 75, 75, 80, 75, 80, 75, 70, 70];
@@ -768,7 +768,7 @@ assert.ok(
 );
 assert.ok(
   !stuckMarkup.includes("border-2 border-heritage-gold") &&
-    !stuckMarkup.includes("ring-2 ring-heritage-gold/80"),
+  !stuckMarkup.includes("ring-2 ring-heritage-gold/80"),
   "The audience question uses the same thin border as the garment cards",
 );
 assert.ok(stuckMarkup.includes("Still needed to continue to Fabric."));

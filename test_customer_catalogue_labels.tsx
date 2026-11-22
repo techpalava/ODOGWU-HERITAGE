@@ -14,7 +14,7 @@ import {
 import { getFutureDesignStyleCompositionLabel } from "./src/utils/designStudioFutureDesignStyle";
 import type { LiveOrderSummaryView } from "./src/utils/designStudioLiveOrderSummary";
 import {
-  KNICKER_PLAIN_DESCRIPTION,
+  NIKKA_PLAIN_DESCRIPTION,
   STEP_1_GARMENT_DISPLAY_LABELS,
   getStep1GarmentPlainDescription,
 } from "./src/utils/garmentConstructionPricing";
@@ -24,10 +24,10 @@ import type {
   StyleCategory,
 } from "./src/types";
 
-const KNICKER_COPY =
-  "Knicker: native-style shorts that end at or just below the knee.";
+const NIKKA_COPY =
+  "Nikka: native-style shorts that end at or just below the knee.";
 
-assert.equal(KNICKER_PLAIN_DESCRIPTION, KNICKER_COPY);
+assert.equal(NIKKA_PLAIN_DESCRIPTION, NIKKA_COPY);
 
 const extractGroup = (source: string, groupId: string): Record<string, string> => {
   const start = source.indexOf(`id: "${groupId}"`);
@@ -58,10 +58,14 @@ assert.equal(customerCatalogueLabel("Men"), "Men");
 assert.equal(customerCatalogueLabel("HiTarget Ankara"), "HiTarget Ankara");
 assert.equal(customerCatalogueLabel("Kampala"), "Kampala");
 assert.equal(customerCatalogueLabel("IN_STOCK"), "IN_STOCK");
-assert.equal(customerCatalogueLabel("Standard Nikka Shorts"), "Standard Knicker Shorts");
+assert.equal(customerCatalogueLabel("Standard Knicker Shorts"), "Standard Nikka Shorts");
+assert.equal(
+  customerCatalogueLabel("Knicker / Standard Shorts"),
+  "Standard Nikka Shorts",
+);
 assert.equal(
   customerCatalogueLabel("Nikka / Standard Shorts"),
-  "Standard Knicker Shorts",
+  "Standard Nikka Shorts",
 );
 assert.equal(customerCatalogueLabel("Executive Kaftan"), "Executive Long Shirt");
 
@@ -74,7 +78,7 @@ for (const garmentType of Object.keys(
 ) as FabricGarmentType[]) {
   const description = getStep1GarmentPlainDescription(garmentType);
   if (garmentType === "standard_shorts") {
-    assert.equal(description, KNICKER_COPY);
+    assert.equal(description, NIKKA_COPY);
   } else {
     assert.equal(description, null, `${garmentType} has no invented description`);
   }
@@ -117,8 +121,8 @@ assert.equal(
   "Garment details to be confirmed",
 );
 
-const resolvedKnicker = {
-  id: "resolved-knicker",
+const resolvedNikka = {
+  id: "resolved-nikka",
   name: "Resolved",
   description: "",
   gender: "male",
@@ -133,8 +137,8 @@ const resolvedKnicker = {
   ],
 } as StyleCategory;
 assert.equal(
-  getFutureDesignStyleCompositionLabel(resolvedKnicker),
-  "Knicker / Standard Shorts",
+  getFutureDesignStyleCompositionLabel(resolvedNikka),
+  "Nikka / Standard Shorts",
   "Resolved garment names stay on their updated labels",
 );
 
@@ -160,14 +164,14 @@ const cardMarkup = (garmentType: string): string => {
   return match[0];
 };
 
-const knickerCard = cardMarkup("standard_shorts");
+const nikkaCard = cardMarkup("standard_shorts");
 const bumCard = cardMarkup("bum_shorts");
-assert.ok(knickerCard.includes("Standard Knicker Shorts"));
-assert.equal(knickerCard.split(KNICKER_COPY).length - 1, 1);
-assert.doesNotMatch(knickerCard, /\bnikka\b/i);
-assert.doesNotMatch(knickerCard, /\bkaftan\b/i);
+assert.ok(nikkaCard.includes("Standard Nikka Shorts"));
+assert.equal(nikkaCard.split(NIKKA_COPY).length - 1, 1);
+assert.doesNotMatch(nikkaCard, /\bknicker\b/i);
+assert.doesNotMatch(nikkaCard, /\bkaftan\b/i);
 assert.ok(bumCard.includes("Standard Bum Shorts"));
-assert.equal(bumCard.includes(KNICKER_COPY), false);
+assert.equal(bumCard.includes(NIKKA_COPY), false);
 assert.equal(bumCard.includes("Just below the Crotch"), false);
 assert.ok(markup.includes('data-testid="step1-summary-description-standard_shorts"'));
 assert.equal(
@@ -175,10 +179,10 @@ assert.equal(
   false,
 );
 const summaryMarkup = markup.split('aria-label="Order Summary"')[1] || "";
-assert.equal(summaryMarkup.split(KNICKER_COPY).length - 1, 1);
-assert.ok(summaryMarkup.includes("Standard Knicker Shorts"));
+assert.equal(summaryMarkup.split(NIKKA_COPY).length - 1, 1);
+assert.ok(summaryMarkup.includes("Standard Nikka Shorts"));
 assert.ok(summaryMarkup.includes("Standard Bum Shorts"));
-assert.doesNotMatch(summaryMarkup, /\bnikka\b/i);
+assert.doesNotMatch(summaryMarkup, /\bknicker\b/i);
 
 const view: LiveOrderSummaryView = {
   sections: [
@@ -189,9 +193,9 @@ const view: LiveOrderSummaryView = {
       lines: [
         {
           id: "construction-base:standard_shorts",
-          label: "Standard Knicker Shorts",
+          label: "Standard Nikka Shorts",
           detail: "With Rope",
-          plainDescription: KNICKER_COPY,
+          plainDescription: NIKKA_COPY,
           amountLabel: "€70.00",
           focusGarmentKey: "base:standard_shorts",
         },
@@ -218,9 +222,9 @@ const orderSummary = renderToStaticMarkup(
     unlockedStages: new Set<DesignStudioStageId>(),
   }),
 );
-assert.ok(orderSummary.includes("Standard Knicker Shorts"));
-assert.equal(orderSummary.split(KNICKER_COPY).length - 1, 1);
-assert.doesNotMatch(orderSummary, /\bnikka\b/i);
+assert.ok(orderSummary.includes("Standard Nikka Shorts"));
+assert.equal(orderSummary.split(NIKKA_COPY).length - 1, 1);
+assert.doesNotMatch(orderSummary, /\bknicker\b/i);
 assert.doesNotMatch(orderSummary, /\bkaftan\b/i);
 assert.ok(orderSummary.includes("With Rope"));
 assert.ok(orderSummary.includes("Standard Shirt"));

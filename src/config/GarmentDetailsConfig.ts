@@ -239,7 +239,7 @@ export const CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION: Readonly<
   shirt: { title: "SHIRT" },
   dress: { title: "DRESS (LADIES)" },
   neck: { title: "NECK DESIGN" },
-  standard_shorts: { title: "STANDARD KNICKER SHORTS" },
+  standard_shorts: { title: "STANDARD NIKKA SHORTS" },
   bum_shorts: { title: "STANDARD BUM SHORTS" },
   trousers: { title: "LEG PANTS (TROUSER)" },
   skirts: { title: "SKIRTS (LADIES)" },
@@ -283,7 +283,7 @@ export type AdditionalClothesCostSection =
 /**
  * Customer-facing “Additional Clothes Costs” full restore.
  * Flip to `true` to restore every additional-cost group, its completion rules,
- * and active pricing. Dress, Skirt, and Standard Knicker Shorts additional costs remain
+ * and active pricing. Dress, Skirt, and Standard Nikka Shorts additional costs remain
  * customer-visible even while this flag is false. Does not delete catalogue
  * options, Admin support, or draft/historical data.
  */
@@ -390,8 +390,8 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE: Readonly<
   dress_construction: "Dress Length and Sleeve Length",
   dress_pockets: "Dress Pockets",
   neck_design: "Neck Design",
-  standard_shorts_fastening: "Knicker/Standard Shorts Fastening",
-  standard_shorts_pockets: "Knicker Pockets",
+  standard_shorts_fastening: "Nikka/Standard Shorts Fastening",
+  standard_shorts_pockets: "Nikka Pockets",
   bum_shorts_fastening: "Bum Shorts Fastening",
   bum_shorts_pockets: "Bum Shorts Pockets",
   trouser_fastening: "Trouser Fastening",
@@ -428,7 +428,7 @@ export const ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION: Readonly<
   neck_additional: { title: "Neck Design - Additional" },
   trouser_additional: { title: "Leg Pants (Trouser) - Additional" },
   standard_shorts_additional: {
-    title: "Standard Knicker Shorts - Additional",
+    title: "Standard Nikka Shorts - Additional",
   },
   bum_shorts_additional: { title: "Standard Bum Shorts - Additional" },
   skirt_additional: { title: "Skirts (Ladies) - Additional" },
@@ -517,7 +517,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   ),
   createAdditionalPhysicalGarmentOption(
     "standard_shorts",
-    "Standard Knicker Shorts",
+    "Standard Nikka Shorts",
     "Add one pair of standard-length shorts.",
   ),
   createAdditionalPhysicalGarmentOption(

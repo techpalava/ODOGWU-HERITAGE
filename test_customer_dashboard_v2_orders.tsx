@@ -495,7 +495,7 @@ assert.equal(noWorkshopList.includes("data-customer-v2-order-stage-history"), fa
   );
   for (const expectedLabel of [
     "Long Skirt",
-    "Standard Knicker Shorts",
+    "Standard Nikka Shorts",
     "Standard Bum Shorts",
     "Full-Length Gown",
     "Long Shirt",
@@ -520,11 +520,11 @@ assert.equal(noWorkshopList.includes("data-customer-v2-order-stage-history"), fa
     <CustomerFutureOrderV2Details order={rawOrderB} payment={undefined} onClose={() => undefined} />,
   );
   assert.ok(rawDetailsA.includes("Long Skirt"));
-  assert.ok(rawDetailsA.includes("Standard Knicker Shorts"));
+  assert.ok(rawDetailsA.includes("Standard Nikka Shorts"));
   assert.ok(rawDetailsA.includes("Standard Bum Shorts"));
   assert.ok(rawDetailsB.includes("Full-Length Gown"));
   assert.ok(rawDetailsB.includes("Long Shirt"));
-  assert.ok(rawDetailsB.includes("Standard Knicker Shorts"));
+  assert.ok(rawDetailsB.includes("Standard Nikka Shorts"));
   for (const rawKey of ["Long_skirt", "Standard_shorts", "Bum_shorts", "Full_length_gown", "kaftan", "nikka"]) {
     assert.equal(rawDetailsA.includes(rawKey), false);
     assert.equal(rawDetailsB.includes(rawKey), false);
