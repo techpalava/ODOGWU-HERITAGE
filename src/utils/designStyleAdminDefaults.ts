@@ -1,8 +1,11 @@
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig.js";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
 import type {
   BusinessSettings,
+  CanonicalPhysicalGarmentType,
   CustomDetailGarmentGroup,
   CustomDetailSelectionGroup,
+  FabricCapacityGarmentSpec,
 } from "../types.js";
 import { customerCatalogueLabel } from "./customerCatalogueLabel.js";
 import {
@@ -15,6 +18,55 @@ export const DEFAULT_ADMIN_STYLE_GENDER = "male" as const;
 export const DEFAULT_ADMIN_STYLE_OUTFIT_TYPE = "Senator Set" as const;
 export const DEFAULT_ADMIN_STYLE_COMPOSITION = "Shirt Only" as const;
 export const DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY = "HiTarget Ankara" as const;
+
+export const ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] =
+  [
+    "shirt",
+    "trouser",
+    "skirt",
+    "standard_shorts",
+    "bum_shorts",
+    "dress",
+    "kaftan",
+    "full_length_gown",
+    "agbada",
+  ];
+
+export const deriveFeaturesMaleAndFemale = (
+  representedGenders?: readonly string[],
+): boolean =>
+  Array.isArray(representedGenders) &&
+  representedGenders.includes("male") &&
+  representedGenders.includes("female");
+
+export const formatDerivedGarmentCompositionLabel = (
+  fabricCapacityComposition?: readonly FabricCapacityGarmentSpec[],
+  fallbackComposition?: string,
+): string => {
+  if (
+    Array.isArray(fabricCapacityComposition) &&
+    fabricCapacityComposition.length > 0
+  ) {
+    const labels = [
+      ...new Set(
+        fabricCapacityComposition
+          .filter((spec) => spec && typeof spec.garmentType === "string")
+          .map((spec) =>
+            formatCustomerVisibleKaftanText(
+              getFabricGarmentLabel(spec.garmentType),
+            ),
+          )
+          .filter(Boolean),
+      ),
+    ];
+    if (labels.length > 0) {
+      return labels.join(" + ");
+    }
+  }
+  return customerCatalogueLabel(
+    fallbackComposition?.trim() || DEFAULT_ADMIN_STYLE_COMPOSITION,
+  );
+};
 
 export const DEFAULT_ADMIN_STYLE_SUPPORTED_GARMENT_GROUPS: readonly CustomDetailGarmentGroup[] =
   ["shirt", "neck"];
@@ -77,6 +129,7 @@ export const createDefaultDesignStyleDraft = (
   embroideryProminence: "standard",
   defaultGarmentDetails: {},
   showsWearer: false,
+  styleApplicability: { mode: "exact_only" },
   designStyleAuthority: {
     ...createDefaultDesignStyleAuthorityMetadata(displayOrder),
     referenceComposition: {
