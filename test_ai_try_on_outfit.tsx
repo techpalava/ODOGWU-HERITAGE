@@ -492,4 +492,69 @@ for (const [list, reason, message] of [
   await act(async () => { view.unmount(); });
 }
 
+// Combined outfit without bottom selected yet: picker stays usable, then
+// narrows + auto-switches twin + hides filter chips + shows inline notice
+// the instant Standard Skirt is picked, and resets cleanly on Trouser.
+{
+  const outfitFilterRequests: AiTryOnGenerationRequest[] = [];
+  let fPanel!: ReturnType<typeof create>;
+  await act(async () => {
+    fPanel = create(createElement(AiTryOnPhotoPanel, {
+      ...props,
+      targets: [lengthTarget],
+      triesPerOrder: 10,
+      initialTriesRemaining: 10,
+      jobStore: createAiTryOnBackgroundJobs({ storage: null }),
+      requestPreview: async (request) => {
+        outfitFilterRequests.push(request);
+        return {
+          kind: "completed",
+          resultReference: { kind: "verified_private_try_on_result", assetId: `flt-${outfitFilterRequests.length}`, ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp", data: Buffer.from(`flt-${outfitFilterRequests.length}`).toString("base64") },
+          orderTriesRemaining: 10 - outfitFilterRequests.length,
+        };
+      },
+    }));
+  });
+  const fData = (attr: string, value?: string) =>
+    fPanel.root.findAll((node) => typeof node.type === "string" && node.props[attr] !== undefined && (value === undefined || node.props[attr] === value));
+  const fModels = () => fData("data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
+  const fGenerate = () => fPanel.root.find((node) => node.type === "button" && /Generate preview|Generate combined outfit|Make a new preview/.test(text(node)));
+
+  // Pick male-plus and Men filter chip on standalone Standard Shirt.
+  await act(async () => { fData("data-ai-try-on-model-filter", "men")[0].props.onClick(); });
+  await act(async () => { fData("data-ai-try-on-model", "male-plus")[0].props.onClick(); });
+
+  // Enter Combined outfit before choosing any bottom: picker remains usable.
+  await act(async () => { fData("data-ai-try-on-outfit-mode")[0].props.onClick(); });
+  assert.equal(fData("data-ai-try-on-model-filter").length, 3, "filter chips stay available before bottom narrows group");
+  assert.equal(fData("data-ai-try-on-model", "male-plus")[0].props["aria-checked"], true);
+  assert.equal(fData("data-ai-try-on-model-auto-switched").length, 0);
+
+  // Pick Standard Shirt top + Standard Skirt bottom: narrows to Women-only + short,
+  // hides filter chips, never renders empty list despite stale Men chip,
+  // auto-switches male-plus -> female-plus-short, and shows persistent inline notice.
+  await act(async () => { fData("data-ai-try-on-outfit-choice", "top")[0].props.onChange({ target: { value: "shirt-first" } }); });
+  await act(async () => { fData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "skirt" } }); });
+  assert.equal(fData("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short");
+  assert.equal(fData("data-ai-try-on-model-filter").length, 0, "filter chips hidden for Women-only outfit");
+  assert.equal(fModels().length, 5, "all 5 short Women models shown even after stale Men filter");
+  assert.ok(fModels().every((id) => id.startsWith("female-") && id.endsWith("-short")));
+  assert.equal(fData("data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
+  assert.equal(fData("data-ai-try-on-model-auto-switched").length, 1, "inline notice shown for outfit auto-switch");
+  assert.match(text(fData("data-ai-try-on-model-auto-switched")[0]), /Women.*this outfit/);
+  assert.equal(outfitFilterRequests.length, 0);
+  await act(async () => { await fGenerate().props.onClick(); });
+  assert.equal(outfitFilterRequests[0].defaultModelId, "female-plus-short");
+
+  // Switch bottom to Trouser: restores Both Men & Women + long base + All filter active, clears notice.
+  await act(async () => { fData("data-ai-try-on-outfit-choice", "bottom")[0].props.onChange({ target: { value: "trouser" } }); });
+  assert.equal(fData("data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
+  assert.equal(fData("data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true, "filter resets to All on flexible outfit");
+  assert.equal(fModels().length, 10, "both Men and Women long models visible for Shirt + Trouser");
+  assert.equal(fData("data-ai-try-on-model-auto-switched").length, 0, "compatible outfit clears notice");
+  await act(async () => { fPanel.unmount(); });
+}
+
 console.log("Combined outfit: snapshots, explicit choices, slot isolation, downstream selection and reload passed");

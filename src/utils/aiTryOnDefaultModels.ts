@@ -127,10 +127,11 @@ export const aiTryOnAllowedModelGroupsForOutfit = (
 ): readonly AiTryOnModelGroup[] => {
   const topGroups = aiTryOnAllowedModelGroupsForGarment(topGarmentType);
   const bottomGroups = aiTryOnAllowedModelGroupsForGarment(bottomGarmentType);
-  const intersection = topGroups.filter((g) => bottomGroups.includes(g));
-  if (intersection.length > 0) {
-    return intersection;
-  }
+  const allowMen = topGroups.includes("men") && bottomGroups.includes("men");
+  const allowWomen = topGroups.includes("women") && bottomGroups.includes("women");
+  if (allowMen && allowWomen) return ALL_MODEL_GROUPS;
+  if (allowWomen) return WOMEN_ONLY_MODEL_GROUPS;
+  if (allowMen) return MEN_ONLY_MODEL_GROUPS;
   return bottomGroups.length > 0 ? bottomGroups : ALL_MODEL_GROUPS;
 };
 
@@ -241,8 +242,6 @@ export const resolveAiTryOnStudioModelForGarment = ({
 /** Site-relative picture URL, e.g. `/ai-try-on-models/male-plus.webp`. */
 export const aiTryOnDefaultModelImageUrl = (entry: AiTryOnDefaultModel): string =>
   `/${AI_TRY_ON_DEFAULT_MODEL_PUBLIC_DIR}/${entry.id}.webp`;
-
-/** aiTryOnDefaultModelsInGroup */
 
 export const aiTryOnDefaultModelsInGroup = (
   group: AiTryOnModelGroup,

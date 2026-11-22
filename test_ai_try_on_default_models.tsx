@@ -971,16 +971,18 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   // Short garments show only short bases. Long garments show only long bases.
   // Switching keeps the persona and changes the fingerprint. No Generate until asked.
   const lengthGarment = (
-    garmentType: "standard_shorts" | "bum_shorts" | "skirt" | "dress" | "full_length_gown" | "long_skirt" | "shirt" | "kaftan",
+    garmentType: "standard_shorts" | "bum_shorts" | "skirt" | "dress" | "full_length_gown" | "long_skirt" | "shirt" | "kaftan" | "trouser" | "agbada",
     styleGender?: string,
+    extra?: { styleShowsWearer?: boolean; fabricSwatchImageUrl?: string | null },
   ) => ({
     garmentKey: garmentType,
     garmentType,
     sourceKind: "catalog" as const,
     label: garmentType,
     garmentImageUrl: `https://example.test/${garmentType}.jpg`,
-    fabricSwatchImageUrl: null,
+    fabricSwatchImageUrl: extra?.fabricSwatchImageUrl ?? null,
     fabricColorHex: null,
+    styleShowsWearer: extra?.styleShowsWearer,
     styleGender: styleGender ?? null,
     orderDetails: { garments: [{ garmentType, optionIds: [], decorations: [] }] },
     inputFingerprint: FINGERPRINT,
@@ -990,30 +992,38 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   for (const garmentType of ["standard_shorts", "bum_shorts", "skirt", "dress"] as const) {
     const isWomenOnly = ["skirt", "dress"].includes(garmentType);
     const expectedCount = isWomenOnly ? 5 : 10;
-    const expectedDefault = garmentType === "dress" ? "female-1-light-short" : isWomenOnly ? "female-1-light-short" : "male-1-light-short";
+    const expectedDefault = isWomenOnly ? "female-1-light-short" : "male-1-light-short";
+    // Pass male/unisex/undefined styleGender even for women-only garments to prove
+    // allowedModelGroups strictly overrides styleGender and never leaks a Men model.
     const { renderer, requests } = renderPanel({
-      targets: [target({ previewableGarments: [lengthGarment(garmentType, isWomenOnly ? "female" : undefined)] })],
+      targets: [target({ previewableGarments: [lengthGarment(garmentType, isWomenOnly ? "male" : undefined)] })],
     });
     assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "short", garmentType);
     const ids = modelIds(renderer);
     assert.equal(ids.length, expectedCount, `${garmentType} shows the short bases only`);
     assert.ok(ids.every((id) => String(id).endsWith("-short")), garmentType);
     assert.equal(ids.some((id) => id === "male-1-light" || id === "female-1-light"), false, garmentType);
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, isWomenOnly ? 0 : 3, `${garmentType} filter chip visibility`);
     assert.equal(byData(renderer, "data-ai-try-on-model", expectedDefault)[0].props["aria-checked"], true, garmentType);
     assert.equal(requests.length, 0, "showing a short base does not generate");
     await act(async () => { renderer.unmount(); });
   }
-  for (const garmentType of ["full_length_gown", "long_skirt", "shirt", "kaftan"] as const) {
+  for (const garmentType of ["full_length_gown", "long_skirt", "shirt", "kaftan", "trouser", "agbada"] as const) {
     const isWomenOnly = ["full_length_gown", "long_skirt"].includes(garmentType);
-    const expectedCount = isWomenOnly ? 5 : 10;
+    const isMenOnly = garmentType === "agbada";
+    const singleGender = isWomenOnly || isMenOnly;
+    const expectedCount = singleGender ? 5 : 10;
     const expectedDefault = isWomenOnly ? "female-1-light" : "male-1-light";
+    // Opposite styleGender must never override single-gender garments.
+    const testGender = isWomenOnly ? "unisex" : isMenOnly ? "female" : undefined;
     const { renderer, requests } = renderPanel({
-      targets: [target({ previewableGarments: [lengthGarment(garmentType, isWomenOnly ? "female" : undefined)] })],
+      targets: [target({ previewableGarments: [lengthGarment(garmentType, testGender)] })],
     });
     assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long", garmentType);
     const ids = modelIds(renderer);
     assert.equal(ids.length, expectedCount, `${garmentType} shows the long bases only`);
     assert.ok(ids.every((id) => !String(id).endsWith("-short")), garmentType);
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, singleGender ? 0 : 3, `${garmentType} filter chip visibility`);
     assert.equal(byData(renderer, "data-ai-try-on-model", expectedDefault)[0].props["aria-checked"], true, garmentType);
     assert.equal(requests.length, 0, "showing a long base does not generate");
     await act(async () => { renderer.unmount(); });
@@ -1059,6 +1069,223 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0, "an uploaded photo stays the wearer");
   assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], true);
   await act(async () => { renderer.unmount(); });
+}
+
+{
+  // Garment-model filtering counterexample regressions:
+  // 1) Flexible garment defaults to All (both rows visible) with styleGender pre-highlight.
+  // 2) Single-gender garment with opposite styleGender sends allowed-group model on Generate.
+  // 3) Stale modelFilter trap: Men chip on Shirt -> Dress (never empty!) -> Shirt resets to All.
+  // 4) Auto-switch preserves skinTone+build twin, persists inline notice across re-renders,
+  //    clears on manual pick or return to compatible garment, never auto-generates.
+  // 5) Generating guard & style_photo preservation.
+  // 6) Multi-wearer isolation.
+  const makeGarment = (
+    garmentType: "shirt" | "dress" | "agbada" | "kaftan",
+    styleGender?: string | null,
+    extra?: { styleShowsWearer?: boolean; fabricSwatchImageUrl?: string | null },
+  ) => ({
+    garmentKey: garmentType,
+    garmentType,
+    sourceKind: "catalog" as const,
+    label: garmentType,
+    garmentImageUrl: `https://example.test/${garmentType}.jpg`,
+    fabricSwatchImageUrl: extra?.fabricSwatchImageUrl ?? "https://example.test/swatch.jpg",
+    fabricColorHex: null,
+    styleShowsWearer: extra?.styleShowsWearer,
+    styleGender: styleGender ?? null,
+    orderDetails: { garments: [{ garmentType, optionIds: [], decorations: [] }] },
+    inputFingerprint: FINGERPRINT,
+  });
+  const modelIds = (renderer: ReturnType<typeof create>) =>
+    byData(renderer, "data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
+
+  // 1) Flexible garment with female styleGender still shows All (both Men & Women rows).
+  {
+    const { renderer, requests } = renderPanel({
+      targets: [target({ previewableGarments: [makeGarment("shirt", "female")] })],
+    });
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true);
+    assert.equal(byData(renderer, "data-ai-try-on-model-group").length, 2, "both Men and Women rows visible");
+    assert.equal(modelIds(renderer).length, 10);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "female-1-light")[0].props["aria-checked"], true);
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0);
+    await click(generateButton(renderer));
+    assert.equal(requests[0].defaultModelId, "female-1-light");
+    await act(async () => { renderer.unmount(); });
+  }
+
+  // 2) Standard Dress with male styleGender sends a Women model on Generate (never a Men model).
+  {
+    const { renderer, requests } = renderPanel({
+      targets: [target({ previewableGarments: [makeGarment("dress", "male")] })],
+    });
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0, "filter chips hidden on single-gender garment");
+    assert.equal(byData(renderer, "data-ai-try-on-model-group").length, 1);
+    assert.equal(byData(renderer, "data-ai-try-on-model-group")[0].props["data-ai-try-on-model-group"], "women");
+    assert.equal(byData(renderer, "data-ai-try-on-model", "female-1-light-short")[0].props["aria-checked"], true);
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "initial default does not show auto-switch notice");
+    await click(generateButton(renderer));
+    assert.equal(requests[0].defaultModelId, "female-1-light-short");
+    await act(async () => { renderer.unmount(); });
+  }
+
+  // 3) Stale modelFilter trap + 4) Twin auto-switch & persistent notice lifecycle.
+  {
+    const { renderer, requests } = renderPanel({
+      targets: [target({
+        previewableGarments: [
+          makeGarment("shirt", "male"),
+          makeGarment("dress", "male"),
+          makeGarment("agbada", "female"),
+          makeGarment("kaftan", "unisex"),
+        ],
+      })],
+    });
+    // Click Men filter chip, pick male-plus.
+    await click(byData(renderer, "data-ai-try-on-model-filter", "men")[0]);
+    assert.equal(modelIds(renderer).length, 5);
+    await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0);
+
+    // Switch to Standard Dress: must NOT render empty list, hides chips, switches to female-plus-short,
+    // and keeps the inline auto-switch notice visible across renders!
+    await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0);
+    assert.equal(modelIds(renderer).length, 5, "stale Men filter never empties Women-only picker");
+    assert.ok(modelIds(renderer).every((id) => id.startsWith("female-") && id.endsWith("-short")));
+    assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
+    const dressNotice = byData(renderer, "data-ai-try-on-model-auto-switched");
+    assert.equal(dressNotice.length, 1, "inline auto-switch notice persists on restricted garment");
+    assert.match(textOf(dressNotice[0]), /Women.*Standard Dress/);
+    assert.equal(/Kaftan/.test(textOf(dressNotice[0])), false);
+    assert.equal(requests.length, 0, "auto-switch does not generate");
+    await click(generateButton(renderer));
+    assert.equal(requests[0].defaultModelId, "female-plus-short");
+
+    // Return to Standard Shirt (compatible garment): filter resets to All (10 models) and notice clears!
+    await click(byData(renderer, "data-ai-try-on-garment", "shirt")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true, "filter resets to All");
+    assert.equal(modelIds(renderer).length, 10, "both Men and Women rows restored");
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "returning to compatible garment clears notice");
+
+    // Switch back to male-plus -> Dress -> manually pick another Women model -> notice clears immediately!
+    await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
+    await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 1);
+    await click(byData(renderer, "data-ai-try-on-model", "female-3-deep-short")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "manual model pick clears notice");
+
+    // Switch from Dress (female-3-deep-short) -> Agbada (Men-only, long) -> auto-switches to male-3-deep!
+    await click(byData(renderer, "data-ai-try-on-garment", "agbada")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0);
+    assert.equal(modelIds(renderer).length, 5);
+    assert.ok(modelIds(renderer).every((id) => id.startsWith("male-") && !id.endsWith("-short")));
+    assert.equal(byData(renderer, "data-ai-try-on-model", "male-3-deep")[0].props["aria-checked"], true);
+    const agbadaNotice = byData(renderer, "data-ai-try-on-model-auto-switched");
+    assert.equal(agbadaNotice.length, 1);
+    assert.match(textOf(agbadaNotice[0]), /Men.*Long Shirt \(Agbada\)/);
+    assert.equal(/Kaftan/.test(textOf(agbadaNotice[0])), false);
+    await act(async () => { renderer.unmount(); });
+  }
+
+  // 5a) Generating guard: auto-switch does not mutate modelByWearer while generating === true.
+  {
+    let finishRequest!: () => void;
+    const controlledModels: Record<string, string>[] = [];
+    const jobStore = createAiTryOnBackgroundJobs({ storage: null });
+    let modelState: Record<string, string> = { "w-ada": "male-plus" };
+    let renderer!: ReturnType<typeof create>;
+    const mount = () => createElement(AiTryOnPhotoPanel, {
+      targets: [target({ previewableGarments: [makeGarment("shirt", "male"), makeGarment("dress", "male")] })],
+      sessionModelIdByWearer: modelState,
+      onSessionModelIdByWearerChange: (update) => {
+        modelState = update(modelState);
+        controlledModels.push({ ...modelState });
+        renderer.update(mount());
+      },
+      triesPerOrder: 5,
+      initialTriesRemaining: 5,
+      jobStore,
+      requestPreview: async () => {
+        await new Promise<void>((resolve) => {
+          finishRequest = resolve;
+        });
+        return {
+          kind: "completed" as const,
+          resultReference: { kind: "verified_private_try_on_result" as const, assetId: "gen-guard", ownerBindingId: "order" },
+          previewStored: true,
+          preview: { mimeType: "image/webp" as const, data: "UklGRg==" },
+          orderTriesRemaining: 4,
+        };
+      },
+      preparePhoto: async () => ({ mimeType: "image/jpeg" as const, data: "AA==" }),
+      createThumbnailUrl: () => "blob:guard",
+      revokeThumbnailUrl: () => undefined,
+      onPreviewCreated: () => undefined,
+      onUnavailable: () => undefined,
+    });
+    await act(async () => { renderer = create(mount()); });
+    await click(generateButton(renderer));
+    const writesBeforeSwitch = controlledModels.length;
+    await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
+    assert.equal(controlledModels.length, writesBeforeSwitch, "auto-switch effect does not mutate model while generating");
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "no auto-switch notice while generating");
+    await act(async () => { finishRequest(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    assert.equal(modelState["w-ada"], "female-plus-short", "reconciles cleanly once generation settles");
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 1);
+    await act(async () => { renderer.unmount(); });
+  }
+
+  // 5b) style_photo mode is preserved when switching to a single-gender garment.
+  {
+    const { renderer } = renderPanel({
+      targets: [target({
+        previewableGarments: [
+          makeGarment("shirt", "male", { styleShowsWearer: true }),
+          makeGarment("dress", "female", { styleShowsWearer: true }),
+        ],
+      })],
+    });
+    await click(byData(renderer, "data-ai-try-on-style-photo-option")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-panel")[0].props["data-ai-try-on-wearer-source"], "style_photo");
+    await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-panel")[0].props["data-ai-try-on-wearer-source"], "style_photo", "style_photo stays active across garment switch");
+    assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0);
+    await act(async () => { renderer.unmount(); });
+  }
+
+  // 6) Multi-wearer isolation: auto-switching Wearer A leaves Wearer B untouched.
+  {
+    const jane = target({
+      wearerId: "w-jane",
+      label: "Jane",
+      previewableGarments: [makeGarment("shirt", "male"), makeGarment("dress", "female")],
+    });
+    const lucky = target({
+      wearerId: "w-lucky",
+      label: "Lucky",
+      previewableGarments: [makeGarment("shirt", "male")],
+    });
+    const { renderer, requests } = renderPanel({ targets: [jane, lucky] });
+    // Lucky explicitly picks male-2-medium.
+    await click(byData(renderer, "data-wearer-chip", "w-lucky")[0]);
+    await click(byData(renderer, "data-ai-try-on-model", "male-2-medium")[0]);
+    // Jane explicitly picks male-plus on Shirt, then switches to Dress -> auto-switches to female-plus-short.
+    await click(byData(renderer, "data-wearer-chip", "w-jane")[0]);
+    await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
+    await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 1);
+    // Switch back to Lucky: still on male-2-medium with no auto-switch notice!
+    await click(byData(renderer, "data-wearer-chip", "w-lucky")[0]);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "male-2-medium")[0].props["aria-checked"], true, "Wearer B model stays untouched");
+    assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "Wearer B has no auto-switch notice");
+    await click(generateButton(renderer));
+    assert.equal(requests[0].defaultModelId, "male-2-medium");
+    await act(async () => { renderer.unmount(); });
+  }
 }
 
 console.log("AI Try-on default models: all checks passed");
