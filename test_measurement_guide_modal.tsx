@@ -591,6 +591,13 @@ assert.equal(
   "section",
   "Measurement guide banner is a labelled section landmark",
 );
+const guideBannerParagraphs = guideBannerInMediumRisk[0].findAllByType("p");
+assert.ok(
+  guideBannerParagraphs.some((p) => String(p.props.className).includes("font-bold") && collectText(p).includes("close-to-body checklists")),
+  "Measurement guide banner description uses bold typography",
+);
+const guideBannerHeading = guideBannerInMediumRisk[0].findByType("h3");
+assert.match(String(guideBannerHeading.props.className), /font-extrabold/);
 
 // 8. Verify "Who are these measurements for?" appears above "These clothes are for you..." in solo and multi-person views,
 // and that WearerAssignmentPanel renders right after the Dimension / Measurement header.
