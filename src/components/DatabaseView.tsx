@@ -147,11 +147,12 @@ import { getNextDesignStyleId } from "../utils/designStyleId";
 import { customerCatalogueLabel } from "../utils/customerCatalogueLabel";
 import { DEFAULT_BUSINESS_SETTINGS } from "../data/mockData";
 import {
-  buildNormalizedStyleSelectOptions,
+  ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES,
   createDefaultDesignStyleDraft,
   DEFAULT_ADMIN_STYLE_COMPOSITION,
-  DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY,
   DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+  deriveFeaturesMaleAndFemale,
+  formatDerivedGarmentCompositionLabel,
   parseDesignStyleCommaList,
   resolveDesignStyleGenderOptions,
   resolveOutfitTypeOptions,
@@ -435,12 +436,10 @@ export default function DatabaseView({
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
   const [isNewRecord, setIsNewRecord] = useState(false);
   const [styleCategoriesInput, setStyleCategoriesInput] = useState("");
-  const [styleOptionsInput, setStyleOptionsInput] = useState("");
   const openStyleEditor = (styleItem: DesignStyleAdminProjection, isNew: boolean) => {
     setIsNewRecord(isNew);
     setEditingItem(styleItem);
     setStyleCategoriesInput((styleItem.designCategories || []).join(", "));
-    setStyleOptionsInput((styleItem.options || []).join(", "));
     setEditingType("style");
   };
   useEffect(() => {
@@ -1103,19 +1102,38 @@ export default function DatabaseView({
         alert("Represented genders must be assigned.");
         return;
       }
-      if (conf.featuresMaleAndFemale && (!conf.representedGenders.includes('male') || !conf.representedGenders.includes('female'))) {
-        alert("Features both male and female requires both male and female to be represented.");
-        return;
-      }
     }
 
-    const authority = getDesignStyleAuthorityMetadata(item);
+    if (
+      item.styleApplicability?.mode === "adaptable" &&
+      (!Array.isArray(item.styleApplicability.garmentTypes) ||
+        item.styleApplicability.garmentTypes.length === 0)
+    ) {
+      alert(
+        "Select at least one adaptable garment type or switch Style Applicability to Exact Match Only.",
+      );
+      return;
+    }
+
+    const styleToPublish: StyleCategory = item.customDetailConfig
+      ? {
+          ...item,
+          customDetailConfig: {
+            ...item.customDetailConfig,
+            featuresMaleAndFemale: deriveFeaturesMaleAndFemale(
+              item.customDetailConfig.representedGenders,
+            ),
+          },
+        }
+      : item;
+
+    const authority = getDesignStyleAuthorityMetadata(styleToPublish);
     if (!authority) {
       triggerStatus("This Design Style has no valid publication authority.", "error");
       return;
     }
     if (isNewRecord) {
-      if (adminStyles.some((s) => s.id === item.id)) {
+      if (adminStyles.some((s) => s.id === styleToPublish.id)) {
         alert("A style with this ID already exists.");
         return;
       }
@@ -1123,7 +1141,7 @@ export default function DatabaseView({
 
     try {
       await DesignStyleAuthorityService.publish({
-        style: item,
+        style: styleToPublish,
         lifecycle: authority.lifecycle,
         displayOrder: authority.displayOrder,
         referenceComposition: cloneReferenceComposition(
@@ -1132,7 +1150,7 @@ export default function DatabaseView({
         expectedPublicRevision: authority.publicRevision,
       });
       triggerStatus(
-        `${isNewRecord ? "Created" : "Updated"} ${authority.lifecycle} style ${item.name} successfully!`,
+        `${isNewRecord ? "Created" : "Updated"} ${authority.lifecycle} style ${styleToPublish.name} successfully!`,
       );
       setEditingType(null);
     } catch (error) {
@@ -2407,66 +2425,21 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
-                        Garment Composition
+                        Garment Composition (Derived)
                       </label>
-                      <select
+                      <input
+                        type="text"
+                        readOnly
                         aria-label="Garment Composition"
-                        value={
-                          editingItem.garmentComposition
-                            ? customerCatalogueLabel(editingItem.garmentComposition)
-                            : DEFAULT_ADMIN_STYLE_COMPOSITION
-                        }
-                        onChange={(event) =>
-                          setEditingItem((prev: any) => ({
-                            ...prev,
-                            garmentComposition: event.target.value,
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      >
-                        {buildNormalizedStyleSelectOptions({
-                          configured: businessSettings.garmentCompositions,
-                          fallback:
-                            DEFAULT_BUSINESS_SETTINGS.garmentCompositions || [],
-                          currentValue: editingItem.garmentComposition,
-                        }).map((label) => (
-                          <option key={label} value={label}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Fabric Category
-                      </label>
-                      <select
-                        aria-label="Style Fabric Category"
-                        value={
-                          editingItem.fabricCategory ||
-                          DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY
-                        }
-                        onChange={(event) =>
-                          setEditingItem((prev: any) => ({
-                            ...prev,
-                            fabricCategory: event.target.value,
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      >
-                        {buildNormalizedStyleSelectOptions({
-                          configured: [
-                            ...fabricCategoryOptions.map((opt) => opt.value),
-                            "Any",
-                          ],
-                          fallback: [DEFAULT_ADMIN_STYLE_FABRIC_CATEGORY, "Any"],
-                          currentValue: editingItem.fabricCategory,
-                        }).map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
+                        value={formatDerivedGarmentCompositionLabel(
+                          editingItem.fabricCapacityComposition,
+                          editingItem.garmentComposition,
+                        )}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-gray-50 text-heritage-ink/75 rounded-lg"
+                      />
+                      <p className="text-[10px] text-heritage-ink/60">
+                        Derived from the selected garment types below. Stored legacy composition value is preserved on save.
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
@@ -2486,26 +2459,6 @@ export default function DatabaseView({
                         }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         placeholder="e.g. Standard Length Shirt, Short Sleeve"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Style Feature Options (Comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        aria-label="Style Feature Options"
-                        value={styleOptionsInput}
-                        onChange={(event) => {
-                          const raw = event.target.value;
-                          setStyleOptionsInput(raw);
-                          setEditingItem((prev: any) => ({
-                            ...prev,
-                            options: parseDesignStyleCommaList(raw),
-                          }));
-                        }}
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                        placeholder="e.g. Mandarin Collar, Short Sleeve"
                       />
                     </div>
                     <div className="col-span-1 sm:col-span-2">
@@ -2831,8 +2784,9 @@ export default function DatabaseView({
                                         ...conf,
                                         representedGenders,
                                         featuresMaleAndFemale:
-                                          representedGenders.includes("male") &&
-                                          representedGenders.includes("female"),
+                                          deriveFeaturesMaleAndFemale(
+                                            representedGenders,
+                                          ),
                                       }
                                     });
                                   }}
@@ -2842,6 +2796,245 @@ export default function DatabaseView({
                               </label>
                             ))}
                           </div>
+                        </div>
+
+                        <div className="space-y-3 col-span-1 sm:col-span-2 rounded-lg border border-heritage-gold/20 bg-white p-3">
+                          <div className="space-y-1">
+                            <label className="font-bold text-heritage-green block">
+                              Style Applicability
+                            </label>
+                            <p className="text-[10px] text-heritage-ink/60">
+                              Controls whether customers can apply this design only to its original garments or adapt it to other selected garments in Step 3.
+                            </p>
+                            <select
+                              aria-label="Style Applicability Mode"
+                              value={
+                                editingItem.styleApplicability?.mode === "adaptable"
+                                  ? "adaptable"
+                                  : "exact_only"
+                              }
+                              onChange={(event) => {
+                                if (event.target.value !== "adaptable") {
+                                  setEditingItem({
+                                    ...editingItem,
+                                    styleApplicability: { mode: "exact_only" },
+                                  });
+                                  return;
+                                }
+                                const existingGarments: CanonicalPhysicalGarmentType[] =
+                                  Array.isArray(
+                                    editingItem.styleApplicability?.garmentTypes,
+                                  )
+                                    ? editingItem.styleApplicability.garmentTypes.filter(
+                                        (g: CanonicalPhysicalGarmentType) =>
+                                          ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
+                                            g,
+                                          ),
+                                      )
+                                    : [];
+                                const fallbackGarments: CanonicalPhysicalGarmentType[] =
+                                  Array.isArray(editingItem.fabricCapacityComposition)
+                                    ? [
+                                        ...new Set<CanonicalPhysicalGarmentType>(
+                                          editingItem.fabricCapacityComposition
+                                            .map((spec: any): unknown => spec?.garmentType)
+                                            .filter(
+                                              (
+                                                g: unknown,
+                                              ): g is CanonicalPhysicalGarmentType =>
+                                                typeof g === "string" &&
+                                                ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
+                                                  g as CanonicalPhysicalGarmentType,
+                                                ),
+                                            ),
+                                        ),
+                                      ]
+                                    : [];
+                                const garmentTypes =
+                                  existingGarments.length > 0
+                                    ? existingGarments
+                                    : fallbackGarments;
+                                const existingDemographics: Array<"male" | "female"> =
+                                  Array.isArray(
+                                    editingItem.styleApplicability?.demographics,
+                                  )
+                                    ? editingItem.styleApplicability.demographics.filter(
+                                        (d: unknown): d is "male" | "female" =>
+                                          d === "male" || d === "female",
+                                      )
+                                    : [];
+                                setEditingItem({
+                                  ...editingItem,
+                                  styleApplicability: {
+                                    mode: "adaptable",
+                                    garmentTypes,
+                                    ...(existingDemographics.length > 0
+                                      ? { demographics: existingDemographics }
+                                      : {}),
+                                  },
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg text-xs"
+                            >
+                              <option value="exact_only">
+                                Exact Match Only (Default)
+                              </option>
+                              <option value="adaptable">
+                                Adaptable to Selected Garments
+                              </option>
+                            </select>
+                          </div>
+
+                          {editingItem.styleApplicability?.mode === "adaptable" && (
+                            <div className="space-y-3 border-t border-heritage-gold/15 pt-3">
+                              <div className="space-y-1.5">
+                                <label className="font-bold text-heritage-green block text-xs">
+                                  Adaptable Garment Types
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                  {ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.map(
+                                    (garmentType) => {
+                                      const garmentLabel =
+                                        getFabricGarmentLabel(garmentType);
+                                      const checked = Boolean(
+                                        editingItem.styleApplicability?.garmentTypes?.includes(
+                                          garmentType,
+                                        ),
+                                      );
+                                      return (
+                                        <label
+                                          key={`adaptable-${garmentType}`}
+                                          className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-heritage-cream/10 px-3 py-1.5 text-xs"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            aria-label={`Adaptable garment ${garmentLabel}`}
+                                            checked={checked}
+                                            onChange={(event) => {
+                                              const current: CanonicalPhysicalGarmentType[] =
+                                                Array.isArray(
+                                                  editingItem.styleApplicability
+                                                    ?.garmentTypes,
+                                                )
+                                                  ? editingItem.styleApplicability
+                                                      .garmentTypes
+                                                  : [];
+                                              const garmentTypes = event.target
+                                                .checked
+                                                ? [
+                                                    ...new Set([
+                                                      ...current,
+                                                      garmentType,
+                                                    ]),
+                                                  ]
+                                                : current.filter(
+                                                    (item) => item !== garmentType,
+                                                  );
+                                              const existingDemographics: Array<
+                                                "male" | "female"
+                                              > = Array.isArray(
+                                                editingItem.styleApplicability
+                                                  ?.demographics,
+                                              )
+                                                ? editingItem.styleApplicability.demographics.filter(
+                                                    (
+                                                      d: unknown,
+                                                    ): d is "male" | "female" =>
+                                                      d === "male" || d === "female",
+                                                  )
+                                                : [];
+                                              setEditingItem({
+                                                ...editingItem,
+                                                styleApplicability: {
+                                                  mode: "adaptable",
+                                                  garmentTypes,
+                                                  ...(existingDemographics.length > 0
+                                                    ? {
+                                                        demographics:
+                                                          existingDemographics,
+                                                      }
+                                                    : {}),
+                                                },
+                                              });
+                                            }}
+                                            className="h-4 w-4 rounded text-heritage-green"
+                                          />
+                                          <span>{garmentLabel}</span>
+                                        </label>
+                                      );
+                                    },
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="font-bold text-heritage-green block text-xs">
+                                  Optional Adaptable Audiences
+                                </label>
+                                <p className="text-[10px] text-heritage-ink/60">
+                                  Leave unchecked to use the style&apos;s Design audience. Check audiences only to allow adapting this design across additional audiences.
+                                </p>
+                                <div className="flex gap-4">
+                                  {(["male", "female"] as const).map((g) => (
+                                    <label
+                                      key={`adaptable-audience-${g}`}
+                                      className="flex cursor-pointer items-center gap-2 text-xs"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Adaptable audience ${g}`}
+                                        checked={Boolean(
+                                          editingItem.styleApplicability?.demographics?.includes(
+                                            g,
+                                          ),
+                                        )}
+                                        onChange={(event) => {
+                                          const currentGarments: CanonicalPhysicalGarmentType[] =
+                                            Array.isArray(
+                                              editingItem.styleApplicability
+                                                ?.garmentTypes,
+                                            )
+                                              ? editingItem.styleApplicability
+                                                  .garmentTypes
+                                              : [];
+                                          const currentDemographics: Array<
+                                            "male" | "female"
+                                          > = Array.isArray(
+                                            editingItem.styleApplicability
+                                              ?.demographics,
+                                          )
+                                            ? editingItem.styleApplicability.demographics.filter(
+                                                (
+                                                  d: unknown,
+                                                ): d is "male" | "female" =>
+                                                  d === "male" || d === "female",
+                                              )
+                                            : [];
+                                          const demographics = event.target.checked
+                                            ? [...new Set([...currentDemographics, g])]
+                                            : currentDemographics.filter(
+                                                (d) => d !== g,
+                                              );
+                                          setEditingItem({
+                                            ...editingItem,
+                                            styleApplicability: {
+                                              mode: "adaptable",
+                                              garmentTypes: currentGarments,
+                                              ...(demographics.length > 0
+                                                ? { demographics }
+                                                : {}),
+                                            },
+                                          });
+                                        }}
+                                        className="h-4 w-4 rounded text-heritage-green"
+                                      />
+                                      <span className="capitalize">{g}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="space-y-2 col-span-1 sm:col-span-2">
@@ -2857,7 +3050,7 @@ export default function DatabaseView({
                                   type="checkbox"
                                   checked={editingItem.customDetailConfig?.supportedGarmentGroups?.includes(g) || false}
                                   onChange={(e) => {
-                                    const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
+                                    const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: deriveFeaturesMaleAndFemale([]), supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
                                     const list = conf.supportedGarmentGroups || [];
                                     const supportedGarmentGroups = e.target.checked
                                       ? [...list, g]
@@ -2923,7 +3116,7 @@ export default function DatabaseView({
                                   onChange={(e) => {
                                     const conf = editingItem.customDetailConfig || {
                                       representedGenders: [],
-                                      featuresMaleAndFemale: false,
+                                      featuresMaleAndFemale: deriveFeaturesMaleAndFemale([]),
                                       supportedGarmentGroups: [],
                                       requiredSelectionGroups: [],
                                       enabled: true,
@@ -5098,11 +5291,6 @@ export default function DatabaseView({
                                   DEFAULT_ADMIN_STYLE_COMPOSITION,
                               )}
                             </span>
-                            {s.fabricCategory && s.fabricCategory !== "Any" && (
-                              <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-gold bg-heritage-gold/5">
-                                {s.fabricCategory}
-                              </span>
-                            )}
                           </div>
                           {s.detectedColors && (
                             <div className="flex items-center gap-2 pt-1">
