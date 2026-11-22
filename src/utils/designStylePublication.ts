@@ -1,4 +1,4 @@
-import type { StyleCategory } from "../types";
+import type { DesignStyleCategory, StyleCategory } from "../types";
 import {
   prepareAuthoritativeDesignStyleRecord,
   type AuthoritativeDesignStyleRecordV1,
@@ -53,6 +53,7 @@ export interface PublishDesignStyleInput {
   readonly displayOrder: number;
   readonly referenceComposition: DesignStyleReferenceComposition;
   readonly expectedPublicRevision: number;
+  readonly categories?: readonly DesignStyleCategory[];
 }
 
 export const isSupersededDesignStyleImageUnreferenced = ({
@@ -102,6 +103,7 @@ export const publishDesignStyleWithDependencies = async (
     referenceComposition: input.referenceComposition,
     currentRecord: current?.record ?? null,
     image: replacementUpload ? "" : requestedImage,
+    categories: input.categories,
   });
 
   let uploadedImage: string | null = null;
@@ -127,6 +129,7 @@ export const publishDesignStyleWithDependencies = async (
     referenceComposition: input.referenceComposition,
     currentRecord: current?.record ?? null,
     image: uploadedImage ?? requestedImage,
+    categories: input.categories,
   });
 
   try {
