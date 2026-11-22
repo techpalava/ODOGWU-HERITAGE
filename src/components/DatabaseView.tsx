@@ -460,7 +460,7 @@ export default function DatabaseView({
     : [];
 
   // Editing modal/form states
-  const [editingType, setEditingType] = useState<
+  const [editingType, setEditingTypeState] = useState<
     | "user"
     | "style"
     | "fabric"
@@ -473,6 +473,13 @@ export default function DatabaseView({
     | "v2-personalized-price"
     | null
   >(null);
+  const [editorFocusRequestCount, setEditorFocusRequestCount] = useState(0);
+  const setEditingType = (nextType: typeof editingType) => {
+    setEditingTypeState(nextType);
+    if (nextType !== null) {
+      setEditorFocusRequestCount((count) => count + 1);
+    }
+  };
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
   const [isNewRecord, setIsNewRecord] = useState(false);
   const openStyleEditor = (styleItem: DesignStyleAdminProjection, isNew: boolean) => {
@@ -481,9 +488,12 @@ export default function DatabaseView({
     setEditingType("style");
   };
   useEffect(() => {
-    if (editingType !== "catalog_option") return;
-    catalogEditorRef.current?.scrollIntoView?.({ block: "start" });
-  }, [editingType, isNewCatalogOption, editingCatalogOption?.id]);
+    if (!editingType || editorFocusRequestCount === 0) return;
+    const editorEl = catalogEditorRef.current;
+    if (!editorEl) return;
+    editorEl.scrollIntoView?.({ behavior: "auto", block: "start" });
+    editorEl.focus?.({ preventScroll: true });
+  }, [editingType, editorFocusRequestCount]);
   const [fabricNameSuggestions, setFabricNameSuggestions] = useState<string[]>([]);
   const [suggestionHistory, setSuggestionHistory] = useState<string[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
@@ -2013,7 +2023,9 @@ export default function DatabaseView({
             {editingType && (editingItem || editingType === "catalog_option") && (
               <div
                 ref={catalogEditorRef}
-                className="mb-8 p-6 bg-heritage-forest/5 border-2 border-heritage-gold/20 rounded-2xl text-left space-y-4"
+                tabIndex={-1}
+                data-testid="admin-record-editor"
+                className="scroll-mt-28 mb-8 p-6 bg-heritage-forest/5 border-2 border-heritage-gold/20 rounded-2xl text-left space-y-4 focus:outline-none"
               >
                 <div className="flex items-center justify-between border-b border-heritage-gold/10 pb-3">
                   <h3 className="text-sm font-bold font-serif text-heritage-green uppercase tracking-wider">
