@@ -14,7 +14,10 @@ import {
   Step1GarmentReferencePhoto,
   getGarmentTypeStepLabel,
 } from "./src/components/GarmentTypeStep";
-import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import {
+  CUSTOMER_SELECTABLE_GARMENT_TYPES,
+  STEP_1_GARMENT_CARD_PRESETS,
+} from "./src/utils/garmentConstructionPricing";
 import {
   STEP1_DUAL_IMAGE_GARMENT_TYPES,
   STEP1_GARMENT_REFERENCE_IMAGES,
@@ -163,21 +166,18 @@ const emptyMarkup = renderStepMarkup();
 assert.ok(
   emptyMarkup.includes(`src="${STEP1_GARMENT_REFERENCE_IMAGES.shirt.src}"`),
 );
-assert.ok(emptyMarkup.includes('alt="Ankara Standard Shirt reference"'));
-assert.ok(emptyMarkup.includes("Standard Shirt"));
+assert.ok(emptyMarkup.includes('alt="Ankara Standard Shirt — Short Sleeve reference"'));
+assert.ok(emptyMarkup.includes('alt="Ankara Standard Shirt — Long Sleeve reference"'));
+assert.ok(emptyMarkup.includes("Standard Shirt — Short Sleeve"));
+assert.ok(emptyMarkup.includes("Standard Shirt — Long Sleeve"));
 assert.equal(emptyMarkup.includes("Base Garment"), false);
 assert.equal(emptyMarkup.includes("Style Preview"), false);
 assert.equal(emptyMarkup.includes("Mid-Long Sleeve"), false);
 assert.equal(emptyMarkup.includes("step1-shirt-preview"), false);
 assert.equal(
-  (emptyMarkup.match(/data-testid="step1-garment-reference-gallery"/g) || []).length,
-  4,
-  "Exactly the four approved garment cards must reserve the dual-image layout.",
-);
-assert.equal(
-  (emptyMarkup.match(/ankara-standard-shirt-long-sleeve\.webp/g) || []).length,
+  (emptyMarkup.match(/src="\/images\/garments\/ankara-standard-shirt-long-sleeve\.webp"/g) || []).length,
   1,
-  "The Standard Shirt alternate must render alongside its primary image.",
+  "The Standard Shirt Long Sleeve card renders its long-sleeve reference image once.",
 );
 for (const garmentType of STEP1_DUAL_IMAGE_GARMENT_TYPES) {
   assert.equal(isStep1DualImageGarmentType(garmentType), true);
@@ -231,10 +231,10 @@ assert.equal(
 );
 assert.equal(
   (emptyMarkup.match(/data-testid="step1-garment-select-/g) || []).length,
-  CUSTOMER_SELECTABLE_GARMENT_TYPES.length,
+  STEP_1_GARMENT_CARD_PRESETS.length,
 );
 assert.ok(emptyMarkup.includes('aria-pressed="false"'));
-assert.ok(emptyMarkup.includes('aria-label="Select Standard Shirt"'));
+assert.ok(emptyMarkup.includes('aria-label="Select Standard Shirt — Short Sleeve"'));
 assert.ok(emptyMarkup.includes(STEP1_GARMENT_SELECT_ATTENTION_CLASS));
 assert.ok(emptyMarkup.includes("motion-safe:animate-step1-select-attention"));
 assert.ok(emptyMarkup.includes("motion-reduce:animate-none"));
@@ -251,22 +251,25 @@ assert.ok(
   "Step 1 reference frames must use the half-height 2/1 aspect crop",
 );
 assert.equal(
-  (emptyMarkup.match(/aspect-square/g) || []).length,
-  8,
-  "Each of the four dual-image cards must render two equal-width image frames.",
+  (emptyMarkup.match(/data-testid="step1-garment-reference-image"/g) || []).length,
+  STEP_1_GARMENT_CARD_PRESETS.length,
+  "Every Step 1 card renders its matching reference image.",
 );
 
-for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
-  assert.ok(isStep1GarmentReferenceType(garmentType));
-  const config = STEP1_GARMENT_REFERENCE_IMAGES[garmentType];
-  const label = getGarmentTypeStepLabel(garmentType);
+for (const preset of STEP_1_GARMENT_CARD_PRESETS) {
+  assert.ok(isStep1GarmentReferenceType(preset.garmentType));
+  const expectedConfig =
+    preset.referenceImageVariant === "secondary" &&
+    isStep1DualImageGarmentType(preset.garmentType)
+      ? getStep1GarmentSecondaryReferenceImage(preset.garmentType)!
+      : STEP1_GARMENT_REFERENCE_IMAGES[preset.garmentType];
   assert.ok(
-    emptyMarkup.includes(`src="${config.src}"`),
-    `${garmentType} must render its reference image source`,
+    emptyMarkup.includes(`src="${expectedConfig.src}"`),
+    `${preset.id} must render its reference image source`,
   );
   assert.ok(
-    emptyMarkup.includes(`alt="${getStep1GarmentReferenceAlt(label)}"`),
-    `${garmentType} must render meaningful reference alt text`,
+    emptyMarkup.includes(`alt="${getStep1GarmentReferenceAlt(preset.label)}"`),
+    `${preset.id} must render meaningful reference alt text`,
   );
 }
 
@@ -279,11 +282,11 @@ assert.ok(selectedMarkup.includes("SELECTED"));
 assert.ok(selectedMarkup.includes('data-step1-deselect-cue="true"'));
 assert.equal(selectedMarkup.includes("✓ SELECTED"), false);
 assert.ok(selectedMarkup.includes("border-heritage-green"));
-assert.ok(selectedMarkup.includes('id="garment-type-step-shirt"'));
+assert.ok(selectedMarkup.includes('id="garment-type-step-shirt_short_sleeve"'));
 assert.ok(selectedMarkup.includes('aria-pressed="true"'));
-assert.ok(selectedMarkup.includes('aria-label="Deselect Standard Shirt"'));
+assert.ok(selectedMarkup.includes('aria-label="Deselect Standard Shirt — Short Sleeve"'));
 assert.equal(selectedMarkup.includes('checked'), false);
-const shirtSelectStart = selectedMarkup.indexOf('data-testid="step1-garment-select-shirt"');
+const shirtSelectStart = selectedMarkup.indexOf('data-testid="step1-garment-select-shirt_short_sleeve"');
 assert.ok(shirtSelectStart >= 0);
 const shirtSelectSlice = selectedMarkup.slice(shirtSelectStart, shirtSelectStart + 900);
 assert.equal(
@@ -356,69 +359,47 @@ const renderSelectable = (selected: readonly FabricGarmentType[]) =>
 act(() => {
   selectableRenderer = create(renderSelectable([]));
 });
-const shirtGallery = selectableRenderer.root
-  .findByProps({ "data-testid": "step1-garment-card-shirt" })
-  .findByProps({ "data-testid": "step1-garment-reference-gallery" });
-const shirtGalleryImages = shirtGallery.findAllByProps({
-  "data-testid": "step1-garment-reference-image",
-});
-assert.equal(shirtGalleryImages.length, 2);
-assert.equal(shirtGalleryImages[0]?.props.src, STEP1_GARMENT_REFERENCE_IMAGES.shirt.src);
-assert.equal(
-  shirtGalleryImages[1]?.props.src,
-  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.shirt?.src,
-);
+const shirtShortImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-shirt_short_sleeve" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
+assert.equal(shirtShortImage.props.src, STEP1_GARMENT_REFERENCE_IMAGES.shirt.src);
+const shirtLongImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-shirt_long_sleeve" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
+assert.equal(shirtLongImage.props.src, STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.shirt?.src);
 
-const longShirtGallery = selectableRenderer.root
-  .findByProps({ "data-testid": "step1-garment-card-kaftan" })
-  .findByProps({ "data-testid": "step1-garment-reference-gallery" });
-const longShirtGalleryImages = longShirtGallery.findAllByProps({
-  "data-testid": "step1-garment-reference-image",
-});
-assert.equal(longShirtGalleryImages.length, 2);
+const longShirtShortImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-kaftan_short_sleeve" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
 assert.equal(
-  longShirtGalleryImages[0]?.props.src,
-  STEP1_GARMENT_REFERENCE_IMAGES.kaftan.src,
-  "Long Shirt gallery image[0] (left/primary) must be the short-sleeve asset",
-);
-assert.equal(
-  longShirtGalleryImages[0]?.props.src,
+  longShirtShortImage.props.src,
   "/images/garments/ankara-kaftan-short-sleeve.webp",
+  "Long Shirt Short Sleeve card must use the short-sleeve asset",
 );
+const longShirtLongImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-kaftan_long_sleeve" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
 assert.equal(
-  longShirtGalleryImages[1]?.props.src,
-  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.kaftan?.src,
-  "Long Shirt gallery image[1] (right/secondary) must be the long-sleeve asset",
-);
-assert.equal(
-  longShirtGalleryImages[1]?.props.src,
+  longShirtLongImage.props.src,
   "/images/garments/ankara-kaftan.webp",
+  "Long Shirt Long Sleeve card must use the long-sleeve asset",
 );
 
-const longDressGallery = selectableRenderer.root
-  .findByProps({ "data-testid": "step1-garment-card-full_length_gown" })
-  .findByProps({ "data-testid": "step1-garment-reference-gallery" });
-const longDressGalleryImages = longDressGallery.findAllByProps({
-  "data-testid": "step1-garment-reference-image",
-});
-assert.equal(longDressGalleryImages.length, 2);
+const longDressShortImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-full_length_gown_sleeveless_or_short" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
 assert.equal(
-  longDressGalleryImages[0]?.props.src,
-  STEP1_GARMENT_REFERENCE_IMAGES.full_length_gown.src,
-  "Long Dress gallery image[0] (left/primary) must be the short-sleeve asset",
-);
-assert.equal(
-  longDressGalleryImages[0]?.props.src,
+  longDressShortImage.props.src,
   "/images/garments/ankara-long-dress-gown-short-sleeve.webp",
+  "Long Dress Sleeveless / Short Sleeve card must use the short-sleeve asset",
 );
+const longDressLongImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-full_length_gown_mid_or_long" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
 assert.equal(
-  longDressGalleryImages[1]?.props.src,
-  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.full_length_gown?.src,
-  "Long Dress gallery image[1] (right/secondary) must be the long/mid-long sleeve asset",
-);
-assert.equal(
-  longDressGalleryImages[1]?.props.src,
+  longDressLongImage.props.src,
   "/images/garments/ankara-long-dress-gown.webp",
+  "Long Dress Mid / Long Sleeve card must use the long-sleeve asset",
 );
 assert.equal(
   selectableRenderer.root.findAllByProps({
@@ -432,19 +413,22 @@ assert.equal(
   }).length,
   0,
 );
-assert.equal(selectedGarmentTypes.length, 0, "Gallery presentation must not select a garment");
-assert.equal(garmentChangeCount, 0, "Gallery presentation must not change garment state");
-assert.equal(constructionChangeCount, 0, "Gallery presentation must not change construction state");
+assert.equal(selectedGarmentTypes.length, 0, "Card rendering must not select a garment");
+assert.equal(garmentChangeCount, 0, "Card rendering must not change garment state");
+assert.equal(constructionChangeCount, 0, "Card rendering must not change construction state");
 assert.equal(
   selectableRenderer.root.findAllByProps({
     type: "checkbox",
-    id: "garment-type-step-shirt",
+    id: "garment-type-step-shirt_short_sleeve",
   }).length,
   0,
 );
-for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
+const primaryPresetIds = STEP_1_GARMENT_CARD_PRESETS.filter(
+  (preset) => preset.referenceImageVariant === "primary",
+);
+for (const preset of primaryPresetIds) {
   const card = selectableRenderer.root.findByProps({
-    "data-testid": `step1-garment-card-${garmentType}`,
+    "data-testid": `step1-garment-card-${preset.id}`,
   });
   const changeCountBeforeCardClick = garmentChangeCount;
   assert.ok(card.props.className.includes("cursor-pointer"));
@@ -454,14 +438,14 @@ for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.equal(
     garmentChangeCount,
     changeCountBeforeCardClick + 1,
-    `Clicking ${garmentType}'s non-button card area must select it exactly once.`,
+    `Clicking ${preset.id}'s non-button card area must select it exactly once.`,
   );
-  assert.ok(selectedGarmentTypes.includes(garmentType));
+  assert.ok(selectedGarmentTypes.includes(preset.garmentType));
   act(() => {
     selectableRenderer.update(renderSelectable(selectedGarmentTypes));
   });
   const selectedCard = selectableRenderer.root.findByProps({
-    "data-testid": `step1-garment-card-${garmentType}`,
+    "data-testid": `step1-garment-card-${preset.id}`,
   });
   act(() => {
     selectedCard.props.onClick({ target: null });
@@ -469,27 +453,27 @@ for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.equal(
     garmentChangeCount,
     changeCountBeforeCardClick + 2,
-    `Clicking selected ${garmentType}'s non-button card area must deselect it exactly once.`,
+    `Clicking selected ${preset.id}'s non-button card area must deselect it exactly once.`,
   );
-  assert.equal(selectedGarmentTypes.includes(garmentType), false);
+  assert.equal(selectedGarmentTypes.includes(preset.garmentType), false);
   act(() => {
     selectableRenderer.update(renderSelectable(selectedGarmentTypes));
   });
 }
 assert.equal(selectedGarmentTypes.length, 0);
-assert.equal(garmentChangeCount, CUSTOMER_SELECTABLE_GARMENT_TYPES.length * 2);
-assert.equal(constructionChangeCount, CUSTOMER_SELECTABLE_GARMENT_TYPES.length * 2);
+assert.equal(garmentChangeCount, primaryPresetIds.length * 2);
+assert.equal(constructionChangeCount, primaryPresetIds.length * 2);
 garmentChangeCount = 0;
 constructionChangeCount = 0;
 const shirtSelect = selectableRenderer.root.findByProps({
-  "data-testid": "step1-garment-select-shirt",
+  "data-testid": "step1-garment-select-shirt_short_sleeve",
 });
 const shirtCard = selectableRenderer.root.findByProps({
-  "data-testid": "step1-garment-card-shirt",
+  "data-testid": "step1-garment-card-shirt_short_sleeve",
 });
 assert.equal(shirtSelect.props.type, "button");
 assert.equal(shirtSelect.props["aria-pressed"], false);
-assert.equal(shirtSelect.props["aria-label"], "Select Standard Shirt");
+assert.equal(shirtSelect.props["aria-label"], "Select Standard Shirt — Short Sleeve");
 assert.equal(
   shirtSelect.findAllByProps({ "data-step1-deselect-cue": "true" }).length,
   0,
@@ -518,10 +502,10 @@ act(() => {
   selectableRenderer.update(renderSelectable(selectedGarmentTypes));
 });
 const selectedShirtSelect = selectableRenderer.root.findByProps({
-  "data-testid": "step1-garment-select-shirt",
+  "data-testid": "step1-garment-select-shirt_short_sleeve",
 });
 assert.equal(selectedShirtSelect.props["aria-pressed"], true);
-assert.equal(selectedShirtSelect.props["aria-label"], "Deselect Standard Shirt");
+assert.equal(selectedShirtSelect.props["aria-label"], "Deselect Standard Shirt — Short Sleeve");
 assert.equal(selectedShirtSelect.props.type, "button");
 assert.equal(
   selectedShirtSelect.findAll(
@@ -548,7 +532,7 @@ act(() => {
 });
 act(() => {
   selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-select-shirt" })
+    .findByProps({ "data-testid": "step1-garment-select-shirt_short_sleeve" })
     .props.onClick();
 });
 act(() => {
@@ -564,21 +548,25 @@ act(() => {
 });
 act(() => {
   selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-select-dress" })
+    .findByProps({ "data-testid": "step1-garment-select-dress_sleeveless_or_short" })
     .props.onClick();
 });
 assert.deepEqual(selectedGarmentTypes, ["shirt", "trouser", "dress"]);
 act(() => {
   selectableRenderer.update(renderSelectable(selectedGarmentTypes));
 });
-for (const garmentType of ["shirt", "trouser", "dress"] as const) {
+for (const presetId of [
+  "shirt_short_sleeve",
+  "trouser",
+  "dress_sleeveless_or_short",
+] as const) {
   const selectedControl = selectableRenderer.root.findByProps({
-    "data-testid": `step1-garment-select-${garmentType}`,
+    "data-testid": `step1-garment-select-${presetId}`,
   });
   assert.equal(selectedControl.props["aria-pressed"], true);
   assert.ok(
     selectedControl.findByProps({ "data-step1-deselect-cue": "true" }),
-    `${garmentType} selected control must show the X deselect cue`,
+    `${presetId} selected control must show the X deselect cue`,
   );
 }
 act(() => {
@@ -593,18 +581,18 @@ act(() => {
 });
 assert.equal(
   selectableRenderer.root.findByProps({
-    "data-testid": "step1-garment-select-shirt",
+    "data-testid": "step1-garment-select-shirt_short_sleeve",
   }).props["aria-pressed"],
   true,
 );
 assert.ok(
   selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-select-shirt" })
+    .findByProps({ "data-testid": "step1-garment-select-shirt_short_sleeve" })
     .findByProps({ "data-step1-deselect-cue": "true" }),
 );
 assert.equal(
   selectableRenderer.root.findByProps({
-    "data-testid": "step1-garment-select-dress",
+    "data-testid": "step1-garment-select-dress_sleeveless_or_short",
   }).props["aria-pressed"],
   true,
 );
@@ -622,12 +610,12 @@ assert.equal(
 );
 assert.ok(
   selectableRenderer.root.findByProps({
-    "data-testid": "step1-garment-card-shirt",
+    "data-testid": "step1-garment-card-shirt_short_sleeve",
   }),
 );
 assert.equal(
   selectableRenderer.root.findAllByProps({
-    "data-testid": "step1-garment-select-shirt",
+    "data-testid": "step1-garment-select-shirt_short_sleeve",
   }).length,
   1,
 );

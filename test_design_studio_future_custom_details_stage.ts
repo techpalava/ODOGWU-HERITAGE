@@ -1125,68 +1125,24 @@ assert.equal(
   1,
   "the Shirts card contains one Long Shirt garment block",
 );
-const standardConstruction = groupInGarmentSection(
-  standardShirtBlock,
-  "shirt_construction",
+assert.equal(
+  standardShirtBlock.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
+  0,
+  "Base Standard Shirt hides redundant shirt_construction in Step 4",
 );
-const longConstruction = groupInGarmentSection(
-  longShirtBlock,
-  "shirt_construction",
+assert.equal(
+  longShirtBlock.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
+  0,
+  "Base Long Shirt hides redundant shirt_construction in Step 4",
 );
 assert.match(textContent(standardShirtBlock), /Standard Shirt/);
-assert.match(textContent(standardConstruction), /Main Garment/);
-assert.match(textContent(standardConstruction), /Standard Length Shirt, Short Sleeve/);
-assert.match(textContent(standardConstruction), /Standard Length Shirt, Long Sleeve/);
-assert.doesNotMatch(textContent(standardConstruction), /Mid-Long Sleeve|Mid-to-Long Sleeve|Mid Sleeve/);
-// Step 4 length switch: every shirt offers both lengths' Main Garment options.
-assert.match(textContent(standardConstruction), /Long Length Shirt, Short Sleeve/);
+assert.match(textContent(longShirtBlock), /Long Shirt/);
 assert.doesNotMatch(
   textContent(shirtsSection),
   /With Rope Plus Elastic Band/,
-  "Shirt construction must not gain With Rope Plus Elastic Band",
+  "Shirt section must not gain With Rope Plus Elastic Band",
 );
-assert.match(textContent(longShirtBlock), /Long Shirt/);
-assert.match(textContent(longConstruction), /Main Garment/);
-assert.match(textContent(longConstruction), /Long Length Shirt, Short Sleeve/);
-assert.match(textContent(longConstruction), /Long Length Shirt, Long Sleeve/);
-assert.doesNotMatch(textContent(longConstruction), /Mid-Long Sleeve|Mid-to-Long Sleeve|Mid Sleeve/);
-assert.match(textContent(longConstruction), /Standard Length Shirt, Short Sleeve/);
-assert.equal(
-  optionInOccurrenceGroup(
-    standardConstruction,
-    "Standard Length Shirt, Short Sleeve",
-  )?.findByType("input").props.checked,
-  true,
-  "the authoritative Standard Shirt default remains selected",
-);
-assert.equal(
-  optionInOccurrenceGroup(
-    longConstruction,
-    "Long Length Shirt, Short Sleeve",
-  )?.findByType("input").props.checked,
-  true,
-  "the authoritative Long Shirt default remains selected",
-);
-const standardAlternative = optionInOccurrenceGroup(
-  standardConstruction,
-  "Standard Length Shirt, Long Sleeve",
-);
-assert.ok(standardAlternative);
-assert.equal(standardAlternative.findByType("input").props.disabled, undefined);
-assert.match(
-  String(standardAlternative.findByType("input").props.id),
-  /^future-custom-detail-base:shirt-shirt_construction-/,
-  "the Standard Shirt construction control retains its exact occurrence identity",
-);
-act(() => {
-  standardAlternative.findByType("input").props.onChange();
-});
-assert.deepEqual(garmentFirstConstructionEvents, [[
-  "base:shirt",
-  "shirt",
-  "shirt_construction",
-  "shirt_std_midlong",
-]]);
+assert.equal(garmentFirstConstructionEvents.length, 0);
 
 const neckSection = garmentFirstRenderer.root.findByProps({
   "data-custom-detail-family-section": "neck",
@@ -1492,25 +1448,21 @@ const longDressOwnedConstruction = groupInGarmentSection(
   "dress_construction",
 );
 assert.match(textContent(standardDressOwnedBlock), /Standard Dress/);
-assert.match(textContent(standardDressOwnedConstruction), /Main Garment/);
+assert.match(textContent(standardDressOwnedConstruction), /Sleeve Style/);
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
 assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Short Sleeve/);
-assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Mid Sleeve/);
-assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Long Sleeve/);
-assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Mid \\(3-Quarter\\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
-// Step 4 length lock: a dress only offers the options of the length picked in Step 1.
+assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Mid Sleeve|Long Sleeve|Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
+// Step 4 tier lock: a base dress only offers the 2 zero-price-change sleeve options of the Step 1 tier.
 assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Long Length/);
 assert.doesNotMatch(textContent(standardDressOwnedConstruction), /dress_long_/);
-assert.equal(standardDressOwnedConstruction.findAllByType("input").length, 4, "Standard Dress offers its four Standard Length options");
+assert.equal(standardDressOwnedConstruction.findAllByType("input").length, 2, "Standard Dress offers strictly its 2 Sleeveless / Short Sleeve options");
 assert.match(textContent(longDressOwnedBlock), /Long Dress/);
-assert.match(textContent(longDressOwnedConstruction), /Main Garment/);
+assert.match(textContent(longDressOwnedConstruction), /Sleeve Style/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Sleeveless \/ Over Shoulder/);
 assert.match(textContent(longDressOwnedConstruction), /Long Length, Short Sleeve/);
-assert.match(textContent(longDressOwnedConstruction), /Long Length, Mid Sleeve/);
-assert.match(textContent(longDressOwnedConstruction), /Long Length, Long Sleeve/);
-assert.doesNotMatch(textContent(longDressOwnedConstruction), /Mid \\(3-Quarter\\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
+assert.doesNotMatch(textContent(longDressOwnedConstruction), /Mid Sleeve|Long Sleeve|Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
 assert.doesNotMatch(textContent(longDressOwnedConstruction), /Standard Length/);
-assert.equal(longDressOwnedConstruction.findAllByType("input").length, 4, "Long Dress offers its four Long Length options");
+assert.equal(longDressOwnedConstruction.findAllByType("input").length, 2, "Long Dress offers strictly its 2 Sleeveless / Short Sleeve options");
 assert.equal(standardDressOwnedConstruction.findAllByProps({ "data-construction-length-group": "dress_std_" }).length, 0, "no Standard/Long Length sub-headings for Standard Dress");
 assert.equal(longDressOwnedConstruction.findAllByProps({ "data-construction-length-group": "dress_long_" }).length, 0, "no Standard/Long Length sub-headings for Long Dress");
 assert.equal(
@@ -1549,46 +1501,6 @@ assert.deepEqual(dressOwnedConstructionEvents, [[
   "dress_construction",
   "dress_std_short",
 ]]);
-const standardDressMid = optionInOccurrenceGroup(
-  standardDressOwnedConstruction,
-  "Standard Length, Mid Sleeve",
-);
-const standardDressLong = optionInOccurrenceGroup(
-  standardDressOwnedConstruction,
-  "Standard Length, Long Sleeve",
-);
-assert.ok(standardDressMid && standardDressLong);
-assert.match(textContent(standardDressMid), /€75\.00/);
-assert.match(textContent(standardDressLong), /€75\.00/);
-const longDressMid = optionInOccurrenceGroup(
-  longDressOwnedConstruction,
-  "Long Length, Mid Sleeve",
-);
-const longDressLong = optionInOccurrenceGroup(
-  longDressOwnedConstruction,
-  "Long Length, Long Sleeve",
-);
-assert.ok(longDressMid && longDressLong);
-assert.match(textContent(longDressMid), /€80\.00/);
-assert.match(textContent(longDressLong), /€80\.00/);
-act(() => {
-  standardDressMid.findByType("input").props.onChange();
-});
-assert.deepEqual(dressOwnedConstructionEvents[1], [
-  "base:dress",
-  "dress",
-  "dress_construction",
-  "dress_std_mid",
-]);
-act(() => {
-  standardDressLong.findByType("input").props.onChange();
-});
-assert.deepEqual(dressOwnedConstructionEvents[2], [
-  "base:dress",
-  "dress",
-  "dress_construction",
-  "dress_std_long",
-]);
 assert.equal(
   standardDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
   1,
@@ -1748,64 +1660,24 @@ assert.equal(
   1,
   "the Skirts card contains one Long Skirt garment block",
 );
-const standardSkirtOwnedConstruction = groupInGarmentSection(
-  standardSkirtOwnedBlock,
-  "skirt_length",
+assert.equal(
+  standardSkirtOwnedBlock.findAllByProps({ "data-custom-detail-group": "skirt_length" }).length,
+  0,
+  "Base Standard Skirt hides redundant skirt_length in Step 4",
 );
-const longSkirtOwnedConstruction = groupInGarmentSection(
-  longSkirtOwnedBlock,
-  "skirt_length",
+assert.equal(
+  longSkirtOwnedBlock.findAllByProps({ "data-custom-detail-group": "skirt_length" }).length,
+  0,
+  "Base Long Skirt hides redundant skirt_length in Step 4",
 );
 assert.match(textContent(standardSkirtOwnedBlock), /Standard Skirt/);
-assert.match(textContent(standardSkirtOwnedConstruction), /Main Garment/);
-assert.match(textContent(standardSkirtOwnedConstruction), /Standard Length, Above Knee/);
-// Step 4 length switch: every skirt offers both lengths' Main Garment options.
-assert.match(textContent(standardSkirtOwnedConstruction), /Long Length/);
 assert.match(textContent(longSkirtOwnedBlock), /Long Skirt/);
-assert.match(textContent(longSkirtOwnedConstruction), /Main Garment/);
-assert.match(textContent(longSkirtOwnedConstruction), /Long Length/);
-assert.match(textContent(longSkirtOwnedConstruction), /Standard Length, Above Knee/);
 assert.doesNotMatch(
   textContent(skirtsOwnedSection),
   /With Rope Plus Elastic Band/,
-  "Skirt construction must not gain With Rope Plus Elastic Band",
+  "Skirt section must not gain With Rope Plus Elastic Band",
 );
-assert.equal(
-  optionInOccurrenceGroup(
-    standardSkirtOwnedConstruction,
-    "Standard Length, Above Knee",
-  )?.findByType("input").props.checked,
-  true,
-  "the authoritative Standard Skirt default remains selected",
-);
-assert.equal(
-  optionInOccurrenceGroup(
-    longSkirtOwnedConstruction,
-    "Long Length",
-  )?.findByType("input").props.checked,
-  true,
-  "the authoritative Long Skirt default remains selected",
-);
-const standardSkirtConstructionControl = optionInOccurrenceGroup(
-  standardSkirtOwnedConstruction,
-  "Standard Length, Above Knee",
-);
-assert.ok(standardSkirtConstructionControl);
-assert.equal(standardSkirtConstructionControl.findByType("input").props.disabled, undefined);
-assert.match(
-  String(standardSkirtConstructionControl.findByType("input").props.id),
-  /^future-custom-detail-base:skirt-skirt_length-skirt_std/,
-  "the Standard Skirt construction control retains its exact occurrence identity",
-);
-act(() => {
-  standardSkirtConstructionControl.findByType("input").props.onChange();
-});
-assert.deepEqual(skirtOwnedConstructionEvents, [[
-  "base:skirt",
-  "skirt",
-  "skirt_length",
-  "skirt_std",
-]]);
+assert.equal(skirtOwnedConstructionEvents.length, 0);
 assert.equal(
   standardSkirtOwnedBlock.findAllByProps({ "data-custom-detail-group": "skirt_pockets" }).length,
   1,
@@ -2424,8 +2296,8 @@ const longDressPockets = assertOccurrenceOwnedGroup({
   selectionGroup: "dress_pockets",
   controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_pockets-",
 });
-assert.match(textContent(standardDressConstruction), /Main Garment/);
-assert.match(textContent(longDressConstruction), /Main Garment/);
+assert.match(textContent(standardDressConstruction), /Sleeve Style/);
+assert.match(textContent(longDressConstruction), /Sleeve Style/);
 assert.match(textContent(standardDressConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
 assert.doesNotMatch(textContent(standardDressConstruction), /Long Length/); // Step 4 length lock: only the Step 1 length is offered
 assert.match(textContent(longDressConstruction), /Long Length, Short Sleeve/);
@@ -2473,19 +2345,19 @@ assert.deepEqual(
           node.props["data-custom-detail-group"] === "skirt_pockets"),
     )
     .map((node) => node.props["data-custom-detail-group"] || node.props["data-custom-detail-section"]),
-  ["skirt_length", "skirt-additional-clothes-costs", "skirt_pockets"],
-  "Skirt sections read Main Garment, then that garment's Additional Clothes Costs, then its Pocket",
+  ["skirt-additional-clothes-costs", "skirt_pockets"],
+  "Base Skirt sections omit locked skirt_length and read Additional Clothes Costs, then Pocket",
 );
-const standardSkirtConstruction = assertOccurrenceOwnedGroup({
-  block: standardSkirtBlock,
-  selectionGroup: "skirt_length",
-  controlIdPrefix: "future-custom-detail-base:skirt-skirt_length-skirt_", // both lengths (Step 4 length switch)
-});
-const longSkirtConstruction = assertOccurrenceOwnedGroup({
-  block: longSkirtBlock,
-  selectionGroup: "skirt_length",
-  controlIdPrefix: "future-custom-detail-base:long_skirt-skirt_length-skirt_", // both lengths (Step 4 length switch)
-});
+assert.equal(
+  standardSkirtBlock.findAllByProps({ "data-custom-detail-group": "skirt_length" }).length,
+  0,
+  "Base Standard Skirt hides locked skirt_length in Step 4",
+);
+assert.equal(
+  longSkirtBlock.findAllByProps({ "data-custom-detail-group": "skirt_length" }).length,
+  0,
+  "Base Long Skirt hides locked skirt_length in Step 4",
+);
 const standardSkirtPockets = assertOccurrenceOwnedGroup({
   block: standardSkirtBlock,
   selectionGroup: "skirt_pockets",
@@ -2496,12 +2368,6 @@ const longSkirtPockets = assertOccurrenceOwnedGroup({
   selectionGroup: "skirt_pockets",
   controlIdPrefix: "future-custom-detail-base:long_skirt-skirt_pockets-",
 });
-assert.match(textContent(standardSkirtConstruction), /Main Garment/);
-assert.match(textContent(longSkirtConstruction), /Main Garment/);
-assert.match(textContent(standardSkirtConstruction), /Standard Length, Above Knee/);
-assert.match(textContent(standardSkirtConstruction), /Long Length/); // Step 4 length switch: both lengths offered
-assert.match(textContent(longSkirtConstruction), /Long Length/);
-assert.match(textContent(longSkirtConstruction), /Standard Length/); // Step 4 length switch: both lengths offered
 assert.match(textContent(standardSkirtPockets), /Pocket for Standard Skirt/);
 assert.match(textContent(longSkirtPockets), /Pocket for Long Skirt/);
 assert.doesNotMatch(textContent(standardSkirtPockets), /Long Skirt/);
