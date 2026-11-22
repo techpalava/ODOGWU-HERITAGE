@@ -25,13 +25,22 @@ import {
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money.js";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
+  STEP_1_GARMENT_CARD_PRESETS,
   STEP_1_SELECTABLE_GARMENT_TYPES,
+  findStep1CardPresetForResolution,
   getStep1GarmentDisplayLabel,
   getStep1GarmentPlainDescription,
   getStep1SelectableGarmentTypes,
   type GarmentConstructionPricingResolution,
+  type Step1GarmentCardPresetId,
   resolveGarmentConstructionPricing,
+  resolveGarmentConstructionPricingForOptionId,
 } from "../utils/garmentConstructionPricing.js";
+import {
+  GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+  reconcileGarmentConstructionResolution,
+  selectStep1GarmentCardPreset,
+} from "../utils/garmentTypeStepState.js";
 import {
   STEP1_GARMENT_REFERENCE_DISCLAIMER,
   getStep1GarmentReferenceAlt,
@@ -162,8 +171,11 @@ export const Step1GarmentReferenceGallery = ({
 );
 
 export interface GarmentTypeStepCategoryPresentation {
+  presetId: Step1GarmentCardPresetId;
   garmentType: FabricGarmentType;
   label: string;
+  optionId: string;
+  referenceImageVariant: "primary" | "secondary";
   fabricUnits: 1 | 2;
   fabricCapacityUsage: string;
   selected: boolean;
@@ -185,6 +197,9 @@ export interface GarmentTypeStepPresentation {
 export interface GarmentTypeStepProps {
   selectedGarmentTypes: readonly FabricGarmentType[];
   selectedDemographics: readonly CustomDetailDemographic[];
+  selectedConstructionByGarment?: Readonly<
+    Partial<Record<FabricGarmentType, GarmentConstructionPricingResolution>>
+  >;
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   onGarmentTypesChange: (garmentTypes: FabricGarmentType[]) => void;
@@ -253,16 +268,34 @@ const getAssignmentsForGarments = (
 export const getGarmentTypeStepPresentation = ({
   selectedGarmentTypes,
   normalizedCustomDetailCatalog,
+  selectedConstructionByGarment,
 }: Pick<
   GarmentTypeStepProps,
-  "selectedGarmentTypes" | "normalizedCustomDetailCatalog"
+  | "selectedGarmentTypes"
+  | "normalizedCustomDetailCatalog"
+  | "selectedConstructionByGarment"
 >): GarmentTypeStepPresentation => {
   const selectedSet = new Set(selectedGarmentTypes);
   const canonicalSelection = CANONICAL_PHYSICAL_GARMENT_TYPES.filter((type) =>
     selectedSet.has(type),
   );
-  const constructionPricing = canonicalSelection.map((garmentType) =>
-    resolveGarmentConstructionPricing(garmentType, normalizedCustomDetailCatalog),
+  const constructionPricing = canonicalSelection.map((garmentType) => {
+    const canonicalDefault = resolveGarmentConstructionPricing(
+      garmentType,
+      normalizedCustomDetailCatalog,
+    );
+    const saved = selectedConstructionByGarment?.[garmentType];
+    return (
+      reconcileGarmentConstructionResolution(
+        saved,
+        canonicalDefault,
+        normalizedCustomDetailCatalog,
+        { allowLengthSwitch: true },
+      ) || canonicalDefault
+    );
+  });
+  const constructionByGarmentMap = new Map(
+    constructionPricing.map((resolution) => [resolution.garmentType, resolution]),
   );
   const step1SelectableSelection = getStep1SelectableGarmentTypes(
     canonicalSelection,
@@ -272,18 +305,33 @@ export const getGarmentTypeStepPresentation = ({
   );
 
   return {
-    categories: STEP_1_SELECTABLE_GARMENT_TYPES.map((garmentType) => {
-      const fabricUnits = createStyleBaseGarmentSpec(garmentType).fabricUnits;
+    categories: STEP_1_GARMENT_CARD_PRESETS.map((preset) => {
+      const fabricUnits = createStyleBaseGarmentSpec(preset.garmentType).fabricUnits;
+      const activeResolution = selectedSet.has(preset.garmentType)
+        ? constructionByGarmentMap.get(preset.garmentType) || null
+        : null;
+      const activePreset = activeResolution
+        ? findStep1CardPresetForResolution(preset.garmentType, activeResolution)
+        : null;
+      const selected = activePreset?.id === preset.id;
+      const cardConstructionPricing =
+        selected && activeResolution
+          ? activeResolution
+          : resolveGarmentConstructionPricingForOptionId(
+              preset.garmentType,
+              preset.optionId,
+              normalizedCustomDetailCatalog,
+            );
       return {
-        garmentType,
-        label: getGarmentTypeStepLabel(garmentType),
+        presetId: preset.id,
+        garmentType: preset.garmentType,
+        label: preset.label,
+        optionId: preset.optionId,
+        referenceImageVariant: preset.referenceImageVariant,
         fabricUnits,
         fabricCapacityUsage: formatGarmentFabricCapacityUsage(fabricUnits),
-        selected: selectedSet.has(garmentType),
-        constructionPricing:
-          constructionPricing.find(
-            (resolution) => resolution.garmentType === garmentType,
-          ) || null,
+        selected,
+        constructionPricing: cardConstructionPricing,
       };
     }),
     selectedGarmentTypes: canonicalSelection,
@@ -308,6 +356,7 @@ export const getGarmentTypeStepPresentation = ({
 export const GarmentTypeStep = ({
   selectedGarmentTypes,
   selectedDemographics,
+  selectedConstructionByGarment,
   selectedFabricQuantity = 0,
   normalizedCustomDetailCatalog,
   onGarmentTypesChange,
@@ -322,8 +371,10 @@ export const GarmentTypeStep = ({
   lengthSwitchNotes = {},
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
+  void STEP_1_SELECTABLE_GARMENT_TYPES;
   const presentation = getGarmentTypeStepPresentation({
     selectedGarmentTypes,
+    selectedConstructionByGarment,
     normalizedCustomDetailCatalog,
   });
   const hasUnresolvedConstructionPricing = presentation.constructionPricing.some(
@@ -332,18 +383,38 @@ export const GarmentTypeStep = ({
   const garmentCount = presentation.garmentCount;
   const fabricQuantity = presentation.fabricQuantity;
 
-  const toggleGarment = (garmentType: FabricGarmentType) => {
-    const nextGarmentTypes = updateGarmentTypeSelection(
-      presentation.selectedGarmentTypes,
-      garmentType,
-      !presentation.selectedGarmentTypes.includes(garmentType),
+  const togglePreset = (presetId: Step1GarmentCardPresetId) => {
+    const currentConstructionByGarment = Object.fromEntries(
+      presentation.constructionPricing.map((resolution) => [
+        resolution.garmentType,
+        resolution,
+      ]),
     );
-    const nextPresentation = getGarmentTypeStepPresentation({
-      selectedGarmentTypes: nextGarmentTypes,
+    const nextResult = selectStep1GarmentCardPreset({
+      currentSelection: {
+        garmentTypes: presentation.selectedGarmentTypes as typeof CANONICAL_PHYSICAL_GARMENT_TYPES[number][],
+        audienceSelection: {
+          schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+          demographics: [...selectedDemographics],
+        },
+        demographic:
+          selectedDemographics.length === 0
+            ? null
+            : selectedDemographics.length === 1
+              ? selectedDemographics[0]
+              : "unisex",
+        constructionByGarment: currentConstructionByGarment,
+      },
+      presetId,
       normalizedCustomDetailCatalog,
     });
+    const nextGarmentTypes = nextResult.selection.garmentTypes;
+    const nextResolutions = nextGarmentTypes.flatMap((garmentType) => {
+      const resolution = nextResult.selection.constructionByGarment[garmentType];
+      return resolution ? [resolution] : [];
+    });
     onGarmentTypesChange(nextGarmentTypes);
-    onConstructionDefaultsChange(nextPresentation.constructionPricing);
+    onConstructionDefaultsChange(nextResolutions);
   };
 
   const handleDemographicChange = (
@@ -536,31 +607,32 @@ export const GarmentTypeStep = ({
             {presentation.categories.map((category, index) => {
               const price = category.constructionPricing;
               const isResolved = price?.status === "resolved";
-              const buttonId = `${idPrefix}-${category.garmentType}`;
-              const referenceImage = isStep1GarmentReferenceType(
+              const buttonId = `${idPrefix}-${category.presetId}`;
+              const primaryReferenceImage = isStep1GarmentReferenceType(
                 category.garmentType,
               )
                 ? getStep1GarmentReferenceImage(category.garmentType)
                 : null;
-              const dualImageGarmentType = isStep1DualImageGarmentType(
-                category.garmentType,
-              )
-                ? category.garmentType
-                : null;
-              const secondaryReferenceImage = dualImageGarmentType
-                ? getStep1GarmentSecondaryReferenceImage(dualImageGarmentType)
-                : null;
+              const secondaryReferenceImage =
+                category.referenceImageVariant === "secondary" &&
+                isStep1DualImageGarmentType(category.garmentType)
+                  ? getStep1GarmentSecondaryReferenceImage(category.garmentType)
+                  : null;
+              const referenceImage =
+                secondaryReferenceImage ?? primaryReferenceImage;
               const referenceAlt = getStep1GarmentReferenceAlt(category.label);
               const plainDescription = getStep1GarmentPlainDescription(
                 category.garmentType,
               );
               return (
                 <article
-                  key={category.garmentType}
-                  data-testid={`step1-garment-card-${category.garmentType}`}
+                  key={category.presetId}
+                  data-testid={`step1-garment-card-${category.presetId}`}
+                  data-step1-garment-type={category.garmentType}
+                  data-step1-preset-id={category.presetId}
                   onClick={(event) => {
                     if (!isInteractiveCardTarget(event.target)) {
-                      toggleGarment(category.garmentType);
+                      togglePreset(category.presetId);
                     }
                   }}
                   className={`flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-md ${
@@ -573,32 +645,12 @@ export const GarmentTypeStep = ({
                       : ""
                   }`}
                 >
-                  {dualImageGarmentType ? (
-                    <Step1GarmentReferenceGallery
-                      primary={
-                        referenceImage
-                          ? { src: referenceImage.src, alt: referenceAlt }
-                          : null
-                      }
-                      secondary={
-                        secondaryReferenceImage
-                          ? {
-                              src: secondaryReferenceImage.src,
-                              alt: `${referenceAlt}, alternate view`,
-                            }
-                          : null
-                      }
-                      garmentLabel={category.label}
-                      eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
-                    />
-                  ) : (
-                    <Step1GarmentReferencePhoto
-                      key={referenceImage?.src ?? "missing"}
-                      src={referenceImage?.src ?? null}
-                      alt={referenceAlt}
-                      eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
-                    />
-                  )}
+                  <Step1GarmentReferencePhoto
+                    key={referenceImage?.src ?? "missing"}
+                    src={referenceImage?.src ?? null}
+                    alt={referenceAlt}
+                    eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
+                  />
                   <div
                     className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
                       category.selected && !isResolved
@@ -656,8 +708,8 @@ export const GarmentTypeStep = ({
                           ? `Deselect ${category.label}`
                           : `Select ${category.label}`
                       }
-                      data-testid={`step1-garment-select-${category.garmentType}`}
-                      onClick={() => toggleGarment(category.garmentType)}
+                      data-testid={`step1-garment-select-${category.presetId}`}
+                      onClick={() => togglePreset(category.presetId)}
                       className={`${STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS} ${
                         category.selected
                           ? "group justify-between gap-0 bg-heritage-green px-0 text-heritage-cream hover:bg-heritage-forest"
@@ -795,6 +847,12 @@ export const GarmentTypeStep = ({
                     FabricGarmentType,
                     "other"
                   >;
+                  const activePreset = findStep1CardPresetForResolution(
+                    garmentType,
+                    pricing,
+                  );
+                  const summaryLabel =
+                    activePreset?.label ?? getGarmentTypeStepLabel(garmentType);
                   const plainDescription =
                     getStep1GarmentPlainDescription(garmentType);
                   return (
@@ -804,7 +862,7 @@ export const GarmentTypeStep = ({
                     >
                       <div className="min-w-0 flex-1">
                         <p className="break-words">
-                          {getGarmentTypeStepLabel(garmentType)}
+                          {summaryLabel}
                         </p>
                         {plainDescription ? (
                           <p

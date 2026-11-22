@@ -11912,6 +11912,9 @@ export default function DesignStudioView({
             selectedDemographics={getGarmentTypeSelectedDemographics(
               garmentTypeSelection,
             )}
+            selectedConstructionByGarment={
+              garmentTypeSelection.constructionByGarment
+            }
             selectedFabricQuantity={garmentTypeStepSelectedFabricQuantity}
             normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
             onGarmentTypesChange={handleDormantGarmentTypesChange}
