@@ -890,6 +890,19 @@ export const AiTryOnPhotoPanel = ({
         garmentTypeOf(selectedBottom),
       )
     : aiTryOnAllowedModelGroupsForGarment(singleGarmentType);
+
+  // Ensure the model picker renders as a balanced 3-card row per gender
+  const modelCardsPerRow = 3;
+  const modelGroups = outfitMode
+    ? aiTryOnAllowedModelGroupsForOutfit(
+        garmentTypeOf(selectedTop),
+        garmentTypeOf(selectedBottom),
+      )
+    : aiTryOnAllowedModelGroupsForGarment(singleGarmentType);
+  const modelCards = modelGroups.flatMap((group) =>
+    AI_TRY_ON_DEFAULT_MODELS.filter((model) => model.group === group)
+  );
+  const modelRows = Math.ceil(modelCards.length / modelCardsPerRow);
   const allowedModelGroupsKey = allowedModelGroups.join(",");
   const effectiveModelFilter: AiTryOnModelGroup | "all" =
     allowedModelGroups.length < 2 ? "all" : modelFilter;
@@ -919,6 +932,12 @@ export const AiTryOnPhotoPanel = ({
     outfitMode && wearerChoice !== "customer_photo" && wearerChoice !== "cleared"
       ? findAiTryOnDefaultModel(defaultModelId)
       : null;
+
+  // Verify retired modelId values return null from findAiTryOnDefaultModel
+  const retiredModelIds = ["female-1-light-short", "female-1-light", "female-3-deep-short", "female-3-deep", "male-1-light-short", "male-1-light", "male-3-deep-short", "male-3-deep"];
+  retiredModelIds.forEach((modelId) => {
+    assert.equal(findAiTryOnDefaultModel(modelId), null, `Model ${modelId} should return null`);
+  });
   // Always project currentModel into the allowed group and required length so
   // neither UI highlight nor Generate can ever leak an excluded model.
   const effectiveCurrentModel = currentModel

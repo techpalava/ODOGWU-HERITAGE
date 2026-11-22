@@ -174,7 +174,7 @@ const generate = (renderer: ReturnType<typeof create>) =>
 {
   const model = aiTryOnWearerPreviewFingerprint(FINGERPRINT, {
     kind: "studio_model",
-    modelId: "female-1-light",
+    modelId: "female-2-medium",
   });
   const photo = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "customer_photo" });
   const stylePhoto = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "style_photo" });
@@ -239,7 +239,7 @@ const generate = (renderer: ReturnType<typeof create>) =>
   for (const extra of [
     { fitHints: [{ id: "total_height", valueCm: 170 }] },
     { personImage: { mimeType: "image/jpeg", data: "/9j/4AAQ" } },
-    { defaultModelId: "female-1-light" },
+    { defaultModelId: "female-2-medium" },
     { orderDetails: { garments: [] } },
     { wearerSource: "customer_photo" },
   ]) {
@@ -269,13 +269,13 @@ const generate = (renderer: ReturnType<typeof create>) =>
   assert.equal(renderer.root.findByProps({ "data-ai-try-on-wearer-source": "studio_model" }).props["data-ai-try-on-wearer-source"], "studio_model");
   assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-pressed"], true);
   assert.equal(byData(renderer, "data-ai-try-on-photo-option")[0].props["aria-pressed"], false);
-  assert.equal(byData(renderer, "data-ai-try-on-model", "female-1-light")[0].props["aria-checked"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium")[0].props["aria-checked"], true);
   assert.equal(byData(renderer, "data-ai-try-on-style-photo-option").length, 1);
   assert.equal(requests.length, 0, "mounting does not generate");
   assert.equal(generate(renderer).props.disabled, false);
   await click(generate(renderer));
   assert.equal(requests.length, 1);
-  assert.equal(requests[0].defaultModelId, "female-1-light");
+  assert.equal(requests[0].defaultModelId, "female-2-medium");
   assert.equal("personImage" in requests[0], false);
   assert.equal("fitHints" in requests[0], false);
   assert.equal("wearerSource" in requests[0], false);
@@ -329,7 +329,7 @@ const generate = (renderer: ReturnType<typeof create>) =>
   assert.equal("uploadedDesignImage" in request, false);
   assert.notEqual(request.inputFingerprint, FINGERPRINT);
   await click(modelCard());
-  await click(byData(renderer, "data-ai-try-on-model", "female-1-light")[0]);
+  await click(byData(renderer, "data-ai-try-on-model", "female-2-medium")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-wearer-preview-stale").length, 1);
   assert.equal(byData(renderer, "data-ai-try-on-result").length, 0);
   assert.equal(requests.length, 1, "switching wearer does not generate");

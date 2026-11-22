@@ -848,14 +848,14 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
     emptyAda.renderer.root.find((node) => node.props["data-ai-try-on-model-option"]).props.onClick();
   });
   act(() => {
-    emptyAda.renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-1-light").props.onClick();
+    emptyAda.renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-2-medium").props.onClick();
   });
   await act(async () => {
     await generateButton(emptyAda.renderer).props.onClick();
   });
   const modeled = emptyAda.requests[2] as { wearerKey: string; defaultModelId?: string };
   assert.equal(modeled.wearerKey, "w-obi");
-  assert.equal(modeled.defaultModelId, "male-1-light");
+  assert.equal(modeled.defaultModelId, "male-2-medium");
   assert.equal("fitHints" in modeled, false, "model mode sends no customer fit hints");
   assert.equal(
     checkedWearer(emptyAda.renderer, "data-ai-try-on-measurement-wearer"),
@@ -1008,12 +1008,12 @@ const generateButton = (renderer: ReturnType<typeof create>) =>
 
   const modelOption = renderer.root.find((node) => node.props["data-ai-try-on-model-option"]);
   act(() => modelOption.props.onClick());
-  const modelButton = renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-1-light");
+  const modelButton = renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-2-medium");
   act(() => modelButton.props.onClick());
   assert.equal(modelButton.props["aria-checked"], true);
   act(() => toggle().props.onClick());
   act(() => toggle().props.onClick());
-  const restoredModel = renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-1-light");
+  const restoredModel = renderer.root.find((node) => node.props["data-ai-try-on-model"] === "male-2-medium");
   assert.equal(restoredModel.props["aria-checked"], true, "the model choice survives leaving Try-on");
   assert.equal(generateButton(renderer).props.disabled, false);
 }
