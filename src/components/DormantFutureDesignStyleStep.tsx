@@ -15,9 +15,14 @@ import { garmentConstructionInclusionNote } from "../utils/designPriceBreakdownP
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import type {
   CanonicalPhysicalGarmentType,
+  DesignStyleCategory,
   GarmentConstructionPricingResolution,
   StyleCategory,
 } from "../types";
+import {
+  normalizeDesignStyleCategoryName,
+  sortDesignStyleCategories,
+} from "../utils/designStyleCategories";
 import {
   getGarmentTypeStepLabel,
   Step1GarmentReferencePhoto,
@@ -50,6 +55,7 @@ interface DormantFutureDesignStyleStepProps {
   constructionDisplayLabelByGarmentKey?: Readonly<Record<string, string>>;
   activeOccurrenceTarget: DesignStyleStepOccurrencePresentation["target"] | null;
   catalogueEntries: readonly DesignStyleStepCatalogueEntry[];
+  designStyleCategories?: readonly DesignStyleCategory[];
   clearRequest: DesignStyleStepClearMutationRequest | null;
   clearRequests?: readonly DesignStyleStepClearMutationRequest[];
   runtimeStatus: DesignStyleStepRuntimeStatus;
@@ -135,6 +141,24 @@ interface DormantFutureDesignStyleStepProps {
   /** Catalogue id handed off from Explore Design Styles, when one is active. */
   galleryStyleId?: string | null;
 }
+
+const AUDIENCE_FILTER_LABELS: Readonly<
+  Record<StyleCategory["gender"], string>
+> = {
+  male: "Men",
+  female: "Women",
+  unisex: "Unisex",
+  couple: "Couples",
+  family: "Families",
+};
+
+const AUDIENCE_FILTER_ORDER: readonly StyleCategory["gender"][] = [
+  "male",
+  "female",
+  "unisex",
+  "couple",
+  "family",
+];
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
   return String(style.name ?? "").trim();
@@ -222,6 +246,7 @@ export const DormantFutureDesignStyleStep = ({
   constructionDisplayLabelByGarmentKey,
   activeOccurrenceTarget,
   catalogueEntries,
+  designStyleCategories = [],
   clearRequest,
   clearRequests = [],
   runtimeStatus,
@@ -325,12 +350,71 @@ export const DormantFutureDesignStyleStep = ({
   const [continueTargetPulseToken, setContinueTargetPulseToken] = useState<
     string | null
   >(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
+  const [selectedAudience, setSelectedAudience] = useState<string>("all");
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
   const uploadInputIdPrefix = useId();
   const catalogueReady = stylesLoadState === "ready";
   const mutationsEnabled =
     catalogueReady && (runtimeStatus === "ready" || runtimeStatus === "review");
+  const visibleCategories = useMemo(
+    () =>
+      sortDesignStyleCategories(
+        designStyleCategories.filter(
+          (category) =>
+            category.enabled &&
+            catalogueEntries.some((entry) =>
+              entry.style.categoryIds?.includes(category.id),
+            ),
+        ),
+      ),
+    [designStyleCategories, catalogueEntries],
+  );
+  const availableAudiences = useMemo(
+    () =>
+      AUDIENCE_FILTER_ORDER.filter((audience) =>
+        catalogueEntries.some((entry) => entry.style.gender === audience),
+      ),
+    [catalogueEntries],
+  );
+  useEffect(() => {
+    if (
+      selectedCategoryId !== "all" &&
+      !visibleCategories.some((category) => category.id === selectedCategoryId)
+    ) {
+      setSelectedCategoryId("all");
+    }
+  }, [selectedCategoryId, visibleCategories]);
+  useEffect(() => {
+    if (
+      selectedAudience !== "all" &&
+      !availableAudiences.includes(
+        selectedAudience as StyleCategory["gender"],
+      )
+    ) {
+      setSelectedAudience("all");
+    }
+  }, [selectedAudience, availableAudiences]);
+  const filteredCatalogueEntries = useMemo(
+    () =>
+      catalogueEntries.filter((entry) => {
+        if (
+          selectedCategoryId !== "all" &&
+          !entry.style.categoryIds?.includes(selectedCategoryId)
+        ) {
+          return false;
+        }
+        if (
+          selectedAudience !== "all" &&
+          entry.style.gender !== selectedAudience
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [catalogueEntries, selectedCategoryId, selectedAudience],
+  );
   const firstIncompleteOccurrence = occurrences.find(
     (occurrence) => occurrence.status !== "complete",
   );
@@ -1421,8 +1505,117 @@ export const DormantFutureDesignStyleStep = ({
             <section ref={allDesignsRef} data-testid="step3-all-designs" className="mt-8 min-w-0 scroll-mt-24">
               <h3 className="font-serif text-xl font-bold text-heritage-green">Choose design styles you like</h3>
               <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">Browse our design styles and choose the ones you want to use for your garments.</p>
+              {(visibleCategories.length > 0 || availableAudiences.length > 1) && (
+                <div className="mt-4 space-y-2.5">
+                  {visibleCategories.length > 0 && (
+                    <div
+                      role="group"
+                      aria-label="Filter design styles by category"
+                      data-testid="step3-category-filter"
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <button
+                        type="button"
+                        data-testid="step3-category-chip-all"
+                        aria-pressed={selectedCategoryId === "all"}
+                        onClick={() => setSelectedCategoryId("all")}
+                        className={`inline-flex min-h-9 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                          selectedCategoryId === "all"
+                            ? "border-heritage-green bg-heritage-green text-white"
+                            : "border-heritage-gold/30 bg-white text-heritage-green hover:border-heritage-green/50"
+                        }`}
+                      >
+                        All
+                      </button>
+                      {visibleCategories.map((category) => {
+                        const displayCategoryName =
+                          normalizeDesignStyleCategoryName(category.name);
+                        const active = selectedCategoryId === category.id;
+                        return (
+                          <button
+                            key={category.id}
+                            type="button"
+                            data-testid={`step3-category-chip-${category.id}`}
+                            aria-pressed={active}
+                            onClick={() => setSelectedCategoryId(category.id)}
+                            className={`inline-flex min-h-9 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? "border-heritage-green bg-heritage-green text-white"
+                                : "border-heritage-gold/30 bg-white text-heritage-green hover:border-heritage-green/50"
+                            }`}
+                          >
+                            {displayCategoryName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {availableAudiences.length > 1 && (
+                    <div
+                      role="group"
+                      aria-label="Filter design styles by audience"
+                      data-testid="step3-audience-filter"
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <button
+                        type="button"
+                        data-testid="step3-audience-chip-all"
+                        aria-pressed={selectedAudience === "all"}
+                        onClick={() => setSelectedAudience("all")}
+                        className={`inline-flex min-h-8 items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                          selectedAudience === "all"
+                            ? "border-heritage-gold bg-heritage-gold/15 text-heritage-green"
+                            : "border-gray-200 bg-white text-heritage-ink/75 hover:border-heritage-gold/40"
+                        }`}
+                      >
+                        All Audiences
+                      </button>
+                      {availableAudiences.map((audience) => {
+                        const active = selectedAudience === audience;
+                        return (
+                          <button
+                            key={audience}
+                            type="button"
+                            data-testid={`step3-audience-chip-${audience}`}
+                            aria-pressed={active}
+                            onClick={() => setSelectedAudience(audience)}
+                            className={`inline-flex min-h-8 items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                              active
+                                ? "border-heritage-gold bg-heritage-gold/15 text-heritage-green"
+                                : "border-gray-200 bg-white text-heritage-ink/75 hover:border-heritage-gold/40"
+                            }`}
+                          >
+                            {AUDIENCE_FILTER_LABELS[audience]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              {filteredCatalogueEntries.length === 0 ? (
+                <div
+                  role="status"
+                  data-testid="step3-filter-empty"
+                  className="mt-4 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
+                >
+                  <p className="font-bold text-heritage-green">
+                    No design styles match the selected filters.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategoryId("all");
+                      setSelectedAudience("all");
+                    }}
+                    className={`mt-3 inline-flex min-h-10 items-center rounded-xl border border-heritage-green/25 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green ${studioOutlinedNavInteractionClass}`}
+                  >
+                    Show all designs
+                  </button>
+                </div>
+              ) : (
               <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {catalogueEntries.map((entry) => {
+                {filteredCatalogueEntries.map((entry) => {
                   const displayStyleName = formatDisplayStyleLabel(entry.style);
                   return (
                    <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-heritage-gold/60 hover:shadow-md">
@@ -1454,6 +1647,7 @@ export const DormantFutureDesignStyleStep = ({
                   </article>
                 );})}
               </div>
+              )}
             </section>
           )}
         </div>

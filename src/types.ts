@@ -124,6 +124,14 @@ export interface StyleApplicability {
   demographics?: CustomDetailDemographic[];
 }
 
+export interface DesignStyleCategory {
+  id: string;
+  name: string;
+  displayOrder: number;
+  enabled: boolean;
+  description?: string;
+}
+
 export interface StyleCategory {
   id: string;
   name: string;
@@ -132,7 +140,8 @@ export interface StyleCategory {
   outfitType?: string;
   garmentComposition?: string;
   fabricCategory?: string;
-  designCategories?: string[]; // E.g., "Male Designs", "Family-Look Designs", etc.
+  categoryIds?: string[];
+  designCategories?: string[]; // Read-only legacy mirror of assigned category names.
   options: string[]; // specific sub-styles
   image?: string;
   detectedColors?: {

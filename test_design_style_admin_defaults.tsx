@@ -6,8 +6,13 @@ import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConf
 import { DEFAULT_BUSINESS_SETTINGS } from "./src/data/mockData";
 import { getFabricGarmentLabel } from "./src/engine/FabricCapacityEngine";
 import { DesignStyleAuthorityService } from "./src/services/designStyleAuthorityService";
+import { DesignStyleCategoryService } from "./src/services/designStyleCategoryService";
 import { useAppStore } from "./src/store/useAppStore";
-import type { Customer, StyleCategory } from "./src/types";
+import type {
+  Customer,
+  DesignStyleCategory,
+  StyleCategory,
+} from "./src/types";
 import { resolveStyleApplicability } from "./src/utils/designStudioFutureDesignStyle";
 import {
   ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES,
@@ -77,8 +82,30 @@ const persistence: DesignStylePublicationDependencies = {
 
 const originalSubscribe = DesignStyleAuthorityService.subscribeToAdminRecords;
 const originalPublish = DesignStyleAuthorityService.publish;
+const originalCategorySubscribe = DesignStyleCategoryService.subscribe;
 const originalStoreState = useAppStore.getState();
 let renderer: ReturnType<typeof create> | undefined;
+
+const sampleCategories: DesignStyleCategory[] = [
+  {
+    id: "standard-length-shirt",
+    name: "Standard Length Shirt",
+    displayOrder: 0,
+    enabled: true,
+  },
+  {
+    id: "short-sleeve",
+    name: "Short Sleeve",
+    displayOrder: 1,
+    enabled: true,
+  },
+  {
+    id: "ceremonial",
+    name: "Ceremonial",
+    displayOrder: 2,
+    enabled: true,
+  },
+];
 
 const findStyleForm = () => {
   const form = renderer!.root
@@ -132,6 +159,11 @@ try {
     emitAdminSnapshot();
     return () => subscribers.delete(onSnapshot as never);
   }) as typeof DesignStyleAuthorityService.subscribeToAdminRecords;
+
+  DesignStyleCategoryService.subscribe = ((onCategories) => {
+    onCategories(sampleCategories);
+    return () => undefined;
+  }) as typeof DesignStyleCategoryService.subscribe;
 
   DesignStyleAuthorityService.publish = (async (input) => {
     publicationInputs.push(input);
@@ -237,17 +269,21 @@ try {
   const nameInput = renderer!.root.findByProps({
     placeholder: "e.g. Royal Senator",
   });
-  const categoriesInput = renderer!.root.findByProps({
-    "aria-label": "Design Categories",
+  const standardLengthChip = renderer!.root.findByProps({
+    "aria-label": "Category Standard Length Shirt",
+  });
+  const shortSleeveChip = renderer!.root.findByProps({
+    "aria-label": "Category Short Sleeve",
   });
 
   await act(async () => {
     nameInput.props.onChange({ target: { value: "Emerald Collar Test Shirt" } });
   });
   await act(async () => {
-    categoriesInput.props.onChange({
-      target: { value: "Standard Length Shirt, Short Sleeve" },
-    });
+    standardLengthChip.props.onClick();
+  });
+  await act(async () => {
+    shortSleeveChip.props.onClick();
   });
 
   await submitStyleForm();
@@ -267,6 +303,10 @@ try {
   assert.equal(committedRecord.presentation.monogramCuffEligible, false);
   assert.equal(committedRecord.presentation.embroideryProminence, "standard");
   assert.equal("showsWearer" in committedRecord.presentation, false);
+  assert.deepEqual(committedRecord.presentation.categoryIds, [
+    "standard-length-shirt",
+    "short-sleeve",
+  ]);
   assert.deepEqual(committedRecord.presentation.designCategories, [
     "Standard Length Shirt",
     "Short Sleeve",
@@ -506,6 +546,7 @@ try {
   await act(async () => renderer?.unmount());
   DesignStyleAuthorityService.subscribeToAdminRecords = originalSubscribe;
   DesignStyleAuthorityService.publish = originalPublish;
+  DesignStyleCategoryService.subscribe = originalCategorySubscribe;
   useAppStore.setState(originalStoreState);
 }
 

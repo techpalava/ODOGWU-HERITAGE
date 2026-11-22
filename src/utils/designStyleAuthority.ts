@@ -9,9 +9,16 @@ import type {
   CustomDetailGarmentGroup,
   CustomDetailSelectionGroup,
   DesignSelections,
+  DesignStyleCategory,
   FabricCapacityGarmentSpec,
   StyleCategory,
 } from "../types.js";
+import {
+  DESIGN_STYLE_CATEGORY_MAX_PER_STYLE,
+  isValidDesignStyleCategoryId,
+  normalizeStyleCategoryIds,
+  resolveMirroredDesignCategories,
+} from "./designStyleCategories.js";
 
 export const DESIGN_STYLE_AUTHORITY_SCHEMA_VERSION = 1 as const;
 
@@ -51,6 +58,7 @@ export interface DesignStylePresentationV1 {
   readonly garmentComposition: string;
   readonly fabricCategory: string;
   readonly options: readonly string[];
+  readonly categoryIds?: readonly string[];
   readonly designCategories: readonly string[];
   readonly detectedColors: {
     readonly main: string;
@@ -479,13 +487,34 @@ const parseConstructionDetails = (value: unknown): ConstructionDetail[] | null =
 const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => {
   if (!isRecord(value)) return null;
   const presentationKeys = Object.keys(value);
-  const allowedPresentationKeys = new Set<string>([...PRESENTATION_KEYS, "showsWearer"]);
+  const allowedPresentationKeys = new Set<string>([
+    ...PRESENTATION_KEYS,
+    "showsWearer",
+    "categoryIds",
+  ]);
   if (
     !PRESENTATION_KEYS.every((key) => presentationKeys.includes(key)) ||
     presentationKeys.some((key) => !allowedPresentationKeys.has(key)) ||
     (value.showsWearer !== undefined && typeof value.showsWearer !== "boolean")
   ) {
     return null;
+  }
+  let categoryIds: string[] | undefined;
+  if (value.categoryIds !== undefined) {
+    if (
+      !Array.isArray(value.categoryIds) ||
+      value.categoryIds.length > DESIGN_STYLE_CATEGORY_MAX_PER_STYLE
+    ) {
+      return null;
+    }
+    const parsedIds: string[] = [];
+    for (const item of value.categoryIds) {
+      if (!isValidDesignStyleCategoryId(item) || parsedIds.includes(item)) {
+        return null;
+      }
+      parsedIds.push(item);
+    }
+    categoryIds = parsedIds;
   }
   if (
     !isBoundedString(value.name, 160) ||
@@ -551,6 +580,7 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
     garmentComposition: value.garmentComposition,
     fabricCategory: value.fabricCategory,
     options,
+    ...(categoryIds && categoryIds.length > 0 ? { categoryIds } : {}),
     designCategories,
     detectedColors: {
       main: value.detectedColors.main,
@@ -706,6 +736,7 @@ const presentationFromStyle = (
   style: StyleCategory,
   displayOrder: number,
   image: string,
+  categories?: readonly DesignStyleCategory[],
 ): DesignStylePresentationV1 => {
   const customDetailConfig = style.customDetailConfig;
   const supportedGarmentGroups = parseEnumArray(
@@ -721,6 +752,14 @@ const presentationFromStyle = (
   }
   const gender = STYLE_GENDERS.has(style.gender) ? style.gender : "unisex";
   const features = style.includedDesignFeatures || {};
+  const categoryIds = normalizeStyleCategoryIds(style.categoryIds);
+  const designCategories = resolveMirroredDesignCategories({
+    categoryIds: style.categoryIds,
+    categories,
+    fallbackDesignCategories: (style.designCategories || []).map((item) =>
+      String(item).trim(),
+    ),
+  });
   return {
     name: style.name.trim(),
     description: String(style.description || "").trim(),
@@ -731,9 +770,8 @@ const presentationFromStyle = (
     garmentComposition: String(style.garmentComposition || "").trim(),
     fabricCategory: String(style.fabricCategory || "").trim(),
     options: (style.options || []).map((item) => String(item).trim()),
-    designCategories: (style.designCategories || []).map((item) =>
-      String(item).trim(),
-    ),
+    ...(categoryIds.length > 0 ? { categoryIds } : {}),
+    designCategories,
     detectedColors: {
       main: String(style.detectedColors?.main || "").trim(),
       secondary: String(style.detectedColors?.secondary || "").trim(),
@@ -777,6 +815,7 @@ export const prepareAuthoritativeDesignStyleRecord = ({
   referenceComposition,
   currentRecord,
   image = style.image || "",
+  categories,
 }: {
   style: StyleCategory;
   lifecycle: DesignStyleLifecycle;
@@ -784,6 +823,7 @@ export const prepareAuthoritativeDesignStyleRecord = ({
   referenceComposition: DesignStyleReferenceComposition;
   currentRecord: AuthoritativeDesignStyleRecordV1 | null;
   image?: string;
+  categories?: readonly DesignStyleCategory[];
 }): AuthoritativeDesignStyleRecordV1 => {
   if (!isSafeIdentifier(style.id) || !style.name?.trim()) {
     throw new Error("INVALID_STYLE_ID_OR_NAME");
@@ -812,7 +852,7 @@ export const prepareAuthoritativeDesignStyleRecord = ({
     publicRevision: currentRecord ? currentRecord.publicRevision + 1 : 1,
     eligibilityRevision,
     eligibilityFingerprint: fingerprint,
-    presentation: presentationFromStyle(style, displayOrder, image),
+    presentation: presentationFromStyle(style, displayOrder, image, categories),
     eligibility,
     referenceComposition,
   };
@@ -864,6 +904,10 @@ export const projectDesignStyleRecordForAdmin = (
     outfitType: record.presentation.outfitType,
     garmentComposition: record.presentation.garmentComposition,
     fabricCategory: record.presentation.fabricCategory,
+    ...(record.presentation.categoryIds &&
+    record.presentation.categoryIds.length > 0
+      ? { categoryIds: [...record.presentation.categoryIds] }
+      : {}),
     designCategories: [...record.presentation.designCategories],
     detectedColors: { ...record.presentation.detectedColors },
     constructionDetails: record.presentation.constructionDetails.map((item) => ({
