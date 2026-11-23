@@ -166,7 +166,8 @@ import {
   deriveFeaturesMaleAndFemale,
   formatDerivedGarmentCompositionLabel,
   resolveDesignStyleGenderOptions,
-  resolveOutfitTypeOptions,
+  resolveGroupedOutfitTypeOptions,
+  getDefaultOutfitTypeForGender,
 } from "../utils/designStyleAdminDefaults";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
@@ -482,10 +483,22 @@ export default function DatabaseView({
   };
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
   const [isNewRecord, setIsNewRecord] = useState(false);
+  // Track if admin has manually changed outfitType (to avoid auto-overwrite on gender change)
+  const [outfitTypeManuallyChanged, setOutfitTypeManuallyChanged] = useState(false);
+  // Quick-add outfit type inline state
+  const [showQuickAddOutfitType, setShowQuickAddOutfitType] = useState(false);
+  const [quickAddOutfitTypeValue, setQuickAddOutfitTypeValue] = useState("");
+  const [quickAddOutfitTypeError, setQuickAddOutfitTypeError] = useState<string | null>(null);
+
   const openStyleEditor = (styleItem: DesignStyleAdminProjection, isNew: boolean) => {
     setIsNewRecord(isNew);
     setEditingItem(styleItem);
     setEditingType("style");
+    // Reset manual change tracking when opening editor
+    setOutfitTypeManuallyChanged(false);
+    setShowQuickAddOutfitType(false);
+    setQuickAddOutfitTypeValue("");
+    setQuickAddOutfitTypeError(null);
   };
   useEffect(() => {
     if (!editingType || editorFocusRequestCount === 0) return;
@@ -1212,6 +1225,94 @@ export default function DatabaseView({
         "error",
       );
     }
+  };
+
+  const handleQuickAddOutfitType = () => {
+    const trimmed = quickAddOutfitTypeValue.trim();
+    if (!trimmed) {
+      setQuickAddOutfitTypeError("Outfit type name cannot be empty.");
+      return;
+    }
+    if (trimmed.length > 160) {
+      setQuickAddOutfitTypeError("Outfit type name must be 160 characters or fewer.");
+      return;
+    }
+    const normalized = customerCatalogueLabel(trimmed);
+    if (!normalized) {
+      setQuickAddOutfitTypeError("Invalid outfit type name.");
+      return;
+    }
+    // Reject "Kaftan"/"Knicker" or case-insensitive duplicates
+    const lowerNormalized = normalized.toLowerCase();
+    if (lowerNormalized === "kaftan" || lowerNormalized === "knicker") {
+      setQuickAddOutfitTypeError("This outfit type name is not allowed.");
+      return;
+    }
+    // Mirror resolveGroupedOutfitTypeOptions: an empty/undefined saved list
+    // falls back to the defaults so quick-add never wipes them.
+    const existingTypes =
+      businessSettings.outfitTypes && businessSettings.outfitTypes.length > 0
+        ? businessSettings.outfitTypes
+        : DEFAULT_BUSINESS_SETTINGS.outfitTypes || [];
+    const isDuplicate = existingTypes.some(
+      (t) => customerCatalogueLabel(t.name).toLowerCase() === lowerNormalized,
+    );
+    if (isDuplicate) {
+      setQuickAddOutfitTypeError("An outfit type with this name already exists.");
+      return;
+    }
+    // Determine gender from editingItem.gender
+    let newGender: "male" | "female" | "family" = "male";
+    const currentGender = editingItem.gender?.toLowerCase();
+    if (currentGender === "female") {
+      newGender = "female";
+    } else if (currentGender === "couple" || currentGender === "family") {
+      newGender = "family";
+    }
+    // Generate a new ID
+    const newId = normalized
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const newType = {
+      id: newId,
+      name: normalized,
+      gender: newGender,
+      enabled: true,
+      displayOrder:
+        (existingTypes.length > 0
+          ? Math.max(...existingTypes.map((t) => t.displayOrder ?? 0))
+          : 0) + 1,
+    };
+    const nextOutfitTypes = [...existingTypes, newType];
+    const nextBusinessSettings: BusinessSettings = {
+      ...businessSettings,
+      outfitTypes: nextOutfitTypes,
+    };
+    // Persist via the existing businessSettings path (store setter ->
+    // StorageService.saveBusinessSettings). On failure, leave the editing
+    // state untouched so nothing references an unsaved outfit type.
+    try {
+      setBusinessSettings(nextBusinessSettings);
+    } catch (error) {
+      console.error("Failed to save new outfit type", error);
+      setQuickAddOutfitTypeError(
+        "Failed to save the new outfit type. Please try again.",
+      );
+      triggerStatus("Failed to save the new outfit type.", "error");
+      return;
+    }
+    // Immediately select it
+    setEditingItem((prev: any) => ({
+      ...prev,
+      outfitType: normalized,
+    }));
+    setOutfitTypeManuallyChanged(true);
+    // Close quick-add
+    setShowQuickAddOutfitType(false);
+    setQuickAddOutfitTypeValue("");
+    setQuickAddOutfitTypeError(null);
+    triggerStatus(`Added outfit type "${normalized}" successfully!`, "success");
   };
 
   const handleArchiveStyle = async (style: DesignStyleAdminProjection) => {
@@ -2601,12 +2702,24 @@ export default function DatabaseView({
                       <select
                         aria-label="Collection Audience"
                         value={editingItem.gender || "male"}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const nextGender = event.target.value;
                           setEditingItem((prev: any) => ({
                             ...prev,
-                            gender: event.target.value,
-                          }))
-                        }
+                            gender: nextGender,
+                          }));
+                          if (isNewRecord && !outfitTypeManuallyChanged) {
+                            const defaultOutfitType = getDefaultOutfitTypeForGender(
+                              nextGender,
+                              businessSettings,
+                              DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
+                            );
+                            setEditingItem((prev: any) => ({
+                              ...prev,
+                              outfitType: defaultOutfitType,
+                            }));
+                          }
+                        }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
                         {resolveDesignStyleGenderOptions(genderOptionsCollection).map(
@@ -2619,9 +2732,81 @@ export default function DatabaseView({
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Outfit Type
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="font-bold text-heritage-green">
+                          Outfit Type
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowQuickAddOutfitType(!showQuickAddOutfitType);
+                            if (!showQuickAddOutfitType) {
+                              setQuickAddOutfitTypeValue("");
+                              setQuickAddOutfitTypeError(null);
+                            }
+                          }}
+                          className="text-xs text-heritage-green hover:text-heritage-gold font-medium transition-colors"
+                          aria-label={showQuickAddOutfitType ? "Cancel adding new outfit type" : "Add new outfit type"}
+                        >
+                          {showQuickAddOutfitType ? "Cancel" : "+ Add new"}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-heritage-ink/60">
+                        Shown as the style type badge in the customer catalogue.
+                      </p>
+                      {showQuickAddOutfitType && (
+                        <div className="flex gap-2 min-h-11">
+                          <input
+                            type="text"
+                            value={quickAddOutfitTypeValue}
+                            onChange={(e) => {
+                              setQuickAddOutfitTypeValue(e.target.value);
+                              setQuickAddOutfitTypeError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleQuickAddOutfitType();
+                              } else if (e.key === "Escape") {
+                                setShowQuickAddOutfitType(false);
+                                setQuickAddOutfitTypeValue("");
+                                setQuickAddOutfitTypeError(null);
+                              }
+                            }}
+                            placeholder="e.g. Custom Style Name"
+                            maxLength={160}
+                            className="flex-1 px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-heritage-gold/30"
+                            aria-label="New outfit type name"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={handleQuickAddOutfitType}
+                            disabled={!quickAddOutfitTypeValue.trim() || !!quickAddOutfitTypeError}
+                            className="px-3 py-2 bg-heritage-green text-white text-xs rounded-lg hover:bg-heritage-green/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Save new outfit type"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowQuickAddOutfitType(false);
+                              setQuickAddOutfitTypeValue("");
+                              setQuickAddOutfitTypeError(null);
+                            }}
+                            className="px-3 py-2 border border-heritage-gold/20 bg-white text-heritage-green text-xs rounded-lg hover:bg-heritage-cream/30 transition-colors"
+                            aria-label="Cancel adding new outfit type"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                      {quickAddOutfitTypeError && (
+                        <p className="text-[10px] text-red-600" role="alert">
+                          {quickAddOutfitTypeError}
+                        </p>
+                      )}
                       <select
                         aria-label="Outfit Type"
                         value={
@@ -2629,22 +2814,28 @@ export default function DatabaseView({
                             ? customerCatalogueLabel(editingItem.outfitType)
                             : DEFAULT_ADMIN_STYLE_OUTFIT_TYPE
                         }
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          setOutfitTypeManuallyChanged(true);
                           setEditingItem((prev: any) => ({
                             ...prev,
                             outfitType: event.target.value,
-                          }))
-                        }
+                          }));
+                        }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {resolveOutfitTypeOptions(
+                        {resolveGroupedOutfitTypeOptions({
                           businessSettings,
-                          DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
-                          editingItem.outfitType,
-                        ).map((label) => (
-                          <option key={label} value={label}>
-                            {label}
-                          </option>
+                          fallbackOutfitTypes: DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
+                          selectedGender: editingItem.gender,
+                          currentValue: editingItem.outfitType,
+                        }).map((group) => (
+                          <optgroup key={group.label} label={group.label}>
+                            {group.options.map((label) => (
+                              <option key={label} value={label}>
+                                {label}
+                              </option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                     </div>
