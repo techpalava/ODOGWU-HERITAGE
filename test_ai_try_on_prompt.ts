@@ -613,12 +613,12 @@ assert.equal(buildAiTryOnOutfitPrompt({
 const shortModelFingerprint = aiTryOnOutfitFingerprint(
   { garmentKey: "base:shirt", inputFingerprint: "tryon-top" },
   { garmentKey: "base:standard_shorts", inputFingerprint: "tryon-bottom" },
-  { kind: "studio_model", modelId: "female-1-light-short" },
+  { kind: "studio_model", modelId: "female-2-medium-short" },
 );
 const longModelFingerprint = aiTryOnOutfitFingerprint(
   { garmentKey: "base:shirt", inputFingerprint: "tryon-top" },
   { garmentKey: "base:standard_shorts", inputFingerprint: "tryon-bottom" },
-  { kind: "studio_model", modelId: "female-1-light" },
+  { kind: "studio_model", modelId: "female-2-medium" },
 );
 assert.ok(shortModelFingerprint && longModelFingerprint);
 assert.notEqual(shortModelFingerprint, longModelFingerprint, "the outfit fingerprint follows the short or long studio model id");
@@ -708,7 +708,7 @@ assert.equal(
   parseAiTryOnGenerationRequest({
     mode: "garment",
     inputFingerprint: "tryon-v1-0123456789abcdef",
-    defaultModelId: "male-1-light",
+    defaultModelId: "male-2-medium",
     garmentImageUrl: "https://example.test/shirt.jpg",
     topTuckPreference: "tucked",
   }).ok,
@@ -718,7 +718,7 @@ assert.equal(
   parseAiTryOnGenerationRequest({
     mode: "garment",
     inputFingerprint: "tryon-v1-0123456789abcdef",
-    defaultModelId: "male-1-light",
+    defaultModelId: "male-2-medium",
     garmentImageUrl: "https://example.test/shirt.jpg",
     topTuckPreference: "bogus",
   }).ok,

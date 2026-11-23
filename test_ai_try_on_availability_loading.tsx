@@ -95,7 +95,7 @@ const tryOnTarget: AiTryOnWearerTarget = {
   label: "You",
   inputFingerprint: shirtFingerprint,
   mode: "garment",
-  garmentImageUrl: "/ai-try-on-models/male-1-light.webp",
+  garmentImageUrl: "/ai-try-on-models/male-2-medium.webp",
   fabricSwatchImageUrl: null,
   previewableGarments: [
     {
@@ -103,7 +103,7 @@ const tryOnTarget: AiTryOnWearerTarget = {
       garmentType: "shirt",
       sourceKind: "catalog",
       label: "Standard Shirt",
-      garmentImageUrl: "/ai-try-on-models/male-1-light.webp",
+      garmentImageUrl: "/ai-try-on-models/male-2-medium.webp",
       fabricSwatchImageUrl: null,
       fabricColorHex: null,
       orderDetails: null,
@@ -209,7 +209,7 @@ const text = (renderer: ReactTestRenderer) => JSON.stringify(renderer.toJSON());
     renderer.root.findByProps({ "data-ai-try-on-model-option": true }).props.onClick();
   });
   await act(async () => {
-    renderer.root.findByProps({ "data-ai-try-on-model": "male-1-light" }).props.onClick();
+    renderer.root.findByProps({ "data-ai-try-on-model": "male-2-medium" }).props.onClick();
   });
   await act(async () => {
     renderer.root.findByProps({ "data-ai-try-on-outfit-mode": true }).props.onClick();
@@ -254,14 +254,14 @@ const text = (renderer: ReactTestRenderer) => JSON.stringify(renderer.toJSON());
     renderer.root.findByProps({ "data-ai-try-on-model-option": true }).props.onClick();
   });
   await act(async () => {
-    renderer.root.findByProps({ "data-ai-try-on-model": "male-1-light" }).props.onClick();
+    renderer.root.findByProps({ "data-ai-try-on-model": "male-2-medium" }).props.onClick();
   });
   assert.equal(generateButton(renderer).props.disabled, false);
   await act(async () => {
     await generateButton(renderer).props.onClick();
   });
   assert.equal(requests.length, 1, "one explicit Generate sends one request");
-  assert.equal(requests[0].defaultModelId, "male-1-light");
+  assert.equal(requests[0].defaultModelId, "male-2-medium");
 }
 
 {

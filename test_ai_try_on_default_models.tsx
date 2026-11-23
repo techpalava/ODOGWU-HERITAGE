@@ -68,17 +68,17 @@ const DAY = 24 * 60 * 60 * 1000;
 
 // ------------------------------------------------------------ catalogue + assets
 {
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.length, 20);
-  assert.equal(new Set(AI_TRY_ON_DEFAULT_MODELS.map((m) => m.id)).size, 20, "unique ids");
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "long").length, 10);
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "short").length, 10);
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "men").length, 10);
-  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "women").length, 10);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.length, 12);
+  assert.equal(new Set(AI_TRY_ON_DEFAULT_MODELS.map((m) => m.id)).size, 12, "unique ids");
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "long").length, 6);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "short").length, 6);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "men").length, 6);
+  assert.equal(AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === "women").length, 6);
   for (const group of ["men", "women"] as const) {
     for (const lengthCategory of ["long", "short"] as const) {
       const models = AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.group === group && m.lengthCategory === lengthCategory);
-      assert.equal(models.length, 5, `${group} ${lengthCategory}`);
-      assert.deepEqual(new Set(models.map((m) => m.skinTone)), new Set(["light", "medium", "deep"]), `${group}: skin tones`);
+      assert.equal(models.length, 3, `${group} ${lengthCategory}`);
+      assert.deepEqual(new Set(models.map((m) => m.skinTone)), new Set(["medium"]), `${group}: skin tones`);
       assert.deepEqual(new Set(models.map((m) => m.build)), new Set(["regular", "medium", "plus"]), `${group}: builds`);
     }
   }
@@ -106,26 +106,26 @@ const DAY = 24 * 60 * 60 * 1000;
     assert.equal(loaded.mimeType, "image/webp");
     assert.equal(loaded.data, bytes.toString("base64"));
   }
-  // Approved captions: the original six are "regular build". Short bases reuse them.
+  // Approved captions: build-focused labels, short bases reuse them.
   assert.deepEqual(
     AI_TRY_ON_DEFAULT_MODELS.filter((m) => m.lengthCategory === "long").map((m) => `${m.id}: ${m.label}`),
     [
-      "male-1-light: Light skin tone, regular build",
-      "male-2-medium: Medium skin tone, regular build",
-      "male-3-deep: Deep skin tone, regular build",
-      "male-medium-build: Medium skin tone, medium build",
-      "male-plus: Medium skin tone, plus-size",
-      "female-1-light: Light skin tone, regular build",
-      "female-2-medium: Medium skin tone, regular build",
-      "female-3-deep: Deep skin tone, regular build",
-      "female-medium-build: Medium skin tone, medium build",
-      "female-plus: Medium skin tone, plus-size",
+      "male-2-medium: Regular build",
+      "male-medium-build: Medium build",
+      "male-plus: Plus-size build",
+      "female-2-medium: Regular build",
+      "female-medium-build: Medium build",
+      "female-plus: Plus-size build",
     ],
   );
   assert.equal(AI_TRY_ON_DEFAULT_MODELS.some((m) => /slim/i.test(m.label)), false);
   assert.equal(findAiTryOnDefaultModel("../secrets"), null);
   assert.equal(findAiTryOnDefaultModel(undefined), null);
-  assert.equal(findAiTryOnDefaultModel("male-1-light")?.lengthCategory, "long");
+  // Retired IDs return null and fall back cleanly to the default active model.
+  assert.equal(findAiTryOnDefaultModel("male-1-light"), null);
+  assert.equal(findAiTryOnDefaultModel("male-3-deep"), null);
+  assert.equal(findAiTryOnDefaultModel("female-1-light"), null);
+  assert.equal(findAiTryOnDefaultModel("female-3-deep"), null);
   assert.equal(findAiTryOnDefaultModel("female-plus-short")?.lengthCategory, "short");
   for (const [garmentType, length] of [
     ["standard_shorts", "short"],
@@ -160,10 +160,10 @@ const DAY = 24 * 60 * 60 * 1000;
   const dressRes = resolveAiTryOnStudioModelForGarment({ currentModel: malePlus, allowedGroups: ["women"], lengthCategory: "short" });
   assert.equal(dressRes.model.id, "female-plus-short");
   assert.equal(dressRes.groupSwitched, true);
-  const female3DeepShort = findAiTryOnDefaultModel("female-3-deep-short");
-  assert.ok(female3DeepShort);
-  const agbadaRes = resolveAiTryOnStudioModelForGarment({ currentModel: female3DeepShort, allowedGroups: ["men"], lengthCategory: "long" });
-  assert.equal(agbadaRes.model.id, "male-3-deep");
+  const femaleMediumBuildShort = findAiTryOnDefaultModel("female-medium-build-short");
+  assert.ok(femaleMediumBuildShort);
+  const agbadaRes = resolveAiTryOnStudioModelForGarment({ currentModel: femaleMediumBuildShort, allowedGroups: ["men"], lengthCategory: "long" });
+  assert.equal(agbadaRes.model.id, "male-medium-build");
   assert.equal(agbadaRes.groupSwitched, true);
   const female2Medium = findAiTryOnDefaultModel("female-2-medium");
   assert.ok(female2Medium);
@@ -560,9 +560,9 @@ const harness = () => {
   assert.equal(h.geminiRequests.length, 3);
 
   // 5. Out of tries: a saved result is still served, a new one is refused.
-  await h.post({ defaultModelId: "male-1-light" });
   await h.post({ defaultModelId: "male-2-medium" });
-  const outOfTries = await h.post({ defaultModelId: "male-3-deep" });
+  await h.post({ defaultModelId: "male-medium-build" });
+  const outOfTries = await h.post({ defaultModelId: "female-2-medium" });
   assert.equal(outOfTries.status, 429);
   assert.equal(outOfTries.body.code, "ORDER_TRY_LIMIT_REACHED");
   const stillFree = await h.post({ defaultModelId: "female-plus" });
@@ -850,7 +850,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.equal(photoOption.type, "button");
   assert.equal(photoOption.props["aria-pressed"], false);
   assert.equal(option[0].props["aria-pressed"], true, "a studio model is selected by default");
-  assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "male-2-medium")[0].props["aria-checked"], true);
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 1);
   assert.equal(hasConsent(renderer), false, "the default model needs no consent notice");
   await click(option[0]);
@@ -858,17 +858,17 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.equal(byData(renderer, "data-ai-try-on-model-option")[0].props["aria-expanded"], true);
   const picker = byData(renderer, "data-ai-try-on-model-picker")[0];
   assert.match(textOf(picker), new RegExp(AI_TRY_ON_MODEL_COPY.heading));
-  assert.equal(byData(renderer, "data-ai-try-on-model").length, 10, "all ten models");
+  assert.equal(byData(renderer, "data-ai-try-on-model").length, 6, "all six models");
   assert.deepEqual(byData(renderer, "data-ai-try-on-model-group").map((node) => node.props["data-ai-try-on-model-group"]), ["men", "women"]);
   // Filter by Men / Women.
   await click(byData(renderer, "data-ai-try-on-model-filter", "women")[0]);
   assert.deepEqual(
     byData(renderer, "data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"]),
-    ["female-1-light", "female-2-medium", "female-3-deep", "female-medium-build", "female-plus"],
+    ["female-2-medium", "female-medium-build", "female-plus"],
   );
   const thumbs = renderer.root.findAll((node) => node.type === "img" && String(node.props.src).startsWith("/ai-try-on-models/"));
-  assert.equal(thumbs.length, 5, "static assets, no Storage");
-  assert.ok(byData(renderer, "data-ai-try-on-model").every((node) => /skin tone/.test(textOf(node))), "skin tone + build shown");
+  assert.equal(thumbs.length, 3, "static assets, no Storage");
+  assert.ok(byData(renderer, "data-ai-try-on-model").every((node) => /build/.test(textOf(node))), "build labels shown");
   assert.equal(generateButton(renderer).props.disabled, false, "the default model is ready");
   assert.equal(requests.length, 0, "selecting the default model does not generate");
   await click(byData(renderer, "data-ai-try-on-model", "female-plus")[0]);
@@ -893,7 +893,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   await click(byData(renderer, "data-ai-try-on-model-option")[0]);
   await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
   await click(byData(renderer, "data-wearer-chip", "w-obi")[0]);
-  assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light")[0].props["aria-checked"], true, "Obi starts on the default model");
+  assert.equal(byData(renderer, "data-ai-try-on-model", "male-2-medium")[0].props["aria-checked"], true, "Obi starts on the default model");
   assert.equal(hasConsent(renderer), false);
   assert.equal(generateButton(renderer).props.disabled, false);
   await click(byData(renderer, "data-wearer-chip", "w-ada")[0]);
@@ -910,7 +910,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
   assert.equal(byData(renderer, "data-ai-try-on-shown-on-model").length, 0, "no model line on a photo preview");
   // "Use a photo instead" clears the wearer's model choice.
   await click(byData(renderer, "data-ai-try-on-model-option")[0]);
-  await click(byData(renderer, "data-ai-try-on-model", "male-1-light")[0]);
+  await click(byData(renderer, "data-ai-try-on-model", "male-2-medium")[0]);
   await click(byData(renderer, "data-ai-try-on-model-close")[0]);
   assert.equal(generateButton(renderer).props.disabled, true);
   assert.equal(hasConsent(renderer), true);
@@ -991,8 +991,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     byData(renderer, "data-ai-try-on-model").map((node) => node.props["data-ai-try-on-model"] as string);
   for (const garmentType of ["standard_shorts", "bum_shorts", "skirt", "dress"] as const) {
     const isWomenOnly = ["skirt", "dress"].includes(garmentType);
-    const expectedCount = isWomenOnly ? 5 : 10;
-    const expectedDefault = isWomenOnly ? "female-1-light-short" : "male-1-light-short";
+    const expectedCount = isWomenOnly ? 3 : 6;
+    const expectedDefault = isWomenOnly ? "female-2-medium-short" : "male-2-medium-short";
     // Pass male/unisex/undefined styleGender even for women-only garments to prove
     // allowedModelGroups strictly overrides styleGender and never leaks a Men model.
     const { renderer, requests } = renderPanel({
@@ -1012,8 +1012,8 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     const isWomenOnly = ["full_length_gown", "long_skirt"].includes(garmentType);
     const isMenOnly = garmentType === "agbada";
     const singleGender = isWomenOnly || isMenOnly;
-    const expectedCount = singleGender ? 5 : 10;
-    const expectedDefault = isWomenOnly ? "female-1-light" : "male-1-light";
+    const expectedCount = singleGender ? 3 : 6;
+    const expectedDefault = isWomenOnly ? "female-2-medium" : "male-2-medium";
     // Opposite styleGender must never override single-gender garments.
     const testGender = isWomenOnly ? "unisex" : isMenOnly ? "female" : undefined;
     const { renderer, requests } = renderPanel({
@@ -1041,29 +1041,29 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
       ],
     })],
   });
-  assert.equal(byData(renderer, "data-ai-try-on-model", "male-1-light-short")[0].props["aria-checked"], true);
-  await click(byData(renderer, "data-ai-try-on-model", "female-3-deep-short")[0]);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "male-2-medium-short")[0].props["aria-checked"], true);
+  await click(byData(renderer, "data-ai-try-on-model", "female-plus-short")[0]);
   assert.equal(requests.length, 0, "picking a short persona does not generate");
   await click(byData(renderer, "data-ai-try-on-garment", "shirt")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model-length")[0].props["data-ai-try-on-model-length"], "long");
   assert.ok(modelIds(renderer).every((id) => !String(id).endsWith("-short")));
-  assert.equal(byData(renderer, "data-ai-try-on-model", "female-3-deep")[0].props["aria-checked"], true, "same persona, long base");
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "same persona, long base");
   assert.equal(requests.length, 0, "switching to a long garment does not generate");
-  const longFingerprint = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "studio_model", modelId: "female-3-deep" });
-  const shortFingerprint = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "studio_model", modelId: "female-3-deep-short" });
+  const longFingerprint = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "studio_model", modelId: "female-plus" });
+  const shortFingerprint = aiTryOnWearerPreviewFingerprint(FINGERPRINT, { kind: "studio_model", modelId: "female-plus-short" });
   assert.notEqual(longFingerprint, shortFingerprint);
   await click(generateButton(renderer));
-  assert.equal(requests[0].defaultModelId, "female-3-deep");
+  assert.equal(requests[0].defaultModelId, "female-plus");
   assert.equal(requests[0].inputFingerprint, longFingerprint, "the long base is in the fingerprint");
   await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
-  assert.equal(byData(renderer, "data-ai-try-on-model", "female-3-deep-short")[0].props["aria-checked"], true, "back to the short base of the same persona");
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true, "back to the short base of the same persona");
   assert.equal(requests.length, 1, "switching back to a short garment does not generate");
   await click(generateButton(renderer));
-  assert.equal(requests[1].defaultModelId, "female-3-deep-short");
+  assert.equal(requests[1].defaultModelId, "female-plus-short");
   assert.equal(requests[1].inputFingerprint, shortFingerprint, "the short base changes the fingerprint");
   await click(byData(renderer, "data-ai-try-on-garment", "kaftan")[0]);
-  assert.equal(byData(renderer, "data-ai-try-on-model", "female-3-deep")[0].props["aria-checked"], true, "Long Shirt uses the long base");
-  assert.equal(modelIds(renderer).includes("female-3-deep-short"), false);
+  assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus")[0].props["aria-checked"], true, "Long Shirt uses the long base");
+  assert.equal(modelIds(renderer).includes("female-plus-short"), false);
   await choosePhoto(renderer);
   await click(byData(renderer, "data-ai-try-on-garment", "standard_shorts")[0]);
   assert.equal(byData(renderer, "data-ai-try-on-model-picker").length, 0, "an uploaded photo stays the wearer");
@@ -1107,11 +1107,11 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     });
     assert.equal(byData(renderer, "data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true);
     assert.equal(byData(renderer, "data-ai-try-on-model-group").length, 2, "both Men and Women rows visible");
-    assert.equal(modelIds(renderer).length, 10);
-    assert.equal(byData(renderer, "data-ai-try-on-model", "female-1-light")[0].props["aria-checked"], true);
+    assert.equal(modelIds(renderer).length, 6);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium")[0].props["aria-checked"], true);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0);
     await click(generateButton(renderer));
-    assert.equal(requests[0].defaultModelId, "female-1-light");
+    assert.equal(requests[0].defaultModelId, "female-2-medium");
     await act(async () => { renderer.unmount(); });
   }
 
@@ -1123,10 +1123,10 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0, "filter chips hidden on single-gender garment");
     assert.equal(byData(renderer, "data-ai-try-on-model-group").length, 1);
     assert.equal(byData(renderer, "data-ai-try-on-model-group")[0].props["data-ai-try-on-model-group"], "women");
-    assert.equal(byData(renderer, "data-ai-try-on-model", "female-1-light-short")[0].props["aria-checked"], true);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium-short")[0].props["aria-checked"], true);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "initial default does not show auto-switch notice");
     await click(generateButton(renderer));
-    assert.equal(requests[0].defaultModelId, "female-1-light-short");
+    assert.equal(requests[0].defaultModelId, "female-2-medium-short");
     await act(async () => { renderer.unmount(); });
   }
 
@@ -1144,7 +1144,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     });
     // Click Men filter chip, pick male-plus.
     await click(byData(renderer, "data-ai-try-on-model-filter", "men")[0]);
-    assert.equal(modelIds(renderer).length, 5);
+    assert.equal(modelIds(renderer).length, 3);
     await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0);
 
@@ -1153,7 +1153,7 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0);
-    assert.equal(modelIds(renderer).length, 5, "stale Men filter never empties Women-only picker");
+    assert.equal(modelIds(renderer).length, 3, "stale Men filter never empties Women-only picker");
     assert.ok(modelIds(renderer).every((id) => id.startsWith("female-") && id.endsWith("-short")));
     assert.equal(byData(renderer, "data-ai-try-on-model", "female-plus-short")[0].props["aria-checked"], true);
     const dressNotice = byData(renderer, "data-ai-try-on-model-auto-switched");
@@ -1164,25 +1164,25 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     await click(generateButton(renderer));
     assert.equal(requests[0].defaultModelId, "female-plus-short");
 
-    // Return to Standard Shirt (compatible garment): filter resets to All (10 models) and notice clears!
+    // Return to Standard Shirt (compatible garment): filter resets to All (6 models) and notice clears!
     await click(byData(renderer, "data-ai-try-on-garment", "shirt")[0]);
     assert.equal(byData(renderer, "data-ai-try-on-model-filter", "all")[0].props["aria-checked"], true, "filter resets to All");
-    assert.equal(modelIds(renderer).length, 10, "both Men and Women rows restored");
+    assert.equal(modelIds(renderer).length, 6, "both Men and Women rows restored");
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "returning to compatible garment clears notice");
 
     // Switch back to male-plus -> Dress -> manually pick another Women model -> notice clears immediately!
     await click(byData(renderer, "data-ai-try-on-model", "male-plus")[0]);
     await click(byData(renderer, "data-ai-try-on-garment", "dress")[0]);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 1);
-    await click(byData(renderer, "data-ai-try-on-model", "female-3-deep-short")[0]);
+    await click(byData(renderer, "data-ai-try-on-model", "female-medium-build-short")[0]);
     assert.equal(byData(renderer, "data-ai-try-on-model-auto-switched").length, 0, "manual model pick clears notice");
 
-    // Switch from Dress (female-3-deep-short) -> Agbada (Men-only, long) -> auto-switches to male-3-deep!
+    // Switch from Dress (female-medium-build-short) -> Agbada (Men-only, long) -> auto-switches to male-medium-build!
     await click(byData(renderer, "data-ai-try-on-garment", "agbada")[0]);
     assert.equal(byData(renderer, "data-ai-try-on-model-filter").length, 0);
-    assert.equal(modelIds(renderer).length, 5);
+    assert.equal(modelIds(renderer).length, 3);
     assert.ok(modelIds(renderer).every((id) => id.startsWith("male-") && !id.endsWith("-short")));
-    assert.equal(byData(renderer, "data-ai-try-on-model", "male-3-deep")[0].props["aria-checked"], true);
+    assert.equal(byData(renderer, "data-ai-try-on-model", "male-medium-build")[0].props["aria-checked"], true);
     const agbadaNotice = byData(renderer, "data-ai-try-on-model-auto-switched");
     assert.equal(agbadaNotice.length, 1);
     assert.match(textOf(agbadaNotice[0]), /Men.*Long Shirt \(Agbada\)/);

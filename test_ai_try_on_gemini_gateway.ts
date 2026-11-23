@@ -1331,10 +1331,10 @@ console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt
     save: async () => undefined,
   });
   const cachedResult = response();
-  await handleAiTryOn(post({ ...modelBody, orderKey: "draft-model-hit", defaultModelId: "male-1-light" }), cachedResult.res, cached.deps);
+  await handleAiTryOn(post({ ...modelBody, orderKey: "draft-model-hit", defaultModelId: "male-2-medium" }), cachedResult.res, cached.deps);
   assert.equal(cachedResult.state.status, 200);
   const hitLog = cached.logs.find((line) => line.includes('"outcome":"model_cache_hit"')) ?? "";
-  assert.match(hitLog, /"modelId":"male-1-light"/);
+  assert.match(hitLog, /"modelId":"male-2-medium"/);
   assert.equal(cached.calls.length, 0, "a cache hit does not call Gemini");
 
   const photo = harness();

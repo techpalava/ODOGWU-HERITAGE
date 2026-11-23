@@ -84,7 +84,7 @@ const chooseModel = async (renderer: ReactTestRenderer) => {
     renderer.root.findByProps({ "data-ai-try-on-model-option": true }).props.onClick();
   });
   const length = renderer.root.findByProps({ "data-ai-try-on-model-picker": true }).props["data-ai-try-on-model-length"];
-  const modelId = length === "short" ? "male-1-light-short" : "male-1-light";
+  const modelId = length === "short" ? "male-2-medium-short" : "male-2-medium";
   await act(async () => {
     renderer.root.findByProps({ "data-ai-try-on-model": modelId }).props.onClick();
   });

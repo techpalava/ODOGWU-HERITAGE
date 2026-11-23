@@ -91,7 +91,7 @@ const button = (renderer: ReactTestRenderer, label: string) =>
     renderer.root.findByProps({ "data-ai-try-on-model-option": true }).props.onClick();
   });
   await act(async () => {
-    renderer.root.findByProps({ "data-ai-try-on-model": "male-1-light" }).props.onClick();
+    renderer.root.findByProps({ "data-ai-try-on-model": "male-2-medium" }).props.onClick();
   });
   assert.equal(renderer.root.findByProps({ "data-ai-try-on-generate": true }).props.disabled, true);
   await act(async () => { button(renderer, "Reset my AI try-on tries").props.onClick(); });
