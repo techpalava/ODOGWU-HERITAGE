@@ -236,64 +236,58 @@ export const resolveGroupedOutfitTypeOptions = ({
   };
 
   for (const entry of enabledEntries) {
-    const gender = entry.gender ?? "other";
-    if (groups[gender]) {
+    const gender =
+      typeof entry.gender === "string" ? entry.gender.trim().toLowerCase() : "other";
+    if (Object.prototype.hasOwnProperty.call(groups, gender)) {
       groups[gender].push(entry.normalizedName);
     } else {
       groups.other.push(entry.normalizedName);
     }
   }
 
-  for (const key of Object.keys(groups)) {
-    const seen = new Set<string>();
-    groups[key] = groups[key].filter((name) => {
+  // A single case-insensitive `seen` set spans every bucket so no <option>
+  // label can ever be rendered twice across optgroups.
+  const seen = new Set<string>();
+  const takeUnseen = (names: readonly string[]): string[] => {
+    const result: string[] = [];
+    for (const name of names) {
       const lower = name.toLowerCase();
-      if (seen.has(lower)) return false;
+      if (seen.has(lower)) continue;
       seen.add(lower);
-      return true;
-    });
-  }
+      result.push(name);
+    }
+    return result;
+  };
 
   const buckets: GroupedOutfitTypeOption[] = [];
 
-  const menswearOptions = [...groups.male, ...groups.unisex];
+  const menswearOptions = takeUnseen([...groups.male, ...groups.unisex]);
   if (menswearOptions.length > 0) {
     buckets.push({ label: "Menswear", options: menswearOptions });
   }
 
-  if (groups.female.length > 0) {
-    buckets.push({ label: "Womenswear", options: groups.female });
+  const womenswearOptions = takeUnseen(groups.female);
+  if (womenswearOptions.length > 0) {
+    buckets.push({ label: "Womenswear", options: womenswearOptions });
   }
 
-  const coupleFamilyOptions = [...groups.couple, ...groups.family];
+  const coupleFamilyOptions = takeUnseen([...groups.couple, ...groups.family]);
   if (coupleFamilyOptions.length > 0) {
     buckets.push({ label: "Couple & Family", options: coupleFamilyOptions });
   }
 
-  const allEnabledNames = new Set(
-    enabledEntries.map((e) => e.normalizedName.toLowerCase())
-  );
-  const otherSavedOptions: string[] = [];
-  if (currentValue?.trim()) {
-    const normalizedCurrent = customerCatalogueLabel(currentValue.trim());
-    if (normalizedCurrent && !allEnabledNames.has(normalizedCurrent.toLowerCase())) {
-      otherSavedOptions.push(normalizedCurrent);
-    }
-  }
-  for (const name of groups.other) {
-    if (!allEnabledNames.has(name.toLowerCase())) {
-      otherSavedOptions.push(name);
-    }
-  }
-  const otherSeen = new Set<string>();
-  const dedupedOther = otherSavedOptions.filter((name) => {
-    const lower = name.toLowerCase();
-    if (otherSeen.has(lower)) return false;
-    otherSeen.add(lower);
-    return true;
-  });
-  if (dedupedOther.length > 0) {
-    buckets.push({ label: "Other / Saved", options: dedupedOther });
+  // "Other / Saved" keeps enabled entries with an unknown/missing gender plus
+  // the currently saved value (e.g. a legacy or disabled type such as
+  // "Agbada") when it is not already offered in an earlier bucket.
+  const normalizedCurrent = currentValue?.trim()
+    ? customerCatalogueLabel(currentValue.trim())
+    : "";
+  const otherSavedOptions = takeUnseen([
+    ...groups.other,
+    ...(normalizedCurrent ? [normalizedCurrent] : []),
+  ]);
+  if (otherSavedOptions.length > 0) {
+    buckets.push({ label: "Other / Saved", options: otherSavedOptions });
   }
 
   const genderToBucket: Record<string, string> = {
@@ -303,17 +297,36 @@ export const resolveGroupedOutfitTypeOptions = ({
     couple: "Couple & Family",
     family: "Couple & Family",
   };
-  const preferredBucketLabel = selectedGender
-    ? genderToBucket[selectedGender]
+  const normalizedGender = selectedGender?.trim().toLowerCase();
+  const preferredBucketLabel = normalizedGender
+    ? genderToBucket[normalizedGender]
     : "Menswear";
 
-  const preferredIndex = buckets.findIndex((b) => b.label === preferredBucketLabel);
+  const preferredIndex = preferredBucketLabel
+    ? buckets.findIndex((b) => b.label === preferredBucketLabel)
+    : -1;
   if (preferredIndex > 0) {
     const [preferred] = buckets.splice(preferredIndex, 1);
     buckets.unshift(preferred);
   }
 
   return buckets;
+};
+
+const CANONICAL_DEFAULT_OUTFIT_TYPE_BY_GENDER: Record<string, string> = {
+  male: DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+  unisex: DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+  female: "Long Dress",
+  couple: "Couple Collection",
+  family: "Family Collection",
+};
+
+const OUTFIT_TYPE_GENDER_GROUPS: Record<string, readonly string[]> = {
+  male: ["male", "unisex"],
+  unisex: ["unisex", "male"],
+  female: ["female"],
+  couple: ["couple", "family"],
+  family: ["family", "couple"],
 };
 
 export const getDefaultOutfitTypeForGender = (
@@ -340,19 +353,27 @@ export const getDefaultOutfitTypeForGender = (
     return a.normalizedName.localeCompare(b.normalizedName);
   });
 
-  const genderLower = (gender ?? "male").toLowerCase();
+  const genderLower = gender?.trim().toLowerCase() || DEFAULT_ADMIN_STYLE_GENDER;
+  const canonicalDefault =
+    CANONICAL_DEFAULT_OUTFIT_TYPE_BY_GENDER[genderLower] ??
+    DEFAULT_ADMIN_STYLE_OUTFIT_TYPE;
 
-  if (genderLower === "female") {
-    const femaleEntry = enabledEntries.find((e) => e.gender === "female");
-    return femaleEntry?.normalizedName ?? "Long Dress";
+  const canonicalMatch = enabledEntries.find(
+    (entry) =>
+      entry.normalizedName.toLowerCase() === canonicalDefault.toLowerCase(),
+  );
+  if (canonicalMatch) {
+    return canonicalDefault;
   }
-  if (genderLower === "couple" || genderLower === "family") {
-    // Both couple and family map to "family" gender in outfitTypes
-    const familyEntry = enabledEntries.find((e) => e.gender === "family");
-    return familyEntry?.normalizedName ?? (genderLower === "couple" ? "Couple Collection" : "Family Collection");
-  }
-  const maleEntry = enabledEntries.find((e) => e.gender === "male");
-  return maleEntry?.normalizedName ?? DEFAULT_ADMIN_STYLE_OUTFIT_TYPE;
+
+  const genderGroup =
+    OUTFIT_TYPE_GENDER_GROUPS[genderLower] ?? OUTFIT_TYPE_GENDER_GROUPS.male;
+  const firstInGroup = enabledEntries.find(
+    (entry) =>
+      typeof entry.gender === "string" &&
+      genderGroup.includes(entry.gender.trim().toLowerCase()),
+  );
+  return firstInGroup?.normalizedName ?? canonicalDefault;
 };
 
 export const resolveDesignStyleGenderOptions = (

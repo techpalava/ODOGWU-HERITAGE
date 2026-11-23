@@ -16,7 +16,10 @@ import type {
 import { resolveStyleApplicability } from "./src/utils/designStudioFutureDesignStyle";
 import {
   ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES,
+  DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
   deriveFeaturesMaleAndFemale,
+  getDefaultOutfitTypeForGender,
+  resolveGroupedOutfitTypeOptions,
 } from "./src/utils/designStyleAdminDefaults";
 import type { AuthoritativeDesignStyleRecordV1 } from "./src/utils/designStyleAuthority";
 import {
@@ -600,6 +603,314 @@ try {
   DesignStyleCategoryService.subscribe = originalCategorySubscribe;
   useAppStore.setState(originalStoreState);
 }
+
+// ---------------------------------------------------------------------------
+// Pure unit coverage: grouped outfit type options + gender defaults
+// ---------------------------------------------------------------------------
+type OutfitTypeEntries = NonNullable<(typeof DEFAULT_BUSINESS_SETTINGS)["outfitTypes"]>;
+const defaultOutfitTypes: OutfitTypeEntries =
+  DEFAULT_BUSINESS_SETTINGS.outfitTypes || [];
+const outfitEntry = (
+  id: string,
+  name: string,
+  gender: string | undefined,
+  displayOrder?: number,
+  enabled?: boolean,
+): OutfitTypeEntries[number] =>
+  ({ id, name, gender, displayOrder, enabled }) as unknown as OutfitTypeEntries[number];
+const groupLabels = (groups: ReturnType<typeof resolveGroupedOutfitTypeOptions>) =>
+  groups.map((group) => group.label);
+const allOptionLabels = (
+  groups: ReturnType<typeof resolveGroupedOutfitTypeOptions>,
+) => groups.flatMap((group) => [...group.options]);
+const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
+
+{
+  // enabled !== false filtering: only explicitly disabled entries are dropped.
+  const groups = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("a", "Alpha Set", "male", 1, true),
+        outfitEntry("b", "Bravo Set", "male", 2, undefined),
+        outfitEntry("c", "Charlie Set", "male", 3, false),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+  });
+  assert.deepEqual(groups, [
+    { label: "Menswear", options: ["Alpha Set", "Bravo Set"] },
+  ]);
+}
+
+{
+  // displayOrder first, then alphabetical (missing displayOrder sorts last).
+  const groups = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("z", "Zulu Set", "male", 1),
+        outfitEntry("y", "Yankee Set", "male", 2),
+        outfitEntry("b", "Bravo Set", "male", 2),
+        outfitEntry("n", "No Order Set", "male", undefined),
+        outfitEntry("a", "Alpha Set", "male", undefined),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+  });
+  assert.deepEqual(groups[0].options, [
+    "Zulu Set",
+    "Bravo Set",
+    "Yankee Set",
+    "Alpha Set",
+    "No Order Set",
+  ]);
+}
+
+{
+  // customerCatalogueLabel normalization of names and the saved current value.
+  const groups = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("k", "Kaftan", "male", 1),
+        outfitEntry("s", "  Senator Set  ", "male", 2),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    currentValue: "  Knicker  ",
+  });
+  const labels = allOptionLabels(groups);
+  assert.equal(
+    labels.some((label) => BANNED_OUTFIT_LABEL.test(label)),
+    false,
+    `Normalized labels must not contain Kaftan/Knicker: ${labels.join(", ")}`,
+  );
+  assert.ok(labels.includes("Senator Set"));
+  assert.equal(labels.every((label) => label === label.trim()), true);
+}
+
+{
+  // Cross-bucket, case-insensitive deduplication: no label may appear twice.
+  const groups = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("m1", "Senator Set", "male", 1),
+        outfitEntry("m2", "senator set", "male", 2),
+        outfitEntry("u1", "SENATOR SET", "unisex", 3),
+        outfitEntry("f1", "Senator Set", "female", 4),
+        outfitEntry("f2", "Boubou", "female", 5),
+        outfitEntry("c1", "boubou", "couple", 6),
+        outfitEntry("fa1", "Family Collection", "family", 7),
+        outfitEntry("o1", "family collection", "mystery", 8),
+        outfitEntry("o2", "Custom Robe", undefined, 9),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    currentValue: "BOUBOU",
+  });
+  const lowerLabels = allOptionLabels(groups).map((label) => label.toLowerCase());
+  assert.equal(new Set(lowerLabels).size, lowerLabels.length);
+  assert.deepEqual(groups, [
+    { label: "Menswear", options: ["Senator Set"] },
+    { label: "Womenswear", options: ["Boubou"] },
+    { label: "Couple & Family", options: ["Family Collection"] },
+    { label: "Other / Saved", options: ["Custom Robe"] },
+  ]);
+}
+
+{
+  // Gender-first bucket ordering (selectedGender is trimmed + lowercased).
+  const outfitTypes = [
+    outfitEntry("m", "Senator Set", "male", 1),
+    outfitEntry("f", "Long Dress", "female", 2),
+    outfitEntry("c", "Couple Collection", "couple", 3),
+    outfitEntry("fa", "Family Collection", "family", 4),
+    outfitEntry("o", "Mystery Outfit", "other-gender", 5),
+  ];
+  const orderFor = (selectedGender?: string) =>
+    groupLabels(
+      resolveGroupedOutfitTypeOptions({
+        businessSettings: { outfitTypes },
+        fallbackOutfitTypes: defaultOutfitTypes,
+        selectedGender,
+      }),
+    );
+  const base = ["Menswear", "Womenswear", "Couple & Family", "Other / Saved"];
+  assert.deepEqual(orderFor("male"), base);
+  assert.deepEqual(orderFor(undefined), base);
+  assert.deepEqual(orderFor("unisex"), base);
+  assert.deepEqual(orderFor("female"), [
+    "Womenswear",
+    "Menswear",
+    "Couple & Family",
+    "Other / Saved",
+  ]);
+  assert.deepEqual(orderFor("  Female "), orderFor("female"));
+  const coupleFirst = ["Couple & Family", "Menswear", "Womenswear", "Other / Saved"];
+  assert.deepEqual(orderFor("couple"), coupleFirst);
+  assert.deepEqual(orderFor("family"), coupleFirst);
+  assert.deepEqual(orderFor("FAMILY"), coupleFirst);
+  assert.deepEqual(orderFor("alien"), base);
+}
+
+{
+  // "Other / Saved" preserves legacy/disabled saved values (e.g. Agbada) and
+  // enabled entries whose gender is unknown/missing.
+  const defaultsGroups = resolveGroupedOutfitTypeOptions({
+    businessSettings: { outfitTypes: [] },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    selectedGender: "male",
+    currentValue: "Agbada",
+  });
+  const agbadaDefault = defaultOutfitTypes.find((entry) => entry.name === "Agbada");
+  assert.equal(agbadaDefault?.enabled, false, "Agbada is disabled by default.");
+  const otherBucket = defaultsGroups.find((group) => group.label === "Other / Saved");
+  assert.deepEqual(otherBucket?.options, ["Agbada"]);
+  assert.equal(
+    allOptionLabels(defaultsGroups).filter((label) => label === "Agbada").length,
+    1,
+  );
+
+  const legacyGroups = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("m", "Senator Set", "male", 1),
+        outfitEntry("ag", "Agbada", "male", 2, false),
+        outfitEntry("u1", "Legacy Wrapper", undefined, 3),
+        outfitEntry("u2", "Ceremonial Robe", "ceremonial", 4),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    currentValue: "Agbada",
+  });
+  assert.deepEqual(legacyGroups, [
+    { label: "Menswear", options: ["Senator Set"] },
+    {
+      label: "Other / Saved",
+      options: ["Legacy Wrapper", "Ceremonial Robe", "Agbada"],
+    },
+  ]);
+
+  // A saved value already offered in an earlier bucket is not repeated.
+  const alreadyOffered = resolveGroupedOutfitTypeOptions({
+    businessSettings: { outfitTypes: [] },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    currentValue: "senator set",
+  });
+  assert.equal(
+    alreadyOffered.some((group) => group.label === "Other / Saved"),
+    false,
+  );
+}
+
+{
+  // getDefaultOutfitTypeForGender canonical defaults against the real defaults.
+  const settings = { outfitTypes: [] };
+  assert.equal(DEFAULT_ADMIN_STYLE_OUTFIT_TYPE, "Senator Set");
+  assert.equal(
+    getDefaultOutfitTypeForGender("female", settings, defaultOutfitTypes),
+    "Long Dress",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender("couple", settings, defaultOutfitTypes),
+    "Couple Collection",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender("family", settings, defaultOutfitTypes),
+    "Family Collection",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender("male", settings, defaultOutfitTypes),
+    "Senator Set",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender("unisex", settings, defaultOutfitTypes),
+    "Senator Set",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender(undefined, settings, defaultOutfitTypes),
+    "Senator Set",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender(" Female ", settings, defaultOutfitTypes),
+    "Long Dress",
+  );
+
+  // Canonical default is matched case-insensitively.
+  assert.equal(
+    getDefaultOutfitTypeForGender(
+      "female",
+      {
+        outfitTypes: [
+          outfitEntry("mg", "Maxi Gown", "female", 1),
+          outfitEntry("ld", "long dress", "female", 2),
+        ],
+      },
+      defaultOutfitTypes,
+    ),
+    "Long Dress",
+  );
+  // Falls back to the first enabled entry in the gender group.
+  assert.equal(
+    getDefaultOutfitTypeForGender(
+      "female",
+      {
+        outfitTypes: [
+          outfitEntry("ld", "Long Dress", "female", 1, false),
+          outfitEntry("mg", "Maxi Gown", "female", 3),
+          outfitEntry("b", "Boubou", "female", 2),
+        ],
+      },
+      defaultOutfitTypes,
+    ),
+    "Boubou",
+  );
+  // Finally falls back to the canonical default string.
+  assert.equal(
+    getDefaultOutfitTypeForGender(
+      "couple",
+      { outfitTypes: [outfitEntry("m", "Trouser", "male", 1)] },
+      defaultOutfitTypes,
+    ),
+    "Couple Collection",
+  );
+  assert.equal(
+    getDefaultOutfitTypeForGender(
+      "male",
+      { outfitTypes: [outfitEntry("f", "Boubou", "female", 1)] },
+      defaultOutfitTypes,
+    ),
+    "Senator Set",
+  );
+}
+
+{
+  // Zero Kaftan/Knicker labels in the defaults and the resolved output.
+  const defaultNames = defaultOutfitTypes.map((entry) => entry.name);
+  assert.ok(defaultNames.length > 0);
+  assert.deepEqual(
+    defaultNames.filter((name) => BANNED_OUTFIT_LABEL.test(name)),
+    [],
+  );
+  for (const selectedGender of ["male", "female", "couple", "family", "unisex"]) {
+    const labels = allOptionLabels(
+      resolveGroupedOutfitTypeOptions({
+        businessSettings: DEFAULT_BUSINESS_SETTINGS,
+        fallbackOutfitTypes: defaultOutfitTypes,
+        selectedGender,
+        currentValue: "Agbada",
+      }),
+    );
+    assert.deepEqual(
+      labels.filter((label) => BANNED_OUTFIT_LABEL.test(label)),
+      [],
+    );
+    const lower = labels.map((label) => label.toLowerCase());
+    assert.equal(new Set(lower).size, lower.length);
+  }
+}
+
+console.log(
+  "PASS: resolveGroupedOutfitTypeOptions grouping/dedupe/ordering/Other-Saved and getDefaultOutfitTypeForGender defaults",
+);
 
 console.log(
   "PASS: Add Design Style Admin UI defaults, zero-drift unchanged save, derived featuresMaleAndFemale, and styleApplicability controls",

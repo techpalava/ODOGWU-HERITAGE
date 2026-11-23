@@ -1248,8 +1248,12 @@ export default function DatabaseView({
       setQuickAddOutfitTypeError("This outfit type name is not allowed.");
       return;
     }
+    // Mirror resolveGroupedOutfitTypeOptions: an empty/undefined saved list
+    // falls back to the defaults so quick-add never wipes them.
     const existingTypes =
-      businessSettings.outfitTypes || DEFAULT_BUSINESS_SETTINGS.outfitTypes || [];
+      businessSettings.outfitTypes && businessSettings.outfitTypes.length > 0
+        ? businessSettings.outfitTypes
+        : DEFAULT_BUSINESS_SETTINGS.outfitTypes || [];
     const isDuplicate = existingTypes.some(
       (t) => customerCatalogueLabel(t.name).toLowerCase() === lowerNormalized,
     );
@@ -1280,11 +1284,24 @@ export default function DatabaseView({
           ? Math.max(...existingTypes.map((t) => t.displayOrder ?? 0))
           : 0) + 1,
     };
-    // Persist via existing businessSettings path
-    setBusinessSettings((prev) => ({
-      ...prev,
-      outfitTypes: [...(prev.outfitTypes || []), newType],
-    }));
+    const nextOutfitTypes = [...existingTypes, newType];
+    const nextBusinessSettings: BusinessSettings = {
+      ...businessSettings,
+      outfitTypes: nextOutfitTypes,
+    };
+    // Persist via the existing businessSettings path (store setter ->
+    // StorageService.saveBusinessSettings). On failure, leave the editing
+    // state untouched so nothing references an unsaved outfit type.
+    try {
+      setBusinessSettings(nextBusinessSettings);
+    } catch (error) {
+      console.error("Failed to save new outfit type", error);
+      setQuickAddOutfitTypeError(
+        "Failed to save the new outfit type. Please try again.",
+      );
+      triggerStatus("Failed to save the new outfit type.", "error");
+      return;
+    }
     // Immediately select it
     setEditingItem((prev: any) => ({
       ...prev,
