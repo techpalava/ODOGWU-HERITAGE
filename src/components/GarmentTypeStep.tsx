@@ -600,7 +600,7 @@ export const GarmentTypeStep = ({
           <div className="mt-4 w-full shrink-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:max-w-xs lg:justify-self-end xl:max-w-xs">
             {fabricQuantitySummary}
           </div>
-          <p className="mt-4 text-xs leading-relaxed text-heritage-ink/55 lg:col-span-full">
+          <p className="mt-4 text-xs leading-relaxed text-heritage-ink/55 font-bold lg:col-span-full">
             {STEP1_GARMENT_REFERENCE_DISCLAIMER}
           </p>
           <div className="mt-4 grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 xl:grid-cols-3 lg:col-span-full">
