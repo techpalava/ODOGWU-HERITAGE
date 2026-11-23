@@ -890,6 +890,7 @@ export const AiTryOnPhotoPanel = ({
         garmentTypeOf(selectedBottom),
       )
     : aiTryOnAllowedModelGroupsForGarment(singleGarmentType);
+
   const allowedModelGroupsKey = allowedModelGroups.join(",");
   const effectiveModelFilter: AiTryOnModelGroup | "all" =
     allowedModelGroups.length < 2 ? "all" : modelFilter;
@@ -919,6 +920,7 @@ export const AiTryOnPhotoPanel = ({
     outfitMode && wearerChoice !== "customer_photo" && wearerChoice !== "cleared"
       ? findAiTryOnDefaultModel(defaultModelId)
       : null;
+
   // Always project currentModel into the allowed group and required length so
   // neither UI highlight nor Generate can ever leak an excluded model.
   const effectiveCurrentModel = currentModel

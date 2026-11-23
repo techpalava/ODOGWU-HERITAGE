@@ -1,6 +1,6 @@
 /**
- * Default try-on models: ten fictional studio personas a customer can pick
- * instead of uploading a photo ("No photo? Try it on a model").
+ * Default try-on models: six fictional studio personas (3 builds per gender)
+ * a customer can pick instead of uploading a photo ("No photo? Try it on a model").
  *
  * Each persona has two static base photos in public/ai-try-on-models/:
  * `long` (full-length trousers) and `short` (neutral bum shorts for women,
@@ -33,15 +33,10 @@ export const AI_TRY_ON_MODEL_GROUP_LABELS: Readonly<Record<AiTryOnModelGroup, st
   women: "Women",
 };
 
-const SKIN_TONE_LABELS: Readonly<Record<AiTryOnModelSkinTone, string>> = {
-  light: "Light skin tone",
-  medium: "Medium skin tone",
-  deep: "Deep skin tone",
-};
 const BUILD_LABELS: Readonly<Record<AiTryOnModelBuild, string>> = {
-  regular: "regular build",
-  medium: "medium build",
-  plus: "plus-size",
+  regular: "Regular build",
+  medium: "Medium build",
+  plus: "Plus-size build",
 };
 
 const model = (
@@ -57,26 +52,21 @@ const model = (
   build,
   lengthCategory,
   personaId,
-  label: `${SKIN_TONE_LABELS[skinTone]}, ${BUILD_LABELS[build]}`,
+  label: BUILD_LABELS[build],
 });
 
 const PERSONAS: readonly (readonly [string, AiTryOnModelGroup, AiTryOnModelSkinTone, AiTryOnModelBuild])[] = [
-  ["male-1-light", "men", "light", "regular"],
   ["male-2-medium", "men", "medium", "regular"],
-  ["male-3-deep", "men", "deep", "regular"],
   ["male-medium-build", "men", "medium", "medium"],
   ["male-plus", "men", "medium", "plus"],
-  ["female-1-light", "women", "light", "regular"],
   ["female-2-medium", "women", "medium", "regular"],
-  ["female-3-deep", "women", "deep", "regular"],
   ["female-medium-build", "women", "medium", "medium"],
   ["female-plus", "women", "medium", "plus"],
 ];
 
 /**
- * Display order: the original long (trouser) bases first, in the approved
- * persona order, then the matching short bases. Skin tones first, then
- * builds, men before women.
+ * Display order: the 6 personas (3 builds per gender) long bases first, in the
+ * approved persona order, then the matching short bases. Men before women.
  */
 export const AI_TRY_ON_DEFAULT_MODELS: readonly AiTryOnDefaultModel[] = [
   ...PERSONAS.map(([personaId, group, skinTone, build]) => model(personaId, group, skinTone, build, "long")),
