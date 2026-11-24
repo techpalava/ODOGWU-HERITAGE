@@ -709,6 +709,7 @@ export const GarmentTypeStep = ({
                           : `Select ${category.label}`
                       }
                       data-testid={`step1-garment-select-${category.presetId}`}
+                      data-hand-guide-target={index === 0 ? "garment-type-select" : undefined}
                       onClick={() => togglePreset(category.presetId)}
                       className={`${STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS} ${
                         category.selected
@@ -769,7 +770,7 @@ export const GarmentTypeStep = ({
               audienceNeeded ? " clear-both" : ""
             }`}
           >
-            {DEMOGRAPHIC_OPTIONS.map((option) => {
+            {DEMOGRAPHIC_OPTIONS.map((option, idx) => {
               const inputId = `${idPrefix}-demographic-${option.value}`;
               const selected = selectedDemographics.includes(option.value);
               return (
@@ -791,6 +792,7 @@ export const GarmentTypeStep = ({
                       handleDemographicChange(option.value, event)
                     }
                     className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
+                    data-hand-guide-target={idx === 0 ? "garment-type-audience" : undefined}
                   />
                   <span className="min-w-0">
                     <span className="block break-words font-bold text-heritage-green">
