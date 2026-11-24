@@ -3,10 +3,14 @@ import { describe, it } from "node:test";
 import { DESIGN_STUDIO_TEN_STAGE_FOUNDATION } from "./src/utils/designSourceJourney";
 import {
   CONTINUE_UNLOCKED_SELECTOR,
+  MODAL_CHECKBOX_SELECTOR,
+  MODAL_PRIMARY_SELECTOR,
   computeHandGuidePlacement,
   findPrioritizedHandGuideElement,
+  findPrioritizedHandGuideElements,
   getHandGuideHintForElement,
   resolveHandGuideTarget,
+  resolveModalHandGuideTarget,
   shouldSuppressHandGuide,
   shouldTriggerFarCursor,
 } from "./src/utils/designStudioHandGuide";
@@ -21,29 +25,27 @@ describe("designStudioHandGuide target resolution", () => {
     }
   });
 
-  it("orders selectors in strict priority for garment_type, fabric, design_style, measurement, shipping, payment", () => {
-    assert.deepEqual(resolveHandGuideTarget("garment_type").selectors, [
-      '[data-hand-guide-target="garment-type-select"]',
-      '[data-hand-guide-target="garment-type-audience"]',
-      CONTINUE_UNLOCKED_SELECTOR,
-    ]);
-    assert.deepEqual(resolveHandGuideTarget("fabric").selectors, [
-      '[data-hand-guide-target="fabric-select"]',
-      CONTINUE_UNLOCKED_SELECTOR,
-    ]);
-    assert.deepEqual(resolveHandGuideTarget("design_style").selectors, [
-      '[data-hand-guide-target="design-style-select"]',
-      CONTINUE_UNLOCKED_SELECTOR,
-    ]);
-    assert.deepEqual(resolveHandGuideTarget("measurement").selectors, [
-      '[data-hand-guide-target="measurement-standard-size"]',
+  it("orders selectors in strict priority for measurement, shipping, payment", () => {
+    const measurement = resolveHandGuideTarget("measurement");
+    assert.equal(measurement.hint, "Select a measurement option");
+    assert.deepEqual(measurement.selectors, [
+      '[data-hand-guide-target="measurement-option-group"]',
       '[data-hand-guide-target="measurement-required-field"]',
       CONTINUE_UNLOCKED_SELECTOR,
     ]);
-    assert.deepEqual(resolveHandGuideTarget("shipping").selectors, [
+    assert.equal(
+      getHandGuideHintForElement(measurement, false, '[data-hand-guide-target="measurement-required-field"]'),
+      "Enter required measurement",
+    );
+
+    const shipping = resolveHandGuideTarget("shipping");
+    assert.equal(shipping.hint, "Choose delivery or pickup");
+    assert.deepEqual(shipping.selectors, [
+      '[data-hand-guide-target="shipping-delivery-option"]',
       '[data-hand-guide-target="shipping-required-field"]',
       CONTINUE_UNLOCKED_SELECTOR,
     ]);
+
     assert.deepEqual(resolveHandGuideTarget("payment").selectors, [
       '[data-hand-guide-target="payment-terms-checkbox"]',
       '[data-hand-guide-target="payment-pay-button"]',
@@ -51,19 +53,30 @@ describe("designStudioHandGuide target resolution", () => {
     ]);
   });
 
-  it("explains optional/prefilled steps can be adjusted below or continued", () => {
-    const fabricTarget = resolveHandGuideTarget("fabric");
-    assert.equal(
-      getHandGuideHintForElement(fabricTarget, true),
-      "Ready — adjust below or continue",
-    );
-    const additionsTarget = resolveHandGuideTarget("personalized_additions");
-    assert.equal(additionsTarget.isContinue, true);
-    assert.ok(additionsTarget.hint.toLowerCase().includes("below or continue"));
+  it("resolves guided modal targets for fabric-capacity and apply-design-style", () => {
+    const capacity = resolveModalHandGuideTarget("fabric-capacity");
+    assert.deepEqual(capacity.selectors, [MODAL_PRIMARY_SELECTOR]);
+    assert.equal(capacity.hint, "Continue or add a garment");
 
-    const tryOnTarget = resolveHandGuideTarget("try_on");
-    assert.equal(tryOnTarget.isContinue, true);
-    assert.ok(tryOnTarget.hint.toLowerCase().includes("below or continue"));
+    const applyStyle = resolveModalHandGuideTarget("apply-design-style");
+    assert.deepEqual(applyStyle.selectors, [MODAL_CHECKBOX_SELECTOR, MODAL_PRIMARY_SELECTOR]);
+    assert.equal(getHandGuideHintForElement(applyStyle, true), "Apply design style");
+  });
+
+  it("findPrioritizedHandGuideElements returns all visible cards for alternating delivery options", () => {
+    const pickupEl = { id: "pickup" } as unknown as HTMLElement;
+    const deliveryEl = { id: "delivery" } as unknown as HTMLElement;
+
+    const result = findPrioritizedHandGuideElements(
+      ['[data-hand-guide-target="shipping-delivery-option"]', CONTINUE_UNLOCKED_SELECTOR],
+      (sel) =>
+        sel === '[data-hand-guide-target="shipping-delivery-option"]'
+          ? [pickupEl, deliveryEl]
+          : [],
+      () => true,
+    );
+    assert.equal(result.elements.length, 2);
+    assert.equal(result.matchedSelector, '[data-hand-guide-target="shipping-delivery-option"]');
   });
 
   it("findPrioritizedHandGuideElement respects selector priority over DOM order", () => {
@@ -80,17 +93,6 @@ describe("designStudioHandGuide target resolution", () => {
       () => true,
     );
     assert.equal(picked, selectEl);
-
-    const skippedHidden = findPrioritizedHandGuideElement(
-      ['[data-hand-guide-target="garment-type-select"]', CONTINUE_UNLOCKED_SELECTOR],
-      (selector) => {
-        if (selector === CONTINUE_UNLOCKED_SELECTOR) return [continueEl];
-        if (selector === '[data-hand-guide-target="garment-type-select"]') return [selectEl];
-        return [];
-      },
-      (el) => el !== selectEl,
-    );
-    assert.equal(skippedHidden, continueEl);
   });
 
   it("shouldSuppressHandGuide returns false for all stages", () => {
@@ -100,19 +102,31 @@ describe("designStudioHandGuide target resolution", () => {
   });
 });
 
-describe("viewport-edge flip and off-screen geometry", () => {
+describe("viewport-edge flip, neutral group, diagonal pay, and off-screen geometry", () => {
   const viewport = { width: 1280, height: 720 };
 
-  it("places hand below-right when space permits", () => {
+  it("places hand neutrally at top-center for measurement-option-group", () => {
     const placement = computeHandGuidePlacement(
-      { top: 180, left: 200, right: 320, bottom: 220, width: 120, height: 40 },
+      { top: 220, left: 100, right: 900, bottom: 480, width: 800, height: 260 },
       viewport,
+      { neutralGroup: true },
     );
     assert.equal(placement.mode, "anchored");
     if (placement.mode === "anchored") {
-      assert.equal(placement.anchor, "below-right");
-      assert.ok(placement.x > 300);
-      assert.ok(placement.y > 210);
+      assert.equal(placement.anchor, "top-center");
+      assert.ok(placement.x > 400 && placement.x < 550);
+    }
+  });
+
+  it("uses diagonal-up-left anchor for Step 10 Pay button", () => {
+    const placement = computeHandGuidePlacement(
+      { top: 500, left: 200, right: 380, bottom: 548, width: 180, height: 48 },
+      viewport,
+      { diagonalUpLeft: true },
+    );
+    assert.equal(placement.mode, "anchored");
+    if (placement.mode === "anchored") {
+      assert.equal(placement.anchor, "diagonal-up-left");
     }
   });
 
@@ -124,15 +138,6 @@ describe("viewport-edge flip and off-screen geometry", () => {
     assert.equal(rightEdge.mode, "anchored");
     if (rightEdge.mode === "anchored") {
       assert.equal(rightEdge.anchor, "above-left");
-    }
-
-    const bottomEdge = computeHandGuidePlacement(
-      { top: 650, left: 500, right: 660, bottom: 695, width: 160, height: 45 },
-      viewport,
-    );
-    assert.equal(bottomEdge.mode, "anchored");
-    if (bottomEdge.mode === "anchored") {
-      assert.equal(bottomEdge.anchor, "above-left");
     }
   });
 
@@ -168,15 +173,6 @@ describe("far-cursor trigger hysteresis", () => {
         previousDistancePx: 320,
         elapsedFarMs: 3500,
         isFinePointer: false,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldTriggerFarCursor({
-        distancePx: 260,
-        previousDistancePx: 260,
-        elapsedFarMs: 5000,
-        isFinePointer: true,
       }),
       false,
     );

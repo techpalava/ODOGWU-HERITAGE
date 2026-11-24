@@ -27,6 +27,7 @@
   --animate-continue-unlock-glow: continue-unlock-glow 2.4s ease-in-out infinite;
   --animate-continue-ring-blink: continue-ring-blink 2.4s step-end infinite;
   --animate-hand-tap: hand-tap 2.4s ease-in-out infinite;
+  --animate-hand-soft: hand-soft 2.6s ease-in-out infinite;
   --animate-ripple: ripple 2.4s ease-out infinite;
 }
 
@@ -175,6 +176,17 @@
   }
   50% {
     transform: translateY(-4px) rotate(-5deg);
+  }
+}
+
+@keyframes hand-soft {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
   }
 }
 

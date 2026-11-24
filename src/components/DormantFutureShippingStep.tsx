@@ -428,6 +428,7 @@ export const DormantFutureShippingStep = ({
         </legend>
         <div className="mt-3 grid min-w-0 gap-3 md:grid-cols-2">
           <label
+            data-hand-guide-target={!state.fulfilmentMethod ? "shipping-delivery-option" : undefined}
             className={`flex min-h-11 min-w-0 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
               isPickup
                 ? "border-heritage-gold bg-heritage-gold/8"
@@ -458,6 +459,7 @@ export const DormantFutureShippingStep = ({
             </span>
           </label>
           <label
+            data-hand-guide-target={!state.fulfilmentMethod ? "shipping-delivery-option" : undefined}
             className={`flex min-h-11 min-w-0 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
               isDelivery
                 ? "border-heritage-gold bg-heritage-gold/8"

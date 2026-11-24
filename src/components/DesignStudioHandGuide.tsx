@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   CONTINUE_UNLOCKED_SELECTOR,
+  MODAL_PRIMARY_SELECTOR,
   computeHandGuidePlacement,
-  findPrioritizedHandGuideElement,
+  findPrioritizedHandGuideElements,
   getHandGuideHintForElement,
   resolveHandGuideTarget,
+  resolveModalHandGuideTarget,
   shouldSuppressHandGuide,
   shouldTriggerFarCursor,
+  type HandGuideAnchor,
   type HandGuideTarget,
 } from "../utils/designStudioHandGuide";
 import { useDesignStudioBlockingOverlayOpen } from "./designStudioBlockingOverlay";
@@ -23,6 +26,7 @@ const SESSION_DISMISS_KEY = "designStudioHandGuideDismissed";
 const IDLE_DELAY_MS = 7000;
 const NEAR_AUTO_HIDE_PX = 90;
 const FAR_CURSOR_DISTANCE_PX = 280;
+const ALTERNATE_CARD_INTERVAL_MS = 3500;
 
 const isTextEntryElement = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
@@ -36,11 +40,50 @@ const isTextEntryElement = (target: EventTarget | null): boolean => {
 };
 
 /**
+ * Checks open dialogs in the DOM:
+ * - Guided step modals (`[data-hand-guide-modal]`) allow guiding inside the modal.
+ * - Any other open dialog (e.g. `Send feedback`, auth, alerts) suppresses the guide.
+ */
+const inspectOpenDialogState = (): {
+  suppressedByDialog: boolean;
+  guidedModalEl: HTMLElement | null;
+  guidedModalKind: string | null;
+} => {
+  if (typeof document === "undefined") {
+    return { suppressedByDialog: false, guidedModalEl: null, guidedModalKind: null };
+  }
+  const openDialogs = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"], [aria-modal="true"]'),
+  ).filter((el) => {
+    const style = window.getComputedStyle(el);
+    return (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      el.getBoundingClientRect().width > 0
+    );
+  });
+
+  if (openDialogs.length === 0) {
+    return { suppressedByDialog: false, guidedModalEl: null, guidedModalKind: null };
+  }
+
+  // Prefer the topmost guided modal if one is open and no non-guided dialog (e.g. Send feedback) sits above it.
+  const topDialog = openDialogs[openDialogs.length - 1]!;
+  const modalKind = topDialog.getAttribute("data-hand-guide-modal");
+  if (modalKind) {
+    return { suppressedByDialog: false, guidedModalEl: topDialog, guidedModalKind: modalKind };
+  }
+
+  return { suppressedByDialog: true, guidedModalEl: null, guidedModalKind: null };
+};
+
+/**
  * Animated hand guide that points to the next actionable element in the Design Studio.
- * Shows after 7s of inactivity (idle) or when a desktop fine-pointer cursor stays >280px
- * away from the target for 3.5s without moving closer.
- * Auto-hides when cursor <90px from target, user types, blocking overlay opens, target is
- * clicked, or user dismisses it for the session.
+ * - Shows after 7s of inactivity (idle) or when a desktop fine-pointer cursor stays >280px
+ *   away from the target for 3.5s without moving closer.
+ * - Guides inside step workflow modals (`UNUSED FABRIC CAPACITY AVAILABLE`, `Apply Design Style`)
+ *   while suppressing completely on feedback popups and other site dialogs.
+ * - Auto-hides when cursor <90px from target, user types, target is clicked, or dismissed.
  */
 export function DesignStudioHandGuide({
   stageId,
@@ -49,15 +92,18 @@ export function DesignStudioHandGuide({
   const blockingOverlayOpen = useDesignStudioBlockingOverlayOpen();
   const targetRef = useRef<HandGuideTarget | null>(null);
   const elementRef = useRef<HTMLElement | null>(null);
+  const alternateIndexRef = useRef(0);
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<{
     x: number;
     y: number;
-    anchor: "below-right" | "above-left";
+    anchor: HandGuideAnchor;
   } | null>(null);
   const [mode, setMode] = useState<"anchored" | "off-screen">("anchored");
   const [offScreenDirection, setOffScreenDirection] = useState<"up" | "down">("up");
   const [hint, setHint] = useState("");
+  const [subtleAnimation, setSubtleAnimation] = useState(false);
+  const [inModal, setInModal] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,32 +144,107 @@ export function DesignStudioHandGuide({
     return rect.width > 0 && rect.height > 0;
   }, []);
 
-  const findTargetElement = useCallback((): HTMLElement | null => {
-    if (!targetRef.current) return null;
-    // Skip fabric-select once a fabric is already applied in the current stage view.
+  const resolveActiveTargets = useCallback((): {
+    elements: HTMLElement[];
+    matchedSelector: string | null;
+    descriptor: HandGuideTarget | null;
+    suppressed: boolean;
+    modalActive: boolean;
+  } => {
+    const dialogState = inspectOpenDialogState();
+    if (dialogState.suppressedByDialog) {
+      return {
+        elements: [],
+        matchedSelector: null,
+        descriptor: null,
+        suppressed: true,
+        modalActive: false,
+      };
+    }
+
+    if (dialogState.guidedModalEl) {
+      const modalDescriptor = resolveModalHandGuideTarget(dialogState.guidedModalKind);
+      const { elements, matchedSelector } = findPrioritizedHandGuideElements(
+        modalDescriptor.selectors,
+        (sel) => dialogState.guidedModalEl!.querySelectorAll<HTMLElement>(sel),
+        isElementVisible,
+      );
+      return {
+        elements,
+        matchedSelector,
+        descriptor: modalDescriptor,
+        suppressed: false,
+        modalActive: true,
+      };
+    }
+
+    if (blockingOverlayOpen) {
+      return {
+        elements: [],
+        matchedSelector: null,
+        descriptor: null,
+        suppressed: true,
+        modalActive: false,
+      };
+    }
+
+    const descriptor = targetRef.current ?? resolveHandGuideTarget(stageId);
     const selectors =
       stageId === "fabric" && document.querySelector('[data-fabric-in-use="true"]')
         ? [CONTINUE_UNLOCKED_SELECTOR]
-        : targetRef.current.selectors;
+        : descriptor.selectors;
 
-    return findPrioritizedHandGuideElement(
+    const { elements, matchedSelector } = findPrioritizedHandGuideElements(
       selectors,
       (sel) => document.querySelectorAll<HTMLElement>(sel),
       isElementVisible,
     );
-  }, [stageId, isElementVisible]);
+
+    return {
+      elements,
+      matchedSelector,
+      descriptor,
+      suppressed: false,
+      modalActive: false,
+    };
+  }, [stageId, blockingOverlayOpen, isElementVisible]);
 
   const computePosition = useCallback((): boolean => {
-    const targetEl = findTargetElement();
-    if (!targetEl || !targetRef.current) {
+    const resolved = resolveActiveTargets();
+    if (resolved.suppressed || resolved.elements.length === 0 || !resolved.descriptor) {
       elementRef.current = null;
       return false;
     }
+
+    const isShippingAlternating =
+      resolved.matchedSelector === '[data-hand-guide-target="shipping-delivery-option"]' &&
+      resolved.elements.length > 1;
+
+    const activeIdx = isShippingAlternating
+      ? alternateIndexRef.current % resolved.elements.length
+      : 0;
+    const targetEl = resolved.elements[activeIdx]!;
     elementRef.current = targetEl;
-    const isContinueTarget = targetEl.matches(CONTINUE_UNLOCKED_SELECTOR);
-    setHint(getHandGuideHintForElement(targetRef.current, isContinueTarget));
+
+    const isContinueOrPrimary =
+      targetEl.matches(CONTINUE_UNLOCKED_SELECTOR) ||
+      targetEl.matches(MODAL_PRIMARY_SELECTOR);
+    setHint(
+      getHandGuideHintForElement(
+        resolved.descriptor,
+        isContinueOrPrimary,
+        resolved.matchedSelector,
+      ),
+    );
+    setSubtleAnimation(isShippingAlternating);
+    setInModal(resolved.modalActive);
 
     const rect = targetEl.getBoundingClientRect();
+    const isNeutralGroup =
+      resolved.matchedSelector === '[data-hand-guide-target="measurement-option-group"]';
+    const isDiagonalPay =
+      resolved.matchedSelector === '[data-hand-guide-target="payment-pay-button"]';
+
     const placement = computeHandGuidePlacement(
       {
         top: rect.top,
@@ -134,6 +255,10 @@ export function DesignStudioHandGuide({
         height: rect.height,
       },
       { width: window.innerWidth, height: window.innerHeight },
+      {
+        neutralGroup: isNeutralGroup,
+        diagonalUpLeft: isDiagonalPay,
+      },
     );
 
     if (placement.mode === "off-screen") {
@@ -146,7 +271,7 @@ export function DesignStudioHandGuide({
     setMode("anchored");
     setPosition({ x: placement.x, y: placement.y, anchor: placement.anchor });
     return true;
-  }, [findTargetElement]);
+  }, [resolveActiveTargets]);
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) {
@@ -158,19 +283,14 @@ export function DesignStudioHandGuide({
   }, []);
 
   const startIdleTimer = useCallback(() => {
-    if (dismissedRef.current || blockingOverlayOpen || isTypingRef.current) return;
+    if (dismissedRef.current || isTypingRef.current) return;
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(() => {
-      if (
-        !dismissedRef.current &&
-        !blockingOverlayOpen &&
-        !isTypingRef.current &&
-        computePosition()
-      ) {
+      if (!dismissedRef.current && !isTypingRef.current && computePosition()) {
         setIsVisible(true);
       }
     }, IDLE_DELAY_MS);
-  }, [blockingOverlayOpen, computePosition]);
+  }, [computePosition]);
 
   useEffect(() => {
     if (shouldSuppressHandGuide(stageId)) {
@@ -180,20 +300,22 @@ export function DesignStudioHandGuide({
     }
     const target = resolveHandGuideTarget(stageId);
     targetRef.current = target;
+    alternateIndexRef.current = 0;
     setHint(target.hint);
     setIsVisible(false);
     clearTimers();
     startIdleTimer();
   }, [stageId, clearTimers, startIdleTimer]);
 
+  // Alternate between Delivery & Pickup cards softly on repeat while visible
   useEffect(() => {
-    if (blockingOverlayOpen) {
-      setIsVisible(false);
-      clearTimers();
-    } else {
-      startIdleTimer();
-    }
-  }, [blockingOverlayOpen, clearTimers, startIdleTimer]);
+    if (!isVisible || !subtleAnimation) return;
+    const interval = setInterval(() => {
+      alternateIndexRef.current = (alternateIndexRef.current + 1) % 2;
+      computePosition();
+    }, ALTERNATE_CARD_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [isVisible, subtleAnimation, computePosition]);
 
   const handleCursorMove = useCallback(
     (e: MouseEvent) => {
@@ -237,23 +359,28 @@ export function DesignStudioHandGuide({
     [clearTimers, startIdleTimer],
   );
 
-  // Periodic check for far-cursor trigger & <90px auto-hide
+  // Periodic check for dialog suppression, far-cursor trigger & <90px auto-hide
   useEffect(() => {
     if (typeof window === "undefined") return;
     const isFinePointer = window.matchMedia("(pointer: fine)").matches;
 
     const checkInterval = setInterval(() => {
-      if (dismissedRef.current || blockingOverlayOpen || isTypingRef.current) {
+      if (dismissedRef.current || isTypingRef.current) {
         if (isVisible) setIsVisible(false);
         return;
       }
 
-      const targetEl = findTargetElement();
-      if (!targetEl) {
+      const resolved = resolveActiveTargets();
+      if (resolved.suppressed || resolved.elements.length === 0) {
         if (isVisible) setIsVisible(false);
         farSinceRef.current = null;
         return;
       }
+
+      const targetEl =
+        elementRef.current && resolved.elements.includes(elementRef.current)
+          ? elementRef.current
+          : resolved.elements[0]!;
       elementRef.current = targetEl;
 
       const cursor = cursorPositionRef.current;
@@ -303,7 +430,7 @@ export function DesignStudioHandGuide({
     }, 200);
 
     return () => clearInterval(checkInterval);
-  }, [blockingOverlayOpen, isVisible, findTargetElement, computePosition]);
+  }, [isVisible, resolveActiveTargets, computePosition]);
 
   useEffect(() => {
     window.addEventListener("mousemove", handleCursorMove);
@@ -354,7 +481,7 @@ export function DesignStudioHandGuide({
   }, [onDismiss, clearTimers]);
 
   const handleJumpToTarget = useCallback(() => {
-    const targetEl = elementRef.current || findTargetElement();
+    const targetEl = elementRef.current || resolveActiveTargets().elements[0];
     if (!targetEl) {
       setIsVisible(false);
       return;
@@ -366,22 +493,19 @@ export function DesignStudioHandGuide({
     setTimeout(() => {
       computePosition();
     }, reducedMotion ? 0 : 400);
-  }, [findTargetElement, reducedMotion, computePosition]);
+  }, [resolveActiveTargets, reducedMotion, computePosition]);
 
-  if (
-    !isVisible ||
-    dismissedRef.current ||
-    blockingOverlayOpen ||
-    shouldSuppressHandGuide(stageId)
-  ) {
+  if (!isVisible || dismissedRef.current || shouldSuppressHandGuide(stageId)) {
     return null;
   }
+
+  const zIndexClass = inModal ? "z-[10010]" : "z-[99]";
 
   if (mode === "off-screen") {
     const arrow = offScreenDirection === "up" ? "↑" : "↓";
     return (
       <div
-        className="fixed bottom-20 left-1/2 z-[100] -translate-x-1/2 sm:bottom-6"
+        className={`fixed bottom-20 left-1/2 -translate-x-1/2 sm:bottom-6 ${inModal ? "z-[10010]" : "z-[65]"}`}
         style={{ maxWidth: "90vw" }}
         role="region"
         aria-label="Design Studio step guide"
@@ -415,7 +539,6 @@ export function DesignStudioHandGuide({
             </svg>
           </button>
 
-          {/* Animated hand below-right pointing up-left directly at the pill */}
           <div
             className="pointer-events-none absolute -bottom-7 right-4 flex items-center justify-center"
             aria-hidden="true"
@@ -436,27 +559,40 @@ export function DesignStudioHandGuide({
 
   const { x, y, anchor } = position;
   const isAboveLeft = anchor === "above-left";
+  const isTopCenter = anchor === "top-center";
+  const isDiagonal = anchor === "diagonal-up-left";
+
+  const rotationClass = isAboveLeft
+    ? "rotate-180"
+    : isTopCenter
+      ? "rotate-180"
+      : isDiagonal
+        ? "-rotate-[38deg]"
+        : "";
+
+  const animClass = reducedMotion
+    ? ""
+    : subtleAnimation
+      ? "animate-hand-soft"
+      : "animate-hand-tap";
 
   return (
     <div
-      className="pointer-events-none fixed z-[99]"
+      className={`pointer-events-none fixed ${zIndexClass} transition-all duration-300`}
       style={{ left: x, top: y }}
       aria-hidden="true"
     >
       <div className="relative flex flex-col items-center">
-        {/* Only the hand + ripple rotates when flipped above-left; tooltip text stays upright */}
-        <div className={`relative ${isAboveLeft ? "rotate-180" : ""}`}>
-          {!reducedMotion && (
+        <div className={`relative ${rotationClass}`}>
+          {!reducedMotion && !subtleAnimation && (
             <span className="absolute -left-1.5 -top-1.5 h-6 w-6 rounded-full border-2 border-heritage-gold animate-ripple" />
           )}
-          <HandSVG
-            className={`h-8 w-8 drop-shadow-md ${reducedMotion ? "" : "animate-hand-tap"}`}
-          />
+          <HandSVG className={`h-8 w-8 drop-shadow-md ${animClass}`} />
         </div>
 
         <div
           className={`absolute ${
-            isAboveLeft ? "bottom-full mb-1.5" : "top-full mt-1.5"
+            isAboveLeft || isTopCenter ? "bottom-full mb-1.5" : "top-full mt-1.5"
           } left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-heritage-gold bg-heritage-green px-2.5 py-1 text-xs font-semibold text-heritage-cream shadow-md`}
           role="tooltip"
         >

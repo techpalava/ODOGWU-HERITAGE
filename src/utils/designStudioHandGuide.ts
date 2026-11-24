@@ -28,12 +28,14 @@ export interface HandGuideViewport {
   height: number;
 }
 
+export type HandGuideAnchor = "below-right" | "above-left" | "top-center" | "diagonal-up-left";
+
 export type HandGuidePlacement =
   | {
       mode: "anchored";
       x: number;
       y: number;
-      anchor: "below-right" | "above-left";
+      anchor: HandGuideAnchor;
     }
   | {
       mode: "off-screen";
@@ -42,6 +44,9 @@ export type HandGuidePlacement =
 
 export const CONTINUE_UNLOCKED_SELECTOR =
   '[data-studio-nav="forward"][data-continue-unlock-glow="on"]';
+
+export const MODAL_CHECKBOX_SELECTOR = '[data-hand-guide-target="modal-checkbox"]';
+export const MODAL_PRIMARY_SELECTOR = '[data-hand-guide-target="modal-primary"]';
 
 /**
  * Resolves the ideal hand guide target for a given Design Studio stage.
@@ -96,11 +101,11 @@ export function resolveHandGuideTarget(stageId: DesignStudioStageId): HandGuideT
     case "measurement":
       return {
         selectors: [
-          '[data-hand-guide-target="measurement-standard-size"]',
+          '[data-hand-guide-target="measurement-option-group"]',
           '[data-hand-guide-target="measurement-required-field"]',
           CONTINUE_UNLOCKED_SELECTOR,
         ],
-        hint: "Select a size or enter measurements",
+        hint: "Select a measurement option",
         continueHint: "Continue to AI Try-On",
       };
     case "try_on":
@@ -120,10 +125,11 @@ export function resolveHandGuideTarget(stageId: DesignStudioStageId): HandGuideT
     case "shipping":
       return {
         selectors: [
+          '[data-hand-guide-target="shipping-delivery-option"]',
           '[data-hand-guide-target="shipping-required-field"]',
           CONTINUE_UNLOCKED_SELECTOR,
         ],
-        hint: "Enter delivery details",
+        hint: "Choose delivery or pickup",
         continueHint: "Continue to payment",
       };
     case "payment":
@@ -147,6 +153,51 @@ export function resolveHandGuideTarget(stageId: DesignStudioStageId): HandGuideT
 }
 
 /**
+ * Resolves the target descriptor for an open guided modal (`data-hand-guide-modal`).
+ */
+export function resolveModalHandGuideTarget(modalKind: string | null): HandGuideTarget {
+  if (modalKind === "fabric-capacity") {
+    return {
+      selectors: [MODAL_PRIMARY_SELECTOR],
+      hint: "Continue or add a garment",
+    };
+  }
+  if (modalKind === "apply-design-style") {
+    return {
+      selectors: [MODAL_CHECKBOX_SELECTOR, MODAL_PRIMARY_SELECTOR],
+      hint: "Choose garments to apply",
+      continueHint: "Apply design style",
+    };
+  }
+  return {
+    selectors: [MODAL_CHECKBOX_SELECTOR, MODAL_PRIMARY_SELECTOR],
+    hint: "Select or continue",
+  };
+}
+
+/**
+ * Finds all visible matching elements for the highest-priority selector that has at least one visible match.
+ */
+export function findPrioritizedHandGuideElements(
+  selectors: readonly string[],
+  queryAll: (selector: string) => Iterable<HTMLElement>,
+  isVisible: (el: HTMLElement) => boolean,
+): { elements: HTMLElement[]; matchedSelector: string | null } {
+  for (const selector of selectors) {
+    const visible: HTMLElement[] = [];
+    for (const el of queryAll(selector)) {
+      if (isVisible(el)) {
+        visible.push(el);
+      }
+    }
+    if (visible.length > 0) {
+      return { elements: visible, matchedSelector: selector };
+    }
+  }
+  return { elements: [], matchedSelector: null };
+}
+
+/**
  * Finds the first visible matching element according to strict selector priority order.
  */
 export function findPrioritizedHandGuideElement(
@@ -154,25 +205,24 @@ export function findPrioritizedHandGuideElement(
   queryAll: (selector: string) => Iterable<HTMLElement>,
   isVisible: (el: HTMLElement) => boolean,
 ): HTMLElement | null {
-  for (const selector of selectors) {
-    for (const el of queryAll(selector)) {
-      if (isVisible(el)) {
-        return el;
-      }
-    }
-  }
-  return null;
+  return findPrioritizedHandGuideElements(selectors, queryAll, isVisible).elements[0] ?? null;
 }
 
 /**
- * Picks the contextual hint text based on the target stage and whether the matched element
- * is an unlocked Continue button.
+ * Picks the contextual hint text based on the target stage and matched selector.
  */
 export function getHandGuideHintForElement(
   target: HandGuideTarget,
-  matchedSelectorOrIsContinue: boolean,
+  matchedContinueOrPrimary: boolean,
+  matchedSelector?: string | null,
 ): string {
-  if (matchedSelectorOrIsContinue && target.continueHint) {
+  if (matchedSelector === '[data-hand-guide-target="measurement-required-field"]') {
+    return "Enter required measurement";
+  }
+  if (matchedSelector === '[data-hand-guide-target="shipping-required-field"]') {
+    return "Enter delivery details";
+  }
+  if (matchedContinueOrPrimary && target.continueHint) {
     return target.continueHint;
   }
   return target.hint;
@@ -180,16 +230,23 @@ export function getHandGuideHintForElement(
 
 /**
  * Computes anchored vs off-screen placement for the guided hand.
- * Default anchor is below-right (fingertip pointing up-left onto target).
- * Automatically flips to above-left (fingertip pointing down-right onto target)
- * when below-right would clip past the viewport edge.
+ * - `neutralGroup`: top-center of a multi-option group so no single option is favored.
+ * - `diagonalUpLeft`: rotated diagonally up-left onto the target's bottom-right corner (e.g. Pay button).
+ * - Default: below-right (fingertip pointing up-left onto target), flipping to above-left near edges.
  */
 export function computeHandGuidePlacement(
   rect: HandGuideRect,
   viewport: HandGuideViewport,
-  handSize = { width: 32, height: 32 },
-  offset = 8,
+  options?: {
+    handSize?: { width: number; height: number };
+    offset?: number;
+    neutralGroup?: boolean;
+    diagonalUpLeft?: boolean;
+  },
 ): HandGuidePlacement {
+  const handSize = options?.handSize ?? { width: 32, height: 32 };
+  const offset = options?.offset ?? 8;
+
   const isOutOfView =
     rect.bottom < 0 ||
     rect.top > viewport.height ||
@@ -203,8 +260,42 @@ export function computeHandGuidePlacement(
     };
   }
 
+  if (options?.neutralGroup) {
+    const x = Math.max(
+      8,
+      Math.min(
+        rect.left + rect.width / 2 - handSize.width / 2,
+        viewport.width - handSize.width - 8,
+      ),
+    );
+    const y = Math.max(8, rect.top - handSize.height + 4);
+    return {
+      mode: "anchored",
+      x,
+      y,
+      anchor: "top-center",
+    };
+  }
+
+  if (options?.diagonalUpLeft) {
+    const x = Math.max(
+      8,
+      Math.min(rect.right - 6, viewport.width - handSize.width - 8),
+    );
+    const y = Math.max(
+      8,
+      Math.min(rect.bottom - 6, viewport.height - handSize.height - 8),
+    );
+    return {
+      mode: "anchored",
+      x,
+      y,
+      anchor: "diagonal-up-left",
+    };
+  }
+
   const margin = 12;
-  let anchor: "below-right" | "above-left" = "below-right";
+  let anchor: HandGuideAnchor = "below-right";
   let x = rect.right - 6 + offset;
   let y = rect.bottom - 4 + offset;
 
