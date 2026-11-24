@@ -1617,9 +1617,12 @@ export const DormantFutureDesignStyleStep = ({
               <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredCatalogueEntries.map((entry, index) => {
                   const displayStyleName = formatDisplayStyleLabel(entry.style);
+                  const hasAnySelectedStyle = filteredCatalogueEntries.some(
+                    (candidate) => candidate.selectedOccurrenceLabels.length > 0,
+                  );
                   return (
                    <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-heritage-gold/60 hover:shadow-md">
-                    <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`Select ${displayStyleName}`} className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold disabled:cursor-not-allowed" data-hand-guide-target={index === 0 ? "design-style-select" : undefined} />
+                    <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`Select ${displayStyleName}`} className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold disabled:cursor-not-allowed" />
                     <div className="pointer-events-none relative z-[1] aspect-[4/3] overflow-hidden bg-heritage-cream/35">
                       <DesignStyleCatalogueCardImage
                         imageUrl={entry.style.image}
@@ -1641,7 +1644,7 @@ export const DormantFutureDesignStyleStep = ({
                        </div>
                        <button type="button" onClick={(event) => { event.stopPropagation?.(); openDetails(entry, event.currentTarget); }} aria-label={`Read more about ${displayStyleName}`} className="pointer-events-auto relative z-[2] mt-2 inline-flex w-fit min-h-9 items-center text-xs font-bold text-heritage-green underline decoration-heritage-gold/70 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Read more</button>
                        <div data-testid="design-style-card-cta-zone" className="pointer-events-auto relative z-[2] mt-auto pt-3">
-                         <button type="button" disabled={!mutationsEnabled} onClick={(event) => { event.stopPropagation?.(); openDialog(entry, event.currentTarget); }} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${displayStyleName}`} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45" data-hand-guide-target={index === 0 ? "design-style-select" : undefined}>{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
+                         <button type="button" disabled={!mutationsEnabled} onClick={(event) => { event.stopPropagation?.(); openDialog(entry, event.currentTarget); }} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${displayStyleName}`} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45" data-hand-guide-target={!hasAnySelectedStyle && mutationsEnabled && index === 0 ? "design-style-select" : undefined}>{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
                        </div>
                      </div>
                   </article>

@@ -381,7 +381,7 @@ export const FutureFabricCatalogueCard = ({
                 data-fabric-code={fabric.code}
                 data-fabric-action="reuse-existing-allocation"
                 data-fabric-existing-allocation={option.allocationId}
-                data-hand-guide-target="fabric-select"
+                data-hand-guide-target={!disabled ? "fabric-select" : undefined}
                 aria-label={`Select ${fabric.name} from ${option.selectionLabel} for ${
                   targetGarmentLabel || "the selected garment"
                 }`}
@@ -450,7 +450,14 @@ export const FutureFabricCatalogueCard = ({
             data-fabric-code={fabric.code}
             data-fabric-status={resolvedStatusLabel}
             data-fabric-action={presentation.action}
-            data-hand-guide-target={presentation.action === "SELECT" ? "fabric-select" : undefined}
+            data-hand-guide-target={
+              presentation.action === "select" &&
+              !disabled &&
+              !preselected &&
+              !actionPressed
+                ? "fabric-select"
+                : undefined
+            }
             aria-label={`${resolvedStatusLabel} ${fabric.name}${
               targetGarmentLabel ? ` for ${targetGarmentLabel}` : ""
             }`}

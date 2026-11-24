@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { resolveHandGuideTarget, HandGuideTarget, shouldSuppressHandGuide } from "../utils/designStudioHandGuide";
+import {
+  CONTINUE_UNLOCKED_SELECTOR,
+  computeHandGuidePlacement,
+  findPrioritizedHandGuideElement,
+  getHandGuideHintForElement,
+  resolveHandGuideTarget,
+  shouldSuppressHandGuide,
+  shouldTriggerFarCursor,
+  type HandGuideTarget,
+} from "../utils/designStudioHandGuide";
 import { useDesignStudioBlockingOverlayOpen } from "./designStudioBlockingOverlay";
 import type { DesignStudioStageId } from "../types";
 
@@ -10,335 +19,419 @@ interface DesignStudioHandGuideProps {
   onDismiss?: () => void;
 }
 
+const SESSION_DISMISS_KEY = "designStudioHandGuideDismissed";
+const IDLE_DELAY_MS = 7000;
+const NEAR_AUTO_HIDE_PX = 90;
+const FAR_CURSOR_DISTANCE_PX = 280;
+
+const isTextEntryElement = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    target.isContentEditable
+  );
+};
+
 /**
  * Animated hand guide that points to the next actionable element in the Design Studio.
- * Shows after 7s of inactivity (idle) or when cursor stays >280px from target for 3.5s (far-cursor).
- * Auto-hides when cursor <90px from target, user types, blocking overlay opens, or target clicked.
- * Respects `prefers-reduced-motion` and sessionStorage dismiss flag.
+ * Shows after 7s of inactivity (idle) or when a desktop fine-pointer cursor stays >280px
+ * away from the target for 3.5s without moving closer.
+ * Auto-hides when cursor <90px from target, user types, blocking overlay opens, target is
+ * clicked, or user dismisses it for the session.
  */
-export function DesignStudioHandGuide({ stageId, onDismiss }: DesignStudioHandGuideProps) {
+export function DesignStudioHandGuide({
+  stageId,
+  onDismiss,
+}: DesignStudioHandGuideProps) {
   const blockingOverlayOpen = useDesignStudioBlockingOverlayOpen();
   const targetRef = useRef<HandGuideTarget | null>(null);
   const elementRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [position, setPosition] = useState<{ x: number; y: number; anchor: "below-right" | "above-left" } | null>(null);
+  const [position, setPosition] = useState<{
+    x: number;
+    y: number;
+    anchor: "below-right" | "above-left";
+  } | null>(null);
   const [mode, setMode] = useState<"anchored" | "off-screen">("anchored");
+  const [offScreenDirection, setOffScreenDirection] = useState<"up" | "down">("up");
   const [hint, setHint] = useState("");
+  const [reducedMotion, setReducedMotion] = useState(false);
 
-  // Timers
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const farCursorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // State for hysteresis
-  const lastActivityRef = useRef<number>(Date.now());
-  const cursorPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const farSinceRef = useRef<number | null>(null);
+  const farLastDistanceRef = useRef<number | null>(null);
+  const cursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const isTypingRef = useRef(false);
   const dismissedRef = useRef(false);
 
-  // Reduced motion preference
-  const prefersReducedMotion = useRef(false);
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    prefersReducedMotion.current = mediaQuery.matches;
-    const handler = (e: MediaQueryListEvent) => { prefersReducedMotion.current = e.matches; };
+    setReducedMotion(mediaQuery.matches);
+    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
     mediaQuery.addEventListener("change", handler);
     return () => mediaQuery.removeEventListener("change", handler);
   }, []);
 
-  // Check sessionStorage dismiss flag
   useEffect(() => {
-    const dismissed = sessionStorage.getItem("designStudioHandGuideDismissed");
-    dismissedRef.current = dismissed === "true";
+    try {
+      dismissedRef.current = sessionStorage.getItem(SESSION_DISMISS_KEY) === "true";
+    } catch {
+      dismissedRef.current = false;
+    }
   }, []);
 
-  // Resolve target when stageId changes
+  const isElementVisible = useCallback((el: HTMLElement): boolean => {
+    const style = window.getComputedStyle(el);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.opacity === "0"
+    ) {
+      return false;
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }, []);
+
+  const findTargetElement = useCallback((): HTMLElement | null => {
+    if (!targetRef.current) return null;
+    // Skip fabric-select once a fabric is already applied in the current stage view.
+    const selectors =
+      stageId === "fabric" && document.querySelector('[data-fabric-in-use="true"]')
+        ? [CONTINUE_UNLOCKED_SELECTOR]
+        : targetRef.current.selectors;
+
+    return findPrioritizedHandGuideElement(
+      selectors,
+      (sel) => document.querySelectorAll<HTMLElement>(sel),
+      isElementVisible,
+    );
+  }, [stageId, isElementVisible]);
+
+  const computePosition = useCallback((): boolean => {
+    const targetEl = findTargetElement();
+    if (!targetEl || !targetRef.current) {
+      elementRef.current = null;
+      return false;
+    }
+    elementRef.current = targetEl;
+    const isContinueTarget = targetEl.matches(CONTINUE_UNLOCKED_SELECTOR);
+    setHint(getHandGuideHintForElement(targetRef.current, isContinueTarget));
+
+    const rect = targetEl.getBoundingClientRect();
+    const placement = computeHandGuidePlacement(
+      {
+        top: rect.top,
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+
+    if (placement.mode === "off-screen") {
+      setMode("off-screen");
+      setOffScreenDirection(placement.direction);
+      setPosition(null);
+      return true;
+    }
+
+    setMode("anchored");
+    setPosition({ x: placement.x, y: placement.y, anchor: placement.anchor });
+    return true;
+  }, [findTargetElement]);
+
+  const clearTimers = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+    farSinceRef.current = null;
+    farLastDistanceRef.current = null;
+  }, []);
+
+  const startIdleTimer = useCallback(() => {
+    if (dismissedRef.current || blockingOverlayOpen || isTypingRef.current) return;
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => {
+      if (
+        !dismissedRef.current &&
+        !blockingOverlayOpen &&
+        !isTypingRef.current &&
+        computePosition()
+      ) {
+        setIsVisible(true);
+      }
+    }, IDLE_DELAY_MS);
+  }, [blockingOverlayOpen, computePosition]);
+
   useEffect(() => {
     if (shouldSuppressHandGuide(stageId)) {
       setIsVisible(false);
+      clearTimers();
       return;
     }
     const target = resolveHandGuideTarget(stageId);
     targetRef.current = target;
     setHint(target.hint);
-    // Reset visibility when stage changes
     setIsVisible(false);
     clearTimers();
-    resetActivity();
-  }, [stageId]);
+    startIdleTimer();
+  }, [stageId, clearTimers, startIdleTimer]);
 
-  // Find target element in DOM
-  const findTargetElement = useCallback((): HTMLElement | null => {
-    if (!targetRef.current) return null;
-    const { selector } = targetRef.current;
-    // Try each selector in order (comma-separated)
-    const selectors = selector.split(",").map((s) => s.trim());
-    for (const sel of selectors) {
-      const el = document.querySelector<HTMLElement>(sel);
-      if (el && isElementVisible(el)) {
-        return el;
-      }
-    }
-    return null;
-  }, []);
-
-  // Check if element is visible in viewport (not hidden, not zero size)
-  const isElementVisible = (el: HTMLElement): boolean => {
-    const style = window.getComputedStyle(el);
-    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  };
-
-  // Compute position of hand relative to target
-  const computePosition = useCallback(() => {
-    const targetEl = findTargetElement();
-    if (!targetEl) {
-      elementRef.current = null;
-      setMode("off-screen");
-      setPosition(null);
-      return;
-    }
-    elementRef.current = targetEl;
-    const rect = targetEl.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Determine if target is in viewport
-    const inViewport = rect.top >= 0 && rect.left >= 0 && rect.bottom <= viewportHeight && rect.right <= viewportWidth;
-
-    if (!inViewport) {
-      setMode("off-screen");
-      setPosition(null);
-      return;
-    }
-
-    setMode("anchored");
-
-    // Default anchor: below-right of target, fingertip pointing up-left to target's bottom-right corner
-    // Hand dimensions (approx)
-    const handWidth = 48;
-    const handHeight = 48;
-    const offset = 12; // gap between hand and target
-
-    // Try below-right first
-    let anchorX = rect.right + offset;
-    let anchorY = rect.bottom + offset;
-    let anchor: "below-right" | "above-left" = "below-right";
-
-    // Check if hand would clip viewport edges
-    if (anchorX + handWidth > viewportWidth - 16) {
-      // Flip to above-left
-      anchorX = rect.left - handWidth - offset;
-      anchorY = rect.top - handHeight - offset;
-      anchor = "above-left";
-    }
-    if (anchorY + handHeight > viewportHeight - 16) {
-      // If still clips bottom, flip vertically
-      if (anchor === "below-right") {
-        anchorX = rect.right + offset;
-        anchorY = rect.top - handHeight - offset;
-        anchor = "above-left"; // actually above-right but we only have two anchors
-      } else {
-        anchorY = rect.bottom + offset;
-      }
-    }
-    // Ensure not negative
-    anchorX = Math.max(8, Math.min(anchorX, viewportWidth - handWidth - 8));
-    anchorY = Math.max(8, Math.min(anchorY, viewportHeight - handHeight - 8));
-
-    setPosition({ x: anchorX, y: anchorY, anchor });
-  }, [findTargetElement]);
-// Activity detection
-  const handleActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    clearTimers();
-    startTimers();
-  }, []);
-
-  const handleCursorMove = useCallback((e: MouseEvent) => {
-    cursorPositionRef.current = { x: e.clientX, y: e.clientY };
-    handleActivity();
-  }, [handleActivity]);
-
-  const handleKeyDown = useCallback(() => {
-    isTypingRef.current = true;
-    // Auto-hide immediately when typing starts
-    setIsVisible(false);
-    clearTimers();
-    // Reset typing flag after a short delay
-    setTimeout(() => { isTypingRef.current = false; }, 100);
-  }, []);
-
-  const handleScroll = useCallback(() => {
-    handleActivity();
-  }, [handleActivity]);
-
-  const handleClick = useCallback((e: MouseEvent) => {
-    // If click is on the target element, advance/reset timer for next step
-    const targetEl = elementRef.current;
-    if (targetEl && targetEl.contains(e.target as Node)) {
-      // User clicked the target, hide guide and reset timers for next step
+  useEffect(() => {
+    if (blockingOverlayOpen) {
       setIsVisible(false);
       clearTimers();
-      // The stage will change, triggering new target resolution
+    } else {
+      startIdleTimer();
     }
-  }, []);
+  }, [blockingOverlayOpen, clearTimers, startIdleTimer]);
 
-  // Start idle and far-cursor timers
-  const startTimers = useCallback(() => {
-    if (dismissedRef.current || blockingOverlayOpen || isTypingRef.current) return;
-    if (isVisible) return; // already visible
+  const handleCursorMove = useCallback(
+    (e: MouseEvent) => {
+      cursorPositionRef.current = { x: e.clientX, y: e.clientY };
+      startIdleTimer();
+    },
+    [startIdleTimer],
+  );
 
-    // Idle trigger: 7 seconds
-    idleTimerRef.current = setTimeout(() => {
-      if (!dismissedRef.current && !blockingOverlayOpen && !isTypingRef.current) {
-        computePosition();
-        setIsVisible(true);
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (isTextEntryElement(e.target)) {
+        isTypingRef.current = true;
+        setIsVisible(false);
+        clearTimers();
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = setTimeout(() => {
+          isTypingRef.current = false;
+          startIdleTimer();
+        }, 1200);
+      } else {
+        startIdleTimer();
       }
-    }, 7000);
+    },
+    [clearTimers, startIdleTimer],
+  );
 
-    // Far-cursor trigger: desktop fine-pointer only
-    // We'll check on each cursor move if cursor is far from target for 3.5s
-    // This is handled in the cursor check interval.
-  }, [blockingOverlayOpen, isVisible, computePosition]);
+  const handleScroll = useCallback(() => {
+    startIdleTimer();
+  }, [startIdleTimer]);
 
-  const clearTimers = useCallback(() => {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    if (farCursorTimerRef.current) clearTimeout(farCursorTimerRef.current);
-    idleTimerRef.current = null;
-    farCursorTimerRef.current = null;
-  }, []);
+  const handleDocumentClick = useCallback(
+    (e: MouseEvent) => {
+      const targetEl = elementRef.current;
+      if (targetEl && targetEl.contains(e.target as Node)) {
+        setIsVisible(false);
+        clearTimers();
+        startIdleTimer();
+      }
+    },
+    [clearTimers, startIdleTimer],
+  );
 
-  const resetActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    clearTimers();
-    startTimers();
-  }, [clearTimers, startTimers]);
-
-  // Periodic check for far-cursor and auto-hide conditions
+  // Periodic check for far-cursor trigger & <90px auto-hide
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const isFinePointer = window.matchMedia("(pointer: fine)").matches;
+
     const checkInterval = setInterval(() => {
       if (dismissedRef.current || blockingOverlayOpen || isTypingRef.current) {
         if (isVisible) setIsVisible(false);
         return;
       }
 
-      const targetEl = elementRef.current || findTargetElement();
+      const targetEl = findTargetElement();
       if (!targetEl) {
-        // No target found, hide
         if (isVisible) setIsVisible(false);
+        farSinceRef.current = null;
         return;
       }
+      elementRef.current = targetEl;
+
+      const cursor = cursorPositionRef.current;
+      if (!cursor) return;
 
       const rect = targetEl.getBoundingClientRect();
-      const cursor = cursorPositionRef.current;
-      const distance = Math.hypot(cursor.x - (rect.left + rect.width / 2), cursor.y - (rect.top + rect.height / 2));
+      const distance = Math.hypot(
+        cursor.x - (rect.left + rect.width / 2),
+        cursor.y - (rect.top + rect.height / 2),
+      );
 
-      // Auto-hide if cursor within 90px of target
-      if (distance < 90) {
+      if (distance < NEAR_AUTO_HIDE_PX) {
         if (isVisible) setIsVisible(false);
-        clearTimers();
+        farSinceRef.current = null;
+        farLastDistanceRef.current = distance;
         return;
       }
 
-      // Far-cursor trigger: if cursor >280px from target for 3.5s without moving toward it
-      // We'll track if cursor has been far for 3.5s
-      // For simplicity, we'll start a timer when distance > 280px
-      if (distance > 280) {
-        if (!farCursorTimerRef.current) {
-          farCursorTimerRef.current = setTimeout(() => {
-            if (!isVisible && !dismissedRef.current && !blockingOverlayOpen && !isTypingRef.current) {
-              computePosition();
-              setIsVisible(true);
-            }
-            farCursorTimerRef.current = null;
-          }, 3500);
+      if (!isVisible && isFinePointer && distance > FAR_CURSOR_DISTANCE_PX) {
+        const now = Date.now();
+        if (
+          farSinceRef.current === null ||
+          (farLastDistanceRef.current !== null &&
+            distance < farLastDistanceRef.current - 12)
+        ) {
+          farSinceRef.current = now;
+        }
+        farLastDistanceRef.current = distance;
+
+        const elapsedFarMs = now - farSinceRef.current;
+        if (
+          shouldTriggerFarCursor({
+            distancePx: distance,
+            previousDistancePx: null,
+            elapsedFarMs,
+            isFinePointer,
+          }) &&
+          computePosition()
+        ) {
+          setIsVisible(true);
+          farSinceRef.current = null;
         }
       } else {
-        if (farCursorTimerRef.current) {
-          clearTimeout(farCursorTimerRef.current);
-          farCursorTimerRef.current = null;
-        }
+        farSinceRef.current = null;
+        farLastDistanceRef.current = distance;
       }
     }, 200);
 
     return () => clearInterval(checkInterval);
-  }, [blockingOverlayOpen, isVisible, findTargetElement, computePosition, clearTimers]);
+  }, [blockingOverlayOpen, isVisible, findTargetElement, computePosition]);
 
-  // Event listeners
   useEffect(() => {
     window.addEventListener("mousemove", handleCursorMove);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("click", handleClick);
+    window.addEventListener("click", handleDocumentClick);
     return () => {
       window.removeEventListener("mousemove", handleCursorMove);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("click", handleClick);
+      window.removeEventListener("click", handleDocumentClick);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      clearTimers();
     };
-  }, [handleCursorMove, handleKeyDown, handleScroll, handleClick]);
+  }, [
+    handleCursorMove,
+    handleKeyDown,
+    handleScroll,
+    handleDocumentClick,
+    clearTimers,
+  ]);
 
-  // Recompute position on resize/scroll
   useEffect(() => {
     if (!isVisible) return;
-    const handleResize = () => computePosition();
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", handleResize, { passive: true });
+    const handleViewportChange = () => {
+      if (!computePosition()) {
+        setIsVisible(false);
+      }
+    };
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, { passive: true });
     return () => {
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("scroll", handleResize);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange);
     };
   }, [isVisible, computePosition]);
 
-  // Dismiss handler
   const handleDismiss = useCallback(() => {
     setIsVisible(false);
     dismissedRef.current = true;
-    sessionStorage.setItem("designStudioHandGuideDismissed", "true");
+    try {
+      sessionStorage.setItem(SESSION_DISMISS_KEY, "true");
+    } catch {
+      // Ignore storage failures
+    }
     clearTimers();
     onDismiss?.();
   }, [onDismiss, clearTimers]);
-// Render nothing if not visible or dismissed or blocking overlay open
-  if (!isVisible || dismissedRef.current || blockingOverlayOpen || shouldSuppressHandGuide(stageId)) {
+
+  const handleJumpToTarget = useCallback(() => {
+    const targetEl = elementRef.current || findTargetElement();
+    if (!targetEl) {
+      setIsVisible(false);
+      return;
+    }
+    targetEl.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+    setTimeout(() => {
+      computePosition();
+    }, reducedMotion ? 0 : 400);
+  }, [findTargetElement, reducedMotion, computePosition]);
+
+  if (
+    !isVisible ||
+    dismissedRef.current ||
+    blockingOverlayOpen ||
+    shouldSuppressHandGuide(stageId)
+  ) {
     return null;
   }
 
-  // Off-screen mode: render a fixed bottom-center pill with jump link
   if (mode === "off-screen") {
-    const targetEl = findTargetElement();
-    const direction = targetEl ? (targetEl.getBoundingClientRect().top < 0 ? "↑" : "↓") : "↑";
-    const actionText = hint || "Continue";
-
+    const arrow = offScreenDirection === "up" ? "↑" : "↓";
     return (
       <div
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-4 py-2 bg-heritage-green text-white rounded-full shadow-lg"
+        className="fixed bottom-20 left-1/2 z-[100] -translate-x-1/2 sm:bottom-6"
         style={{ maxWidth: "90vw" }}
-        role="dialog"
-        aria-label="Hand guide jump target"
+        role="region"
+        aria-label="Design Studio step guide"
       >
-        <span className="flex items-center gap-1.5 text-sm font-medium">
-          {direction} Jump to: {actionText}
-        </span>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="p-1 rounded-full hover:bg-white/20 transition-colors"
-          aria-label="Hide guide"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-        {/* Animated hand below-right pointing up-left at the pill */}
-        <HandSVG className="ml-2 w-8 h-8 text-heritage-gold animate-hand-tap" aria-hidden="true" />
+        <div className="relative inline-flex items-center gap-1.5 rounded-full border border-heritage-gold bg-heritage-green py-1.5 pl-3.5 pr-2 text-heritage-cream shadow-lg">
+          <button
+            type="button"
+            onClick={handleJumpToTarget}
+            className="cursor-pointer truncate text-xs font-semibold tracking-wide text-heritage-cream hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+          >
+            {arrow} Jump to: {hint || "Continue"}
+          </button>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-heritage-gold transition-colors hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            aria-label="Hide guide"
+            title="Hide guide for this session"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+
+          {/* Animated hand below-right pointing up-left directly at the pill */}
+          <div
+            className="pointer-events-none absolute -bottom-7 right-4 flex items-center justify-center"
+            aria-hidden="true"
+          >
+            {!reducedMotion && (
+              <span className="absolute -left-1 -top-1 h-6 w-6 rounded-full border-2 border-heritage-gold animate-ripple" />
+            )}
+            <HandSVG
+              className={`h-7 w-7 drop-shadow-md ${reducedMotion ? "" : "animate-hand-tap"}`}
+            />
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Anchored mode: render hand overlay at computed position
   if (!position) return null;
 
   const { x, y, anchor } = position;
@@ -346,23 +439,25 @@ export function DesignStudioHandGuide({ stageId, onDismiss }: DesignStudioHandGu
 
   return (
     <div
-      className="fixed pointer-events-none z-[99]"
+      className="pointer-events-none fixed z-[99]"
       style={{ left: x, top: y }}
       aria-hidden="true"
     >
-      <div className={`relative ${isAboveLeft ? "rotate-180" : ""}`}>
-        <HandSVG
-          className={`w-12 h-12 text-heritage-green ${prefersReducedMotion.current ? "" : "animate-hand-tap"}`}
-          aria-hidden="true"
-        />
-        {/* Fingertip ripple ring */}
-        {!prefersReducedMotion.current && (
-          <div className="absolute -bottom-2 -left-2 w-8 h-8 rounded-full border-2 border-heritage-gold animate-ripple" aria-hidden="true" />
-        )}
-        {/* Hint pill */}
+      <div className="relative flex flex-col items-center">
+        {/* Only the hand + ripple rotates when flipped above-left; tooltip text stays upright */}
+        <div className={`relative ${isAboveLeft ? "rotate-180" : ""}`}>
+          {!reducedMotion && (
+            <span className="absolute -left-1.5 -top-1.5 h-6 w-6 rounded-full border-2 border-heritage-gold animate-ripple" />
+          )}
+          <HandSVG
+            className={`h-8 w-8 drop-shadow-md ${reducedMotion ? "" : "animate-hand-tap"}`}
+          />
+        </div>
+
         <div
-          className={`absolute ${isAboveLeft ? "bottom-full left-1/2 -translate-x-1/2 mb-2" : "top-full left-1/2 -translate-x-1/2 mt-2"} 
-                     px-3 py-1.5 bg-heritage-green text-white text-xs font-medium rounded-full whitespace-nowrap shadow-lg`}
+          className={`absolute ${
+            isAboveLeft ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          } left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-heritage-gold bg-heritage-green px-2.5 py-1 text-xs font-semibold text-heritage-cream shadow-md`}
           role="tooltip"
         >
           {hint}
@@ -372,36 +467,22 @@ export function DesignStudioHandGuide({ stageId, onDismiss }: DesignStudioHandGu
   );
 }
 
-/** SVG pointing hand icon (crisp, heritage colors) */
+/** Crisp SVG pointing hand icon (heritage green fill + heritage gold outline), pointing up-left. */
 function HandSVG({ className, ...props }: React.SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 32 32"
+      viewBox="0 0 28 28"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       {...props}
     >
-      {/* Hand shape */}
       <path
-        d="M22 6C22 4.89543 21.1046 4 20 4H12C10.8954 4 10 4.89543 10 6V8H8C6.89543 8 6 8.89543 6 10V22C6 23.1046 6.89543 24 8 24H24C25.1046 24 26 23.1046 26 22V12C26 10.8954 25.1046 10 24 10H22V6Z"
+        d="M10.5 3.5C10.5 2.4 11.4 1.5 12.5 1.5C13.6 1.5 14.5 2.4 14.5 3.5V11.2L15.7 10.6C16.6 10.1 17.7 10.5 18.2 11.4L19.1 11.1C20 10.7 21 11.2 21.4 12.1L22.2 12C23.1 11.8 24 12.5 24 13.5V18.8C24 22.8 20.8 26 16.8 26H13.6C11.1 26 8.8 24.7 7.5 22.5L4.6 17.5C4.1 16.6 4.4 15.4 5.3 14.9C6.1 14.4 7.2 14.7 7.7 15.5L10.5 19.2V3.5Z"
         fill="#0A291B"
         stroke="#C5A85C"
-        strokeWidth="1.5"
-      />
-      {/* Index finger pointing */}
-      <path
-        d="M18 10C18 8.89543 18.8954 8 20 8H22C23.1046 8 24 8.89543 24 10V14C24 15.1046 23.1046 16 22 16H20C18.8954 16 18 15.1046 18 14V10Z"
-        fill="#0A291B"
-        stroke="#C5A85C"
-        strokeWidth="1.5"
-      />
-      {/* Thumb */}
-      <path
-        d="M10 14C10 12.8954 10.8954 12 12 12H14C15.1046 12 16 12.8954 16 14V18C16 19.1046 15.1046 20 14 20H12C10.8954 20 10 19.1046 10 18V14Z"
-        fill="#0A291B"
-        stroke="#C5A85C"
-        strokeWidth="1.5"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
       />
     </svg>
   );

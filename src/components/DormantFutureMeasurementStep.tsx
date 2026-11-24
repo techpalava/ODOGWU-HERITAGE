@@ -1804,6 +1804,11 @@ export const DormantFutureMeasurementStep = ({
                   data-measurement-risk-option={route.id}
                   data-measurement-risk-selected={selected ? "true" : "false"}
                   data-measurement-risk-disabled={unavailable ? "true" : "false"}
+                  data-hand-guide-target={
+                    !selectedRoute && route.id === "low_risk" && !unavailable && !hydrationInvalid
+                      ? "measurement-standard-size"
+                      : undefined
+                  }
                   data-measurement-guide-beam={
                     beamMethodChoices && !unavailable ? "true" : undefined
                   }
