@@ -2752,7 +2752,7 @@ export default function DatabaseView({
                         </button>
                       </div>
                       <p className="text-[10px] text-heritage-ink/60">
-                        Shown as the style type badge in the customer catalogue.
+                        Shown as the style label in the customer catalogue.
                       </p>
                       {showQuickAddOutfitType && (
                         <div className="flex gap-2 min-h-11">
@@ -2841,7 +2841,7 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
-                        Garment Composition (Derived)
+                        Garments Included
                       </label>
                       <input
                         type="text"
@@ -2854,7 +2854,7 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-gray-50 text-heritage-ink/75 rounded-lg"
                       />
                       <p className="text-[10px] text-heritage-ink/60">
-                        Derived from the selected garment types below. Stored legacy composition value is preserved on save.
+                        Updates automatically from the garment types you choose below.
                       </p>
                     </div>
                     <div
@@ -2903,7 +2903,7 @@ export default function DatabaseView({
                           <>
                             <div className="flex items-center justify-between gap-2">
                               <label className="font-bold text-heritage-green">
-                                Design Categories (Select up to{" "}
+                                Style Categories (up to{" "}
                                 {DESIGN_STYLE_CATEGORY_MAX_PER_STYLE})
                               </label>
                               <span className="text-[11px] font-mono text-heritage-ink/60">
@@ -2962,16 +2962,29 @@ export default function DatabaseView({
                               })}
                               {activeCategories.length === 0 &&
                                 orphanedOrArchivedSelectedIds.length === 0 && (
-                                  <p className="text-xs text-heritage-ink/60">
-                                    No active categories yet. Create categories under the Categories tab.
-                                  </p>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-xs text-heritage-ink/60">
+                                      No categories yet. Add categories in the Categories tab so customers can filter styles.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setStyleSubTab("categories");
+                                        setEditingType(null);
+                                      }}
+                                      className="text-xs text-heritage-green hover:text-heritage-gold font-medium underline transition-colors"
+                                      aria-label="Manage Categories"
+                                    >
+                                      Manage Categories
+                                    </button>
+                                  </div>
                                 )}
                             </div>
                             {selectedCategoryIds.length === 0 &&
                               Array.isArray(editingItem.designCategories) &&
                               editingItem.designCategories.length > 0 && (
                                 <p className="text-[10px] text-heritage-ink/60">
-                                  Legacy tags preserved until assigned:{" "}
+                                  Previous tags (kept until you choose categories):{" "}
                                   {editingItem.designCategories
                                     .map((tag: string) =>
                                       normalizeDesignStyleCategoryName(tag),
