@@ -917,12 +917,18 @@ for (const presetId of expectedPresetIdsAll) {
   assert.equal(count, 1, `Card ${presetId} must render exactly once`);
 }
 
-// 3. Shirts & Dresses show "Choose 1 sleeve" helper and sub-group headers
+// 3. Shirts & Dresses show "Choose 1 sleeve" helper, sub-group headers, and gold-bordered family cards
 assert.ok(allGarmentsMarkup.includes("Choose 1 sleeve"), "Shirts/Dresses helper text present");
 assert.ok(allGarmentsMarkup.includes("Standard Shirt"), "Standard Shirt sub-group header");
 assert.ok(allGarmentsMarkup.includes("Long Shirt"), "Long Shirt sub-group header");
 assert.ok(allGarmentsMarkup.includes("Standard Dress"), "Standard Dress sub-group header");
 assert.ok(allGarmentsMarkup.includes("Long Dress"), "Long Dress sub-group header");
+for (const subGroupId of ["standard_shirt", "long_shirt", "standard_dress", "long_dress"]) {
+  assert.ok(
+    allGarmentsMarkup.includes(`data-testid="step1-category-subgroup-${subGroupId}"`),
+    `Sub-group family card ${subGroupId} must render with gold border container`,
+  );
+}
 
 // 4. Selecting a preset shows live selection count pill (test with one selection)
 const shirtSelectedMarkup = renderStep({

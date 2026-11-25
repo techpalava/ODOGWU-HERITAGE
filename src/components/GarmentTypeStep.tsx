@@ -779,7 +779,11 @@ export const GarmentTypeStep = ({
                 {group.subGroups ? (
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {group.subGroups.map((subGroup) => (
-                      <div key={subGroup.subGroupId} className="space-y-2">
+                      <div
+                        key={subGroup.subGroupId}
+                        data-testid={`step1-category-subgroup-${subGroup.subGroupId}`}
+                        className="space-y-2.5 rounded-2xl border border-heritage-gold/40 bg-white/55 p-3 sm:p-3.5"
+                      >
                         <div className="flex min-w-0 items-center justify-between gap-2">
                           <h5 className="font-semibold text-heritage-ink">{subGroup.title}</h5>
                           <span className="shrink-0 rounded bg-heritage-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-heritage-green">
