@@ -97,6 +97,7 @@ import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep
 import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { DesignStudioScrollFabHost } from "./DesignStudioScrollFabHost";
 import { DesignStudioBlockingOverlayProvider } from "./designStudioBlockingOverlay";
+import { DesignStudioHandGuide } from "./DesignStudioHandGuide";
 import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
@@ -11757,6 +11758,7 @@ export default function DesignStudioView({
       }}
     >
     <DesignStudioBlockingOverlayProvider ownedOpen={studioBlockingOverlayOpen}>
+      <DesignStudioHandGuide stageId={futureStageId} />
     <div
       id="design-studio-ten-stage-journey"
       data-journey-mode="ten_stage"

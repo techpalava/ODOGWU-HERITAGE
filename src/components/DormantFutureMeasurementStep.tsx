@@ -435,6 +435,11 @@ const MeasurementField = ({
             aria-invalid={hasInvalidValue || implausible || undefined}
             aria-describedby={hasInvalidValue || implausible ? errorId : undefined}
             aria-label={`${fieldLabel} in ${unitWord}`}
+            data-hand-guide-target={
+              badge === "Required" && displayValue === ""
+                ? "measurement-required-field"
+                : undefined
+            }
             value={displayValue}
             onFocus={() => onFieldFocus?.(requirement.key)}
             onBlur={() => onFieldBlur?.(requirement.key)}
@@ -1782,7 +1787,11 @@ export const DormantFutureMeasurementStep = ({
             </div>
           </section>
         )}
-        <fieldset data-measurement-risk-selector="true" className="mt-3">
+        <fieldset
+          data-measurement-risk-selector="true"
+          data-hand-guide-target={!selectedRoute && !hydrationInvalid ? "measurement-option-group" : undefined}
+          className="mt-3"
+        >
           <legend className="sr-only">Option 1: Close-to-Body Measurements</legend>
           <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
             {ROUTES.map((route) => {

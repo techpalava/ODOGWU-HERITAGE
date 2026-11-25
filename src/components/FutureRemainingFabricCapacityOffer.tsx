@@ -250,6 +250,7 @@ export const FutureRemainingFabricCapacityOfferCard = ({
       aria-labelledby={titleId}
       tabIndex={-1}
       data-testid="remaining-fabric-capacity-offer"
+      data-hand-guide-modal="fabric-capacity"
       className="max-h-[90vh] w-full min-w-0 max-w-lg overflow-y-auto rounded-2xl border border-heritage-gold/40 bg-white p-4 shadow-xl"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -338,6 +339,7 @@ export const FutureRemainingFabricCapacityOfferCard = ({
                 data-testid="remaining-fabric-capacity-offer-decline"
                 data-remaining-fabric-capacity-continue-primary="true"
                 data-continue-unlock-glow="on"
+                data-hand-guide-target="modal-primary"
                 className={`inline-flex min-h-12 w-full max-w-full min-w-0 items-center justify-center rounded-xl px-4 text-center text-sm font-bold uppercase leading-snug tracking-wide [overflow-wrap:normal] ${studioContinueNavInteractionClass} ${STUDIO_CONTINUE_UNLOCK_GLOW_CLASS}`}
               >
                 <span className="min-w-0 text-balance">
