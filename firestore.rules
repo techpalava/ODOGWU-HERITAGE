@@ -791,6 +791,53 @@ service cloud.firestore {
         ]);
     }
 
+    function hasValidPublicCustomGroupShape(data, groupId) {
+      return data.visibility == "PUBLIC"
+        && data.batchId is string
+        && data.batchId == groupId
+        && groupId.size() > 0
+        && groupId.size() <= 128
+        && data.ownerUid is string
+        && data.ownerUid.size() > 0
+        && data.batchName is string
+        && data.batchName.size() > 0
+        && data.batchName.size() <= 160
+        && data.currentMembers is int
+        && data.currentMembers >= 1
+        && data.maxParticipants is int
+        && data.maxParticipants >= 1
+        && data.maxParticipants <= 1000
+        && data.currentMembers <= data.maxParticipants
+        && data.expectedParticipants is int
+        && data.expectedParticipants >= 1
+        && data.expectedParticipants <= data.maxParticipants
+        && data.status in ["DRAFT", "OPEN", "ALMOST_FULL", "FULL", "CLOSED", "LOCKED", "COMPLETED"]
+        && data.keys().hasOnly([
+          "schemaVersion",
+          "batchId",
+          "ownerUid",
+          "organizerId",
+          "organizer",
+          "batchName",
+          "occasion",
+          "description",
+          "country",
+          "city",
+          "preferredDeliveryMonth",
+          "expectedParticipants",
+          "maxParticipants",
+          "visibility",
+          "currentMembers",
+          "closingDate",
+          "deliveryWindow",
+          "status",
+          "pickupLocation",
+          "notes",
+          "createdAt",
+          "updatedAt"
+        ]);
+    }
+
     match /customGroups/{groupId} {
       allow get: if isAdmin()
         || isPublicCustomGroup(resource.data)
@@ -806,9 +853,9 @@ service cloud.firestore {
         || hasValidPrivateBatchCreate(groupId)
         || (
           isSignedIn()
-          && isPublicCustomGroup(request.resource.data)
+          && hasValidPublicCustomGroupShape(request.resource.data, groupId)
           && request.resource.data.ownerUid == request.auth.uid
-          && request.resource.data.batchId == groupId
+          && request.resource.data.currentMembers == 1
         );
       allow update: if isAdmin()
         || (
@@ -816,7 +863,7 @@ service cloud.firestore {
           && (
             (
               isCustomGroupOwner(resource.data)
-              && isPublicCustomGroup(request.resource.data)
+              && hasValidPublicCustomGroupShape(request.resource.data, groupId)
               && request.resource.data.ownerUid == resource.data.ownerUid
               && request.resource.data.batchId == resource.data.batchId
             )
@@ -824,6 +871,11 @@ service cloud.firestore {
               isSignedIn()
               && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["currentMembers"])
+              && request.resource.data.currentMembers is int
+              && resource.data.currentMembers is int
+              && resource.data.maxParticipants is int
+              && request.resource.data.currentMembers == resource.data.currentMembers + 1
+              && request.resource.data.currentMembers <= resource.data.maxParticipants
             )
           )
         )
@@ -879,8 +931,6 @@ service cloud.firestore {
             "name",
             "phone",
             "location",
-            "orderStatus",
-            "method",
             "measurementProfile",
             "measurementProfiles",
             "biometricConsent"

@@ -61,6 +61,27 @@ export function verifyPin(pin: string, storedHash?: string): boolean {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+/**
+ * Constant-time legacy plaintext PIN comparison used only when a pre-migration
+ * customer document has not yet been upgraded to `passcodeHash`.
+ */
+export function verifyLegacyPlaintextPin(
+  pin: string,
+  storedPasscode?: string,
+): boolean {
+  if (typeof storedPasscode !== "string" || storedPasscode.length === 0) {
+    return false;
+  }
+  const actualDigest = createHash("sha256").update(pin, "utf8").digest();
+  const expectedDigest = createHash("sha256")
+    .update(storedPasscode, "utf8")
+    .digest();
+  return (
+    actualDigest.length === expectedDigest.length &&
+    timingSafeEqual(actualDigest, expectedDigest)
+  );
+}
+
 export function validateLoginPin(pin: unknown): pin is string {
   return typeof pin === "string" && /^(?:\d{4}|\d{6})$/.test(pin);
 }
@@ -393,9 +414,9 @@ export async function loginWithPin(
       : 0;
     if (lockedUntil > Date.now()) return "PIN_LOCKED" as const;
 
-    const matches =
-      verifyPin(pin, latest.passcodeHash) ||
-      (typeof latest.passcode === "string" && latest.passcode === pin);
+    const matches = latest.passcodeHash
+      ? verifyPin(pin, latest.passcodeHash)
+      : verifyLegacyPlaintextPin(pin, latest.passcode);
     if (matches) return { status: "MATCHED" as const, latest };
 
     const failedAttempts = (latest.authFailedAttempts || 0) + 1;
