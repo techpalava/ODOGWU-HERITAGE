@@ -117,6 +117,16 @@ assert.deepEqual(authErrorResponse(new AuthRateLimitError(30)), {
   const stored = table("customers").get("legacy-doc")!;
   assert.equal(stored.passcode, undefined, "plaintext PIN is upgraded");
   assert.match(stored.passcodeHash, /^scrypt\$/);
+
+  // If passcodeHash is already set, a stale plaintext passcode cannot bypass it.
+  table("customers").set("legacy-doc", {
+    ...stored,
+    passcode: "1111",
+  });
+  await assert.rejects(
+    loginWithPin(db, auth, "ADA@example.test", "1111"),
+    (error: unknown) => error instanceof Error && error.message === "INVALID_CREDENTIALS",
+  );
 }
 
 // --- Transactional lockout --------------------------------------------------
