@@ -929,6 +929,10 @@ for (const subGroupId of ["standard_shirt", "long_shirt", "standard_dress", "lon
     `Sub-group family card ${subGroupId} must render with gold border container`,
   );
 }
+assert.ok(
+  allGarmentsMarkup.includes("flex h-full flex-col gap-2.5 rounded-2xl border border-heritage-gold/40"),
+  "Sub-group family containers must stretch (flex h-full flex-col) and expand their card grid (flex-1) so buttons align horizontally across side-by-side families",
+);
 
 // 4. Selecting a preset shows live selection count pill (test with one selection)
 const shirtSelectedMarkup = renderStep({

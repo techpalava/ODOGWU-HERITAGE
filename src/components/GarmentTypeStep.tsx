@@ -782,7 +782,7 @@ export const GarmentTypeStep = ({
                       <div
                         key={subGroup.subGroupId}
                         data-testid={`step1-category-subgroup-${subGroup.subGroupId}`}
-                        className="space-y-2.5 rounded-2xl border border-heritage-gold/40 bg-white/55 p-3 sm:p-3.5"
+                        className="flex h-full flex-col gap-2.5 rounded-2xl border border-heritage-gold/40 bg-white/55 p-3 sm:p-3.5"
                       >
                         <div className="flex min-w-0 items-center justify-between gap-2">
                           <h5 className="font-semibold text-heritage-ink">{subGroup.title}</h5>
@@ -790,7 +790,7 @@ export const GarmentTypeStep = ({
                             {subGroup.helper}
                           </span>
                         </div>
-                        <div className="grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1">
+                        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1">
                           {subGroup.presetIds.map((presetId) => {
                             const category = presentation.categories.find((c) => c.presetId === presetId);
                             if (!category) return null;
