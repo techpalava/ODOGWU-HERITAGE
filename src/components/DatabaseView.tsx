@@ -168,6 +168,9 @@ import {
   resolveDesignStyleGenderOptions,
   resolveGroupedOutfitTypeOptions,
   getDefaultOutfitTypeForGender,
+  getUnifiedStyleGarmentTypes,
+  syncUnifiedStyleGarmentComposition,
+  toggleUnifiedStyleGarmentType,
 } from "../utils/designStyleAdminDefaults";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
@@ -214,7 +217,6 @@ import {
 import {
   FABRIC_GARMENT_CAPACITY_UNITS,
   STYLE_BASE_GARMENT_TYPES,
-  createStyleBaseGarmentSpec,
 } from "../config/StyleFabricCapacityConfig";
 
 type TabType =
@@ -1176,7 +1178,7 @@ export default function DatabaseView({
       return;
     }
 
-    const styleToPublish: StyleCategory = item.customDetailConfig
+    const baseStyleToPublish: StyleCategory = item.customDetailConfig
       ? {
           ...item,
           customDetailConfig: {
@@ -1188,11 +1190,20 @@ export default function DatabaseView({
         }
       : item;
 
-    const authority = getDesignStyleAuthorityMetadata(styleToPublish);
-    if (!authority) {
+    const rawAuthority = getDesignStyleAuthorityMetadata(baseStyleToPublish);
+    if (!rawAuthority) {
       triggerStatus("This Design Style has no valid publication authority.", "error");
       return;
     }
+    const styleToPublish: DesignStyleAdminProjection =
+      rawAuthority.referenceComposition.status === "legacy_unresolved" &&
+      Array.isArray(baseStyleToPublish.fabricCapacityComposition) &&
+      baseStyleToPublish.fabricCapacityComposition.length > 0
+        ? syncUnifiedStyleGarmentComposition(
+            baseStyleToPublish as DesignStyleAdminProjection,
+          )
+        : (baseStyleToPublish as DesignStyleAdminProjection);
+    const authority = styleToPublish.designStyleAuthority;
     if (isNewRecord) {
       if (adminStyles.some((s) => s.id === styleToPublish.id)) {
         alert("A style with this ID already exists.");
@@ -3171,137 +3182,46 @@ export default function DatabaseView({
                     <div className="space-y-4 col-span-1 sm:col-span-2 bg-heritage-cream/10 p-4 rounded-xl border border-heritage-gold/20">
                       <h4 className="font-bold text-heritage-green text-sm mb-2 border-b border-heritage-gold/20 pb-2">Garment Guidance</h4>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2 col-span-1 sm:col-span-2">
-                          <label className="font-bold text-heritage-green block">
-                            Garment types shown by this design
-                          </label>
-                          <p className="text-[10px] text-heritage-ink/60">
-                            This retained catalogue metadata describes the
-                            garment types represented by the design. It does not
-                            restrict customer selection in Step 3.
-                          </p>
+                      <div className="space-y-2">
+                        <label className="font-bold text-heritage-green block">
+                          Garments in this design
+                        </label>
+                        <p className="text-[10px] text-heritage-ink/60">
+                          Select the garments shown in the photo. Used for "Originally designed for" guidance in Step 3, Gallery Look presets, and fabric unit metadata. Customers can still apply this design to other garments.
+                        </p>
                           <div className="flex flex-wrap gap-2">
-                            {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
-                              const checked = Boolean(
-                                editingItem.fabricCapacityComposition?.some(
-                                  (spec: any) =>
-                                    spec.garmentType === garmentType,
-                                ),
-                              );
-                              return (
-                                <label
-                                  key={garmentType}
-                                  className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-white px-3 py-1.5 text-xs"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(event) => {
-                                      const current = Array.isArray(
-                                        editingItem.fabricCapacityComposition,
-                                      )
-                                        ? editingItem.fabricCapacityComposition
-                                        : [];
-                                      const fabricCapacityComposition = event
-                                        .target.checked
-                                        ? [
-                                            ...current.filter(
-                                              (spec: any) =>
-                                                spec.garmentType !== garmentType,
-                                            ),
-                                            createStyleBaseGarmentSpec(
-                                              garmentType,
-                                            ),
-                                          ]
-                                        : current.filter(
-                                            (spec: any) =>
-                                              spec.garmentType !== garmentType,
-                                          );
-                                      setEditingItem({
-                                        ...editingItem,
-                                        fabricCapacityComposition,
-                                      });
-                                    }}
-                                    className="h-4 w-4 rounded text-heritage-green"
-                                  />
-                                  <span>
-                                    {getFabricGarmentLabel(garmentType)} ({
-                                      FABRIC_GARMENT_CAPACITY_UNITS[
-                                        garmentType
-                                      ]
-                                    })
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div className="space-y-2 col-span-1 sm:col-span-2">
-                          <label className="font-bold text-heritage-green block">
-                            Originally designed for
-                          </label>
-                          <p className="text-[10px] text-heritage-ink/60">
-                            Describe only what the reference image depicts.
-                            Customers can still use the design for other
-                            garments; this is advisory context only.
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
-                              const selected =
-                                editingStyleAuthority?.referenceComposition.status ===
-                                  "known" &&
-                                editingStyleAuthority.referenceComposition.garmentTypes.includes(
-                                  garmentType as CanonicalPhysicalGarmentType,
+                            {(() => {
+                              const unifiedGarmentTypes = getUnifiedStyleGarmentTypes(editingItem);
+                              return STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
+                                const isCanonical = garmentType !== "other";
+                                const checked = isCanonical && unifiedGarmentTypes.includes(garmentType as CanonicalPhysicalGarmentType);
+                                const fabricUnits = FABRIC_GARMENT_CAPACITY_UNITS[garmentType];
+                                return (
+                                  <label
+                                    key={garmentType}
+                                    className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-white px-3 py-1.5 text-xs"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => {
+                                        if (!isCanonical) return;
+                                        const nextItem = toggleUnifiedStyleGarmentType(
+                                          editingItem,
+                                          garmentType as CanonicalPhysicalGarmentType,
+                                        );
+                                        setEditingItem(nextItem);
+                                      }}
+                                      className="h-4 w-4 rounded text-heritage-green"
+                                    />
+                                    <span>
+                                      {getFabricGarmentLabel(garmentType)} ({fabricUnits})
+                                    </span>
+                                  </label>
                                 );
-                              return (
-                                <label
-                                  key={`reference-${garmentType}`}
-                                  className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-white px-3 py-1.5 text-xs"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selected}
-                                    onChange={(event) => {
-                                      if (!editingStyleAuthority) return;
-                                      const current =
-                                        editingStyleAuthority.referenceComposition.status ===
-                                        "known"
-                                          ? [
-                                              ...editingStyleAuthority
-                                                .referenceComposition.garmentTypes,
-                                            ]
-                                          : [];
-                                      const garmentTypes = event.target.checked
-                                        ? [...new Set([...current, garmentType])]
-                                        : current.filter(
-                                            (item) => item !== garmentType,
-                                          );
-                                      setEditingItem({
-                                        ...editingItem,
-                                        designStyleAuthority: {
-                                          ...editingStyleAuthority,
-                                          referenceComposition:
-                                            garmentTypes.length > 0
-                                              ? {
-                                                  status: "known",
-                                                  garmentTypes,
-                                                }
-                                              : {
-                                                  status: "legacy_unresolved",
-                                                  garmentTypes: [],
-                                                },
-                                        },
-                                      });
-                                    }}
-                                    className="h-4 w-4 rounded text-heritage-green"
-                                  />
-                                  <span>{getFabricGarmentLabel(garmentType)}</span>
-                                </label>
-                              );
-                            })}
+                              });
+                            })()}
                           </div>
-                        </div>
                         <div className="space-y-2">
                           <label className="font-bold text-heritage-green block">Design audience</label>
                           <div className="flex gap-4">
@@ -3369,23 +3289,13 @@ export default function DatabaseView({
                                       )
                                     : [];
                                 const fallbackGarments: CanonicalPhysicalGarmentType[] =
-                                  Array.isArray(editingItem.fabricCapacityComposition)
-                                    ? [
-                                        ...new Set<CanonicalPhysicalGarmentType>(
-                                          editingItem.fabricCapacityComposition
-                                            .map((spec: any): unknown => spec?.garmentType)
-                                            .filter(
-                                              (
-                                                g: unknown,
-                                              ): g is CanonicalPhysicalGarmentType =>
-                                                typeof g === "string" &&
-                                                ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
-                                                  g as CanonicalPhysicalGarmentType,
-                                                ),
-                                            ),
-                                        ),
-                                      ]
-                                    : [];
+                                  getUnifiedStyleGarmentTypes(
+                                    editingItem,
+                                  ).filter((g) =>
+                                    ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
+                                      g,
+                                    ),
+                                  );
                                 const garmentTypes =
                                   existingGarments.length > 0
                                     ? existingGarments
