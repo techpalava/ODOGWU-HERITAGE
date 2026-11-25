@@ -163,23 +163,63 @@ assert.equal(pickupEleven.lagosAmountCents, BLOCK * 2);
 assert.equal(pickupEleven.onwardAmountCents, 0);
 assert.equal(pickupEleven.allInEstimateCents, SUBTOTAL + BLOCK * 2);
 
-for (const orderType of ["Community", "Group Organizer", "Group Member"] as const) {
-  const batchDelivery = estimateFor({ orderType, garmentCount: 1 });
-  assert.equal(batchDelivery.lagosAmountCents, null, orderType);
-  assert.equal(batchDelivery.onwardAmountCents, 1900, orderType);
-  assert.equal(batchDelivery.allInEstimateCents, SUBTOTAL + 1900, orderType);
-  assert.notEqual(batchDelivery.allInEstimateCents, SUBTOTAL + 1900 + 1509);
-  assert.notEqual(batchDelivery.allInEstimateCents, SUBTOTAL + 1900 + BLOCK);
-  const batchPickup = estimateFor({
+{
+  const communityDelivery = estimateFor({ orderType: "Community", garmentCount: 1 });
+  assert.equal(communityDelivery.lagosAmountCents, null, "Community");
+  assert.equal(communityDelivery.onwardAmountCents, 1900, "Community");
+  assert.equal(communityDelivery.allInEstimateCents, SUBTOTAL + 1900, "Community");
+  assert.notEqual(communityDelivery.allInEstimateCents, SUBTOTAL + 1900 + 1509);
+  assert.notEqual(communityDelivery.allInEstimateCents, SUBTOTAL + 1900 + BLOCK);
+  const communityPickup = estimateFor({
+    orderType: "Community",
+    garmentCount: 3,
+    fulfilmentMethod: "eindhoven_pickup",
+    countryCode: "",
+    destinationSelectionMode: null,
+  });
+  assert.equal(communityPickup.lagosAmountCents, null, "Community pickup");
+  assert.equal(communityPickup.onwardAmountCents, 0, "Community pickup");
+  assert.equal(communityPickup.allInEstimateCents, SUBTOTAL, "Community pickup");
+}
+
+for (const orderType of ["Group Organizer", "Group Member"] as const) {
+  const belowMinDelivery = estimateFor({ orderType, garmentCount: 1 });
+  assert.equal(belowMinDelivery.lagosAmountCents, BLOCK, `${orderType} < 10 garments charges €131.25`);
+  assert.equal(belowMinDelivery.onwardAmountCents, 1900, orderType);
+  assert.equal(belowMinDelivery.allInEstimateCents, SUBTOTAL + BLOCK + 1900, orderType);
+  assert.equal(
+    belowMinDelivery.lagosNote,
+    "Private Batch orders require at least 10 garments to waive the €131.25 Lagos → Eindhoven shipping fee. Add more garments to reach 10, or continue with €131.25 shipping included.",
+  );
+
+  const belowMinPickup = estimateFor({
     orderType,
     garmentCount: 3,
     fulfilmentMethod: "eindhoven_pickup",
     countryCode: "",
     destinationSelectionMode: null,
   });
-  assert.equal(batchPickup.lagosAmountCents, null, `${orderType} pickup`);
-  assert.equal(batchPickup.onwardAmountCents, 0, `${orderType} pickup`);
-  assert.equal(batchPickup.allInEstimateCents, SUBTOTAL, `${orderType} pickup`);
+  assert.equal(belowMinPickup.lagosAmountCents, BLOCK, `${orderType} pickup < 10 garments`);
+  assert.equal(belowMinPickup.onwardAmountCents, 0, `${orderType} pickup`);
+  assert.equal(belowMinPickup.allInEstimateCents, SUBTOTAL + BLOCK, `${orderType} pickup`);
+
+  for (const count of [10, 12] as const) {
+    const metMinPickup = estimateFor({
+      orderType,
+      garmentCount: count,
+      fulfilmentMethod: "eindhoven_pickup",
+      countryCode: "",
+      destinationSelectionMode: null,
+    });
+    assert.equal(metMinPickup.lagosAmountCents, null, `${orderType} ${count} garments waives Lagos fee`);
+    assert.equal(metMinPickup.lagosNote, null);
+    assert.equal(metMinPickup.onwardAmountCents, 0);
+    assert.equal(
+      metMinPickup.allInEstimateCents,
+      SUBTOTAL,
+      `${orderType} ${count} garments is not falsely flagged as individualLagosMissing`,
+    );
+  }
 }
 
 const mixedBatch = estimateFor({

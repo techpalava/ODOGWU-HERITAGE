@@ -96,7 +96,7 @@ import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
 import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { DesignStudioScrollFabHost } from "./DesignStudioScrollFabHost";
-import { DesignStudioBlockingOverlayProvider } from "./designStudioBlockingOverlay";
+import { DesignStudioBlockingOverlayProvider, useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { DesignStudioHandGuide } from "./DesignStudioHandGuide";
 import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
@@ -141,7 +141,11 @@ import {
 } from "../utils/orderContextIdentity";
 import { resolveCustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 import {
+  BATCH_MINIMUM_GARMENTS,
 } from "../utils/shippingPricing";
+import {
+  isPrivateBatchOrder,
+} from "../utils/individualInboundShippingDisplay";
 import { calculateDesignPricing } from "../utils/designPricing";
 import { projectCustomerGarmentConstructionBreakdown } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
@@ -1166,6 +1170,12 @@ export default function DesignStudioView({
   /** Transient Summary section-Edit jump into Step 7 (never persisted). */
   const [measurementGroupFocusRequest, setMeasurementGroupFocusRequest] =
     useState<MeasurementGroupFocusRequest | null>(null);
+  /** Private Batch minimum 10-garment warning modal. */
+  const [privateBatchMinModalOpen, setPrivateBatchMinModalOpen] = useState(false);
+  useReportDesignStudioBlockingOverlay(
+    "private-batch-minimum-warning",
+    privateBatchMinModalOpen,
+  );
   /**
    * Only explicit customer navigation is routed through this helper. Hydration,
    * safety correction, and modal/sub-flow state updates continue to set the
@@ -8623,6 +8633,18 @@ export default function DesignStudioView({
       navigateToFutureStage("garment_type", getValidationNavigationTarget());
       return;
     }
+  // Private Batch minimum 10-garment check
+  const orderType = futureOrderIdentity?.orderType ?? ctx.orderType;
+  const garmentCount = garmentTypeSelection.garmentTypes.length;
+  if (
+    futureStageId === "garment_type" &&
+    isPrivateBatchOrder({ orderType, batchType }) &&
+    garmentCount >= 1 &&
+    garmentCount < BATCH_MINIMUM_GARMENTS
+  ) {
+    setPrivateBatchMinModalOpen(true);
+    return;
+  }
     navigateToFutureStage("fabric");
   };
   const handleOpenDormantDesignStyleStage = () => {
@@ -11607,7 +11629,8 @@ export default function DesignStudioView({
     Boolean(futureGarmentRemovalDialogRequest) ||
     Boolean(summaryFabricChangePending) ||
     futureOrderCancelDialogOpen ||
-    showRemainingFabricCapacityOffer;
+    showRemainingFabricCapacityOffer ||
+    privateBatchMinModalOpen;
   const currentStageLabel =
     DESIGN_STUDIO_STEPS.find((step) => step.id === futureStageId)?.label ||
     "Design Studio";
@@ -11942,6 +11965,16 @@ export default function DesignStudioView({
         >
       {futureStageId === "garment_type" ? (
         <div className="space-y-5">
+           {isPrivateBatchOrder({ orderType: futureOrderIdentity?.orderType ?? ctx.orderType, batchType }) && garmentTypeSelection.garmentTypes.length >= 1 && garmentTypeSelection.garmentTypes.length < BATCH_MINIMUM_GARMENTS ? (
+             <div
+               data-testid="private-batch-minimum-banner"
+               className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+             >
+               Private Batch minimum: {garmentTypeSelection.garmentTypes.length} of 10
+               garments selected — orders under 10 garments include €131.25 Lagos
+               → Eindhoven shipping.
+             </div>
+           ) : null}
           <GarmentTypeStep
             selectedGarmentTypes={garmentTypeSelection.garmentTypes}
             selectedDemographics={getGarmentTypeSelectedDemographics(
@@ -13039,6 +13072,73 @@ export default function DesignStudioView({
           }}
           onConfirmCancel={handleConfirmCancelFutureOrder}
         />
+      )}
+      {privateBatchMinModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="private-batch-minimum-title"
+          data-testid="private-batch-minimum-modal"
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-heritage-ink/45 p-4"
+          onClick={() => setPrivateBatchMinModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-heritage-gold/25 bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2
+              id="private-batch-minimum-title"
+              className="font-serif text-xl font-bold text-heritage-green"
+            >
+              Private Batch minimum
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-heritage-ink/70">
+              Private Batch requires at least 10 garments (you currently have{" "}
+              {garmentTypeSelection.garmentTypes.length} selected). Orders under
+              10 garments include the €131.25 Lagos → Eindhoven shipping charge
+              — the same as an Individual Order.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-heritage-ink/60">
+              You can add more garments here on Step 1 or add additional
+              garments and wearers in later steps to reach 10 garments and waive
+              the €131.25 shipping fee.
+            </p>
+            <div className="mt-6 flex flex-col gap-2">
+              <button
+                type="button"
+                data-testid="private-batch-min-add-more"
+                onClick={() => setPrivateBatchMinModalOpen(false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/25 px-4 text-sm font-bold text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                Add More Garments
+              </button>
+              {computedActiveBatch && onJoinCommunityBatch ? (
+                <button
+                  type="button"
+                  data-testid="private-batch-min-switch-community"
+                  onClick={() => {
+                    setPrivateBatchMinModalOpen(false);
+                    onJoinCommunityBatch(computedActiveBatch);
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-gold/40 bg-heritage-cream/40 px-4 text-sm font-bold text-heritage-green transition hover:bg-heritage-gold/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  Switch to Community Batch
+                </button>
+              ) : null}
+              <button
+                type="button"
+                data-testid="private-batch-min-continue"
+                onClick={() => {
+                  setPrivateBatchMinModalOpen(false);
+                  navigateToFutureStage("fabric");
+                }}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-sm font-bold text-white transition hover:bg-heritage-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                Continue (+€131.25 shipping)
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
     </DesignStudioBlockingOverlayProvider>
