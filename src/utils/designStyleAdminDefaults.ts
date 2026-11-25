@@ -1,4 +1,4 @@
-import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig.js";
+import { createStyleBaseGarmentSpec, STYLE_BASE_GARMENT_TYPES } from "../config/StyleFabricCapacityConfig.js";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
 import type {
   BusinessSettings,
@@ -11,8 +11,72 @@ import { customerCatalogueLabel } from "./customerCatalogueLabel.js";
 import {
   createDefaultDesignStyleAuthorityMetadata,
   type DesignStyleAdminProjection,
+  type DesignStyleReferenceComposition,
 } from "./designStyleAuthority.js";
 import { formatCustomerVisibleKaftanText } from "./optionalShortsPresentation.js";
+
+/**
+ * Returns the unified garment types for a design style being edited.
+ * Prefers `designStyleAuthority.referenceComposition.garmentTypes` when status is "known" and non-empty;
+ * otherwise falls back to `fabricCapacityComposition.map(spec => spec.garmentType)` deduplicated
+ * in canonical `STYLE_BASE_GARMENT_TYPES` order.
+ */
+export const getUnifiedStyleGarmentTypes = (
+  style: Pick<
+    DesignStyleAdminProjection,
+    "fabricCapacityComposition" | "designStyleAuthority"
+  >,
+): readonly CanonicalPhysicalGarmentType[] => {
+  const authority = style.designStyleAuthority;
+  if (
+    authority?.referenceComposition?.status === "known" &&
+    authority.referenceComposition.garmentTypes.length > 0
+  ) {
+    return authority.referenceComposition.garmentTypes;
+  }
+  const composition = style.fabricCapacityComposition ?? [];
+  const garmentTypesSet = new Set<CanonicalPhysicalGarmentType>(
+    composition.map((spec) => spec.garmentType).filter((gt): gt is CanonicalPhysicalGarmentType => gt !== "other"),
+  );
+  return STYLE_BASE_GARMENT_TYPES.filter(
+    (gt): gt is CanonicalPhysicalGarmentType => gt !== "other" && garmentTypesSet.has(gt),
+  );
+};
+
+/**
+ * Toggles a garment type in the unified garment list, updating BOTH
+ * `fabricCapacityComposition` and `designStyleAuthority.referenceComposition` in lockstep.
+ * Returns the updated style object (shallow clone with updated fields).
+ */
+export const toggleUnifiedStyleGarmentType = (
+  style: DesignStyleAdminProjection,
+  garmentType: CanonicalPhysicalGarmentType,
+): DesignStyleAdminProjection => {
+  const currentUnified = getUnifiedStyleGarmentTypes(style);
+  const isCurrentlySelected = currentUnified.includes(garmentType);
+  const nextGarmentTypes = isCurrentlySelected
+    ? currentUnified.filter((gt) => gt !== garmentType)
+    : [...currentUnified, garmentType].sort(
+        (a, b) =>
+          STYLE_BASE_GARMENT_TYPES.indexOf(a) - STYLE_BASE_GARMENT_TYPES.indexOf(b),
+      );
+
+  const nextFabricCapacityComposition = nextGarmentTypes.map(createStyleBaseGarmentSpec);
+
+  const nextReferenceComposition: DesignStyleReferenceComposition =
+    nextGarmentTypes.length > 0
+      ? { status: "known", garmentTypes: nextGarmentTypes }
+      : { status: "legacy_unresolved", garmentTypes: [] };
+
+  return {
+    ...style,
+    fabricCapacityComposition: nextFabricCapacityComposition,
+    designStyleAuthority: {
+      ...style.designStyleAuthority,
+      referenceComposition: nextReferenceComposition,
+    },
+  };
+};
 
 export const DEFAULT_ADMIN_STYLE_GENDER = "male" as const;
 export const DEFAULT_ADMIN_STYLE_OUTFIT_TYPE = "Senator Set" as const;
