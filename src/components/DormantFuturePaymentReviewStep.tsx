@@ -1703,6 +1703,17 @@ export const DormantFuturePaymentReviewStep = ({
                     <button
                     type="button"
                     data-future-order-v2-pay={true}
+                    data-hand-guide-target={
+                      !(
+                        communityBatchClosed ||
+                        communityBatchChecking ||
+                        !canSettleReviewedOrder ||
+                        payIsBusy ||
+                        !stripePaymentReady
+                      )
+                        ? "payment-pay-button"
+                        : undefined
+                    }
                     disabled={communityBatchClosed || communityBatchChecking || !canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"

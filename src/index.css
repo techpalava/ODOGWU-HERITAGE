@@ -26,6 +26,9 @@
   --animate-measurement-guide-flash: measurement-guide-flash 800ms ease-out 1;
   --animate-continue-unlock-glow: continue-unlock-glow 2.4s ease-in-out infinite;
   --animate-continue-ring-blink: continue-ring-blink 2.4s step-end infinite;
+  --animate-hand-tap: hand-tap 2.4s ease-in-out infinite;
+  --animate-hand-soft: hand-soft 2.6s ease-in-out infinite;
+  --animate-ripple: ripple 2.4s ease-out infinite;
 }
 
 @keyframes step1-select-attention {
@@ -163,6 +166,38 @@
   }
   100% {
     box-shadow: 0 0 0 0 rgb(197 168 92 / 0);
+  }
+}
+
+/* Hand guide animations */
+@keyframes hand-tap {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(-5deg);
+  }
+}
+
+@keyframes hand-soft {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
   }
 }
 
