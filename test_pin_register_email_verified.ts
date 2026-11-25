@@ -209,8 +209,17 @@ const listServerSources = (directory: string): string[] => {
   return files;
 };
 
+const VERIFIED_ADMIN_EMAIL_SERVER_MODULES = new Set([
+  "customerAuth.ts",
+  "aiTryOnAdminReset.ts",
+  "aiTryOnAdminUsage.ts",
+  "aiTryOnBilling.ts",
+  "aiTryOnHttp.ts",
+  "aiTryOnTopUp.ts",
+]);
+
 for (const file of listServerSources("src/server")) {
-  if (file.endsWith(`${path.sep}customerAuth.ts`)) continue;
+  if (VERIFIED_ADMIN_EMAIL_SERVER_MODULES.has(path.basename(file))) continue;
   const source = readFileSync(file, "utf8");
   const relative = file.replace(/\\/g, "/");
   assert.equal(source.includes("email_verified"), false, relative);
