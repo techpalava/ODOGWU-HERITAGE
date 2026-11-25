@@ -878,4 +878,63 @@ assert.equal(
   "A guide with no remaining items does not animate",
 );
 
+// Category group rendering verification
+const allGarmentsMarkup = renderStep({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  selectedDemographics: ["male"],
+});
+
+// 1. All 4 category group containers render in order
+const groupIds = ["shirts", "dresses", "skirts", "trousers_and_shorts"];
+let lastIndex = -1;
+for (const groupId of groupIds) {
+  const testId = `data-testid="step1-category-group-${groupId}"`;
+  const idx = allGarmentsMarkup.indexOf(testId);
+  assert.ok(idx > 0, `Category group ${groupId} container must render`);
+  assert.ok(idx > lastIndex, `Category groups must render in order: ${groupId} after previous`);
+  lastIndex = idx;
+}
+
+// 2. All 13 garment cards render exactly once
+const expectedPresetIdsAll = [
+  "shirt_short_sleeve",
+  "shirt_long_sleeve",
+  "kaftan_short_sleeve",
+  "kaftan_long_sleeve",
+  "dress_sleeveless_or_short",
+  "dress_mid_or_long",
+  "full_length_gown_sleeveless_or_short",
+  "full_length_gown_mid_or_long",
+  "skirt",
+  "long_skirt",
+  "trouser",
+  "standard_shorts",
+  "bum_shorts",
+];
+for (const presetId of expectedPresetIdsAll) {
+  const testId = `data-testid="step1-garment-card-${presetId}"`;
+  const count = (allGarmentsMarkup.match(new RegExp(testId.replace(/"/g, '\\"'), 'g')) || []).length;
+  assert.equal(count, 1, `Card ${presetId} must render exactly once`);
+}
+
+// 3. Shirts & Dresses show "Choose 1 sleeve" helper and sub-group headers
+assert.ok(allGarmentsMarkup.includes("Choose 1 sleeve"), "Shirts/Dresses helper text present");
+assert.ok(allGarmentsMarkup.includes("Standard Shirt"), "Standard Shirt sub-group header");
+assert.ok(allGarmentsMarkup.includes("Long Shirt"), "Long Shirt sub-group header");
+assert.ok(allGarmentsMarkup.includes("Standard Dress"), "Standard Dress sub-group header");
+assert.ok(allGarmentsMarkup.includes("Long Dress"), "Long Dress sub-group header");
+
+// 4. Selecting a preset shows live selection count pill (test with one selection)
+const shirtSelectedMarkup = renderStep({
+  selectedGarmentTypes: ["shirt"],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+});
+assert.ok(shirtSelectedMarkup.includes("1 selected"), "Selection count pill shows for Shirts group");
+
+// 5. Zero "Kaftan", "Knicker", or "Select all" strings appear
+assert.equal(allGarmentsMarkup.includes("Kaftan"), false, "Kaftan must not appear in customer-facing text");
+assert.equal(allGarmentsMarkup.includes("Knicker"), false, "Knicker must not appear");
+assert.equal(allGarmentsMarkup.includes("Select all"), false, "Select all must not appear");
+
 console.log("Garment Type Step controlled component verification passed.");

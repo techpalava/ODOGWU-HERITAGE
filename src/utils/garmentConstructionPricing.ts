@@ -313,6 +313,23 @@ export type Step1GarmentCardPresetId =
   | "standard_shorts"
   | "bum_shorts";
 
+export type Step1CategoryGroupId = "shirts" | "dresses" | "skirts" | "trousers_and_shorts";
+
+export interface Step1CategorySubGroup {
+  readonly subGroupId: string;
+  readonly title: string;
+  readonly helper: string;
+  readonly presetIds: readonly Step1GarmentCardPresetId[];
+}
+
+export interface Step1CategoryGroup {
+  readonly groupId: Step1CategoryGroupId;
+  readonly title: string;
+  readonly helper: string;
+  readonly presetIds: readonly Step1GarmentCardPresetId[];
+  readonly subGroups?: readonly Step1CategorySubGroup[];
+}
+
 export interface Step1GarmentCardPreset {
   readonly id: Step1GarmentCardPresetId;
   readonly garmentType: CustomerSelectableGarmentType;
@@ -470,6 +487,95 @@ export const getStep1GarmentCardPresetById = (
 ): Step1GarmentCardPreset | null =>
   STEP_1_GARMENT_CARD_PRESET_BY_ID.get(presetId as Step1GarmentCardPresetId) ??
   null;
+
+/** Category group IDs used by the UX grid. */
+/**
+ * Step 1 category grouping definition — 4 clear Category Group Cards.
+ * Groups all 13 `STEP_1_GARMENT_CARD_PRESETS` without dropping or duplicating any preset.
+ */
+export const STEP_1_GARMENT_CATEGORY_GROUPS: readonly Step1CategoryGroup[] = [
+  {
+    groupId: "shirts",
+    title: "Shirts",
+    helper: "Choose 1 sleeve",
+    presetIds: [
+      "shirt_short_sleeve",
+      "shirt_long_sleeve",
+      "kaftan_short_sleeve",
+      "kaftan_long_sleeve",
+    ] as const,
+    subGroups: [
+      {
+        subGroupId: "standard_shirt",
+        title: "Standard Shirt",
+        helper: "Choose 1 sleeve",
+        presetIds: [
+          "shirt_short_sleeve",
+          "shirt_long_sleeve",
+        ] as const,
+      },
+      {
+        subGroupId: "long_shirt",
+        title: "Long Shirt",
+        helper: "Choose 1 sleeve",
+        presetIds: [
+          "kaftan_short_sleeve",
+          "kaftan_long_sleeve",
+        ] as const,
+      },
+    ],
+  },
+  {
+    groupId: "dresses",
+    title: "Dresses",
+    helper: "Choose 1 sleeve",
+    presetIds: [
+      "dress_sleeveless_or_short",
+      "dress_mid_or_long",
+      "full_length_gown_sleeveless_or_short",
+      "full_length_gown_mid_or_long",
+    ] as const,
+    subGroups: [
+      {
+        subGroupId: "standard_dress",
+        title: "Standard Dress",
+        helper: "Choose 1 sleeve",
+        presetIds: [
+          "dress_sleeveless_or_short",
+          "dress_mid_or_long",
+        ] as const,
+      },
+      {
+        subGroupId: "long_dress",
+        title: "Long Dress",
+        helper: "Choose 1 sleeve",
+        presetIds: [
+          "full_length_gown_sleeveless_or_short",
+          "full_length_gown_mid_or_long",
+        ] as const,
+      },
+    ],
+  },
+  {
+    groupId: "skirts",
+    title: "Skirts",
+    helper: "Select one or both",
+    presetIds: [
+      "skirt",
+      "long_skirt",
+    ] as const,
+  },
+  {
+    groupId: "trousers_and_shorts",
+    title: "Trousers & Shorts",
+    helper: "Select any combination",
+    presetIds: [
+      "trouser",
+      "standard_shorts",
+      "bum_shorts",
+    ] as const,
+  },
+] as const;
 
 /**
  * Resolves exact garment construction pricing for an explicit optionId from the
