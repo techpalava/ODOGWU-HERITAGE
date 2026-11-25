@@ -413,15 +413,19 @@ const rootStage = () =>
 
 assert.equal(rootStage(), "garment_type");
 
-// Select 1 garment (Standard Shirt) via its Step 1 toggle button
+// Select 1 garment (Standard Shirt) via its Step 1 toggle button and demographic (male)
 const shirtToggle = studio.root.findAll(
   (node) =>
     node.type === "button" &&
     typeof node.props["aria-label"] === "string" &&
     node.props["aria-label"].includes("Standard Shirt"),
 )[0]!;
+const menCheckbox = studio.root.findByProps({
+  id: "future-garment-type-step-demographic-male",
+});
 await act(async () => {
   shirtToggle.props.onClick();
+  menCheckbox.props.onChange({ currentTarget: { checked: true }, target: { checked: true } });
   await Promise.resolve();
 });
 
