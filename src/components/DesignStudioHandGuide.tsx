@@ -178,7 +178,7 @@ export function DesignStudioHandGuide({
       };
     }
 
-    if (blockingOverlayOpen) {
+    if (blockingOverlayOpen || typeof document === "undefined") {
       return {
         elements: [],
         matchedSelector: null,

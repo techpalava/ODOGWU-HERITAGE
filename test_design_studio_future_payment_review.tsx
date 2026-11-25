@@ -388,6 +388,32 @@ assert.equal(
   false,
   "Community payment review has no Lagos band row",
 );
+for (const orderType of ["Group Organizer", "Group Member"] as const) {
+  for (const count of [1, 3, 9] as const) {
+    const privateBelowMinRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
+      orderType,
+      physicalGarmentCount: count,
+    });
+    const lagosRow = privateBelowMinRows.find((row) => row.id === "lagos_eindhoven_included");
+    assert.ok(lagosRow, `${orderType} with ${count} garments includes Lagos shipping row`);
+    assert.equal(lagosRow.amountCents, 13125);
+    assert.equal(
+      lagosRow.note,
+      "Private Batch orders require at least 10 garments to waive the €131.25 Lagos → Eindhoven shipping fee. Add more garments to reach 10, or continue with €131.25 shipping included.",
+    );
+  }
+  for (const count of [10, 12] as const) {
+    const privateMetMinRows = getFuturePaymentReviewPricingRows(candidate.pricing, {
+      orderType,
+      physicalGarmentCount: count,
+    });
+    assert.equal(
+      privateMetMinRows.some((row) => row.id === "lagos_eindhoven_included"),
+      false,
+      `${orderType} with ${count} garments waives Lagos shipping row`,
+    );
+  }
+}
 const pickupPricingRows = getFuturePaymentReviewPricingRows({
   ...candidate.pricing,
   postEindhovenAdjustmentCents: 0,
