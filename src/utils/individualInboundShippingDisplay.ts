@@ -3,6 +3,7 @@ import {
   INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
   INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
   INDIVIDUAL_SHIPPING_KG_PER_BLOCK,
+  BATCH_MINIMUM_GARMENTS,
 } from "./shippingPricing.js";
 
 /** Display label for the included Individual inbound leg. */
@@ -43,6 +44,7 @@ export interface IndividualInboundShippingDisplay {
   readonly blockCount: number;
   readonly coveredGarments: number;
   readonly coveredWeightKg: number;
+  readonly reason?: string | null;
 }
 
 const isBatchOrder = (input: {
@@ -54,6 +56,22 @@ const isBatchOrder = (input: {
   input.orderType === "Group Member" ||
   input.batchType === "community" ||
   input.batchType === "personalized" ||
+  input.batchType === "actual";
+
+export const isPrivateBatchOrder = (input: {
+  orderType?: string | null;
+  batchType?: string | null;
+}): boolean =>
+  input.orderType === "Group Organizer" ||
+  input.orderType === "Group Member" ||
+  input.batchType === "personalized";
+
+export const isCommunityBatchOrder = (input: {
+  orderType?: string | null;
+  batchType?: string | null;
+}): boolean =>
+  input.orderType === "Community" ||
+  input.batchType === "community" ||
   input.batchType === "actual";
 
 const isIndividualOrder = (input: {
@@ -73,6 +91,9 @@ const formatBlockPriceEur = (): string =>
 export const formatIndividualShippingNote = (
   display: IndividualInboundShippingDisplay,
 ): string => {
+  if (display.reason === "private_batch_below_minimum") {
+    return "Private Batch orders require at least 10 garments to waive the €131.25 Lagos → Eindhoven shipping fee. Add more garments to reach 10, or continue with €131.25 shipping included.";
+  }
   const baseline = `Shipping covers up to ${INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK} garments (under ${INDIVIDUAL_SHIPPING_KG_PER_BLOCK} kg).`;
   if (display.blockCount < 2) return baseline;
   return `${baseline} Your order has ${display.garmentCount} garments, so it uses the ${display.coveredWeightKg} kg range: ${display.blockCount} × ${formatBlockPriceEur()}.`;
@@ -90,27 +111,60 @@ export const resolveIndividualInboundShippingDisplay = (input: {
   physicalGarmentCount: number;
   fulfilmentMethod?: string | null;
 }): IndividualInboundShippingDisplay | null => {
-  if (!isIndividualOrder(input)) return null;
-  if (
-    !Number.isInteger(input.physicalGarmentCount) ||
-    input.physicalGarmentCount < 1
-  ) {
-    return null;
+  // Individual orders: unchanged behavior
+  if (isIndividualOrder(input)) {
+    if (
+      !Number.isInteger(input.physicalGarmentCount) ||
+      input.physicalGarmentCount < 1
+    ) {
+      return null;
+    }
+    const quote = calculateIndividualShipping(input.physicalGarmentCount);
+    const blockCount = quote.blockCount ?? 1;
+    const coveredWeightKg =
+      quote.coveredWeightKg ?? blockCount * INDIVIDUAL_SHIPPING_KG_PER_BLOCK;
+    return {
+      label: INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL,
+      includedLabel: INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL,
+      priceEur: quote.priceEur,
+      amountCents: blockCount * INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
+      weightBand: quote.weightBand,
+      physicalGarmentCount: quote.garmentPieceCount,
+      garmentCount: quote.garmentPieceCount,
+      blockCount,
+      coveredGarments: blockCount * INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
+      coveredWeightKg,
+      reason: null,
+    };
   }
-  const quote = calculateIndividualShipping(input.physicalGarmentCount);
-  const blockCount = quote.blockCount ?? 1;
-  const coveredWeightKg =
-    quote.coveredWeightKg ?? blockCount * INDIVIDUAL_SHIPPING_KG_PER_BLOCK;
-  return {
-    label: INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL,
-    includedLabel: INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL,
-    priceEur: quote.priceEur,
-    amountCents: blockCount * INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
-    weightBand: quote.weightBand,
-    physicalGarmentCount: quote.garmentPieceCount,
-    garmentCount: quote.garmentPieceCount,
-    blockCount,
-    coveredGarments: blockCount * INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
-    coveredWeightKg,
-  };
+
+  // Private Batch orders: charge €131.25 if fewer than 10 garments
+  if (isPrivateBatchOrder(input)) {
+    if (
+      !Number.isInteger(input.physicalGarmentCount) ||
+      input.physicalGarmentCount < 1
+    ) {
+      return null;
+    }
+    if (input.physicalGarmentCount >= BATCH_MINIMUM_GARMENTS) {
+      return null;
+    }
+    // Private Batch with < 10 garments: apply €131.25 Lagos → Eindhoven charge
+    return {
+      label: INDIVIDUAL_INBOUND_SHIPPING_DISPLAY_LABEL,
+      includedLabel: INDIVIDUAL_INBOUND_SHIPPING_INCLUDED_LABEL,
+      priceEur: INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS / 100,
+      amountCents: INDIVIDUAL_SHIPPING_BLOCK_PRICE_CENTS,
+      weightBand: ">2 - 5 kg",
+      physicalGarmentCount: input.physicalGarmentCount,
+      garmentCount: input.physicalGarmentCount,
+      blockCount: 1,
+      coveredGarments: INDIVIDUAL_SHIPPING_GARMENTS_PER_BLOCK,
+      coveredWeightKg: INDIVIDUAL_SHIPPING_KG_PER_BLOCK,
+      reason: "private_batch_below_minimum",
+    };
+  }
+
+  // Community Batch orders: always null
+  return null;
 };
