@@ -10,7 +10,7 @@ History up to 2026-11-25 is verbatim in `docs/archive/RELEASE_HISTORY_2026.md` (
 - Live: https://odogwu-heritage.vercel.app. Stripe **test mode only**. Admin: `src/components/DatabaseView.tsx`.
 - Design Studio (`DesignStudioView.tsx`, `DESIGN_STUDIO_TEN_STAGE_FOUNDATION` in `src/utils/designSourceJourney.ts`):
   1 Garment Type, 2 Fabric, 3 Design Style, 4 Custom Details, 5 Personalized Additions,
-  6 AI Try-on, 7 Measurement, 8 Summary, 9 Delivery & Pickup, 10 Order Review & Payment.
+  6 Measurement, 7 AI Try-on, 8 Summary, 9 Delivery & Pickup, 10 Order Review & Payment.
 - Drafts: guest local (`GuestOrderSessionService`), signed-in cloud (`repository.synchronize`); Step 3 uploads are uid-owned
   (`uploadedDesignSourceRegistry`). Paid orders are V2 (`api/future-order-v2/*`, workshop `future_order_v2_workshop`).
 
