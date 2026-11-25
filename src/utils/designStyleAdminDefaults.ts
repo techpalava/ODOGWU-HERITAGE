@@ -32,15 +32,61 @@ export const getUnifiedStyleGarmentTypes = (
     authority?.referenceComposition?.status === "known" &&
     authority.referenceComposition.garmentTypes.length > 0
   ) {
-    return authority.referenceComposition.garmentTypes;
+    const knownSet = new Set<CanonicalPhysicalGarmentType>(
+      authority.referenceComposition.garmentTypes,
+    );
+    return STYLE_BASE_GARMENT_TYPES.filter(
+      (gt): gt is CanonicalPhysicalGarmentType =>
+        gt !== "other" && knownSet.has(gt),
+    );
   }
   const composition = style.fabricCapacityComposition ?? [];
   const garmentTypesSet = new Set<CanonicalPhysicalGarmentType>(
-    composition.map((spec) => spec.garmentType).filter((gt): gt is CanonicalPhysicalGarmentType => gt !== "other"),
+    composition
+      .map((spec) => spec.garmentType)
+      .filter(
+        (gt): gt is CanonicalPhysicalGarmentType => gt !== "other",
+      ),
   );
   return STYLE_BASE_GARMENT_TYPES.filter(
-    (gt): gt is CanonicalPhysicalGarmentType => gt !== "other" && garmentTypesSet.has(gt),
+    (gt): gt is CanonicalPhysicalGarmentType =>
+      gt !== "other" && garmentTypesSet.has(gt),
   );
+};
+
+/**
+ * Synchronizes BOTH `fabricCapacityComposition` and `designStyleAuthority.referenceComposition`
+ * from a canonical list of garment types (or the style's unified garment types when omitted).
+ * Used when toggling garments and on legacy style save so untouched legacy styles never desync.
+ */
+export const syncUnifiedStyleGarmentComposition = (
+  style: DesignStyleAdminProjection,
+  garmentTypesInput?: readonly CanonicalPhysicalGarmentType[],
+): DesignStyleAdminProjection => {
+  const rawGarmentTypes = garmentTypesInput ?? getUnifiedStyleGarmentTypes(style);
+  const selectedSet = new Set<CanonicalPhysicalGarmentType>(rawGarmentTypes);
+  const nextGarmentTypes = STYLE_BASE_GARMENT_TYPES.filter(
+    (gt): gt is CanonicalPhysicalGarmentType =>
+      gt !== "other" && selectedSet.has(gt),
+  );
+
+  const nextFabricCapacityComposition = nextGarmentTypes.map(
+    createStyleBaseGarmentSpec,
+  );
+
+  const nextReferenceComposition: DesignStyleReferenceComposition =
+    nextGarmentTypes.length > 0
+      ? { status: "known", garmentTypes: nextGarmentTypes }
+      : { status: "legacy_unresolved", garmentTypes: [] };
+
+  return {
+    ...style,
+    fabricCapacityComposition: nextFabricCapacityComposition,
+    designStyleAuthority: {
+      ...style.designStyleAuthority,
+      referenceComposition: nextReferenceComposition,
+    },
+  };
 };
 
 /**
@@ -56,26 +102,9 @@ export const toggleUnifiedStyleGarmentType = (
   const isCurrentlySelected = currentUnified.includes(garmentType);
   const nextGarmentTypes = isCurrentlySelected
     ? currentUnified.filter((gt) => gt !== garmentType)
-    : [...currentUnified, garmentType].sort(
-        (a, b) =>
-          STYLE_BASE_GARMENT_TYPES.indexOf(a) - STYLE_BASE_GARMENT_TYPES.indexOf(b),
-      );
+    : [...currentUnified, garmentType];
 
-  const nextFabricCapacityComposition = nextGarmentTypes.map(createStyleBaseGarmentSpec);
-
-  const nextReferenceComposition: DesignStyleReferenceComposition =
-    nextGarmentTypes.length > 0
-      ? { status: "known", garmentTypes: nextGarmentTypes }
-      : { status: "legacy_unresolved", garmentTypes: [] };
-
-  return {
-    ...style,
-    fabricCapacityComposition: nextFabricCapacityComposition,
-    designStyleAuthority: {
-      ...style.designStyleAuthority,
-      referenceComposition: nextReferenceComposition,
-    },
-  };
+  return syncUnifiedStyleGarmentComposition(style, nextGarmentTypes);
 };
 
 export const DEFAULT_ADMIN_STYLE_GENDER = "male" as const;

@@ -2,10 +2,18 @@
  * Test for Admin Garment Guidance Unified Checkbox Sync
  */
 import assert from "node:assert/strict";
-import { createStyleBaseGarmentSpec, STYLE_BASE_GARMENT_TYPES } from "./src/config/StyleFabricCapacityConfig.js";
-import type { StyleCategory, DesignStyleAdminProjection, DesignStyleReferenceComposition } from "./src/types.js";
-import { getUnifiedStyleGarmentTypes, toggleUnifiedStyleGarmentType } from "./src/utils/designStyleAdminDefaults.js";
-import { createDefaultDesignStyleAuthorityMetadata } from "./src/utils/designStyleAuthority.js";
+import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig.js";
+import type { StyleCategory } from "./src/types.js";
+import {
+  getUnifiedStyleGarmentTypes,
+  syncUnifiedStyleGarmentComposition,
+  toggleUnifiedStyleGarmentType,
+} from "./src/utils/designStyleAdminDefaults.js";
+import {
+  createDefaultDesignStyleAuthorityMetadata,
+  type DesignStyleAdminProjection,
+  type DesignStyleReferenceComposition,
+} from "./src/utils/designStyleAuthority.js";
 
 const createBaseStyle = (overrides: Partial<StyleCategory> = {}): StyleCategory => ({
   id: "test-style-1",
@@ -117,11 +125,11 @@ console.log("\n=== Test 4: Toggle garment ON adds to both fabricCapacityComposit
   
   // Check fabricCapacityComposition
   const fabricTypes = updated.fabricCapacityComposition.map(s => s.garmentType);
-  assert.deepEqual(fabricTypes.sort(), ["dress", "shirt"].sort(), "fabricCapacityComposition should include both");
+  assert.deepEqual([...fabricTypes].sort(), ["dress", "shirt"].sort(), "fabricCapacityComposition should include both");
   
   // Check referenceComposition
   assert.equal(updated.designStyleAuthority.referenceComposition.status, "known", "referenceComposition status should be 'known'");
-  assert.deepEqual(updated.designStyleAuthority.referenceComposition.garmentTypes.sort(), ["dress", "shirt"].sort(), "referenceComposition garmentTypes should match");
+  assert.deepEqual([...updated.designStyleAuthority.referenceComposition.garmentTypes].sort(), ["dress", "shirt"].sort(), "referenceComposition garmentTypes should match");
   
   console.log("PASS: Adding garment updates both fields in lockstep");
 }
@@ -145,11 +153,11 @@ console.log("\n=== Test 5: Toggle garment OFF removes from both fields ===");
   
   // Check fabricCapacityComposition
   const fabricTypes = updated.fabricCapacityComposition.map(s => s.garmentType);
-  assert.deepEqual(fabricTypes.sort(), ["dress", "shirt"].sort(), "fabricCapacityComposition should not include removed garment");
+  assert.deepEqual([...fabricTypes].sort(), ["dress", "shirt"].sort(), "fabricCapacityComposition should not include removed garment");
   
   // Check referenceComposition
   assert.equal(updated.designStyleAuthority.referenceComposition.status, "known", "referenceComposition status should remain 'known'");
-  assert.deepEqual(updated.designStyleAuthority.referenceComposition.garmentTypes.sort(), ["dress", "shirt"].sort(), "referenceComposition garmentTypes should not include removed garment");
+  assert.deepEqual([...updated.designStyleAuthority.referenceComposition.garmentTypes].sort(), ["dress", "shirt"].sort(), "referenceComposition garmentTypes should not include removed garment");
   
   console.log("PASS: Removing garment updates both fields in lockstep");
 }
@@ -227,6 +235,44 @@ console.log("\n=== Test 8: Adding garment to style with existing referenceCompos
   assert.deepEqual(refTypes, expectedOrder, "referenceComposition should include new garment");
   
   console.log("PASS: Adding to existing referenceComposition works correctly");
+}
+
+console.log("\n=== Test 9: Syncing an untouched legacy style promotes referenceComposition to known ===");
+{
+  const style = createBaseStyle({
+    fabricCapacityComposition: [
+      createStyleBaseGarmentSpec("trouser"),
+      createStyleBaseGarmentSpec("shirt"),
+      createStyleBaseGarmentSpec("full_length_gown"),
+    ],
+  });
+  const projection = createAdminProjection(style, {
+    status: "legacy_unresolved",
+    garmentTypes: [],
+  });
+
+  const synced = syncUnifiedStyleGarmentComposition(projection);
+  assert.deepEqual(
+    synced.fabricCapacityComposition.map((s) => ({
+      garmentType: s.garmentType,
+      fabricUnits: s.fabricUnits,
+    })),
+    [
+      { garmentType: "shirt", fabricUnits: 1 },
+      { garmentType: "trouser", fabricUnits: 1 },
+      { garmentType: "full_length_gown", fabricUnits: 2 },
+    ],
+    "fabricCapacityComposition should preserve 1-unit and 2-unit specs in canonical order",
+  );
+  assert.deepEqual(
+    synced.designStyleAuthority.referenceComposition,
+    {
+      status: "known",
+      garmentTypes: ["shirt", "trouser", "full_length_gown"],
+    },
+    "referenceComposition should be promoted to known with canonical garmentTypes",
+  );
+  console.log("PASS: Untouched legacy style syncs both fields cleanly on save");
 }
 
 console.log("\n=== All tests passed! ===");

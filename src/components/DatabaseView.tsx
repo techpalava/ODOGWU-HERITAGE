@@ -169,6 +169,7 @@ import {
   resolveGroupedOutfitTypeOptions,
   getDefaultOutfitTypeForGender,
   getUnifiedStyleGarmentTypes,
+  syncUnifiedStyleGarmentComposition,
   toggleUnifiedStyleGarmentType,
 } from "../utils/designStyleAdminDefaults";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
@@ -1177,7 +1178,7 @@ export default function DatabaseView({
       return;
     }
 
-    const styleToPublish: StyleCategory = item.customDetailConfig
+    const baseStyleToPublish: StyleCategory = item.customDetailConfig
       ? {
           ...item,
           customDetailConfig: {
@@ -1189,11 +1190,20 @@ export default function DatabaseView({
         }
       : item;
 
-    const authority = getDesignStyleAuthorityMetadata(styleToPublish);
-    if (!authority) {
+    const rawAuthority = getDesignStyleAuthorityMetadata(baseStyleToPublish);
+    if (!rawAuthority) {
       triggerStatus("This Design Style has no valid publication authority.", "error");
       return;
     }
+    const styleToPublish: DesignStyleAdminProjection =
+      rawAuthority.referenceComposition.status === "legacy_unresolved" &&
+      Array.isArray(baseStyleToPublish.fabricCapacityComposition) &&
+      baseStyleToPublish.fabricCapacityComposition.length > 0
+        ? syncUnifiedStyleGarmentComposition(
+            baseStyleToPublish as DesignStyleAdminProjection,
+          )
+        : (baseStyleToPublish as DesignStyleAdminProjection);
+    const authority = styleToPublish.designStyleAuthority;
     if (isNewRecord) {
       if (adminStyles.some((s) => s.id === styleToPublish.id)) {
         alert("A style with this ID already exists.");
@@ -3279,23 +3289,13 @@ export default function DatabaseView({
                                       )
                                     : [];
                                 const fallbackGarments: CanonicalPhysicalGarmentType[] =
-                                  Array.isArray(editingItem.fabricCapacityComposition)
-                                    ? [
-                                        ...new Set<CanonicalPhysicalGarmentType>(
-                                          editingItem.fabricCapacityComposition
-                                            .map((spec: any): unknown => spec?.garmentType)
-                                            .filter(
-                                              (
-                                                g: unknown,
-                                              ): g is CanonicalPhysicalGarmentType =>
-                                                typeof g === "string" &&
-                                                ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
-                                                  g as CanonicalPhysicalGarmentType,
-                                                ),
-                                            ),
-                                        ),
-                                      ]
-                                    : [];
+                                  getUnifiedStyleGarmentTypes(
+                                    editingItem,
+                                  ).filter((g) =>
+                                    ADAPTABLE_DESIGN_STYLE_GARMENT_TYPES.includes(
+                                      g,
+                                    ),
+                                  );
                                 const garmentTypes =
                                   existingGarments.length > 0
                                     ? existingGarments
