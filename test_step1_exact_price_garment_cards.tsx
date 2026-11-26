@@ -52,24 +52,28 @@ const textContent = (node: ReactTestInstance | string | null): string =>
       ? node.children.map((child) => textContent(child as ReactTestInstance | string)).join("")
       : "";
 
-// 1. All 13 Step 1 cards render with exact dynamically resolved catalogue prices & zero "Kaftan".
+// 1. All 17 Step 1 cards render with exact dynamically resolved catalogue prices & zero "Kaftan".
 {
   const expectedCards: ReadonlyArray<[string, string, number]> = [
     ["shirt_short_sleeve", "Standard Shirt — Short Sleeve", 65],
     ["shirt_long_sleeve", "Standard Shirt — Long Sleeve", 70],
     ["kaftan_short_sleeve", "Long Shirt — Short Sleeve", 70],
     ["kaftan_long_sleeve", "Long Shirt — Long Sleeve", 75],
-    ["dress_sleeveless_or_short", "Standard Dress — Sleeveless / Short Sleeve", 70],
-    ["dress_mid_or_long", "Standard Dress — Mid / Long Sleeve", 75],
-    ["full_length_gown_sleeveless_or_short", "Long Dress — Sleeveless / Short Sleeve", 75],
-    ["full_length_gown_mid_or_long", "Long Dress — Mid / Long Sleeve", 80],
+    ["dress_sleeveless", "Standard Dress — Sleeveless", 70],
+    ["dress_short_sleeve", "Standard Dress — Short Sleeve", 70],
+    ["dress_mid_sleeve", "Standard Dress — Mid Sleeve", 75],
+    ["dress_long_sleeve", "Standard Dress — Long Sleeve", 75],
+    ["full_length_gown_sleeveless", "Long Dress — Sleeveless", 75],
+    ["full_length_gown_short_sleeve", "Long Dress — Short Sleeve", 75],
+    ["full_length_gown_mid_sleeve", "Long Dress — Mid Sleeve", 80],
+    ["full_length_gown_long_sleeve", "Long Dress — Long Sleeve", 80],
     ["skirt", "Standard Skirt", 75],
     ["long_skirt", "Long Skirt", 80],
     ["trouser", "Trouser", 75],
     ["standard_shorts", "Standard Nikka Shorts", 70],
     ["bum_shorts", "Standard Bum Shorts", 70],
   ];
-  assert.equal(STEP_1_GARMENT_CARD_PRESETS.length, 13);
+  assert.equal(STEP_1_GARMENT_CARD_PRESETS.length, 17);
 
   const markup = renderToStaticMarkup(
     createElement(GarmentTypeStep, {
@@ -115,7 +119,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     }),
   );
   const longShirtCard = repricedMarkup.match(/data-testid="step1-garment-card-shirt_long_sleeve"[\s\S]*?<\/article>/);
-  const longDressCard = repricedMarkup.match(/data-testid="step1-garment-card-full_length_gown_mid_or_long"[\s\S]*?<\/article>/);
+  const longDressCard = repricedMarkup.match(/data-testid="step1-garment-card-full_length_gown_long_sleeve"[\s\S]*?<\/article>/);
   assert.ok(longShirtCard?.[0].includes("€74.00"), "Admin price override flows dynamically to Step 1 shirt card");
   assert.ok(longDressCard?.[0].includes("€83.00"), "Admin price override flows dynamically to Step 1 dress card");
 }
@@ -478,7 +482,7 @@ const renderCustomDetailsStage = ({
   act(() => longSleeveShirtRenderer.unmount());
 }
 
-// 4. Step 4 narrows base dress & full_length_gown dress_construction to strictly 2 same-price sleeves, and switching Step 1 tier reconciles out-of-tier sleeve cleanly.
+// 4. Step 4 locks base dress & full_length_gown dress_construction to single Step 1 sleeve choice, hides dress_construction, and sibling switching replaces price cleanly.
 {
   let dressSelection = reconcileGarmentTypeStepSelection({
     selectedGarmentTypes: ["dress", "full_length_gown"],
@@ -486,41 +490,29 @@ const renderCustomDetailsStage = ({
     normalizedCustomDetailCatalog: catalog,
   }).selection;
 
-  // Pick Short Sleeve on base Standard Dress in Step 4 (still within Sleeveless/Short tier)
-  const pickedShort = selectGarmentConstructionOption({
-    resolution: dressSelection.constructionByGarment.dress!,
-    selectionGroup: "dress_construction",
-    optionId: "dress_std_short",
+  dressSelection = selectStep1GarmentCardPreset({
+    currentSelection: dressSelection,
+    presetId: "dress_short_sleeve",
     normalizedCustomDetailCatalog: catalog,
-  });
-  assert.equal(pickedShort.status, "selected");
-  if (pickedShort.status === "selected") {
-    dressSelection = {
-      ...dressSelection,
-      constructionByGarment: {
-        ...dressSelection.constructionByGarment,
-        dress: pickedShort.resolution,
-      },
-    };
-  }
+  }).selection;
   assert.equal(
     findStep1CardPresetForResolution("dress", dressSelection.constructionByGarment.dress)?.id,
-    "dress_sleeveless_or_short",
+    "dress_short_sleeve",
   );
   assert.deepEqual(
     getAllowedStep4ConstructionOptionIdsForBaseGarment("dress", dressSelection.constructionByGarment.dress),
-    ["dress_std_sleeveless", "dress_std_short"],
+    ["dress_std_short"],
   );
 
-  // Switch Step 1 to Mid / Long Sleeve on both dresses -> out-of-tier dress_std_short cleanly replaced with dress_std_long
+  // Switch Step 1 to Mid Sleeve and Long Sleeve -> exact single option replaced cleanly
   dressSelection = selectStep1GarmentCardPreset({
     currentSelection: dressSelection,
-    presetId: "dress_mid_or_long",
+    presetId: "dress_mid_sleeve",
     normalizedCustomDetailCatalog: catalog,
   }).selection;
   dressSelection = selectStep1GarmentCardPreset({
     currentSelection: dressSelection,
-    presetId: "full_length_gown_mid_or_long",
+    presetId: "full_length_gown_long_sleeve",
     normalizedCustomDetailCatalog: catalog,
   }).selection;
 
@@ -528,8 +520,14 @@ const renderCustomDetailsStage = ({
     dressSelection.constructionByGarment.dress?.status === "resolved"
       ? dressSelection.constructionByGarment.dress.components[0].optionId
       : null,
-    "dress_std_long",
-    "Switching Step 1 dress tier reconciles incompatible dress_std_short to dress_std_long",
+    "dress_std_mid",
+    "Switching Step 1 dress card updates exact optionId to dress_std_mid",
+  );
+  assert.equal(
+    dressSelection.constructionByGarment.dress?.status === "resolved"
+      ? dressSelection.constructionByGarment.dress.totalPriceCents
+      : null,
+    7500,
   );
   assert.equal(
     dressSelection.constructionByGarment.full_length_gown?.status === "resolved"
@@ -545,12 +543,10 @@ const renderCustomDetailsStage = ({
       typeof node.props.id === "string" &&
       node.props.id.startsWith("future-custom-detail-base:dress-dress_construction-"),
   );
-  assert.deepEqual(
-    stdDressInputs.map((node) =>
-      String(node.props.id).replace("future-custom-detail-base:dress-dress_construction-", ""),
-    ),
-    ["dress_std_mid", "dress_std_long"],
-    "Mid/Long Standard Dress narrows Step 4 to strictly Mid Sleeve & Long Sleeve",
+  assert.equal(
+    stdDressInputs.length,
+    0,
+    "Step 4 hides dress_construction for base Standard Dress once sleeve is chosen in Step 1",
   );
   const longDressInputs = renderer.root.findAll(
     (node) =>
@@ -558,41 +554,22 @@ const renderCustomDetailsStage = ({
       typeof node.props.id === "string" &&
       node.props.id.startsWith("future-custom-detail-base:full_length_gown-dress_construction-"),
   );
-  assert.deepEqual(
-    longDressInputs.map((node) =>
-      String(node.props.id).replace("future-custom-detail-base:full_length_gown-dress_construction-", ""),
-    ),
-    ["dress_long_mid", "dress_long_long"],
-    "Mid/Long Long Dress narrows Step 4 to strictly Mid Sleeve & Long Sleeve",
+  assert.equal(
+    longDressInputs.length,
+    0,
+    "Step 4 hides dress_construction for base Long Dress once sleeve is chosen in Step 1",
   );
-  const stdDressBlock = renderer.root.findByProps({ "data-dress-garment-block": "base:dress" });
-  const longDressBlock = renderer.root.findByProps({ "data-dress-garment-block": "base:full_length_gown" });
-  assert.match(textContent(stdDressBlock), /Sleeve Style/);
-  // Both same-price sleeve cards (checked and unchecked) must show "Included" and never the full dress price.
-  for (const [blockLabel, blockNode] of [
-    ["Standard Dress", stdDressBlock],
-    ["Long Dress", longDressBlock],
-  ] as const) {
-    const sleeveGroup = blockNode.findByProps({ "data-custom-detail-group": "dress_construction" });
-    const sleeveLabels = sleeveGroup.findAll((node) => node.type === "label");
-    assert.equal(sleeveLabels.length, 2, `${blockLabel} narrowed Sleeve Style has 2 cards`);
-    for (const sleeveLabel of sleeveLabels) {
-      const labelText = textContent(sleeveLabel);
-      assert.match(labelText, /Included/, `${blockLabel} sleeve card must display "Included"`);
-      assert.doesNotMatch(labelText, /€\d+\.\d{2}/, `${blockLabel} sleeve card must not display full dress price`);
-    }
-  }
-  // Garment Context bar for Mid / Long Sleeve dresses shows matching preset label & secondary photo.
+  // Garment Context bar for Mid Sleeve / Long Sleeve dresses shows matching preset label & image.
   const stdDressContext = renderer.root.findByProps({ "data-step4-garment-context": "base:dress" });
-  assert.match(textContent(stdDressContext), /Standard Dress — Mid \/ Long Sleeve/);
+  assert.match(textContent(stdDressContext), /Standard Dress — Mid Sleeve/);
   const stdDressRefImg = stdDressContext.findByProps({ "data-step4-garment-reference": "base:dress" });
-  assert.equal(stdDressRefImg.props.src, "/images/garments/ankara-standard-dress-long-sleeve.webp");
-  assert.equal(stdDressRefImg.props.alt, "Ankara Standard Dress — Mid / Long Sleeve reference");
+  assert.equal(stdDressRefImg.props.src, "/images/garments/ankara-standard-dress-mid-sleeve.webp");
+  assert.equal(stdDressRefImg.props.alt, "Ankara Standard Dress — Mid Sleeve reference");
   const longDressContext = renderer.root.findByProps({ "data-step4-garment-context": "base:full_length_gown" });
-  assert.match(textContent(longDressContext), /Long Dress — Mid \/ Long Sleeve/);
+  assert.match(textContent(longDressContext), /Long Dress — Long Sleeve/);
   const longDressRefImg = longDressContext.findByProps({ "data-step4-garment-reference": "base:full_length_gown" });
   assert.equal(longDressRefImg.props.src, "/images/garments/ankara-long-dress-gown.webp");
-  assert.equal(longDressRefImg.props.alt, "Ankara Long Dress — Mid / Long Sleeve reference");
+  assert.equal(longDressRefImg.props.alt, "Ankara Long Dress — Long Sleeve reference");
   assert.equal(
     renderer.root.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
     0,
@@ -601,7 +578,7 @@ const renderCustomDetailsStage = ({
   act(() => renderer.unmount());
 }
 
-// 5. Step 5 Additional Garments lock added Shirt length to button clicked, keep Trousers/Shorts under Waistband Fastening, and keep added Skirt length editable.
+// 5. Step 5 Additional Garments lock added Shirt/Dress sleeves & Skirt length (hidden in Step 4/5) while keeping Trousers/Shorts Waistband Fastening editable.
 {
   const selection = selectStep1GarmentCardPreset({
     currentSelection: reconcileGarmentTypeStepSelection({
@@ -654,7 +631,7 @@ const renderCustomDetailsStage = ({
     byGarmentKey: {
       "additional:shirt:1": resolveGarmentConstructionPricing("shirt", catalog),
       "additional:kaftan:1": resolveGarmentConstructionPricing("kaftan", catalog),
-      "additional:dress:1": resolveGarmentConstructionPricing("dress", catalog),
+      "additional:dress:1": resolveGarmentConstructionPricingForOptionId("dress", "dress_std_mid", catalog),
       "additional:skirt:1": resolveGarmentConstructionPricing("skirt", catalog),
       "additional:trouser:1": resolveGarmentConstructionPricing("trouser", catalog),
     },
@@ -671,44 +648,28 @@ const renderCustomDetailsStage = ({
       typeof node.props.id === "string" &&
       node.props.id.startsWith("future-custom-detail-additional:shirt:1-shirt_construction-"),
   );
-  assert.deepEqual(
-    additionalShirtInputs.map((node) =>
-      String(node.props.id).replace("future-custom-detail-additional:shirt:1-shirt_construction-", ""),
-    ),
-    ["shirt_std_short", "shirt_std_midlong"],
-    "Step 5 additional:shirt:1 locks to Standard Length sleeve options",
-  );
+  assert.equal(additionalShirtInputs.length, 0, "Step 5 additional:shirt:1 hides shirt_construction once sleeve is picked");
   const additionalLongShirtInputs = renderer.root.findAll(
     (node) =>
       node.type === "input" &&
       typeof node.props.id === "string" &&
       node.props.id.startsWith("future-custom-detail-additional:kaftan:1-shirt_construction-"),
   );
-  assert.deepEqual(
-    additionalLongShirtInputs.map((node) =>
-      String(node.props.id).replace("future-custom-detail-additional:kaftan:1-shirt_construction-", ""),
-    ),
-    ["shirt_long_short", "shirt_long_midlong"],
-    "Step 5 additional:kaftan:1 locks to Long Length sleeve options",
-  );
-  const addedShirtBlock = renderer.root.findByProps({ "data-shirt-garment-block": "additional:shirt:1" });
-  assert.match(textContent(addedShirtBlock), /€70\.00/, "Step 5 added shirt keeps price on unselected option");
+  assert.equal(additionalLongShirtInputs.length, 0, "Step 5 additional:kaftan:1 hides shirt_construction once sleeve is picked");
   const additionalDressInputs = renderer.root.findAll(
     (node) =>
       node.type === "input" &&
       typeof node.props.id === "string" &&
       node.props.id.startsWith("future-custom-detail-additional:dress:1-dress_construction-"),
   );
-  assert.equal(additionalDressInputs.length, 4, "Step 5 additional:dress:1 retains all 4 Standard Dress sleeve options");
-  const addedDressBlock = renderer.root.findByProps({ "data-dress-garment-block": "additional:dress:1" });
-  assert.match(textContent(addedDressBlock), /€75\.00/, "Step 5 added dress keeps price on unselected option");
+  assert.equal(additionalDressInputs.length, 0, "Step 5 additional:dress:1 hides dress_construction once sleeve is picked");
   const additionalSkirtInputs = renderer.root.findAll(
     (node) =>
       node.type === "input" &&
       typeof node.props.id === "string" &&
       node.props.id.startsWith("future-custom-detail-additional:skirt:1-skirt_length-"),
   );
-  assert.equal(additionalSkirtInputs.length, 2, "Step 5 additional:skirt:1 retains editable skirt_length options");
+  assert.equal(additionalSkirtInputs.length, 0, "Step 5 additional:skirt:1 hides skirt_length switch");
   const addedTrouserGroup = renderer.root
     .findByProps({ "data-trouser-garment-block": "additional:trouser:1" })
     .findByProps({ "data-custom-detail-group": "trouser_fastening" });
@@ -717,7 +678,7 @@ const renderCustomDetailsStage = ({
     textContent(addedTrouserGroup),
     /Choose your preferred waistband fastening for this garment\./,
   );
-  // Step 5 Garment Context bar: base garment reflects active Step 1 Long Sleeve preset; added garment keeps fallback.
+  // Step 5 Garment Context bar reflects active Step 1 / Add-garment preset labels & photos.
   const step5BaseContext = renderer.root.findByProps({ "data-step5-garment-context": "base:shirt" });
   assert.match(textContent(step5BaseContext), /Standard Shirt — Long Sleeve/);
   assert.equal(
@@ -725,11 +686,17 @@ const renderCustomDetailsStage = ({
     "/images/garments/ankara-standard-shirt-long-sleeve.webp",
   );
   const step5AddedContext = renderer.root.findByProps({ "data-step5-garment-context": "additional:shirt:1" });
-  assert.match(textContent(step5AddedContext), /Standard Shirt/);
+  assert.match(textContent(step5AddedContext), /Standard Shirt — Short Sleeve/);
   assert.doesNotMatch(textContent(step5AddedContext), /Long Sleeve/);
   assert.equal(
     step5AddedContext.findByProps({ "data-step4-garment-reference": "additional:shirt:1" }).props.src,
     "/images/garments/ankara-standard-shirt.webp",
+  );
+  const step5AddedDressContext = renderer.root.findByProps({ "data-step5-garment-context": "additional:dress:1" });
+  assert.match(textContent(step5AddedDressContext), /Standard Dress — Mid Sleeve/);
+  assert.equal(
+    step5AddedDressContext.findByProps({ "data-step4-garment-reference": "additional:dress:1" }).props.src,
+    "/images/garments/ankara-standard-dress-mid-sleeve.webp",
   );
   act(() => renderer.unmount());
 }
@@ -754,22 +721,22 @@ const renderCustomDetailsStage = ({
   );
   assert.equal(
     findStep1CardPresetForResolution("dress", hydratedOld.constructionByGarment.dress)?.id,
-    "dress_sleeveless_or_short",
+    "dress_sleeveless",
   );
   assert.equal(
     findStep1CardPresetForResolution("full_length_gown", hydratedOld.constructionByGarment.full_length_gown)?.id,
-    "full_length_gown_sleeveless_or_short",
+    "full_length_gown_sleeveless",
   );
 
-  // Legacy combined sleeve IDs hydrate cleanly to Mid / Long cards.
+  // Legacy combined sleeve IDs hydrate cleanly to Long Sleeve cards.
   assert.equal(
     findStep1CardPresetForResolution("dress", "dress_std_midlong")?.id,
-    "dress_mid_or_long",
+    "dress_long_sleeve",
   );
   assert.equal(
     findStep1CardPresetForResolution("full_length_gown", "dress_long_midlong")?.id,
-    "full_length_gown_mid_or_long",
+    "full_length_gown_long_sleeve",
   );
 }
 
-console.log("PASS: Step 1 13-card exact-price presets, sibling switching, Step 4 hiding/narrowing, Step 5 preservation, and downstream parity");
+console.log("PASS: Step 1 17-card exact-price presets, sibling switching, Step 4 hiding, Step 5 preservation, and downstream parity");

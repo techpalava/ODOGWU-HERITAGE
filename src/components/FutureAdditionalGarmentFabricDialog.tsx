@@ -2,12 +2,19 @@ import { useEffect, useId, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type {
+  CustomDetailOption,
   Fabric,
   FabricAllocationState,
   GarmentTypeStepSelection,
 } from "../types";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
+import {
+  getStep1GarmentCardPresetsForType,
+  getStep1PresetSleeveShortLabel,
+  resolveGarmentConstructionPricingForOptionId,
+} from "../utils/garmentConstructionPricing";
+import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   assignFutureFabricToGarment,
   formatFabricQuantityLimitChangeCopy,
@@ -47,6 +54,8 @@ export const FutureAdditionalGarmentFabricDialog = ({
   fabricAllocationState,
   requiredPhysicalOccurrences,
   errorMessage,
+  normalizedCustomDetailCatalog,
+  onSelectSleeveOption,
   onSelectFabric,
   onSelectExistingAllocation,
   onCancel,
@@ -60,6 +69,8 @@ export const FutureAdditionalGarmentFabricDialog = ({
   fabricAllocationState: FabricAllocationState;
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   errorMessage: string | null;
+  normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
+  onSelectSleeveOption?: (optionId: string) => void;
   onSelectFabric: (fabricCode: string) => void;
   onSelectExistingAllocation: (allocationId: string) => void;
   onCancel: () => void;
@@ -76,6 +87,21 @@ export const FutureAdditionalGarmentFabricDialog = ({
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLButtonElement | null>(null);
   const garmentLabel = getCustomDetailsGarmentLabel(transaction.garmentType);
+  const sleevePresets = useMemo(
+    () =>
+      transaction.origin === "new_addition"
+        ? getStep1GarmentCardPresetsForType(transaction.garmentType)
+        : [],
+    [transaction.garmentType, transaction.origin],
+  );
+  const showSleevePicker =
+    sleevePresets.length > 1 && Boolean(onSelectSleeveOption);
+  const selectedSleeveOptionId =
+    transaction.construction?.status === "resolved"
+      ? transaction.construction.components[0]?.optionId ??
+        sleevePresets[0]?.optionId ??
+        null
+      : sleevePresets[0]?.optionId ?? null;
   const { visibleFabricByCode, duplicateFabricCodes } = useMemo(() => {
     const nextVisibleFabricByCode = new Map<string, Fabric>();
     const nextDuplicateFabricCodes = new Set<string>();
@@ -332,6 +358,63 @@ export const FutureAdditionalGarmentFabricDialog = ({
             </p>
           ) : (
             <div className="space-y-4">
+              {showSleevePicker && (
+                <fieldset
+                  data-additional-garment-sleeve-picker={transaction.garmentKey}
+                  className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-3.5"
+                >
+                  <legend className="px-1 text-xs font-bold uppercase tracking-wide text-heritage-green">
+                    Choose Sleeve for {garmentLabel}
+                  </legend>
+                  <p className="mt-1 text-xs text-heritage-ink/65">
+                    Select the sleeve style for this added garment before picking fabric.
+                  </p>
+                  <div className="mt-2.5 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                    {sleevePresets.map((preset) => {
+                      const sleeveLabel = getStep1PresetSleeveShortLabel(preset);
+                      const checked = selectedSleeveOptionId === preset.optionId;
+                      const optionPricing = normalizedCustomDetailCatalog
+                        ? resolveGarmentConstructionPricingForOptionId(
+                            transaction.garmentType,
+                            preset.optionId,
+                            normalizedCustomDetailCatalog,
+                          )
+                        : null;
+                      return (
+                        <label
+                          key={preset.id}
+                          data-additional-garment-sleeve-card={preset.optionId}
+                          className={`flex min-h-11 min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border-2 px-3 py-2 text-left transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                            checked
+                              ? "border-heritage-green bg-white shadow-sm"
+                              : "border-heritage-gold/25 bg-white/80 hover:border-heritage-gold"
+                          }`}
+                        >
+                          <span className="flex min-w-0 items-center gap-2.5">
+                            <input
+                              type="radio"
+                              name={`additional-garment-sleeve-${transaction.garmentKey}`}
+                              data-additional-garment-sleeve-option={preset.optionId}
+                              checked={checked}
+                              onChange={() => onSelectSleeveOption?.(preset.optionId)}
+                              className="size-4 shrink-0 accent-heritage-green"
+                            />
+                            <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
+                              {sleeveLabel}
+                            </span>
+                          </span>
+                          {optionPricing?.status === "resolved" ? (
+                            <span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">
+                              {PRICING_CURRENCY_SYMBOL}
+                              {optionPricing.totalPrice.toFixed(2)}
+                            </span>
+                          ) : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
               <p id={helpId} className="sr-only">
                 Choose a fabric card to assign it to {garmentLabel}.
               </p>

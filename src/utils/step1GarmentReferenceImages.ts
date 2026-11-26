@@ -1,5 +1,8 @@
 import type { CustomerSelectableGarmentType } from "./garmentConstructionPricing.js";
-import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./garmentConstructionPricing.js";
+import {
+  CUSTOMER_SELECTABLE_GARMENT_TYPES,
+  type Step1GarmentCardPresetId,
+} from "./garmentConstructionPricing.js";
 
 export const STEP1_GARMENT_REFERENCE_DISCLAIMER =
   "Reference images show garment types only. Your selected Fabric and Design Style determine the final appearance.";
@@ -33,7 +36,7 @@ export const STEP1_GARMENT_REFERENCE_IMAGES: {
   standard_shorts: garmentReferenceImage("ankara-standard-shorts.webp"),
   bum_shorts: garmentReferenceImage("ankara-bum-shorts.webp"),
   dress: garmentReferenceImage("ankara-standard-dress.webp"),
-    kaftan: garmentReferenceImage("ankara-kaftan-short-sleeve.webp"),
+  kaftan: garmentReferenceImage("ankara-kaftan-short-sleeve.webp"),
   full_length_gown: garmentReferenceImage("ankara-long-dress-gown-short-sleeve.webp"),
 };
 
@@ -61,6 +64,40 @@ export const STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES: Readonly<
   dress: garmentReferenceImage("ankara-standard-dress-long-sleeve.webp"),
   full_length_gown: garmentReferenceImage("ankara-long-dress-gown.webp"),
 };
+
+/**
+ * Per-card reference image mapping for all 17 Step 1 garment cards.
+ */
+export const STEP1_GARMENT_PRESET_REFERENCE_IMAGES: Readonly<
+  Record<Step1GarmentCardPresetId, Step1GarmentReferenceImageConfig>
+> = {
+  shirt_short_sleeve: garmentReferenceImage("ankara-standard-shirt.webp"),
+  shirt_long_sleeve: garmentReferenceImage("ankara-standard-shirt-long-sleeve.webp"),
+  kaftan_short_sleeve: garmentReferenceImage("ankara-kaftan-short-sleeve.webp"),
+  kaftan_long_sleeve: garmentReferenceImage("ankara-kaftan.webp"),
+  dress_sleeveless: garmentReferenceImage("ankara-standard-dress.webp"),
+  dress_short_sleeve: garmentReferenceImage("ankara-standard-dress-short-sleeve.webp"),
+  dress_mid_sleeve: garmentReferenceImage("ankara-standard-dress-mid-sleeve.webp"),
+  dress_long_sleeve: garmentReferenceImage("ankara-standard-dress-long-sleeve.webp"),
+  full_length_gown_sleeveless: garmentReferenceImage("ankara-long-dress-gown-sleeveless.webp"),
+  full_length_gown_short_sleeve: garmentReferenceImage(
+    "ankara-long-dress-gown-short-sleeve.webp",
+  ),
+  full_length_gown_mid_sleeve: garmentReferenceImage("ankara-long-dress-gown-mid-sleeve.webp"),
+  full_length_gown_long_sleeve: garmentReferenceImage("ankara-long-dress-gown.webp"),
+  skirt: garmentReferenceImage("ankara-standard-skirt.webp"),
+  long_skirt: garmentReferenceImage("ankara-long-skirt.webp"),
+  trouser: garmentReferenceImage("ankara-trouser.webp"),
+  standard_shorts: garmentReferenceImage("ankara-standard-shorts.webp"),
+  bum_shorts: garmentReferenceImage("ankara-bum-shorts.webp"),
+};
+
+export const STEP1_PLACEHOLDER_DRESS_REFERENCE_IMAGES: readonly Step1GarmentReferenceImageConfig[] = [];
+
+export const getStep1PresetReferenceImage = (
+  presetId: Step1GarmentCardPresetId,
+): Step1GarmentReferenceImageConfig =>
+  STEP1_GARMENT_PRESET_REFERENCE_IMAGES[presetId];
 
 export const getStep1GarmentReferenceImage = (
   garmentType: CustomerSelectableGarmentType,

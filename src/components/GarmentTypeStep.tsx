@@ -46,9 +46,7 @@ import {
 import {
   STEP1_GARMENT_REFERENCE_DISCLAIMER,
   getStep1GarmentReferenceAlt,
-  getStep1GarmentReferenceImage,
-  getStep1GarmentSecondaryReferenceImage,
-  isStep1DualImageGarmentType,
+  getStep1PresetReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages.js";
 import { formatRequiredFabricQuantitySentence } from "../utils/designStudioFutureFabricStage.js";
@@ -385,7 +383,7 @@ export const GarmentTypeStep = ({
   const garmentCount = presentation.garmentCount;
   const fabricQuantity = presentation.fabricQuantity;
 
-  // Group the 13 categories from STEP_1_GARMENT_CARD_PRESETS into 4 category groups
+  // Group the 17 categories from STEP_1_GARMENT_CARD_PRESETS into 4 category groups
   const categoryGroups = STEP_1_GARMENT_CATEGORY_GROUPS.map((group) => {
     const matchingCategories = presentation.categories.filter((cat) =>
       group.presetIds.includes(cat.presetId),
@@ -405,15 +403,9 @@ export const GarmentTypeStep = ({
     const price = category.constructionPricing;
     const isResolved = price?.status === "resolved";
     const buttonId = `${idPrefix}-${category.presetId}`;
-    const primaryReferenceImage = isStep1GarmentReferenceType(category.garmentType)
-      ? getStep1GarmentReferenceImage(category.garmentType)
+    const referenceImage = isStep1GarmentReferenceType(category.garmentType)
+      ? getStep1PresetReferenceImage(category.presetId)
       : null;
-    const secondaryReferenceImage =
-      category.referenceImageVariant === "secondary" &&
-      isStep1DualImageGarmentType(category.garmentType)
-        ? getStep1GarmentSecondaryReferenceImage(category.garmentType)
-        : null;
-    const referenceImage = secondaryReferenceImage ?? primaryReferenceImage;
     const referenceAlt = getStep1GarmentReferenceAlt(category.label);
     const plainDescription = getStep1GarmentPlainDescription(category.garmentType);
     return (

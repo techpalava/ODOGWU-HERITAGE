@@ -31,7 +31,6 @@ import {
   selectGarmentConstructionOption,
 } from "./src/utils/garmentTypeStepState";
 import {
-  getOptionGarmentLength,
   getStep1LengthSwitchNote,
   resolveBasePhysicalGarmentType,
 } from "./src/utils/garmentLengthVariant";
@@ -238,7 +237,7 @@ const mainGarmentInputs = (
       node.props.id.startsWith(`future-custom-detail-${parentGarmentKey}-${selectionGroup}-`),
   );
 
-// --- 1. Base shirts & skirts lock construction in Step 1 (hidden in Step 4); base dresses narrow to 2 same-price sleeves. ---
+// --- 1. Base shirts, dresses & skirts lock construction in Step 1 (hidden in Step 4). ---
 for (const garmentType of [
   "shirt",
   "kaftan",
@@ -256,51 +255,28 @@ for (const garmentType of [
   const optionIds = mainGarmentInputs(renderer, `base:${garmentType}`, selectionGroup).map(
     (node) => String(node.props.id).replace(`future-custom-detail-base:${garmentType}-${selectionGroup}-`, ""),
   );
-  const lengths = new Set(optionIds.map((id) => getOptionGarmentLength(selectionGroup as never, id)));
-  if (garmentType === "dress" || garmentType === "full_length_gown") {
-    // Step 4 narrows base dresses to the 2 zero-price-change sleeve choices for the active Step 1 tier.
-    assert.equal(lengthGroups.length, 0, `${garmentType}: no Standard/Long Length selector in Step 4`);
-    assert.deepEqual(
-      [...lengths],
-      [garmentType === "dress" ? "standard" : "long"],
-      `${garmentType}: only the Step 1 length is offered`,
-    );
-    assert.deepEqual(
-      optionIds,
-      garmentType === "dress"
-        ? ["dress_std_sleeveless", "dress_std_short"]
-        : ["dress_long_sleeveless", "dress_long_short"],
-      `${garmentType}: strictly two same-price sleeve options remain for Sleeveless / Short Sleeve tier`,
-    );
-    assert.doesNotMatch(
-      textContent(renderer.root),
-      garmentType === "dress" ? /Long Length/ : /Standard Length/,
-      `${garmentType}: the other length is not shown anywhere in Step 4`,
-    );
-  } else {
-    assert.equal(lengthGroups.length, 0, `${garmentType}: no redundant Step 4 construction selector`);
-    assert.deepEqual(optionIds, [], `${garmentType}: base construction group is hidden in Step 4`);
-  }
+  assert.equal(lengthGroups.length, 0, `${garmentType}: no redundant Step 4 construction selector`);
+  assert.deepEqual(optionIds, [], `${garmentType}: base construction group is hidden in Step 4`);
 }
 
-// A dress still shows Sleeve Style options, neck design and pockets: only the length selector & other tier are gone.
+// A dress still keeps neck design and pockets in Step 4 while sleeve options are hidden.
 for (const garmentType of ["dress", "full_length_gown"] as const) {
   const renderer = renderCustomDetails({ selection: step1([garmentType], "female") });
   const groups = renderer.root
     .findAll((node) => typeof node.props["data-custom-detail-group"] === "string")
     .map((node) => node.props["data-custom-detail-group"]);
-  assert.ok(groups.includes("dress_construction"), `${garmentType}: sleeve options group remains`);
+  assert.equal(groups.includes("dress_construction"), false, `${garmentType}: sleeve options hidden in Step 4`);
   assert.ok(groups.includes("neck_design"), `${garmentType}: neck design remains`);
   assert.ok(groups.includes("dress_pockets"), `${garmentType}: pockets remain`);
 }
 
-// A saved draft that already holds the other dress length keeps showing that tier's 2 sleeve options (never hidden).
+// A saved legacy draft that already holds dress_long_midlong on a Standard Dress card hydrates and locks cleanly in Step 4.
 {
   const savedLong = switched(step1(["dress"], "female"), "dress", "dress_construction", "dress_long_midlong");
   const renderer = renderCustomDetails({ selection: savedLong });
   const optionIds = mainGarmentInputs(renderer, "base:dress", "dress_construction").map((node) => node);
-  assert.equal(optionIds.length, 2, "saved Long Length Mid/Long choice on a Standard Dress card renders its 2 sleeve options");
-  assert.equal(optionIds.some((node) => node.props.checked), true, "the saved option stays selected");
+  assert.equal(optionIds.length, 0, "saved legacy draft hides dress_construction in Step 4 once reconciled");
+  act(() => renderer.unmount());
 }
 
 // Base shirt construction is hidden in Step 4 while pockets and neck design stay editable.
@@ -852,9 +828,9 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
   );
   const dressInputs = mainGarmentInputs(renderer, "base:dress", "dress_construction");
   assert.equal(
-    dressInputs.find((node) => node.props.checked)?.props.id,
-    "future-custom-detail-base:dress-dress_construction-dress_std_sleeveless",
-    "The previous option stays selected",
+    dressInputs.length,
+    0,
+    "Base dress locks its Step 1 sleeve choice and hides dress_construction in Step 4",
   );
 
   // Alone on its fabric, the Dress may become a Long Dress; the assignment is resized in place.
@@ -1143,8 +1119,7 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
     "Fabric keeps the switched added garment",
   );
 
-  // Step 5 UI: added Standard Shirt and Long Shirt lock length to the Add button clicked (matching
-  // Dresses), while an added Standard Skirt keeps both Standard Length and Long Length options.
+  // Step 5 UI: added Standard Shirt, Long Shirt, Dresses, and Standard Skirt hide construction/sleeve/length switch in Step 4/5.
   const step5AdditionalGarments: FabricAllocationState["fabricAllocations"][number]["garmentAssignments"] = [
     { garmentKey: "additional:shirt:1", code: "ADDITIONAL_SHIRT_1", garmentType: "shirt", fabricUnits: 1, sourceRole: "additional" },
     { garmentKey: "additional:kaftan:1", code: "ADDITIONAL_KAFTAN_1", garmentType: "kaftan", fabricUnits: 1, sourceRole: "additional" },
@@ -1164,52 +1139,30 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
     additionalGarments: step5AdditionalGarments,
     additionalGarmentConstructions: step5AdditionalConstructions,
   });
-  const addedShirtOptionIds = mainGarmentInputs(step5Renderer, "additional:shirt:1", "shirt_construction").map((node) =>
-    String(node.props.id).replace("future-custom-detail-additional:shirt:1-shirt_construction-", ""),
-  );
-  assert.deepEqual(
-    addedShirtOptionIds,
-    ["shirt_std_short", "shirt_std_midlong"],
-    "Step 5 added Standard Shirt locks to Standard Length sleeve options",
-  );
-  const addedLongShirtOptionIds = mainGarmentInputs(step5Renderer, "additional:kaftan:1", "shirt_construction").map((node) =>
-    String(node.props.id).replace("future-custom-detail-additional:kaftan:1-shirt_construction-", ""),
-  );
-  assert.deepEqual(
-    addedLongShirtOptionIds,
-    ["shirt_long_short", "shirt_long_midlong"],
-    "Step 5 added Long Shirt locks to Long Length sleeve options",
-  );
-  const addedShirtBlock = step5Renderer.root.findByProps({ "data-shirt-garment-block": "additional:shirt:1" });
-  const addedLongShirtBlock = step5Renderer.root.findByProps({ "data-shirt-garment-block": "additional:kaftan:1" });
   assert.equal(
-    addedShirtBlock.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
+    mainGarmentInputs(step5Renderer, "additional:shirt:1", "shirt_construction").length,
     0,
-    "Added Standard Shirt has no Standard/Long Length split sub-headings",
+    "Step 5 added Standard Shirt hides shirt_construction once sleeve is picked in Add popup",
   );
   assert.equal(
-    addedLongShirtBlock.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
+    mainGarmentInputs(step5Renderer, "additional:kaftan:1", "shirt_construction").length,
     0,
-    "Added Long Shirt has no Standard/Long Length split sub-headings",
+    "Step 5 added Long Shirt hides shirt_construction once sleeve is picked in Add popup",
   );
-  const addedSkirtOptionIds = mainGarmentInputs(step5Renderer, "additional:skirt:1", "skirt_length").map((node) =>
-    String(node.props.id).replace("future-custom-detail-additional:skirt:1-skirt_length-", ""),
-  );
-  assert.deepEqual(
-    addedSkirtOptionIds,
-    ["skirt_std", "skirt_long"],
-    "Step 5 added Standard Skirt retains both Standard Length and Long Length options",
+  assert.equal(
+    mainGarmentInputs(step5Renderer, "additional:skirt:1", "skirt_length").length,
+    0,
+    "Step 5 added Standard Skirt removes skirt_length switch",
   );
   const addedSkirtBlock = step5Renderer.root.findByProps({ "data-skirt-garment-block": "additional:skirt:1" });
   assert.equal(
     addedSkirtBlock.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
-    2,
-    "Added Standard Skirt still renders Standard Length and Long Length groups",
+    0,
+    "Added Standard Skirt has no Standard/Long Length split sub-headings",
   );
   act(() => step5Renderer.unmount());
 
-  // Legacy saved draft safety: an added Standard Shirt whose saved construction holds a Long Shirt
-  // option keeps showing the Long Length sleeve options with the saved choice checked.
+  // Legacy saved draft safety: an added Standard Shirt whose saved construction holds shirt_long_midlong reconciles cleanly and hides construction in Step 4/5.
   const legacySwitchedAddedShirtRenderer = renderCustomDetails({
     stage: "personalized_additions",
     selection: shirtSelection,
@@ -1227,21 +1180,14 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
       },
     },
   });
-  const legacyAddedShirtInputs = mainGarmentInputs(
-    legacySwitchedAddedShirtRenderer,
-    "additional:shirt:1",
-    "shirt_construction",
-  );
-  assert.deepEqual(
-    legacyAddedShirtInputs.map((node) =>
-      String(node.props.id).replace("future-custom-detail-additional:shirt:1-shirt_construction-", ""),
-    ),
-    ["shirt_long_short", "shirt_long_midlong"],
-    "Legacy saved draft on additional:shirt:1 with shirt_long_midlong keeps showing Long Length options",
-  );
   assert.equal(
-    legacyAddedShirtInputs.find((node) => node.props.checked)?.props.id,
-    "future-custom-detail-additional:shirt:1-shirt_construction-shirt_long_midlong",
+    mainGarmentInputs(
+      legacySwitchedAddedShirtRenderer,
+      "additional:shirt:1",
+      "shirt_construction",
+    ).length,
+    0,
+    "Legacy saved draft on additional:shirt:1 hides shirt_construction in Step 4/5",
   );
   act(() => legacySwitchedAddedShirtRenderer.unmount());
 }
