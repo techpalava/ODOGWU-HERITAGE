@@ -1745,7 +1745,7 @@ export const DormantFutureMeasurementStep = ({
             data-measurement-guide-banner="true"
             className="mt-3 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
           >
-            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-3.5">
               <div className="flex min-w-0 items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
                   <BookOpen size={19} aria-hidden="true" />
@@ -1764,7 +1764,7 @@ export const DormantFutureMeasurementStep = ({
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pl-[52px]">
                 <button
                   type="button"
                   data-measurement-guide-open="true"
