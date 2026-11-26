@@ -431,9 +431,46 @@ export const DormantFutureDesignStyleStep = ({
   // Paginate the filtered catalogue entries
   const paginatedCatalogue = useMemo(
     () =>
-      paginateDesignStyleEntries(filteredCatalogueEntries, cataloguePage, STEP3_CATALOGUE_PAGE_SIZE),
+      paginateDesignStyleEntries(
+        filteredCatalogueEntries,
+        cataloguePage,
+        STEP3_CATALOGUE_PAGE_SIZE,
+      ),
     [filteredCatalogueEntries, cataloguePage],
   );
+  const hasAnySelectedStyle = useMemo(
+    () =>
+      filteredCatalogueEntries.some(
+        (candidate) => candidate.selectedOccurrenceLabels.length > 0,
+      ),
+    [filteredCatalogueEntries],
+  );
+
+  // Keep cataloguePage clamped if catalogue shrinks dynamically
+  useEffect(() => {
+    if (cataloguePage > paginatedCatalogue.totalPages) {
+      setCataloguePage(paginatedCatalogue.totalPages);
+    }
+  }, [cataloguePage, paginatedCatalogue.totalPages]);
+
+  const handleCataloguePageChange = (nextPage: number) => {
+    const clampedPage = Math.max(
+      1,
+      Math.min(nextPage, paginatedCatalogue.totalPages),
+    );
+    if (clampedPage === paginatedCatalogue.page) {
+      return;
+    }
+    setCataloguePage(clampedPage);
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    allDesignsRef.current?.scrollIntoView?.({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  };
 
   const firstIncompleteOccurrence = occurrences.find(
     (occurrence) => occurrence.status !== "complete",
@@ -1651,16 +1688,13 @@ export const DormantFutureDesignStyleStep = ({
                       className="mt-2 text-xs text-heritage-ink/60"
                       aria-live="polite"
                     >
-                      Showing {paginatedCatalogue.startIndex}–{paginatedCatalogue.endIndex} of{' '}
+                      Showing {paginatedCatalogue.startIndex}–{paginatedCatalogue.endIndex} of{" "}
                       {paginatedCatalogue.totalItems} designs
                     </div>
                   )}
                   <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {paginatedCatalogue.items.map((entry, index) => {
                       const displayStyleName = formatDisplayStyleLabel(entry.style);
-                      const hasAnySelectedStyle = filteredCatalogueEntries.some(
-                        (candidate) => candidate.selectedOccurrenceLabels.length > 0,
-                      );
                     return (
                       <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-heritage-gold/60 hover:shadow-md">
                         <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`Select ${displayStyleName}`} className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold disabled:cursor-not-allowed" />
@@ -1700,69 +1734,68 @@ export const DormantFutureDesignStyleStep = ({
                     <nav
                       aria-label="Design styles pagination"
                       data-testid="step3-catalogue-pagination"
-                      className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:justify-center"
+                      className="mt-6 flex items-center justify-between gap-2 sm:justify-center sm:gap-3"
                     >
                       <button
                         type="button"
                         data-testid="step3-pagination-prev"
                         disabled={paginatedCatalogue.page <= 1}
-                        onClick={() => {
-                          setCataloguePage((prev) => Math.max(1, prev - 1));
-                          allDesignsRef.current?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }}
+                        onClick={() =>
+                          handleCataloguePageChange(paginatedCatalogue.page - 1)
+                        }
                         className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition disabled:cursor-not-allowed disabled:opacity-40 disabled:border-gray-200 disabled:text-heritage-ink/30 ${studioOutlinedNavInteractionClass}`}
                       >
                         Previous
                       </button>
-                      <div className="flex flex-wrap items-center justify-center gap-1 sm:hidden" aria-hidden="true">
-                        Page {paginatedCatalogue.page} of {paginatedCatalogue.totalPages}
-                      </div>
-                      <div
-                        className="hidden flex-wrap items-center justify-center gap-1 sm:flex"
-                        role="navigation"
-                        aria-label="Page numbers"
+                      <span
+                        data-testid="step3-pagination-mobile-status"
+                        className="text-xs font-semibold text-heritage-ink/75 sm:hidden"
                       >
-                        {getPaginationPageItems(paginatedCatalogue.page, paginatedCatalogue.totalPages).map((item, idx) =>
+                        Page {paginatedCatalogue.page} of {paginatedCatalogue.totalPages}
+                      </span>
+                      <div className="hidden flex-wrap items-center justify-center gap-1 sm:flex">
+                        {getPaginationPageItems(
+                          paginatedCatalogue.page,
+                          paginatedCatalogue.totalPages,
+                        ).map((item, idx) =>
                           item === "ellipsis" ? (
-                            <span key={`ellipsis-${idx}`} className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs font-semibold text-heritage-ink/45" aria-hidden="true">
+                            <span
+                              key={`ellipsis-${idx}`}
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs font-semibold text-heritage-ink/45"
+                              aria-hidden="true"
+                            >
                               …
                             </span>
                           ) : (
                             <button
                               key={`page-${item}`}
                               type="button"
-                              aria-current={item === paginatedCatalogue.page ? "page" : undefined}
+                              aria-label={`Page ${item}`}
+                              aria-current={
+                                item === paginatedCatalogue.page ? "page" : undefined
+                              }
                               disabled={item === paginatedCatalogue.page}
-                              onClick={() => {
-                                setCataloguePage(item);
-                                allDesignsRef.current?.scrollIntoView({
-                                  behavior: "smooth",
-                                  block: "start",
-                                });
-                              }}
-                              className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-xs font-bold transition ${item === paginatedCatalogue.page
-                                ? "bg-heritage-green text-white"
-                                : "bg-white text-heritage-green hover:bg-heritage-cream border border-heritage-gold/30"} disabled:cursor-not-allowed`}
+                              onClick={() => handleCataloguePageChange(item)}
+                              className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1 ${
+                                item === paginatedCatalogue.page
+                                  ? "bg-heritage-green text-white disabled:cursor-default"
+                                  : "border border-heritage-gold/30 bg-white text-heritage-green hover:bg-heritage-cream"
+                              }`}
                             >
                               {item}
                             </button>
-                          )
+                          ),
                         )}
                       </div>
                       <button
                         type="button"
                         data-testid="step3-pagination-next"
-                        disabled={paginatedCatalogue.page >= paginatedCatalogue.totalPages}
-                        onClick={() => {
-                          setCataloguePage((prev) => Math.min(paginatedCatalogue.totalPages, prev + 1));
-                          allDesignsRef.current?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }}
+                        disabled={
+                          paginatedCatalogue.page >= paginatedCatalogue.totalPages
+                        }
+                        onClick={() =>
+                          handleCataloguePageChange(paginatedCatalogue.page + 1)
+                        }
                         className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition disabled:cursor-not-allowed disabled:opacity-40 disabled:border-gray-200 disabled:text-heritage-ink/30 ${studioOutlinedNavInteractionClass}`}
                       >
                         Next

@@ -20,8 +20,8 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     ? node
     : node
       ? node.children
-          .map((child) => textContent(child as ReactTestInstance | string))
-          .join("")
+        .map((child) => textContent(child as ReactTestInstance | string))
+        .join("")
       : "";
 
 // ============================================================================
@@ -213,6 +213,13 @@ console.log("Running unit tests for getPaginationPageItems...");
   // For 8 pages, page 4 is in the "middle" range (>3), so ellipsis after page 1
   assert.deepEqual(result, [1, "ellipsis", 3, 4, 5, "ellipsis", 8]);
   console.log("  ✓ Eight pages (ellipsis appears)");
+}
+
+// 10. Ten pages, currentPage=3 includes +1 neighbor (page 4)
+{
+  const result = getPaginationPageItems(3, 10);
+  assert.deepEqual(result, [1, 2, 3, 4, "ellipsis", 10]);
+  console.log("  ✓ Ten pages, page 3 includes neighbor 4");
 }
 
 console.log("All getPaginationPageItems unit tests passed!\n");
@@ -613,6 +620,131 @@ console.log("  Test 8: Page number buttons work");
   console.log("    ✓ Page number navigation works");
 }
 
+// Test 9: Page change scrolls allDesignsRef into view respecting prefers-reduced-motion
+console.log("  Test 9: Scroll respects prefers-reduced-motion");
+{
+  const styles = Array.from({ length: 26 }, (_, i) =>
+    createTestStyle(`style-${i + 1}`, `Style ${i + 1}`),
+  );
+  const model = createDesignStyleStepTestModel({
+    styles,
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const scrollCalls: Array<ScrollIntoViewOptions | undefined> = [];
+  const createNodeMock = (element: { props?: unknown }) => {
+    const props = element.props as Record<string, unknown> | undefined;
+    return props?.["data-testid"] === "step3-all-designs"
+      ? {
+          scrollIntoView: (options?: ScrollIntoViewOptions) => {
+            scrollCalls.push(options);
+          },
+        }
+      : null;
+  };
+
+  const originalWindow = (globalThis as { window?: unknown }).window;
+  let reducedMotion = false;
+  (globalThis as { window?: unknown }).window = {
+    matchMedia: (query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)" && reducedMotion,
+    }),
+  };
+
+  try {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        createElement(DormantFutureDesignStyleStep, {
+          ...createDesignStyleStepRenderProps(model),
+        }),
+        { createNodeMock },
+      );
+    });
+
+    const nextBtn = getNextButton(renderer.root);
+    assert.ok(nextBtn);
+    await act(async () => nextBtn.props.onClick());
+    assert.deepEqual(scrollCalls[0], { behavior: "smooth", block: "start" });
+
+    reducedMotion = true;
+    const prevBtn = getPrevButton(renderer.root);
+    assert.ok(prevBtn);
+    await act(async () => prevBtn.props.onClick());
+    assert.deepEqual(scrollCalls[1], { behavior: "auto", block: "start" });
+
+    await act(async () => renderer.unmount());
+  } finally {
+    if (originalWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = originalWindow;
+    }
+  }
+  console.log("    ✓ Scroll respects prefers-reduced-motion");
+}
+
+// Test 10: IN USE badge works on Page 2 & dynamic shrink clamps cleanly
+console.log("  Test 10: IN USE across pages & dynamic shrink clamping");
+{
+  const styles26 = Array.from({ length: 26 }, (_, i) =>
+    createTestStyle(`style-${i + 1}`, `Style ${i + 1}`),
+  );
+  const model = createDesignStyleStepTestModel({
+    styles: styles26,
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const baseProps = createDesignStyleStepRenderProps(model);
+  const propsWithPage2InUse = {
+    ...baseProps,
+    catalogueEntries: baseProps.catalogueEntries.map((entry) =>
+      entry.style.id === "style-15"
+        ? { ...entry, selectedOccurrenceLabels: ["Long Shirt"] }
+        : entry,
+    ),
+  };
+
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      createElement(DormantFutureDesignStyleStep, propsWithPage2InUse),
+    );
+  });
+
+  // On Page 1, hand-guide target should be suppressed because style-15 on Page 2 is IN USE
+  const page1GuideTargets = renderer.root.findAll(
+    (n) => n.props?.["data-hand-guide-target"] === "design-style-select",
+  );
+  assert.equal(page1GuideTargets.length, 0);
+
+  // Navigate to Page 2 and confirm style-15 shows IN USE
+  await act(async () => getNextButton(renderer.root)!.props.onClick());
+  const style15Card = renderer.root.find(
+    (n) => n.props?.["data-style-name"] === "Style 15",
+  );
+  assert.ok(textContent(style15Card).includes("IN USE"));
+
+  // Navigate to Page 3, then dynamically shrink catalogue to 15 items (2 pages)
+  await act(async () => getNextButton(renderer.root)!.props.onClick());
+  assert.equal(getRangeText(renderer.root), "Showing 25–26 of 26 designs");
+
+  await act(async () => {
+    renderer.update(
+      createElement(DormantFutureDesignStyleStep, {
+        ...propsWithPage2InUse,
+        catalogueEntries: propsWithPage2InUse.catalogueEntries.slice(0, 15),
+      }),
+    );
+  });
+  assert.equal(getRangeText(renderer.root), "Showing 13–15 of 15 designs");
+
+  // Clicking Previous once must immediately move from clamped Page 2 -> Page 1
+  await act(async () => getPrevButton(renderer.root)!.props.onClick());
+  assert.equal(getRangeText(renderer.root), "Showing 1–12 of 15 designs");
+
+  await act(async () => renderer.unmount());
+  console.log("    ✓ IN USE across pages & dynamic shrink clamping work");
+}
+
 console.log("\nAll UI tests passed!");
 
 // ============================================================================
@@ -621,6 +753,6 @@ console.log("\nAll UI tests passed!");
 
 console.log("\n✅ All tests passed:");
 console.log("  - paginateDesignStyleEntries: 8 unit tests");
-console.log("  - getPaginationPageItems: 9 unit tests");
-console.log("  - UI integration: 8 tests (26 styles pagination, filter reset, edge cases)");
+console.log("  - getPaginationPageItems: 10 unit tests");
+console.log("  - UI integration: 10 tests (26 styles pagination, filter reset, scroll reduced-motion, IN USE, shrink clamping)");
 console.log("\nRun complete: test_step3_catalogue_pagination.tsx");

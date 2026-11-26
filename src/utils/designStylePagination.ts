@@ -26,14 +26,21 @@ export function paginateDesignStyleEntries<T>(
   requestedPage: number,
   pageSize: number = STEP3_CATALOGUE_PAGE_SIZE,
 ): PaginatedResult<T> {
+  const safePageSize =
+    Number.isFinite(pageSize) && pageSize >= 1
+      ? Math.trunc(pageSize)
+      : STEP3_CATALOGUE_PAGE_SIZE;
+  const safeRequestedPage = Number.isFinite(requestedPage)
+    ? Math.trunc(requestedPage)
+    : 1;
   const totalItems = entries.length;
-  const totalPages = totalItems === 0 ? 1 : Math.ceil(totalItems / pageSize);
+  const totalPages = totalItems === 0 ? 1 : Math.ceil(totalItems / safePageSize);
 
   // Clamp requested page to valid range
-  const page = Math.max(1, Math.min(requestedPage, totalPages));
+  const page = Math.max(1, Math.min(safeRequestedPage, totalPages));
 
-  const startIndex = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
-  const endIndex = Math.min(page * pageSize, totalItems);
+  const startIndex = totalItems === 0 ? 0 : (page - 1) * safePageSize + 1;
+  const endIndex = Math.min(page * safePageSize, totalItems);
 
   const start = startIndex === 0 ? 0 : startIndex - 1; // Convert to 0-based for slice
   const end = endIndex;
@@ -62,6 +69,7 @@ export function paginateDesignStyleEntries<T>(
  * Examples:
  *   totalPages=5, currentPage=3  -> [1, 2, 3, 4, 5]
  *   totalPages=10, currentPage=1 -> [1, 2, 3, "ellipsis", 10]
+ *   totalPages=10, currentPage=3 -> [1, 2, 3, 4, "ellipsis", 10]
  *   totalPages=12, currentPage=6 -> [1, "ellipsis", 5, 6, 7, "ellipsis", 12]
  *   totalPages=12, currentPage=11 -> [1, "ellipsis", 10, 11, 12]
  */
@@ -76,6 +84,9 @@ export function getPaginationPageItems(
     return Array.from({ length: totalPages }, (_, i) => i + 1);
   }
 
+  const safePage = Number.isFinite(currentPage)
+    ? Math.max(1, Math.min(Math.trunc(currentPage), totalPages))
+    : 1;
   const pages: Array<number | "ellipsis"> = [];
   const delta = 1; // How many neighbors on each side of currentPage
 
@@ -83,27 +94,28 @@ export function getPaginationPageItems(
   pages.push(1);
 
   // Calculate neighbor range around current page
-  const startNeighbor = Math.max(2, currentPage - delta);
-  const endNeighbor = Math.min(totalPages - 1, currentPage + delta);
+  const startNeighbor = Math.max(2, safePage - delta);
+  const endNeighbor = Math.min(totalPages - 1, safePage + delta);
 
-  if (currentPage <= 3) {
-    // Near start: show pages 2, 3 explicitly
-    for (let p = 2; p <= Math.min(3, totalPages - 1); p++) {
+  if (safePage <= 3) {
+    // Near start: show pages 2..3 (and 4 when on page 3 so +1 neighbor is visible)
+    const end = Math.min(Math.max(3, endNeighbor), totalPages - 1);
+    for (let p = 2; p <= end; p++) {
       if (!pages.includes(p)) pages.push(p);
     }
-    if (totalPages > 4) {
+    if (end < totalPages - 1) {
       pages.push("ellipsis");
     }
-  } else if (currentPage >= totalPages - 2) {
+  } else if (safePage >= totalPages - 2) {
     // Near end: add ellipsis if there's a gap from page 1
     if (startNeighbor > 2) {
       pages.push("ellipsis");
     }
     // Show current page and its neighbors within the last few pages
-    // For page totalPages-1 (e.g., 9 of 10): show 9, 10
+    // For page totalPages-1 (e.g., 9 of 10): show 8, 9, 10
     // For page totalPages (e.g., 10 of 10): show 9, 10
-    // For page totalPages-2 (e.g., 10 of 12): show 10, 11, 12
-    const start = Math.max(2, currentPage - 1);
+    // For page totalPages-2 (e.g., 10 of 12): show 9, 10, 11, 12
+    const start = Math.max(2, safePage - 1);
     for (let p = start; p <= totalPages - 1; p++) {
       if (!pages.includes(p)) pages.push(p);
     }
