@@ -8,7 +8,6 @@ import type { Firestore } from "firebase-admin/firestore";
 import recordPaymentHandler from "./api/future-order-v2/record-payment.js";
 import { AdminAiTryOnUsage } from "./src/components/AdminAiTryOnUsage";
 import { ALLOWED_ADMIN_EMAILS } from "./src/server/adminAllowlist";
-import { getCanonicalEmail } from "./src/security/authIdentity";
 import { handleAiTryOn } from "./src/server/aiTryOnHttp";
 import {
   AI_TRY_ON_TOP_UP_AMOUNT_CENTS,
@@ -115,6 +114,8 @@ const identities: Record<string, Doc> = {
   anon: { uid: "a", admin: true, email: XAVIER, email_verified: true, firebase: { sign_in_provider: "anonymous" } },
   stranger: { uid: "s", admin: true, email: "not-on-the-list@example.test", email_verified: true, firebase: { sign_in_provider: "google.com" } },
   unverified: { uid: "u", admin: true, email: XAVIER, email_verified: false, firebase: { sign_in_provider: "google.com" } },
+  dotted: { uid: "d", admin: true, email: "tech.palavabox@gmail.com", email_verified: true, firebase: { sign_in_provider: "google.com" } },
+  plusTag: { uid: "p", admin: true, email: "techpalavabox+topup@gmail.com", email_verified: true, firebase: { sign_in_provider: "google.com" } },
 };
 
 const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {}) => {
@@ -153,10 +154,12 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   const before = JSON.stringify([...db.docs]);
   assert.equal((await checkout(db, null)).status, 401);
   assert.equal((await checkout(db, "bad")).status, 401);
-  for (const who of ["customer", "anon", "stranger", "unverified"]) {
+  for (const who of ["customer", "anon", "stranger", "unverified", "fred", "dotted", "plusTag"]) {
     const refused = await checkout(db, who, { amountCents: 50, currency: "eur", successUrl: "https://evil.test/phish" });
     assert.equal(refused.status, 403, who);
+    assert.equal(refused.body.code, "ADMIN_ONLY", who);
     assert.equal(refused.created.length, 0, who);
+    assert.equal(refused.docs, before, who);
   }
   assert.equal((await checkout(db, "xavier", { amountCents: 50 })).docs, before, "a refused or unsent checkout writes nothing yet");
   const started = await checkout(db, "xavier", { amountCents: 50, currency: "eur", successUrl: "https://evil.test/phish", tries: 9999 });
@@ -171,9 +174,6 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   assert.equal(started.created[0].successUrl, "https://admin.example/?ai_try_on_top_up=success");
   assert.equal(started.created[0].cancelUrl, "https://admin.example/?ai_try_on_top_up=cancel");
   assert.equal(started.docs, before, "opening Checkout does not add tries");
-  const fred = await checkout(db, "fred");
-  assert.equal(fred.status, 200, "any signed-in admin may start Checkout");
-  assert.equal(fred.created[0].adminEmail, getCanonicalEmail(FRED));
   const live = response();
   await handleAiTryOn({
     method: "POST",
@@ -191,6 +191,23 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   assert.equal(live.state.status, 503);
   assert.equal(live.state.body.code, "STRIPE_TEST_KEY_REQUIRED");
   assert.equal(JSON.stringify([...db.docs]), before);
+  const excludedByEnv = response();
+  await handleAiTryOn({
+    method: "POST",
+    url: "/api/ai-try-on?action=admin-top-up",
+    query: { action: "admin-top-up" },
+    headers: { authorization: "Bearer xavier", host: "admin.example" },
+  }, excludedByEnv.res, {
+    environment: { ADMIN_EMAILS: FRED },
+    getDb: () => db.asFirestore(),
+    verifyIdToken: async () => identities.xavier as never,
+    aiTryOnTopUp: {
+      readSecretKey: () => TEST_KEY,
+      async createCheckoutSession() { throw new Error("excluded admin must not create checkout"); },
+    },
+  });
+  assert.equal(excludedByEnv.state.status, 403);
+  assert.equal(excludedByEnv.state.body.code, "ADMIN_ONLY");
   const get = response();
   await handleAiTryOn({ method: "GET", url: "/api/ai-try-on?action=admin-top-up", headers: { authorization: "Bearer xavier" } }, get.res, {
     verifyIdToken: async () => identities.xavier as never,
@@ -312,6 +329,8 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
 
   const wrongAmount = await deliver({ id: EVENT_C, sessionId: SESSION_B }, paidSession({ id: SESSION_B, amountTotal: 100 }));
   assert.equal(wrongAmount.body.status, "ignored");
+  const legacyAmount = await deliver({ id: EVENT_C, sessionId: SESSION_B }, paidSession({ id: SESSION_B, amountTotal: 6400 }));
+  assert.equal(legacyAmount.body.status, "ignored", "pre-deploy $64 sessions must be rejected on webhook");
   const wrongCurrency = await deliver({ id: EVENT_C, sessionId: SESSION_B }, paidSession({ id: SESSION_B, currency: "eur" }));
   assert.equal(wrongCurrency.body.status, "ignored");
   const unpaid = await deliver({ id: EVENT_C, sessionId: SESSION_B }, paidSession({ id: SESSION_B, paymentStatus: "unpaid" }));
