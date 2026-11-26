@@ -1793,7 +1793,7 @@ export const DormantFutureMeasurementStep = ({
           className="mt-3"
         >
           <legend className="sr-only">Option 1: Close-to-Body Measurements</legend>
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2">
             {ROUTES.map((route) => {
               const selected = selectedRoute === route.id;
               const unavailable = route.id === "critical_risk" && !criticalRiskSupported;
@@ -1818,7 +1818,7 @@ export const DormantFutureMeasurementStep = ({
                   }
                   className={withMeasurementGuideBeam(
                     `flex min-w-0 gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                      unavailable ? "cursor-not-allowed lg:col-span-3" : "cursor-pointer"
+                      unavailable ? "cursor-not-allowed" : "cursor-pointer"
                     } ${
                       selected
                         ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
