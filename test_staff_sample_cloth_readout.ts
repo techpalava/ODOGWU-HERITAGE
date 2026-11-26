@@ -152,6 +152,9 @@ const rowFor = (readout: readonly TailoringWearerReadout[] | null, measurementId
   const dressLength = rowFor(readout, "dress_length_standard");
   assert.equal(dressLength.label, "Standard Dress Length");
   assert.equal(dressLength.display, "101.3 cm", "lengths are never doubled");
+  const armhole = rowFor(readout, "armhole_circumference");
+  assert.equal(armhole.label, "Armhole across sample (laid flat)");
+  assert.equal(armhole.display, "30 cm laid flat (≈ 60 cm around)");
   // Every value: 'around' only for laid-flat across widths, never a raw id as the label,
   // and every Sample Cloth value is typed, never a height estimate.
   rows(readout).forEach((row) => {
@@ -166,6 +169,27 @@ const rowFor = (readout: readonly TailoringWearerReadout[] | null, measurementId
   });
   // Display only: the saved order still holds the laid-flat value the customer typed.
   assert.equal(order.saved.wearers[0].measurement.entered.shared.chest_bust_circumference?.valueCm, 46);
+}
+
+// 1b. Skirt on Sample Cloth (cm): skirt_bottom_circumference is laid-flat half-width (×2 around).
+{
+  const order = savedOrderMeasurements({
+    types: ["skirt"],
+    demographics: ["female"],
+    route: "sample_cloth",
+    unit: "cm",
+    valueFor: (requirement) =>
+      requirement.measurementId === "skirt_bottom_circumference"
+        ? 45
+        : requirement.sampleGeometry === "laid_flat_half_width"
+          ? 32
+          : 60,
+  });
+  const readout = projectTailoringMeasurementReadout(order.saved, order.garmentTypeByKey, order.demographicByKey);
+  assert.ok(readout);
+  const skirtBottom = rowFor(readout, "skirt_bottom_circumference");
+  assert.equal(skirtBottom.label, "Skirt bottom across sample (laid flat)");
+  assert.equal(skirtBottom.display, "45 cm laid flat (≈ 90 cm around)");
 }
 
 // 2. No audience known to the readout: the Chest / Borst fallback wording; inches are shown in cm.
@@ -183,7 +207,9 @@ const rowFor = (readout: readonly TailoringWearerReadout[] | null, measurementId
   assert.equal(chest.display, "45.7 cm laid flat (≈ 91.4 cm around)");
   const male = projectTailoringMeasurementReadout(order.saved, order.garmentTypeByKey, order.demographicByKey);
   assert.equal(rowFor(male, "chest_bust_circumference").label, "Chest across sample (laid flat)");
-  assert.equal(rowFor(male, "neck_circumference").display, "25.4 cm", "neck is measured as an opening: not doubled");
+  const neck = rowFor(male, "neck_circumference");
+  assert.equal(neck.label, "Neck opening (full inside loop)");
+  assert.equal(neck.display, "25.4 cm", "neck is measured as an opening: not doubled");
 }
 
 // 3. Body-measurement routes use Step 7's body labels, with no Sample Cloth note.

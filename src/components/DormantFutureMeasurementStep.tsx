@@ -355,7 +355,7 @@ const MeasurementField = ({
       )
     : requirement.definition.customerLabel;
   const fieldInstruction = sampleGeometry
-    ? getSampleClothFieldInstruction(sampleGeometry)
+    ? getSampleClothFieldInstruction(sampleGeometry, requirement.measurementId)
     : requirement.definition.instructions;
   const convertedDisplay = sampleGeometry === "laid_flat_half_width" && stored
     ? roundMeasurementDisplayValue(
@@ -2202,7 +2202,7 @@ export const DormantFutureMeasurementStep = ({
           </h3>
           <p
             className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
-            title="Shared body measurements stay saved when you switch."
+            title={sampleSelected ? "Shared sample measurements stay saved when you switch." : "Shared body measurements stay saved when you switch."}
           >
             {activeWearerLabel
               ? `One of ${activeWearerLabel}'s garments at a time.`
@@ -2444,7 +2444,7 @@ export const DormantFutureMeasurementStep = ({
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {activeCopySources.length > 1 && (
                     <select
-                      aria-label="Choose person to copy body measurements from"
+                      aria-label={`Choose person to copy ${sampleSelected ? "sample" : "body"} measurements from`}
                       data-measurement-copy-source-select="true"
                       value={selectedCopySource.wearerId}
                       onChange={(event) => {
@@ -2474,7 +2474,7 @@ export const DormantFutureMeasurementStep = ({
                     className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-heritage-green/30 bg-white px-3 py-1.5 text-xs font-bold text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
                   >
                     <Copy size={13} aria-hidden="true" />
-                    <span>Copy body measurements from {selectedCopySource.label}</span>
+                    <span>Copy {sampleSelected ? "sample" : "body"} measurements from {selectedCopySource.label}</span>
                   </button>
                 </div>
               )}
@@ -2482,12 +2482,12 @@ export const DormantFutureMeasurementStep = ({
           {activePendingCopyConfirmation && (
             <div
               role="alertdialog"
-              aria-label={`Confirm copying body measurements from ${activePendingCopyConfirmation.sourceLabel}`}
+              aria-label={`Confirm copying ${sampleSelected ? "sample" : "body"} measurements from ${activePendingCopyConfirmation.sourceLabel}`}
               data-measurement-copy-confirmation="true"
               className="mt-3 flex flex-col gap-2 rounded-xl border border-heritage-gold/45 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <p className="text-xs font-medium leading-relaxed text-heritage-ink/85">
-                Copy {activePendingCopyConfirmation.sharedCount} shared body{" "}
+                Copy {activePendingCopyConfirmation.sharedCount} shared {sampleSelected ? "sample" : "body"}{" "}
                 {activePendingCopyConfirmation.sharedCount === 1
                   ? "measurement"
                   : "measurements"}{" "}
@@ -2499,7 +2499,7 @@ export const DormantFutureMeasurementStep = ({
                 <strong className="font-bold text-heritage-green">
                   {activeWearerLabel}
                 </strong>
-                ? Only shared body fields are copied; garment-specific measurements stay
+                ? Only shared {sampleSelected ? "sample" : "body"} fields are copied; garment-specific measurements stay
                 separate.
               </p>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -2529,7 +2529,7 @@ export const DormantFutureMeasurementStep = ({
               className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-heritage-green/25 bg-white px-3 py-2"
             >
               <p className="text-xs font-semibold text-heritage-green">
-                Copied {activeUndoCopy.copiedCount} shared body{" "}
+                Copied {activeUndoCopy.copiedCount} shared {sampleSelected ? "sample" : "body"}{" "}
                 {activeUndoCopy.copiedCount === 1 ? "measurement" : "measurements"} from{" "}
                 {activeUndoCopy.sourceLabel} to {activeWearerLabel}.
               </p>

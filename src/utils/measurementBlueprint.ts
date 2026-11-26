@@ -132,6 +132,15 @@ const SAMPLE_CLOTH_OMITTED_IDS = new Set<CanonicalMeasurementId>([
   "head_circumference",
 ]);
 
+const SAMPLE_CLOTH_OPTIONAL_IDS = new Set<CanonicalMeasurementId>([
+  "elbow_circumference",
+  "knee_circumference",
+  "waist_to_hip_length",
+  "waist_to_feet_back_length",
+  "under_bust_circumference",
+  "shoulder_to_under_bust_length",
+]);
+
 const SAMPLE_CLOTH_HALF_WIDTH_IDS = new Set<CanonicalMeasurementId>([
   "chest_bust_circumference",
   "belly_circumference",
@@ -144,6 +153,8 @@ const SAMPLE_CLOTH_HALF_WIDTH_IDS = new Set<CanonicalMeasurementId>([
   "thigh_circumference",
   "knee_circumference",
   "ankle_circumference",
+  "skirt_bottom_circumference",
+  "armhole_circumference",
 ]);
 
 const SAMPLE_CLOTH_CUSTOMER_LABELS: Partial<Record<CanonicalMeasurementId, string>> = {
@@ -156,6 +167,9 @@ const SAMPLE_CLOTH_CUSTOMER_LABELS: Partial<Record<CanonicalMeasurementId, strin
   thigh_circumference: "Thigh across sample (laid flat)",
   knee_circumference: "Knee across sample (laid flat)",
   ankle_circumference: "Ankle across sample (laid flat)",
+  skirt_bottom_circumference: "Skirt bottom across sample (laid flat)",
+  armhole_circumference: "Armhole across sample (laid flat)",
+  neck_circumference: "Neck opening (full inside loop)",
 };
 
 export type SampleClothGeometry = "laid_flat_half_width" | "length_or_opening";
@@ -168,6 +182,8 @@ export const isSampleClothHalfWidthMeasurement = (
   measurementId: string,
 ): measurementId is CanonicalMeasurementId =>
   SAMPLE_CLOTH_HALF_WIDTH_IDS.has(measurementId as CanonicalMeasurementId);
+
+export const isSampleClothOptionalMeasurement = (measurementId: CanonicalMeasurementId): boolean => SAMPLE_CLOTH_OPTIONAL_IDS.has(measurementId);
 
 export const getSampleClothGeometry = (
   measurementId: CanonicalMeasurementId,
@@ -280,12 +296,87 @@ const definitionForLabelDemographic = (
   return next;
 };
 
+const SAMPLE_CLOTH_FIELD_INSTRUCTIONS: Partial<Record<CanonicalMeasurementId, string>> = {
+  neck_circumference:
+    "Measure all the way around the inside of the collar or neckline opening (full loop — not laid flat, not doubled).",
+  shoulder_length:
+    "Lay flat and measure straight across the back from left shoulder seam to right shoulder seam.",
+  chest_bust_circumference:
+    "Lay flat and measure straight across from armpit seam to armpit seam (doubled automatically).",
+  belly_circumference:
+    "Lay flat and measure straight across the mid-section / belly area, edge to edge (doubled automatically).",
+  waist_circumference:
+    "Lay flat and measure straight across the top waistband, edge to edge (doubled automatically).",
+  hip_circumference:
+    "Lay flat and measure straight across the widest part of the hip area, edge to edge (doubled automatically).",
+  armhole_circumference:
+    "Lay flat and measure straight from the top shoulder seam down to the bottom underarm seam (doubled automatically).",
+  bicep_circumference:
+    "Lay flat and measure across the sleeve width midway between shoulder and elbow (doubled automatically).",
+  wrist_circumference:
+    "Lay flat and measure across the sleeve cuff opening, edge to edge (doubled automatically).",
+  thigh_circumference:
+    "Lay flat and measure across the upper leg just below the crotch seam (doubled automatically).",
+  ankle_circumference:
+    "Lay flat and measure across the trouser hem opening, edge to edge (doubled automatically).",
+  skirt_bottom_circumference:
+    "Lay flat and measure straight across the bottom hem of the skirt, edge to edge (doubled automatically).",
+  shirt_length_standard:
+    "Lay flat and measure from the highest shoulder point next to the collar straight down to the bottom hem.",
+  shirt_length_long:
+    "Lay flat and measure from the highest shoulder point next to the collar straight down to the bottom hem.",
+  dress_length_standard:
+    "Lay flat and measure from the highest shoulder point next to the collar straight down to the bottom hem.",
+  dress_length_long:
+    "Lay flat and measure from the highest shoulder point next to the collar straight down to the bottom hem.",
+  sleeve_length_short:
+    "Lay flat and measure from the top shoulder seam straight down the outer sleeve edge to the hem.",
+  sleeve_length_mid:
+    "Lay flat and measure from the top shoulder seam straight down the outer sleeve edge to the hem.",
+  sleeve_length_long:
+    "Lay flat and measure from the top shoulder seam straight down the outer sleeve edge to the cuff.",
+  sleeve_length_sleeveless:
+    "Measure along the armhole/shoulder finish of the sample garment.",
+  waist_to_crotch_depth_length:
+    "Lay flat and measure from the top of the waistband straight down to the crotch seam intersection.",
+  waist_to_knee_length:
+    "Lay flat and measure from the top of the waistband straight down the outer side seam to the bottom hem.",
+  waist_to_ankle_length:
+    "Lay flat and measure from the top of the waistband straight down the outer side seam to the bottom hem.",
+  waist_to_feet_side_length:
+    "Lay flat and measure from the top of the waistband straight down the outer side seam to the bottom hem.",
+  waist_to_lap_length:
+    "Lay flat and measure from the top of the waistband straight down the outer side seam to the bottom hem.",
+  square_neck_length:
+    "Lay flat and measure straight down from mid-shoulder to the bottom edge of the square neckline.",
+  square_neck_width:
+    "Lay flat and measure straight across the inner width of the square neckline opening.",
+  elbow_circumference:
+    "Optional — lay sleeve flat and measure across the elbow area, edge to edge (doubled automatically).",
+  knee_circumference:
+    "Optional — lay leg flat and measure across the knee area, edge to edge (doubled automatically).",
+  waist_to_hip_length:
+    "Optional — lay flat and measure from the top of the waistband down to the widest hip line.",
+  waist_to_feet_back_length:
+    "Optional — lay flat and measure from the back waistband straight down to the hem.",
+  under_bust_circumference:
+    "Optional — lay flat and measure straight across directly below the chest area, edge to edge (doubled automatically).",
+  shoulder_to_under_bust_length:
+    "Optional — lay flat and measure from the highest shoulder point down to the seam below the chest area.",
+};
+
 export const getSampleClothFieldInstruction = (
   geometry: SampleClothGeometry | undefined,
-): string =>
-  geometry === "laid_flat_half_width"
-    ? MEASUREMENT_SAMPLE_CLOTH_HALF_WIDTH_INSTRUCTION
-    : MEASUREMENT_SAMPLE_CLOTH_LENGTH_INSTRUCTION;
+  measurementId?: CanonicalMeasurementId,
+): string => {
+  if (measurementId && SAMPLE_CLOTH_FIELD_INSTRUCTIONS[measurementId]) {
+    return SAMPLE_CLOTH_FIELD_INSTRUCTIONS[measurementId]!;
+  }
+  if (geometry === "laid_flat_half_width") {
+    return MEASUREMENT_SAMPLE_CLOTH_HALF_WIDTH_INSTRUCTION;
+  }
+  return MEASUREMENT_SAMPLE_CLOTH_LENGTH_INSTRUCTION;
+};
 
 export const getSampleClothProductionEquivalentCm = (valueCm: number): number =>
   valueCm * SAMPLE_CLOTH_PRODUCTION_SCALE;
@@ -1361,12 +1452,21 @@ export const planMeasurementRequirements = ({
       if (isSampleClothMeasurementMethod(route) && sampleGeometry === null) {
         return;
       }
-      const inputSource: MeasurementInputSource = requiredOnRoute || alternativeOneOf
-        ? "route_marker"
-        : field.averageFactor === null
-          ? "optional_manual"
-          : "calculated_average_factor";
-      const directInput = requiredOnRoute;
+      const isSampleClothOptional = isSampleClothMeasurementMethod(route)
+        && SAMPLE_CLOTH_OPTIONAL_IDS.has(field.measurementId);
+      const inputSource: MeasurementInputSource = isSampleClothOptional
+        ? "optional_manual"
+        : requiredOnRoute || alternativeOneOf
+          ? "route_marker"
+          : field.averageFactor === null
+            ? "optional_manual"
+            : "calculated_average_factor";
+      const directInput = isSampleClothOptional ? false : requiredOnRoute;
+      const section = isSampleClothOptional
+        ? "optional"
+        : requiredOnRoute || alternativeOneOf
+          ? "required"
+          : "optional";
       const scope = definition.scope === "shared_body" ? "shared" : "garment";
       const key = [
         route,
@@ -1387,7 +1487,7 @@ export const planMeasurementRequirements = ({
         profileId: resolution.profile.id,
         sourceRow: field.sourceRow,
         directInput,
-        section: requiredOnRoute || alternativeOneOf ? "required" : "optional",
+        section,
         inputSource,
         averageFactor: field.averageFactor,
         minFactor: field.minFactor,
