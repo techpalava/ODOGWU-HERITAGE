@@ -266,6 +266,13 @@ for (const preset of STEP_1_GARMENT_CARD_PRESETS) {
     STEP1_GARMENT_PRESET_REFERENCE_IMAGES[preset.id].src,
     expectedConfig.src,
   );
+  const presetDiskPath = join(repoRoot, "public", "images", "garments", expectedConfig.filename);
+  assert.ok(
+    existsSync(presetDiskPath),
+    `Expected local preset reference asset at ${presetDiskPath}`,
+  );
+  const [w, h] = webpDimensions(readFileSync(presetDiskPath));
+  assert.ok(w > 0 && h > 0, `${expectedConfig.filename} must have valid WebP dimensions`);
   assert.ok(
     emptyMarkup.includes(`src="${expectedConfig.src}"`),
     `${preset.id} must render its reference image source`,
@@ -276,14 +283,9 @@ for (const preset of STEP_1_GARMENT_CARD_PRESETS) {
   );
 }
 assert.deepEqual(
-  STEP1_PLACEHOLDER_DRESS_REFERENCE_IMAGES.map((entry) => entry.filename),
-  [
-    "ankara-standard-dress-short-sleeve.webp",
-    "ankara-standard-dress-mid-sleeve.webp",
-    "ankara-long-dress-gown-sleeveless.webp",
-    "ankara-long-dress-gown-mid-sleeve.webp",
-  ],
-  "Exactly 4 dress sleeve placeholder entries are configured",
+  STEP1_PLACEHOLDER_DRESS_REFERENCE_IMAGES,
+  [],
+  "All 17 Step 1 cards have real WebP assets with zero remaining placeholders",
 );
 
 const selectedMarkup = renderStepMarkup(["shirt"]);
