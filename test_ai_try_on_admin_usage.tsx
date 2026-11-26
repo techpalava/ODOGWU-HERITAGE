@@ -139,14 +139,14 @@ class FakeFirestore {
   assert.equal(xavier.body.view, "full");
   const cost = xavier.body.cost as { estimate: boolean; perTryUsd: number; allTimeUsd: number; thisMonthUsd: number; reminders: unknown[] };
   assert.equal(cost.estimate, true);
-  assert.equal(cost.perTryUsd, 0.064);
-  assert.equal(cost.allTimeUsd, 9.6, "all-time cost from the lifetime counter (includes earlier tries)");
-  assert.equal(cost.thisMonthUsd, 0.26, "4 tries used this month");
-  assert.deepEqual(cost.reminders, [], "reminders use this month ($0.26), not all time ($9.60)");
-  db.docs.set("aiTryOnUsage/day-2026-11-02", { kind: "day", day: "2026-11-02", started: 150, failed: 0 });
+  assert.equal(cost.perTryUsd, 0.039);
+  assert.equal(cost.allTimeUsd, 5.85, "all-time cost from the lifetime counter (includes earlier tries)");
+  assert.equal(cost.thisMonthUsd, 0.16, "4 tries used this month");
+  assert.deepEqual(cost.reminders, [], "reminders use this month ($0.16), not all time ($5.85)");
+  db.docs.set("aiTryOnUsage/day-2026-11-02", { kind: "day", day: "2026-11-02", started: 240, failed: 0 });
   db.docs.set("aiTryOnUsage/day-2026-10-30", { kind: "day", day: "2026-10-30", started: 900, failed: 0 });
   const busy = (await call("xavier")).body.cost as typeof cost;
-  assert.equal(busy.thisMonthUsd, 9.86, "154 tries this Lagos month");
+  assert.equal(busy.thisMonthUsd, 9.52, "244 tries this Lagos month");
   assert.deepEqual(busy.reminders, [{ amountUsd: 10, level: "critical" }], "October tries do not count toward this month");
   db.docs.delete("aiTryOnUsage/day-2026-11-02");
   db.docs.delete("aiTryOnUsage/day-2026-10-30");
@@ -179,19 +179,27 @@ class FakeFirestore {
   const general = await render(base);
   assert.match(general.json, /All-time tries: /);
   assert.match(general.json, /data-admin-ai-try-on-usage-cap-warning/);
-  assert.doesNotMatch(general.json, /\$|Cost|estimate|Top up/, "no cost or dollar reminder for other admins");
+  assert.match(general.json, /data-admin-ai-try-on-general-top-up-note/);
+  assert.match(general.json, /Top-up pack: 1,000 tries \(\$64\)/);
+  assert.doesNotMatch(
+    general.json,
+    /data-admin-ai-try-on-usage-cost|data-admin-ai-try-on-top-up-history|Cost estimate|\$0\.039|\$39/,
+    "no cost or top-up button/history for other admins",
+  );
   assert.equal(general.links.length, 0, "no Top up for other admins");
-  const full = await render({ ...base, view: "full", cost: { estimate: true, perTryUsd: 0.064, allTimeUsd: 52.48, thisMonthUsd: 0.26, reminders: [{ amountUsd: 10, level: "reached" }, { amountUsd: 20, level: "reached" }] } });
-  assert.match(full.json, /\$52\.48/);
+  const full = await render({ ...base, view: "full", cost: { estimate: true, perTryUsd: 0.039, allTimeUsd: 31.98, thisMonthUsd: 0.16, reminders: [{ amountUsd: 10, level: "reached" }, { amountUsd: 20, level: "reached" }] } });
+  assert.match(full.json, /\$31\.98/);
   assert.match(full.json, /estimate/);
-  assert.match(full.json, /\$64 per 1,000 tries/);
+  assert.match(full.json, /\$39 per 1,000 tries/);
   assert.equal(full.links.length, 1);
   assert.equal(full.links[0].props.type, "button");
-  assert.match(full.json, /Top up 1,000 tries \(\$64\)/);
+  assert.match(full.json, /Top up 1,000 tries \(\$39\)/);
+  assert.doesNotMatch(full.json, /\$64/);
   assert.equal(full.json.includes("console.cloud.google.com"), false);
   assert.match(full.json, /Top-up history/);
   assert.match(full.json, /No top-ups yet/);
-  // A general response never shows cost even if a cost field slipped in.
-  assert.doesNotMatch((await render({ ...base, cost: full.links.length ? { estimate: true, perTryUsd: 0.064, allTimeUsd: 1, thisMonthUsd: 1, reminders: [] } : undefined })).json, /\$/);
+  // A general response never shows cost or the top-up button even if a cost field slipped in.
+  const generalWithSlippedCost = await render({ ...base, cost: full.links.length ? { estimate: true, perTryUsd: 0.039, allTimeUsd: 1, thisMonthUsd: 1, reminders: [] } : undefined });
+  assert.doesNotMatch(generalWithSlippedCost.json, /Cost estimate|\$0\.039|data-admin-ai-try-on-usage-cost|data-admin-ai-try-on-usage-top-up/);
 }
 console.log("PASS: admin AI Try-on usage (Lagos-day counters, split view, cost and Top up only for the full view)");

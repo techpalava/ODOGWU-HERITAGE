@@ -108,11 +108,19 @@ export function AdminAiTryOnUsage({
           <div className="h-full bg-heritage-green" style={{ width: `${capShare}%` }} />
         </div>
       </div>
+      {!cost && (
+        <p
+          className="rounded-xl border border-heritage-gold/20 bg-heritage-cream/30 px-3 py-2 text-xs text-heritage-ink/80"
+          data-admin-ai-try-on-general-top-up-note
+        >
+          Top-up pack: 1,000 tries ($64)
+        </p>
+      )}
       {cost && (
         <div className="space-y-2 rounded-xl border border-heritage-green/20 bg-heritage-cream/40 p-3" data-admin-ai-try-on-usage-cost>
           <p className="text-sm font-bold text-heritage-green">Cost estimate</p>
           <p className="text-sm">All time: <strong>{usd(cost.allTimeUsd)}</strong> (estimate) · This month: <strong>{usd(cost.thisMonthUsd)}</strong> (estimate)</p>
-          <p className="text-xs text-heritage-ink/70">Estimate only: ${cost.perTryUsd.toFixed(3)} per try ($64 per 1,000 tries), from counted tries. Not a bill.</p>
+          <p className="text-xs text-heritage-ink/70">Estimate only: ${cost.perTryUsd.toFixed(3)} per try {`($${Math.round(cost.perTryUsd * 1000)} per 1,000 tries)`}, from counted tries. Not a bill.</p>
           {cost.reminders.map((reminder) => (
             <p key={reminder.amountUsd} role={reminder.level === "warning" ? "status" : "alert"} data-admin-ai-try-on-usage-cost-reminder={`${reminder.amountUsd}-${reminder.level}`}
               className={`rounded-lg border p-2 text-xs font-semibold ${reminder.level === "warning" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-red-300 bg-red-50 text-red-800"}`}>
@@ -123,7 +131,7 @@ export function AdminAiTryOnUsage({
           ))}
           <button type="button" data-admin-ai-try-on-usage-top-up onClick={openCheckout} disabled={topUpPending}
             className="inline-flex min-h-11 items-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wide text-white disabled:opacity-60">
-            {topUpPending ? "Opening Stripe Checkout..." : "Top up 1,000 tries ($64)"}
+            {topUpPending ? "Opening Stripe Checkout..." : "Top up 1,000 tries ($39)"}
           </button>
           {topUpError && <p role="alert" data-admin-ai-try-on-top-up-error className="text-xs font-semibold text-red-800">{topUpError}</p>}
           <div data-admin-ai-try-on-top-up-history>
