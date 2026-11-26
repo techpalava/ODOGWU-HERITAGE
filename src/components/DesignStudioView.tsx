@@ -595,6 +595,7 @@ import {
   getStep1GarmentDisplayLabel,
   orderByCustomerSelectableGarmentType,
   resolveGarmentConstructionPricing,
+  resolveGarmentConstructionPricingForOptionId,
 } from "../utils/garmentConstructionPricing";
 import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
 import {
@@ -10610,15 +10611,21 @@ export default function DesignStudioView({
       });
       return false;
     }
+    const existingAdditionalConstruction =
+      futureAdditionalConstructionReconciliation.state.byGarmentKey[
+        deferredPrompt.garmentKey
+      ];
     const construction =
-      choice.mode === "copy"
-        ? // The source may be a main garment switched to this length in Step 4: its construction
-          // is stored under its Step 1 card, so name the added garment's own type.
-          { ...sourceConstruction!, garmentType: deferredPrompt.garmentType }
-        : resolveGarmentConstructionPricing(
-            deferredPrompt.garmentType,
-            normalizedGarmentTypeCatalog,
-          );
+      existingAdditionalConstruction?.status === "resolved"
+        ? existingAdditionalConstruction
+        : choice.mode === "copy"
+          ? // The source may be a main garment switched to this length in Step 4: its construction
+            // is stored under its Step 1 card, so name the added garment's own type.
+            { ...sourceConstruction!, garmentType: deferredPrompt.garmentType }
+          : resolveGarmentConstructionPricing(
+              deferredPrompt.garmentType,
+              normalizedGarmentTypeCatalog,
+            );
     if (construction.status !== "resolved") {
       setNotification({
         message: "This garment construction price is not ready yet.",
@@ -11335,6 +11342,42 @@ export default function DesignStudioView({
       nextState: result.state,
       fabricCode: result.fabricCode,
     });
+  };
+  const handleAdditionalGarmentSelectSleeveOption = ({
+    transactionId,
+    garmentKey,
+    optionId,
+    occurrenceGeneration,
+  }: {
+    transactionId: number;
+    garmentKey: string;
+    optionId: string;
+    occurrenceGeneration?: number;
+  }) => {
+    const transaction = getCurrentAdditionalGarmentFabricOperation({
+      transactionId,
+      garmentKey,
+      occurrenceGeneration,
+    });
+    if (!transaction || transaction.origin !== "new_addition") return;
+    const resolvedConstruction = resolveGarmentConstructionPricingForOptionId(
+      transaction.garmentType,
+      optionId,
+      normalizedGarmentTypeCatalog,
+    );
+    if (resolvedConstruction.status !== "resolved") {
+      setAdditionalGarmentFabricError(
+        "This sleeve pricing is not ready yet. Choose another sleeve or cancel.",
+      );
+      return;
+    }
+    const nextTransaction: AdditionalGarmentFabricTransaction = {
+      ...transaction,
+      construction: cloneGarmentConstructionPricingResolution(resolvedConstruction),
+    };
+    additionalGarmentFabricTransactionRef.current = nextTransaction;
+    setAdditionalGarmentFabricTransaction(nextTransaction);
+    setAdditionalGarmentFabricError(null);
   };
   const handleAdditionalGarmentSelectFabric = ({
     transactionId,
@@ -13002,7 +13045,18 @@ export default function DesignStudioView({
           garmentTypeSelection={effectiveJourneyGarmentTypeSelection}
           fabricAllocationState={fabricAllocationState}
           requiredPhysicalOccurrences={fabricTransactionPhysicalOccurrences}
+          normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
           errorMessage={additionalGarmentFabricError}
+          onSelectSleeveOption={(optionId) =>
+            handleAdditionalGarmentSelectSleeveOption({
+              transactionId:
+                additionalGarmentFabricTransaction.transactionId,
+              garmentKey: additionalGarmentFabricTransaction.garmentKey,
+              optionId,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
+            })
+          }
           onSelectFabric={(fabricCode) =>
             handleAdditionalGarmentSelectFabric({
               transactionId:

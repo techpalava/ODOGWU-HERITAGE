@@ -699,7 +699,7 @@ assert.equal(
   "the completed Trouser transaction must not leave the Fabric catalogue open",
 );
 await act(async () => {
-  findButton("Add Shirt").props.onClick({ currentTarget: null });
+  findButton("Add Standard Shirt").props.onClick({ currentTarget: null });
   await Promise.resolve();
   await Promise.resolve();
 });
@@ -713,12 +713,119 @@ assert.equal(
 );
 assert.match(secondPendingDialog.props["data-target-garment-key"], /^additional:shirt:/);
 assert.equal(secondPendingDialog.props["data-dialog-phase"], "catalogue");
+const shirtKey = secondPendingDialog.props["data-target-garment-key"] as string;
+const sleevePicker = secondPendingDialog.findByProps({
+  "data-additional-garment-sleeve-picker": shirtKey,
+});
+const shirtSleeveInputs = sleevePicker.findAll(
+  (node) =>
+    node.type === "input" &&
+    typeof node.props["data-additional-garment-sleeve-option"] === "string",
+);
+assert.deepEqual(
+  shirtSleeveInputs.map((node) => node.props["data-additional-garment-sleeve-option"]),
+  ["shirt_std_short", "shirt_std_midlong"],
+  "Step 5 Add-garment popup renders 2 sleeve options for Shirts",
+);
+assert.match(textContent(sleevePicker), /€65\.00/);
+assert.match(textContent(sleevePicker), /€70\.00/);
+act(() => {
+  sleevePicker
+    .findByProps({ "data-additional-garment-sleeve-option": "shirt_std_midlong" })
+    .props.onChange();
+});
+assert.equal(
+  renderer.root
+    .findByProps({ "data-additional-garment-sleeve-option": "shirt_std_midlong" })
+    .props.checked,
+  true,
+  "Selecting Long Sleeve in Step 5 Add-garment popup updates the active sleeve option",
+);
 assert.equal(
   renderer.root
     .findAllByProps({ "data-fabric-card": "true", "aria-pressed": true })
     .length,
   0,
   "a later manual addition must again open with zero Fabric preselected",
+);
+await act(async () => {
+  renderer.root
+    .findByProps({ "data-fabric-card": "true", "data-fabric-code": fabricB.code })
+    .props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const shirtDesignDialog = renderer.root.findByProps({
+  "data-additional-garment-design-style-dialog": "true",
+});
+assert.equal(shirtDesignDialog.props["data-garment-key"], shirtKey);
+await act(async () => {
+  shirtDesignDialog
+    .findAllByProps({ "data-testid": "additional-garment-design-style-card" })[0]!
+    .findAllByType("button")
+    .find((button) => textContent(button).trim().startsWith("Use This Design"))!
+    .props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const copyDialog = renderer.root.findByProps({
+  "data-additional-garment-custom-details-dialog": "true",
+});
+await act(async () => {
+  copyDialog
+    .findAllByType("button")
+    .find((button) => textContent(button).trim() === "Choose Custom Details")!
+    .props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const afterShirtChoose = renderer.root.findByType(DormantFutureCustomDetailsStep);
+const committedShirtConstruction =
+  afterShirtChoose.props.designSelections.additionalGarmentConstructions
+    ?.byGarmentKey[shirtKey];
+assert.equal(
+  committedShirtConstruction?.status === "resolved"
+    ? committedShirtConstruction.components[0]?.optionId
+    : null,
+  "shirt_std_midlong",
+  "Step 5 Add -> Fabric -> Design Style -> Copy preserves the Long Sleeve chosen in the Add-garment popup",
+);
+assert.equal(
+  renderer.root.findAll(
+    (node) =>
+      node.type === "input" &&
+      typeof node.props.id === "string" &&
+      node.props.id.startsWith(`future-custom-detail-${shirtKey}-shirt_construction-`),
+  ).length,
+  0,
+  "Added Shirt hides sleeve selection in Step 4/5 once chosen in the Add-garment popup",
+);
+
+// Verify Step 5 Add-garment popup renders 4 sleeve options with catalogue prices for Dresses.
+await act(async () => {
+  findButton("Add Standard Dress").props.onClick({ currentTarget: null });
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const dressPendingDialog = renderer.root.findByProps({
+  "data-additional-garment-fabric-dialog": "true",
+});
+const dressKey = dressPendingDialog.props["data-target-garment-key"] as string;
+const dressSleevePicker = dressPendingDialog.findByProps({
+  "data-additional-garment-sleeve-picker": dressKey,
+});
+assert.deepEqual(
+  dressSleevePicker
+    .findAll(
+      (node) =>
+        node.type === "input" &&
+        typeof node.props["data-additional-garment-sleeve-option"] === "string",
+    )
+    .map((node) => node.props["data-additional-garment-sleeve-option"]),
+  ["dress_std_sleeveless", "dress_std_short", "dress_std_mid", "dress_std_long"],
+  "Step 5 Add-garment popup renders all 4 sleeve options for Dresses",
 );
 act(() => {
   renderer.root

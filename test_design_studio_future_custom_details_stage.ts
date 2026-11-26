@@ -192,8 +192,8 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     ? node
     : node
       ? node.children
-          .map((child) => textContent(child as ReactTestInstance | string))
-          .join("")
+        .map((child) => textContent(child as ReactTestInstance | string))
+        .join("")
       : "";
 
 const neckLayoutGarmentTypeSelection = reconcileGarmentTypeStepSelection({
@@ -617,8 +617,8 @@ assert.equal(
     (node) =>
       Boolean(
         node.props &&
-          typeof node.props === "object" &&
-          typeof node.props["data-decorative-garment-assign"] === "string",
+        typeof node.props === "object" &&
+        typeof node.props["data-decorative-garment-assign"] === "string",
       ),
   ).length,
   0,
@@ -633,8 +633,8 @@ for (const feature of [
     (node) =>
       Boolean(
         node.props &&
-          typeof node.props === "object" &&
-          node.props["data-decorative-feature"] === feature,
+        typeof node.props === "object" &&
+        node.props["data-decorative-feature"] === feature,
       ),
   );
   assert.ok(card, `${feature} renders as a Step 5 customer option`);
@@ -670,8 +670,8 @@ const garmentAssignRows = monogramAssignPanel.findAll(
   (node) =>
     Boolean(
       node.props &&
-        typeof node.props === "object" &&
-        typeof node.props["data-decorative-garment"] === "string",
+      typeof node.props === "object" &&
+      typeof node.props["data-decorative-garment"] === "string",
     ),
 );
 assert.ok(
@@ -721,8 +721,8 @@ assert.match(
       (node) =>
         Boolean(
           node.props &&
-            typeof node.props === "object" &&
-            node.props["data-decorative-feature"] === "Name Monogram",
+          typeof node.props === "object" &&
+          node.props["data-decorative-feature"] === "Name Monogram",
         ),
     ),
   ),
@@ -1100,7 +1100,7 @@ act(() => {
       onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
-    onMonogramTextChange: () => undefined,
+      onMonogramTextChange: () => undefined,
       onAccessoryToggle: () => undefined,
       onClearAccessories: () => undefined,
       onAddAdditionalGarment: () => undefined,
@@ -1352,7 +1352,7 @@ const renderFutureCustomDetailsStage = ({
       onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
-    onMonogramTextChange: () => undefined,
+      onMonogramTextChange: () => undefined,
       onAccessoryToggle: () => undefined,
       onClearAccessories: () => undefined,
       onAddAdditionalGarment: () => undefined,
@@ -1475,68 +1475,19 @@ assert.doesNotMatch(
   /With Rope Plus Elastic Band/,
   "Dress construction must not gain With Rope Plus Elastic Band",
 );
-const standardDressOwnedConstruction = groupInGarmentSection(
-  standardDressOwnedBlock,
-  "dress_construction",
+assert.equal(
+  standardDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_construction" }).length,
+  0,
+  "Standard Dress hides locked dress_construction in Step 4",
 );
-const longDressOwnedConstruction = groupInGarmentSection(
-  longDressOwnedBlock,
-  "dress_construction",
+assert.equal(
+  longDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_construction" }).length,
+  0,
+  "Long Dress hides locked dress_construction in Step 4",
 );
 assert.match(textContent(standardDressOwnedBlock), /Standard Dress/);
-assert.match(textContent(standardDressOwnedConstruction), /Sleeve Style/);
-assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
-assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Short Sleeve/);
-assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Mid Sleeve|Long Sleeve|Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
-// Step 4 tier lock: a base dress only offers the 2 zero-price-change sleeve options of the Step 1 tier.
-assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Long Length/);
-assert.doesNotMatch(textContent(standardDressOwnedConstruction), /dress_long_/);
-assert.equal(standardDressOwnedConstruction.findAllByType("input").length, 2, "Standard Dress offers strictly its 2 Sleeveless / Short Sleeve options");
 assert.match(textContent(longDressOwnedBlock), /Long Dress/);
-assert.match(textContent(longDressOwnedConstruction), /Sleeve Style/);
-assert.match(textContent(longDressOwnedConstruction), /Long Length, Sleeveless \/ Over Shoulder/);
-assert.match(textContent(longDressOwnedConstruction), /Long Length, Short Sleeve/);
-assert.doesNotMatch(textContent(longDressOwnedConstruction), /Mid Sleeve|Long Sleeve|Mid \(3-Quarter\)|Mid-to-Long Sleeve|Mid-Long Sleeve/);
-assert.doesNotMatch(textContent(longDressOwnedConstruction), /Standard Length/);
-assert.equal(longDressOwnedConstruction.findAllByType("input").length, 2, "Long Dress offers strictly its 2 Sleeveless / Short Sleeve options");
-assert.equal(standardDressOwnedConstruction.findAllByProps({ "data-construction-length-group": "dress_std_" }).length, 0, "no Standard/Long Length sub-headings for Standard Dress");
-assert.equal(longDressOwnedConstruction.findAllByProps({ "data-construction-length-group": "dress_long_" }).length, 0, "no Standard/Long Length sub-headings for Long Dress");
-assert.equal(
-  optionInOccurrenceGroup(
-    standardDressOwnedConstruction,
-    "Standard Length, Sleeveless / Over Shoulder",
-  )?.findByType("input").props.checked,
-  true,
-  "the authoritative Standard Dress default remains selected",
-);
-assert.equal(
-  optionInOccurrenceGroup(
-    longDressOwnedConstruction,
-    "Long Length, Sleeveless / Over Shoulder",
-  )?.findByType("input").props.checked,
-  true,
-  "the authoritative Long Dress default remains selected",
-);
-const standardDressAlternative = optionInOccurrenceGroup(
-  standardDressOwnedConstruction,
-  "Standard Length, Short Sleeve",
-);
-assert.ok(standardDressAlternative);
-assert.equal(standardDressAlternative.findByType("input").props.disabled, undefined);
-assert.match(
-  String(standardDressAlternative.findByType("input").props.id),
-  /^future-custom-detail-base:dress-dress_construction-dress_std_/,
-  "the Standard Dress construction control retains its exact occurrence identity",
-);
-act(() => {
-  standardDressAlternative.findByType("input").props.onChange();
-});
-assert.deepEqual(dressOwnedConstructionEvents, [[
-  "base:dress",
-  "dress",
-  "dress_construction",
-  "dress_std_short",
-]]);
+void dressOwnedConstructionEvents;
 assert.equal(
   standardDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
   1,
@@ -2141,7 +2092,7 @@ act(() => {
       onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
-    onMonogramTextChange: () => undefined,
+      onMonogramTextChange: () => undefined,
       onAccessoryToggle: () => undefined,
       onClearAccessories: () => undefined,
       onAddAdditionalGarment: () => undefined,
@@ -2241,7 +2192,7 @@ act(() => {
       onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
-    onMonogramTextChange: () => undefined,
+      onMonogramTextChange: () => undefined,
       onAccessoryToggle: () => undefined,
       onClearAccessories: () => undefined,
       onAddAdditionalGarment: () => undefined,
@@ -2321,19 +2272,19 @@ assert.deepEqual(
           node.props["data-custom-detail-group"] === "dress_pockets"),
     )
     .map((node) => node.props["data-custom-detail-group"] || node.props["data-custom-detail-section"]),
-  ["dress_construction", "dress-additional-clothes-costs", "dress_pockets"],
-  "Dress sections read Main Garment, then that garment's Additional Clothes Costs, then its Pocket",
+  ["dress-additional-clothes-costs", "dress_pockets"],
+  "Dress sections omit locked dress_construction and read Additional Clothes Costs, then Pocket",
 );
-const standardDressConstruction = assertOccurrenceOwnedGroup({
-  block: standardDressBlock,
-  selectionGroup: "dress_construction",
-  controlIdPrefix: "future-custom-detail-base:dress-dress_construction-dress_std_", // locked to the Step 1 length (Standard)
-});
-const longDressConstruction = assertOccurrenceOwnedGroup({
-  block: longDressBlock,
-  selectionGroup: "dress_construction",
-  controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_construction-dress_long_", // locked to the Step 1 length (Long)
-});
+assert.equal(
+  standardDressBlock.findAllByProps({ "data-custom-detail-group": "dress_construction" }).length,
+  0,
+  "Base Standard Dress hides locked dress_construction in Step 4",
+);
+assert.equal(
+  longDressBlock.findAllByProps({ "data-custom-detail-group": "dress_construction" }).length,
+  0,
+  "Base Long Dress hides locked dress_construction in Step 4",
+);
 const standardDressPockets = assertOccurrenceOwnedGroup({
   block: standardDressBlock,
   selectionGroup: "dress_pockets",
@@ -2344,12 +2295,6 @@ const longDressPockets = assertOccurrenceOwnedGroup({
   selectionGroup: "dress_pockets",
   controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_pockets-",
 });
-assert.match(textContent(standardDressConstruction), /Sleeve Style/);
-assert.match(textContent(longDressConstruction), /Sleeve Style/);
-assert.match(textContent(standardDressConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
-assert.doesNotMatch(textContent(standardDressConstruction), /Long Length/); // Step 4 length lock: only the Step 1 length is offered
-assert.match(textContent(longDressConstruction), /Long Length, Short Sleeve/);
-assert.doesNotMatch(textContent(longDressConstruction), /Standard Length/); // Step 4 length lock: only the Step 1 length is offered
 assert.match(textContent(standardDressPockets), /Pocket for Standard Dress/);
 assert.match(textContent(longDressPockets), /Pocket for Long Dress/);
 assert.doesNotMatch(textContent(standardDressPockets), /Long Dress/);
@@ -2572,7 +2517,7 @@ assert.equal(
 );
 assert.ok(
   personalizedDetail.parent!.children.indexOf(personalizedDetail) >
-    personalizedDetail.parent!.children.indexOf(personalizedOptionGrid()),
+  personalizedDetail.parent!.children.indexOf(personalizedOptionGrid()),
   "the conditional detail must follow the entire option grid",
 );
 assert.match(
@@ -2618,7 +2563,7 @@ assert.equal(
 );
 assert.equal(
   neckLayoutReconciliation.state.selectionsByGarmentKey["base:shirt"]?.[
-    PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
+  PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
   ],
   PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
   "selecting Personalized Additional must retain the existing selection authority",
@@ -2833,11 +2778,11 @@ const additionalStepProps = {
   onToggleMultiSelect: () => undefined,
   onPersonalizedTextChange: () => undefined,
   onDecorativeFeatureEnable: () => undefined,
-      onDecorativeFeatureDisable: () => undefined,
-      onDecorativeFeatureGarmentAssign: () => undefined,
+  onDecorativeFeatureDisable: () => undefined,
+  onDecorativeFeatureGarmentAssign: () => undefined,
   onClearDecorativeFeatures: () => undefined,
   onMonogramPlacementChange: () => undefined,
-    onMonogramTextChange: () => undefined,
+  onMonogramTextChange: () => undefined,
   onAccessoryToggle: () => undefined,
   onClearAccessories: () => undefined,
   onAddAdditionalGarment: () => undefined,
@@ -2879,8 +2824,8 @@ assert.equal(
 assert.match(textContent(addSection), /Added garment/);
 assert.equal(
   addSection.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
-  1,
-  "the Additional Shirt construction group renders inside Step 5 Add Additional Garment",
+  0,
+  "the Additional Shirt hides shirt_construction in Step 4/5 once sleeve is picked in the Add popup",
 );
 assert.equal(
   addSection.findAllByProps({

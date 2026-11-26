@@ -7,6 +7,10 @@ import {
   type CanonicalMeasurementId,
   type MeasurementProfileId,
 } from "./src/config/MeasurementBlueprintConfig";
+import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
+import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
+import { resolveGarmentConstructionPricingForOptionId } from "./src/utils/garmentConstructionPricing";
+import { planMeasurementRequirements } from "./src/utils/measurementBlueprint";
 
 const MID_REQUIRED: Record<MeasurementProfileId, CanonicalMeasurementId[]> = {
   A: [
@@ -232,5 +236,48 @@ assert.equal(
     MEASUREMENT_PROFILES.some((profile) => profile.id === "N" as MeasurementProfileId),
   false,
 );
+
+const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+for (const [garmentType, optionId, expectedSleeveId, expectedExcludedSleeveId] of [
+  ["dress", "dress_std_sleeveless", "sleeve_length_sleeveless", "sleeve_length_short"],
+  ["dress", "dress_std_short", "sleeve_length_short", "sleeve_length_sleeveless"],
+  ["dress", "dress_std_mid", "sleeve_length_mid", "sleeve_length_long"],
+  ["dress", "dress_std_long", "sleeve_length_long", "sleeve_length_mid"],
+  ["full_length_gown", "dress_long_sleeveless", "sleeve_length_sleeveless", "sleeve_length_short"],
+  ["full_length_gown", "dress_long_short", "sleeve_length_short", "sleeve_length_sleeveless"],
+  ["full_length_gown", "dress_long_mid", "sleeve_length_mid", "sleeve_length_long"],
+  ["full_length_gown", "dress_long_long", "sleeve_length_long", "sleeve_length_mid"],
+] as const) {
+  const construction = resolveGarmentConstructionPricingForOptionId(
+    garmentType,
+    optionId,
+    catalog,
+  );
+  assert.equal(construction.status, "resolved");
+  const plan = planMeasurementRequirements({
+    route: "high_risk",
+    garmentTypeSelection: {
+      garmentTypes: [garmentType],
+      demographic: "female",
+      constructionByGarment: { [garmentType]: construction },
+    },
+    physicalGarments: [{ garmentKey: `base:${garmentType}`, garmentType }],
+  });
+  assert.equal(
+    plan.requirements.some((req) => req.measurementId === expectedSleeveId),
+    true,
+    `${optionId} must resolve ${expectedSleeveId}`,
+  );
+  assert.equal(
+    plan.requirements.some((req) => req.measurementId === expectedExcludedSleeveId),
+    false,
+    `${optionId} must exclude ${expectedExcludedSleeveId} without mid/long ambiguity`,
+  );
+  assert.equal(
+    plan.requirements.some((req) => Boolean(req.alternativeGroup)),
+    false,
+    `${optionId} must have zero unresolved alternativeGroup ambiguity`,
+  );
+}
 
 console.log("PASS: measurement required matrix A-M");

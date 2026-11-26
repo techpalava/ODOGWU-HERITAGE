@@ -303,15 +303,49 @@ export type Step1GarmentCardPresetId =
   | "shirt_long_sleeve"
   | "kaftan_short_sleeve"
   | "kaftan_long_sleeve"
-  | "dress_sleeveless_or_short"
-  | "dress_mid_or_long"
-  | "full_length_gown_sleeveless_or_short"
-  | "full_length_gown_mid_or_long"
+  | "dress_sleeveless"
+  | "dress_short_sleeve"
+  | "dress_mid_sleeve"
+  | "dress_long_sleeve"
+  | "full_length_gown_sleeveless"
+  | "full_length_gown_short_sleeve"
+  | "full_length_gown_mid_sleeve"
+  | "full_length_gown_long_sleeve"
   | "skirt"
   | "long_skirt"
   | "trouser"
   | "standard_shorts"
   | "bum_shorts";
+
+export type LegacyStep1GarmentCardPresetId =
+  | "dress_sleeveless_or_short"
+  | "dress_mid_or_long"
+  | "full_length_gown_sleeveless_or_short"
+  | "full_length_gown_mid_or_long";
+
+export const LEGACY_STEP1_GARMENT_CARD_PRESET_ID_MAP: Readonly<
+  Record<LegacyStep1GarmentCardPresetId, Step1GarmentCardPresetId>
+> = {
+  dress_sleeveless_or_short: "dress_sleeveless",
+  dress_mid_or_long: "dress_long_sleeve",
+  full_length_gown_sleeveless_or_short: "full_length_gown_sleeveless",
+  full_length_gown_mid_or_long: "full_length_gown_long_sleeve",
+};
+
+export const resolveStep1GarmentCardPresetId = (
+  presetId: string,
+): Step1GarmentCardPresetId | null => {
+  const mapped =
+    LEGACY_STEP1_GARMENT_CARD_PRESET_ID_MAP[
+    presetId as LegacyStep1GarmentCardPresetId
+    ];
+  if (mapped) return mapped;
+  return STEP_1_GARMENT_CARD_PRESET_BY_ID.has(
+    presetId as Step1GarmentCardPresetId,
+  )
+    ? (presetId as Step1GarmentCardPresetId)
+    : null;
+};
 
 export type Step1CategoryGroupId = "shirts" | "dresses" | "skirts" | "trousers_and_shorts";
 
@@ -338,8 +372,7 @@ export interface Step1GarmentCardPreset {
   readonly optionId: string;
   /**
    * Allowed Step 4 construction option IDs for base Step 1 occurrences.
-   * - Single-element array (shirts, skirts): construction is locked in Step 1 and hidden in Step 4.
-   * - Two-element array (dresses): Step 4 narrows to these same-price sleeve choices.
+   * - Single-element array (shirts, dresses, skirts): construction is locked in Step 1 and hidden in Step 4.
    * - Null (trouser, standard_shorts, bum_shorts): fastening remains editable in Step 4.
    */
   readonly step4AllowedOptionIds: readonly string[] | null;
@@ -347,7 +380,7 @@ export interface Step1GarmentCardPreset {
 }
 
 /**
- * Canonical 13-card Step 1 preset registry.
+ * Canonical 17-card Step 1 preset registry.
  * Prices are never hardcoded here — every card resolves its price dynamically
  * from the normalized Admin CustomDetailOption catalogue.
  */
@@ -389,45 +422,75 @@ export const STEP_1_GARMENT_CARD_PRESETS: readonly Step1GarmentCardPreset[] = [
     referenceImageVariant: "secondary",
   },
   {
-    id: "dress_sleeveless_or_short",
+    id: "dress_sleeveless",
     garmentType: "dress",
-    label: "Standard Dress — Sleeveless / Short Sleeve",
+    label: "Standard Dress — Sleeveless",
     selectionGroup: "dress_construction",
     optionId: "dress_std_sleeveless",
-    step4AllowedOptionIds: ["dress_std_sleeveless", "dress_std_short"],
+    step4AllowedOptionIds: ["dress_std_sleeveless"],
     referenceImageVariant: "primary",
   },
   {
-    id: "dress_mid_or_long",
+    id: "dress_short_sleeve",
     garmentType: "dress",
-    label: "Standard Dress — Mid / Long Sleeve",
+    label: "Standard Dress — Short Sleeve",
     selectionGroup: "dress_construction",
-    optionId: DRESS_STANDARD_LONG_SLEEVE_OPTION_ID,
-    step4AllowedOptionIds: [
-      DRESS_STANDARD_MID_SLEEVE_OPTION_ID,
-      DRESS_STANDARD_LONG_SLEEVE_OPTION_ID,
-    ],
+    optionId: "dress_std_short",
+    step4AllowedOptionIds: ["dress_std_short"],
+    referenceImageVariant: "primary",
+  },
+  {
+    id: "dress_mid_sleeve",
+    garmentType: "dress",
+    label: "Standard Dress — Mid Sleeve",
+    selectionGroup: "dress_construction",
+    optionId: DRESS_STANDARD_MID_SLEEVE_OPTION_ID,
+    step4AllowedOptionIds: [DRESS_STANDARD_MID_SLEEVE_OPTION_ID],
     referenceImageVariant: "secondary",
   },
   {
-    id: "full_length_gown_sleeveless_or_short",
+    id: "dress_long_sleeve",
+    garmentType: "dress",
+    label: "Standard Dress — Long Sleeve",
+    selectionGroup: "dress_construction",
+    optionId: DRESS_STANDARD_LONG_SLEEVE_OPTION_ID,
+    step4AllowedOptionIds: [DRESS_STANDARD_LONG_SLEEVE_OPTION_ID],
+    referenceImageVariant: "secondary",
+  },
+  {
+    id: "full_length_gown_sleeveless",
     garmentType: "full_length_gown",
-    label: "Long Dress — Sleeveless / Short Sleeve",
+    label: "Long Dress — Sleeveless",
     selectionGroup: "dress_construction",
     optionId: "dress_long_sleeveless",
-    step4AllowedOptionIds: ["dress_long_sleeveless", "dress_long_short"],
+    step4AllowedOptionIds: ["dress_long_sleeveless"],
     referenceImageVariant: "primary",
   },
   {
-    id: "full_length_gown_mid_or_long",
+    id: "full_length_gown_short_sleeve",
     garmentType: "full_length_gown",
-    label: "Long Dress — Mid / Long Sleeve",
+    label: "Long Dress — Short Sleeve",
+    selectionGroup: "dress_construction",
+    optionId: "dress_long_short",
+    step4AllowedOptionIds: ["dress_long_short"],
+    referenceImageVariant: "primary",
+  },
+  {
+    id: "full_length_gown_mid_sleeve",
+    garmentType: "full_length_gown",
+    label: "Long Dress — Mid Sleeve",
+    selectionGroup: "dress_construction",
+    optionId: DRESS_LONG_LENGTH_MID_SLEEVE_OPTION_ID,
+    step4AllowedOptionIds: [DRESS_LONG_LENGTH_MID_SLEEVE_OPTION_ID],
+    referenceImageVariant: "secondary",
+  },
+  {
+    id: "full_length_gown_long_sleeve",
+    garmentType: "full_length_gown",
+    label: "Long Dress — Long Sleeve",
     selectionGroup: "dress_construction",
     optionId: DRESS_LONG_LENGTH_LONG_SLEEVE_OPTION_ID,
-    step4AllowedOptionIds: [
-      DRESS_LONG_LENGTH_MID_SLEEVE_OPTION_ID,
-      DRESS_LONG_LENGTH_LONG_SLEEVE_OPTION_ID,
-    ],
+    step4AllowedOptionIds: [DRESS_LONG_LENGTH_LONG_SLEEVE_OPTION_ID],
     referenceImageVariant: "secondary",
   },
   {
@@ -484,14 +547,31 @@ const STEP_1_GARMENT_CARD_PRESET_BY_ID = new Map<
 
 export const getStep1GarmentCardPresetById = (
   presetId: string,
-): Step1GarmentCardPreset | null =>
-  STEP_1_GARMENT_CARD_PRESET_BY_ID.get(presetId as Step1GarmentCardPresetId) ??
-  null;
+): Step1GarmentCardPreset | null => {
+  const resolvedId = resolveStep1GarmentCardPresetId(presetId);
+  return resolvedId
+    ? STEP_1_GARMENT_CARD_PRESET_BY_ID.get(resolvedId) ?? null
+    : null;
+};
+
+export const getStep1GarmentCardPresetsForType = (
+  garmentType: FabricGarmentType,
+): readonly Step1GarmentCardPreset[] =>
+  STEP_1_GARMENT_CARD_PRESETS.filter(
+    (preset) => preset.garmentType === garmentType,
+  );
+
+export const getStep1PresetSleeveShortLabel = (
+  preset: Pick<Step1GarmentCardPreset, "label">,
+): string => {
+  const dashIndex = preset.label.indexOf(" — ");
+  return dashIndex >= 0 ? preset.label.slice(dashIndex + 3) : preset.label;
+};
 
 /** Category group IDs used by the UX grid. */
 /**
  * Step 1 category grouping definition — 4 clear Category Group Cards.
- * Groups all 13 `STEP_1_GARMENT_CARD_PRESETS` without dropping or duplicating any preset.
+ * Groups all 17 `STEP_1_GARMENT_CARD_PRESETS` without dropping or duplicating any preset.
  */
 export const STEP_1_GARMENT_CATEGORY_GROUPS: readonly Step1CategoryGroup[] = [
   {
@@ -530,10 +610,14 @@ export const STEP_1_GARMENT_CATEGORY_GROUPS: readonly Step1CategoryGroup[] = [
     title: "Dresses",
     helper: "Choose 1 sleeve",
     presetIds: [
-      "dress_sleeveless_or_short",
-      "dress_mid_or_long",
-      "full_length_gown_sleeveless_or_short",
-      "full_length_gown_mid_or_long",
+      "dress_sleeveless",
+      "dress_short_sleeve",
+      "dress_mid_sleeve",
+      "dress_long_sleeve",
+      "full_length_gown_sleeveless",
+      "full_length_gown_short_sleeve",
+      "full_length_gown_mid_sleeve",
+      "full_length_gown_long_sleeve",
     ] as const,
     subGroups: [
       {
@@ -541,8 +625,10 @@ export const STEP_1_GARMENT_CATEGORY_GROUPS: readonly Step1CategoryGroup[] = [
         title: "Standard Dress",
         helper: "Choose 1 sleeve",
         presetIds: [
-          "dress_sleeveless_or_short",
-          "dress_mid_or_long",
+          "dress_sleeveless",
+          "dress_short_sleeve",
+          "dress_mid_sleeve",
+          "dress_long_sleeve",
         ] as const,
       },
       {
@@ -550,8 +636,10 @@ export const STEP_1_GARMENT_CATEGORY_GROUPS: readonly Step1CategoryGroup[] = [
         title: "Long Dress",
         helper: "Choose 1 sleeve",
         presetIds: [
-          "full_length_gown_sleeveless_or_short",
-          "full_length_gown_mid_or_long",
+          "full_length_gown_sleeveless",
+          "full_length_gown_short_sleeve",
+          "full_length_gown_mid_sleeve",
+          "full_length_gown_long_sleeve",
         ] as const,
       },
     ],
@@ -623,10 +711,10 @@ export const resolveGarmentConstructionPricingForOptionId = (
     constructionComponents.length === 1
       ? constructionComponents[0][0]
       : explicitCatalogOption &&
-          constructionComponents.some(
-            ([selectionGroup]) =>
-              selectionGroup === explicitCatalogOption.selectionGroup,
-          )
+        constructionComponents.some(
+          ([selectionGroup]) =>
+            selectionGroup === explicitCatalogOption.selectionGroup,
+        )
         ? explicitCatalogOption.selectionGroup
         : constructionComponents[0][0];
 
@@ -744,21 +832,26 @@ export const findStep1CardPresetForResolution = (
   ) {
     return presetsForType[1];
   }
-  if (
-    primaryGroup === "dress_construction" &&
-    (normalizedOptionId.endsWith("_mid") ||
+  if (primaryGroup === "dress_construction") {
+    if (normalizedOptionId.endsWith("_short")) {
+      return presetsForType.find((p) => p.optionId.endsWith("_short")) ?? presetsForType[0];
+    }
+    if (normalizedOptionId.endsWith("_mid")) {
+      return presetsForType.find((p) => p.optionId.endsWith("_mid")) ?? presetsForType[2];
+    }
+    if (
       normalizedOptionId.endsWith("_long") ||
-      normalizedOptionId.endsWith("_midlong"))
-  ) {
-    return presetsForType[1];
+      normalizedOptionId.endsWith("_midlong")
+    ) {
+      return presetsForType.find((p) => p.optionId.endsWith("_long")) ?? presetsForType[3];
+    }
   }
   return presetsForType[0];
 };
 
 /**
- * Returns the allowed Step 4 construction option IDs for a base Step 1 garment.
- * - Single ID (shirts, skirts): construction is locked in Step 1 and hidden in Step 4.
- * - Two IDs (dresses): Step 4 narrows to the two same-price sleeve choices for the tier.
+ * Returns the allowed Step 4 construction option IDs for a Step 1 garment.
+ * - Single ID (shirts, dresses, skirts): construction is locked in Step 1 and hidden in Step 4.
  * - Null (trouser, shorts, agbada): Step 4 keeps the fastening/construction group editable.
  */
 export const getAllowedStep4ConstructionOptionIdsForBaseGarment = (

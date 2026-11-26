@@ -543,7 +543,7 @@ export type GarmentTypeStepSelectionAction =
   | { type: "set_demographic"; demographic: unknown };
 
 /**
- * Applies a Step 1 13-card preset click with one-variant-per-garmentType semantics:
+ * Applies a Step 1 17-card preset click with one-variant-per-garmentType semantics:
  * - Unselected garmentType: selects the garmentType and writes the card's exact construction.
  * - Selected sibling card: keeps garmentTypes deduplicated and replaces constructionByGarment[garmentType].
  * - Already-active card: deselects garmentType cleanly.

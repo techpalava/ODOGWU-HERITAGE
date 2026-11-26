@@ -20,11 +20,14 @@ import {
 } from "./src/utils/garmentConstructionPricing";
 import {
   STEP1_DUAL_IMAGE_GARMENT_TYPES,
+  STEP1_GARMENT_PRESET_REFERENCE_IMAGES,
   STEP1_GARMENT_REFERENCE_IMAGES,
   STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES,
+  STEP1_PLACEHOLDER_DRESS_REFERENCE_IMAGES,
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
   getStep1GarmentSecondaryReferenceImage,
+  getStep1PresetReferenceImage,
   isStep1DualImageGarmentType,
   isStep1GarmentReferenceType,
   listMissingStep1GarmentReferenceImageKeys,
@@ -258,11 +261,11 @@ assert.equal(
 
 for (const preset of STEP_1_GARMENT_CARD_PRESETS) {
   assert.ok(isStep1GarmentReferenceType(preset.garmentType));
-  const expectedConfig =
-    preset.referenceImageVariant === "secondary" &&
-    isStep1DualImageGarmentType(preset.garmentType)
-      ? getStep1GarmentSecondaryReferenceImage(preset.garmentType)!
-      : STEP1_GARMENT_REFERENCE_IMAGES[preset.garmentType];
+  const expectedConfig = getStep1PresetReferenceImage(preset.id);
+  assert.equal(
+    STEP1_GARMENT_PRESET_REFERENCE_IMAGES[preset.id].src,
+    expectedConfig.src,
+  );
   assert.ok(
     emptyMarkup.includes(`src="${expectedConfig.src}"`),
     `${preset.id} must render its reference image source`,
@@ -272,6 +275,16 @@ for (const preset of STEP_1_GARMENT_CARD_PRESETS) {
     `${preset.id} must render meaningful reference alt text`,
   );
 }
+assert.deepEqual(
+  STEP1_PLACEHOLDER_DRESS_REFERENCE_IMAGES.map((entry) => entry.filename),
+  [
+    "ankara-standard-dress-short-sleeve.webp",
+    "ankara-standard-dress-mid-sleeve.webp",
+    "ankara-long-dress-gown-sleeveless.webp",
+    "ankara-long-dress-gown-mid-sleeve.webp",
+  ],
+  "Exactly 4 dress sleeve placeholder entries are configured",
+);
 
 const selectedMarkup = renderStepMarkup(["shirt"]);
 assert.ok(
@@ -339,6 +352,7 @@ assert.equal(STEP1_GARMENT_REFERENCE_FRAME_CLASS.includes("aspect-[2/1]"), true)
 assert.equal(STEP1_GARMENT_REFERENCE_FRAME_CLASS.includes("aspect-square"), false);
 
 let selectedGarmentTypes: FabricGarmentType[] = [];
+let selectedConstructionByGarment: Partial<Record<FabricGarmentType, any>> = {};
 let garmentChangeCount = 0;
 let constructionChangeCount = 0;
 let selectableRenderer: ReturnType<typeof create>;
@@ -346,14 +360,18 @@ const renderSelectable = (selected: readonly FabricGarmentType[]) =>
   createElement(GarmentTypeStep, {
     selectedGarmentTypes: selected,
     selectedDemographics: [],
+    selectedConstructionByGarment,
     normalizedCustomDetailCatalog: catalog,
     onGarmentTypesChange: (next) => {
       garmentChangeCount += 1;
       selectedGarmentTypes = next;
     },
     onDemographicsChange: () => undefined,
-    onConstructionDefaultsChange: () => {
+    onConstructionDefaultsChange: (resolutions) => {
       constructionChangeCount += 1;
+      selectedConstructionByGarment = Object.fromEntries(
+        resolutions.map((resolution) => [resolution.garmentType, resolution]),
+      );
     },
   });
 act(() => {
@@ -386,20 +404,20 @@ assert.equal(
 );
 
 const longDressShortImage = selectableRenderer.root
-  .findByProps({ "data-testid": "step1-garment-card-full_length_gown_sleeveless_or_short" })
+  .findByProps({ "data-testid": "step1-garment-card-full_length_gown_short_sleeve" })
   .findByProps({ "data-testid": "step1-garment-reference-image" });
 assert.equal(
   longDressShortImage.props.src,
   "/images/garments/ankara-long-dress-gown-short-sleeve.webp",
-  "Long Dress Sleeveless / Short Sleeve card must use the short-sleeve asset",
+  "Long Dress Short Sleeve card must use the short-sleeve asset",
 );
 const longDressLongImage = selectableRenderer.root
-  .findByProps({ "data-testid": "step1-garment-card-full_length_gown_mid_or_long" })
+  .findByProps({ "data-testid": "step1-garment-card-full_length_gown_long_sleeve" })
   .findByProps({ "data-testid": "step1-garment-reference-image" });
 assert.equal(
   longDressLongImage.props.src,
   "/images/garments/ankara-long-dress-gown.webp",
-  "Long Dress Mid / Long Sleeve card must use the long-sleeve asset",
+  "Long Dress Long Sleeve card must use the long-sleeve asset",
 );
 assert.equal(
   selectableRenderer.root.findAllByProps({
@@ -548,7 +566,7 @@ act(() => {
 });
 act(() => {
   selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-select-dress_sleeveless_or_short" })
+    .findByProps({ "data-testid": "step1-garment-select-dress_sleeveless" })
     .props.onClick();
 });
 assert.deepEqual(selectedGarmentTypes, ["shirt", "trouser", "dress"]);
@@ -558,7 +576,7 @@ act(() => {
 for (const presetId of [
   "shirt_short_sleeve",
   "trouser",
-  "dress_sleeveless_or_short",
+  "dress_sleeveless",
 ] as const) {
   const selectedControl = selectableRenderer.root.findByProps({
     "data-testid": `step1-garment-select-${presetId}`,
@@ -592,7 +610,7 @@ assert.ok(
 );
 assert.equal(
   selectableRenderer.root.findByProps({
-    "data-testid": "step1-garment-select-dress_sleeveless_or_short",
+    "data-testid": "step1-garment-select-dress_sleeveless",
   }).props["aria-pressed"],
   true,
 );
