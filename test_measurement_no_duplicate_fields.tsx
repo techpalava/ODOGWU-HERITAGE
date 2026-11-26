@@ -76,7 +76,7 @@ const VARIANTS: Record<string, Variant> = {
   "Gown G": { type: "full_length_gown", option: ["dress_long_short", "gown_construction"], femaleOnly: true },
   "Trousers I": { type: "trouser" },
   "Shorts J": { type: "standard_shorts" },
-  "Bum Shorts K": { type: "bum_shorts", femaleOnly: true },
+  "Bum Shorts K": { type: "bum_shorts" },
   "Skirt L": { type: "skirt", option: ["skirt_std", "skirt_length"], femaleOnly: true },
   "Long Skirt M": { type: "long_skirt", option: ["skirt_long", "skirt_length"], femaleOnly: true },
 };

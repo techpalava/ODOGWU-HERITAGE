@@ -120,6 +120,11 @@ assert.equal(
   null,
 );
 assert.equal(
+  resolveMeasurementAudienceNotice({ garments: garmentsFor(["bum_shorts"]), garmentTypeSelection: selectionFor(["bum_shorts"], "male") }),
+  null,
+  "Bum Shorts are unisex and get no audience warning on a Male order",
+);
+assert.equal(
   resolveMeasurementAudienceNotice({ garments: garmentsFor(["agbada"]), garmentTypeSelection: selectionFor(["agbada"], "male") }),
   null,
   "Agbada (no profile) keeps its existing behaviour and gets no audience warning",
@@ -150,14 +155,14 @@ assert.equal(
 console.log("PASS: audience warning copy");
 
 // 3. Height Only stays available and completes; every method plans sensibly.
-const cases: Array<[string, FabricGarmentType[], GarmentTypeStepSelection["demographic"], string]> = [
+const cases: Array<[string, FabricGarmentType[], GarmentTypeStepSelection["demographic"], string | null]> = [
   ["no audience, Standard Dress", ["dress"], null, "no_audience"],
   ["no audience, Shirt + Standard Dress", ["shirt", "dress"], null, "no_audience"],
   ["Male, Standard Dress", ["dress"], "male", "audience_mismatch"],
   ["Male, Shirt + Standard Dress", ["shirt", "dress"], "male", "audience_mismatch"],
   ["Male, Full-Length Gown", ["full_length_gown"], "male", "audience_mismatch"],
   ["Male, Skirt", ["skirt"], "male", "audience_mismatch"],
-  ["Male, Bum Shorts", ["bum_shorts"], "male", "audience_mismatch"],
+  ["Male, Bum Shorts", ["bum_shorts"], "male", null],
 ];
 
 const uniqueIds = (where: string, ids: readonly string[]) =>
@@ -170,7 +175,7 @@ for (const [label, types, demographic, kind] of cases) {
     const where = `${label} / ${route}`;
     assert.equal(plan.criticalRiskSupported, true, `${where}: Height Only available`);
     assert.deepEqual(plan.criticalRiskBlockingGarmentKeys, []);
-    assert.equal(plan.audienceNotice?.kind, kind, `${where}: warning kind`);
+    assert.equal(plan.audienceNotice?.kind ?? null, kind, `${where}: warning kind`);
     assert.deepEqual(
       [...new Set(plan.profiles.map((profile) => profile.status))],
       ["resolved"],
