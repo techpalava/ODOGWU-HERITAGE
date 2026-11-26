@@ -17,16 +17,17 @@ import {
 } from "./src/data/mockData";
 
 // Catalogue / admin-settings defaults (mockData) and reference seed labels
-// no longer show "Kaftan"; stable ids (kaftan, kaftan-set, kaftan-dress,
-// executive-kaftan, kaftan-var-N, outfit_type_kaftan / KAFTAN) are unchanged.
+// no longer show "Kaftan"; outfit type ids were migrated (long-shirt,
+// long-shirt-set, long-dress) while executive-kaftan, kaftan-var-N and
+// outfit_type_kaftan / KAFTAN stay unchanged.
 {
   const assertNoKaftan = (text: string, where: string) =>
     assert.doesNotMatch(text, /kaftan/i, `${where}: "Kaftan" must not be shown`);
   const outfitTypes = DEFAULT_BUSINESS_SETTINGS.outfitTypes || [];
   const outfitName = (id: string) => outfitTypes.find((o) => o.id === id)?.name;
-  assert.equal(outfitName("kaftan"), "Long Shirt");
-  assert.equal(outfitName("kaftan-set"), "Long Shirt Set");
-  assert.equal(outfitName("kaftan-dress"), "Long Dress");
+  assert.equal(outfitName("long-shirt"), "Long Shirt");
+  assert.equal(outfitName("long-shirt-set"), "Long Shirt Set");
+  assert.equal(outfitName("long-dress"), "Long Dress");
   for (const o of outfitTypes) assertNoKaftan(o.name, `outfit type ${o.id}`);
 
   const compositions = DEFAULT_BUSINESS_SETTINGS.garmentCompositions || [];
