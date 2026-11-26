@@ -264,9 +264,38 @@ export const buildNormalizedStyleSelectOptions = ({
 };
 
 /**
+ * Built-in outfit types shared by Menswear and Womenswear. Saved Firestore
+ * settings created before they became shared may still carry a single-gender
+ * value ("male" / "female"); mergeOutfitTypesWithDefaults upgrades those to
+ * "unisex" (keeping every other field, including an explicit enabled: false).
+ */
+export const SHARED_BUILT_IN_OUTFIT_TYPE_IDS: readonly string[] = [
+  "senator-set",
+  "standard-shirt",
+  "standard-dress",
+];
+
+const SINGLE_GENDER_OUTFIT_VALUES = new Set(["male", "female"]);
+
+const upgradeSharedBuiltInOutfitType = <
+  T extends NonNullable<BusinessSettings["outfitTypes"]>[number],
+>(
+  entry: T,
+): T => {
+  const idKey = entry.id?.trim().toLowerCase();
+  if (!idKey || !SHARED_BUILT_IN_OUTFIT_TYPE_IDS.includes(idKey)) return entry;
+  const gender =
+    typeof entry.gender === "string" ? entry.gender.trim().toLowerCase() : "";
+  if (!SINGLE_GENDER_OUTFIT_VALUES.has(gender)) return entry;
+  return { ...entry, gender: "unisex" } as T;
+};
+
+/**
  * Merges saved businessSettings.outfitTypes with built-in enabled defaults so
  * newly added outfit types appear in existing Firestore environments without
- * resurrecting entries explicitly disabled in saved settings.
+ * resurrecting entries explicitly disabled in saved settings. Shared built-in
+ * types (Senator Set, Standard Shirt, Standard Dress) saved with a
+ * single-gender value are upgraded to "unisex".
  */
 export const mergeOutfitTypesWithDefaults = (
   configured: BusinessSettings["outfitTypes"] | undefined,
@@ -283,7 +312,7 @@ export const mergeOutfitTypesWithDefaults = (
     const nameKey = customerCatalogueLabel(entry.name).toLowerCase();
     if (nameKey) seenNames.add(nameKey);
   }
-  const merged = [...configured];
+  const merged = configured.map(upgradeSharedBuiltInOutfitType);
   for (const entry of fallback) {
     if (entry.enabled === false) continue;
     const idKey = entry.id?.trim().toLowerCase();
@@ -354,52 +383,51 @@ export const resolveGroupedOutfitTypeOptions = ({
     return a.normalizedName.localeCompare(b.normalizedName);
   });
 
-  const groups: Record<string, string[]> = {
-    male: [],
-    female: [],
-    family: [],
-    couple: [],
-    unisex: [],
-    other: [],
-  };
-
-  for (const entry of enabledEntries) {
+  const KNOWN_GENDERS = new Set(["male", "female", "unisex", "couple", "family"]);
+  const genderOf = (entry: (typeof enabledEntries)[number]): string => {
     const gender =
-      typeof entry.gender === "string" ? entry.gender.trim().toLowerCase() : "other";
-    if (Object.prototype.hasOwnProperty.call(groups, gender)) {
-      groups[gender].push(entry.normalizedName);
-    } else {
-      groups.other.push(entry.normalizedName);
-    }
-  }
+      typeof entry.gender === "string" ? entry.gender.trim().toLowerCase() : "";
+    return KNOWN_GENDERS.has(gender) ? gender : "other";
+  };
+  // Entries keep the global displayOrder/alphabetical sort inside every
+  // bucket, so a shared "unisex" type sits at the same relative position in
+  // Menswear and Womenswear.
+  const namesFor = (genders: readonly string[]): string[] =>
+    enabledEntries
+      .filter((entry) => genders.includes(genderOf(entry)))
+      .map((entry) => entry.normalizedName);
 
-  // A single case-insensitive `seen` set spans every bucket so no <option>
-  // label can ever be rendered twice across optgroups.
-  const seen = new Set<string>();
-  const takeUnseen = (names: readonly string[]): string[] => {
+  // Case-insensitive de-duplication is scoped to each optgroup: a shared
+  // ("unisex") type is offered under BOTH Menswear and Womenswear, but no
+  // label repeats inside a single optgroup. `offered` tracks every label
+  // already shown so "Other / Saved" only lists genuinely missing values.
+  const offered = new Set<string>();
+  const dedupeWithinGroup = (names: readonly string[]): string[] => {
+    const seenInGroup = new Set<string>();
     const result: string[] = [];
     for (const name of names) {
       const lower = name.toLowerCase();
-      if (seen.has(lower)) continue;
-      seen.add(lower);
+      if (seenInGroup.has(lower)) continue;
+      seenInGroup.add(lower);
       result.push(name);
     }
+    for (const name of result) offered.add(name.toLowerCase());
     return result;
   };
 
   const buckets: GroupedOutfitTypeOption[] = [];
 
-  const menswearOptions = takeUnseen([...groups.male, ...groups.unisex]);
+  const menswearOptions = dedupeWithinGroup(namesFor(["male", "unisex"]));
   if (menswearOptions.length > 0) {
     buckets.push({ label: "Menswear", options: menswearOptions });
   }
 
-  const womenswearOptions = takeUnseen(groups.female);
+  const womenswearOptions = dedupeWithinGroup(namesFor(["female", "unisex"]));
   if (womenswearOptions.length > 0) {
     buckets.push({ label: "Womenswear", options: womenswearOptions });
   }
 
-  const coupleFamilyOptions = takeUnseen([...groups.couple, ...groups.family]);
+  const coupleFamilyOptions = dedupeWithinGroup(namesFor(["couple", "family"]));
   if (coupleFamilyOptions.length > 0) {
     buckets.push({ label: "Couple & Family", options: coupleFamilyOptions });
   }
@@ -410,10 +438,12 @@ export const resolveGroupedOutfitTypeOptions = ({
   const normalizedCurrent = currentValue?.trim()
     ? customerCatalogueLabel(currentValue.trim())
     : "";
-  const otherSavedOptions = takeUnseen([
-    ...groups.other,
-    ...(normalizedCurrent ? [normalizedCurrent] : []),
-  ]);
+  const otherSavedOptions = dedupeWithinGroup(
+    [
+      ...namesFor(["other"]),
+      ...(normalizedCurrent ? [normalizedCurrent] : []),
+    ].filter((name) => !offered.has(name.toLowerCase())),
+  );
   if (otherSavedOptions.length > 0) {
     buckets.push({ label: "Other / Saved", options: otherSavedOptions });
   }
@@ -452,7 +482,7 @@ const CANONICAL_DEFAULT_OUTFIT_TYPE_BY_GENDER: Record<string, string> = {
 const OUTFIT_TYPE_GENDER_GROUPS: Record<string, readonly string[]> = {
   male: ["male", "unisex"],
   unisex: ["unisex", "male"],
-  female: ["female"],
+  female: ["female", "unisex"],
   couple: ["couple", "family"],
   family: ["family", "couple"],
 };
