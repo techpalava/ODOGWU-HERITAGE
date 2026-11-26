@@ -24,6 +24,11 @@ import {
   sortDesignStyleCategories,
 } from "../utils/designStyleCategories";
 import {
+  paginateDesignStyleEntries,
+  getPaginationPageItems,
+  STEP3_CATALOGUE_PAGE_SIZE,
+} from "../utils/designStylePagination";
+import {
   getGarmentTypeStepLabel,
   Step1GarmentReferencePhoto,
 } from "./GarmentTypeStep";
@@ -352,6 +357,7 @@ export const DormantFutureDesignStyleStep = ({
   >(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
   const [selectedAudience, setSelectedAudience] = useState<string>("all");
+  const [cataloguePage, setCataloguePage] = useState(1);
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
   const uploadInputIdPrefix = useId();
@@ -396,6 +402,12 @@ export const DormantFutureDesignStyleStep = ({
       setSelectedAudience("all");
     }
   }, [selectedAudience, availableAudiences]);
+
+  // Reset catalogue page to 1 when category or audience filter changes
+  useEffect(() => {
+    setCataloguePage(1);
+  }, [selectedCategoryId, selectedAudience]);
+
   const filteredCatalogueEntries = useMemo(
     () =>
       catalogueEntries.filter((entry) => {
@@ -415,6 +427,51 @@ export const DormantFutureDesignStyleStep = ({
       }),
     [catalogueEntries, selectedCategoryId, selectedAudience],
   );
+
+  // Paginate the filtered catalogue entries
+  const paginatedCatalogue = useMemo(
+    () =>
+      paginateDesignStyleEntries(
+        filteredCatalogueEntries,
+        cataloguePage,
+        STEP3_CATALOGUE_PAGE_SIZE,
+      ),
+    [filteredCatalogueEntries, cataloguePage],
+  );
+  const hasAnySelectedStyle = useMemo(
+    () =>
+      filteredCatalogueEntries.some(
+        (candidate) => candidate.selectedOccurrenceLabels.length > 0,
+      ),
+    [filteredCatalogueEntries],
+  );
+
+  // Keep cataloguePage clamped if catalogue shrinks dynamically
+  useEffect(() => {
+    if (cataloguePage > paginatedCatalogue.totalPages) {
+      setCataloguePage(paginatedCatalogue.totalPages);
+    }
+  }, [cataloguePage, paginatedCatalogue.totalPages]);
+
+  const handleCataloguePageChange = (nextPage: number) => {
+    const clampedPage = Math.max(
+      1,
+      Math.min(nextPage, paginatedCatalogue.totalPages),
+    );
+    if (clampedPage === paginatedCatalogue.page) {
+      return;
+    }
+    setCataloguePage(clampedPage);
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    allDesignsRef.current?.scrollIntoView?.({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  };
+
   const firstIncompleteOccurrence = occurrences.find(
     (occurrence) => occurrence.status !== "complete",
   );
@@ -1624,12 +1681,20 @@ export const DormantFutureDesignStyleStep = ({
                   </button>
                 </div>
               ) : (
-                <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {filteredCatalogueEntries.map((entry, index) => {
-                    const displayStyleName = formatDisplayStyleLabel(entry.style);
-                    const hasAnySelectedStyle = filteredCatalogueEntries.some(
-                      (candidate) => candidate.selectedOccurrenceLabels.length > 0,
-                    );
+                <>
+                  {paginatedCatalogue.totalPages > 1 && (
+                    <div
+                      data-testid="step3-catalogue-range"
+                      className="mt-2 text-xs text-heritage-ink/60"
+                      aria-live="polite"
+                    >
+                      Showing {paginatedCatalogue.startIndex}–{paginatedCatalogue.endIndex} of{" "}
+                      {paginatedCatalogue.totalItems} designs
+                    </div>
+                  )}
+                  <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {paginatedCatalogue.items.map((entry, index) => {
+                      const displayStyleName = formatDisplayStyleLabel(entry.style);
                     return (
                       <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-heritage-gold/60 hover:shadow-md">
                         <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`Select ${displayStyleName}`} className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold disabled:cursor-not-allowed" />
@@ -1665,6 +1730,79 @@ export const DormantFutureDesignStyleStep = ({
                     );
                   })}
                 </div>
+                  {paginatedCatalogue.totalPages > 1 && (
+                    <nav
+                      aria-label="Design styles pagination"
+                      data-testid="step3-catalogue-pagination"
+                      className="mt-6 flex items-center justify-between gap-2 sm:justify-center sm:gap-3"
+                    >
+                      <button
+                        type="button"
+                        data-testid="step3-pagination-prev"
+                        disabled={paginatedCatalogue.page <= 1}
+                        onClick={() =>
+                          handleCataloguePageChange(paginatedCatalogue.page - 1)
+                        }
+                        className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition disabled:cursor-not-allowed disabled:opacity-40 disabled:border-gray-200 disabled:text-heritage-ink/30 ${studioOutlinedNavInteractionClass}`}
+                      >
+                        Previous
+                      </button>
+                      <span
+                        data-testid="step3-pagination-mobile-status"
+                        className="text-xs font-semibold text-heritage-ink/75 sm:hidden"
+                      >
+                        Page {paginatedCatalogue.page} of {paginatedCatalogue.totalPages}
+                      </span>
+                      <div className="hidden flex-wrap items-center justify-center gap-1 sm:flex">
+                        {getPaginationPageItems(
+                          paginatedCatalogue.page,
+                          paginatedCatalogue.totalPages,
+                        ).map((item, idx) =>
+                          item === "ellipsis" ? (
+                            <span
+                              key={`ellipsis-${idx}`}
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs font-semibold text-heritage-ink/45"
+                              aria-hidden="true"
+                            >
+                              …
+                            </span>
+                          ) : (
+                            <button
+                              key={`page-${item}`}
+                              type="button"
+                              aria-label={`Page ${item}`}
+                              aria-current={
+                                item === paginatedCatalogue.page ? "page" : undefined
+                              }
+                              disabled={item === paginatedCatalogue.page}
+                              onClick={() => handleCataloguePageChange(item)}
+                              className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1 ${
+                                item === paginatedCatalogue.page
+                                  ? "bg-heritage-green text-white disabled:cursor-default"
+                                  : "border border-heritage-gold/30 bg-white text-heritage-green hover:bg-heritage-cream"
+                              }`}
+                            >
+                              {item}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="step3-pagination-next"
+                        disabled={
+                          paginatedCatalogue.page >= paginatedCatalogue.totalPages
+                        }
+                        onClick={() =>
+                          handleCataloguePageChange(paginatedCatalogue.page + 1)
+                        }
+                        className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition disabled:cursor-not-allowed disabled:opacity-40 disabled:border-gray-200 disabled:text-heritage-ink/30 ${studioOutlinedNavInteractionClass}`}
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  )}
+                </>
               )}
             </section>
           )}
