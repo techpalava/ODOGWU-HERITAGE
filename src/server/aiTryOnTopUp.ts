@@ -17,9 +17,9 @@ import {
 /**
  * Stripe TEST Checkout for one pack of AI Try-on generations.
  *
- * Xavier priced the pack at $64. Future Order V2 charges EUR (card + iDEAL).
+ * Xavier priced the pack at $39. Future Order V2 charges EUR (card + iDEAL).
  * This Checkout stays USD and card-only so the price on the admin page matches
- * that $64. iDEAL cannot charge USD. If the Stripe test account rejects USD,
+ * that $39. iDEAL cannot charge USD. If the Stripe test account rejects USD,
  * change `AI_TRY_ON_TOP_UP_CURRENCY` only after Xavier picks a currency.
  * Recommended: keep USD.
  *
@@ -28,7 +28,7 @@ import {
  * Live keys and live-mode events are refused.
  */
 export const AI_TRY_ON_TOP_UP_TRIES = 1000;
-export const AI_TRY_ON_TOP_UP_AMOUNT_CENTS = 6400;
+export const AI_TRY_ON_TOP_UP_AMOUNT_CENTS = 3900;
 export const AI_TRY_ON_TOP_UP_CURRENCY = "usd" as const;
 export const AI_TRY_ON_TOP_UP_PURPOSE = "ai_try_on_top_up";
 export const AI_TRY_ON_TOP_UP_WEBHOOK_SECRET_ENV = "STRIPE_AI_TRY_ON_TOP_UP_WEBHOOK_SECRET";
@@ -226,7 +226,7 @@ const setNoStore = (res: HttpResponse): HttpResponse => {
   return res;
 };
 
-/** Null when this paid test session is the $64 / 1,000-try pack. */
+/** Null when this paid test session is the $39 / 1,000-try pack. */
 export const aiTryOnTopUpSessionRejection = (
   session: AiTryOnTopUpCheckoutSession,
 ): string | null => {
@@ -316,7 +316,8 @@ export const readAiTryOnTopUpHistory = async (db: Firestore): Promise<AiTryOnTop
   for (const doc of snapshot.docs) {
     const data = doc.data() as Record<string, unknown>;
     if (data.triesAdded !== AI_TRY_ON_TOP_UP_TRIES) continue;
-    if (data.amountCents !== AI_TRY_ON_TOP_UP_AMOUNT_CENTS) continue;
+    const amountCents = data.amountCents;
+    if (amountCents !== AI_TRY_ON_TOP_UP_AMOUNT_CENTS && amountCents !== 6400) continue;
     if (data.currency !== AI_TRY_ON_TOP_UP_CURRENCY) continue;
     if (data.testMode !== true || data.livemode !== false) continue;
     if (typeof data.createdAt !== "string" || typeof data.adminEmail !== "string") continue;
@@ -328,7 +329,7 @@ export const readAiTryOnTopUpHistory = async (db: Firestore): Promise<AiTryOnTop
       sessionId: doc.id,
       paymentIntentId,
       adminEmail: data.adminEmail,
-      amountCents: AI_TRY_ON_TOP_UP_AMOUNT_CENTS,
+      amountCents,
       currency: AI_TRY_ON_TOP_UP_CURRENCY,
       triesAdded: AI_TRY_ON_TOP_UP_TRIES,
       createdAt: data.createdAt,
@@ -423,7 +424,7 @@ const isRawBody = (value: unknown): value is string | Uint8Array =>
 
 /**
  * Credits 1,000 tries after Stripe signs the event and the retrieved
- * Checkout Session is the paid $64 test pack. The event body is not trusted.
+ * Checkout Session is the paid $39 test pack. The event body is not trusted.
  */
 export const handleAiTryOnTopUpWebhook = async (
   req: HttpRequest,

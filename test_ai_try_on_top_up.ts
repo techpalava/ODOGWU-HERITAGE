@@ -16,6 +16,7 @@ import {
   AI_TRY_ON_TOP_UP_WEBHOOK_SECRET_ENV,
   creditVerifiedAiTryOnTopUp,
   handleAiTryOnTopUpWebhook,
+  readAiTryOnTopUpHistory,
   type AiTryOnTopUpCheckoutRequest,
   type AiTryOnTopUpCheckoutSession,
 } from "./src/server/aiTryOnTopUp";
@@ -162,7 +163,7 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   assert.equal(started.status, 200);
   assert.equal(started.body.url, "https://checkout.stripe.com/c/pay/cs_test_newsession");
   assert.equal(started.created.length, 1);
-  assert.equal(started.created[0].amountCents, 6400);
+  assert.equal(started.created[0].amountCents, 3900);
   assert.equal(started.created[0].currency, "usd");
   assert.equal(started.created[0].tries, 1000);
   assert.equal(started.created[0].adminUid, "xavier");
@@ -289,7 +290,7 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   const record = db.docs.get(`aiTryOnTopUps/${SESSION_A}`)!;
   assert.equal(record.adminEmail, XAVIER);
   assert.equal(record.adminUid, "xavier");
-  assert.equal(record.amountCents, 6400);
+  assert.equal(record.amountCents, 3900);
   assert.equal(record.currency, "usd");
   assert.equal(record.triesAdded, 1000);
   assert.equal(record.paymentIntentId, "pi_test_12345678");
@@ -436,7 +437,26 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   assert.equal(history.length, 1);
   assert.equal(history[0].sessionId, SESSION_A);
   assert.equal(history[0].triesAdded, AI_TRY_ON_TOP_UP_TRIES);
-  assert.equal(history[0].amountCents, 6400);
+  assert.equal(history[0].amountCents, 3900);
+  db.docs.set(`aiTryOnTopUps/${SESSION_B}`, {
+    schemaVersion: 1,
+    purpose: "ai_try_on_top_up",
+    sessionId: SESSION_B,
+    eventId: EVENT_B,
+    paymentIntentId: "pi_test_legacy64",
+    adminUid: "xavier",
+    adminEmail: XAVIER,
+    amountCents: 6400,
+    currency: "usd",
+    triesAdded: 1000,
+    testMode: true,
+    livemode: false,
+    createdAt: "2026-11-01T12:00:00.000Z",
+  });
+  const historyWithLegacy = await readAiTryOnTopUpHistory(db.asFirestore());
+  assert.equal(historyWithLegacy.length, 2);
+  assert.equal(historyWithLegacy[0].amountCents, 3900);
+  assert.equal(historyWithLegacy[1].amountCents, 6400);
   assert.equal(history[0].adminEmail, XAVIER);
   const fred = await usage("fred");
   assert.deepEqual(fred.body.allTime, { tries: 1000, cap: 2000 });
@@ -502,12 +522,12 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
     days: [],
     months: [],
     allTime: { tries: 1000, cap: 2000 },
-    cost: { estimate: true, perTryUsd: 0.064, allTimeUsd: 64, thisMonthUsd: 0, reminders: [] },
+    cost: { estimate: true, perTryUsd: 0.039, allTimeUsd: 39, thisMonthUsd: 0, reminders: [] },
     topUps: [{
       sessionId: SESSION_A,
       paymentIntentId: "pi_test_12345678",
       adminEmail: XAVIER,
-      amountCents: 6400,
+      amountCents: 3900,
       currency: "usd",
       triesAdded: 1000,
       createdAt: "2026-11-08T12:00:00.000Z",
@@ -527,9 +547,9 @@ const checkout = async (db: FakeFirestore, who: string | null, body: unknown = {
   const json = JSON.stringify(renderer.toJSON());
   assert.match(json, /Remaining:/);
   assert.match(json, /"2000"/);
-  assert.match(json, /Top up 1,000 tries \(\$64\)/);
+  assert.match(json, /Top up 1,000 tries \(\$39\)/);
   assert.match(json, /techpalavabox@gmail.com/);
-  assert.match(json, /\$64\.00/);
+  assert.match(json, /\$39\.00/);
   assert.match(json, new RegExp(SESSION_A));
   assert.match(json, /pi_test_12345678/);
   const button = renderer.root.find((node) => node.props["data-admin-ai-try-on-usage-top-up"] !== undefined);
