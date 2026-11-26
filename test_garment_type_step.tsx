@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create } from "react-test-renderer";
+import { resolveStep1DemographicMismatch } from "./src/utils/measurementBlueprint";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import {
   FABRIC_GARMENT_CAPACITY_UNITS,
@@ -958,5 +960,174 @@ assert.ok(shirtSelectedMarkup.includes("1 selected"), "Selection count pill show
 assert.equal(allGarmentsMarkup.includes("Kaftan"), false, "Kaftan must not appear in customer-facing text");
 assert.equal(allGarmentsMarkup.includes("Knicker"), false, "Knicker must not appear");
 assert.equal(allGarmentsMarkup.includes("Select all"), false, "Select all must not appear");
+
+// 6. Step 1 non-blocking demographic mismatch warning & 1-click quick fixes
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+for (const garmentType of ["dress", "full_length_gown", "skirt", "long_skirt"] as const) {
+  const mismatch = resolveStep1DemographicMismatch([garmentType], ["male"]);
+  assert.ok(mismatch, `Male + ${garmentType} must produce mismatch`);
+  assert.deepEqual(mismatch.mismatchedGarmentTypes, [garmentType]);
+  assert.equal(mismatch.hasUnisexGarments, false);
+  assert.equal(mismatch.message.includes("Kaftan"), false);
+  assert.equal(mismatch.message.includes("Knicker"), false);
+
+  const demographicChanges: CustomDetailDemographic[][] = [];
+  let continueClicks = 0;
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      createElement(GarmentTypeStep, {
+        selectedGarmentTypes: [garmentType],
+        selectedDemographics: ["male"],
+        normalizedCustomDetailCatalog: catalog,
+        onGarmentTypesChange: () => undefined,
+        onDemographicsChange: (next) => demographicChanges.push(next),
+        onConstructionDefaultsChange: () => undefined,
+        onContinue: () => {
+          continueClicks += 1;
+        },
+        continueDisabled: false,
+        stageBlockers: [],
+      }),
+    );
+  });
+
+  const banner = renderer.root.findByProps({
+    "data-testid": "step1-demographic-mismatch-warning",
+  });
+  assert.equal(banner.props.role, "status");
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "step1-still-needed" }).length,
+    0,
+    "Warning is non-blocking (no still-needed blocker)",
+  );
+  const continueButtons = renderer.root.findAllByProps({
+    "aria-label": "Continue to Fabric",
+  });
+  assert.ok(continueButtons.length > 0);
+  assert.ok(
+    continueButtons.every((button) => button.props.disabled !== true),
+    `Continue to Fabric remains enabled for Male + ${garmentType}`,
+  );
+  await act(async () => {
+    continueButtons[0]!.props.onClick();
+  });
+  assert.equal(continueClicks, 1);
+
+  const switchFemale = renderer.root.findByProps({
+    "data-testid": "step1-demographic-switch-female",
+  });
+  const switchUnisex = renderer.root.findByProps({
+    "data-testid": "step1-demographic-switch-unisex",
+  });
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "step1-demographic-add-female" }).length,
+    0,
+  );
+  await act(async () => {
+    switchFemale.props.onClick();
+    switchUnisex.props.onClick();
+  });
+  assert.deepEqual(demographicChanges, [["female"], ["unisex"]]);
+  await act(async () => {
+    renderer.unmount();
+  });
+}
+
+// Mixed order: Male + Standard Shirt + Standard Dress
+{
+  const mixed = resolveStep1DemographicMismatch(["shirt", "dress"], ["male"]);
+  assert.ok(mixed);
+  assert.deepEqual(mixed.mismatchedGarmentTypes, ["dress"]);
+  assert.equal(mixed.hasUnisexGarments, true);
+  assert.ok(mixed.message.includes("Standard Dress is usually a women's garment"));
+  assert.equal(mixed.message.includes("Kaftan"), false);
+  assert.equal(mixed.message.includes("Knicker"), false);
+
+  const multiWomen = resolveStep1DemographicMismatch(["dress", "skirt"], ["male"]);
+  assert.ok(multiWomen);
+  assert.ok(
+    multiWomen.message.includes("Standard Dress and Standard Skirt are usually women's garments"),
+  );
+
+  const demographicChanges: CustomDetailDemographic[][] = [];
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      createElement(GarmentTypeStep, {
+        selectedGarmentTypes: ["shirt", "dress"],
+        selectedDemographics: ["male"],
+        normalizedCustomDetailCatalog: catalog,
+        onGarmentTypesChange: () => undefined,
+        onDemographicsChange: (next) => demographicChanges.push(next),
+        onConstructionDefaultsChange: () => undefined,
+        onContinue: () => undefined,
+        continueDisabled: false,
+        stageBlockers: [],
+      }),
+    );
+  });
+
+  const addFemale = renderer.root.findByProps({
+    "data-testid": "step1-demographic-add-female",
+  });
+  const switchUnisex = renderer.root.findByProps({
+    "data-testid": "step1-demographic-switch-unisex",
+  });
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "step1-demographic-switch-female" }).length,
+    0,
+  );
+  await act(async () => {
+    addFemale.props.onClick();
+    switchUnisex.props.onClick();
+  });
+  assert.deepEqual(demographicChanges, [["male", "female"], ["unisex"]]);
+  await act(async () => {
+    renderer.unmount();
+  });
+}
+
+// No warning cases: unisex garments with Male, Female/Unisex/multi-audience/empty with any garment
+for (const garmentType of ["shirt", "kaftan", "trouser", "standard_shorts", "bum_shorts"] as const) {
+  assert.equal(
+    resolveStep1DemographicMismatch([garmentType], ["male"]),
+    null,
+    `Male + ${garmentType} must NOT warn`,
+  );
+  const markup = renderStep({
+    selectedGarmentTypes: [garmentType],
+    selectedDemographics: ["male"],
+  });
+  assert.equal(
+    markup.includes('data-testid="step1-demographic-mismatch-warning"'),
+    false,
+    `No mismatch banner for Male + ${garmentType}`,
+  );
+}
+
+for (const demographics of [
+  [],
+  ["female"],
+  ["unisex"],
+  ["male", "female"],
+  ["male", "unisex"],
+] as CustomDetailDemographic[][]) {
+  assert.equal(
+    resolveStep1DemographicMismatch(["shirt", "trouser", "dress", "skirt"], demographics),
+    null,
+    `No mismatch for demographics=${JSON.stringify(demographics)}`,
+  );
+  const markup = renderStep({
+    selectedGarmentTypes: ["shirt", "dress"],
+    selectedDemographics: demographics,
+  });
+  assert.equal(
+    markup.includes('data-testid="step1-demographic-mismatch-warning"'),
+    false,
+    `No mismatch banner for demographics=${JSON.stringify(demographics)}`,
+  );
+}
 
 console.log("Garment Type Step controlled component verification passed.");

@@ -1,10 +1,12 @@
 import type {
   CanonicalPhysicalGarmentType,
+  CustomDetailDemographic,
   Fabric,
   FabricAllocation,
   FutureMeasurementStateV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
+  WearerFitContext,
   WearerOrderStateV2,
 } from "../types.js";
 import type { PhysicalGarmentOccurrence } from "./designSourceState.js";
@@ -139,6 +141,8 @@ export interface AiTryOnWearerTarget {
   readonly legacyWearerSlot?: true;
   /** Outfit slot only: every current pair; a preview of any one is current. */
   readonly outfitPairs?: readonly AiTryOnOutfitPair[];
+  /** Preferred studio model gender from wearer fit or Step 1 demographic. */
+  readonly preferredModelGender?: "male" | "female" | null;
 }
 
 export interface AiTryOnTargetOccurrence {
@@ -182,12 +186,26 @@ const fabricCodeFor = (
     allocation.garmentAssignments.some((assignment) => assignment.garmentKey === garmentKey),
   )?.fabricCode || null;
 
+const resolvePreferredModelGender = (
+  wearerFitContext: WearerFitContext | null | undefined,
+  step1Demographic: CustomDetailDemographic | null | undefined,
+): "male" | "female" | null => {
+  if (wearerFitContext === "male" || wearerFitContext === "female") {
+    return wearerFitContext;
+  }
+  if (step1Demographic === "male" || step1Demographic === "female") {
+    return step1Demographic;
+  }
+  return null;
+};
+
 const buildTarget = ({
   input,
   wearerId,
   label,
   garmentKeys,
   fitHints,
+  preferredModelGender,
   orderDetailsFor,
   orderDetailsForOccurrence,
 }: {
@@ -196,6 +214,7 @@ const buildTarget = ({
   label: string;
   garmentKeys: ReadonlySet<string>;
   fitHints: readonly AiTryOnFitHint[];
+  preferredModelGender: "male" | "female" | null;
   orderDetailsFor: (swatchFabricCode: string | null) => AiTryOnOrderDetails | null;
   orderDetailsForOccurrence: (
     occurrence: AiTryOnTargetOccurrence,
@@ -335,6 +354,7 @@ const buildTarget = ({
     previewableGarments: garmentsWithFingerprints,
     fitHints,
     orderDetails,
+    ...(preferredModelGender ? { preferredModelGender } : {}),
   };
 };
 
@@ -362,6 +382,7 @@ export const buildAiTryOnWearerTargets = (
   const wearers = [...(input.wearerOrder?.wearers || [])].sort(
     (left, right) => left.presentationOrder - right.presentationOrder,
   );
+  const step1Demographic = input.garmentTypeSelection?.demographic;
 
   if (wearers.length <= 1) {
     const sole = wearers[0];
@@ -377,6 +398,7 @@ export const buildAiTryOnWearerTargets = (
               measurement: input.measurement,
               garmentKeys: input.occurrences.map((occurrence) => occurrence.garmentKey),
             }),
+        preferredModelGender: resolvePreferredModelGender(sole?.fitContext, step1Demographic),
         orderDetailsFor: (swatch) =>
           buildAiTryOnOrderDetails(detailsSource(input.occurrences, swatch)),
         orderDetailsForOccurrence,
@@ -400,6 +422,7 @@ export const buildAiTryOnWearerTargets = (
         wearerOrder: input.wearerOrder,
         wearerId: wearer.wearerId,
       }),
+      preferredModelGender: resolvePreferredModelGender(wearer.fitContext, step1Demographic),
       orderDetailsFor: (swatch) =>
         buildAiTryOnOrderDetailsForWearer({
           ...detailsSource(input.occurrences, swatch),

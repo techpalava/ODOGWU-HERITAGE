@@ -26,6 +26,10 @@ import {
   resolveAuthoritativePhysicalOrder,
 } from "./designSourceState.js";
 import { buildEffectiveUploadedJourneyGarmentTypeSelection } from "./uploadedDesignStep1.js";
+import {
+  getStep1GarmentDisplayLabel,
+  type CustomerSelectableGarmentType,
+} from "./garmentConstructionPricing.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -753,6 +757,87 @@ export const resolveHydratedMeasurementPhysicalGarments = ({
   });
 };
 
+const getMeasurementProfilesForPhysicalGarment = (
+  garmentType: FabricGarmentType,
+): readonly MeasurementProfile[] => {
+  if (garmentType === "agbada" || garmentType === "other") {
+    return [];
+  }
+  const measurementFamily =
+    garmentType === "kaftan"
+      ? "shirt"
+      : garmentType === "long_skirt"
+        ? "skirt"
+        : garmentType === "full_length_gown"
+          ? "dress"
+          : garmentType;
+  const allowedProfileIds =
+    ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT[garmentType];
+  return MEASUREMENT_PROFILES.filter(
+    (profile) =>
+      profile.garmentType === measurementFamily &&
+      (!allowedProfileIds || allowedProfileIds.includes(profile.id)),
+  );
+};
+
+export interface Step1DemographicMismatch {
+  readonly mismatchedGarmentTypes: readonly CustomerSelectableGarmentType[];
+  readonly hasUnisexGarments: boolean;
+  readonly message: string;
+}
+
+/**
+ * Advisory Step 1 check: warns (without blocking) only when the customer
+ * selects Male alone alongside women's-profile garments (derived directly from
+ * MEASUREMENT_PROFILES).
+ */
+export const resolveStep1DemographicMismatch = (
+  selectedGarmentTypes: readonly FabricGarmentType[],
+  selectedDemographics: readonly CustomDetailDemographic[],
+): Step1DemographicMismatch | null => {
+  if (
+    selectedDemographics.length !== 1 ||
+    selectedDemographics[0] !== "male"
+  ) {
+    return null;
+  }
+
+  const mismatchedGarmentTypes: CustomerSelectableGarmentType[] = [];
+  let hasUnisexGarments = false;
+  const seen = new Set<FabricGarmentType>();
+
+  for (const garmentType of selectedGarmentTypes) {
+    if (seen.has(garmentType)) continue;
+    seen.add(garmentType);
+    const profiles = getMeasurementProfilesForPhysicalGarment(garmentType);
+    if (profiles.length === 0) continue;
+    if (profiles.some((profile) => profile.demographics.includes("male"))) {
+      hasUnisexGarments = true;
+    } else {
+      mismatchedGarmentTypes.push(garmentType as CustomerSelectableGarmentType);
+    }
+  }
+
+  if (mismatchedGarmentTypes.length === 0) {
+    return null;
+  }
+
+  const labels = mismatchedGarmentTypes.map((garmentType) =>
+    getStep1GarmentDisplayLabel(garmentType),
+  );
+  const labelList = formatGarmentList(labels);
+  const isSingle = labels.length === 1;
+  const message = isSingle
+    ? `${labelList} is usually a women's garment, but you selected Male. If this order is for a woman or a mixed/family group, update your choice below — otherwise we'll still continue using standard sizing.`
+    : `${labelList} are usually women's garments, but you selected Male. If this order is for a woman or a mixed/family group, update your choice below — otherwise we'll still continue using standard sizing.`;
+
+  return {
+    mismatchedGarmentTypes,
+    hasUnisexGarments,
+    message,
+  };
+};
+
 export const resolveMeasurementProfile = ({
   garment,
   garmentTypeSelection,
@@ -770,21 +855,7 @@ export const resolveMeasurementProfile = ({
   if (!demographic) {
     return { status: "unresolved", garmentKey, garmentType, code: "demographic_ineligible" };
   }
-  const measurementFamily =
-    garmentType === "kaftan"
-      ? "shirt"
-      : garmentType === "long_skirt"
-        ? "skirt"
-        : garmentType === "full_length_gown"
-          ? "dress"
-          : garmentType;
-  const allowedProfileIds =
-    ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT[garmentType];
-  const candidates = MEASUREMENT_PROFILES.filter(
-    (profile) =>
-      profile.garmentType === measurementFamily &&
-      (!allowedProfileIds || allowedProfileIds.includes(profile.id)),
-  );
+  const candidates = getMeasurementProfilesForPhysicalGarment(garmentType);
   const eligible = candidates.filter((profile) =>
     profile.demographics.includes(demographic),
   );

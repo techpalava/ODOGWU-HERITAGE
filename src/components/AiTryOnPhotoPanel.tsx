@@ -895,11 +895,12 @@ export const AiTryOnPhotoPanel = ({
   const effectiveModelFilter: AiTryOnModelGroup | "all" =
     allowedModelGroups.length < 2 ? "all" : modelFilter;
 
-  // Derive effectiveStyleGender for outfit mode: prefer bottom, then top, then preview.
-  const effectiveStyleGender =
-    outfitMode
-      ? selectedBottom?.styleGender ?? selectedTop?.styleGender ?? selectedPreview?.styleGender
-      : selectedPreview?.styleGender;
+  // Derive effectiveStyleGender from wearer/Step 1 demographic preference first,
+  // falling back to catalogue styleGender (bottom, then top, then preview).
+  const fallbackStyleGender = outfitMode
+    ? selectedBottom?.styleGender ?? selectedTop?.styleGender ?? selectedPreview?.styleGender
+    : selectedPreview?.styleGender;
+  const effectiveStyleGender = target?.preferredModelGender ?? fallbackStyleGender;
 
   // No chosen outfit bottom yet: keep the current base until the bottom is known.
   const explicitStudioLength: AiTryOnModelLengthCategory | null = outfitMode
