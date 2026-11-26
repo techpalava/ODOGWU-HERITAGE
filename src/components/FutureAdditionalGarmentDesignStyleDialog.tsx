@@ -6,6 +6,7 @@ import type { DesignStyleStepCatalogueEntry } from "../utils/designStyleStepRunt
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { studioOutlinedNavInteractionClass } from "./DesignStudioBackButton";
 import { DesignStyleImage } from "./DesignStyleImage";
+import { DesignStyleSleeveBadge } from "./DesignStyleSleeveBadge";
 import { DESIGN_STYLE_CARD_IMAGE_PRESET } from "../utils/optimizedImageUrl";
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
@@ -230,6 +231,10 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
                         imageUrl={entry.style.image}
                         alt={`${displayStyleName} design`}
                         styleId={entry.style.id}
+                      />
+                      <DesignStyleSleeveBadge
+                        sleeveOption={entry.style.sleeveOption}
+                        className="absolute bottom-2.5 left-2.5"
                       />
                       {entry.selected && (
                         <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">

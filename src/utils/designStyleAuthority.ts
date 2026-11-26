@@ -10,6 +10,7 @@ import type {
   CustomDetailSelectionGroup,
   DesignSelections,
   DesignStyleCategory,
+  DesignStyleSleeveOption,
   FabricCapacityGarmentSpec,
   StyleCategory,
 } from "../types.js";
@@ -19,6 +20,7 @@ import {
   normalizeStyleCategoryIds,
   resolveMirroredDesignCategories,
 } from "./designStyleCategories.js";
+import { isDesignStyleSleeveOption } from "./designStyleSleeveOption.js";
 
 export const DESIGN_STYLE_AUTHORITY_SCHEMA_VERSION = 1 as const;
 
@@ -85,6 +87,12 @@ export interface DesignStylePresentationV1 {
    * a wearer. Absent means false, so older records stay valid.
    */
   readonly showsWearer?: boolean;
+  /**
+   * Optional sleeve style for this design. Used as an informational badge
+   * on the design's photo in Step 3 Design Studio and Step 5 Additional
+   * Garment popup. Absent means not specified (no badge).
+   */
+  readonly sleeveOption?: DesignStyleSleeveOption;
 }
 
 export interface AuthoritativeDesignStyleRecordV1 {
@@ -491,11 +499,13 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
     ...PRESENTATION_KEYS,
     "showsWearer",
     "categoryIds",
+    "sleeveOption",
   ]);
   if (
     !PRESENTATION_KEYS.every((key) => presentationKeys.includes(key)) ||
     presentationKeys.some((key) => !allowedPresentationKeys.has(key)) ||
-    (value.showsWearer !== undefined && typeof value.showsWearer !== "boolean")
+    (value.showsWearer !== undefined && typeof value.showsWearer !== "boolean") ||
+    (value.sleeveOption !== undefined && !isDesignStyleSleeveOption(value.sleeveOption))
   ) {
     return null;
   }
@@ -597,6 +607,9 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
     embroideryProminence: value.embroideryProminence,
     defaultGarmentDetails: toJsonMap(value.defaultGarmentDetails),
     ...(value.showsWearer === true ? { showsWearer: true } : {}),
+    ...(isDesignStyleSleeveOption(value.sleeveOption)
+      ? { sleeveOption: value.sleeveOption }
+      : {}),
   };
 };
 
@@ -752,6 +765,17 @@ const presentationFromStyle = (
   }
   const gender = STYLE_GENDERS.has(style.gender) ? style.gender : "unisex";
   const features = style.includedDesignFeatures || {};
+
+  const sleeveValue = style.sleeveOption;
+  if (sleeveValue !== undefined && String(sleeveValue).trim() === "") {
+    // Empty string is treated as "not specified" — omit from presentation.
+  } else if (isDesignStyleSleeveOption(sleeveValue)) {
+    // Valid sleeve option — include in presentation.
+  } else if (sleeveValue !== undefined) {
+    // Invalid value — fail closed.
+    throw new Error("INVALID_STYLE_SLEEVE_OPTION");
+  }
+
   const categoryIds = normalizeStyleCategoryIds(style.categoryIds);
   const designCategories = resolveMirroredDesignCategories({
     categoryIds: style.categoryIds,
@@ -805,6 +829,9 @@ const presentationFromStyle = (
       style.defaultGarmentDetails as DesignSelections | undefined,
     ),
     ...(style.showsWearer === true ? { showsWearer: true } : {}),
+    ...(isDesignStyleSleeveOption(style.sleeveOption)
+      ? { sleeveOption: style.sleeveOption }
+      : {}),
   };
 };
 
@@ -940,6 +967,9 @@ export const projectDesignStyleRecordForAdmin = (
     monogramCuffEligible: record.presentation.monogramCuffEligible,
     embroideryProminence: record.presentation.embroideryProminence,
     ...(record.presentation.showsWearer === true ? { showsWearer: true } : {}),
+    ...(record.presentation.sleeveOption
+      ? { sleeveOption: record.presentation.sleeveOption }
+      : {}),
     defaultGarmentDetails: toJsonMap(
       record.presentation.defaultGarmentDetails,
     ) as DesignSelections,

@@ -3,6 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export type DesignStyleSleeveOption =
+  | "sleeveless"
+  | "short_sleeve"
+  | "mid_sleeve"
+  | "long_sleeve";
+
 export interface NamedMeasurementProfile {
   id: string;
   name: string;
@@ -187,6 +193,13 @@ export interface StyleCategory {
    * means false.
    */
   showsWearer?: boolean;
+
+  /**
+   * Optional sleeve style for this design. Used as an informational badge
+   * on the design's photo in Step 3 Design Studio and Step 5 Additional
+   * Garment popup. Does not affect construction pricing.
+   */
+  sleeveOption?: DesignStyleSleeveOption;
 }
 
 /** Internal half-fabric integers: 1 = 1/2 customer-facing unit, 2 = 1 customer-facing unit. */
