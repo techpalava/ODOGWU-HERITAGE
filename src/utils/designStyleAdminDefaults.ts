@@ -489,3 +489,37 @@ export const resolveDesignStyleGenderOptions = (
     label,
   }));
 };
+
+/**
+ * Derives represented custom-detail genders from the top-level Collection Audience.
+ */
+export const deriveRepresentedGendersFromStyleAudience = (
+  gender?: string,
+): Array<"male" | "female"> => {
+  if (gender === "male") return ["male"];
+  if (gender === "female") return ["female"];
+  return ["male", "female"];
+};
+
+/**
+ * Mirrors advisory "Originally designed for" metadata from selected garment specs.
+ */
+export const syncReferenceCompositionFromGarmentSpecs = (
+  specs?: readonly FabricCapacityGarmentSpec[],
+): DesignStyleReferenceComposition => {
+  const garmentTypes = Array.isArray(specs)
+    ? ([
+        ...new Set(
+          specs
+            .map((spec) => spec?.garmentType)
+            .filter(
+              (g): g is CanonicalPhysicalGarmentType =>
+                typeof g === "string" && g.length > 0,
+            ),
+        ),
+      ] as CanonicalPhysicalGarmentType[])
+    : [];
+  return garmentTypes.length > 0
+    ? { status: "known", garmentTypes }
+    : { status: "legacy_unresolved", garmentTypes: [] };
+};
