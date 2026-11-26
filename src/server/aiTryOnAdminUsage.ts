@@ -13,8 +13,8 @@ import type { AiTryOnResetIdentity } from "./aiTryOnAdminReset.js";
  */
 const FULL_VIEW_EMAILS = new Set(["techpalavabox@gmail.com"].map(getCanonicalEmail));
 
-/** Estimate only: $64 per 1,000 counted tries (no billing data is read). */
-export const AI_TRY_ON_COST_PER_TRY_USD = 0.064;
+/** Estimate only: $39 per 1,000 counted tries (actual gemini-2.5-flash-image estimate; no billing data is read). */
+export const AI_TRY_ON_COST_PER_TRY_USD = 0.039;
 /** Reminders at 80% and 95% of each amount, like the cap warning. */
 export const AI_TRY_ON_COST_REMINDER_AMOUNTS_USD = [10, 20] as const;
 export const AI_TRY_ON_COST_REMINDER_LEVELS = { warning: 0.8, critical: 0.95 } as const;
