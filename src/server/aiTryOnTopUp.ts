@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import type { Firestore } from "firebase-admin/firestore";
 import { getCanonicalEmail } from "../security/authIdentity.js";
 import { isAllowedAdminEmail } from "./adminAllowlist.js";
+import { isAiTryOnBillingUnavailableAccount } from "./aiTryOnBilling.js";
 import type { AiTryOnResetIdentity } from "./aiTryOnAdminReset.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
@@ -89,18 +90,19 @@ export interface AiTryOnTopUpHistoryRow {
   createdAt: string;
 }
 
+/**
+ * Only Xavier's verified, non-anonymous admin account (also present on the
+ * server admin allowlist) may start a Stripe test top-up checkout. General
+ * admins only see the read-only 1,000 / $64 info label in usage settings.
+ */
 export const isSignedInAiTryOnTopUpAdmin = (
   identity: AiTryOnResetIdentity,
   environment: Record<string, string | undefined> = process.env,
 ): boolean =>
-  Boolean(identity.uid) &&
   identity.admin === true &&
-  identity.email_verified === true &&
   typeof identity.email === "string" &&
   isAllowedAdminEmail(identity.email, environment) &&
-  typeof identity.firebase?.sign_in_provider === "string" &&
-  Boolean(identity.firebase.sign_in_provider) &&
-  identity.firebase.sign_in_provider !== "anonymous";
+  isAiTryOnBillingUnavailableAccount(identity);
 
 export const isAiTryOnTopUpWebhookRequest = (
   req: HttpRequest & { query?: unknown; url?: string },
