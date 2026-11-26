@@ -297,6 +297,45 @@ try {
   }
   prefersReducedMotion = false;
 
+  // 4. The lock note button inside step3-continue-lock-note: clickable,
+  // scrolls to, focuses, and pulses the first incomplete garment; never calls onContinue.
+  {
+    const noteButton = root.findByProps({ "data-testid": "step3-continue-lock-note-button" });
+    assert.equal(noteButton.type, "button");
+    assert.equal(noteButton.props.type, "button");
+    assert.equal(textContent(noteButton), "Choose a design reference for Standard Skirt to continue.");
+    const card = cards.get(targetToken)!;
+    const scrollsBefore = card.scrolls.length;
+    const focusBefore = card.focusCalls.length;
+    await act(async () => noteButton.props.onClick());
+    assert.equal(continueCalls, 0, "lock note button never calls onContinue");
+    assert.equal(card.scrolls.length, scrollsBefore + 1);
+    assert.deepEqual(card.scrolls.at(-1), { behavior: "smooth", block: "center" });
+    const targetCard = root.find(
+      (node) => node.type === "article" && node.props["data-occurrence-token"] === targetToken,
+    );
+    assert.equal(targetCard.props.tabIndex, -1, "the target card can take focus");
+    assert.equal(targetCard.props["data-step3-continue-target"], "true");
+    await flushFrames();
+    assert.equal(card.focusCalls.length, focusBefore + 1, "lock note button focuses the card");
+    assert.deepEqual(card.focusCalls.at(-1), { preventScroll: true });
+    const pulsing = root.find(
+      (node) => node.type === "article" && node.props["data-occurrence-token"] === targetToken,
+    );
+    assert.equal(pulsing.props["data-step3-continue-target-pulse"], "true");
+    assert.ok(String(pulsing.props.className).includes(STEP3_CONTINUE_TARGET_PULSE_CLASS));
+    // Only the first unassigned card is targeted.
+    for (const other of root.findAll(
+      (node) =>
+        node.type === "article" &&
+        typeof node.props["data-occurrence-token"] === "string" &&
+        node.props["data-occurrence-token"] !== targetToken,
+    )) {
+      assert.equal(other.props["data-step3-continue-target"], undefined);
+      assert.equal(String(other.props.className).includes(STEP3_CONTINUE_TARGET_PULSE_CLASS), false);
+    }
+  }
+
   // Complete: no beam, the check stays, the note is gone, Continue works.
   let completeContinueCalls = 0;
   const complete = await render(

@@ -1495,7 +1495,14 @@ export const DormantFutureDesignStyleStep = ({
                 data-testid="step3-continue-lock-note"
                 className={`w-full rounded-lg border border-heritage-gold/45 bg-white px-3 py-2 sm:w-max sm:max-w-full text-xs font-semibold text-amber-800 ${STEP3_CONTINUE_NOTE_BEAM_CLASS}`}
               >
-                Choose a design reference for {firstIncompleteOccurrence.label} to continue.
+                <button
+                  type="button"
+                  data-testid="step3-continue-lock-note-button"
+                  onClick={revealFirstIncompleteGarment}
+                  className="w-full cursor-pointer text-left underline decoration-amber-600/40 underline-offset-2 transition hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1"
+                >
+                  Choose a design reference for {firstIncompleteOccurrence.label} to continue.
+                </button>
               </p>
             ) : null}
             forward={{
