@@ -339,6 +339,37 @@ assert.notEqual(
   "total_height",
 );
 
+// Armhole is laid-flat half-width, elbow is optional on sample_cloth, seam-to-seam micro-instructions & sample-aware headings render.
+const armholeField = renderer.root.findByProps({ "data-measurement-field": "armhole_circumference" });
+assert.equal(armholeField.props["data-sample-geometry"], "laid_flat_half_width");
+assert.match(collectText(armholeField), /top shoulder seam down to the bottom underarm seam/i);
+
+const requiredSection = renderer.root.findByProps({ "data-measurement-section": "required" });
+const optionalSection = renderer.root.findByProps({ "data-measurement-section": "optional" });
+assert.equal(
+  requiredSection.findAllByProps({ "data-measurement-field": "elbow_circumference" }).length,
+  0,
+  "elbow_circumference must not be in Required section on sample_cloth",
+);
+assert.equal(
+  optionalSection.findAllByProps({ "data-measurement-field": "elbow_circumference" }).length,
+  1,
+  "elbow_circumference must be demoted to Optional section on sample_cloth",
+);
+
+const neckField = renderer.root.findByProps({ "data-measurement-field": "neck_circumference" });
+assert.equal(neckField.props["data-sample-geometry"], "length_or_opening");
+assert.match(collectText(neckField), /Neck opening \(full inside loop\)/);
+assert.match(collectText(neckField), /full loop/i);
+
+const requiredText = collectText(requiredSection);
+assert.match(requiredText, /armpit seam to armpit seam/i);
+assert.match(requiredText, /Shared sample measurements/);
+const fullSampleText = collectText(renderer.root);
+assert.doesNotMatch(fullSampleText, /Shared Body Measurements/i);
+assert.doesNotMatch(fullSampleText, /shared body/i);
+assert.doesNotMatch(fullSampleText, /Kaftan|Knicker/);
+
 const chestField = renderer.root.findByProps({ "data-measurement-field": "chest_bust_circumference" });
 assert.equal(chestField.props["data-sample-geometry"], "laid_flat_half_width");
 const chestInput = chestField.findByType("input");
