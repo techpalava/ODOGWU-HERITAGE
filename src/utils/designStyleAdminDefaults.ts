@@ -263,6 +263,41 @@ export const buildNormalizedStyleSelectOptions = ({
   return [...new Set(normalized)];
 };
 
+/**
+ * Merges saved businessSettings.outfitTypes with built-in enabled defaults so
+ * newly added outfit types appear in existing Firestore environments without
+ * resurrecting entries explicitly disabled in saved settings.
+ */
+export const mergeOutfitTypesWithDefaults = (
+  configured: BusinessSettings["outfitTypes"] | undefined,
+  fallback: NonNullable<BusinessSettings["outfitTypes"]>,
+): NonNullable<BusinessSettings["outfitTypes"]> => {
+  if (!configured || configured.length === 0) {
+    return [...fallback];
+  }
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  for (const entry of configured) {
+    const idKey = entry.id?.trim().toLowerCase();
+    if (idKey) seenIds.add(idKey);
+    const nameKey = customerCatalogueLabel(entry.name).toLowerCase();
+    if (nameKey) seenNames.add(nameKey);
+  }
+  const merged = [...configured];
+  for (const entry of fallback) {
+    if (entry.enabled === false) continue;
+    const idKey = entry.id?.trim().toLowerCase();
+    const nameKey = customerCatalogueLabel(entry.name).toLowerCase();
+    if ((idKey && seenIds.has(idKey)) || (nameKey && seenNames.has(nameKey))) {
+      continue;
+    }
+    if (idKey) seenIds.add(idKey);
+    if (nameKey) seenNames.add(nameKey);
+    merged.push(entry);
+  }
+  return merged;
+};
+
 export const resolveOutfitTypeOptions = (
   businessSettings: Pick<BusinessSettings, "outfitTypes">,
   fallbackOutfitTypes: NonNullable<BusinessSettings["outfitTypes"]>,
