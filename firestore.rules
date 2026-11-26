@@ -121,7 +121,8 @@ service cloud.firestore {
           "monogramCuffEligible",
           "embroideryProminence",
           "defaultGarmentDetails",
-          "showsWearer"
+          "showsWearer",
+          "sleeveOption"
         ])
         && data.keys().hasAll([
           "name",
@@ -217,6 +218,10 @@ service cloud.firestore {
         && (
           !data.keys().hasAny(["showsWearer"])
           || data.showsWearer is bool
+        )
+        && (
+          !data.keys().hasAny(["sleeveOption"])
+          || data.sleeveOption in ["sleeveless", "short_sleeve", "mid_sleeve", "long_sleeve"]
         );
     }
 

@@ -154,6 +154,11 @@ import {
   type DesignStyleAdminProjection,
   type DesignStyleLifecycle,
 } from "../utils/designStyleAuthority";
+import {
+  DESIGN_STYLE_SLEEVE_OPTIONS,
+  getDesignStyleSleeveOptionLabel,
+  type DesignStyleSleeveOption,
+} from "../utils/designStyleSleeveOption";
 import { DesignStylePublicationError } from "../utils/designStylePublication";
 import { getNextDesignStyleId } from "../utils/designStyleId";
 import { customerCatalogueLabel } from "../utils/customerCatalogueLabel";
@@ -3222,6 +3227,39 @@ export default function DatabaseView({
                               });
                             })()}
                           </div>
+                        <div className="space-y-2">
+                          <label className="font-bold text-heritage-green block">
+                            Sleeve Option
+                          </label>
+                          <p className="text-[10px] text-heritage-ink/60">
+                            Optional. Shown as a badge on this design's photo in Step 3 so
+                            customers can see the sleeve style at a glance. Does not affect
+                            Step 4 construction pricing.
+                          </p>
+                          <select
+                            aria-label="Sleeve Option"
+                            data-testid="admin-style-sleeve-option"
+                            value={editingItem.sleeveOption || ""}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setEditingItem({
+                                ...editingItem,
+                                sleeveOption:
+                                  value === ""
+                                    ? undefined
+                                    : (value as DesignStyleSleeveOption),
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg text-xs"
+                          >
+                            <option value="">Not specified (No badge)</option>
+                            {DESIGN_STYLE_SLEEVE_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {getDesignStyleSleeveOptionLabel(option)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="space-y-2">
                           <label className="font-bold text-heritage-green block">Design audience</label>
                           <div className="flex gap-4">
