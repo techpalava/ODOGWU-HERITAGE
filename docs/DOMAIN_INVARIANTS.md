@@ -1,5 +1,7 @@
 # ODOGWU HERITAGE — Domain Invariants
 
+> **Read only the section matching the subsystem you are editing.**
+
 Deep subsystem rules extracted from `FAST_EXECUTOR_GUIDE.md` v6. Read only the section(s) relevant to the subsystem you are modifying.
 
 ---

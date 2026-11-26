@@ -495,7 +495,7 @@ assert.equal(noWorkshopList.includes("data-customer-v2-order-stage-history"), fa
   );
   for (const expectedLabel of [
     "Long Skirt",
-    "Standard Knicker Shorts",
+    "Standard Nikka Shorts",
     "Standard Bum Shorts",
     "Full-Length Gown",
     "Long Shirt",
@@ -520,17 +520,65 @@ assert.equal(noWorkshopList.includes("data-customer-v2-order-stage-history"), fa
     <CustomerFutureOrderV2Details order={rawOrderB} payment={undefined} onClose={() => undefined} />,
   );
   assert.ok(rawDetailsA.includes("Long Skirt"));
-  assert.ok(rawDetailsA.includes("Standard Knicker Shorts"));
+  assert.ok(rawDetailsA.includes("Standard Nikka Shorts"));
   assert.ok(rawDetailsA.includes("Standard Bum Shorts"));
   assert.ok(rawDetailsB.includes("Full-Length Gown"));
   assert.ok(rawDetailsB.includes("Long Shirt"));
-  assert.ok(rawDetailsB.includes("Standard Knicker Shorts"));
+  assert.ok(rawDetailsB.includes("Standard Nikka Shorts"));
   for (const rawKey of ["Long_skirt", "Standard_shorts", "Bum_shorts", "Full_length_gown", "kaftan", "nikka"]) {
     assert.equal(rawDetailsA.includes(rawKey), false);
     assert.equal(rawDetailsB.includes(rawKey), false);
   }
   assert.equal(JSON.stringify(rawOrderA), rawSnapshotBeforeA);
   assert.equal(JSON.stringify(rawOrderB), rawSnapshotBeforeB);
+
+  const onsiteOrder = structuredClone(paidOrder);
+  (onsiteOrder.masterOrder.cartItem.candidate as unknown as {
+    measurements: {
+      schemaVersion: 1;
+      route: "onsite_physical";
+      unit: "cm";
+      onsiteBookingAcknowledged: boolean;
+      entered: { shared: Record<string, never>; byGarmentKey: Record<string, never> };
+      enteredByRoute: {
+        low_risk: { shared: Record<string, never>; byGarmentKey: Record<string, never> };
+        high_risk: { shared: Record<string, never>; byGarmentKey: Record<string, never> };
+        sample_cloth: { shared: Record<string, never>; byGarmentKey: Record<string, never> };
+        onsite_physical: { shared: Record<string, never>; byGarmentKey: Record<string, never> };
+      };
+      derived: { shared: Record<string, never>; byGarmentKey: Record<string, never> };
+      blueprintVersion: "measurement-blueprint-v1";
+      formulaVersion: "low-risk-formula-v1";
+      inputFingerprint: string;
+      calculationStatus: "complete";
+      diagnostics: never[];
+    };
+  }).measurements = {
+    schemaVersion: 1,
+    route: "onsite_physical",
+    unit: "cm",
+    onsiteBookingAcknowledged: true,
+    entered: { shared: {}, byGarmentKey: {} },
+    enteredByRoute: {
+      low_risk: { shared: {}, byGarmentKey: {} },
+      high_risk: { shared: {}, byGarmentKey: {} },
+      sample_cloth: { shared: {}, byGarmentKey: {} },
+      onsite_physical: { shared: {}, byGarmentKey: {} },
+    },
+    derived: { shared: {}, byGarmentKey: {} },
+    blueprintVersion: "measurement-blueprint-v1",
+    formulaVersion: "low-risk-formula-v1",
+    inputFingerprint: "measurement_onsite_dashboard_fixture",
+    calculationStatus: "complete",
+    diagnostics: [],
+  };
+  const onsiteDetailsHtml = renderToStaticMarkup(
+    <CustomerFutureOrderV2Details order={onsiteOrder} payment={paidRecord} onClose={() => undefined} />,
+  );
+  assert.match(onsiteDetailsHtml, /data-customer-v2-order-measurement-onsite="/);
+  assert.match(onsiteDetailsHtml, /Onsite Physical Measurements/);
+  assert.match(onsiteDetailsHtml, /https:\/\/wa\.me\/31644533190/);
+  assert.doesNotMatch(onsiteDetailsHtml, /onsite_physical/);
 }
 
 console.log("Customer dashboard V2 order tests passed.");

@@ -46,9 +46,13 @@ import type { FuturePaymentReviewGarmentPicture } from "../utils/futurePaymentRe
 import {
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
+  getStep1GarmentSecondaryReferenceImage,
+  isStep1DualImageGarmentType,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import {
+  findStep1CardPresetForResolution,
+  getAllowedStep4ConstructionOptionIdsForBaseGarment,
   getStep1GarmentDisplayLabel,
   getStep1GarmentPlainDescription,
   orderByCustomerSelectableGarmentType,
@@ -75,6 +79,7 @@ import {
   getMonogramTextForGarment,
   getTraditionalAccessoryPrice,
   hasGarmentScopedDecorativeFeatureSelections,
+  resolveShowStudioTraditionalAccessories,
 } from "../utils/decorativePricing";
 import {
   MONOGRAM_TEXT_MAX_LENGTH,
@@ -116,6 +121,7 @@ import {
   getGarmentLengthFamilyForSelectionGroup,
   getOptionGarmentLength,
   getOriginalGarmentTypeFromKey,
+  parseBaseGarmentTypeFromKey,
 } from "../utils/garmentLengthVariant";
 
 /** First garments kept visible in the main Miscellaneous list before it is expanded. */
@@ -175,6 +181,7 @@ interface DormantFutureCustomDetailsStepProps {
   orderType?: string | null;
   designSelections: DesignSelections;
   showAdditionalClothesCosts?: boolean;
+  showTraditionalAccessories?: boolean;
   selectedStyle: StyleCategory | null;
   additionalGarments: readonly FabricGarmentAssignment[];
   additionalGarmentConstructionOptions: readonly {
@@ -365,11 +372,12 @@ const getOptionPriceLabel = (
   option: CustomDetailOption,
   isConstruction: boolean,
   selected: boolean,
+  allOptionsIncluded = false,
 ): string =>
   option.requiresEvaluation
     ? "Price requires evaluation."
     : isConstruction
-      ? selected
+      ? selected || allOptionsIncluded
         ? "Included"
         : money(option.priceCents / 100)
       : option.priceCents === 0
@@ -462,6 +470,29 @@ const CUSTOM_DETAIL_FIELDSET_CLASS =
 const customDetailOptionCardClassName = (checked: boolean) =>
   `flex h-full min-h-20 w-full min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`;
 
+const getAllowedStep4ConstructionOptionIdsForOccurrence = (
+  occurrence: FutureCustomDetailsCatalogueOccurrence,
+  selectionGroup: CustomDetailSelectionGroup,
+  isConstruction: boolean,
+): readonly string[] | null => {
+  if (!isConstruction || occurrence.role !== "main") return null;
+  if (
+    selectionGroup !== "shirt_construction" &&
+    selectionGroup !== "dress_construction" &&
+    selectionGroup !== "skirt_length"
+  ) {
+    return null;
+  }
+  const stepOneGarmentType =
+    parseBaseGarmentTypeFromKey(occurrence.subject.parentGarmentKey) ??
+    occurrence.subject.parentGarmentType;
+  if (stepOneGarmentType === "agbada") return null;
+  return getAllowedStep4ConstructionOptionIdsForBaseGarment(
+    stepOneGarmentType,
+    occurrence.construction,
+  );
+};
+
 const getConstructionPresentationPrefix = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
   selectionGroup: CustomDetailSelectionGroup,
@@ -474,10 +505,11 @@ const getConstructionPresentationPrefix = (
     getGarmentLengthFamilyForSelectionGroup(selectionGroup)?.id === lengthFamily?.id &&
     lengthFamily
   ) {
-    // Standard Dress and Long Dress: the length picked in Step 1 is locked. Only the options of
-    // that length are offered (sleeve choices), so Step 4 can never switch one dress into the
-    // other. A saved draft that already holds the other length keeps showing that length.
-    if (lengthFamily.id === "dress") {
+    // Standard/Long Dress and Standard/Long Shirt: the length picked in Step 1 (or via the
+    // Step 5 Add button) is locked. Only the options of that length are offered (sleeve choices),
+    // so Step 4 / Step 5 cannot switch one length into the other. A saved draft that already holds
+    // the other length keeps showing that length.
+    if (lengthFamily.id === "dress" || lengthFamily.id === "shirt") {
       const selectedOptionId = getSelectedConstructionId(occurrence, selectionGroup);
       const lockedLength =
         (selectedOptionId
@@ -540,15 +572,23 @@ const optionalGroupHelper = (selectionGroup: CustomDetailSelectionGroup) =>
     ? "Select an option, or keep None to match the design photo."
     : "Select an option or keep None for this category.";
 
+const isWaistbandFasteningGroup = (
+  selectionGroup: CustomDetailSelectionGroup,
+): boolean =>
+  selectionGroup === "trouser_fastening" ||
+  selectionGroup === "standard_shorts_fastening" ||
+  selectionGroup === "bum_shorts_fastening";
+
 const getGarmentFirstDetailLabel = (
   selectionGroup: CustomDetailSelectionGroup,
 ): string => {
   switch (selectionGroup) {
-    case "shirt_construction":
-    case "dress_construction":
     case "standard_shorts_fastening":
     case "bum_shorts_fastening":
     case "trouser_fastening":
+      return "Waistband Fastening";
+    case "shirt_construction":
+    case "dress_construction":
     case "skirt_length":
       return "Main Garment";
     case "neck_design":
@@ -686,6 +726,7 @@ export const DormantFutureCustomDetailsStep = ({
   orderType = null,
   designSelections,
   showAdditionalClothesCosts,
+  showTraditionalAccessories,
   selectedStyle,
   additionalGarments,
   additionalGarmentConstructionOptions,
@@ -727,6 +768,9 @@ export const DormantFutureCustomDetailsStep = ({
 }: DormantFutureCustomDetailsStepProps) => {
   const isPersonalizedAdditionsStage = stage === "personalized_additions";
   const isCustomDetailsStage = !isPersonalizedAdditionsStage;
+  const traditionalAccessoriesVisible = resolveShowStudioTraditionalAccessories(
+    showTraditionalAccessories,
+  );
   const canPresentAdditionalGarmentCustomDetailsPrompt =
     isCustomDetailsStage ||
     (isPersonalizedAdditionsStage && allowAdditionalGarmentCustomDetailsPrompt);
@@ -1116,6 +1160,21 @@ export const DormantFutureCustomDetailsStep = ({
       selectionIndex: selectionIndex > 0 ? selectionIndex : null,
     };
   };
+  const baseConstructionByParentGarmentKey = useMemo(() => {
+    const map = new Map<string, GarmentConstructionPricingResolution>();
+    catalogue.coreGroups.forEach((group) => {
+      group.occurrences.forEach((occurrence) => {
+        if (
+          occurrence.role === "main" &&
+          occurrence.construction?.status === "resolved" &&
+          !map.has(occurrence.subject.parentGarmentKey)
+        ) {
+          map.set(occurrence.subject.parentGarmentKey, occurrence.construction);
+        }
+      });
+    });
+    return map;
+  }, [catalogue.coreGroups]);
   const additionalGarmentKeys = new Set(
     additionalGarments
       .filter((garment) => garment.sourceRole === "additional")
@@ -1247,15 +1306,29 @@ export const DormantFutureCustomDetailsStep = ({
     const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
       : null;
-    const constructionPresentationPrefix = getConstructionPresentationPrefix(
+    const allowedStep4OptionIds = getAllowedStep4ConstructionOptionIdsForOccurrence(
       occurrence,
       group.selectionGroup,
+      group.isConstruction,
     );
-    const presentationOptions = (constructionPresentationPrefix
-      ? group.options.filter((option) =>
-          option.id.startsWith(constructionPresentationPrefix),
-        )
-      : group.options
+    const isNarrowedDressSleeveGroup =
+      group.selectionGroup === "dress_construction" &&
+      allowedStep4OptionIds !== null &&
+      allowedStep4OptionIds.length > 1;
+    const constructionPresentationPrefix =
+      allowedStep4OptionIds !== null
+        ? null
+        : getConstructionPresentationPrefix(occurrence, group.selectionGroup);
+    const presentationOptions = (
+      allowedStep4OptionIds !== null
+        ? group.options.filter((option) =>
+            allowedStep4OptionIds.includes(option.id),
+          )
+        : constructionPresentationPrefix
+          ? group.options.filter((option) =>
+              option.id.startsWith(constructionPresentationPrefix),
+            )
+          : group.options
     ).filter((option) => !isCustomerHiddenLegacySleeveOption(option.id));
     const noneSelected = !group.isConstruction && !hasSelection(
       reconciliation.state,
@@ -1296,7 +1369,7 @@ export const DormantFutureCustomDetailsStep = ({
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-start justify-between gap-x-3">
                 <span className="min-w-0 flex-1 break-words text-sm font-bold leading-5 text-heritage-green">{canonicalSleeveConstructionLabel(option.id, option.label)}</span>
-                <span className="shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked)}</span>
+                <span className="shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked, isNarrowedDressSleeveGroup)}</span>
               </span>
               {!isPersonalizedRequirement && option.description && <span className="mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65">{option.description}</span>}
               {!isPersonalizedRequirement && option.requiresEvaluation && <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
@@ -1430,7 +1503,8 @@ export const DormantFutureCustomDetailsStep = ({
               })}
             </div>
           </>
-        ) : constructionPresentationPrefix === null &&
+        ) : allowedStep4OptionIds === null &&
+          constructionPresentationPrefix === null &&
           CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP[group.selectionGroup] ? (
           <div className="min-w-0 space-y-4">
             {CONSTRUCTION_LENGTH_GROUPS_BY_SELECTION_GROUP[group.selectionGroup]?.map(({ heading, prefix }) => {
@@ -1550,6 +1624,7 @@ export const DormantFutureCustomDetailsStep = ({
     layout: "grid" | "stack" = "grid",
     {
       legendTitle = group.title,
+      helperText,
       showOccurrenceHeading = true,
       occurrenceHeading,
       showGroupHeader = true,
@@ -1558,6 +1633,7 @@ export const DormantFutureCustomDetailsStep = ({
       visibleGarmentKeys,
     }: {
       legendTitle?: string;
+      helperText?: string;
       showOccurrenceHeading?: boolean;
       occurrenceHeading?: (
         occurrence: FutureCustomDetailsCatalogueOccurrence,
@@ -1589,7 +1665,14 @@ export const DormantFutureCustomDetailsStep = ({
             <span className={CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS}>{legendTitle}</span>
             <span className={CUSTOM_DETAIL_STATUS_BADGE_CLASS}>{getGroupStatus(statusGroup)}</span>
           </legend>
-          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : optionalGroupHelper(group.selectionGroup)}</p>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+            {helperText ??
+              (isWaistbandFasteningGroup(group.selectionGroup)
+                ? "Choose your preferred waistband fastening for this garment."
+                : group.isConstruction
+                  ? "Select the all-inclusive construction that applies to this garment."
+                  : optionalGroupHelper(group.selectionGroup))}
+          </p>
         </>
       ) : (
         <legend className="sr-only">{legendTitle}</legend>
@@ -1683,7 +1766,7 @@ export const DormantFutureCustomDetailsStep = ({
     );
     const garmentBlockOccurrences: FutureCustomDetailsCatalogueOccurrence[] = [];
     const seenGarmentKeys = new Set<string>();
-    constructionGroups.forEach((group) => {
+    [...constructionGroups, ...companionGroups, ...pocketsGroups].forEach((group) => {
       group.occurrences.forEach((occurrence) => {
         if (seenGarmentKeys.has(occurrence.subject.garmentKey)) return;
         seenGarmentKeys.add(occurrence.subject.garmentKey);
@@ -1705,6 +1788,7 @@ export const DormantFutureCustomDetailsStep = ({
       legendTitle: string,
       headingMode: "base" | "added" = "base",
       className = "",
+      helperText?: string,
     ) =>
       renderGroupFieldset(
         { ...group, occurrences: [occurrence] },
@@ -1712,6 +1796,7 @@ export const DormantFutureCustomDetailsStep = ({
         "grid",
         {
           legendTitle,
+          helperText,
           showOccurrenceHeading: false,
           className,
         },
@@ -1750,13 +1835,74 @@ export const DormantFutureCustomDetailsStep = ({
       const garmentKey = occurrence.subject.garmentKey;
       const constructionGroup = groupForOccurrence(constructionGroups, garmentKey);
       const pocketsGroup = groupForOccurrence(pocketsGroups, garmentKey);
-      if (!constructionGroup) return null;
+      const allowedStep4OptionIds = constructionGroup
+        ? getAllowedStep4ConstructionOptionIdsForOccurrence(
+            occurrence,
+            constructionGroup.selectionGroup,
+            constructionGroup.isConstruction,
+          )
+        : null;
+      const hideConstructionGroup = Boolean(
+        constructionGroup &&
+          allowedStep4OptionIds !== null &&
+          allowedStep4OptionIds.length === 1,
+      );
+      const isNarrowedDressSleeveGroup = Boolean(
+        constructionGroup &&
+          constructionGroup.selectionGroup === "dress_construction" &&
+          allowedStep4OptionIds !== null &&
+          allowedStep4OptionIds.length > 1,
+      );
+      const isWaistbandFasteningConstructionGroup = Boolean(
+        constructionGroup &&
+          isWaistbandFasteningGroup(constructionGroup.selectionGroup),
+      );
       const showOccurrenceTitle =
         headingMode === "added" || !hideDuplicateOccurrenceTitle;
       const garmentCompanionGroups = companionGroupsForGarment(garmentKey);
       const showFamilyExtrasHeader =
         garmentCompanionGroups.length > 0 && !familyExtrasHeaderShown;
       if (garmentCompanionGroups.length > 0) familyExtrasHeaderShown = true;
+      const blockSections: ReactNode[] = [];
+      if (constructionGroup && !hideConstructionGroup) {
+        blockSections.push(
+          renderOccurrenceGroup(
+            constructionGroup,
+            occurrence,
+            isNarrowedDressSleeveGroup
+              ? "Sleeve Style"
+              : isWaistbandFasteningConstructionGroup
+                ? "Waistband Fastening"
+                : "Main Garment",
+            headingMode,
+            "",
+            isNarrowedDressSleeveGroup
+              ? "Choose your sleeve style. Both options are included at the same price."
+              : isWaistbandFasteningConstructionGroup
+                ? "Choose your preferred waistband fastening for this garment."
+                : undefined,
+          ),
+        );
+      }
+      if (garmentCompanionGroups.length > 0) {
+        blockSections.push(
+          renderDressCompanion(garmentCompanionGroups, headingMode, {
+            showHeader: showFamilyExtrasHeader,
+            familyGroups: companionGroups,
+          }),
+        );
+      }
+      if (pocketsGroup) {
+        blockSections.push(
+          renderOccurrenceGroup(
+            pocketsGroup,
+            occurrence,
+            `Pocket for ${getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}`,
+            headingMode,
+          ),
+        );
+      }
+      if (blockSections.length === 0) return null;
       const block = (
         <section
           key={garmentKey}
@@ -1772,29 +1918,20 @@ export const DormantFutureCustomDetailsStep = ({
               {getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}
             </h4>
           ) : null}
-          {/* Reading order: Main Garment, then this garment's Additional Clothes Costs, then its Pocket. */}
+          {/* Reading order: Main Garment / Sleeve Style (when applicable), then Additional Clothes Costs, then Pocket. */}
           <div className={`${showOccurrenceTitle ? "mt-3 " : ""}${CUSTOM_DETAIL_GARMENT_SECTION_STACK_CLASS}`}>
-            <div className="min-w-0">
-              {renderOccurrenceGroup(constructionGroup, occurrence, "Main Garment", headingMode)}
-            </div>
-            {garmentCompanionGroups.length > 0 ? (
-              <div className={CUSTOM_DETAIL_GARMENT_LATER_SECTION_CLASS}>
-                {renderDressCompanion(garmentCompanionGroups, headingMode, {
-                  showHeader: showFamilyExtrasHeader,
-                  familyGroups: companionGroups,
-                })}
+            {blockSections.map((sectionNode, sectionIndex) => (
+              <div
+                key={sectionIndex}
+                className={
+                  sectionIndex === 0
+                    ? "min-w-0"
+                    : CUSTOM_DETAIL_GARMENT_LATER_SECTION_CLASS
+                }
+              >
+                {sectionNode}
               </div>
-            ) : null}
-            {pocketsGroup ? (
-              <div className={CUSTOM_DETAIL_GARMENT_LATER_SECTION_CLASS}>
-                {renderOccurrenceGroup(
-                  pocketsGroup,
-                  occurrence,
-                  `Pocket for ${getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}`,
-                  headingMode,
-                )}
-              </div>
-            ) : null}
+            ))}
           </div>
         </section>
       );
@@ -1813,7 +1950,7 @@ export const DormantFutureCustomDetailsStep = ({
     });
 
     const ownedContent =
-      useGarmentOwnedBlocks && constructionGroups.length > 0 ? (
+      useGarmentOwnedBlocks && garmentBlockOccurrences.length > 0 ? (
         <div>
           <div className={`mt-4 min-w-0 space-y-4${companionGroups.length > 0 ? " overflow-x-hidden" : ""}`}>
             {ownedBlocks}
@@ -1906,7 +2043,7 @@ export const DormantFutureCustomDetailsStep = ({
               selectionGroups.has("standard_shorts_additional")
             ? {
                 section: "standard-shorts-additional-clothes-costs",
-                ariaLabel: "Standard Knicker Shorts additional clothes costs",
+                ariaLabel: "Standard Nikka Shorts additional clothes costs",
                 helper:
                   "Optional extras for these shorts. Keep None if you do not want extra pockets.",
               }
@@ -2129,7 +2266,13 @@ export const DormantFutureCustomDetailsStep = ({
         >
           {stageTitle}
         </h2>
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">{isPersonalizedAdditionsStage ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record." : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}</p>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
+          {isPersonalizedAdditionsStage
+            ? traditionalAccessoriesVisible
+              ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record."
+              : "Add personalized requirements, monogram or embroidery, and any additional garment details. These choices stay in the same garment-scoped Custom Details record."
+            : "Customize the details for your selected garments. Garment length and base sleeve tier were chosen in Garment Type and are already included in your price."}
+        </p>
       </div>
 
       {stageAttentionMessages.length > 0 && (
@@ -2151,12 +2294,32 @@ export const DormantFutureCustomDetailsStep = ({
           className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2"
         >
           {garmentFabricContexts.map((context) => {
-            const garmentLabel = getCustomDetailsGarmentLabel(context.garmentType);
+            const baseGarmentLabel = getCustomDetailsGarmentLabel(
+              context.garmentType,
+            );
+            const activeBaseConstruction =
+              context.sourceRole === "main"
+                ? (baseConstructionByParentGarmentKey.get(context.garmentKey) ??
+                  null)
+                : null;
+            const activePreset =
+              context.sourceRole === "main" &&
+              activeBaseConstruction?.status === "resolved"
+                ? findStep1CardPresetForResolution(
+                    context.garmentType,
+                    activeBaseConstruction,
+                  )
+                : null;
+            const garmentLabel = activePreset?.label ?? baseGarmentLabel;
             const plainDescription = getStep1GarmentPlainDescription(
               context.garmentType,
             );
             const referenceImage = isStep1GarmentReferenceType(context.garmentType)
-              ? getStep1GarmentReferenceImage(context.garmentType)
+              ? activePreset?.referenceImageVariant === "secondary" &&
+                isStep1DualImageGarmentType(context.garmentType)
+                ? (getStep1GarmentSecondaryReferenceImage(context.garmentType) ??
+                  getStep1GarmentReferenceImage(context.garmentType))
+                : getStep1GarmentReferenceImage(context.garmentType)
               : null;
             const assigned = getAssignedFabricForGarment(context.garmentKey);
             const design =
@@ -2184,7 +2347,7 @@ export const DormantFutureCustomDetailsStep = ({
                 ) : (
                   <div
                     role="img"
-                    aria-label={`Garment preview unavailable for ${garmentLabel}`}
+                    aria-label={`Garment preview unavailable for ${baseGarmentLabel}`}
                     data-step4-garment-reference={context.garmentKey}
                     className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-heritage-gold/10 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
                   >
@@ -2195,7 +2358,7 @@ export const DormantFutureCustomDetailsStep = ({
                   <AssignedFabricPreview
                     fabric={assigned.fabric}
                     garmentKey={context.garmentKey}
-                    garmentLabel={garmentLabel}
+                    garmentLabel={baseGarmentLabel}
                     fabricCode={assigned.fabricCode}
                     className="size-11 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40"
                     size="thumb"
@@ -2203,7 +2366,7 @@ export const DormantFutureCustomDetailsStep = ({
                 ) : (
                   <div
                     role="img"
-                    aria-label={`No Fabric assigned to ${garmentLabel}`}
+                    aria-label={`No Fabric assigned to ${baseGarmentLabel}`}
                     data-step4-assigned-fabric={context.garmentKey}
                     className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/35 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
                   >
@@ -2212,7 +2375,7 @@ export const DormantFutureCustomDetailsStep = ({
                 )}
                 <GarmentContextDesignThumb
                   garmentKey={context.garmentKey}
-                  garmentLabel={garmentLabel}
+                  garmentLabel={baseGarmentLabel}
                   imageUrl={design?.imageUrl ?? null}
                 />
                 <div className="min-w-0 text-xs leading-snug">
@@ -2569,7 +2732,7 @@ export const DormantFutureCustomDetailsStep = ({
           </section>
           )}
 
-          {isPersonalizedAdditionsStage && (
+          {isPersonalizedAdditionsStage && traditionalAccessoriesVisible && (
           <section data-custom-detail-section="accessories" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Select Accessories - Optional</h3>
             <p className="mt-1 text-xs text-heritage-ink/60">Optional accessories remain separate from garment construction.</p>
@@ -2849,7 +3012,7 @@ export const DormantFutureCustomDetailsStep = ({
             <p className="text-xs leading-relaxed text-heritage-ink/60">{garmentConstructionInclusionNote(orderType)}</p>
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
-            {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.detail}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
+            {[...decorativeFeatureLines, ...(traditionalAccessoriesVisible ? designSelections.accessories || [] : [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.detail}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(traditionalAccessoriesVisible ? designSelections.accessories || [] : []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
             {pricing.status === "pending" && <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">A personalized addition is reviewed after you order. The garment total today does not include it.</p>}
             {pricing.status === "invalid" && <p className="rounded-lg bg-red-50 p-2 text-xs leading-relaxed text-red-700">A saved Custom Details price needs review.</p>}
             <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green"><span className="min-w-0 break-words">Estimated total so far</span><span className="shrink-0 font-mono">{estimatedTotal === null ? "Pending" : money(estimatedTotal)}</span></div>

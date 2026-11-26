@@ -105,19 +105,19 @@ export const MEASUREMENT_GUIDE_CHECKLIST_SECTIONS: readonly MeasurementGuideChec
     },
     {
       id: "lower_body",
-      title: "Trouser, Standard Knicker Shorts & Standard Bum Shorts",
+      title: "Trouser, Standard Nikka Shorts & Standard Bum Shorts",
       subtitle: "Lower-body circumferences, rise, and outseam lengths",
       items: [
         "Waist Circumference",
         "Hip Circumference",
         "Thigh Circumference",
-        "Knee Circumference (Trouser & Standard Knicker Shorts)",
+        "Knee Circumference (Trouser & Standard Nikka Shorts)",
         "Ankle Horizontal & Diagonal Circumference (Trouser)",
         "Waist-to-Hip Length",
         "Waist-to-Thigh/Lap Length (Standard Bum Shorts)",
         "Waist-to-Crotch-Depth Length (Front Rise)",
         "Waist-to-Knee Length (Trouser)",
-        "Waist-to-Just Above Knee Length (Standard Knicker Shorts)",
+        "Waist-to-Just Above Knee Length (Standard Nikka Shorts)",
         "Waist-to-Ankle Length (Trouser)",
         "Waist-to-Feet Bodyside & Backside Without Shoes (Trouser)",
       ],
@@ -223,12 +223,12 @@ export const MeasurementGuideModal = ({
                 <BookOpen size={20} aria-hidden="true" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                   Tailoring Reference
                 </p>
                 <h3
                   id={titleId}
-                  className="font-serif text-lg font-bold text-heritage-green sm:text-xl"
+                  className="font-serif text-lg font-extrabold text-heritage-green sm:text-xl"
                 >
                   Measurement Guide &amp; How-To
                 </h3>
@@ -322,13 +322,13 @@ export const MeasurementGuideModal = ({
                 data-measurement-guide-close-to-body="true"
                 className="rounded-2xl border border-heritage-gold/40 bg-heritage-cream/80 p-4 shadow-sm sm:p-5"
               >
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                   Close-to-Body Rule
                 </p>
-                <h4 className="mt-1 font-serif text-base font-bold text-heritage-green sm:text-lg">
+                <h4 className="mt-1 font-serif text-base font-extrabold text-heritage-green sm:text-lg">
                   How to take accurate close-to-body measurements
                 </h4>
-                <ul className="mt-3 grid gap-2 text-sm leading-relaxed font-medium text-heritage-ink/85 sm:grid-cols-2">
+                <ul className="mt-3 grid gap-2 text-sm leading-relaxed font-semibold text-heritage-ink sm:grid-cols-2">
                   <li className="flex items-start gap-2 rounded-xl border border-heritage-gold/25 bg-white/85 px-3 py-2.5">
                     <CheckCircle2
                       size={16}
@@ -336,9 +336,9 @@ export const MeasurementGuideModal = ({
                       className="mt-0.5 shrink-0 text-heritage-gold"
                     />
                     <span>
-                      Use a <strong>flexible measuring tape</strong>, keep it
+                      Use a <strong className="font-extrabold">flexible measuring tape</strong>, keep it
                       level all around, and hold it{" "}
-                      <strong>snug (not tight)</strong>.
+                      <strong className="font-extrabold">snug (not tight)</strong>.
                     </span>
                   </li>
                   <li className="flex items-start gap-2 rounded-xl border border-heritage-gold/25 bg-white/85 px-3 py-2.5">
@@ -349,7 +349,7 @@ export const MeasurementGuideModal = ({
                     />
                     <span>
                       Stand straight and relax —{" "}
-                      <strong>do not suck in your stomach</strong> while
+                      <strong className="font-extrabold">do not suck in your stomach</strong> while
                       measuring waist or tummy.
                     </span>
                   </li>
@@ -360,7 +360,7 @@ export const MeasurementGuideModal = ({
                       className="mt-0.5 shrink-0 text-heritage-gold"
                     />
                     <span>
-                      <strong>Record measurements in inches</strong> (or switch
+                      <strong className="font-extrabold">Record measurements in inches</strong> (or switch
                       to centimetres using the unit toggle in the form).
                     </span>
                   </li>
@@ -371,8 +371,8 @@ export const MeasurementGuideModal = ({
                       className="mt-0.5 shrink-0 text-heritage-gold"
                     />
                     <span>
-                      <strong>Circumference comfort allowance:</strong> place{" "}
-                      <strong>
+                      <strong className="font-extrabold">Circumference comfort allowance:</strong> place{" "}
+                      <strong className="font-extrabold">
                         1–2 fingers (your index or middle finger, or both
                         fingers)
                       </strong>{" "}
@@ -388,10 +388,10 @@ export const MeasurementGuideModal = ({
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 className="font-serif text-base font-bold text-heritage-green sm:text-lg">
+                    <h4 className="font-serif text-base font-extrabold text-heritage-green sm:text-lg">
                       Garment Category Checklists
                     </h4>
-                    <p className="text-xs font-medium text-heritage-ink/75">
+                    <p className="text-xs font-bold text-heritage-ink sm:text-sm">
                       Review the measurement points required across each garment
                       type, or switch to the Illustrated PDF Guide tab for photo
                       diagrams.
@@ -447,14 +447,14 @@ export const MeasurementGuideModal = ({
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <h5 className="font-serif text-base font-bold text-heritage-green">
+                          <h5 className="font-serif text-base font-extrabold text-heritage-green">
                             {section.title}
                           </h5>
-                          <p className="mt-0.5 text-xs font-medium text-heritage-ink/75">
+                          <p className="mt-0.5 text-xs font-bold text-heritage-ink/90">
                             {section.subtitle}
                           </p>
                         </div>
-                        <span className="rounded-full border border-heritage-gold/40 bg-heritage-cream/60 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-bronze">
+                        <span className="rounded-full border border-heritage-gold/40 bg-heritage-cream/60 px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-heritage-bronze">
                           {section.items.length} points
                         </span>
                       </div>
@@ -462,7 +462,7 @@ export const MeasurementGuideModal = ({
                         {section.items.map((item, index) => (
                           <li
                             key={item}
-                            className="flex items-start gap-2.5 rounded-xl border border-heritage-green/10 bg-heritage-cream/30 px-3 py-2 text-xs font-semibold leading-snug text-heritage-ink"
+                            className="flex items-start gap-2.5 rounded-xl border border-heritage-green/10 bg-heritage-cream/30 px-3 py-2 text-sm font-bold leading-snug text-heritage-ink"
                           >
                             <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-heritage-green/10 text-[10px] font-extrabold text-heritage-green">
                               {index + 1}
@@ -486,16 +486,16 @@ export const MeasurementGuideModal = ({
             >
               <div className="flex flex-col gap-3 rounded-2xl border border-heritage-gold/35 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider text-heritage-bronze">
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-heritage-bronze">
                     Complete 25-Page Illustrated PDF
                   </p>
-                  <p className="mt-1 text-sm font-medium leading-relaxed text-heritage-ink/80">
+                  <p className="mt-1 text-sm font-bold leading-relaxed text-heritage-ink">
                     Browse garment tables (pages 1–2), close-to-body photo
                     diagrams (pages 3–24), and the master overview matrix (page
                     25). On mobile browsers that restrict inline PDF scrolling,
                     use{" "}
-                    <strong>Open Full PDF in New Tab</strong> or{" "}
-                    <strong>Download PDF</strong>.
+                    <strong className="font-extrabold">Open Full PDF in New Tab</strong> or{" "}
+                    <strong className="font-extrabold">Download PDF</strong>.
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">

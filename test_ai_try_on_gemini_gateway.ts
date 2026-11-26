@@ -573,7 +573,7 @@ for (const environment of [{}, { GEMINI_API_KEY: FAKE_KEY }, { AI_TRY_ON_ENABLED
     ["Virtual try-on photo edit with a fabric change.\nImage 1: the customer", "Image 1", "image", "Image 2", "image", "Image 3", "image"],
     "fabric mode: prompt, label + person, label + garment, label + swatch",
   );
-  assert.match((h.calls[1].contents[0].parts[5] as { text: string }).text, /^Image 3, fabric swatch, for colour and pattern only\. No other image may set the fabric:$/);
+  assert.match((h.calls[1].contents[0].parts[5] as { text: string }).text, /^Image 3, fabric swatch, for the main garment body's colour and pattern only\. No other image may set that fabric\. Design Style contrast patches, pockets and panels may use complementary accents:$/);
   assert.equal(h.calls[1].contents[0].parts.filter((part) => "inlineData" in part).length, 3);
   assert.match((h.calls[1].contents[0].parts[0] as { text: string }).text, /Image 3: the fabric swatch/);
 
@@ -1331,10 +1331,10 @@ console.log("PASS: AI Try-on Step 3 gateway (route, limits, Gemini shape, prompt
     save: async () => undefined,
   });
   const cachedResult = response();
-  await handleAiTryOn(post({ ...modelBody, orderKey: "draft-model-hit", defaultModelId: "male-1-light" }), cachedResult.res, cached.deps);
+  await handleAiTryOn(post({ ...modelBody, orderKey: "draft-model-hit", defaultModelId: "male-2-medium" }), cachedResult.res, cached.deps);
   assert.equal(cachedResult.state.status, 200);
   const hitLog = cached.logs.find((line) => line.includes('"outcome":"model_cache_hit"')) ?? "";
-  assert.match(hitLog, /"modelId":"male-1-light"/);
+  assert.match(hitLog, /"modelId":"male-2-medium"/);
   assert.equal(cached.calls.length, 0, "a cache hit does not call Gemini");
 
   const photo = harness();

@@ -12,6 +12,17 @@ import {
 } from "./brevoEmail.js";
 import { getAdminServices } from "./firebaseAdmin.js";
 import { FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM } from "../utils/futureOrderV2StripeReturn.js";
+import {
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
+} from "../utils/designStudioFutureShipping.js";
+import {
+  hasOnsitePhysicalMeasurements,
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
+} from "../utils/measurementBlueprint.js";
 import { readAiTryOnOrderImageRecord } from "./aiTryOnOrderImages.js";
 import { keepAliveAfterResponse, type KeepAliveAfterResponse } from "./keepAliveAfterResponse.js";
 
@@ -65,12 +76,37 @@ const escapeHtml = (value: string) =>
 export const orderConfirmationOrderUrl = (siteUrl: string, orderId: string): string =>
   `${siteUrl.replace(/\/+$/, "")}/?${FUTURE_ORDER_V2_STRIPE_RETURN_ORDER_PARAM}=${encodeURIComponent(orderId)}`;
 
+export const FUTURE_ORDERS_V2_COLLECTION = "futureOrdersV2";
+
+export const orderRecordUsesOnsiteMeasurements = (record: unknown): boolean => {
+  if (!record || typeof record !== "object") return false;
+  const candidate = record as {
+    masterOrder?: {
+      cartItem?: {
+        candidate?: {
+          measurements?: unknown;
+        };
+      };
+    };
+    candidate?: {
+      measurements?: unknown;
+    };
+    measurements?: unknown;
+  };
+  return (
+    hasOnsitePhysicalMeasurements(candidate.masterOrder?.cartItem?.candidate?.measurements) ||
+    hasOnsitePhysicalMeasurements(candidate.candidate?.measurements) ||
+    hasOnsitePhysicalMeasurements(candidate.measurements)
+  );
+};
+
 export function renderOrderConfirmationEmail(input: {
   brandName: string;
   siteUrl: string;
   orderId: string;
   name: string | null;
   hasAiPreview: boolean;
+  hasOnsiteMeasurements?: boolean;
 }) {
   const brand = escapeHtml(input.brandName);
   const subject = COPY.emailSubject(input.orderId);
@@ -79,6 +115,9 @@ export function renderOrderConfirmationEmail(input: {
     `<p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#333333;">${escapeHtml(text)}</p>`;
   const button = orderUrl
     ? `<p style="margin:8px 0 24px;"><a href="${escapeHtml(orderUrl)}" data-order-link style="display:inline-block;padding:14px 24px;border-radius:12px;background:#0A291B;color:#ffffff;font-weight:bold;text-decoration:none;font-size:15px;">${escapeHtml(COPY.emailViewOrder)}</a></p>`
+    : "";
+  const onsiteBlock = input.hasOnsiteMeasurements
+    ? `${paragraph(`${MEASUREMENT_ONSITE_PHYSICAL_LABEL}: ${MEASUREMENT_ONSITE_BOOKING_INSTRUCTION} ${MEASUREMENT_ONSITE_BOOKING_REASON}`)}<p style="margin:0 0 20px;"><a href="${escapeHtml(FUTURE_PICKUP_ATELIER_WHATSAPP_URL)}" data-onsite-whatsapp-link style="display:inline-block;padding:10px 18px;border-radius:10px;border:1px solid #0A291B;color:#0A291B;font-weight:bold;text-decoration:none;font-size:14px;">${escapeHtml(`${MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL} (${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY})`)}</a></p>`
     : "";
   const html = `<!doctype html>
 <html lang="en">
@@ -95,6 +134,7 @@ ${paragraph(COPY.emailGreeting(input.name))}
 ${paragraph(COPY.emailIntro(input.orderId))}
 ${button}
 ${input.hasAiPreview ? paragraph(COPY.emailAiPreviewLine) : ""}
+${onsiteBlock}
 ${paragraph(COPY.emailNextSteps)}
 <p style="margin:24px 0 0;font-size:16px;line-height:24px;color:#0A291B;font-weight:bold;">${escapeHtml(COPY.emailSignOff)}</p>
 </td></tr>
@@ -211,6 +251,15 @@ export const sendOrderConfirmationEmail = async (
     } catch {
       // The email still goes out, without the AI preview line.
     }
+    let hasOnsiteMeasurements = false;
+    try {
+      const orderSnap = await db.collection(FUTURE_ORDERS_V2_COLLECTION).doc(orderId).get();
+      if (orderSnap.exists) {
+        hasOnsiteMeasurements = orderRecordUsesOnsiteMeasurements(orderSnap.data());
+      }
+    } catch {
+      // The email still goes out without the onsite booking reminder block.
+    }
     // The budget may have expired during the read above. The timeout path
     // then releases this claim as "failed" for the next event; sending now
     // could race that event's retry and email the customer twice.
@@ -221,6 +270,7 @@ export const sendOrderConfirmationEmail = async (
       orderId,
       name: recipient.name,
       hasAiPreview,
+      hasOnsiteMeasurements,
     });
     const message = { to: recipient.email, subject: rendered.subject, html: rendered.html };
     // The provider call is in flight. Refresh the lease so a concurrent

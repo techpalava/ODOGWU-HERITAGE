@@ -21,10 +21,7 @@ import type {
 } from "../types";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
-import {
-  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
-  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
-} from "../utils/designStudioFutureShipping";
+import { FUTURE_PICKUP_ATELIER_WHATSAPP_URL } from "../utils/designStudioFutureShipping";
 import {
   clearActiveFutureMeasurementEntered,
   collectRequiredAlternativeGroups,
@@ -47,11 +44,19 @@ import {
   getSampleClothProductionEquivalentCm,
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
+  isOnsitePhysicalMeasurementMethod,
   isTryOnUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
   isValidHeightForEstimates,
+  MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL,
+  MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE,
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_PHYSICAL_METHOD,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
   MEASUREMENT_RISK_ROUTE_DESCRIPTIONS,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
@@ -67,6 +72,7 @@ import {
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
+  setFutureMeasurementOnsiteAcknowledged,
   setFutureMeasurementUnit,
   type MeasurementGarmentChipState,
   type MeasurementPhysicalGarment,
@@ -147,6 +153,7 @@ interface DormantFutureMeasurementStepProps {
   groupFocusRequest?: MeasurementGroupFocusRequest | null;
   /** Called once per request; found=false means fall back to the top of Step 7. */
   onGroupFocusHandled?: (requestId: number, found: boolean) => void;
+  wearerAssignmentPanel?: React.ReactNode;
   /**
    * @deprecated Ignored. Step 7 no longer shows a fit control or a fit
    * conflict; measurement fields follow the Studio garment demographic.
@@ -241,6 +248,8 @@ const getBlockerMessage = (
       return "Complete every required measurement shown below.";
     case "invalid_measurement_value":
       return "Correct the highlighted measurement before continuing.";
+    case "onsite_booking_acknowledgement_required":
+      return MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE;
     default:
       return "Review the measurements shown below before this step can be completed.";
   }
@@ -346,7 +355,7 @@ const MeasurementField = ({
       )
     : requirement.definition.customerLabel;
   const fieldInstruction = sampleGeometry
-    ? getSampleClothFieldInstruction(sampleGeometry)
+    ? getSampleClothFieldInstruction(sampleGeometry, requirement.measurementId)
     : requirement.definition.instructions;
   const convertedDisplay = sampleGeometry === "laid_flat_half_width" && stored
     ? roundMeasurementDisplayValue(
@@ -426,6 +435,11 @@ const MeasurementField = ({
             aria-invalid={hasInvalidValue || implausible || undefined}
             aria-describedby={hasInvalidValue || implausible ? errorId : undefined}
             aria-label={`${fieldLabel} in ${unitWord}`}
+            data-hand-guide-target={
+              badge === "Required" && displayValue === ""
+                ? "measurement-required-field"
+                : undefined
+            }
             value={displayValue}
             onFocus={() => onFieldFocus?.(requirement.key)}
             onBlur={() => onFieldBlur?.(requirement.key)}
@@ -766,6 +780,7 @@ export const DormantFutureMeasurementStep = ({
   onAddPersonAndAssignGarment,
   groupFocusRequest = null,
   onGroupFocusHandled,
+  wearerAssignmentPanel,
   onChange,
   onRouteChange,
   onBack,
@@ -886,6 +901,7 @@ export const DormantFutureMeasurementStep = ({
     ? resolvedState.route
     : null;
   const sampleSelected = isSampleClothMeasurementMethod(selectedMethod);
+  const onsiteSelected = isOnsitePhysicalMeasurementMethod(selectedMethod);
   const presentationRequirements = projectMeasurementRequirementsForPresentation({
     requirements: plan.requirements,
     state: resolvedState,
@@ -1492,6 +1508,15 @@ export const DormantFutureMeasurementStep = ({
         ? "incomplete"
         : resolvedState.calculationStatus,
   );
+  const onsiteStatus = getStatusLabel(
+    MEASUREMENT_ONSITE_PHYSICAL_METHOD,
+    selectedMethod,
+    canContinueToTryOn && resolvedState.calculationStatus === "complete"
+      ? "complete"
+      : resolvedState.calculationStatus === "complete"
+        ? "incomplete"
+        : resolvedState.calculationStatus,
+  );
 
   return (
     <section
@@ -1542,8 +1567,13 @@ export const DormantFutureMeasurementStep = ({
           use the unit selected below. Switching between centimetres and inches
           converts saved values.
         </p>
-        {activeWearerLabel ? (
-          <div className="mt-3 space-y-2">
+      </header>
+
+      {wearerAssignmentPanel}
+
+      {activeWearerLabel ? (
+        <section className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
+          <div className="space-y-2">
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
                 Measuring for
@@ -1667,55 +1697,8 @@ export const DormantFutureMeasurementStep = ({
               )}
             </div>
           </div>
-        ) : null}
-      </header>
-
-      <section
-        aria-label="Measurement guide and PDF download"
-        data-measurement-guide-banner="true"
-        className="rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
-      >
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
-              <BookOpen size={19} aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-heritage-bronze">
-                Illustrated 25-Page Guide
-              </p>
-              <h3 className="mt-0.5 font-serif text-base font-bold text-heritage-green sm:text-lg">
-                Need help taking accurate measurements?
-              </h3>
-              <p className="mt-1 text-xs font-medium leading-relaxed text-heritage-ink/80 sm:text-sm">
-                Open our close-to-body checklists and photo diagrams in this
-                window without losing any values you have typed, or download the
-                full PDF guide.
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-measurement-guide-open="true"
-              onClick={() => setGuideModalOpen(true)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              <BookOpen size={15} aria-hidden="true" />
-              <span>View Measurement Guide</span>
-            </button>
-            <a
-              href={MEASUREMENT_GUIDE_PDF_HREF}
-              download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
-              data-measurement-guide-download="true"
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              <Download size={15} aria-hidden="true" />
-              <span>Download PDF Guide</span>
-            </a>
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <section
         ref={measurementOptionsRef}
@@ -1756,7 +1739,59 @@ export const DormantFutureMeasurementStep = ({
             Measurement by Risk Level
           </p>
         </header>
-        <fieldset data-measurement-risk-selector="true" className="mt-3">
+        {!sampleSelected && (
+          <section
+            aria-label="Measurement guide and PDF download"
+            data-measurement-guide-banner="true"
+            className="mt-3 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
+          >
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
+                  <BookOpen size={19} aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
+                    Measurement guide
+                  </p>
+                  <h3 className="mt-0.5 font-serif text-base font-extrabold text-heritage-green sm:text-lg">
+                    Need help taking accurate measurements?
+                  </h3>
+                  <p className="mt-1 text-xs font-bold leading-relaxed text-heritage-ink sm:text-sm">
+                    Open our close-to-body checklists and photo diagrams in this
+                    window without losing any values you have typed, or download the
+                    full PDF guide.
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-measurement-guide-open="true"
+                  onClick={() => setGuideModalOpen(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <BookOpen size={15} aria-hidden="true" />
+                  <span>View Measurement Guide</span>
+                </button>
+                <a
+                  href={MEASUREMENT_GUIDE_PDF_HREF}
+                  download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
+                  data-measurement-guide-download="true"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <Download size={15} aria-hidden="true" />
+                  <span>Download PDF Guide</span>
+                </a>
+              </div>
+            </div>
+          </section>
+        )}
+        <fieldset
+          data-measurement-risk-selector="true"
+          data-hand-guide-target={!selectedRoute && !hydrationInvalid ? "measurement-option-group" : undefined}
+          className="mt-3"
+        >
           <legend className="sr-only">Option 1: Close-to-Body Measurements</legend>
           <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
             {ROUTES.map((route) => {
@@ -1916,38 +1951,118 @@ export const DormantFutureMeasurementStep = ({
         data-measurement-option-section="alternate_contact"
         aria-label="Option 3: Onsite Physical Measurements"
       >
-        <h3
-          data-measurement-option-heading="onsite"
-          className="font-serif text-lg font-bold leading-snug text-heritage-green"
-        >
-          Option 3: Onsite Physical Measurements
-        </h3>
-        <p className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80">
-          Information only. These do not complete your measurements.
-        </p>
-        <div
-          data-measurement-onsite-info="true"
-          className="mt-4 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
-        >
-          <p className="break-words text-sm leading-relaxed font-medium text-heritage-ink/80">
-            Reach out to the contact to arrange a measurement
+        <fieldset data-measurement-onsite-selector="true">
+          <legend
+            data-measurement-option-heading="onsite"
+            className="block w-full font-serif text-lg font-bold leading-snug text-heritage-green"
+          >
+            Option 3: Onsite Physical Measurements
+          </legend>
+          <p
+            data-measurement-onsite-instruction="true"
+            className="mt-2 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80"
+          >
+            {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
           </p>
           <p
             data-measurement-onsite-booking-window="true"
-            className="mt-1 break-words text-sm leading-relaxed font-medium text-heritage-ink/80"
+            className="mt-1 font-sans text-sm leading-relaxed font-medium text-heritage-ink/80"
           >
-            Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
+            {MEASUREMENT_ONSITE_BOOKING_REASON}
           </p>
-          <a
-            href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-            className="mt-2 inline-block font-sans text-sm font-semibold text-heritage-green underline underline-offset-2"
+          <div className="mt-4">
+            <label
+              data-measurement-onsite-option={MEASUREMENT_ONSITE_PHYSICAL_METHOD}
+              data-measurement-onsite-selected={onsiteSelected ? "true" : "false"}
+              data-measurement-guide-beam={beamMethodChoices ? "true" : undefined}
+              className={withMeasurementGuideBeam(
+                `flex min-w-0 cursor-pointer gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  onsiteSelected
+                    ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                    : "border-heritage-green/15 hover:border-heritage-gold/45"
+                }`,
+                beamMethodChoices,
+              )}
+            >
+              <input
+                type="radio"
+                name="future-measurement-route"
+                value={MEASUREMENT_ONSITE_PHYSICAL_METHOD}
+                checked={onsiteSelected}
+                disabled={hydrationInvalid}
+                onChange={() => {
+                  if (hydrationInvalid) return;
+                  onRouteChange(MEASUREMENT_ONSITE_PHYSICAL_METHOD);
+                  if (hasUnassignedGarments && physicalGarments.length === 0) {
+                    openAssignModal();
+                  }
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="min-w-0">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="break-words text-sm font-semibold text-heritage-green">
+                    {MEASUREMENT_ONSITE_PHYSICAL_LABEL}
+                  </span>
+                  {onsiteStatus && (
+                    <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-bold tracking-wide text-heritage-ink/85">
+                      {onsiteStatus}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+        <a
+          href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-measurement-onsite-whatsapp="true"
+          className="mt-3 inline-flex min-h-11 w-full max-w-full items-center justify-center break-words rounded-xl bg-heritage-green px-4 py-2.5 text-center text-sm font-bold leading-snug text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
+          {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL}
+        </a>
+        {onsiteSelected && (
+          <div
+            data-measurement-onsite-info="true"
+            className="mt-3 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 font-sans"
           >
-            {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
-          </a>
-        </div>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                data-measurement-onsite-ack="true"
+                checked={Boolean(resolvedState.onsiteBookingAcknowledged)}
+                disabled={hydrationInvalid}
+                onChange={(event) => {
+                  if (hydrationInvalid) return;
+                  onChange(
+                    setFutureMeasurementOnsiteAcknowledged(
+                      resolvedState,
+                      event.target.checked,
+                    ),
+                  );
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="break-words text-sm leading-relaxed font-medium text-heritage-ink/85">
+                {MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_LABEL}
+              </span>
+            </label>
+            <div className="mt-3" data-measurement-onsite-ack-status={resolvedState.onsiteBookingAcknowledged ? "complete" : "incomplete"}>
+              {resolvedState.onsiteBookingAcknowledged ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-heritage-green/30 bg-heritage-green/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-heritage-green">
+                  <Check size={11} aria-hidden="true" />
+                  Confirmed
+                </span>
+              ) : (
+                <p className="text-xs font-semibold text-heritage-bronze">
+                  {MEASUREMENT_ONSITE_ACKNOWLEDGEMENT_REQUIRED_MESSAGE}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       <section
@@ -2019,7 +2134,11 @@ export const DormantFutureMeasurementStep = ({
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
-              {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
+              {sampleSelected
+                ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE
+                : onsiteSelected
+                  ? MEASUREMENT_ONSITE_PHYSICAL_LABEL
+                  : "Current route status"}
             </p>
             <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
               {routeStatusLabel}
@@ -2029,7 +2148,11 @@ export const DormantFutureMeasurementStep = ({
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-heritage-green/15 bg-white px-3 py-2 text-xs font-semibold text-heritage-green">
-            {completedManualInputCount} / {requiredUnitCount} saved
+            {onsiteSelected
+              ? resolvedState.onsiteBookingAcknowledged
+                ? "Confirmed"
+                : "Confirmation required"
+              : `${completedManualInputCount} / ${requiredUnitCount} saved`}
           </div>
         </div>
         {hasUnassignedGarments && (
@@ -2065,26 +2188,21 @@ export const DormantFutureMeasurementStep = ({
         )}
       </section>
 
+      {!onsiteSelected && (
       <section
         className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-unit-garment-row="true"
-        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "split" : "unit-only"}
+        data-measurement-unit-garment-layout={measurementGarments.length > 1 ? "stacked" : "unit-only"}
       >
-        <div
-          className={
-            measurementGarments.length > 1
-              ? "flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
-              : "min-w-0"
-          }
-        >
+        <div className="flex min-w-0 flex-col gap-5">
       {measurementGarments.length > 1 && (
-        <div className="min-w-0 flex-1" data-measurement-garment-picker="true">
+        <div className="min-w-0" data-measurement-garment-picker="true">
           <h3 className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
             Choose a garment
           </h3>
           <p
             className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
-            title="Shared body measurements stay saved when you switch."
+            title={sampleSelected ? "Shared sample measurements stay saved when you switch." : "Shared body measurements stay saved when you switch."}
           >
             {activeWearerLabel
               ? `One of ${activeWearerLabel}'s garments at a time.`
@@ -2175,30 +2293,24 @@ export const DormantFutureMeasurementStep = ({
           )}
         </div>
       )}
+        <div className={measurementGarments.length > 1 ? "border-t border-heritage-gold/25 pt-5" : undefined}>
         <fieldset
           data-measurement-unit={state.unit}
-          className={
-            measurementGarments.length > 1
-              ? "min-w-0 shrink-0 border-t border-heritage-green/10 pt-4 sm:ml-auto sm:max-w-xs sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"
-              : "grid min-w-0 w-full grid-cols-1 gap-x-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-          }
+          className="min-w-0 w-full rounded-xl border border-heritage-gold/30 bg-heritage-cream/45 p-4"
         >
-          <legend className="text-xs font-extrabold uppercase tracking-wide text-heritage-ink/85">
+          <legend className="text-sm font-extrabold uppercase tracking-wide text-heritage-green">
             Measurement unit
           </legend>
           <p
             data-measurement-entry-unit={state.unit}
-            className="mt-1 text-xs leading-snug font-medium text-heritage-ink/80"
+            className="mt-1 text-sm leading-snug font-medium text-heritage-ink/85"
             title="Each field shows that unit. Switching units converts what you already saved."
           >
-            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.
-            <span className="sr-only"> Each field shows that unit.</span> Switching converts saved values.
+            Numbers you type are {state.unit === "inch" ? "inches" : "centimetres"}.<span className="sr-only"> Each field shows that unit.</span> Tap below to switch — saved values convert automatically.
           </p>
           <div
             data-measurement-unit-toggle="true"
-            className={`inline-flex max-w-full justify-self-start rounded-full border border-heritage-green/20 bg-heritage-cream/40 p-0.5 ${
-              measurementGarments.length > 1 ? "mt-3" : "mt-3 sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:mt-0 sm:justify-self-end"
-            }`}
+            className="mt-3 inline-flex w-full max-w-md rounded-full border-2 border-heritage-green/35 bg-white p-1 shadow-sm sm:w-auto"
           >
             {(["cm", "inch"] as const).map((unit) => (
               <button
@@ -2206,10 +2318,10 @@ export const DormantFutureMeasurementStep = ({
                 type="button"
                 aria-pressed={state.unit === unit}
                 onClick={() => onChange(setFutureMeasurementUnit(resolvedState, unit))}
-                className={`min-h-9 rounded-full px-4 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold ${
+                className={`min-h-12 flex-1 rounded-full px-6 text-sm font-bold tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-1 sm:min-w-[164px] sm:flex-initial ${
                   state.unit === unit
                     ? "bg-heritage-green text-white shadow-sm"
-                    : "text-heritage-green hover:bg-white"
+                    : "text-heritage-green hover:bg-heritage-cream/70"
                 }`}
               >
                 {unit === "inch" ? "Inches" : "Centimetres"}
@@ -2218,7 +2330,9 @@ export const DormantFutureMeasurementStep = ({
           </div>
         </fieldset>
         </div>
+        </div>
       </section>
+      )}
 
       {selectedGarmentUnassigned && (
         <section
@@ -2310,7 +2424,11 @@ export const DormantFutureMeasurementStep = ({
                   }`}
                 >
                   {activeWearerComplete && <Check size={11} aria-hidden="true" />}
-                  {completedManualInputCount}/{requiredUnitCount} saved
+                  {onsiteSelected
+                    ? resolvedState.onsiteBookingAcknowledged
+                      ? "Onsite confirmed"
+                      : "Confirmation needed"
+                    : `${completedManualInputCount}/${requiredUnitCount} saved`}
                 </span>
               </div>
               <p className="mt-1 truncate text-xs font-medium text-heritage-ink/80">
@@ -2326,7 +2444,7 @@ export const DormantFutureMeasurementStep = ({
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {activeCopySources.length > 1 && (
                     <select
-                      aria-label="Choose person to copy body measurements from"
+                      aria-label={`Choose person to copy ${sampleSelected ? "sample" : "body"} measurements from`}
                       data-measurement-copy-source-select="true"
                       value={selectedCopySource.wearerId}
                       onChange={(event) => {
@@ -2356,7 +2474,7 @@ export const DormantFutureMeasurementStep = ({
                     className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-heritage-green/30 bg-white px-3 py-1.5 text-xs font-bold text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
                   >
                     <Copy size={13} aria-hidden="true" />
-                    <span>Copy body measurements from {selectedCopySource.label}</span>
+                    <span>Copy {sampleSelected ? "sample" : "body"} measurements from {selectedCopySource.label}</span>
                   </button>
                 </div>
               )}
@@ -2364,12 +2482,12 @@ export const DormantFutureMeasurementStep = ({
           {activePendingCopyConfirmation && (
             <div
               role="alertdialog"
-              aria-label={`Confirm copying body measurements from ${activePendingCopyConfirmation.sourceLabel}`}
+              aria-label={`Confirm copying ${sampleSelected ? "sample" : "body"} measurements from ${activePendingCopyConfirmation.sourceLabel}`}
               data-measurement-copy-confirmation="true"
               className="mt-3 flex flex-col gap-2 rounded-xl border border-heritage-gold/45 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <p className="text-xs font-medium leading-relaxed text-heritage-ink/85">
-                Copy {activePendingCopyConfirmation.sharedCount} shared body{" "}
+                Copy {activePendingCopyConfirmation.sharedCount} shared {sampleSelected ? "sample" : "body"}{" "}
                 {activePendingCopyConfirmation.sharedCount === 1
                   ? "measurement"
                   : "measurements"}{" "}
@@ -2381,7 +2499,7 @@ export const DormantFutureMeasurementStep = ({
                 <strong className="font-bold text-heritage-green">
                   {activeWearerLabel}
                 </strong>
-                ? Only shared body fields are copied; garment-specific measurements stay
+                ? Only shared {sampleSelected ? "sample" : "body"} fields are copied; garment-specific measurements stay
                 separate.
               </p>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -2411,7 +2529,7 @@ export const DormantFutureMeasurementStep = ({
               className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-heritage-green/25 bg-white px-3 py-2"
             >
               <p className="text-xs font-semibold text-heritage-green">
-                Copied {activeUndoCopy.copiedCount} shared body{" "}
+                Copied {activeUndoCopy.copiedCount} shared {sampleSelected ? "sample" : "body"}{" "}
                 {activeUndoCopy.copiedCount === 1 ? "measurement" : "measurements"} from{" "}
                 {activeUndoCopy.sourceLabel} to {activeWearerLabel}.
               </p>
@@ -2429,7 +2547,7 @@ export const DormantFutureMeasurementStep = ({
         </div>
       )}
 
-      {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
+      {!onsiteSelected && !selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
       <MeasurementSection
         title="Required Measurements"
         description={
@@ -2451,7 +2569,7 @@ export const DormantFutureMeasurementStep = ({
       />
       )}
 
-      {!selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
+      {!onsiteSelected && !selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
         <MeasurementSection
           title={CALCULATED_FROM_HEIGHT_LABEL}
           description={CALCULATED_FROM_HEIGHT_DESCRIPTION}
@@ -2468,7 +2586,7 @@ export const DormantFutureMeasurementStep = ({
         />
       )}
 
-      {!selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
+      {!onsiteSelected && !selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
         <MeasurementSection
           title="Optional Measurements"
           description="Add any of these if you want. They are not required."

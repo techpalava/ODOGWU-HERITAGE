@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import {
   formatIndividualShippingNote,
+  isPrivateBatchOrder,
   resolveIndividualInboundShippingDisplay,
 } from "./individualInboundShippingDisplay.js";
 import { PRICING_CURRENCY_SYMBOL } from "./money.js";
@@ -92,10 +93,14 @@ export const projectShippingDisplayEstimate = ({
   const lagosAmountCents = lagos?.amountCents ?? null;
   // A second resolver call with one garment distinguishes "this route has no
   // separate Lagos leg" from "the leg applies, but the count cannot be priced".
+  // For Private Batch orders, the probe uses the actual garment count so that
+  // orders with >= 10 garments are not falsely flagged as individualLagosMissing.
   const lagosRoute = resolveIndividualInboundShippingDisplay({
     orderType,
     batchType,
-    physicalGarmentCount: 1,
+    physicalGarmentCount: isPrivateBatchOrder({ orderType, batchType })
+      ? garmentCount
+      : 1,
     fulfilmentMethod,
   });
   const individualLagosMissing = lagosRoute !== null && lagosAmountCents === null;

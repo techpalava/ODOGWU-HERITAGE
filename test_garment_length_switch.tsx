@@ -151,14 +151,22 @@ const MAIN_GARMENT_GROUP: Partial<Record<CanonicalPhysicalGarmentType, string>> 
 };
 
 const renderCustomDetails = ({
+  stage = "custom_details",
   selection,
+  additionalGarments = [],
+  additionalGarmentConstructions,
   constructionEvents = [],
 }: {
+  stage?: "custom_details" | "personalized_additions";
   selection: GarmentTypeStepSelection;
+  additionalGarments?: FabricAllocationState["fabricAllocations"][number]["garmentAssignments"];
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   constructionEvents?: string[][];
 }) => {
   const reconciliation = reconcileGarmentScopedCustomDetails({
     garmentTypeSelection: selection,
+    additionalGarments,
+    additionalGarmentConstructions,
     catalogInspection,
     existingState: createEmptyGarmentScopedCustomDetailsState(),
   });
@@ -171,13 +179,14 @@ const renderCustomDetails = ({
   act(() => {
     renderer = create(
       createElement(DormantFutureCustomDetailsStep, {
-        stage: "custom_details",
+        stage,
         reconciliation,
         catalogue: projectFutureCustomDetailsCatalogue({
           garmentTypeSelection: selection,
           reconciliation,
           activeOptions: catalog,
-          additionalGarments: [],
+          additionalGarments,
+          additionalGarmentConstructions,
         }),
         personalizedInputs: inputs.state,
         completion: validateGarmentScopedCustomDetailsCompletion({
@@ -191,7 +200,7 @@ const renderCustomDetails = ({
         constructionSubtotal: 0,
         designSelections: {},
         selectedStyle: null,
-        additionalGarments: [],
+        additionalGarments,
         additionalGarmentConstructionOptions: [],
         onSingleSelect: () => undefined,
         onClearSelection: () => undefined,
@@ -229,7 +238,7 @@ const mainGarmentInputs = (
       node.props.id.startsWith(`future-custom-detail-${parentGarmentKey}-${selectionGroup}-`),
   );
 
-// --- 1. Shirts and skirts show both lengths in Step 4 (Layout B). Dresses are locked to the Step 1 length. ---
+// --- 1. Base shirts & skirts lock construction in Step 1 (hidden in Step 4); base dresses narrow to 2 same-price sleeves. ---
 for (const garmentType of [
   "shirt",
   "kaftan",
@@ -249,35 +258,32 @@ for (const garmentType of [
   );
   const lengths = new Set(optionIds.map((id) => getOptionGarmentLength(selectionGroup as never, id)));
   if (garmentType === "dress" || garmentType === "full_length_gown") {
-    // Step 4 never offers the other length of a dress: no Standard/Long Length selector at all.
+    // Step 4 narrows base dresses to the 2 zero-price-change sleeve choices for the active Step 1 tier.
     assert.equal(lengthGroups.length, 0, `${garmentType}: no Standard/Long Length selector in Step 4`);
     assert.deepEqual(
       [...lengths],
       [garmentType === "dress" ? "standard" : "long"],
       `${garmentType}: only the Step 1 length is offered`,
     );
-    assert.equal(optionIds.length, 3, `${garmentType}: three sleeve options remain`);
+    assert.deepEqual(
+      optionIds,
+      garmentType === "dress"
+        ? ["dress_std_sleeveless", "dress_std_short"]
+        : ["dress_long_sleeveless", "dress_long_short"],
+      `${garmentType}: strictly two same-price sleeve options remain for Sleeveless / Short Sleeve tier`,
+    );
     assert.doesNotMatch(
       textContent(renderer.root),
       garmentType === "dress" ? /Long Length/ : /Standard Length/,
       `${garmentType}: the other length is not shown anywhere in Step 4`,
     );
   } else {
-    assert.deepEqual(
-      lengthGroups.map((node) => textContent(node.children[0] as ReactTestInstance)),
-      ["Standard Length", "Long Length"],
-      `${garmentType}: Main Garment options are grouped Standard Length then Long Length`,
-    );
-    assert.deepEqual([...lengths].sort(), ["long", "standard"], `${garmentType} offers both lengths`);
+    assert.equal(lengthGroups.length, 0, `${garmentType}: no redundant Step 4 construction selector`);
+    assert.deepEqual(optionIds, [], `${garmentType}: base construction group is hidden in Step 4`);
   }
-  assert.equal(
-    mainGarmentInputs(renderer, `base:${garmentType}`, selectionGroup).every((node) => !node.props.disabled),
-    true,
-    `${garmentType}: nothing is locked when the order holds one length`,
-  );
 }
 
-// A dress still shows Sleeve options, neck design and pockets: only the length selector is gone.
+// A dress still shows Sleeve Style options, neck design and pockets: only the length selector & other tier are gone.
 for (const garmentType of ["dress", "full_length_gown"] as const) {
   const renderer = renderCustomDetails({ selection: step1([garmentType], "female") });
   const groups = renderer.root
@@ -288,24 +294,33 @@ for (const garmentType of ["dress", "full_length_gown"] as const) {
   assert.ok(groups.includes("dress_pockets"), `${garmentType}: pockets remain`);
 }
 
-// A saved draft that already holds the other dress length keeps showing that length (never hidden).
+// A saved draft that already holds the other dress length keeps showing that tier's 2 sleeve options (never hidden).
 {
   const savedLong = switched(step1(["dress"], "female"), "dress", "dress_construction", "dress_long_midlong");
   const renderer = renderCustomDetails({ selection: savedLong });
   const optionIds = mainGarmentInputs(renderer, "base:dress", "dress_construction").map((node) => node);
-  assert.equal(optionIds.length, 3, "saved Long Length choice on a Standard Dress card still renders its options");
+  assert.equal(optionIds.length, 2, "saved Long Length Mid/Long choice on a Standard Dress card renders its 2 sleeve options");
   assert.equal(optionIds.some((node) => node.props.checked), true, "the saved option stays selected");
 }
 
-// Option prices and text are the catalogue's, unchanged.
+// Base shirt construction is hidden in Step 4 while pockets and neck design stay editable.
 {
   const renderer = renderCustomDetails({ selection: step1(["shirt"]) });
-  const labels = renderer.root
-    .findAll((node) => node.type === "label" && typeof node.props.htmlFor === "string" && node.props.htmlFor.includes("-shirt_construction-"))
-    .map((node) => textContent(node));
-  for (const option of catalog.filter((candidate) => candidate.selectionGroup === "shirt_construction")) {
-    assert.ok(labels.some((label) => label.includes(option.label)), `${option.label} is shown as-is`);
-  }
+  assert.equal(
+    renderer.root.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
+    0,
+    "base shirt_construction is hidden in Step 4",
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-custom-detail-group": "shirt_pockets" }).length,
+    1,
+    "base shirt_pockets stays editable in Step 4",
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-custom-detail-group": "neck_design" }).length,
+    1,
+    "base neck_design stays editable in Step 4",
+  );
 }
 
 // --- 2. Switching changes the garment type, units, price, label and measurement profile. ----
@@ -447,28 +462,19 @@ for (const [types, stepOne, group, optionId] of [
   }
 }
 
-// --- 3. Both lengths in one order: every garment may switch to any length. -------------------
+// --- 3. Both lengths in one order: legacy domain length-switch support & reload preservation. ---
 {
   const bothShirts = step1(["shirt", "kaftan"]);
-  const events: string[][] = [];
-  const renderer = renderCustomDetails({ selection: bothShirts, constructionEvents: events });
+  const renderer = renderCustomDetails({ selection: bothShirts });
   for (const key of ["base:shirt", "base:kaftan"]) {
     const inputs = mainGarmentInputs(renderer, key, "shirt_construction");
-    assert.equal(inputs.length, 4, `${key} offers both lengths`);
-    assert.ok(inputs.every((node) => !node.props.disabled), `${key} has no locked option`);
+    assert.equal(inputs.length, 0, `${key} hides redundant shirt_construction in Step 4`);
   }
   assert.equal(
     renderer.root.findAll((node) => node.props["data-construction-length-lock-reason"] !== undefined).length,
     0,
     "No lock message",
   );
-  const standardShirtLong = mainGarmentInputs(renderer, "base:shirt", "shirt_construction").find((node) =>
-    String(node.props.id).endsWith("shirt_long_short"),
-  )!;
-  act(() => {
-    standardShirtLong.props.onChange();
-  });
-  assert.deepEqual(events, [["base:shirt", "shirt", "shirt_construction", "shirt_long_short"]]);
   const plan = planGarmentLengthSwitch({
     parentGarmentKey: "base:shirt",
     currentGarmentType: "shirt",
@@ -1136,6 +1142,108 @@ const IN_STOCK = { code: "F1", stock: 5, stockStatus: "IN_STOCK" as const };
     [["base:shirt", "shirt"], ["additional:skirt:1", "long_skirt"]],
     "Fabric keeps the switched added garment",
   );
+
+  // Step 5 UI: added Standard Shirt and Long Shirt lock length to the Add button clicked (matching
+  // Dresses), while an added Standard Skirt keeps both Standard Length and Long Length options.
+  const step5AdditionalGarments: FabricAllocationState["fabricAllocations"][number]["garmentAssignments"] = [
+    { garmentKey: "additional:shirt:1", code: "ADDITIONAL_SHIRT_1", garmentType: "shirt", fabricUnits: 1, sourceRole: "additional" },
+    { garmentKey: "additional:kaftan:1", code: "ADDITIONAL_KAFTAN_1", garmentType: "kaftan", fabricUnits: 1, sourceRole: "additional" },
+    { garmentKey: "additional:skirt:1", code: "ADDITIONAL_SKIRT_1", garmentType: "skirt", fabricUnits: 1, sourceRole: "additional" },
+  ];
+  const step5AdditionalConstructions: AdditionalGarmentConstructionStateV1 = {
+    schemaVersion: 1,
+    byGarmentKey: {
+      "additional:shirt:1": resolveGarmentConstructionPricing("shirt", catalog),
+      "additional:kaftan:1": resolveGarmentConstructionPricing("kaftan", catalog),
+      "additional:skirt:1": resolveGarmentConstructionPricing("skirt", catalog),
+    },
+  };
+  const step5Renderer = renderCustomDetails({
+    stage: "personalized_additions",
+    selection: shirtSelection,
+    additionalGarments: step5AdditionalGarments,
+    additionalGarmentConstructions: step5AdditionalConstructions,
+  });
+  const addedShirtOptionIds = mainGarmentInputs(step5Renderer, "additional:shirt:1", "shirt_construction").map((node) =>
+    String(node.props.id).replace("future-custom-detail-additional:shirt:1-shirt_construction-", ""),
+  );
+  assert.deepEqual(
+    addedShirtOptionIds,
+    ["shirt_std_short", "shirt_std_midlong"],
+    "Step 5 added Standard Shirt locks to Standard Length sleeve options",
+  );
+  const addedLongShirtOptionIds = mainGarmentInputs(step5Renderer, "additional:kaftan:1", "shirt_construction").map((node) =>
+    String(node.props.id).replace("future-custom-detail-additional:kaftan:1-shirt_construction-", ""),
+  );
+  assert.deepEqual(
+    addedLongShirtOptionIds,
+    ["shirt_long_short", "shirt_long_midlong"],
+    "Step 5 added Long Shirt locks to Long Length sleeve options",
+  );
+  const addedShirtBlock = step5Renderer.root.findByProps({ "data-shirt-garment-block": "additional:shirt:1" });
+  const addedLongShirtBlock = step5Renderer.root.findByProps({ "data-shirt-garment-block": "additional:kaftan:1" });
+  assert.equal(
+    addedShirtBlock.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
+    0,
+    "Added Standard Shirt has no Standard/Long Length split sub-headings",
+  );
+  assert.equal(
+    addedLongShirtBlock.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
+    0,
+    "Added Long Shirt has no Standard/Long Length split sub-headings",
+  );
+  const addedSkirtOptionIds = mainGarmentInputs(step5Renderer, "additional:skirt:1", "skirt_length").map((node) =>
+    String(node.props.id).replace("future-custom-detail-additional:skirt:1-skirt_length-", ""),
+  );
+  assert.deepEqual(
+    addedSkirtOptionIds,
+    ["skirt_std", "skirt_long"],
+    "Step 5 added Standard Skirt retains both Standard Length and Long Length options",
+  );
+  const addedSkirtBlock = step5Renderer.root.findByProps({ "data-skirt-garment-block": "additional:skirt:1" });
+  assert.equal(
+    addedSkirtBlock.findAll((node) => typeof node.props["data-construction-length-group"] === "string").length,
+    2,
+    "Added Standard Skirt still renders Standard Length and Long Length groups",
+  );
+  act(() => step5Renderer.unmount());
+
+  // Legacy saved draft safety: an added Standard Shirt whose saved construction holds a Long Shirt
+  // option keeps showing the Long Length sleeve options with the saved choice checked.
+  const legacySwitchedAddedShirtRenderer = renderCustomDetails({
+    stage: "personalized_additions",
+    selection: shirtSelection,
+    additionalGarments: [
+      { garmentKey: "additional:shirt:1", code: "ADDITIONAL_SHIRT_1", garmentType: "shirt", fabricUnits: 1, sourceRole: "additional" },
+    ],
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: {
+        "additional:shirt:1": pick(
+          resolveGarmentConstructionPricing("shirt", catalog),
+          "shirt_construction",
+          "shirt_long_midlong",
+        ),
+      },
+    },
+  });
+  const legacyAddedShirtInputs = mainGarmentInputs(
+    legacySwitchedAddedShirtRenderer,
+    "additional:shirt:1",
+    "shirt_construction",
+  );
+  assert.deepEqual(
+    legacyAddedShirtInputs.map((node) =>
+      String(node.props.id).replace("future-custom-detail-additional:shirt:1-shirt_construction-", ""),
+    ),
+    ["shirt_long_short", "shirt_long_midlong"],
+    "Legacy saved draft on additional:shirt:1 with shirt_long_midlong keeps showing Long Length options",
+  );
+  assert.equal(
+    legacyAddedShirtInputs.find((node) => node.props.checked)?.props.id,
+    "future-custom-detail-additional:shirt:1-shirt_construction-shirt_long_midlong",
+  );
+  act(() => legacySwitchedAddedShirtRenderer.unmount());
 }
 
 // --- 7. Uploaded designs: the garment list follows the switch. --------------------------------

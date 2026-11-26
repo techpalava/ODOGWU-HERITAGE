@@ -186,6 +186,7 @@ const makeMeasurementState = (
     high_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
     critical_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
     sample_cloth: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
+    onsite_physical: { shared: {}, byGarmentKey: {} },
   };
   return {
     ...empty,
@@ -245,6 +246,7 @@ const makeMeasurementState = (
       sample_cloth: [
         `sample_cloth:${targetGarmentKey}:A:waist_circumference`,
       ],
+      onsite_physical: [],
     },
   };
 };

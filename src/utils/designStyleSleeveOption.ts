@@ -3,11 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type DesignStyleSleeveOption =
-  | "sleeveless"
-  | "short_sleeve"
-  | "mid_sleeve"
-  | "long_sleeve";
+import type { DesignStyleSleeveOption } from "../types.js";
+
+export type { DesignStyleSleeveOption };
 
 export const DESIGN_STYLE_SLEEVE_OPTIONS: readonly DesignStyleSleeveOption[] = [
   "sleeveless",
@@ -16,9 +14,16 @@ export const DESIGN_STYLE_SLEEVE_OPTIONS: readonly DesignStyleSleeveOption[] = [
   "long_sleeve",
 ] as const;
 
-export const DESIGN_STYLE_SLEEVE_OPTION_VALUES: readonly string[] = [
-  "",
-  ...DESIGN_STYLE_SLEEVE_OPTIONS,
+/**
+ * Canonical persisted sleeve option values. Kept in lockstep with the
+ * `hasValidDesignStylePresentation` rule in firestore.rules. "Not specified"
+ * is represented by omitting the field, never by an empty string.
+ */
+export const DESIGN_STYLE_SLEEVE_OPTION_VALUES: readonly DesignStyleSleeveOption[] = [
+  "sleeveless",
+  "short_sleeve",
+  "mid_sleeve",
+  "long_sleeve",
 ] as const;
 
 /**
@@ -28,7 +33,7 @@ export const DESIGN_STYLE_SLEEVE_OPTION_VALUES: readonly string[] = [
 export const isDesignStyleSleeveOption = (
   value: unknown,
 ): value is DesignStyleSleeveOption =>
-  DESIGN_STYLE_SLEEVE_OPTIONS.includes(value as DesignStyleSleeveOption);
+  DESIGN_STYLE_SLEEVE_OPTION_VALUES.includes(value as DesignStyleSleeveOption);
 
 /**
  * Normalizes a value to a valid DesignStyleSleeveOption or undefined.

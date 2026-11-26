@@ -186,6 +186,10 @@ const makeDraft = (
         shared: {},
         byGarmentKey: {},
       },
+      onsite_physical: {
+        shared: {},
+        byGarmentKey: {},
+      },
     },
     unassignedEntered: {
       shared: {},
@@ -248,6 +252,7 @@ const makeDraft = (
       high_risk: ["high_risk:base:agbada:chest_bust_circumference"],
       critical_risk: [],
       sample_cloth: [],
+      onsite_physical: [],
     },
   },
   futureShippingState: {

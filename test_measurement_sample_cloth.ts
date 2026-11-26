@@ -14,14 +14,21 @@ import {
   countRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
   deriveActiveCalculatedMeasurements,
+  formatImplausibleMeasurementMessage,
   fromCanonicalCentimetres,
   getActiveFutureMeasurementEntered,
+  getSampleClothCustomerLabel,
+  getSampleClothFieldInstruction,
+  getSampleClothGeometry,
   getSampleClothProductionEquivalentCm,
   isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
+  isImplausibleCanonicalMeasurement,
   isTryOnUnlockedByMeasurements,
+  isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
+  isSampleClothOptionalMeasurement,
   isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
   MEASUREMENT_METHOD_LABELS,
@@ -113,6 +120,15 @@ const midLongShirtSelection: GarmentTypeStepSelection = {
   },
 };
 
+const skirtSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["skirt"],
+  demographic: "female",
+  constructionByGarment: {
+    skirt: construction("skirt", "skirt_std", "skirt_length"),
+  },
+};
+const skirtGarments = [{ garmentKey: "skirt:1", garmentType: "skirt" as const }];
+
 const displayInches = (valueCm: number | undefined): number | null =>
   valueCm == null
     ? null
@@ -121,7 +137,7 @@ const displayInches = (valueCm: number | undefined): number | null =>
 const planFor = (
   route: MeasurementMethodId,
   garmentTypeSelection: GarmentTypeStepSelection,
-  physicalGarments: Array<{ garmentKey: string; garmentType: "shirt" | "dress" | "trouser" }>,
+  physicalGarments: Array<{ garmentKey: string; garmentType: "shirt" | "dress" | "trouser" | "skirt" }>,
 ) =>
   planMeasurementRequirements({
     route,
@@ -132,7 +148,7 @@ const planFor = (
 const fillDirect = (
   method: MeasurementMethodId,
   garmentTypeSelection: GarmentTypeStepSelection,
-  physicalGarments: Array<{ garmentKey: string; garmentType: "shirt" | "dress" | "trouser" }>,
+  physicalGarments: Array<{ garmentKey: string; garmentType: "shirt" | "dress" | "trouser" | "skirt" }>,
   existing: FutureMeasurementStateV1 = createEmptyFutureMeasurementState(method, "inch"),
   displayValue = 10,
 ): { state: FutureMeasurementStateV1; plan: ReturnType<typeof planMeasurementRequirements> } => {
@@ -832,5 +848,162 @@ const malformedLowHydration = classifyFutureMeasurementHydration({
   derived: { shared: {}, byGarmentKey: {} },
 });
 assert.equal(malformedLowHydration.status, "invalid");
+
+// 1. skirt_bottom_circumference and armhole_circumference are laid-flat half-widths (×2 + halved plausibility bounds).
+assert.equal(isSampleClothHalfWidthMeasurement("armhole_circumference"), true);
+assert.equal(isSampleClothHalfWidthMeasurement("skirt_bottom_circumference"), true);
+assert.equal(getSampleClothGeometry("armhole_circumference"), "laid_flat_half_width");
+assert.equal(getSampleClothGeometry("skirt_bottom_circumference"), "laid_flat_half_width");
+assert.equal(
+  getSampleClothCustomerLabel("armhole_circumference", "Armhole Circumference", "male"),
+  "Armhole across sample (laid flat)",
+);
+assert.equal(
+  getSampleClothCustomerLabel("skirt_bottom_circumference", "Skirt Bottom Circumference", "female"),
+  "Skirt bottom across sample (laid flat)",
+);
+
+// Plausibility bounds divide by 2 for laid-flat half-widths.
+assert.equal(
+  isImplausibleCanonicalMeasurement(4, "armhole_circumference", "circumference", "laid_flat_half_width"),
+  false,
+);
+assert.equal(
+  isImplausibleCanonicalMeasurement(3, "armhole_circumference", "circumference", "laid_flat_half_width"),
+  true,
+);
+assert.equal(
+  isImplausibleCanonicalMeasurement(115, "armhole_circumference", "circumference", "laid_flat_half_width"),
+  true,
+);
+assert.equal(
+  isImplausibleCanonicalMeasurement(150, "skirt_bottom_circumference", "finished_garment_preference", "laid_flat_half_width"),
+  false,
+);
+assert.equal(
+  isImplausibleCanonicalMeasurement(155, "skirt_bottom_circumference", "finished_garment_preference", "laid_flat_half_width"),
+  true,
+);
+assert.match(
+  formatImplausibleMeasurementMessage(
+    "armhole_circumference",
+    "circumference",
+    "cm",
+    "laid_flat_half_width",
+  ),
+  /4\s*[–-]\s*110\s*centimetres/,
+);
+
+const armholeRequirement = sampleShirtPlan.requirements.find(
+  (requirement) => requirement.measurementId === "armhole_circumference",
+)!;
+assert.equal(armholeRequirement.sampleGeometry, "laid_flat_half_width");
+const armholeFilled = fillDirect("sample_cloth", shirtSelection, shirtGarments, undefined, 12);
+const armholeUpdated = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: armholeFilled.state,
+    requirement: armholeRequirement,
+    displayValue: 11,
+  }),
+  plan: sampleShirtPlan,
+});
+assert.equal(displayInches(armholeUpdated.entered.shared.armhole_circumference?.valueCm), 11);
+assert.equal(displayInches(armholeUpdated.derived.shared.armhole_circumference?.valueCm), 22);
+
+const sampleSkirtPlan = planFor("sample_cloth", skirtSelection, skirtGarments);
+const skirtBottomRequirement = sampleSkirtPlan.requirements.find(
+  (requirement) => requirement.measurementId === "skirt_bottom_circumference",
+)!;
+assert.equal(skirtBottomRequirement.sampleGeometry, "laid_flat_half_width");
+const skirtFilled = fillDirect("sample_cloth", skirtSelection, skirtGarments, undefined, 20);
+const skirtUpdated = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: skirtFilled.state,
+    requirement: skirtBottomRequirement,
+    displayValue: 22,
+  }),
+  plan: sampleSkirtPlan,
+});
+assert.equal(
+  displayInches(skirtUpdated.entered.byGarmentKey["skirt:1"]?.skirt_bottom_circumference?.valueCm),
+  22,
+);
+assert.equal(
+  displayInches(skirtUpdated.derived.byGarmentKey["skirt:1"]?.skirt_bottom_circumference?.valueCm),
+  44,
+);
+
+// 2. neck_circumference stays 1:1 (full inside loop, not doubled).
+assert.equal(isSampleClothHalfWidthMeasurement("neck_circumference"), false);
+assert.equal(getSampleClothGeometry("neck_circumference"), "length_or_opening");
+assert.equal(
+  getSampleClothCustomerLabel("neck_circumference", "Neck Circumference", "male"),
+  "Neck opening (full inside loop)",
+);
+assert.match(
+  getSampleClothFieldInstruction("length_or_opening", "neck_circumference"),
+  /full loop.*not doubled/i,
+);
+assert.equal(armholeUpdated.derived.shared.neck_circumference, undefined);
+
+// 3. All 6 body-only landmarks are demoted to Optional on sample_cloth ONLY (untouched on low_risk),
+//    do not block completion when left blank, and still convert ×2 when voluntarily entered.
+const sampleTrouserPlan = planFor("sample_cloth", trouserSelection, trouserGarments);
+const lowTrouserPlan = planFor("low_risk", trouserSelection, trouserGarments);
+const sampleDressPlan = planFor("sample_cloth", dressSelection, dressGarments);
+const lowDressPlan = planFor("low_risk", dressSelection, dressGarments);
+const lowShirtPlan = planFor("low_risk", shirtSelection, shirtGarments);
+
+const demotedCases = [
+  ["elbow_circumference", sampleShirtPlan, lowShirtPlan],
+  ["knee_circumference", sampleTrouserPlan, lowTrouserPlan],
+  ["waist_to_hip_length", sampleTrouserPlan, lowTrouserPlan],
+  ["waist_to_feet_back_length", sampleTrouserPlan, lowTrouserPlan],
+  ["under_bust_circumference", sampleDressPlan, lowDressPlan],
+  ["shoulder_to_under_bust_length", sampleDressPlan, lowDressPlan],
+] as const;
+
+for (const [measurementId, samplePlanForId, lowPlanForId] of demotedCases) {
+  assert.equal(isSampleClothOptionalMeasurement(measurementId), true, `${measurementId} helper`);
+  const sampleReq = samplePlanForId.requirements.find((r) => r.measurementId === measurementId);
+  assert.ok(sampleReq, `${measurementId} present in sample_cloth plan`);
+  assert.equal(sampleReq.section, "optional", `${measurementId} section optional on sample_cloth`);
+  assert.equal(sampleReq.directInput, false, `${measurementId} directInput false on sample_cloth`);
+  assert.equal(sampleReq.inputSource, "optional_manual", `${measurementId} optional_manual on sample_cloth`);
+
+  const lowReq = lowPlanForId.requirements.find((r) => r.measurementId === measurementId);
+  assert.ok(lowReq, `${measurementId} present in low_risk plan`);
+  assert.equal(lowReq.section, "required", `${measurementId} stays required on low_risk`);
+  assert.equal(lowReq.directInput, true, `${measurementId} stays directInput on low_risk`);
+}
+
+// Leaving all optional fields blank does not block completion, and filling optional half-width converts ×2.
+assert.equal(isFutureMeasurementStageComplete(armholeFilled.state), true);
+assert.equal(armholeFilled.state.entered.shared.elbow_circumference, undefined);
+const elbowReq = sampleShirtPlan.requirements.find((r) => r.measurementId === "elbow_circumference")!;
+const withOptionalElbow = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: armholeFilled.state,
+    requirement: elbowReq,
+    displayValue: 7,
+  }),
+  plan: sampleShirtPlan,
+});
+assert.equal(displayInches(withOptionalElbow.entered.shared.elbow_circumference?.valueCm), 7);
+assert.equal(displayInches(withOptionalElbow.derived.shared.elbow_circumference?.valueCm), 14);
+
+// 4. Seam-to-seam micro-instructions for Sample Cloth fields (no Bust/Borst/Kaftan/Knicker).
+for (const [geometry, id, expectedPattern] of [
+  ["laid_flat_half_width", "chest_bust_circumference", /armpit seam to armpit seam/i],
+  ["laid_flat_half_width", "armhole_circumference", /top shoulder seam down to the bottom underarm seam/i],
+  ["laid_flat_half_width", "skirt_bottom_circumference", /bottom hem of the skirt/i],
+  ["length_or_opening", "shoulder_length", /left shoulder seam to right shoulder seam/i],
+  ["length_or_opening", "waist_to_crotch_depth_length", /top of the waistband straight down to the crotch seam/i],
+  ["laid_flat_half_width", "elbow_circumference", /^Optional —/],
+] as const) {
+  const instruction = getSampleClothFieldInstruction(geometry, id);
+  assert.match(instruction, expectedPattern);
+  assert.doesNotMatch(instruction, /\b(Bust|Borst|Kaftan|Knicker)\b/);
+}
 
 console.log("PASS: sample cloth laid-flat field policy, 2x conversion, isolation, and draft compatibility");

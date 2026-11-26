@@ -13,7 +13,11 @@ import type {
 import { normalizePhysicalGarmentOccurrenceIdentityState } from "./physicalGarmentOccurrenceIdentity.js";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
+  findStep1CardPresetForResolution,
+  getStep1GarmentCardPresetById,
   resolveGarmentConstructionPricing,
+  resolveGarmentConstructionPricingForOptionId,
+  type Step1GarmentCardPresetId,
 } from "./garmentConstructionPricing.js";
 import { isClothingPriceSelectionGroup } from "./catalogHelpers.js";
 import { getOptionGarmentLength } from "./garmentLengthVariant.js";
@@ -281,7 +285,10 @@ export const reconcileGarmentConstructionResolution = (
     }
     return [
       {
-        componentKey: component.componentKey,
+        componentKey:
+          option.id === component.optionId
+            ? component.componentKey
+            : `${canonicalDefault.garmentType}:${option.selectionGroup}:${option.id}`,
         optionId: option.id,
         selectionGroup: option.selectionGroup,
         priceCents: option.priceCents,
@@ -531,20 +538,101 @@ export const getGarmentTypeStepControlledState = (
 
 export type GarmentTypeStepSelectionAction =
   | { type: "set_garment_types"; garmentTypes: unknown }
+  | { type: "toggle_preset"; presetId: Step1GarmentCardPresetId }
   | { type: "set_demographics"; demographics: unknown }
   | { type: "set_demographic"; demographic: unknown };
+
+/**
+ * Applies a Step 1 13-card preset click with one-variant-per-garmentType semantics:
+ * - Unselected garmentType: selects the garmentType and writes the card's exact construction.
+ * - Selected sibling card: keeps garmentTypes deduplicated and replaces constructionByGarment[garmentType].
+ * - Already-active card: deselects garmentType cleanly.
+ */
+export const selectStep1GarmentCardPreset = ({
+  currentSelection,
+  presetId,
+  normalizedCustomDetailCatalog,
+}: {
+  currentSelection: GarmentTypeStepSelection;
+  presetId: Step1GarmentCardPresetId;
+  normalizedCustomDetailCatalog: readonly CustomDetailOption[];
+}): GarmentTypeStepReconciliationResult => {
+  const normalized = normalizePersistedGarmentTypeStepSelection(currentSelection);
+  const preset = getStep1GarmentCardPresetById(presetId);
+  if (!preset) {
+    return reconcileGarmentTypeStepSelection({
+      persistedSelection: normalized,
+      normalizedCustomDetailCatalog,
+    });
+  }
+
+  const isTypeSelected = normalized.garmentTypes.includes(preset.garmentType);
+  const activePreset = isTypeSelected
+    ? findStep1CardPresetForResolution(
+        preset.garmentType,
+        normalized.constructionByGarment[preset.garmentType],
+      )
+    : null;
+
+  if (isTypeSelected && activePreset?.id === preset.id) {
+    const nextGarmentTypes = normalized.garmentTypes.filter(
+      (garmentType) => garmentType !== preset.garmentType,
+    );
+    const { [preset.garmentType]: _removed, ...remainingConstruction } =
+      normalized.constructionByGarment;
+    return reconcileGarmentTypeStepSelection({
+      persistedSelection: {
+        ...normalized,
+        constructionByGarment: remainingConstruction,
+      },
+      selectedGarmentTypes: nextGarmentTypes,
+      normalizedCustomDetailCatalog,
+    });
+  }
+
+  const nextGarmentTypes = isTypeSelected
+    ? normalized.garmentTypes
+    : CANONICAL_PHYSICAL_GARMENT_TYPES.filter(
+        (garmentType) =>
+          garmentType === preset.garmentType ||
+          normalized.garmentTypes.includes(garmentType),
+      );
+  const nextPresetResolution = resolveGarmentConstructionPricingForOptionId(
+    preset.garmentType,
+    preset.optionId,
+    normalizedCustomDetailCatalog,
+  );
+  return reconcileGarmentTypeStepSelection({
+    persistedSelection: {
+      ...normalized,
+      garmentTypes: nextGarmentTypes,
+      constructionByGarment: {
+        ...normalized.constructionByGarment,
+        [preset.garmentType]: nextPresetResolution,
+      },
+    },
+    selectedGarmentTypes: nextGarmentTypes,
+    normalizedCustomDetailCatalog,
+  });
+};
 
 export const reduceGarmentTypeStepSelection = (
   selection: GarmentTypeStepSelection,
   action: GarmentTypeStepSelectionAction,
   normalizedCustomDetailCatalog: readonly CustomDetailOption[],
 ): GarmentTypeStepReconciliationResult =>
-  reconcileGarmentTypeStepSelection({
-    persistedSelection: selection,
-    normalizedCustomDetailCatalog,
-    ...(action.type === "set_garment_types"
-      ? { selectedGarmentTypes: action.garmentTypes }
-      : action.type === "set_demographics"
-        ? { selectedDemographics: action.demographics }
-        : { selectedDemographic: action.demographic }),
-  });
+  action.type === "toggle_preset"
+    ? selectStep1GarmentCardPreset({
+        currentSelection: selection,
+        presetId: action.presetId,
+        normalizedCustomDetailCatalog,
+      })
+    : reconcileGarmentTypeStepSelection({
+        persistedSelection: selection,
+        normalizedCustomDetailCatalog,
+        ...(action.type === "set_garment_types"
+          ? { selectedGarmentTypes: action.garmentTypes }
+          : action.type === "set_demographics"
+            ? { selectedDemographics: action.demographics }
+            : { selectedDemographic: action.demographic }),
+      });

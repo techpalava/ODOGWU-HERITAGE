@@ -112,9 +112,15 @@ const v2ColumnValue = (
  */
 const v2MeasurementsText = (readout: readonly TailoringWearerReadout[]): string =>
   readout
-    .map((wearer) =>
-      [
+    .map((wearer) => {
+      const hasNumericValues =
+        wearer.shared.length > 0 ||
+        wearer.garments.some((garment) => garment.values.length > 0);
+      return [
         `${wearer.displayName} — Method: ${wearer.methodLabel}${wearer.methodNote ? ` (${wearer.methodNote})` : ""}`,
+        ...(!hasNumericValues && wearer.garments.length > 0
+          ? [`Garments: ${wearer.garments.map((garment) => garment.label).join(", ")}`]
+          : []),
         ...(wearer.shared.length
           ? [wearer.shared.map((value) => `Shared ${value.label}: ${value.display}`).join("; ")]
           : []),
@@ -124,8 +130,8 @@ const v2MeasurementsText = (readout: readonly TailoringWearerReadout[]): string 
             (garment) =>
               `${garment.label}: ${garment.values.map((value) => `${value.label}: ${value.display}`).join("; ")}`,
           ),
-      ].join(" | "),
-    )
+      ].join(" | ");
+    })
     .join(" || ");
 
 /** Workshop columns of a V2 row: saved measurements where they map, "N/A" elsewhere. */

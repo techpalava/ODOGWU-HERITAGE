@@ -11,6 +11,7 @@ import {
   hashPin,
   validateLoginPin,
   validateRegisterPin,
+  verifyLegacyPlaintextPin,
   verifyPin,
 } from "./src/server/customerAuth";
 
@@ -363,5 +364,42 @@ assert.doesNotMatch(
   customerReviewCreate.match(/data\.keys\(\)\.hasAll\(\[[^\]]*\]\)/)?.[0] ?? "",
   /nationality/i,
 );
+
+// M3: Public customGroups create shape & single-step currentMembers increment bounds
+assert.match(rules, /function hasValidPublicCustomGroupShape\(data, groupId\)/);
+assert.match(
+  rules,
+  /hasValidPublicCustomGroupShape\(request\.resource\.data, groupId\)\s*&& request\.resource\.data\.ownerUid == request\.auth\.uid\s*&& request\.resource\.data\.currentMembers == 1/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.currentMembers == resource\.data\.currentMembers \+ 1\s*&& request\.resource\.data\.currentMembers <= resource\.data\.maxParticipants/,
+);
+
+// L4: Customer self-update cannot alter workflow fields orderStatus or method
+const customerMatchBlock = rules.match(
+  /match \/customers\/\{customerId\} \{[\s\S]*?\n    \}/,
+)?.[0];
+assert.ok(customerMatchBlock, "customers rules block must exist");
+assert.doesNotMatch(customerMatchBlock, /"orderStatus"/);
+assert.doesNotMatch(customerMatchBlock, /"method"/);
+assert.match(customerMatchBlock, /"measurementProfiles"/);
+
+// L3: Constant-time legacy plaintext PIN helper
+assert.equal(verifyLegacyPlaintextPin("4826", "4826"), true);
+assert.equal(verifyLegacyPlaintextPin("4826", "4827"), false);
+assert.equal(verifyLegacyPlaintextPin("4826", ""), false);
+assert.equal(verifyLegacyPlaintextPin("4826", undefined), false);
+const customerAuthSource = readFileSync("src/server/customerAuth.ts", "utf8");
+assert.doesNotMatch(
+  customerAuthSource,
+  /\.passcode\s*===\s*pin/,
+  "customerAuth must not compare plaintext PIN with non-constant ===",
+);
+
+// L1: vercel.json CSP report-only includes Google profile image and payment hosts
+const vercelConfig = readFileSync("vercel.json", "utf8");
+assert.match(vercelConfig, /https:\/\/lh3\.googleusercontent\.com/);
+assert.match(vercelConfig, /https:\/\/www\.paypal\.com/);
 
 console.log("PASS: Firebase identity and Firestore rule security checks");

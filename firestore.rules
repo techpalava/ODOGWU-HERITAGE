@@ -112,6 +112,7 @@ service cloud.firestore {
           "garmentComposition",
           "fabricCategory",
           "options",
+          "categoryIds",
           "designCategories",
           "detectedColors",
           "constructionDetails",
@@ -208,12 +209,56 @@ service cloud.firestore {
         && data.embroideryProminence in ["standard", "heavy"]
         && data.defaultGarmentDetails is map
         && (
+          !data.keys().hasAny(["categoryIds"])
+          || (
+            data.categoryIds is list
+            && data.categoryIds.size() <= 3
+          )
+        )
+        && (
           !data.keys().hasAny(["showsWearer"])
           || data.showsWearer is bool
         )
         && (
           !data.keys().hasAny(["sleeveOption"])
           || data.sleeveOption in ["sleeveless", "short_sleeve", "mid_sleeve", "long_sleeve"]
+        );
+    }
+
+    function hasValidDesignStyleCategory(categoryId, data) {
+      return data is map
+        && data.keys().hasOnly([
+          "id",
+          "name",
+          "displayOrder",
+          "enabled",
+          "description"
+        ])
+        && data.keys().hasAll([
+          "id",
+          "name",
+          "displayOrder",
+          "enabled"
+        ])
+        && data.id is string
+        && data.id == categoryId
+        && data.id.size() > 0
+        && data.id.size() <= 64
+        && data.id.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && !data.name.lower().matches('.*kaftan.*')
+        && data.displayOrder is int
+        && data.displayOrder >= 0
+        && data.enabled is bool
+        && (
+          !data.keys().hasAny(["description"])
+          || (
+            data.description is string
+            && data.description.size() <= 240
+            && !data.description.lower().matches('.*kaftan.*')
+          )
         );
     }
 
@@ -234,6 +279,7 @@ service cloud.firestore {
           "shirt",
           "trouser",
           "skirt",
+          "long_skirt",
           "standard_shorts",
           "bum_shorts",
           "dress",
@@ -260,6 +306,7 @@ service cloud.firestore {
           "shirt",
           "trouser",
           "skirt",
+          "long_skirt",
           "standard_shorts",
           "bum_shorts",
           "dress",
@@ -292,6 +339,7 @@ service cloud.firestore {
           "shirt",
           "trouser",
           "skirt",
+          "long_skirt",
           "standard_shorts",
           "bum_shorts",
           "dress",
@@ -456,6 +504,12 @@ service cloud.firestore {
       allow create: if isAdmin() && hasValidDesignStyleCreate(styleId);
       allow update: if isAdmin() && hasValidDesignStyleUpdate(styleId);
       allow delete: if false;
+    }
+
+    match /design_style_categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && hasValidDesignStyleCategory(categoryId, request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /batches/{batchId} {
@@ -742,6 +796,53 @@ service cloud.firestore {
         ]);
     }
 
+    function hasValidPublicCustomGroupShape(data, groupId) {
+      return data.visibility == "PUBLIC"
+        && data.batchId is string
+        && data.batchId == groupId
+        && groupId.size() > 0
+        && groupId.size() <= 128
+        && data.ownerUid is string
+        && data.ownerUid.size() > 0
+        && data.batchName is string
+        && data.batchName.size() > 0
+        && data.batchName.size() <= 160
+        && data.currentMembers is int
+        && data.currentMembers >= 1
+        && data.maxParticipants is int
+        && data.maxParticipants >= 1
+        && data.maxParticipants <= 1000
+        && data.currentMembers <= data.maxParticipants
+        && data.expectedParticipants is int
+        && data.expectedParticipants >= 1
+        && data.expectedParticipants <= data.maxParticipants
+        && data.status in ["DRAFT", "OPEN", "ALMOST_FULL", "FULL", "CLOSED", "LOCKED", "COMPLETED"]
+        && data.keys().hasOnly([
+          "schemaVersion",
+          "batchId",
+          "ownerUid",
+          "organizerId",
+          "organizer",
+          "batchName",
+          "occasion",
+          "description",
+          "country",
+          "city",
+          "preferredDeliveryMonth",
+          "expectedParticipants",
+          "maxParticipants",
+          "visibility",
+          "currentMembers",
+          "closingDate",
+          "deliveryWindow",
+          "status",
+          "pickupLocation",
+          "notes",
+          "createdAt",
+          "updatedAt"
+        ]);
+    }
+
     match /customGroups/{groupId} {
       allow get: if isAdmin()
         || isPublicCustomGroup(resource.data)
@@ -757,9 +858,9 @@ service cloud.firestore {
         || hasValidPrivateBatchCreate(groupId)
         || (
           isSignedIn()
-          && isPublicCustomGroup(request.resource.data)
+          && hasValidPublicCustomGroupShape(request.resource.data, groupId)
           && request.resource.data.ownerUid == request.auth.uid
-          && request.resource.data.batchId == groupId
+          && request.resource.data.currentMembers == 1
         );
       allow update: if isAdmin()
         || (
@@ -767,7 +868,7 @@ service cloud.firestore {
           && (
             (
               isCustomGroupOwner(resource.data)
-              && isPublicCustomGroup(request.resource.data)
+              && hasValidPublicCustomGroupShape(request.resource.data, groupId)
               && request.resource.data.ownerUid == resource.data.ownerUid
               && request.resource.data.batchId == resource.data.batchId
             )
@@ -775,6 +876,11 @@ service cloud.firestore {
               isSignedIn()
               && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(["currentMembers"])
+              && request.resource.data.currentMembers is int
+              && resource.data.currentMembers is int
+              && resource.data.maxParticipants is int
+              && request.resource.data.currentMembers == resource.data.currentMembers + 1
+              && request.resource.data.currentMembers <= resource.data.maxParticipants
             )
           )
         )
@@ -830,8 +936,6 @@ service cloud.firestore {
             "name",
             "phone",
             "location",
-            "orderStatus",
-            "method",
             "measurementProfile",
             "measurementProfiles",
             "biometricConsent"

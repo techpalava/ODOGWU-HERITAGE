@@ -48,6 +48,7 @@ import {
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewMeasurementGroups,
   getFuturePaymentReviewMeasurementHeader,
+  getFuturePaymentReviewOnsiteWearers,
   getFuturePaymentReviewWearerMeasurementSections,
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
@@ -59,6 +60,16 @@ import {
   type FutureOrderV2PreparationPresentation,
   type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
+import {
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
+} from "../utils/designStudioFutureShipping";
+import {
+  MEASUREMENT_ONSITE_BOOKING_INSTRUCTION,
+  MEASUREMENT_ONSITE_BOOKING_REASON,
+  MEASUREMENT_ONSITE_PHYSICAL_LABEL,
+  MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL,
+} from "../utils/measurementBlueprint";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   formatCustomDetailsGarmentLabel,
@@ -713,6 +724,11 @@ export const DormantFuturePaymentReviewStep = ({
         plainPersonGarmentLabels: true,
       })
     : [];
+  const onsiteWearers = candidate
+    ? getFuturePaymentReviewOnsiteWearers(candidate, {
+        plainPersonGarmentLabels: true,
+      })
+    : [];
   const measurementCount = measurementGroups.reduce(
     (count, group) => count + group.items.length,
     0,
@@ -1117,6 +1133,8 @@ export const DormantFuturePaymentReviewStep = ({
                     candidate.measurements,
                   );
                   if (measurementHeader.kind === "single") {
+                    const isOnsiteRoute =
+                      measurementHeader.routeLabel === MEASUREMENT_ONSITE_PHYSICAL_LABEL;
                     return (
                       <>
                         {measurementHeader.wearerLabel ? (
@@ -1124,8 +1142,10 @@ export const DormantFuturePaymentReviewStep = ({
                             {measurementHeader.wearerLabel}
                           </p>
                         ) : null}
-                        <p className="font-bold capitalize text-heritage-green">
-                          {measurementHeader.routeLabel} route
+                        <p className={`font-bold text-heritage-green ${isOnsiteRoute ? "" : "capitalize"}`}>
+                          {isOnsiteRoute
+                            ? measurementHeader.routeLabel
+                            : `${measurementHeader.routeLabel} route`}
                         </p>
                         <p className="mt-1 text-xs text-heritage-ink/60">
                           Status: {measurementHeader.statusLabel}
@@ -1141,6 +1161,8 @@ export const DormantFuturePaymentReviewStep = ({
                       {measurementHeader.wearers.map((wearer) => {
                         const assignedGarmentLabels =
                           wearerSectionById.get(wearer.wearerId)?.assignedGarmentLabels || [];
+                        const isOnsiteRoute =
+                          wearer.routeLabel === MEASUREMENT_ONSITE_PHYSICAL_LABEL;
                         return (
                         <div key={wearer.wearerId}>
                           <p className="font-bold text-heritage-green">
@@ -1151,8 +1173,8 @@ export const DormantFuturePaymentReviewStep = ({
                               Garments: {assignedGarmentLabels.join(", ")}
                             </p>
                           ) : null}
-                          <p className="text-xs capitalize text-heritage-ink/70">
-                            {wearer.routeLabel} route
+                          <p className={`text-xs text-heritage-ink/70 ${isOnsiteRoute ? "font-semibold text-heritage-green" : "capitalize"}`}>
+                            {isOnsiteRoute ? wearer.routeLabel : `${wearer.routeLabel} route`}
                           </p>
                           <p className="text-xs text-heritage-ink/60">
                             Status: {wearer.statusLabel}
@@ -1165,10 +1187,58 @@ export const DormantFuturePaymentReviewStep = ({
                 })()}
               </div>
             </div>
+            {onsiteWearers.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {onsiteWearers.map((onsiteWearer) => (
+                  <div
+                    key={onsiteWearer.wearerId}
+                    data-payment-review-measurement-onsite-info="true"
+                    data-payment-review-measurement-onsite-wearer={onsiteWearer.wearerId}
+                    className="rounded-xl border border-heritage-gold/35 bg-heritage-cream/30 p-3.5 sm:p-4"
+                  >
+                    <p className="text-xs font-bold uppercase tracking-wider text-heritage-gold">
+                      {onsiteWearer.wearerLabel
+                        ? `${onsiteWearer.wearerLabel} · ${MEASUREMENT_ONSITE_PHYSICAL_LABEL}`
+                        : MEASUREMENT_ONSITE_PHYSICAL_LABEL}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold leading-snug text-heritage-green">
+                      {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
+                    </p>
+                    {onsiteWearer.assignedGarmentLabels.length > 0 && (
+                      <p
+                        data-payment-review-measurement-onsite-garments={onsiteWearer.wearerId}
+                        className="mt-1.5 text-xs font-medium text-heritage-ink/75"
+                      >
+                        Covered garments:{" "}
+                        {onsiteWearer.assignedGarmentLabels
+                          .map((label) => formatCustomDetailsGarmentLabel(label))
+                          .join(", ")}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs leading-relaxed text-heritage-ink/75">
+                      {MEASUREMENT_ONSITE_BOOKING_REASON}
+                    </p>
+                    <div className="mt-2.5">
+                      <a
+                        href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-payment-review-measurement-onsite-whatsapp="true"
+                        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                      >
+                        {MEASUREMENT_ONSITE_WHATSAPP_BUTTON_LABEL} ({FUTURE_PICKUP_ATELIER_PHONE_DISPLAY})
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {measurementGroups.length === 0 ? (
-              <p className="mt-3 text-sm text-heritage-ink/60">
-                Measurement values are pending.
-              </p>
+              onsiteWearers.length > 0 ? null : (
+                <p className="mt-3 text-sm text-heritage-ink/60">
+                  Measurement values are pending.
+                </p>
+              )
             ) : (
               <PaymentReviewDisclosure
                 id="measurements"
@@ -1237,15 +1307,21 @@ export const DormantFuturePaymentReviewStep = ({
                               </p>
                             ) : null}
                           </div>
-                          <div className="grid min-w-0 gap-4 md:grid-cols-2">
-                            {wearerSection.groups.map((group) =>
-                              renderMeasurementGroupCard(
-                                group,
-                                `${wearerSection.wearerId}:`,
-                                "h5",
-                              ),
-                            )}
-                          </div>
+                          {wearerSection.groups.length > 0 ? (
+                            <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                              {wearerSection.groups.map((group) =>
+                                renderMeasurementGroupCard(
+                                  group,
+                                  `${wearerSection.wearerId}:`,
+                                  "h5",
+                                ),
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-heritage-ink/70">
+                              {wearerSection.routeLabel}: {MEASUREMENT_ONSITE_BOOKING_INSTRUCTION}
+                            </p>
+                          )}
                         </section>
                       ))}
                     </div>
@@ -1627,6 +1703,17 @@ export const DormantFuturePaymentReviewStep = ({
                     <button
                     type="button"
                     data-future-order-v2-pay={true}
+                    data-hand-guide-target={
+                      !(
+                        communityBatchClosed ||
+                        communityBatchChecking ||
+                        !canSettleReviewedOrder ||
+                        payIsBusy ||
+                        !stripePaymentReady
+                      )
+                        ? "payment-pay-button"
+                        : undefined
+                    }
                     disabled={communityBatchClosed || communityBatchChecking || !canSettleReviewedOrder || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"

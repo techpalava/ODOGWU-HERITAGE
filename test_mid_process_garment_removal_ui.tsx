@@ -382,7 +382,7 @@ const shortsTargets = projectFutureGarmentRemovalTargets({
   provisionalGarmentKey: null,
 });
 const shortsBefore = JSON.stringify({ shortsOccurrences, shortsTargets });
-const expectedShortsLabels = ["Standard Knicker Shorts", "Standard Bum Shorts"];
+const expectedShortsLabels = ["Standard Nikka Shorts", "Standard Bum Shorts"];
 for (const index of [0, 1]) {
   const occurrence = shortsOccurrences[index];
   const expectedLabel = expectedShortsLabels[index];
@@ -393,7 +393,7 @@ for (const index of [0, 1]) {
     shortsTargets[index].accessibleName,
     `Remove ${expectedLabel}, base garment`,
   );
-  assert.doesNotMatch(shortsTargets[index].accessibleName, /Knicker \/ Standard Shorts|Nikka/i);
+  assert.doesNotMatch(shortsTargets[index].accessibleName, /Nikka \/ Standard Shorts|Knicker/i);
   assert.ok(!shortsTargets[index].accessibleName.includes(occurrence.garmentKey));
   assert.equal(FABRIC_GARMENT_CAPACITY_UNITS[occurrence.garmentType], 1);
   const price = resolveGarmentConstructionPricing(occurrence.garmentType, SEED_CUSTOM_DETAIL_CATALOG);
@@ -421,9 +421,9 @@ const additionalShortsTargets = projectFutureGarmentRemovalTargets({
 assert.deepEqual(
   additionalShortsTargets.map((target) => target.accessibleName),
   [
-    "Remove Standard Knicker Shorts, base garment",
+    "Remove Standard Nikka Shorts, base garment",
     "Remove Standard Bum Shorts, base garment",
-    "Remove Standard Knicker Shorts, additional garment 1",
+    "Remove Standard Nikka Shorts, additional garment 1",
     "Remove Standard Bum Shorts, additional garment 1",
   ],
 );

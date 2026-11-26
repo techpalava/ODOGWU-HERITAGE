@@ -15,7 +15,10 @@ import {
   updateGarmentTypeSelection,
 } from "./src/components/GarmentTypeStep";
 import { DesignStudioStepGuide } from "./src/components/DesignStudioStepGuide";
-import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import {
+  STEP_1_GARMENT_CARD_PRESETS,
+  STEP_1_SELECTABLE_GARMENT_TYPES,
+} from "./src/utils/garmentConstructionPricing";
 import { getGarmentTypeStepSelectedFabricQuantity } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import {
@@ -36,7 +39,7 @@ const expectedGarmentLabels = [
   "Long Shirt",
   "Standard Dress",
   "Long Dress",
-  "Standard Knicker Shorts",
+  "Standard Nikka Shorts",
   "Standard Bum Shorts",
   "Trouser",
   "Standard Skirt",
@@ -73,6 +76,43 @@ const renderStep = ({
     }),
   );
 
+const expectedPresetIds = [
+  "shirt_short_sleeve",
+  "shirt_long_sleeve",
+  "kaftan_short_sleeve",
+  "kaftan_long_sleeve",
+  "dress_sleeveless_or_short",
+  "dress_mid_or_long",
+  "full_length_gown_sleeveless_or_short",
+  "full_length_gown_mid_or_long",
+  "skirt",
+  "long_skirt",
+  "trouser",
+  "standard_shorts",
+  "bum_shorts",
+] as const;
+const expectedPresetLabels = [
+  "Standard Shirt — Short Sleeve",
+  "Standard Shirt — Long Sleeve",
+  "Long Shirt — Short Sleeve",
+  "Long Shirt — Long Sleeve",
+  "Standard Dress — Sleeveless / Short Sleeve",
+  "Standard Dress — Mid / Long Sleeve",
+  "Long Dress — Sleeveless / Short Sleeve",
+  "Long Dress — Mid / Long Sleeve",
+  "Standard Skirt",
+  "Long Skirt",
+  "Trouser",
+  "Standard Nikka Shorts",
+  "Standard Bum Shorts",
+] as const;
+const expectedPresetPrices = [65, 70, 70, 75, 70, 75, 75, 80, 75, 80, 75, 70, 70];
+assert.equal(STEP_1_GARMENT_CARD_PRESETS.length, 13);
+assert.deepEqual(
+  STEP_1_GARMENT_CARD_PRESETS.map((preset) => preset.id),
+  expectedPresetIds,
+);
+
 const emptyPresentation = getGarmentTypeStepPresentation({
   selectedGarmentTypes: [],
   normalizedCustomDetailCatalog: catalog,
@@ -81,10 +121,21 @@ assert.equal(emptyPresentation.selectedGarmentTypes.length, 0);
 assert.equal(emptyPresentation.constructionPricing.length, 0);
 assert.equal(emptyPresentation.constructionSubtotalCents, 0);
 assert.equal(emptyPresentation.customerFacingCapacityAmount, "0");
-assert.equal(emptyPresentation.categories.length, 9);
-assert.deepEqual(emptyPresentation.categories.map((item) => item.garmentType), approvedGarmentIds);
-assert.deepEqual(emptyPresentation.categories.map((item) => item.label), expectedGarmentLabels);
-assert.deepEqual(emptyPresentation.categories.map((item) => item.fabricUnits), [1, 1, 1, 2, 1, 1, 1, 1, 1]);
+assert.equal(emptyPresentation.categories.length, 13);
+assert.deepEqual(emptyPresentation.categories.map((item) => item.presetId), expectedPresetIds);
+assert.deepEqual(emptyPresentation.categories.map((item) => item.label), expectedPresetLabels);
+assert.deepEqual(
+  emptyPresentation.categories.map((item) => item.fabricUnits),
+  [1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1],
+);
+assert.deepEqual(
+  emptyPresentation.categories.map((item) =>
+    item.constructionPricing?.status === "resolved"
+      ? item.constructionPricing.totalPrice
+      : null,
+  ),
+  expectedPresetPrices,
+);
 
 for (const demographic of ["male", "female", "unisex"] as const) {
   const markup = renderStep({ selectedDemographics: [demographic] });
@@ -232,8 +283,8 @@ assert.equal(
 );
 
 const emptyMarkup = renderStep();
-assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 8);
-assert.equal((emptyMarkup.match(/Uses 1 fabric capacity unit\./g) || []).length, 1);
+assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 11);
+assert.equal((emptyMarkup.match(/Uses 1 fabric capacity unit\./g) || []).length, 2);
 assert.equal(emptyMarkup.includes("Uses one fabric capacity unit."), false);
 assert.equal(emptyMarkup.includes("Uses two fabric capacity units."), false);
 assert.equal(emptyMarkup.includes("Uses 0.5"), false);
@@ -462,7 +513,7 @@ const shirtTrouserDressMarkup = renderStep({
   selectedGarmentTypes: ["shirt", "trouser", "dress"],
 });
 assert.ok(shirtTrouserDressMarkup.includes("€210.00"));
-assert.ok(shirtTrouserDressMarkup.includes("Ankara Standard Shirt reference"));
+assert.ok(shirtTrouserDressMarkup.includes("Ankara Standard Shirt — Short Sleeve reference"));
 assert.equal(
   (shirtTrouserDressMarkup.match(/Reference images show garment types only\./g) || [])
     .length,
@@ -510,11 +561,16 @@ assert.deepEqual(allEightSelection.garmentTypes, [
   "shirt", "trouser", "skirt", "long_skirt", "standard_shorts", "bum_shorts", "dress", "kaftan", "full_length_gown",
 ], "Display reordering must preserve canonical selection identity and ordering");
 const renderedCards = [...allEightStep1Markup.matchAll(/<article[^>]+data-testid="step1-garment-card-([^"]+)"[^>]*>([\s\S]*?)<\/article>/g)];
-assert.deepEqual(renderedCards.map((match) => match[1]), approvedGarmentIds);
+assert.deepEqual(renderedCards.map((match) => match[1]), expectedPresetIds);
 renderedCards.forEach((match, index) => {
-  assert.ok(match[2].includes(expectedGarmentLabels[index]));
-  assert.ok(match[2].includes(`€${approvedPrices[index].toFixed(2)}`));
+  assert.ok(match[2].includes(expectedPresetLabels[index]));
+  assert.ok(match[2].includes(`€${expectedPresetPrices[index].toFixed(2)}`));
   assert.equal(/With Rope|LONG SLEEVES|crotch|upper-thigh/.test(match[2]), false);
+  const visibleCardText = [
+    match[2].replace(/<[^>]+>/g, " "),
+    ...[...match[2].matchAll(/(?:alt|aria-label)="([^"]*)"/g)].map((attr) => attr[1]),
+  ].join(" ");
+  assert.equal(/\bkaftan\b/i.test(visibleCardText), false, "Customer-visible card text must never say Kaftan");
 });
 const additionalOnlyFabricState = {
   fabricAllocations: [
@@ -712,7 +768,7 @@ assert.ok(
 );
 assert.ok(
   !stuckMarkup.includes("border-2 border-heritage-gold") &&
-    !stuckMarkup.includes("ring-2 ring-heritage-gold/80"),
+  !stuckMarkup.includes("ring-2 ring-heritage-gold/80"),
   "The audience question uses the same thin border as the garment cards",
 );
 assert.ok(stuckMarkup.includes("Still needed to continue to Fabric."));
@@ -821,5 +877,74 @@ assert.equal(
   false,
   "A guide with no remaining items does not animate",
 );
+
+// Category group rendering verification
+const allGarmentsMarkup = renderStep({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  selectedDemographics: ["male"],
+});
+
+// 1. All 4 category group containers render in order
+const groupIds = ["shirts", "dresses", "skirts", "trousers_and_shorts"];
+let lastIndex = -1;
+for (const groupId of groupIds) {
+  const testId = `data-testid="step1-category-group-${groupId}"`;
+  const idx = allGarmentsMarkup.indexOf(testId);
+  assert.ok(idx > 0, `Category group ${groupId} container must render`);
+  assert.ok(idx > lastIndex, `Category groups must render in order: ${groupId} after previous`);
+  lastIndex = idx;
+}
+
+// 2. All 13 garment cards render exactly once
+const expectedPresetIdsAll = [
+  "shirt_short_sleeve",
+  "shirt_long_sleeve",
+  "kaftan_short_sleeve",
+  "kaftan_long_sleeve",
+  "dress_sleeveless_or_short",
+  "dress_mid_or_long",
+  "full_length_gown_sleeveless_or_short",
+  "full_length_gown_mid_or_long",
+  "skirt",
+  "long_skirt",
+  "trouser",
+  "standard_shorts",
+  "bum_shorts",
+];
+for (const presetId of expectedPresetIdsAll) {
+  const testId = `data-testid="step1-garment-card-${presetId}"`;
+  const count = (allGarmentsMarkup.match(new RegExp(testId.replace(/"/g, '\\"'), 'g')) || []).length;
+  assert.equal(count, 1, `Card ${presetId} must render exactly once`);
+}
+
+// 3. Shirts & Dresses show "Choose 1 sleeve" helper, sub-group headers, and gold-bordered family cards
+assert.ok(allGarmentsMarkup.includes("Choose 1 sleeve"), "Shirts/Dresses helper text present");
+assert.ok(allGarmentsMarkup.includes("Standard Shirt"), "Standard Shirt sub-group header");
+assert.ok(allGarmentsMarkup.includes("Long Shirt"), "Long Shirt sub-group header");
+assert.ok(allGarmentsMarkup.includes("Standard Dress"), "Standard Dress sub-group header");
+assert.ok(allGarmentsMarkup.includes("Long Dress"), "Long Dress sub-group header");
+for (const subGroupId of ["standard_shirt", "long_shirt", "standard_dress", "long_dress"]) {
+  assert.ok(
+    allGarmentsMarkup.includes(`data-testid="step1-category-subgroup-${subGroupId}"`),
+    `Sub-group family card ${subGroupId} must render with gold border container`,
+  );
+}
+assert.ok(
+  allGarmentsMarkup.includes("flex h-full flex-col gap-2.5 rounded-2xl border border-heritage-gold/40"),
+  "Sub-group family containers must stretch (flex h-full flex-col) and expand their card grid (flex-1) so buttons align horizontally across side-by-side families",
+);
+
+// 4. Selecting a preset shows live selection count pill (test with one selection)
+const shirtSelectedMarkup = renderStep({
+  selectedGarmentTypes: ["shirt"],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+});
+assert.ok(shirtSelectedMarkup.includes("1 selected"), "Selection count pill shows for Shirts group");
+
+// 5. Zero "Kaftan", "Knicker", or "Select all" strings appear
+assert.equal(allGarmentsMarkup.includes("Kaftan"), false, "Kaftan must not appear in customer-facing text");
+assert.equal(allGarmentsMarkup.includes("Knicker"), false, "Knicker must not appear");
+assert.equal(allGarmentsMarkup.includes("Select all"), false, "Select all must not appear");
 
 console.log("Garment Type Step controlled component verification passed.");

@@ -25,13 +25,24 @@ import {
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money.js";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
+  STEP_1_GARMENT_CARD_PRESETS,
+  STEP_1_GARMENT_CATEGORY_GROUPS,
   STEP_1_SELECTABLE_GARMENT_TYPES,
+  findStep1CardPresetForResolution,
   getStep1GarmentDisplayLabel,
   getStep1GarmentPlainDescription,
   getStep1SelectableGarmentTypes,
   type GarmentConstructionPricingResolution,
+  type Step1GarmentCardPresetId,
   resolveGarmentConstructionPricing,
+  resolveGarmentConstructionPricingForOptionId,
 } from "../utils/garmentConstructionPricing.js";
+
+import {
+  GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+  reconcileGarmentConstructionResolution,
+  selectStep1GarmentCardPreset,
+} from "../utils/garmentTypeStepState.js";
 import {
   STEP1_GARMENT_REFERENCE_DISCLAIMER,
   getStep1GarmentReferenceAlt,
@@ -162,8 +173,11 @@ export const Step1GarmentReferenceGallery = ({
 );
 
 export interface GarmentTypeStepCategoryPresentation {
+  presetId: Step1GarmentCardPresetId;
   garmentType: FabricGarmentType;
   label: string;
+  optionId: string;
+  referenceImageVariant: "primary" | "secondary";
   fabricUnits: 1 | 2;
   fabricCapacityUsage: string;
   selected: boolean;
@@ -185,6 +199,9 @@ export interface GarmentTypeStepPresentation {
 export interface GarmentTypeStepProps {
   selectedGarmentTypes: readonly FabricGarmentType[];
   selectedDemographics: readonly CustomDetailDemographic[];
+  selectedConstructionByGarment?: Readonly<
+    Partial<Record<FabricGarmentType, GarmentConstructionPricingResolution>>
+  >;
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   onGarmentTypesChange: (garmentTypes: FabricGarmentType[]) => void;
@@ -253,16 +270,34 @@ const getAssignmentsForGarments = (
 export const getGarmentTypeStepPresentation = ({
   selectedGarmentTypes,
   normalizedCustomDetailCatalog,
+  selectedConstructionByGarment,
 }: Pick<
   GarmentTypeStepProps,
-  "selectedGarmentTypes" | "normalizedCustomDetailCatalog"
+  | "selectedGarmentTypes"
+  | "normalizedCustomDetailCatalog"
+  | "selectedConstructionByGarment"
 >): GarmentTypeStepPresentation => {
   const selectedSet = new Set(selectedGarmentTypes);
   const canonicalSelection = CANONICAL_PHYSICAL_GARMENT_TYPES.filter((type) =>
     selectedSet.has(type),
   );
-  const constructionPricing = canonicalSelection.map((garmentType) =>
-    resolveGarmentConstructionPricing(garmentType, normalizedCustomDetailCatalog),
+  const constructionPricing = canonicalSelection.map((garmentType) => {
+    const canonicalDefault = resolveGarmentConstructionPricing(
+      garmentType,
+      normalizedCustomDetailCatalog,
+    );
+    const saved = selectedConstructionByGarment?.[garmentType];
+    return (
+      reconcileGarmentConstructionResolution(
+        saved,
+        canonicalDefault,
+        normalizedCustomDetailCatalog,
+        { allowLengthSwitch: true },
+      ) || canonicalDefault
+    );
+  });
+  const constructionByGarmentMap = new Map(
+    constructionPricing.map((resolution) => [resolution.garmentType, resolution]),
   );
   const step1SelectableSelection = getStep1SelectableGarmentTypes(
     canonicalSelection,
@@ -272,18 +307,33 @@ export const getGarmentTypeStepPresentation = ({
   );
 
   return {
-    categories: STEP_1_SELECTABLE_GARMENT_TYPES.map((garmentType) => {
-      const fabricUnits = createStyleBaseGarmentSpec(garmentType).fabricUnits;
+    categories: STEP_1_GARMENT_CARD_PRESETS.map((preset) => {
+      const fabricUnits = createStyleBaseGarmentSpec(preset.garmentType).fabricUnits;
+      const activeResolution = selectedSet.has(preset.garmentType)
+        ? constructionByGarmentMap.get(preset.garmentType) || null
+        : null;
+      const activePreset = activeResolution
+        ? findStep1CardPresetForResolution(preset.garmentType, activeResolution)
+        : null;
+      const selected = activePreset?.id === preset.id;
+      const cardConstructionPricing =
+        selected && activeResolution
+          ? activeResolution
+          : resolveGarmentConstructionPricingForOptionId(
+              preset.garmentType,
+              preset.optionId,
+              normalizedCustomDetailCatalog,
+            );
       return {
-        garmentType,
-        label: getGarmentTypeStepLabel(garmentType),
+        presetId: preset.id,
+        garmentType: preset.garmentType,
+        label: preset.label,
+        optionId: preset.optionId,
+        referenceImageVariant: preset.referenceImageVariant,
         fabricUnits,
         fabricCapacityUsage: formatGarmentFabricCapacityUsage(fabricUnits),
-        selected: selectedSet.has(garmentType),
-        constructionPricing:
-          constructionPricing.find(
-            (resolution) => resolution.garmentType === garmentType,
-          ) || null,
+        selected,
+        constructionPricing: cardConstructionPricing,
       };
     }),
     selectedGarmentTypes: canonicalSelection,
@@ -308,6 +358,7 @@ export const getGarmentTypeStepPresentation = ({
 export const GarmentTypeStep = ({
   selectedGarmentTypes,
   selectedDemographics,
+  selectedConstructionByGarment,
   selectedFabricQuantity = 0,
   normalizedCustomDetailCatalog,
   onGarmentTypesChange,
@@ -322,8 +373,10 @@ export const GarmentTypeStep = ({
   lengthSwitchNotes = {},
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
+  void STEP_1_SELECTABLE_GARMENT_TYPES;
   const presentation = getGarmentTypeStepPresentation({
     selectedGarmentTypes,
+    selectedConstructionByGarment,
     normalizedCustomDetailCatalog,
   });
   const hasUnresolvedConstructionPricing = presentation.constructionPricing.some(
@@ -332,18 +385,187 @@ export const GarmentTypeStep = ({
   const garmentCount = presentation.garmentCount;
   const fabricQuantity = presentation.fabricQuantity;
 
-  const toggleGarment = (garmentType: FabricGarmentType) => {
-    const nextGarmentTypes = updateGarmentTypeSelection(
-      presentation.selectedGarmentTypes,
-      garmentType,
-      !presentation.selectedGarmentTypes.includes(garmentType),
+  // Group the 13 categories from STEP_1_GARMENT_CARD_PRESETS into 4 category groups
+  const categoryGroups = STEP_1_GARMENT_CATEGORY_GROUPS.map((group) => {
+    const matchingCategories = presentation.categories.filter((cat) =>
+      group.presetIds.includes(cat.presetId),
     );
-    const nextPresentation = getGarmentTypeStepPresentation({
-      selectedGarmentTypes: nextGarmentTypes,
+    return {
+      ...group,
+      categories: matchingCategories,
+      selectedCount: matchingCategories.filter((c) => c.selected).length,
+    };
+  });
+
+  // Render a single preset card with all required attributes
+  const renderPresetCard = (
+    category: typeof presentation.categories[0],
+    globalIndex: number,
+  ) => {
+    const price = category.constructionPricing;
+    const isResolved = price?.status === "resolved";
+    const buttonId = `${idPrefix}-${category.presetId}`;
+    const primaryReferenceImage = isStep1GarmentReferenceType(category.garmentType)
+      ? getStep1GarmentReferenceImage(category.garmentType)
+      : null;
+    const secondaryReferenceImage =
+      category.referenceImageVariant === "secondary" &&
+      isStep1DualImageGarmentType(category.garmentType)
+        ? getStep1GarmentSecondaryReferenceImage(category.garmentType)
+        : null;
+    const referenceImage = secondaryReferenceImage ?? primaryReferenceImage;
+    const referenceAlt = getStep1GarmentReferenceAlt(category.label);
+    const plainDescription = getStep1GarmentPlainDescription(category.garmentType);
+    return (
+      <article
+        key={category.presetId}
+        data-testid={`step1-garment-card-${category.presetId}`}
+        data-step1-garment-type={category.garmentType}
+        data-step1-preset-id={category.presetId}
+        onClick={(event) => {
+          if (!isInteractiveCardTarget(event.target)) {
+            togglePreset(category.presetId);
+          }
+        }}
+        className={`flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-md ${
+          category.selected
+            ? "border-heritage-green shadow-sm ring-2 ring-heritage-green/25"
+            : "border-heritage-gold/20 bg-white"
+        } ${
+          category.selected && !isResolved
+            ? "border-amber-500 ring-amber-400/40"
+            : ""
+        }`}
+      >
+        <Step1GarmentReferencePhoto
+          key={referenceImage?.src ?? "missing"}
+          src={referenceImage?.src ?? null}
+          alt={referenceAlt}
+          eager={globalIndex < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
+        />
+        <div
+          className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
+            category.selected && !isResolved
+              ? "bg-amber-50"
+              : category.selected
+              ? "bg-heritage-cream/55"
+              : "bg-white"
+          }`}
+        >
+          <div className="mb-2.5 min-w-0">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
+              <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
+                {category.label}
+              </h3>
+              {isResolved && (
+                <p className="shrink-0 font-mono text-sm font-bold text-heritage-green">
+                  {formatGarmentTypeStepEuro(price.totalPrice)}
+                </p>
+              )}
+            </div>
+            {plainDescription ? (
+              <p
+                data-testid={`step1-garment-description-${category.garmentType}`}
+                className="mt-1 break-words text-[11px] leading-snug text-heritage-ink/65"
+              >
+                {plainDescription}
+              </p>
+            ) : null}
+            <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
+              {category.fabricCapacityUsage}
+            </p>
+            {category.selected && lengthSwitchNotes[category.garmentType] && (
+              <p
+                data-garment-type-length-switch-note={category.garmentType}
+                className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
+              >
+                {lengthSwitchNotes[category.garmentType]}
+              </p>
+            )}
+            {category.selected && !isResolved && (
+              <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
+                <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
+                <span className="min-w-0 break-words">Construction pricing needs review.</span>
+              </p>
+            )}
+          </div>
+          <button
+            id={buttonId}
+            type="button"
+            aria-pressed={category.selected}
+            aria-label={
+              category.selected
+                ? `Deselect ${category.label}`
+                : `Select ${category.label}`
+            }
+            data-testid={`step1-garment-select-${category.presetId}`}
+            data-hand-guide-target={
+              !presentation.categories.some((item) => item.selected) && globalIndex === 0
+                ? "garment-type-select"
+                : undefined
+            }
+            onClick={() => togglePreset(category.presetId)}
+            className={`${STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS} ${
+              category.selected
+                ? "group justify-between gap-0 bg-heritage-green px-0 text-heritage-cream hover:bg-heritage-forest"
+                : `${STEP1_GARMENT_SELECT_ATTENTION_CLASS} border border-heritage-green bg-heritage-cream text-heritage-green hover:animate-none hover:-translate-y-0.5 hover:border-heritage-forest hover:bg-white hover:shadow-md`
+            }`}
+          >
+            {category.selected ? (
+              <>
+                <span className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2">
+                  <Check aria-hidden="true" size={14} />
+                  SELECTED
+                </span>
+                <span
+                  aria-hidden="true"
+                  data-step1-deselect-cue="true"
+                  className="inline-flex size-11 shrink-0 items-center justify-center border-l border-white/20 text-heritage-cream/90 group-hover:text-red-200"
+                >
+                  <X size={16} />
+                </span>
+              </>
+            ) : (
+              "SELECT"
+            )}
+          </button>
+        </div>
+      </article>
+    );
+  };
+
+  const togglePreset = (presetId: Step1GarmentCardPresetId) => {
+    const currentConstructionByGarment = Object.fromEntries(
+      presentation.constructionPricing.map((resolution) => [
+        resolution.garmentType,
+        resolution,
+      ]),
+    );
+    const nextResult = selectStep1GarmentCardPreset({
+      currentSelection: {
+        garmentTypes: presentation.selectedGarmentTypes as typeof CANONICAL_PHYSICAL_GARMENT_TYPES[number][],
+        audienceSelection: {
+          schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+          demographics: [...selectedDemographics],
+        },
+        demographic:
+          selectedDemographics.length === 0
+            ? null
+            : selectedDemographics.length === 1
+              ? selectedDemographics[0]
+              : "unisex",
+        constructionByGarment: currentConstructionByGarment,
+      },
+      presetId,
       normalizedCustomDetailCatalog,
     });
+    const nextGarmentTypes = nextResult.selection.garmentTypes;
+    const nextResolutions = nextGarmentTypes.flatMap((garmentType) => {
+      const resolution = nextResult.selection.constructionByGarment[garmentType];
+      return resolution ? [resolution] : [];
+    });
     onGarmentTypesChange(nextGarmentTypes);
-    onConstructionDefaultsChange(nextPresentation.constructionPricing);
+    onConstructionDefaultsChange(nextResolutions);
   };
 
   const handleDemographicChange = (
@@ -529,163 +751,68 @@ export const GarmentTypeStep = ({
           <div className="mt-4 w-full shrink-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:max-w-xs lg:justify-self-end xl:max-w-xs">
             {fabricQuantitySummary}
           </div>
-          <p className="mt-4 text-xs leading-relaxed text-heritage-ink/55 lg:col-span-full">
+          <p className="mt-4 text-xs leading-relaxed text-heritage-ink/55 font-bold lg:col-span-full">
             {STEP1_GARMENT_REFERENCE_DISCLAIMER}
           </p>
-          <div className="mt-4 grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 xl:grid-cols-3 lg:col-span-full">
-            {presentation.categories.map((category, index) => {
-              const price = category.constructionPricing;
-              const isResolved = price?.status === "resolved";
-              const buttonId = `${idPrefix}-${category.garmentType}`;
-              const referenceImage = isStep1GarmentReferenceType(
-                category.garmentType,
-              )
-                ? getStep1GarmentReferenceImage(category.garmentType)
-                : null;
-              const dualImageGarmentType = isStep1DualImageGarmentType(
-                category.garmentType,
-              )
-                ? category.garmentType
-                : null;
-              const secondaryReferenceImage = dualImageGarmentType
-                ? getStep1GarmentSecondaryReferenceImage(dualImageGarmentType)
-                : null;
-              const referenceAlt = getStep1GarmentReferenceAlt(category.label);
-              const plainDescription = getStep1GarmentPlainDescription(
-                category.garmentType,
-              );
-              return (
-                <article
-                  key={category.garmentType}
-                  data-testid={`step1-garment-card-${category.garmentType}`}
-                  onClick={(event) => {
-                    if (!isInteractiveCardTarget(event.target)) {
-                      toggleGarment(category.garmentType);
-                    }
-                  }}
-                  className={`flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-md ${
-                    category.selected
-                      ? "border-heritage-green shadow-sm ring-2 ring-heritage-green/25"
-                      : "border-heritage-gold/20 bg-white"
-                  } ${
-                    category.selected && !isResolved
-                      ? "border-amber-500 ring-amber-400/40"
-                      : ""
-                  }`}
-                >
-                  {dualImageGarmentType ? (
-                    <Step1GarmentReferenceGallery
-                      primary={
-                        referenceImage
-                          ? { src: referenceImage.src, alt: referenceAlt }
-                          : null
-                      }
-                      secondary={
-                        secondaryReferenceImage
-                          ? {
-                              src: secondaryReferenceImage.src,
-                              alt: `${referenceAlt}, alternate view`,
-                            }
-                          : null
-                      }
-                      garmentLabel={category.label}
-                      eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
-                    />
-                  ) : (
-                    <Step1GarmentReferencePhoto
-                      key={referenceImage?.src ?? "missing"}
-                      src={referenceImage?.src ?? null}
-                      alt={referenceAlt}
-                      eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
-                    />
-                  )}
-                  <div
-                    className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
-                      category.selected && !isResolved
-                        ? "bg-amber-50"
-                        : category.selected
-                          ? "bg-heritage-cream/55"
-                          : "bg-white"
-                    }`}
-                  >
-                    <div className="mb-2.5 min-w-0">
-                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
-                        <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
-                          {category.label}
-                        </h3>
-                        {isResolved && (
-                          <p className="shrink-0 font-mono text-sm font-bold text-heritage-green">
-                            {formatGarmentTypeStepEuro(price.totalPrice)}
-                          </p>
-                        )}
-                      </div>
-                      {plainDescription ? (
-                        <p
-                          data-testid={`step1-garment-description-${category.garmentType}`}
-                          className="mt-1 break-words text-[11px] leading-snug text-heritage-ink/65"
-                        >
-                          {plainDescription}
-                        </p>
-                      ) : null}
-                      <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
-                        {category.fabricCapacityUsage}
-                      </p>
-                      {category.selected && lengthSwitchNotes[category.garmentType] && (
-                        <p
-                          data-garment-type-length-switch-note={category.garmentType}
-                          className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
-                        >
-                          {lengthSwitchNotes[category.garmentType]}
-                        </p>
-                      )}
-                      {category.selected && !isResolved && (
-                        <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
-                          <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
-                          <span className="min-w-0 break-words">
-                            Construction pricing needs review.
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      id={buttonId}
-                      type="button"
-                      aria-pressed={category.selected}
-                      aria-label={
-                        category.selected
-                          ? `Deselect ${category.label}`
-                          : `Select ${category.label}`
-                      }
-                      data-testid={`step1-garment-select-${category.garmentType}`}
-                      onClick={() => toggleGarment(category.garmentType)}
-                      className={`${STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS} ${
-                        category.selected
-                          ? "group justify-between gap-0 bg-heritage-green px-0 text-heritage-cream hover:bg-heritage-forest"
-                          : `${STEP1_GARMENT_SELECT_ATTENTION_CLASS} border border-heritage-green bg-heritage-cream text-heritage-green hover:animate-none hover:-translate-y-0.5 hover:border-heritage-forest hover:bg-white hover:shadow-md`
-                      }`}
-                    >
-                      {category.selected ? (
-                        <>
-                          <span className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2">
-                            <Check aria-hidden="true" size={14} />
-                            SELECTED
-                          </span>
-                          <span
-                            aria-hidden="true"
-                            data-step1-deselect-cue="true"
-                            className="inline-flex size-11 shrink-0 items-center justify-center border-l border-white/20 text-heritage-cream/90 group-hover:text-red-200"
-                          >
-                            <X size={16} />
-                          </span>
-                        </>
-                      ) : (
-                        "SELECT"
-                      )}
-                    </button>
+          <div className="mt-4 space-y-5 lg:col-span-full">
+            {categoryGroups.map((group) => (
+              <div
+                key={group.groupId}
+                data-testid={`step1-category-group-${group.groupId}`}
+                data-step1-category-group={group.groupId}
+                className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/25 p-3.5 sm:p-4"
+              >
+                <div className="mb-3 flex min-w-0 items-start justify-between gap-2">
+                  <div>
+                    <h4 className="font-bold text-heritage-green">{group.title}</h4>
+                    <p className="mt-0.5 text-xs text-heritage-ink/60">{group.helper}</p>
                   </div>
-                </article>
-              );
-            })}
+                  {group.selectedCount > 0 && (
+                    <span
+                      data-testid={`step1-category-group-count-${group.groupId}`}
+                      className="shrink-0 rounded-full bg-heritage-gold/15 px-2 py-0.5 text-xs font-semibold text-heritage-green"
+                    >
+                      {group.selectedCount} selected
+                    </span>
+                  )}
+                </div>
+                {group.subGroups ? (
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {group.subGroups.map((subGroup) => (
+                      <div
+                        key={subGroup.subGroupId}
+                        data-testid={`step1-category-subgroup-${subGroup.subGroupId}`}
+                        className="flex h-full flex-col gap-2.5 rounded-2xl border border-heritage-gold/40 bg-white/55 p-3 sm:p-3.5"
+                      >
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <h5 className="font-semibold text-heritage-ink">{subGroup.title}</h5>
+                          <span className="shrink-0 rounded bg-heritage-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-heritage-green">
+                            {subGroup.helper}
+                          </span>
+                        </div>
+                        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1">
+                          {subGroup.presetIds.map((presetId) => {
+                            const category = presentation.categories.find((c) => c.presetId === presetId);
+                            if (!category) return null;
+                            const globalIndex = presentation.categories.findIndex((c) => c.presetId === presetId);
+                            return renderPresetCard(category, globalIndex);
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 xl:grid-cols-3">
+                    {group.presetIds.map((presetId) => {
+                      const category = presentation.categories.find((c) => c.presetId === presetId);
+                      if (!category) return null;
+                      const globalIndex = presentation.categories.findIndex((c) => c.presetId === presetId);
+                      return renderPresetCard(category, globalIndex);
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </fieldset>
 
@@ -717,7 +844,7 @@ export const GarmentTypeStep = ({
               audienceNeeded ? " clear-both" : ""
             }`}
           >
-            {DEMOGRAPHIC_OPTIONS.map((option) => {
+            {DEMOGRAPHIC_OPTIONS.map((option, idx) => {
               const inputId = `${idPrefix}-demographic-${option.value}`;
               const selected = selectedDemographics.includes(option.value);
               return (
@@ -739,6 +866,11 @@ export const GarmentTypeStep = ({
                       handleDemographicChange(option.value, event)
                     }
                     className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
+                    data-hand-guide-target={
+                      selectedDemographics.length === 0 && idx === 0
+                        ? "garment-type-audience"
+                        : undefined
+                    }
                   />
                   <span className="min-w-0">
                     <span className="block break-words font-bold text-heritage-green">
@@ -795,6 +927,12 @@ export const GarmentTypeStep = ({
                     FabricGarmentType,
                     "other"
                   >;
+                  const activePreset = findStep1CardPresetForResolution(
+                    garmentType,
+                    pricing,
+                  );
+                  const summaryLabel =
+                    activePreset?.label ?? getGarmentTypeStepLabel(garmentType);
                   const plainDescription =
                     getStep1GarmentPlainDescription(garmentType);
                   return (
@@ -804,7 +942,7 @@ export const GarmentTypeStep = ({
                     >
                       <div className="min-w-0 flex-1">
                         <p className="break-words">
-                          {getGarmentTypeStepLabel(garmentType)}
+                          {summaryLabel}
                         </p>
                         {plainDescription ? (
                           <p

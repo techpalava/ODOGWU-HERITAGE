@@ -52,7 +52,7 @@ for (const orderType of ["Community", "Group Organizer", "Group Member"]) {
       physicalGarmentCount: 13,
     }),
     null,
-    `${orderType} does not display the individual band`,
+    `${orderType} with 13 garments does not display the individual band`,
   );
   assert.equal(
     individualLagosToEindhovenChargeCents({
@@ -63,7 +63,7 @@ for (const orderType of ["Community", "Group Organizer", "Group Member"]) {
   );
 }
 
-for (const batchType of ["community", "personalized", "actual"]) {
+for (const batchType of ["community", "actual"]) {
   assert.equal(
     resolveIndividualInboundShippingDisplay({
       batchType,
@@ -72,6 +72,41 @@ for (const batchType of ["community", "personalized", "actual"]) {
     null,
     `${batchType} does not display the individual band`,
   );
+}
+
+for (const count of [1, 3, 9]) {
+  for (const input of [
+    { orderType: "Group Organizer", physicalGarmentCount: count },
+    { orderType: "Group Member", physicalGarmentCount: count },
+    { batchType: "personalized", physicalGarmentCount: count },
+  ]) {
+    const display = resolveIndividualInboundShippingDisplay(input);
+    assert.ok(display, `Private Batch with ${count} garments charges €131.25`);
+    assert.equal(display.amountCents, 13125);
+    assert.equal(display.priceEur, 131.25);
+    assert.equal(display.blockCount, 1);
+    assert.equal(display.reason, "private_batch_below_minimum");
+    assert.equal(
+      formatIndividualShippingNote(display),
+      "Private Batch orders require at least 10 garments to waive the €131.25 Lagos → Eindhoven shipping fee. Add more garments to reach 10, or continue with €131.25 shipping included.",
+    );
+    assert.equal(individualLagosToEindhovenChargeCents(input), 13125);
+  }
+}
+
+for (const count of [10, 12]) {
+  for (const input of [
+    { orderType: "Group Organizer", physicalGarmentCount: count },
+    { orderType: "Group Member", physicalGarmentCount: count },
+    { batchType: "personalized", physicalGarmentCount: count },
+  ]) {
+    assert.equal(
+      resolveIndividualInboundShippingDisplay(input),
+      null,
+      `Private Batch with ${count} garments waives the Lagos shipping fee`,
+    );
+    assert.equal(individualLagosToEindhovenChargeCents(input), null);
+  }
 }
 
 assert.equal(

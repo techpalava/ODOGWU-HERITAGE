@@ -3,6 +3,27 @@ import {
   isCustomerAvailableCustomDetailSelectionGroup,
   resolveShowAdditionalClothesCosts,
 } from "../config/GarmentDetailsConfig";
+import { resolveShowStudioTraditionalAccessories } from "./decorativePricing";
+
+/**
+ * Strips legacy Traditional Accessories from an active, unsubmitted Design
+ * Studio draft while Traditional Accessories are separated out of the studio.
+ */
+export const clearHiddenStudioTraditionalAccessories = (
+  designSelections: DesignSelections,
+  showTraditionalAccessories?: boolean,
+): DesignSelections => {
+  if (resolveShowStudioTraditionalAccessories(showTraditionalAccessories)) {
+    return designSelections;
+  }
+  if ((designSelections.accessories?.length ?? 0) === 0) {
+    return designSelections;
+  }
+  return {
+    ...designSelections,
+    accessories: [],
+  };
+};
 
 /**
  * Projects persisted compatibility fields into the active customer journey.
@@ -11,27 +32,33 @@ import {
 export const projectActiveCustomerDesignSelections = ({
   designSelections,
   showAdditionalClothesCosts,
+  showTraditionalAccessories,
 }: {
   designSelections: DesignSelections;
   showAdditionalClothesCosts?: boolean;
+  showTraditionalAccessories?: boolean;
 }): DesignSelections => {
+  const accessoriesCleared = clearHiddenStudioTraditionalAccessories(
+    designSelections,
+    showTraditionalAccessories,
+  );
   const includeAllAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
     showAdditionalClothesCosts,
   );
-  if (includeAllAdditionalClothesCosts) return designSelections;
+  if (includeAllAdditionalClothesCosts) return accessoriesCleared;
 
   const availabilityOptions = { showAdditionalClothesCosts };
-  const projectedCustomDetails = designSelections.customDetails
+  const projectedCustomDetails = accessoriesCleared.customDetails
     ? Object.fromEntries(
-        Object.entries(designSelections.customDetails).filter(([group]) =>
-          isCustomerAvailableCustomDetailSelectionGroup(
-            group,
-            availabilityOptions,
-          ),
+      Object.entries(accessoriesCleared.customDetails).filter(([group]) =>
+        isCustomerAvailableCustomDetailSelectionGroup(
+          group,
+          availabilityOptions,
         ),
-      ) as NonNullable<DesignSelections["customDetails"]>
+      ),
+    ) as NonNullable<DesignSelections["customDetails"]>
     : undefined;
-  const projectedSnapshots = designSelections.customDetailSnapshots?.filter(
+  const projectedSnapshots = accessoriesCleared.customDetailSnapshots?.filter(
     (snapshot) =>
       isCustomerAvailableCustomDetailSelectionGroup(
         snapshot.selectionGroup,
@@ -44,14 +71,14 @@ export const projectActiveCustomerDesignSelections = ({
   );
 
   return {
-    ...designSelections,
-    ...(designSelections.hasLining === true && !dressAdditionalVisible
+    ...accessoriesCleared,
+    ...(accessoriesCleared.hasLining === true && !dressAdditionalVisible
       ? { hasLining: false }
       : {}),
-    ...(designSelections.customDetails
+    ...(accessoriesCleared.customDetails
       ? { customDetails: projectedCustomDetails }
       : {}),
-    ...(designSelections.customDetailSnapshots
+    ...(accessoriesCleared.customDetailSnapshots
       ? { customDetailSnapshots: projectedSnapshots }
       : {}),
   };

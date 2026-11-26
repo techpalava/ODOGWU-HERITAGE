@@ -21,7 +21,7 @@ export function DesignStyleSleeveBadge({
   return (
     <span
       data-testid="design-style-sleeve-badge"
-      className={`pointer-events-none rounded-full border border-heritage-green/20 bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-heritage-green shadow-sm backdrop-blur-sm ${className}`}
+      className={`pointer-events-none inline-flex items-center rounded-full border border-heritage-green/20 bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-heritage-green shadow-sm backdrop-blur-sm ${className}`}
     >
       {label}
     </span>

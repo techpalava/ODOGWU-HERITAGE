@@ -11,7 +11,7 @@ export type InlineOptionalShortsGarmentType = Extract<
 export const INLINE_OPTIONAL_SHORTS_LABELS: Readonly<
   Record<InlineOptionalShortsGarmentType, string>
 > = {
-  standard_shorts: "Standard Knicker Shorts",
+  standard_shorts: "Standard Nikka Shorts",
   bum_shorts: "Standard Bum Shorts",
 };
 
@@ -33,8 +33,10 @@ const RAW_GARMENT_LABEL_ALIASES: Readonly<Record<string, string>> = {
   full_length_gown: "Full-Length Gown",
   agbada: "Long Shirt (Agbada)",
   nikka: INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
+  knicker: INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
   "knicker / standard shorts": INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
   "nikka / standard shorts": INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
+  "standard knicker shorts": INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
   "standard nikka shorts": INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
   "bum shorts": INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts,
 };
@@ -52,15 +54,17 @@ export const formatCustomDetailsGarmentLabel = (label: string): string => {
   return formatSavedNikkaDisplayText(formatCustomerVisibleKaftanText(label));
 };
 
-/** Normalizes legacy saved "Nikka" strings inside summaries and saved order text. */
+/** Normalizes legacy saved "Knicker" / "Nikka" strings inside summaries and saved order text. */
 export const formatSavedNikkaDisplayText = (text: string): string =>
   text
-    .replace(/\bNikka\s*\/\s*Standard Shorts\b/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
-    .replace(/\bKnicker\s*\/\s*Standard Shorts\b/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
-    .replace(/\bStandard Nikka Shorts\b/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
-    .replace(/\bNikka\/Standard Shorts Fastening\b/gi, "Knicker/Standard Shorts Fastening")
-    .replace(/\bNikka Pockets\b/gi, "Knicker Pockets")
-    .replace(/\bNikka\b/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts);
+    .replace(/\b(?:Knicker|Nikka)\/Standard Shorts Fastening\b/gi, "Nikka/Standard Shorts Fastening")
+    .replace(/\b(?:Knicker|Nikka) Pockets\b/gi, "Nikka Pockets")
+    .replace(/\b(?:Knicker|Nikka):(?=\s*native-style shorts\b)/gi, "Nikka:")
+    .replace(/\bNikka\s*\/\s*Standard Shorts\b(?!\s+Fastening\b)/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/\bKnicker\s*\/\s*Standard Shorts\b(?!\s+Fastening\b)/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/\bStandard (?:Knicker|Nikka) Shorts\b/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/\bKnicker\b/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts)
+    .replace(/(?<!Standard )\bNikka\b(?!\s+Shorts\b|\s+Pockets\b|\/Standard Shorts Fastening\b|:\s*native-style shorts\b)/gi, INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts);
 
 export const getCustomDetailsGarmentLabel = (garmentType: FabricGarmentType): string =>
   formatCustomDetailsGarmentLabel(getFabricGarmentLabel(garmentType));

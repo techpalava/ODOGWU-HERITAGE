@@ -117,6 +117,7 @@ const candidate = (
       high_risk: { shared: {}, byGarmentKey: {} },
       critical_risk: { shared: {}, byGarmentKey: {} },
       sample_cloth: { shared: {}, byGarmentKey: {} },
+      onsite_physical: { shared: {}, byGarmentKey: {} },
     },
     derived: { shared: {}, byGarmentKey: {} },
     blueprintVersion: "measurement-v1",
@@ -125,7 +126,7 @@ const candidate = (
     calculationStatus: "complete",
     diagnostics: [],
     invalidInputKeys: [],
-    invalidInputKeysByRoute: { low_risk: [], medium_risk: [], high_risk: [], critical_risk: [], sample_cloth: [] },
+    invalidInputKeysByRoute: { low_risk: [], medium_risk: [], high_risk: [], critical_risk: [], sample_cloth: [], onsite_physical: [] },
   },
   shipping: {
     state: {

@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   applyLegacyStyleFabricCapacityConfig,
   createStyleBaseGarmentSpec,
+  STYLE_BASE_GARMENT_TYPES,
 } from "./src/config/StyleFabricCapacityConfig";
 import type { StyleCategory } from "./src/types";
 import {
   createLegacyDesignStyleMigrationDraft,
   parseAuthoritativeDesignStyleRecord,
   prepareAuthoritativeDesignStyleRecord,
+  projectDesignStyleRecordForAdmin,
   projectPublishedDesignStyleRecord,
   type AuthoritativeDesignStyleRecordV1,
   type DesignStyleLifecycle,
 } from "./src/utils/designStyleAuthority";
+import { resolveStyleApplicability } from "./src/utils/designStudioFutureDesignStyle";
 
 const baseStyle = (overrides: Partial<StyleCategory> = {}): StyleCategory => ({
   id: "authority-style-1",
@@ -342,6 +346,136 @@ if (historicalThreeFlags.status === "valid") {
   assert.equal(historicalProjection?.includedDesignFeatures.hasNet, false);
   assert.equal(historicalProjection?.hasLining, false);
   assert.equal(historicalProjection?.hasNet, false);
+}
+
+// Zero-drift unchanged round-trip from Admin projection back to authoritative record
+const adminProjected = projectDesignStyleRecordForAdmin(published);
+const unchangedRoundTrip = prepareAuthoritativeDesignStyleRecord({
+  style: adminProjected,
+  lifecycle: adminProjected.designStyleAuthority.lifecycle,
+  displayOrder: adminProjected.designStyleAuthority.displayOrder,
+  referenceComposition: adminProjected.designStyleAuthority.referenceComposition,
+  currentRecord: published,
+});
+assert.deepEqual(unchangedRoundTrip.presentation, published.presentation);
+assert.deepEqual(unchangedRoundTrip.eligibility, published.eligibility);
+assert.equal(
+  unchangedRoundTrip.eligibilityRevision,
+  published.eligibilityRevision,
+);
+assert.equal(
+  unchangedRoundTrip.eligibilityFingerprint,
+  published.eligibilityFingerprint,
+);
+assert.deepEqual(
+  unchangedRoundTrip.referenceComposition,
+  published.referenceComposition,
+);
+assert.equal(unchangedRoundTrip.publicRevision, published.publicRevision + 1);
+
+// Adaptable style with empty demographics omits empty array in projection so customer
+// resolveStyleApplicability does not fail closed to exact_only.
+const adaptableNoDemographicsRecord = createRecord(
+  "published",
+  null,
+  baseStyle({
+    styleApplicability: {
+      mode: "adaptable",
+      garmentTypes: ["dress"],
+    },
+  }),
+);
+assert.deepEqual(adaptableNoDemographicsRecord.eligibility.adaptability, {
+  mode: "adaptable",
+  garmentTypes: ["dress"],
+  demographics: [],
+});
+const adaptableNoDemographicsProjection = projectPublishedDesignStyleRecord(
+  adaptableNoDemographicsRecord,
+);
+assert.ok(adaptableNoDemographicsProjection);
+assert.equal(
+  "demographics" in (adaptableNoDemographicsProjection.styleApplicability || {}),
+  false,
+);
+assert.deepEqual(
+  resolveStyleApplicability(adaptableNoDemographicsProjection),
+  {
+    mode: "adaptable",
+    garmentTypes: ["dress"],
+    demographics: null,
+  },
+);
+const adaptableRePrepared = createRecord(
+  "published",
+  adaptableNoDemographicsRecord,
+  adaptableNoDemographicsProjection,
+);
+assert.deepEqual(
+  adaptableRePrepared.eligibility,
+  adaptableNoDemographicsRecord.eligibility,
+);
+assert.equal(
+  adaptableRePrepared.eligibilityFingerprint,
+  adaptableNoDemographicsRecord.eligibilityFingerprint,
+);
+assert.equal(
+  adaptableRePrepared.eligibilityRevision,
+  adaptableNoDemographicsRecord.eligibilityRevision,
+);
+
+const longSkirtRecord = prepareAuthoritativeDesignStyleRecord({
+  style: baseStyle({
+    id: "authority-style-long-skirt",
+    fabricCapacityComposition: [createStyleBaseGarmentSpec("long_skirt")],
+    customDetailConfig: {
+      representedGenders: ["female"],
+      featuresMaleAndFemale: false,
+      supportedGarmentGroups: ["skirt"],
+      requiredSelectionGroups: ["skirt_length"],
+      enabled: true,
+    },
+    styleApplicability: {
+      mode: "adaptable",
+      garmentTypes: ["long_skirt"],
+    },
+  }),
+  lifecycle: "published",
+  displayOrder: 4,
+  referenceComposition: {
+    status: "known",
+    garmentTypes: ["long_skirt"],
+  },
+  currentRecord: null,
+});
+assert.equal(
+  parseAuthoritativeDesignStyleRecord(longSkirtRecord.id, longSkirtRecord).status,
+  "valid",
+);
+assert.deepEqual(longSkirtRecord.eligibility.garmentTypes, ["long_skirt"]);
+assert.deepEqual(longSkirtRecord.eligibility.adaptability.garmentTypes, [
+  "long_skirt",
+]);
+assert.deepEqual(longSkirtRecord.referenceComposition, {
+  status: "known",
+  garmentTypes: ["long_skirt"],
+});
+
+const firestoreRulesSource = readFileSync(
+  new URL("./firestore.rules", import.meta.url),
+  "utf8",
+);
+const canonicalGarmentTypes = STYLE_BASE_GARMENT_TYPES.filter(
+  (garmentType) => garmentType !== "other",
+);
+const garmentTypeAllowLists = Array.from(
+  firestoreRulesSource.matchAll(/garmentTypes\.hasOnly\(\[([^\]]+)\]\)/g),
+  (match) => Array.from(match[1].matchAll(/"([^"]+)"/g), (item) => item[1]),
+);
+assert.equal(garmentTypeAllowLists.length, 3);
+for (const allowList of garmentTypeAllowLists) {
+  assert.deepEqual([...allowList].sort(), [...canonicalGarmentTypes].sort());
+  assert.equal(allowList.includes("long_skirt"), true);
 }
 
 console.log(

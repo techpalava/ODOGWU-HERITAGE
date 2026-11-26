@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { CustomDetailOption, Customer, 
   MasterOrder,
   CustomGroup,
+  DesignStyleCategory,
   Fabric,
   StyleCategory,
   Showpiece,
@@ -37,6 +38,7 @@ import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 import { guestUploadedDesignOwnershipContinuity } from "../services/guestUploadedDesignOwnershipContinuity";
 import { DesignStyleAuthorityService } from "../services/designStyleAuthorityService";
+import { DesignStyleCategoryService } from "../services/designStyleCategoryService";
 import type { FabricCatalogueLoadState } from "../utils/fabricCatalogueNotice";
 import type { StylesLoadState } from "../utils/stylesCatalogueLoadState";
 import {
@@ -67,6 +69,7 @@ export interface AppState {
   activeTab:
     | "home"
     | "design"
+    | "accessories"
     | "dashboard"
     | "about"
     | "gallery"
@@ -79,6 +82,7 @@ export interface AppState {
     tab:
       | "home"
       | "design"
+      | "accessories"
       | "dashboard"
       | "about"
       | "gallery"
@@ -203,6 +207,7 @@ export interface AppState {
   setStyles: (
     styles: StyleCategory[] | ((prev: StyleCategory[]) => StyleCategory[]),
   ) => Promise<void>;
+  designStyleCategories: DesignStyleCategory[];
   showpieces: Showpiece[];
   setShowpieces: (
     showpieces: Showpiece[] | ((prev: Showpiece[]) => Showpiece[]),
@@ -398,6 +403,11 @@ export const useAppStore = create<AppState>((set, get) => {
   activeTab:
     (typeof window !== "undefined" &&
       (legalPageTabFromPath(window.location.pathname) ||
+        (window.location.hash.toLowerCase() === "#accessories" ||
+        window.location.pathname.replace(/\/+$/, "").toLowerCase() ===
+          "/accessories"
+          ? "accessories"
+          : null) ||
         (sessionStorage.getItem("asml_active_tab") as any))) ||
     "home",
   setActiveTab: (tab) => {
@@ -857,6 +867,7 @@ export const useAppStore = create<AppState>((set, get) => {
   },
 
   referenceData: [],
+  designStyleCategories: [],
   setReferenceData: (data) => {
     const newData =
       typeof data === "function" ? data(get().referenceData) : data;
@@ -1129,6 +1140,17 @@ export const useAppStore = create<AppState>((set, get) => {
         StorageService.subscribeToCollection<ReferenceDataGroup>("reference_data", (data) => {
           set({ referenceData: data });
         })
+      );
+
+      storeUnsubs.push(
+        DesignStyleCategoryService.subscribe(
+          (categories) => {
+            set({ designStyleCategories: [...categories] });
+          },
+          (error) => {
+            console.error("Error subscribing to design style categories:", error);
+          },
+        ),
       );
 
       armBusinessSettingsLoadFallback(requestId);

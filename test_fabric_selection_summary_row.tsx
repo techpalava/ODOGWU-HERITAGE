@@ -93,8 +93,8 @@ assert.equal(formatFabricSelectionNumbersBadge([2, 3]), "Assigned to Selections 
 assert.equal(formatFabricSelectionNumbersBadge([1, 2, 4]), "Assigned to Selections 1, 2 & 4");
 assert.equal(formatFabricSelectionNumbersBadge([]), "");
 // Compact garment line (Option D): last word, unique, occurrence suffix kept.
-assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Knicker Shorts"], "compact"), "Shirt + Shorts");
-assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Knicker Shorts"]), "Standard Shirt + Standard Knicker Shorts");
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Nikka Shorts"], "compact"), "Shirt + Shorts");
+assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Nikka Shorts"]), "Standard Shirt + Standard Nikka Shorts");
 assert.equal(formatFabricSelectionSummaryGarmentLine(["Standard Shirt", "Standard Shirt 2"], "compact"), "Shirt + Shirt 2");
 assert.equal(formatFabricSelectionSummaryGarmentLine(["Skirt", "Long Skirt"], "compact"), "Skirt + Long Skirt", "ambiguous short labels fall back to full");
 assert.equal(formatFabricSelectionSummaryGarmentLine(["Long Dress"], "compact"), "Dress");
