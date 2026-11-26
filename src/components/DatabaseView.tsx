@@ -2875,7 +2875,7 @@ export default function DatabaseView({
                         }).map((group) => (
                           <optgroup key={group.label} label={group.label}>
                             {group.options.map((label) => (
-                              <option key={label} value={label}>
+                              <option key={`${group.label}::${label}`} value={label}>
                                 {label}
                               </option>
                             ))}

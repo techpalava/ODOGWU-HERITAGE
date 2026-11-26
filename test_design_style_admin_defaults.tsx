@@ -668,6 +668,23 @@ const allOptionLabels = (
   groups: ReturnType<typeof resolveGroupedOutfitTypeOptions>,
 ) => groups.flatMap((group) => [...group.options]);
 const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
+const groupOptions = (
+  groups: ReturnType<typeof resolveGroupedOutfitTypeOptions>,
+  label: string,
+) => [...(groups.find((group) => group.label === label)?.options ?? [])];
+const assertNoDuplicatesWithinEachGroup = (
+  groups: ReturnType<typeof resolveGroupedOutfitTypeOptions>,
+  context: string,
+) => {
+  for (const group of groups) {
+    const lower = group.options.map((label) => label.toLowerCase());
+    assert.equal(
+      new Set(lower).size,
+      lower.length,
+      `${context}: optgroup "${group.label}" must not repeat a label: ${group.options.join(", ")}`,
+    );
+  }
+};
 
 {
   // enabled !== false filtering: only explicitly disabled entries are dropped.
@@ -732,7 +749,9 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
 }
 
 {
-  // Cross-bucket, case-insensitive deduplication: no label may appear twice.
+  // Per-optgroup, case-insensitive deduplication: a label never repeats inside
+  // one optgroup; shared ("unisex") labels are offered under BOTH Menswear and
+  // Womenswear; "Other / Saved" never repeats a label offered earlier.
   const groups = resolveGroupedOutfitTypeOptions({
     businessSettings: {
       outfitTypes: [
@@ -750,13 +769,63 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
     fallbackOutfitTypes: defaultOutfitTypes,
     currentValue: "BOUBOU",
   });
-  const lowerLabels = allOptionLabels(groups).map((label) => label.toLowerCase());
-  assert.equal(new Set(lowerLabels).size, lowerLabels.length);
+  assertNoDuplicatesWithinEachGroup(groups, "per-group dedupe");
   assert.deepEqual(groups, [
     { label: "Menswear", options: ["Senator Set"] },
-    { label: "Womenswear", options: ["Boubou"] },
-    { label: "Couple & Family", options: ["Family Collection"] },
+    { label: "Womenswear", options: ["SENATOR SET", "Boubou"] },
+    { label: "Couple & Family", options: ["boubou", "Family Collection"] },
     { label: "Other / Saved", options: ["Custom Robe"] },
+  ]);
+}
+
+{
+  // Shared ("unisex") entries appear in BOTH Menswear and Womenswear, keep
+  // the global displayOrder position inside each bucket, and are still
+  // deduped case-insensitively within each bucket.
+  const groups = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("senator-set", "Senator Set", "unisex", 1),
+        outfitEntry("senator-shirt", "Senator Shirt", "male", 2),
+        outfitEntry("standard-shirt", "Standard Shirt", "unisex", 3),
+        outfitEntry("dup-shirt", "standard shirt", "male", 4),
+        outfitEntry("dup-shirt-f", "STANDARD SHIRT", "female", 5),
+        outfitEntry("top-only", "Top Only", "female", 6),
+        outfitEntry("standard-dress", "Standard Dress", "unisex", 7),
+        outfitEntry("long-dress", "Long Dress", "female", 8),
+        outfitEntry("couple", "Couple Collection", "couple", 9),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    selectedGender: "male",
+  });
+  assertNoDuplicatesWithinEachGroup(groups, "unisex in both");
+  assert.deepEqual(groups, [
+    {
+      label: "Menswear",
+      options: ["Senator Set", "Senator Shirt", "Standard Shirt", "Standard Dress"],
+    },
+    {
+      label: "Womenswear",
+      options: ["Senator Set", "Standard Shirt", "Top Only", "Standard Dress", "Long Dress"],
+    },
+    { label: "Couple & Family", options: ["Couple Collection"] },
+  ]);
+  // A saved shared value is already offered, so no "Other / Saved" bucket.
+  const withCurrent = resolveGroupedOutfitTypeOptions({
+    businessSettings: {
+      outfitTypes: [
+        outfitEntry("standard-shirt", "Standard Shirt", "unisex", 1),
+        outfitEntry("top-only", "Top Only", "female", 2),
+      ],
+    },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    selectedGender: "female",
+    currentValue: "standard shirt",
+  });
+  assert.deepEqual(withCurrent, [
+    { label: "Womenswear", options: ["Standard Shirt", "Top Only"] },
+    { label: "Menswear", options: ["Standard Shirt"] },
   ]);
 }
 
@@ -769,6 +838,26 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
     outfitEntry("fa", "Family Collection", "family", 4),
     outfitEntry("o", "Mystery Outfit", "other-gender", 5),
   ];
+  const orderForWithShared = (selectedGender?: string) =>
+    groupLabels(
+      resolveGroupedOutfitTypeOptions({
+        businessSettings: {
+          outfitTypes: [
+            outfitEntry("u", "Standard Shirt", "unisex", 1),
+            outfitEntry("c", "Couple Collection", "couple", 2),
+          ],
+        },
+        fallbackOutfitTypes: defaultOutfitTypes,
+        selectedGender,
+      }),
+    );
+  // A list with ONLY shared entries still renders both Menswear and
+  // Womenswear, with the selected gender's bucket first.
+  assert.deepEqual(orderForWithShared("male"), ["Menswear", "Womenswear", "Couple & Family"]);
+  assert.deepEqual(orderForWithShared("unisex"), ["Menswear", "Womenswear", "Couple & Family"]);
+  assert.deepEqual(orderForWithShared("female"), ["Womenswear", "Menswear", "Couple & Family"]);
+  assert.deepEqual(orderForWithShared("couple"), ["Couple & Family", "Menswear", "Womenswear"]);
+  assert.deepEqual(orderForWithShared("family"), ["Couple & Family", "Menswear", "Womenswear"]);
   const orderFor = (selectedGender?: string) =>
     groupLabels(
       resolveGroupedOutfitTypeOptions({
@@ -907,6 +996,20 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
     ),
     "Boubou",
   );
+  // Female falls back to a shared ("unisex") entry when no female entry exists.
+  assert.equal(
+    getDefaultOutfitTypeForGender(
+      "female",
+      {
+        outfitTypes: [
+          outfitEntry("m", "Trouser", "male", 1),
+          outfitEntry("sd", "Standard Dress", "unisex", 2),
+        ],
+      },
+      defaultOutfitTypes,
+    ),
+    "Standard Dress",
+  );
   // Finally falls back to the canonical default string.
   assert.equal(
     getDefaultOutfitTypeForGender(
@@ -947,23 +1050,53 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
       labels.filter((label) => BANNED_OUTFIT_LABEL.test(label)),
       [],
     );
-    const lower = labels.map((label) => label.toLowerCase());
-    assert.equal(new Set(lower).size, lower.length);
+    const groups = resolveGroupedOutfitTypeOptions({
+      businessSettings: DEFAULT_BUSINESS_SETTINGS,
+      fallbackOutfitTypes: defaultOutfitTypes,
+      selectedGender,
+      currentValue: "Agbada",
+    });
+    assertNoDuplicatesWithinEachGroup(groups, `defaults (${selectedGender})`);
+    for (const shared of ["Senator Set", "Standard Shirt", "Standard Dress"]) {
+      assert.ok(groupOptions(groups, "Menswear").includes(shared), `Menswear must offer ${shared}`);
+      assert.ok(groupOptions(groups, "Womenswear").includes(shared), `Womenswear must offer ${shared}`);
+      assert.equal(groupOptions(groups, "Couple & Family").includes(shared), false);
+      assert.equal(groupOptions(groups, "Other / Saved").includes(shared), false);
+    }
+    assert.equal(groupOptions(groups, "Womenswear").includes("Senator Shirt"), false);
+    assert.equal(groupOptions(groups, "Menswear").includes("Long Dress"), false);
   }
 }
 
 {
-  // DEFAULT_BUSINESS_SETTINGS.outfitTypes sequential displayOrder (1..28) + new Womenswear labels
+  // DEFAULT_BUSINESS_SETTINGS.outfitTypes sequential displayOrder (1..29) + new Womenswear labels
   assert.deepEqual(
     defaultOutfitTypes.map((entry) => entry.displayOrder),
-    Array.from({ length: 28 }, (_, i) => i + 1),
+    Array.from({ length: 29 }, (_, i) => i + 1),
   );
+  // Shared Men & Women built-in outfit types.
+  for (const [id, name] of [
+    ["senator-set", "Senator Set"],
+    ["standard-shirt", "Standard Shirt"],
+    ["standard-dress", "Standard Dress"],
+  ] as const) {
+    const entry = defaultOutfitTypes.find((candidate) => candidate.id === id);
+    assert.equal(entry?.name, name);
+    assert.equal(entry?.gender, "unisex", `${name} must be shared (unisex)`);
+    assert.equal(entry?.enabled, true, `${name} must be enabled`);
+  }
+  const defaultIds = defaultOutfitTypes.map((entry) => entry.id);
+  assert.equal(new Set(defaultIds).size, defaultIds.length, "Default outfit type ids must be unique");
   assert.equal(
     defaultOutfitTypes.find((entry) => entry.name === "Agbada")?.enabled,
     false,
   );
   const womenswearNames = defaultOutfitTypes
-    .filter((entry) => entry.gender === "female" && entry.enabled !== false)
+    .filter(
+      (entry) =>
+        (entry.gender === "female" || entry.gender === "unisex") &&
+        entry.enabled !== false,
+    )
     .map((entry) => entry.name);
   for (const requiredLabel of [
     "Top Only",
@@ -1009,6 +1142,18 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
     false,
     "Disabled saved Agbada must not be resurrected by merge",
   );
+  // Saved single-gender built-in Senator Set is upgraded to shared (unisex),
+  // keeping its saved displayOrder; the input array is not mutated.
+  assert.deepEqual(
+    merged.find((entry) => entry.id === "senator-set"),
+    outfitEntry("senator-set", "Senator Set", "unisex", 1, true),
+  );
+  assert.equal(legacySavedOutfitTypes[0]?.gender, "male", "merge must not mutate saved settings");
+  // Missing built-ins merge in once (Standard Shirt + Standard Dress as unisex).
+  assert.equal(merged.filter((entry) => entry.id === "standard-shirt").length, 1);
+  assert.equal(merged.find((entry) => entry.id === "standard-shirt")?.gender, "unisex");
+  assert.equal(merged.find((entry) => entry.id === "standard-dress")?.gender, "unisex");
+  assert.equal(merged.filter((entry) => entry.id === "senator-set").length, 1);
   const grouped = resolveGroupedOutfitTypeOptions({
     businessSettings: { outfitTypes: merged },
     fallbackOutfitTypes: defaultOutfitTypes,
@@ -1017,6 +1162,8 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
   assert.equal(grouped[0]?.label, "Womenswear");
   const womenswearOptions = grouped[0]?.options ?? [];
   for (const label of [
+    "Senator Set",
+    "Standard Shirt",
     "Top Only",
     "Top & Trouser",
     "Dress",
@@ -1039,8 +1186,57 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
     allLabels.some((label) => BANNED_OUTFIT_LABEL.test(label)),
     false,
   );
-  const lower = allLabels.map((label) => label.toLowerCase());
-  assert.equal(new Set(lower).size, lower.length, "Merged options must have zero duplicates");
+  assertNoDuplicatesWithinEachGroup(grouped, "merged legacy settings");
+  for (const shared of ["Senator Set", "Standard Shirt", "Standard Dress"]) {
+    assert.ok(groupOptions(grouped, "Menswear").includes(shared), `Merged Menswear must include "${shared}"`);
+  }
+}
+
+{
+  // Saved single-gender Standard Dress / Senator Set upgrade to unisex while
+  // preserving an explicit enabled: false; non-shared entries and saved
+  // "unisex"/"family" values are untouched; Standard Shirt merges once.
+  const saved: OutfitTypeEntries = [
+    outfitEntry("senator-set", "Senator Set", "male", 3, false),
+    outfitEntry("standard-dress", "Standard Dress", "female", 7, true),
+    outfitEntry("senator-shirt", "Senator Shirt", "male", 4, true),
+    outfitEntry("long-dress", "Long Dress", "female", 8, true),
+    outfitEntry("couple-collection", "Couple Collection", "family", 9, true),
+  ];
+  const merged = mergeOutfitTypesWithDefaults(saved, defaultOutfitTypes);
+  assert.deepEqual(
+    merged.slice(0, saved.length),
+    [
+      outfitEntry("senator-set", "Senator Set", "unisex", 3, false),
+      outfitEntry("standard-dress", "Standard Dress", "unisex", 7, true),
+      outfitEntry("senator-shirt", "Senator Shirt", "male", 4, true),
+      outfitEntry("long-dress", "Long Dress", "female", 8, true),
+      outfitEntry("couple-collection", "Couple Collection", "family", 9, true),
+    ],
+  );
+  assert.equal(merged.filter((entry) => entry.id === "senator-set").length, 1);
+  assert.equal(merged.filter((entry) => entry.id === "standard-shirt").length, 1);
+  const grouped = resolveGroupedOutfitTypeOptions({
+    businessSettings: { outfitTypes: merged },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    selectedGender: "female",
+  });
+  assertNoDuplicatesWithinEachGroup(grouped, "upgrade merge");
+  // Disabled Senator Set stays hidden everywhere.
+  assert.equal(allOptionLabels(grouped).includes("Senator Set"), false);
+  assert.ok(groupOptions(grouped, "Womenswear").includes("Standard Dress"));
+  assert.ok(groupOptions(grouped, "Menswear").includes("Standard Dress"));
+  assert.ok(groupOptions(grouped, "Womenswear").includes("Standard Shirt"));
+  assert.ok(groupOptions(grouped, "Menswear").includes("Standard Shirt"));
+  // Saved "unisex" stays unisex; an empty saved list returns the defaults.
+  assert.equal(
+    mergeOutfitTypesWithDefaults(
+      [outfitEntry("standard-shirt", "Standard Shirt", "unisex", 2, true)],
+      defaultOutfitTypes,
+    ).filter((entry) => entry.id === "standard-shirt").length,
+    1,
+  );
+  assert.deepEqual(mergeOutfitTypesWithDefaults([], defaultOutfitTypes), [...defaultOutfitTypes]);
 }
 
 console.log(
