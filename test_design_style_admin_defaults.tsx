@@ -19,6 +19,7 @@ import {
   DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
   deriveFeaturesMaleAndFemale,
   getDefaultOutfitTypeForGender,
+  mergeOutfitTypesWithDefaults,
   resolveGroupedOutfitTypeOptions,
 } from "./src/utils/designStyleAdminDefaults";
 import type { AuthoritativeDesignStyleRecordV1 } from "./src/utils/designStyleAuthority";
@@ -949,6 +950,97 @@ const BANNED_OUTFIT_LABEL = /\b(kaftan|knicker)/i;
     const lower = labels.map((label) => label.toLowerCase());
     assert.equal(new Set(lower).size, lower.length);
   }
+}
+
+{
+  // DEFAULT_BUSINESS_SETTINGS.outfitTypes sequential displayOrder (1..28) + new Womenswear labels
+  assert.deepEqual(
+    defaultOutfitTypes.map((entry) => entry.displayOrder),
+    Array.from({ length: 28 }, (_, i) => i + 1),
+  );
+  assert.equal(
+    defaultOutfitTypes.find((entry) => entry.name === "Agbada")?.enabled,
+    false,
+  );
+  const womenswearNames = defaultOutfitTypes
+    .filter((entry) => entry.gender === "female" && entry.enabled !== false)
+    .map((entry) => entry.name);
+  for (const requiredLabel of [
+    "Top Only",
+    "Top & Trouser",
+    "Top & Skirt",
+    "Dress",
+    "Standard Dress",
+    "Long Dress",
+    "Standard Skirt",
+    "Long Skirt",
+  ]) {
+    assert.ok(
+      womenswearNames.includes(requiredLabel),
+      `DEFAULT_BUSINESS_SETTINGS must include Womenswear label "${requiredLabel}"`,
+    );
+  }
+}
+
+{
+  // Legacy Firestore outfitTypes list merges with built-in defaults without resurrecting disabled entries
+  const legacySavedOutfitTypes: OutfitTypeEntries = [
+    outfitEntry("senator-set", "Senator Set", "male", 1, true),
+    outfitEntry("agbada", "Agbada", "male", 2, false),
+    outfitEntry("maxi-gown", "Maxi Gown", "female", 3, true),
+    outfitEntry("midi-gown", "Midi Gown", "female", 4, true),
+    outfitEntry("shift-dress", "Shift Dress", "female", 5, true),
+    outfitEntry("boubou", "Boubou", "female", 6, true),
+    outfitEntry("long-dress", "Long Dress", "female", 7, true),
+    outfitEntry("kimono-set", "Kimono Set", "female", 8, true),
+    outfitEntry("blouse", "Blouse", "female", 9, true),
+    outfitEntry("top-skirt", "Top & Skirt", "female", 10, true),
+    outfitEntry("wrapper-set", "Wrapper Set", "female", 11, true),
+    outfitEntry("skirt-set", "Skirt Set", "female", 12, true),
+    outfitEntry("palazzo-trouser", "Palazzo Trouser", "female", 13, true),
+    outfitEntry("jumpsuit", "Jumpsuit", "female", 14, true),
+  ];
+  const merged = mergeOutfitTypesWithDefaults(
+    legacySavedOutfitTypes,
+    defaultOutfitTypes,
+  );
+  assert.equal(
+    merged.find((entry) => entry.name === "Agbada")?.enabled,
+    false,
+    "Disabled saved Agbada must not be resurrected by merge",
+  );
+  const grouped = resolveGroupedOutfitTypeOptions({
+    businessSettings: { outfitTypes: merged },
+    fallbackOutfitTypes: defaultOutfitTypes,
+    selectedGender: "female",
+  });
+  assert.equal(grouped[0]?.label, "Womenswear");
+  const womenswearOptions = grouped[0]?.options ?? [];
+  for (const label of [
+    "Top Only",
+    "Top & Trouser",
+    "Dress",
+    "Standard Dress",
+    "Standard Skirt",
+    "Long Skirt",
+    "Shift Dress",
+    "Blouse",
+    "Palazzo Trouser",
+    "Jumpsuit",
+  ]) {
+    assert.ok(
+      womenswearOptions.includes(label),
+      `Merged Womenswear dropdown must include "${label}"`,
+    );
+  }
+  const allLabels = allOptionLabels(grouped);
+  assert.equal(allLabels.includes("Agbada"), false);
+  assert.equal(
+    allLabels.some((label) => BANNED_OUTFIT_LABEL.test(label)),
+    false,
+  );
+  const lower = allLabels.map((label) => label.toLowerCase());
+  assert.equal(new Set(lower).size, lower.length, "Merged options must have zero duplicates");
 }
 
 console.log(

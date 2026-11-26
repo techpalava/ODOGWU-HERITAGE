@@ -171,6 +171,7 @@ import {
   deriveFeaturesMaleAndFemale,
   deriveRepresentedGendersFromStyleAudience,
   formatDerivedGarmentCompositionLabel,
+  mergeOutfitTypesWithDefaults,
   resolveDesignStyleGenderOptions,
   resolveGroupedOutfitTypeOptions,
   getDefaultOutfitTypeForGender,
@@ -1244,6 +1245,11 @@ export default function DatabaseView({
     }
   };
 
+  const effectiveStyleOutfitTypes = mergeOutfitTypesWithDefaults(
+    businessSettings.outfitTypes,
+    DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
+  );
+
   const handleQuickAddOutfitType = () => {
     const trimmed = quickAddOutfitTypeValue.trim();
     if (!trimmed) {
@@ -1271,7 +1277,7 @@ export default function DatabaseView({
       businessSettings.outfitTypes && businessSettings.outfitTypes.length > 0
         ? businessSettings.outfitTypes
         : DEFAULT_BUSINESS_SETTINGS.outfitTypes || [];
-    const isDuplicate = existingTypes.some(
+    const isDuplicate = effectiveStyleOutfitTypes.some(
       (t) => customerCatalogueLabel(t.name).toLowerCase() === lowerNormalized,
     );
     if (isDuplicate) {
@@ -2749,7 +2755,7 @@ export default function DatabaseView({
                           if (isNewRecord && !outfitTypeManuallyChanged) {
                             const defaultOutfitType = getDefaultOutfitTypeForGender(
                               nextGender,
-                              businessSettings,
+                              { outfitTypes: effectiveStyleOutfitTypes },
                               DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
                             );
                             setEditingItem((prev: any) => ({
@@ -2862,7 +2868,7 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
                         {resolveGroupedOutfitTypeOptions({
-                          businessSettings,
+                          businessSettings: { outfitTypes: effectiveStyleOutfitTypes },
                           fallbackOutfitTypes: DEFAULT_BUSINESS_SETTINGS.outfitTypes || [],
                           selectedGender: editingItem.gender,
                           currentValue: editingItem.outfitType,
