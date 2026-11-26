@@ -35,6 +35,7 @@ import { formatDesignStudioStepCounter } from "../utils/designSourceJourney";
 import { useReportDesignStudioBlockingOverlay } from "./designStudioBlockingOverlay";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
 import { DesignStyleImage } from "./DesignStyleImage";
+import { DesignStyleSleeveBadge } from "./DesignStyleSleeveBadge";
 import {
   DESIGN_STYLE_CARD_IMAGE_PRESET,
   DESIGN_STYLE_DIALOG_IMAGE_PRESET,
@@ -1307,7 +1308,23 @@ export const DormantFutureDesignStyleStep = ({
           <button ref={detailsCloseRef} type="button" onClick={closeDetails} aria-label="Close Design Style details" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
         </header>
         <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
-          {detailsEntry.style.image && <DesignStyleImage imageUrl={detailsEntry.style.image} alt={`${formatDisplayStyleLabel(detailsEntry.style)} design`} preset={DESIGN_STYLE_DIALOG_IMAGE_PRESET} surface="design-style-dialog" reportCode={detailsEntry.style.id} imgClassName="max-h-80 w-full rounded-2xl bg-heritage-cream/35 object-contain" fallbackClassName="flex min-h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl bg-heritage-cream/35 px-4 text-center text-xs text-heritage-ink/45" />}
+          {detailsEntry.style.image && (
+            <div className="relative">
+              <DesignStyleImage
+                imageUrl={detailsEntry.style.image}
+                alt={`${formatDisplayStyleLabel(detailsEntry.style)} design`}
+                preset={DESIGN_STYLE_DIALOG_IMAGE_PRESET}
+                surface="design-style-dialog"
+                reportCode={detailsEntry.style.id}
+                imgClassName="max-h-80 w-full rounded-2xl bg-heritage-cream/35 object-contain"
+                fallbackClassName="flex min-h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl bg-heritage-cream/35 px-4 text-center text-xs text-heritage-ink/45"
+              />
+              <DesignStyleSleeveBadge
+                sleeveOption={detailsEntry.style.sleeveOption}
+                className="absolute bottom-3 left-3"
+              />
+            </div>
+          )}
           {detailsEntry.style.description && <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-heritage-ink/75">{detailsEntry.style.description}</p>}
           {detailsEntry.referenceGarmentTypes.length > 0 && <p className="mt-4 rounded-xl bg-heritage-cream/45 px-3 py-2 text-xs leading-relaxed text-heritage-ink/70"><span className="font-bold text-heritage-green">Originally designed for:</span> {formatReferenceGarmentTypes(detailsEntry.referenceGarmentTypes)}</p>}
         </div>
@@ -1432,6 +1449,10 @@ export const DormantFutureDesignStyleStep = ({
                         imageUrl={entry.style.image}
                         alt={`${displayStyleName} design`}
                         styleId={entry.style.id}
+                      />
+                      <DesignStyleSleeveBadge
+                        sleeveOption={entry.style.sleeveOption}
+                        className="absolute bottom-2.5 left-2.5"
                       />
                       {galleryStyleId && galleryStyleId === entry.style.id ? <span className="absolute left-3 top-3 inline-flex max-w-[58%] items-center rounded-full border border-heritage-gold bg-white px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-heritage-green shadow-sm">From gallery</span> : null}
                       {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
