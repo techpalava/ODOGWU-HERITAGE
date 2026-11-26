@@ -169,6 +169,7 @@ import {
   DEFAULT_ADMIN_STYLE_COMPOSITION,
   DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
   deriveFeaturesMaleAndFemale,
+  deriveRepresentedGendersFromStyleAudience,
   formatDerivedGarmentCompositionLabel,
   resolveDesignStyleGenderOptions,
   resolveGroupedOutfitTypeOptions,
@@ -2624,8 +2625,10 @@ export default function DatabaseView({
                 {editingType === "style" && (
                   <form
                     onSubmit={handleSaveStyle}
-                    className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans"
+                    className="text-xs font-sans"
                   >
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
                     <div className="col-span-1 sm:col-span-2 border-b border-heritage-gold/20 pb-2">
                       <h3 className="font-serif text-lg font-bold text-heritage-green">Core information</h3>
                       <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/60">Create the customer-facing Design Style here. Its generated ID remains stable after publication.</p>
@@ -2720,10 +2723,29 @@ export default function DatabaseView({
                         value={editingItem.gender || "male"}
                         onChange={(event) => {
                           const nextGender = event.target.value;
-                          setEditingItem((prev: any) => ({
-                            ...prev,
-                            gender: nextGender,
-                          }));
+                          const representedGenders =
+                            deriveRepresentedGendersFromStyleAudience(
+                              nextGender,
+                            );
+                          setEditingItem((prev: any) => {
+                            const conf = prev.customDetailConfig || {
+                              supportedGarmentGroups: [],
+                              requiredSelectionGroups: [],
+                              enabled: true,
+                            };
+                            return {
+                              ...prev,
+                              gender: nextGender,
+                              customDetailConfig: {
+                                ...conf,
+                                representedGenders,
+                                featuresMaleAndFemale:
+                                  deriveFeaturesMaleAndFemale(
+                                    representedGenders,
+                                  ),
+                              },
+                            };
+                          });
                           if (isNewRecord && !outfitTypeManuallyChanged) {
                             const defaultOutfitType = getDefaultOutfitTypeForGender(
                               nextGender,
@@ -3227,6 +3249,18 @@ export default function DatabaseView({
                               });
                             })()}
                           </div>
+                        </div>
+                        <details
+                          data-testid="admin-style-advanced-overrides"
+                          className="col-span-1 sm:col-span-2 rounded-xl border border-heritage-gold/20 bg-white/80 p-3"
+                        >
+                          <summary className="cursor-pointer select-none font-bold text-heritage-green flex flex-wrap items-center justify-between gap-2">
+                            <span>Advanced Garment & Custom Detail Overrides</span>
+                            <span className="text-[10px] font-normal text-heritage-ink/60">
+                              Auto-synced from Audience & Garment Types unless overridden
+                            </span>
+                          </summary>
+                          <div className="mt-3 space-y-4 border-t border-heritage-gold/15 pt-3">
                         <div className="space-y-2">
                           <label className="font-bold text-heritage-green block">
                             Sleeve Option
@@ -3628,6 +3662,7 @@ export default function DatabaseView({
                           </div>
                         </div>
                       </div>
+                        </details>
                     </div>
                     <div className="space-y-1 sm:col-span-2">
                       <label className="font-bold text-heritage-green">
@@ -3645,81 +3680,6 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         placeholder="Short summary of fit guidelines..."
                       />
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <label className="font-bold text-heritage-green flex justify-between items-center">
-                        <span>Design Style Image</span>
-                        <span className="text-gray-400 font-normal">
-                          Enter URL or drag file
-                        </span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="https://images.unsplash.com..."
-                        value={editingItem.image || ""}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            image: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg font-mono text-[10px]"
-                      />
-
-                      <div
-                        className={`relative w-[144px] h-[144px] sm:w-[192px] sm:h-[192px] border-2 border-dashed rounded-xl overflow-hidden transition-colors mx-auto ${
-                          isDragging
-                            ? "border-heritage-gold bg-heritage-gold/5"
-                            : "border-gray-300 hover:border-heritage-gold/50 bg-gray-50"
-                        }`}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                      >
-                        <input
-                          type="file"
-                          id="style-file-input"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleFileChange}
-                        />
-                        {editingItem.image ? (
-                          <div className="absolute inset-0 flex items-center justify-center bg-heritage-cream border border-heritage-gold/10 shadow-sm group">
-                            <img
-                              loading="lazy"
-                              src={editingItem.image}
-                              alt="Style Preview"
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[9px]">
-                              <Upload size={16} className="mb-1" />
-                              <span>Replace</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingItem({ ...editingItem, image: "" });
-                                }}
-                                className="mt-2 bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-[10px] font-bold cursor-pointer"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <label
-                            htmlFor="style-file-input"
-                            className="absolute inset-0 flex flex-col items-center justify-center text-heritage-ink/50 cursor-pointer hover:text-heritage-gold transition-colors p-2 text-center"
-                          >
-                            <Image size={20} className="mb-1 opacity-50" />
-                            <p className="text-[9px] font-semibold">
-                              Upload Image
-                            </p>
-                          </label>
-                        )}
-                      </div>
-
                     </div>
                     <DesignStyleDecorativePriceOverrides
                       constructionDetails={editingItem.constructionDetails || []}
@@ -3743,6 +3703,158 @@ export default function DatabaseView({
                           ? "Publish Style"
                           : "Save Style Record"}
                       </button>
+                    </div>
+                    </div>
+                    <aside
+                      data-testid="admin-style-floating-photo"
+                      className="order-first lg:order-last lg:sticky lg:top-24 lg:self-start rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-md space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-heritage-gold/15 pb-2">
+                        <span className="font-bold text-heritage-green">
+                          Design Style Image
+                        </span>
+                        <span className="text-[10px] text-heritage-ink/55">
+                          URL or drop file
+                        </span>
+                      </div>
+
+                      <div
+                        className={`relative w-full aspect-[3/4] max-h-[380px] border-2 border-dashed rounded-xl overflow-hidden transition-colors mx-auto ${
+                          isDragging
+                            ? "border-heritage-gold bg-heritage-gold/5"
+                            : "border-gray-300 hover:border-heritage-gold/50 bg-gray-50"
+                        }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        <input
+                          type="file"
+                          id="style-file-input"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFileChange}
+                        />
+                        {editingItem.image ? (
+                          <div className="absolute inset-0 flex items-center justify-center bg-heritage-cream/40 border border-heritage-gold/10 shadow-sm group">
+                            <img
+                              loading="lazy"
+                              src={editingItem.image}
+                              alt="Style Preview"
+                              className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 text-white text-[10px]">
+                              <label
+                                htmlFor="style-file-input"
+                                className="flex flex-col items-center cursor-pointer bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded font-semibold"
+                              >
+                                <Upload size={15} className="mb-1" />
+                                <span>Replace Image</span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingItem({ ...editingItem, image: "" });
+                                }}
+                                className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-[10px] font-bold cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label
+                            htmlFor="style-file-input"
+                            className="absolute inset-0 flex flex-col items-center justify-center text-heritage-ink/50 cursor-pointer hover:text-heritage-gold transition-colors p-3 text-center"
+                          >
+                            <Image size={24} className="mb-1.5 opacity-50" />
+                            <p className="text-[11px] font-semibold">
+                              Upload or Drop Style Photo
+                            </p>
+                          </label>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 text-[10px]">
+                        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold capitalize">
+                          {editingStyleAuthority?.lifecycle || "draft"}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-heritage-green/10 text-heritage-green font-semibold capitalize">
+                          {editingItem.gender || "male"}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-heritage-gold/15 text-heritage-ink font-semibold">
+                          {customerCatalogueLabel(
+                            editingItem.outfitType ||
+                              DEFAULT_ADMIN_STYLE_OUTFIT_TYPE,
+                          )}
+                        </span>
+                        {editingItem.sleeveOption && (
+                          <span className="px-2 py-0.5 rounded bg-heritage-forest/10 text-heritage-green font-semibold capitalize">
+                            {getDesignStyleSleeveOptionLabel(editingItem.sleeveOption)}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded bg-heritage-green text-heritage-gold font-semibold">
+                          {editingItem.showsWearer === true
+                            ? "Shows Wearer"
+                            : "Garment / Unconsented"}
+                        </span>
+                      </div>
+
+                      {(editingItem.detectedColors?.main ||
+                        editingItem.detectedColors?.secondary) && (
+                        <div className="flex items-center gap-2 text-[10px] text-heritage-ink/70">
+                          <span className="font-semibold">Colors:</span>
+                          {editingItem.detectedColors?.main && (
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className="inline-block h-3 w-3 rounded-full border border-gray-300"
+                                style={{
+                                  backgroundColor:
+                                    editingItem.detectedColors.main,
+                                }}
+                              />
+                              <span className="font-mono">
+                                {editingItem.detectedColors.main}
+                              </span>
+                            </span>
+                          )}
+                          {editingItem.detectedColors?.secondary && (
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className="inline-block h-3 w-3 rounded-full border border-gray-300"
+                                style={{
+                                  backgroundColor:
+                                    editingItem.detectedColors.secondary,
+                                }}
+                              />
+                              <span className="font-mono">
+                                {editingItem.detectedColors.secondary}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <label className="font-bold text-heritage-green text-[11px] block">
+                          Image URL
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="https://images.unsplash.com..."
+                          value={editingItem.image || ""}
+                          onChange={(e) =>
+                            setEditingItem({
+                              ...editingItem,
+                              image: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg font-mono text-[10px]"
+                        />
+                      </div>
+                    </aside>
                     </div>
                   </form>
                 )}

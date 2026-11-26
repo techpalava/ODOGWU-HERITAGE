@@ -596,6 +596,49 @@ try {
     block: "start",
   });
   assert.deepEqual(editorFocusCalls.at(-1), { preventScroll: true });
+
+  // 5. Floating side photo panel & collapsible auto-synced overrides
+  await openFirstStyleInList();
+  const floatingPhotoAside = renderer!.root.findByProps({
+    "data-testid": "admin-style-floating-photo",
+  });
+  assert.equal(
+    String(floatingPhotoAside.props.className).includes("lg:sticky"),
+    true,
+    "Floating style photo card must use sticky desktop positioning.",
+  );
+  assert.equal(
+    String(floatingPhotoAside.props.className).includes("order-first lg:order-last"),
+    true,
+    "Floating style photo card must sit first on mobile and on the side on desktop.",
+  );
+  assert.ok(
+    floatingPhotoAside.findByProps({ id: "style-file-input" }),
+    "Style file input must live inside the floating photo panel.",
+  );
+
+  const advancedDetails = renderer!.root.findByProps({
+    "data-testid": "admin-style-advanced-overrides",
+  });
+  assert.equal(advancedDetails.type, "details");
+  assert.equal(
+    Boolean(advancedDetails.props.open),
+    false,
+    "Advanced garment & audience overrides must start collapsed.",
+  );
+
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Collection Audience" })
+      .props.onChange({ target: { value: "female" } });
+  });
+  await submitStyleForm();
+  assert.deepEqual(committedRecord.eligibility.demographics, ["female"]);
+  assert.equal(
+    projectDesignStyleRecordForAdmin(committedRecord).customDetailConfig
+      ?.featuresMaleAndFemale,
+    false,
+  );
 } finally {
   await act(async () => renderer?.unmount());
   DesignStyleAuthorityService.subscribeToAdminRecords = originalSubscribe;
