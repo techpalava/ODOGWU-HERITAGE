@@ -46,8 +46,7 @@ import type { FuturePaymentReviewGarmentPicture } from "../utils/futurePaymentRe
 import {
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
-  getStep1GarmentSecondaryReferenceImage,
-  isStep1DualImageGarmentType,
+  getStep1PresetReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import {
@@ -475,7 +474,7 @@ const getAllowedStep4ConstructionOptionIdsForOccurrence = (
   selectionGroup: CustomDetailSelectionGroup,
   isConstruction: boolean,
 ): readonly string[] | null => {
-  if (!isConstruction || occurrence.role !== "main") return null;
+  if (!isConstruction) return null;
   if (
     selectionGroup !== "shirt_construction" &&
     selectionGroup !== "dress_construction" &&
@@ -1160,12 +1159,11 @@ export const DormantFutureCustomDetailsStep = ({
       selectionIndex: selectionIndex > 0 ? selectionIndex : null,
     };
   };
-  const baseConstructionByParentGarmentKey = useMemo(() => {
+  const constructionByParentGarmentKey = useMemo(() => {
     const map = new Map<string, GarmentConstructionPricingResolution>();
     catalogue.coreGroups.forEach((group) => {
       group.occurrences.forEach((occurrence) => {
         if (
-          occurrence.role === "main" &&
           occurrence.construction?.status === "resolved" &&
           !map.has(occurrence.subject.parentGarmentKey)
         ) {
@@ -2297,17 +2295,13 @@ export const DormantFutureCustomDetailsStep = ({
             const baseGarmentLabel = getCustomDetailsGarmentLabel(
               context.garmentType,
             );
-            const activeBaseConstruction =
-              context.sourceRole === "main"
-                ? (baseConstructionByParentGarmentKey.get(context.garmentKey) ??
-                  null)
-                : null;
+            const activeConstruction =
+              constructionByParentGarmentKey.get(context.garmentKey) ?? null;
             const activePreset =
-              context.sourceRole === "main" &&
-              activeBaseConstruction?.status === "resolved"
+              activeConstruction?.status === "resolved"
                 ? findStep1CardPresetForResolution(
                     context.garmentType,
-                    activeBaseConstruction,
+                    activeConstruction,
                   )
                 : null;
             const garmentLabel = activePreset?.label ?? baseGarmentLabel;
@@ -2315,10 +2309,8 @@ export const DormantFutureCustomDetailsStep = ({
               context.garmentType,
             );
             const referenceImage = isStep1GarmentReferenceType(context.garmentType)
-              ? activePreset?.referenceImageVariant === "secondary" &&
-                isStep1DualImageGarmentType(context.garmentType)
-                ? (getStep1GarmentSecondaryReferenceImage(context.garmentType) ??
-                  getStep1GarmentReferenceImage(context.garmentType))
+              ? activePreset
+                ? getStep1PresetReferenceImage(activePreset.id)
                 : getStep1GarmentReferenceImage(context.garmentType)
               : null;
             const assigned = getAssignedFabricForGarment(context.garmentKey);

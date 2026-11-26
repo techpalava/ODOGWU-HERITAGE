@@ -19,7 +19,12 @@ import {
   reconcileGuestDesignDraftGarmentTypeSelection,
   reduceGarmentTypeStepSelection,
 } from "./src/utils/garmentTypeStepState";
-import { CANONICAL_PHYSICAL_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import {
+  CANONICAL_PHYSICAL_GARMENT_TYPES,
+  findStep1CardPresetForResolution,
+  getStep1GarmentCardPresetById,
+  resolveStep1GarmentCardPresetId,
+} from "./src/utils/garmentConstructionPricing";
 import { buildAuthoritativePhysicalOccurrences } from "./src/utils/designSourceState";
 import { resolveMeasurementProfile } from "./src/utils/measurementBlueprint";
 
@@ -564,6 +569,85 @@ assert.deepEqual(
     "Order Review & Payment",
   ],
   "The active Design Studio must expose the approved ten-stage journey.",
+);
+
+assert.equal(resolveStep1GarmentCardPresetId("dress_sleeveless_or_short"), "dress_sleeveless");
+assert.equal(resolveStep1GarmentCardPresetId("dress_mid_or_long"), "dress_long_sleeve");
+assert.equal(
+  resolveStep1GarmentCardPresetId("full_length_gown_sleeveless_or_short"),
+  "full_length_gown_sleeveless",
+);
+assert.equal(
+  resolveStep1GarmentCardPresetId("full_length_gown_mid_or_long"),
+  "full_length_gown_long_sleeve",
+);
+assert.equal(resolveStep1GarmentCardPresetId("unknown_legacy_preset"), null);
+assert.equal(getStep1GarmentCardPresetById("dress_mid_or_long")?.id, "dress_long_sleeve");
+
+for (const [garmentType, optionId, expectedPresetId] of [
+  ["dress", "dress_std_sleeveless", "dress_sleeveless"],
+  ["dress", "dress_std_short", "dress_short_sleeve"],
+  ["dress", "dress_std_mid", "dress_mid_sleeve"],
+  ["dress", "dress_std_long", "dress_long_sleeve"],
+  ["dress", "dress_std_midlong", "dress_long_sleeve"],
+  ["full_length_gown", "dress_long_sleeveless", "full_length_gown_sleeveless"],
+  ["full_length_gown", "dress_long_short", "full_length_gown_short_sleeve"],
+  ["full_length_gown", "dress_long_mid", "full_length_gown_mid_sleeve"],
+  ["full_length_gown", "dress_long_long", "full_length_gown_long_sleeve"],
+  ["full_length_gown", "dress_long_midlong", "full_length_gown_long_sleeve"],
+] as const) {
+  const hydratedDress = reconcileGarmentTypeStepSelection({
+    persistedSelection: {
+      garmentTypes: [garmentType],
+      demographic: "female",
+      constructionByGarment: {
+        [garmentType]: {
+          status: "resolved",
+          garmentType,
+          components: [
+            {
+              componentKey: `${garmentType}:dress_construction:${optionId}`,
+              optionId,
+              selectionGroup: "dress_construction",
+              priceCents: 1,
+              price: 0.01,
+            },
+          ],
+          totalPriceCents: 1,
+          totalPrice: 0.01,
+        },
+      },
+    },
+    normalizedCustomDetailCatalog: catalog,
+  });
+  assert.equal(
+    findStep1CardPresetForResolution(
+      garmentType,
+      hydratedDress.selection.constructionByGarment[garmentType],
+    )?.id,
+    expectedPresetId,
+  );
+  assert.equal(
+    hydratedDress.selection.constructionByGarment[garmentType]?.status,
+    "resolved",
+  );
+}
+
+const malformedDressConstruction = normalizePersistedGarmentTypeStepSelection({
+  garmentTypes: ["dress"],
+  demographic: "female",
+  constructionByGarment: {
+    dress: {
+      status: "resolved",
+      garmentType: "dress",
+      components: [{ componentKey: "wrong:key", optionId: "dress_std_short" }],
+    },
+  },
+});
+assert.equal(
+  malformedDressConstruction.constructionByGarment.dress,
+  undefined,
+  "Malformed constructionByGarment fails closed during normalization",
 );
 
 console.log("PASS: authoritative Garment Type Step state and draft persistence");

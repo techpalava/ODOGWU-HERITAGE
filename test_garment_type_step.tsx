@@ -81,10 +81,14 @@ const expectedPresetIds = [
   "shirt_long_sleeve",
   "kaftan_short_sleeve",
   "kaftan_long_sleeve",
-  "dress_sleeveless_or_short",
-  "dress_mid_or_long",
-  "full_length_gown_sleeveless_or_short",
-  "full_length_gown_mid_or_long",
+  "dress_sleeveless",
+  "dress_short_sleeve",
+  "dress_mid_sleeve",
+  "dress_long_sleeve",
+  "full_length_gown_sleeveless",
+  "full_length_gown_short_sleeve",
+  "full_length_gown_mid_sleeve",
+  "full_length_gown_long_sleeve",
   "skirt",
   "long_skirt",
   "trouser",
@@ -96,18 +100,22 @@ const expectedPresetLabels = [
   "Standard Shirt — Long Sleeve",
   "Long Shirt — Short Sleeve",
   "Long Shirt — Long Sleeve",
-  "Standard Dress — Sleeveless / Short Sleeve",
-  "Standard Dress — Mid / Long Sleeve",
-  "Long Dress — Sleeveless / Short Sleeve",
-  "Long Dress — Mid / Long Sleeve",
+  "Standard Dress — Sleeveless",
+  "Standard Dress — Short Sleeve",
+  "Standard Dress — Mid Sleeve",
+  "Standard Dress — Long Sleeve",
+  "Long Dress — Sleeveless",
+  "Long Dress — Short Sleeve",
+  "Long Dress — Mid Sleeve",
+  "Long Dress — Long Sleeve",
   "Standard Skirt",
   "Long Skirt",
   "Trouser",
   "Standard Nikka Shorts",
   "Standard Bum Shorts",
 ] as const;
-const expectedPresetPrices = [65, 70, 70, 75, 70, 75, 75, 80, 75, 80, 75, 70, 70];
-assert.equal(STEP_1_GARMENT_CARD_PRESETS.length, 13);
+const expectedPresetPrices = [65, 70, 70, 75, 70, 70, 75, 75, 75, 75, 80, 80, 75, 80, 75, 70, 70];
+assert.equal(STEP_1_GARMENT_CARD_PRESETS.length, 17);
 assert.deepEqual(
   STEP_1_GARMENT_CARD_PRESETS.map((preset) => preset.id),
   expectedPresetIds,
@@ -121,12 +129,12 @@ assert.equal(emptyPresentation.selectedGarmentTypes.length, 0);
 assert.equal(emptyPresentation.constructionPricing.length, 0);
 assert.equal(emptyPresentation.constructionSubtotalCents, 0);
 assert.equal(emptyPresentation.customerFacingCapacityAmount, "0");
-assert.equal(emptyPresentation.categories.length, 13);
+assert.equal(emptyPresentation.categories.length, 17);
 assert.deepEqual(emptyPresentation.categories.map((item) => item.presetId), expectedPresetIds);
 assert.deepEqual(emptyPresentation.categories.map((item) => item.label), expectedPresetLabels);
 assert.deepEqual(
   emptyPresentation.categories.map((item) => item.fabricUnits),
-  [1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1],
 );
 assert.deepEqual(
   emptyPresentation.categories.map((item) =>
@@ -283,8 +291,8 @@ assert.equal(
 );
 
 const emptyMarkup = renderStep();
-assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 11);
-assert.equal((emptyMarkup.match(/Uses 1 fabric capacity unit\./g) || []).length, 2);
+assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 13);
+assert.equal((emptyMarkup.match(/Uses 1 fabric capacity unit\./g) || []).length, 4);
 assert.equal(emptyMarkup.includes("Uses one fabric capacity unit."), false);
 assert.equal(emptyMarkup.includes("Uses two fabric capacity units."), false);
 assert.equal(emptyMarkup.includes("Uses 0.5"), false);
@@ -895,16 +903,20 @@ for (const groupId of groupIds) {
   lastIndex = idx;
 }
 
-// 2. All 13 garment cards render exactly once
+// 2. All 17 garment cards render exactly once
 const expectedPresetIdsAll = [
   "shirt_short_sleeve",
   "shirt_long_sleeve",
   "kaftan_short_sleeve",
   "kaftan_long_sleeve",
-  "dress_sleeveless_or_short",
-  "dress_mid_or_long",
-  "full_length_gown_sleeveless_or_short",
-  "full_length_gown_mid_or_long",
+  "dress_sleeveless",
+  "dress_short_sleeve",
+  "dress_mid_sleeve",
+  "dress_long_sleeve",
+  "full_length_gown_sleeveless",
+  "full_length_gown_short_sleeve",
+  "full_length_gown_mid_sleeve",
+  "full_length_gown_long_sleeve",
   "skirt",
   "long_skirt",
   "trouser",
