@@ -233,6 +233,44 @@ const twoWearers: WearerOrderStateV2 = {
 
   const notReady = buildAiTryOnWearerTargets(baseInput({ customDetailsReady: false }));
   assert.equal(notReady[0].inputFingerprint, null);
+
+  // preferredModelGender from wearer fitContext or Step 1 demographic.
+  const [femaleStep1] = buildAiTryOnWearerTargets(
+    baseInput({
+      garmentTypeSelection: { ...garmentTypeSelection, demographic: "female" },
+    }),
+  );
+  assert.equal(femaleStep1.preferredModelGender, "female");
+
+  const [maleStep1] = buildAiTryOnWearerTargets(
+    baseInput({
+      garmentTypeSelection: { ...garmentTypeSelection, demographic: "male" },
+    }),
+  );
+  assert.equal(maleStep1.preferredModelGender, "male");
+
+  const [unisexStep1] = buildAiTryOnWearerTargets(
+    baseInput({
+      garmentTypeSelection: { ...garmentTypeSelection, demographic: "unisex" },
+    }),
+  );
+  assert.equal(unisexStep1.preferredModelGender ?? null, null);
+
+  const [nullStep1] = buildAiTryOnWearerTargets(
+    baseInput({
+      garmentTypeSelection: { ...garmentTypeSelection, demographic: null },
+    }),
+  );
+  assert.equal(nullStep1.preferredModelGender ?? null, null);
+
+  const multiUnisex = buildAiTryOnWearerTargets(
+    baseInput({
+      garmentTypeSelection: { ...garmentTypeSelection, demographic: "unisex" },
+      wearerOrder: twoWearers,
+    }),
+  );
+  assert.equal(multiUnisex[0].preferredModelGender, "female", "wearer fitContext overrides Step 1 unisex");
+  assert.equal(multiUnisex[1].preferredModelGender, "male", "wearer fitContext overrides Step 1 unisex");
 }
 
 // ------------------------------------------------------------ order-level completion

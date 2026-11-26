@@ -56,6 +56,7 @@ import {
   type GarmentTypeStageBlockerCode,
 } from "../utils/designStudioJourneyMode.js";
 import { formatDesignStudioStepCounter } from "../utils/designSourceJourney.js";
+import { resolveStep1DemographicMismatch } from "../utils/measurementBlueprint.js";
 
 const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   value: CustomDetailDemographic;
@@ -876,6 +877,66 @@ export const GarmentTypeStep = ({
               );
             })}
           </div>
+          {(() => {
+            const demographicMismatch = resolveStep1DemographicMismatch(
+              presentation.selectedGarmentTypes,
+              selectedDemographics,
+            );
+            if (!demographicMismatch) return null;
+            return (
+              <div
+                role="status"
+                data-testid="step1-demographic-mismatch-warning"
+                className="mt-4 flex min-w-0 items-start gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-950"
+              >
+                <AlertCircle
+                  aria-hidden="true"
+                  size={16}
+                  className="mt-0.5 shrink-0 text-amber-700"
+                />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <p className="break-words font-medium">{demographicMismatch.message}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {demographicMismatch.hasUnisexGarments ? (
+                      <button
+                        type="button"
+                        data-testid="step1-demographic-add-female"
+                        onClick={() =>
+                          onDemographicsChange(
+                            updateGarmentTypeDemographics(
+                              selectedDemographics,
+                              "female",
+                              true,
+                            ),
+                          )
+                        }
+                        className="inline-flex min-h-9 cursor-pointer items-center justify-center rounded-xl border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2"
+                      >
+                        Add Female
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="step1-demographic-switch-female"
+                        onClick={() => onDemographicsChange(["female"])}
+                        className="inline-flex min-h-9 cursor-pointer items-center justify-center rounded-xl border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2"
+                      >
+                        Switch to Female
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      data-testid="step1-demographic-switch-unisex"
+                      onClick={() => onDemographicsChange(["unisex"])}
+                      className="inline-flex min-h-9 cursor-pointer items-center justify-center rounded-xl border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2"
+                    >
+                      Switch to Unisex / Family
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </fieldset>
         {showInlineContinue && (
           <div

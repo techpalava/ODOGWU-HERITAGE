@@ -364,12 +364,53 @@ const maleBumSelection: GarmentTypeStepSelection = {
     bum_shorts: construction("bum_shorts", "bum_rope", "bum_shorts_fastening"),
   },
 };
-assert.equal(
+const maleBumProfile = resolveMeasurementProfile({
+  garment: { garmentKey: "bum:1", garmentType: "bum_shorts" },
+  garmentTypeSelection: maleBumSelection,
+});
+assert.equal(maleBumProfile.status, "resolved");
+if (maleBumProfile.status === "resolved") {
+  assert.equal(maleBumProfile.profile.id, "K");
+}
+
+const maleDressSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["dress"],
+  demographic: "male",
+  constructionByGarment: {
+    dress: construction("dress", "dress_std_short", "dress_construction"),
+  },
+};
+assert.deepEqual(
   resolveMeasurementProfile({
-    garment: { garmentKey: "bum:1", garmentType: "bum_shorts" },
-    garmentTypeSelection: maleBumSelection,
-  }).status,
-  "unresolved",
+    garment: { garmentKey: "dress:1", garmentType: "dress" },
+    garmentTypeSelection: maleDressSelection,
+  }),
+  {
+    status: "unresolved",
+    garmentKey: "dress:1",
+    garmentType: "dress",
+    code: "demographic_ineligible",
+  },
+);
+
+const maleSkirtSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["skirt"],
+  demographic: "male",
+  constructionByGarment: {
+    skirt: construction("skirt", "skirt_std", "skirt_length"),
+  },
+};
+assert.deepEqual(
+  resolveMeasurementProfile({
+    garment: { garmentKey: "skirt:1", garmentType: "skirt" },
+    garmentTypeSelection: maleSkirtSelection,
+  }),
+  {
+    status: "unresolved",
+    garmentKey: "skirt:1",
+    garmentType: "skirt",
+    code: "demographic_ineligible",
+  },
 );
 
 const physicalGarments = getMeasurementPhysicalGarments({

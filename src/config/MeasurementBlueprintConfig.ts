@@ -543,7 +543,7 @@ export const MEASUREMENT_PROFILES: readonly MeasurementProfile[] = [
   profile("H", "Dress — Long Length, Mid or Long Sleeve", "DRESS (LL-MS to LS)", 164, "dress", femaleDemographics, ["dress_long_midlong", "dress_long_mid", "dress_long_long"], { dress_long_mid: "sleeve_length_mid", dress_long_long: "sleeve_length_long" }),
   profile("I", "Pants/Trousers", "PANTS (TROUSERS)", 189, "trouser", allDemographics, []),
   profile("J", "Nikka/Standard Shorts", "SHORTS (NIKKA)", 208, "standard_shorts", allDemographics, []),
-  profile("K", "Bum Shorts", "BUM SHORTS", 223, "bum_shorts", femaleDemographics, []),
+  profile("K", "Bum Shorts", "BUM SHORTS", 223, "bum_shorts", allDemographics, []),
   profile("L", "Standard-Length Skirt", "SKIRTS — STANDARD", 238, "skirt", femaleDemographics, ["skirt_std"]),
   profile("M", "Long Skirt", "SKIRTS — LONG", 253, "skirt", femaleDemographics, ["skirt_long"]),
 ] as const;

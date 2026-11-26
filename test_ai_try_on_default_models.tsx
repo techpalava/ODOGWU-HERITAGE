@@ -1286,6 +1286,65 @@ const hasConsent = (renderer: ReturnType<typeof create>) => byData(renderer, "da
     assert.equal(requests[0].defaultModelId, "male-2-medium");
     await act(async () => { renderer.unmount(); });
   }
+
+  // 7) preferredModelGender (Step 1 / wearer demographic) pre-selection for unisex vs restricted garments.
+  {
+    // Unisex Standard Shirt with preferredModelGender="female" overrides male/unisex styleGender.
+    for (const styleGender of ["male", "unisex", null] as const) {
+      const { renderer, requests } = renderPanel({
+        targets: [target({
+          preferredModelGender: "female",
+          previewableGarments: [makeGarment("shirt", styleGender)],
+        })],
+      });
+      assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium")[0].props["aria-checked"], true);
+      await click(generateButton(renderer));
+      assert.equal(requests[0].defaultModelId, "female-2-medium");
+      await act(async () => { renderer.unmount(); });
+    }
+
+    // Unisex Standard Shirt with preferredModelGender="male" overrides female styleGender.
+    {
+      const { renderer, requests } = renderPanel({
+        targets: [target({
+          preferredModelGender: "male",
+          previewableGarments: [makeGarment("shirt", "female")],
+        })],
+      });
+      assert.equal(byData(renderer, "data-ai-try-on-model", "male-2-medium")[0].props["aria-checked"], true);
+      await click(generateButton(renderer));
+      assert.equal(requests[0].defaultModelId, "male-2-medium");
+      await act(async () => { renderer.unmount(); });
+    }
+
+    // Without preferredModelGender (Step 1 Unisex without wearer fit), catalogue styleGender decides.
+    {
+      const { renderer } = renderPanel({
+        targets: [target({
+          preferredModelGender: null,
+          previewableGarments: [makeGarment("shirt", "female")],
+        })],
+      });
+      assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium")[0].props["aria-checked"], true);
+      await act(async () => { renderer.unmount(); });
+    }
+
+    // Standard Dress stays Women-only even when preferredModelGender="male" (Step 1 Male).
+    {
+      const { renderer, requests } = renderPanel({
+        targets: [target({
+          preferredModelGender: "male",
+          previewableGarments: [makeGarment("dress", "male")],
+        })],
+      });
+      assert.equal(byData(renderer, "data-ai-try-on-model-group").length, 1);
+      assert.equal(byData(renderer, "data-ai-try-on-model-group")[0].props["data-ai-try-on-model-group"], "women");
+      assert.equal(byData(renderer, "data-ai-try-on-model", "female-2-medium-short")[0].props["aria-checked"], true);
+      await click(generateButton(renderer));
+      assert.equal(requests[0].defaultModelId, "female-2-medium-short");
+      await act(async () => { renderer.unmount(); });
+    }
+  }
 }
 
 console.log("AI Try-on default models: all checks passed");
