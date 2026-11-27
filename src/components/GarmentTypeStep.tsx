@@ -5,7 +5,12 @@ import {
 } from "./DesignStudioStepLayout";
 import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
-import { DesignStudioStepActions } from "./DesignStudioBackButton.js";
+import {
+  DesignStudioStepActions,
+  STEP1_CONTINUE_ENTRANCE_CLASS,
+  studioStep1GoldContinueClass,
+  STUDIO_CONTINUE_RING_BLINK_CLASS,
+} from "./DesignStudioBackButton.js";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide.js";
 import type {
   CustomDetailDemographic,
@@ -673,6 +678,7 @@ export const GarmentTypeStep = ({
           slot="header"
           backDisabled
           className="mb-5"
+          variant={showInlineContinue ? "step1-unlocked-footer" : "default"}
           note={
             showStillNeeded ? (
               <DesignStudioStepGuide
@@ -709,6 +715,16 @@ export const GarmentTypeStep = ({
                   })}
                 </ul>
               </DesignStudioStepGuide>
+            ) : showInlineContinue ? (
+              <p
+                id={stillNeededId}
+                role="status"
+                data-testid="step1-all-set"
+                className="flex items-center gap-1.5 rounded-xl border border-heritage-gold/40 bg-heritage-cream/60 px-3 py-2 text-xs font-semibold text-heritage-green"
+              >
+                <CheckCircle2 aria-hidden="true" size={14} className="shrink-0 text-heritage-green" />
+                <span>All set — continue to Fabric.</span>
+              </p>
             ) : null
           }
           forward={onContinue ? {
@@ -717,6 +733,9 @@ export const GarmentTypeStep = ({
             disabled: continueDisabled,
             ariaLabel: "Continue to Fabric",
             describedBy: showStillNeeded ? stillNeededId : undefined,
+            className: continueDisabled
+              ? "hidden"
+              : `${studioStep1GoldContinueClass} ${STEP1_CONTINUE_ENTRANCE_CLASS} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`,
           } : undefined}
         />
         <div className="border-b border-heritage-gold/15 pb-5">
@@ -949,11 +968,14 @@ export const GarmentTypeStep = ({
           >
             <DesignStudioStepActions
               slot="footer"
+              variant="step1-unlocked-footer"
               backDisabled
               forward={{
                 destination: "Fabric",
                 onClick: onContinue,
+                disabled: continueDisabled,
                 ariaLabel: "Continue to Fabric",
+                className: `${studioStep1GoldContinueClass} ${STEP1_CONTINUE_ENTRANCE_CLASS} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`,
               }}
             />
           </div>

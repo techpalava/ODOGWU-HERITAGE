@@ -29,6 +29,7 @@
   --animate-hand-tap: hand-tap 2.4s ease-in-out infinite;
   --animate-hand-soft: hand-soft 2.6s ease-in-out infinite;
   --animate-ripple: ripple 2.4s ease-out infinite;
+  --animate-step1-continue-entrance: step1-continue-entrance 400ms ease-out 1;
 }
 
 @keyframes step1-select-attention {
@@ -198,6 +199,18 @@
   100% {
     transform: scale(2);
     opacity: 0;
+  }
+}
+
+/* Step 1 Continue button entrance: subtle fade-in and slide-up. */
+@keyframes step1-continue-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
