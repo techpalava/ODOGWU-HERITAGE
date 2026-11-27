@@ -866,6 +866,12 @@ export const DormantFutureMeasurementStep = ({
   const [guideCueTarget, setGuideCueTarget] = useState<"form" | "options">("form");
   const measurementGuideRef = useRef<HTMLElement | null>(null);
   const measurementOptionsRef = useRef<HTMLElement | null>(null);
+  // Wearer jump: only a customer click on GO TO <WEARER> requests it (never chips, mount or restore).
+  const activeWearerJumpAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [wearerJumpRequest, setWearerJumpRequest] = useState<{
+    wearerId: string;
+    seq: number;
+  } | null>(null);
   const requestGuideCue = (target: "form" | "options") => {
     setGuideCueTarget(target);
     setGuideCueRequest((count) => count + 1);
@@ -897,6 +903,31 @@ export const DormantFutureMeasurementStep = ({
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
     : null;
+  // Runs after the wearer switch commits (the form section remounts on activeWearerId).
+  useEffect(() => {
+    if (!wearerJumpRequest || activeWearerId !== wearerJumpRequest.wearerId) return;
+    setWearerJumpRequest(null);
+    const schedule = (callback: () => void) => {
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(callback);
+      } else {
+        callback();
+      }
+    };
+    schedule(() => {
+      const target =
+        activeWearerJumpAnchorRef.current ??
+        (!selectedMethod ? measurementOptionsRef.current : measurementGuideRef.current);
+      target?.scrollIntoView?.({
+        behavior: measurementGuidePrefersReducedMotion() ? "auto" : "smooth",
+        block: "start",
+      });
+      // Let the scroll settle before focus, like the group-focus jump does.
+      schedule(() => {
+        target?.focus?.({ preventScroll: true });
+      });
+    });
+  }, [wearerJumpRequest, activeWearerId, selectedMethod, hydrationInvalid]);
   const selectedRoute = isSelectedMeasurementRiskRoute(resolvedState.route)
     ? resolvedState.route
     : null;
@@ -2175,7 +2206,14 @@ export const DormantFutureMeasurementStep = ({
             <button
               type="button"
               data-measurement-go-to-wearer={nextIncompleteWearer.wearerId}
-              onClick={() => onGoToWearer(nextIncompleteWearer.wearerId)}
+              onClick={() => {
+                const targetId = nextIncompleteWearer.wearerId;
+                setWearerJumpRequest((prev) => ({
+                  wearerId: targetId,
+                  seq: (prev?.seq ?? 0) + 1,
+                }));
+                onGoToWearer(targetId);
+              }}
               data-measurement-guide-beam={beamNextWearer ? "true" : undefined}
               className={withMeasurementGuideBeam(
                 "inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green/75 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2",
@@ -2404,6 +2442,13 @@ export const DormantFutureMeasurementStep = ({
       )}
 
       {activeWearerLabel && (
+        <>
+        <div
+          ref={activeWearerJumpAnchorRef}
+          tabIndex={-1}
+          data-measurement-active-wearer-jump-anchor="true"
+          className="!m-0 h-0 scroll-mt-28 overflow-hidden outline-none sm:scroll-mt-24"
+        />
         <div
           data-measurement-active-wearer-banner="true"
           data-measurement-active-wearer-banner-id={activeWearerId || undefined}
@@ -2545,6 +2590,7 @@ export const DormantFutureMeasurementStep = ({
             </div>
           )}
         </div>
+        </>
       )}
 
       {!onsiteSelected && !selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
