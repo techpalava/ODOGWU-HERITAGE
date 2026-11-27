@@ -9,6 +9,7 @@ import {
   findPrioritizedHandGuideElement,
   findPrioritizedHandGuideElements,
   getHandGuideHintForElement,
+  isScrolledPastContinueThreshold,
   resolveHandGuideTarget,
   resolveModalHandGuideTarget,
   shouldSuppressHandGuide,
@@ -185,5 +186,87 @@ describe("far-cursor trigger hysteresis", () => {
       }),
       false,
     );
+  });
+});
+
+describe("garment_type dynamic hints and 65% rule", () => {
+  const garmentTypeTarget = resolveHandGuideTarget("garment_type");
+
+  it("returns 'Select garment(s)' when no garment selected and no audience", () => {
+    const hint = getHandGuideHintForElement(garmentTypeTarget, false, '[data-hand-guide-target="garment-type-select"]', {
+      scrollY: 0,
+      viewportHeight: 600,
+      documentHeight: 2000,
+      hasGarmentSelection: false,
+      hasAudienceSelection: false,
+      continueUnlocked: false,
+      isMobile: true,
+    });
+    assert.equal(hint, "Select garment(s)");
+  });
+
+  it("returns 'Who the design is for' when garment selected but no audience", () => {
+    const hint = getHandGuideHintForElement(garmentTypeTarget, false, '[data-hand-guide-target="garment-type-audience"]', {
+      scrollY: 0,
+      viewportHeight: 600,
+      documentHeight: 2000,
+      hasGarmentSelection: true,
+      hasAudienceSelection: false,
+      continueUnlocked: false,
+      isMobile: true,
+    });
+    assert.equal(hint, "Who the design is for");
+  });
+
+  it("returns 'Who the design is for' when matched selector is garment-type-audience", () => {
+    const hint = getHandGuideHintForElement(garmentTypeTarget, false, '[data-hand-guide-target="garment-type-audience"]', {
+      scrollY: 0,
+      viewportHeight: 600,
+      documentHeight: 2000,
+      hasGarmentSelection: true,
+      hasAudienceSelection: false,
+      continueUnlocked: false,
+      isMobile: true,
+    });
+    assert.equal(hint, "Who the design is for");
+  });
+
+  it("returns 'Continue to Fabric' when Continue is unlocked below 65% and 'Continue' past 65%", () => {
+    const hintBelow = getHandGuideHintForElement(garmentTypeTarget, true, CONTINUE_UNLOCKED_SELECTOR, {
+      scrollY: 0,
+      viewportHeight: 600,
+      documentHeight: 2000,
+      hasGarmentSelection: true,
+      hasAudienceSelection: true,
+      continueUnlocked: true,
+      isMobile: true,
+    });
+    assert.equal(hintBelow, "Continue to Fabric");
+
+    const hintPast65 = getHandGuideHintForElement(garmentTypeTarget, true, CONTINUE_UNLOCKED_SELECTOR, {
+      scrollY: 1000,
+      viewportHeight: 600,
+      documentHeight: 2000,
+      hasGarmentSelection: true,
+      hasAudienceSelection: true,
+      continueUnlocked: true,
+      isMobile: true,
+    });
+    assert.equal(hintPast65, "Continue");
+  });
+
+  it("isScrolledPastContinueThreshold returns false below 65%", () => {
+    assert.equal(isScrolledPastContinueThreshold(500, 600, 2000), false); // 500/1400 = 35.7%
+    assert.equal(isScrolledPastContinueThreshold(800, 600, 2000), false); // 800/1400 = 57.1%
+  });
+
+  it("isScrolledPastContinueThreshold returns true at or above 65%", () => {
+    assert.equal(isScrolledPastContinueThreshold(910, 600, 2000), true); // 910/1400 = 65%
+    assert.equal(isScrolledPastContinueThreshold(1000, 600, 2000), true); // 1000/1400 = 71.4%
+  });
+
+  it("isScrolledPastContinueThreshold handles edge cases", () => {
+    assert.equal(isScrolledPastContinueThreshold(0, 600, 600), false); // no scrollable content
+    assert.equal(isScrolledPastContinueThreshold(100, 600, 500), false); // document shorter than viewport
   });
 });

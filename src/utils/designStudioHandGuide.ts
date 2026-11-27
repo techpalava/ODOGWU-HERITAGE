@@ -12,6 +12,42 @@ export interface HandGuideTarget {
   continueHint?: string;
   /** Whether the target is primarily a Continue button. */
   isContinue?: boolean;
+  /** Optional dynamic hint resolver for stages with state-dependent hints. */
+  resolveHint?: (state: HandGuideStageState) => string;
+}
+
+/**
+ * Stage state information for dynamic hint resolution.
+ */
+export interface HandGuideStageState {
+  /** Current scroll Y position. */
+  scrollY: number;
+  /** Viewport height. */
+  viewportHeight: number;
+  /** Document height. */
+  documentHeight: number;
+  /** For garment_type: whether any garment is selected. */
+  hasGarmentSelection?: boolean;
+  /** For garment_type: whether audience is selected. */
+  hasAudienceSelection?: boolean;
+  /** For garment_type: whether Continue is unlocked (visible). */
+  continueUnlocked?: boolean;
+  /** Whether we're on mobile (<640px). */
+  isMobile: boolean;
+}
+
+/**
+ * Checks if the user has scrolled past the 65% threshold of the page.
+ */
+export function isScrolledPastContinueThreshold(
+  scrollY: number,
+  viewportHeight: number,
+  documentHeight: number,
+  threshold = 0.65,
+): boolean {
+  const scrollableHeight = documentHeight - viewportHeight;
+  if (scrollableHeight <= 0) return false;
+  return scrollY / scrollableHeight >= threshold;
 }
 
 export interface HandGuideRect {
@@ -61,8 +97,33 @@ export function resolveHandGuideTarget(stageId: DesignStudioStageId): HandGuideT
           '[data-hand-guide-target="garment-type-audience"]',
           CONTINUE_UNLOCKED_SELECTOR,
         ],
-        hint: "Select a garment",
+        hint: "Select garment(s)",
         continueHint: "Continue to Fabric",
+        resolveHint: (state: HandGuideStageState) => {
+          const { hasGarmentSelection, hasAudienceSelection, continueUnlocked, scrollY, viewportHeight, documentHeight } = state;
+          const past65 = isScrolledPastContinueThreshold(scrollY, viewportHeight, documentHeight);
+
+          // If Continue is unlocked and visible, show "Continue" past 65% and "Continue to Fabric" (or "Continue") otherwise
+          if (continueUnlocked) {
+            return past65 ? "Continue" : "Continue to Fabric";
+          }
+
+          // Past 65% and Continue is locked: target next missing item, not hidden Continue
+          if (past65) {
+            if (hasGarmentSelection && !hasAudienceSelection) {
+              return "Who the design is for";
+            }
+            return "Select garment(s)";
+          }
+
+          // Below 65%: normal priority
+          if (hasGarmentSelection && !hasAudienceSelection) {
+            return "Who the design is for";
+          }
+
+          // Default: Select garment(s)
+          return "Select garment(s)";
+        },
       };
     case "fabric":
       return {
@@ -215,12 +276,20 @@ export function getHandGuideHintForElement(
   target: HandGuideTarget,
   matchedContinueOrPrimary: boolean,
   matchedSelector?: string | null,
+  stageState?: HandGuideStageState,
 ): string {
+  // Use dynamic hint resolver if available (e.g., for garment_type stage)
+  if (target.resolveHint && stageState) {
+    return target.resolveHint(stageState);
+  }
   if (matchedSelector === '[data-hand-guide-target="measurement-required-field"]') {
     return "Enter required measurement";
   }
   if (matchedSelector === '[data-hand-guide-target="shipping-required-field"]') {
     return "Enter delivery details";
+  }
+  if (matchedSelector === '[data-hand-guide-target="garment-type-audience"]') {
+    return "Who the design is for";
   }
   if (matchedContinueOrPrimary && target.continueHint) {
     return target.continueHint;
