@@ -119,6 +119,7 @@ export interface DesignStudioForwardButtonProps {
   "aria-describedby"?: string;
   label?: string;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 export const DesignStudioForwardButton = ({
@@ -133,6 +134,7 @@ export const DesignStudioForwardButton = ({
   "aria-describedby": ariaDescribedBy,
   label,
   className = "",
+  style,
 }: DesignStudioForwardButtonProps) => {
   const secondary = label || !destination ? null : `to ${destination}`;
   const primary = label ?? "Continue";
@@ -156,6 +158,7 @@ export const DesignStudioForwardButton = ({
       data-studio-nav="forward"
       data-continue-unlock-glow={unlockGlow["data-continue-unlock-glow"]}
       className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${unlockGlow.className} ${className}`}
+      style={style}
     >
       <StudioNavLabel primary={primary} secondary={secondary} emphasis="outline" />
       <Icon aria-hidden="true" size={16} className="shrink-0" />

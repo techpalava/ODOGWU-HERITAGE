@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import {
   CONTINUE_UNLOCKED_SELECTOR,
   MODAL_PRIMARY_SELECTOR,
   computeHandGuidePlacement,
   findPrioritizedHandGuideElements,
   getHandGuideHintForElement,
+  isScrolledPastContinueThreshold,
   resolveHandGuideTarget,
   resolveModalHandGuideTarget,
   shouldSuppressHandGuide,
   shouldTriggerFarCursor,
   type HandGuideAnchor,
   type HandGuideTarget,
+  type HandGuideStageState,
 } from "../utils/designStudioHandGuide";
 import { useDesignStudioBlockingOverlayOpen } from "./designStudioBlockingOverlay";
 import type { DesignStudioStageId } from "../types";
@@ -78,6 +80,27 @@ const inspectOpenDialogState = (): {
 };
 
 /**
+ * Finds the scrollable container for mobile landing (sticky header offset).
+ * For garment-type-select: scrolls the category group container.
+ * For garment-type-audience: scrolls the fieldset.
+ */
+function getMobileScrollTarget(targetEl: HTMLElement, stageId: DesignStudioStageId, matchedSelector: string | null): HTMLElement {
+  if (stageId !== "garment_type") return targetEl;
+  const isMobile = window.innerWidth < 640;
+  if (!isMobile) return targetEl;
+
+  if (matchedSelector === '[data-hand-guide-target="garment-type-select"]') {
+    // Scroll the category group container so header lands below sticky header
+    return targetEl.closest('[data-testid^="step1-category-group-"]') ?? targetEl;
+  }
+  if (matchedSelector === '[data-hand-guide-target="garment-type-audience"]') {
+    // Scroll the fieldset so "Who is this design for?" heading lands below sticky header
+    return targetEl.closest('fieldset') ?? targetEl;
+  }
+  return targetEl;
+}
+
+/**
  * Animated hand guide that points to the next actionable element in the Design Studio.
  * - Shows after 7s of inactivity (idle) or when a desktop fine-pointer cursor stays >280px
  *   away from the target for 3.5s without moving closer.
@@ -93,6 +116,12 @@ export function DesignStudioHandGuide({
   const targetRef = useRef<HandGuideTarget | null>(null);
   const elementRef = useRef<HTMLElement | null>(null);
   const alternateIndexRef = useRef(0);
+  const labelRef = useRef<HTMLDivElement>(null);
+  const offScreenPillRef = useRef<HTMLDivElement>(null);
+  const handIconRef = useRef<HTMLDivElement>(null);
+  const handSvgRef = useRef<SVGSVGElement>(null);
+  const guideContainerRef = useRef<HTMLDivElement>(null);
+
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<{
     x: number;
@@ -143,6 +172,45 @@ export function DesignStudioHandGuide({
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   }, []);
+
+  // Compute stage-specific state for dynamic hints
+  const computeStageState = useCallback((): HandGuideStageState => {
+    const scrollY = window.scrollY;
+    const viewportHeight = window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    const isMobile = window.innerWidth < 640;
+
+    let hasGarmentSelection = false;
+    let hasAudienceSelection = false;
+
+    const unlockedContinueEls = Array.from(
+      document.querySelectorAll<HTMLElement>(CONTINUE_UNLOCKED_SELECTOR),
+    ).filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    const continueUnlocked = unlockedContinueEls.length > 0;
+
+    if (stageId === "garment_type") {
+      // Check for garment selection via testid + aria-pressed (data-hand-guide-target is only on unselected)
+      const garmentSelectEls = document.querySelectorAll('[data-testid^="step1-garment-select-"][aria-pressed="true"]');
+      hasGarmentSelection = garmentSelectEls.length > 0;
+
+      // Check for audience selection: any checkbox with garment-type-audience that's checked
+      const audienceEls = document.querySelectorAll('[data-hand-guide-target="garment-type-audience"]');
+      hasAudienceSelection = Array.from(audienceEls).some((el) => (el as HTMLInputElement).checked);
+    }
+
+    return {
+      scrollY,
+      viewportHeight,
+      documentHeight,
+      hasGarmentSelection,
+      hasAudienceSelection,
+      continueUnlocked,
+      isMobile,
+    };
+  }, [stageId]);
 
   const resolveActiveTargets = useCallback((): {
     elements: HTMLElement[];
@@ -222,26 +290,61 @@ export function DesignStudioHandGuide({
 
     const activeIdx = isShippingAlternating
       ? alternateIndexRef.current % resolved.elements.length
-      : 0;
-    const targetEl = resolved.elements[activeIdx]!;
+      : resolved.matchedSelector === CONTINUE_UNLOCKED_SELECTOR
+        ? resolved.elements.length - 1
+        : 0;
+    let targetEl = resolved.elements[activeIdx]!;
+
+    const stageState = computeStageState();
+    const { scrollY, viewportHeight, documentHeight, continueUnlocked } = stageState;
+    const past65 = isScrolledPastContinueThreshold(scrollY, viewportHeight, documentHeight);
+
+    const forwardBtns = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-studio-nav="forward"]'),
+    ).filter(isElementVisible);
+    const unlockedForwardBtns = forwardBtns.filter((el) =>
+      el.matches(CONTINUE_UNLOCKED_SELECTOR),
+    );
+    const bottomContinueBtn =
+      unlockedForwardBtns[unlockedForwardBtns.length - 1] ??
+      (stageId !== "garment_type" ? forwardBtns[forwardBtns.length - 1] ?? null : null);
+
+    let forceContinueHint = false;
+    if (!resolved.modalActive && bottomContinueBtn) {
+      if (continueUnlocked) {
+        targetEl = bottomContinueBtn;
+        if (past65) {
+          forceContinueHint = true;
+        }
+      } else if (past65 && stageId !== "garment_type") {
+        targetEl = bottomContinueBtn;
+        forceContinueHint = true;
+      }
+    }
+
     elementRef.current = targetEl;
 
     const isContinueOrPrimary =
+      forceContinueHint ||
       targetEl.matches(CONTINUE_UNLOCKED_SELECTOR) ||
       targetEl.matches(MODAL_PRIMARY_SELECTOR);
     setHint(
-      getHandGuideHintForElement(
-        resolved.descriptor,
-        isContinueOrPrimary,
-        resolved.matchedSelector,
-      ),
+      forceContinueHint
+        ? "Continue"
+        : getHandGuideHintForElement(
+            resolved.descriptor,
+            isContinueOrPrimary,
+            resolved.matchedSelector,
+            stageState,
+          ),
     );
     setSubtleAnimation(isShippingAlternating);
     setInModal(resolved.modalActive);
 
     const rect = targetEl.getBoundingClientRect();
     const isNeutralGroup =
-      resolved.matchedSelector === '[data-hand-guide-target="measurement-option-group"]';
+      resolved.matchedSelector === '[data-hand-guide-target="measurement-option-group"]' &&
+      !forceContinueHint;
     const isDiagonalPay =
       resolved.matchedSelector === '[data-hand-guide-target="payment-pay-button"]';
 
@@ -263,7 +366,7 @@ export function DesignStudioHandGuide({
 
     if (placement.mode === "off-screen") {
       setMode("off-screen");
-      setOffScreenDirection(placement.direction);
+      setOffScreenDirection(forceContinueHint ? "down" : placement.direction);
       setPosition(null);
       return true;
     }
@@ -271,7 +374,7 @@ export function DesignStudioHandGuide({
     setMode("anchored");
     setPosition({ x: placement.x, y: placement.y, anchor: placement.anchor });
     return true;
-  }, [resolveActiveTargets]);
+  }, [resolveActiveTargets, computeStageState, isElementVisible, stageId]);
 
   const clearTimers = useCallback(() => {
     if (idleTimerRef.current) {
@@ -481,42 +584,164 @@ export function DesignStudioHandGuide({
   }, [onDismiss, clearTimers]);
 
   const handleJumpToTarget = useCallback(() => {
-    const targetEl = elementRef.current || resolveActiveTargets().elements[0];
+    const resolved = resolveActiveTargets();
+    const targetEl = elementRef.current || resolved.elements[0];
     if (!targetEl) {
       setIsVisible(false);
       return;
     }
-    targetEl.scrollIntoView({
-      behavior: reducedMotion ? "auto" : "smooth",
-      block: "center",
-    });
+
+    const isMobile = window.innerWidth < 640;
+
+    if (isMobile && stageId === "garment_type") {
+      // On mobile, scroll the correct container so header lands directly below sticky header
+      const scrollTarget = getMobileScrollTarget(targetEl, stageId, resolved.matchedSelector);
+      const stickyHeaderEl = document.querySelector("header.sticky, header") as HTMLElement | null;
+      const stickyOffset = stickyHeaderEl ? stickyHeaderEl.getBoundingClientRect().height + 12 : 96;
+      const targetTop = scrollTarget.getBoundingClientRect().top + window.scrollY - stickyOffset;
+      window.scrollTo({
+        top: Math.max(0, Math.round(targetTop)),
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+    } else {
+      targetEl.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    }
+
     setTimeout(() => {
       computePosition();
     }, reducedMotion ? 0 : 400);
-  }, [resolveActiveTargets, reducedMotion, computePosition]);
+  }, [resolveActiveTargets, reducedMotion, computePosition, stageId]);
+
+  // --- Global overlap detection and viewport clamping (runs for both anchored and off-screen) ---
+  useLayoutEffect(() => {
+    if (!isVisible) return;
+
+    const checkAndFixOverlap = () => {
+      const container = guideContainerRef.current;
+      const pill = mode === "anchored" ? labelRef.current : offScreenPillRef.current;
+      if (!container) return;
+
+      // Reset previous inline transform offsets before measuring
+      container.style.transform = "";
+      if (labelRef.current) {
+        labelRef.current.style.transform = "";
+      }
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const margin = 8;
+
+      const protectedSelectors = [
+        "button:not([aria-label=\"Hide guide\"]):not([data-hand-guide-jump])",
+        "input",
+        "select",
+        "textarea",
+        "[role=\"button\"]",
+        "[role=\"checkbox\"]",
+        "[role=\"radio\"]",
+        "[role=\"option\"]",
+        "h1, h2, h3, h4, h5, h6",
+        "[data-hand-guide-target]",
+        ".group-header",
+        ".step-header",
+      ];
+
+      const protectedElements = Array.from(
+        document.querySelectorAll<HTMLElement>(protectedSelectors.join(", ")),
+      ).filter((el) => !container.contains(el));
+
+      const measureEl = pill ?? container;
+      const rect = measureEl.getBoundingClientRect();
+
+      let dx = 0;
+      let dy = 0;
+
+      // 1. Clamp horizontally and vertically inside viewport
+      if (rect.left < margin) {
+        dx = margin - rect.left;
+      } else if (rect.right > viewportWidth - margin) {
+        dx = (viewportWidth - margin) - rect.right;
+      }
+
+      if (rect.top < margin) {
+        dy = margin - rect.top;
+      } else if (rect.bottom > viewportHeight - margin) {
+        dy = (viewportHeight - margin) - rect.bottom;
+      }
+
+      // 2. Check collision against protected interactive elements & headings
+      const shiftedLeft = rect.left + dx;
+      const shiftedRight = rect.right + dx;
+      const shiftedTop = rect.top + dy;
+      const shiftedBottom = rect.bottom + dy;
+
+      for (const protectedEl of protectedElements) {
+        const elRect = protectedEl.getBoundingClientRect();
+        if (elRect.width === 0 || elRect.height === 0) continue;
+
+        const overlaps =
+          shiftedLeft < elRect.right &&
+          shiftedRight > elRect.left &&
+          shiftedTop < elRect.bottom &&
+          shiftedBottom > elRect.top;
+
+        if (overlaps) {
+          const shiftAbove = elRect.top - rect.bottom - 8;
+          const shiftBelow = elRect.bottom - rect.top + 8;
+          const canGoAbove = rect.top + shiftAbove >= margin;
+          const canGoBelow = rect.bottom + shiftBelow <= viewportHeight - margin;
+
+          if (canGoAbove && (!canGoBelow || Math.abs(shiftAbove) <= Math.abs(shiftBelow))) {
+            dy = shiftAbove;
+          } else if (canGoBelow) {
+            dy = shiftBelow;
+          }
+          break;
+        }
+      }
+
+      if (dx !== 0 || dy !== 0) {
+        if (mode === "off-screen") {
+          container.style.transform = `translate(calc(-50% + ${Math.round(dx)}px), ${Math.round(dy)}px)`;
+        } else if (labelRef.current) {
+          labelRef.current.style.transform = `translate(calc(-50% + ${Math.round(dx)}px), ${Math.round(dy)}px)`;
+        }
+      }
+    };
+
+    checkAndFixOverlap();
+    const rafId = requestAnimationFrame(checkAndFixOverlap);
+    return () => cancelAnimationFrame(rafId);
+  }, [isVisible, mode, position, hint, offScreenDirection, reducedMotion, subtleAnimation]);
 
   if (!isVisible || dismissedRef.current || shouldSuppressHandGuide(stageId)) {
     return null;
   }
 
   const zIndexClass = inModal ? "z-[10010]" : "z-[99]";
+  const jumpLabel = `Jump to: ${hint || "Continue"}`;
 
   if (mode === "off-screen") {
     const arrow = offScreenDirection === "up" ? "↑" : "↓";
     return (
       <div
-        className={`fixed bottom-20 left-1/2 -translate-x-1/2 sm:bottom-6 ${inModal ? "z-[10010]" : "z-[65]"}`}
-        style={{ maxWidth: "90vw" }}
+        ref={guideContainerRef}
+        className={`fixed bottom-20 left-1/2 -translate-x-1/2 sm:bottom-6 ${inModal ? "z-[10010]" : "z-[65]"} transition-all duration-300`}
+        style={{ maxWidth: "calc(100vw - 16px)" }}
         role="region"
         aria-label="Design Studio step guide"
       >
-        <div className="relative inline-flex items-center gap-1.5 rounded-full border border-heritage-gold bg-heritage-green py-1.5 pl-3.5 pr-2 text-heritage-cream shadow-lg">
+        <div
+          ref={offScreenPillRef}
+          className="relative inline-flex max-w-[calc(100vw-16px)] items-center gap-1.5 rounded-full border border-heritage-gold bg-heritage-green py-1.5 pl-3.5 pr-2 text-heritage-cream shadow-lg"
+        >
           <button
             type="button"
+            data-hand-guide-jump="true"
             onClick={handleJumpToTarget}
-            className="cursor-pointer truncate text-xs font-semibold tracking-wide text-heritage-cream hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            className="cursor-pointer truncate max-w-[calc(100vw-68px)] text-xs font-semibold tracking-wide text-heritage-cream hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
           >
-            {arrow} Jump to: {hint || "Continue"}
+            {arrow} {jumpLabel}
           </button>
           <button
             type="button"
@@ -540,6 +765,7 @@ export function DesignStudioHandGuide({
           </button>
 
           <div
+            ref={handIconRef}
             className="pointer-events-none absolute -bottom-7 right-4 flex items-center justify-center"
             aria-hidden="true"
           >
@@ -547,6 +773,7 @@ export function DesignStudioHandGuide({
               <span className="absolute -left-1 -top-1 h-6 w-6 rounded-full border-2 border-heritage-gold animate-ripple" />
             )}
             <HandSVG
+              ref={handSvgRef}
               className={`h-7 w-7 drop-shadow-md ${reducedMotion ? "" : "animate-hand-tap"}`}
             />
           </div>
@@ -561,6 +788,7 @@ export function DesignStudioHandGuide({
   const isAboveLeft = anchor === "above-left";
   const isTopCenter = anchor === "top-center";
   const isDiagonal = anchor === "diagonal-up-left";
+  const anchoredArrow = isAboveLeft || isTopCenter ? "↓" : "↑";
 
   const rotationClass = isAboveLeft
     ? "rotate-180"
@@ -578,25 +806,55 @@ export function DesignStudioHandGuide({
 
   return (
     <div
+      ref={guideContainerRef}
       className={`pointer-events-none fixed ${zIndexClass} transition-all duration-300`}
       style={{ left: x, top: y }}
-      aria-hidden="true"
+      role="region"
+      aria-label="Design Studio step guide"
     >
       <div className="relative flex flex-col items-center">
-        <div className={`relative ${rotationClass}`}>
+        <div className={`relative ${rotationClass}`} aria-hidden="true">
           {!reducedMotion && !subtleAnimation && (
             <span className="absolute -left-1.5 -top-1.5 h-6 w-6 rounded-full border-2 border-heritage-gold animate-ripple" />
           )}
-          <HandSVG className={`h-8 w-8 drop-shadow-md ${animClass}`} />
+          <HandSVG ref={handSvgRef} className={`h-8 w-8 drop-shadow-md ${animClass}`} />
         </div>
 
         <div
-          className={`absolute ${
+          ref={labelRef}
+          className={`pointer-events-auto absolute ${
             isAboveLeft || isTopCenter ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          } left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-heritage-gold bg-heritage-green px-2.5 py-1 text-xs font-semibold text-heritage-cream shadow-md`}
+          } left-1/2 -translate-x-1/2 inline-flex max-w-[calc(100vw-16px)] items-center gap-1.5 whitespace-nowrap rounded-full border border-heritage-gold bg-heritage-green py-1 pl-3 pr-1.5 text-xs font-semibold text-heritage-cream shadow-md`}
           role="tooltip"
         >
-          {hint}
+          <button
+            type="button"
+            data-hand-guide-jump="true"
+            onClick={handleJumpToTarget}
+            className="cursor-pointer truncate max-w-[calc(100vw-68px)] text-xs font-semibold tracking-wide text-heritage-cream hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+          >
+            {anchoredArrow} {jumpLabel}
+          </button>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-heritage-gold transition-colors hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            aria-label="Hide guide"
+            title="Hide guide for this session"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
