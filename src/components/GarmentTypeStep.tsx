@@ -5,7 +5,12 @@ import {
 } from "./DesignStudioStepLayout";
 import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
-import { DesignStudioStepActions } from "./DesignStudioBackButton.js";
+import {
+  DesignStudioStepActions,
+  STEP1_CONTINUE_ENTRANCE_CLASS,
+  studioStep1GoldContinueClass,
+  STUDIO_CONTINUE_RING_BLINK_CLASS,
+} from "./DesignStudioBackButton.js";
 import { DesignStudioStepGuide } from "./DesignStudioStepGuide.js";
 import type {
   CustomDetailDemographic,
@@ -78,9 +83,13 @@ export const getGarmentTypeStepLabel = (
 
 const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 
-/** Half-height Step 1 reference frame (~50% shorter than the prior square crop). */
+/** Half-height Step 1 reference frame on desktop (sm:aspect-[2/1]); taller 4:5 frame (min 240px) on mobile. */
 export const STEP1_GARMENT_REFERENCE_FRAME_CLASS =
-  "relative aspect-[2/1] w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]";
+  "relative aspect-[2/1] w-full max-sm:aspect-[4/5] max-sm:min-h-[240px] overflow-hidden rounded-t-2xl bg-[#f4eee6]";
+
+/** Mobile reference frame alias kept for backward compatibility. */
+export const STEP1_GARMENT_REFERENCE_FRAME_CLASS_MOBILE =
+  STEP1_GARMENT_REFERENCE_FRAME_CLASS;
 
 export const STEP1_GARMENT_SELECT_ATTENTION_CLASS =
   "motion-safe:animate-step1-select-attention motion-reduce:animate-none";
@@ -437,7 +446,7 @@ export const GarmentTypeStep = ({
           eager={globalIndex < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
         />
         <div
-          className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
+          className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 text-center sm:text-left ${
             category.selected && !isResolved
               ? "bg-amber-50"
               : category.selected
@@ -446,8 +455,8 @@ export const GarmentTypeStep = ({
           }`}
         >
           <div className="mb-2.5 min-w-0">
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
-              <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
+            <div className="flex min-w-0 flex-col items-center sm:flex-row sm:flex-wrap sm:items-start sm:justify-between gap-x-2 gap-y-1">
+              <h3 className="min-w-0 break-words text-balance text-sm font-bold leading-snug text-heritage-green">
                 {category.label}
               </h3>
               {isResolved && (
@@ -476,7 +485,7 @@ export const GarmentTypeStep = ({
               </p>
             )}
             {category.selected && !isResolved && (
-              <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
+              <p className="mt-2 flex min-w-0 items-start justify-center sm:items-start gap-1.5 text-[11px] font-semibold text-amber-800">
                 <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
                 <span className="min-w-0 break-words">Construction pricing needs review.</span>
               </p>
@@ -513,7 +522,7 @@ export const GarmentTypeStep = ({
                 <span
                   aria-hidden="true"
                   data-step1-deselect-cue="true"
-                  className="inline-flex size-11 shrink-0 items-center justify-center border-l border-white/20 text-heritage-cream/90 group-hover:text-red-200"
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-r-xl border border-red-200 bg-white text-red-700 group-hover:bg-red-50 group-hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                 >
                   <X size={16} />
                 </span>
@@ -669,6 +678,7 @@ export const GarmentTypeStep = ({
           slot="header"
           backDisabled
           className="mb-5"
+          variant={showInlineContinue ? "step1-unlocked-footer" : "default"}
           note={
             showStillNeeded ? (
               <DesignStudioStepGuide
@@ -705,6 +715,16 @@ export const GarmentTypeStep = ({
                   })}
                 </ul>
               </DesignStudioStepGuide>
+            ) : showInlineContinue ? (
+              <p
+                id={stillNeededId}
+                role="status"
+                data-testid="step1-all-set"
+                className="flex items-center gap-1.5 rounded-xl border border-heritage-gold/40 bg-heritage-cream/60 px-3 py-2 text-xs font-semibold text-heritage-green"
+              >
+                <CheckCircle2 aria-hidden="true" size={14} className="shrink-0 text-heritage-green" />
+                <span>All set — continue to Fabric.</span>
+              </p>
             ) : null
           }
           forward={onContinue ? {
@@ -713,6 +733,9 @@ export const GarmentTypeStep = ({
             disabled: continueDisabled,
             ariaLabel: "Continue to Fabric",
             describedBy: showStillNeeded ? stillNeededId : undefined,
+            className: continueDisabled
+              ? "hidden"
+              : `${studioStep1GoldContinueClass} ${STEP1_CONTINUE_ENTRANCE_CLASS} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`,
           } : undefined}
         />
         <div className="border-b border-heritage-gold/15 pb-5">
@@ -783,7 +806,7 @@ export const GarmentTypeStep = ({
                             {subGroup.helper}
                           </span>
                         </div>
-                        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1">
+                        <div className="grid min-w-0 flex-1 grid-cols-1 sm:grid-cols-2 gap-2.5">
                           {subGroup.presetIds.map((presetId) => {
                             const category = presentation.categories.find((c) => c.presetId === presetId);
                             if (!category) return null;
@@ -795,7 +818,7 @@ export const GarmentTypeStep = ({
                     ))}
                   </div>
                 ) : (
-                  <div className="grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 xl:grid-cols-3">
+                  <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
                     {group.presetIds.map((presetId) => {
                       const category = presentation.categories.find((c) => c.presetId === presetId);
                       if (!category) return null;
@@ -945,11 +968,14 @@ export const GarmentTypeStep = ({
           >
             <DesignStudioStepActions
               slot="footer"
+              variant="step1-unlocked-footer"
               backDisabled
               forward={{
                 destination: "Fabric",
                 onClick: onContinue,
+                disabled: continueDisabled,
                 ariaLabel: "Continue to Fabric",
+                className: `${studioStep1GoldContinueClass} ${STEP1_CONTINUE_ENTRANCE_CLASS} ${STUDIO_CONTINUE_RING_BLINK_CLASS}`,
               }}
             />
           </div>

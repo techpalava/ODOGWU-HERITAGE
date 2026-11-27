@@ -29,6 +29,7 @@
   --animate-hand-tap: hand-tap 2.4s ease-in-out infinite;
   --animate-hand-soft: hand-soft 2.6s ease-in-out infinite;
   --animate-ripple: ripple 2.4s ease-out infinite;
+  --animate-step1-continue-entrance: step1-continue-entrance 400ms ease-out 1;
 }
 
 @keyframes step1-select-attention {
@@ -201,6 +202,18 @@
   }
 }
 
+/* Step 1 Continue button entrance: subtle fade-in and slide-up. */
+@keyframes step1-continue-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Custom premium scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
@@ -260,5 +273,50 @@ body {
 @media (hover: hover) and (prefers-reduced-motion: reduce) {
   .catalogue-photo-eye {
     transition: none;
+  }
+}
+/* Mobile-only: darken muted grey text for WCAG AA 4.5:1 on cream/white.
+   Central override — no call-site edits. Desktop (>=640px) untouched. */
+@media (max-width: 639.98px) {
+  .text-gray-400,
+  .text-gray-500,
+  .text-gray-600,
+  .text-stone-400,
+  .text-stone-500,
+  .text-stone-600,
+  .text-neutral-400,
+  .text-neutral-500,
+  .text-neutral-600,
+  .text-slate-400,
+  .text-slate-500,
+  .text-slate-600,
+  .text-zinc-400,
+  .text-zinc-500,
+  .text-zinc-600 {
+    color: rgb(27 27 27 / 0.72);
+  }
+
+  .text-heritage-ink\/60,
+  .text-heritage-ink\/65,
+  .text-heritage-ink\/70 {
+    color: rgb(27 27 27 / 0.72);
+  }
+
+  .text-heritage-ink\/35 {
+    color: rgb(27 27 27 / 0.50);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(27 27 27 / 0.50);
+  }
+
+  .text-xs {
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+  }
+  .text-\[9px\],
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 13px;
   }
 }

@@ -32,6 +32,20 @@ export const STUDIO_CONTINUE_RING_BLINK_CLASS =
 export const STUDIO_CONTINUE_UNLOCK_GLOW_CLASS =
   "motion-safe:animate-continue-unlock-glow motion-safe:focus-visible:animate-none motion-reduce:shadow-[inset_0_0_0_2px_rgb(255_255_255/0.7),0_0_0_3px_rgb(255_255_255/0.95),0_0_0_4px_rgb(10_41_27/0.18)]";
 
+/**
+ * Subtle entrance animation for the Step 1 unlocked Continue button.
+ * Respects prefers-reduced-motion.
+ */
+export const STEP1_CONTINUE_ENTRANCE_CLASS =
+  "motion-safe:animate-step1-continue-entrance motion-reduce:animate-none";
+
+/**
+ * Primary gold Continue button for Step 1 unlocked state.
+ * Full-width on mobile, max-w-xs on sm+, heritage gold background.
+ */
+export const studioStep1GoldContinueClass =
+  "border-2 border-heritage-gold bg-heritage-gold text-heritage-green shadow-sm transition duration-200 ease-out enabled:hover:border-heritage-gold enabled:hover:bg-heritage-gold/90 enabled:hover:text-heritage-green focus-visible:border-heritage-gold focus-visible:bg-heritage-gold/90 focus-visible:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:border-heritage-gold/40 disabled:bg-heritage-gold/40 disabled:text-heritage-green/60 disabled:shadow-none";
+
 /** Ring class + data attribute for any Studio Continue / next-step button. */
 export const getStudioContinueUnlockGlow = (
   unlocked: boolean,
@@ -119,6 +133,7 @@ export interface DesignStudioForwardButtonProps {
   "aria-describedby"?: string;
   label?: string;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 export const DesignStudioForwardButton = ({
@@ -133,6 +148,7 @@ export const DesignStudioForwardButton = ({
   "aria-describedby": ariaDescribedBy,
   label,
   className = "",
+  style,
 }: DesignStudioForwardButtonProps) => {
   const secondary = label || !destination ? null : `to ${destination}`;
   const primary = label ?? "Continue";
@@ -156,12 +172,15 @@ export const DesignStudioForwardButton = ({
       data-studio-nav="forward"
       data-continue-unlock-glow={unlockGlow["data-continue-unlock-glow"]}
       className={`${studioNavButtonClass} group ${studioContinueNavInteractionClass} disabled:cursor-not-allowed disabled:border-transparent disabled:bg-heritage-green/35 disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:border-transparent aria-disabled:bg-heritage-green/35 aria-disabled:shadow-none ${unlockGlow.className} ${className}`}
+      style={style}
     >
       <StudioNavLabel primary={primary} secondary={secondary} emphasis="outline" />
       <Icon aria-hidden="true" size={16} className="shrink-0" />
     </button>
   );
 };
+
+export type DesignStudioStepActionsVariant = "default" | "step1-unlocked-footer";
 
 export const DesignStudioStepActions = ({
   slot,
@@ -172,6 +191,8 @@ export const DesignStudioStepActions = ({
   note,
   forwardNote,
   className = "",
+  variant = "default",
+  showSaveOrder = true,
 }: {
   /** Header and footer must both use this component so their rows cannot diverge. */
   slot: "header" | "footer";
@@ -188,6 +209,10 @@ export const DesignStudioStepActions = ({
    */
   forwardNote?: ReactNode;
   className?: string;
+  /** Layout variant for special step configurations. */
+  variant?: DesignStudioStepActionsVariant;
+  /** Whether to render the Save Order button (default true). */
+  showSaveOrder?: boolean;
 }) => {
   const saveAction = useSaveOrderAction();
   const saveReasonId = useId();
@@ -199,6 +224,8 @@ export const DesignStudioStepActions = ({
   // the content below does not move.
   const reserveDisabledReason = Boolean(saveAction) && backDisabled;
   const showNote = Boolean(note) || showDisabledReason || reserveDisabledReason;
+
+  const isStep1UnlockedFooter = variant === "step1-unlocked-footer";
 
   return (
     <div
@@ -213,15 +240,17 @@ export const DesignStudioStepActions = ({
         data-studio-step-actions-buttons="true"
         className={`flex w-full min-w-0 flex-row flex-nowrap items-stretch justify-between gap-2 sm:gap-3 max-sm:flex-wrap ${
           forward && forwardNote ? "sm:flex-wrap" : ""
-        }`}
+        } ${isStep1UnlockedFooter ? "flex-col items-stretch sm:flex-col sm:items-stretch" : ""}`}
       >
-        <DesignStudioBackButton
-          destination={backDestination}
-          onClick={onBack}
-          disabled={backDisabled}
-          className="min-w-0 flex-1 basis-0 sm:max-w-xs"
-        />
-        {saveAction ? (
+        {!backDisabled ? (
+          <DesignStudioBackButton
+            destination={backDestination}
+            onClick={onBack}
+            disabled={backDisabled}
+            className="min-w-0 flex-1 basis-0 sm:max-w-xs"
+          />
+        ) : null}
+        {saveAction && showSaveOrder && !isStep1UnlockedFooter ? (
           <SaveOrderButton
             describedById={showDisabledReason ? saveReasonId : undefined}
             className="max-sm:order-last max-sm:max-w-none max-sm:flex-none max-sm:basis-full"
@@ -230,11 +259,11 @@ export const DesignStudioStepActions = ({
         {forward && forwardNote ? (
           <div
             data-studio-step-actions-forward-column="true"
-            className="contents"
+            className={`contents ${isStep1UnlockedFooter ? "w-full" : ""}`}
           >
             <DesignStudioForwardButton
               {...forward}
-              className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+              className={`min-w-0 flex-1 basis-0 ${isStep1UnlockedFooter ? "w-full max-w-none sm:max-w-none basis-full" : "sm:max-w-xs"} ${forward.className || ""}`}
             />
             <div
               data-studio-step-actions-forward-note="true"
@@ -246,7 +275,14 @@ export const DesignStudioStepActions = ({
         ) : forward ? (
           <DesignStudioForwardButton
             {...forward}
-            className={`min-w-0 flex-1 basis-0 sm:max-w-xs ${forward.className || ""}`}
+            className={`min-w-0 flex-1 basis-0 ${isStep1UnlockedFooter ? "w-full max-w-none sm:max-w-none basis-full" : "sm:max-w-xs"} ${forward.className || ""}`}
+          />
+        ) : null}
+        {saveAction && showSaveOrder && isStep1UnlockedFooter ? (
+          <SaveOrderButton
+            describedById={showDisabledReason ? saveReasonId : undefined}
+            variant="step-row"
+            className="min-h-9 py-1.5 text-[11px] border border-heritage-green/50 w-full sm:self-center sm:max-w-xs"
           />
         ) : null}
       </div>
