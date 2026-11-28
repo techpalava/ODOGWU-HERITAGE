@@ -838,15 +838,11 @@ export const GarmentTypeStep = ({
           className={
             audienceNeeded
               ? `mt-7 min-w-0 scroll-mt-24 rounded-2xl border border-heritage-gold bg-heritage-cream/50 px-4 pb-5 pt-4 ${STEP1_AUDIENCE_GUIDE_BEAM_CLASS}`
-              : "mt-7 min-w-0 scroll-mt-24 border-t border-heritage-gold/15 pt-6"
+              : "mt-7 min-w-0 scroll-mt-24 border-t-0 pt-0 sm:border-t sm:border-heritage-gold/15 sm:pt-6"
           }
         >
           <legend
-            className={
-              audienceNeeded
-                ? "float-left w-full font-serif text-lg font-bold text-heritage-green"
-                : "font-serif text-lg font-bold text-heritage-green"
-            }
+            className="float-left w-full font-serif text-lg font-bold text-heritage-green sm:float-none sm:w-auto"
           >
             Who is this design for?
           </legend>
@@ -856,9 +852,7 @@ export const GarmentTypeStep = ({
             </p>
           ) : null}
           <div
-            className={`mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3${
-              audienceNeeded ? " clear-both" : ""
-            }`}
+            className="clear-both mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3"
           >
             {DEMOGRAPHIC_OPTIONS.map((option, idx) => {
               const inputId = `${idPrefix}-demographic-${option.value}`;
@@ -867,9 +861,9 @@ export const GarmentTypeStep = ({
                 <label
                   key={option.value}
                   htmlFor={inputId}
-                  className={`flex min-h-[72px] min-w-0 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  className={`flex min-h-[72px] min-w-0 cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 text-left sm:items-start sm:justify-start transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                     selected
-                      ? "border-heritage-gold bg-heritage-cream/55"
+                      ? "border-heritage-green bg-heritage-green/5 sm:border-heritage-gold sm:bg-heritage-cream/55"
                       : "border-heritage-gold/20 bg-white hover:border-heritage-gold/60"
                   }`}
                 >
@@ -881,14 +875,14 @@ export const GarmentTypeStep = ({
                     onChange={(event) =>
                       handleDemographicChange(option.value, event)
                     }
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
+                    className="order-2 h-5 w-5 shrink-0 accent-heritage-green sm:order-1 sm:mt-0.5"
                     data-hand-guide-target={
                       selectedDemographics.length === 0 && idx === 0
                         ? "garment-type-audience"
                         : undefined
                     }
                   />
-                  <span className="min-w-0">
+                  <span className="order-1 min-w-0 flex-1 text-left sm:order-2">
                     <span className="block break-words font-bold text-heritage-green">
                       {option.label}
                     </span>
