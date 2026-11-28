@@ -201,7 +201,7 @@ const isAdditionalDesignStyleOccurrence = (
 ): boolean => occurrence.target.garmentKey.startsWith("additional:");
 
 const assignmentListClassName = (count: number): string =>
-  `mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white${count > 2 ? " divide-y divide-heritage-green/15" : ""
+  `mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white max-sm:[&>*+*]:border-t max-sm:[&>*+*]:border-heritage-green/15${count > 2 ? " divide-y divide-heritage-green/15" : ""
   }`;
 
 /**
@@ -357,6 +357,9 @@ export const DormantFutureDesignStyleStep = ({
   >(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
   const [selectedAudience, setSelectedAudience] = useState<string>("all");
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const categoryFilterRowRef = useRef<HTMLDivElement | null>(null);
+  const audienceFilterRowRef = useRef<HTMLDivElement | null>(null);
   const [cataloguePage, setCataloguePage] = useState(1);
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
@@ -407,6 +410,29 @@ export const DormantFutureDesignStyleStep = ({
   useEffect(() => {
     setCataloguePage(1);
   }, [selectedCategoryId, selectedAudience]);
+
+  // Auto-scroll active category/audience filter chip into view on mobile
+  useEffect(() => {
+    const activeCatChip = categoryFilterRowRef.current?.querySelector<HTMLElement>(
+      '[aria-pressed="true"]',
+    );
+    activeCatChip?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [selectedCategoryId]);
+
+  useEffect(() => {
+    const activeAudChip = audienceFilterRowRef.current?.querySelector<HTMLElement>(
+      '[aria-pressed="true"]',
+    );
+    activeAudChip?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [selectedAudience]);
 
   const filteredCatalogueEntries = useMemo(
     () =>
@@ -1128,7 +1154,7 @@ export const DormantFutureDesignStyleStep = ({
             ? "design_style"
             : undefined
         }
-        className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-l-2 px-3 py-2 sm:grid-cols-[4rem_minmax(0,1fr)] ${highlightPrefersReducedMotion
+        className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 border-l-2 px-3 py-3 sm:gap-y-1.5 sm:py-2 sm:grid-cols-[4rem_minmax(0,1fr)] ${highlightPrefersReducedMotion
             ? ""
             : "transition-[background-color,border-color,box-shadow] duration-200"
           } lg:grid-cols-[4rem_minmax(0,1fr)_22rem] lg:gap-x-3 ${isAssignmentFeedbackTarget
@@ -1184,7 +1210,7 @@ export const DormantFutureDesignStyleStep = ({
             {garmentDisplayLabel}
           </p>
           <p className="break-words text-xs leading-relaxed text-heritage-ink/70">
-            <span className="font-semibold text-heritage-green">
+            <span className={occurrence.assignmentLabel ? "font-semibold text-heritage-green" : "font-normal text-heritage-ink/65 sm:font-semibold sm:text-heritage-green"}>
               {occurrence.assignmentLabel || "No design selected"}
             </span>
           </p>
@@ -1196,7 +1222,7 @@ export const DormantFutureDesignStyleStep = ({
           ) : null}
         </div>
         <div className="@container col-span-2 flex min-w-0 flex-col items-stretch gap-1.5 lg:col-span-1 lg:items-end lg:self-center">
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className={`grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end ${occurrence.assignment && occurrenceClearRequest && mutationsEnabled && occurrenceUploadState.status !== "pending" ? (isUploadedAssignment ? "grid-cols-2" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]") : "grid-cols-2"}`}>
             <button
               type="button"
               onClick={(event) => {
@@ -1207,7 +1233,7 @@ export const DormantFutureDesignStyleStep = ({
                   block: "start",
                 });
               }}
-              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
               {catalogueChooseLabel}
             </button>
@@ -1225,7 +1251,7 @@ export const DormantFutureDesignStyleStep = ({
                     if (input instanceof HTMLInputElement) input.click();
                   }}
                   aria-label={uploadActionLabel}
-                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 bg-heritage-green px-3 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-heritage-green/25 bg-heritage-green px-3 text-xs font-bold text-white sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {isUploadedAssignment ? "Replace Upload" : "Upload Design"}
                 </button>
@@ -1266,7 +1292,7 @@ export const DormantFutureDesignStyleStep = ({
                 data-design-clear-compact={isUploadedAssignment ? undefined : "true"}
                 className={
                   isUploadedAssignment
-                    ? "inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                    ? "col-span-2 inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 sm:col-span-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                     : // A 40px red X when the button row is too narrow for the
                     // "Clear" text to fit beside Choose/Change and Upload
                     // (container query on the row); the "Clear" text otherwise.
@@ -1291,7 +1317,7 @@ export const DormantFutureDesignStyleStep = ({
               <span
                 aria-hidden="true"
                 data-design-clear-placeholder="true"
-                className="pointer-events-none invisible inline-flex h-0 w-10 select-none overflow-hidden border-x border-transparent text-[11px] font-bold @min-[18.75rem]:w-auto @min-[18.75rem]:px-2.5 @min-[18.75rem]:before:content-['Clear']"
+                className="pointer-events-none invisible max-sm:hidden inline-flex h-0 w-10 select-none overflow-hidden border-x border-transparent text-[11px] font-bold @min-[18.75rem]:w-auto @min-[18.75rem]:px-2.5 @min-[18.75rem]:before:content-['Clear']"
               />
             ) : null}
           </div>
@@ -1534,7 +1560,7 @@ export const DormantFutureDesignStyleStep = ({
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
 
           {baseOccurrences.length > 0 && (
-            <section ref={mappingsSectionRef} aria-labelledby="current-design-mappings-title" className="mt-5">
+            <section ref={mappingsSectionRef} aria-labelledby="current-design-mappings-title" className="mt-2 sm:mt-5">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
                 {occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
@@ -1579,83 +1605,183 @@ export const DormantFutureDesignStyleStep = ({
               {(visibleCategories.length > 0 || availableAudiences.length > 1) && (
                 <div className="mt-4 space-y-2.5">
                   {visibleCategories.length > 0 && (
-                    <div
-                      role="group"
-                      aria-label="Filter design styles by category"
-                      data-testid="step3-category-filter"
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <button
-                        type="button"
-                        data-testid="step3-category-chip-all"
-                        aria-pressed={selectedCategoryId === "all"}
-                        onClick={() => setSelectedCategoryId("all")}
-                        className={`inline-flex min-h-9 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${selectedCategoryId === "all"
-                            ? "border-heritage-green bg-heritage-green text-white"
-                            : "border-heritage-gold/30 bg-white text-heritage-green hover:border-heritage-green/50"
-                          }`}
-                      >
-                        All
-                      </button>
-                      {visibleCategories.map((category) => {
-                        const displayCategoryName =
-                          normalizeDesignStyleCategoryName(category.name);
-                        const active = selectedCategoryId === category.id;
-                        return (
+                    <>
+                      {visibleCategories.length > 12 && (
+                        <div className="sm:hidden">
                           <button
-                            key={category.id}
                             type="button"
-                            data-testid={`step3-category-chip-${category.id}`}
-                            aria-pressed={active}
-                            onClick={() => setSelectedCategoryId(category.id)}
-                            className={`inline-flex min-h-9 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${active
+                            data-testid="step3-category-sheet-trigger"
+                            onClick={() => setCategorySheetOpen(true)}
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-heritage-gold/40 bg-white px-3.5 py-1.5 text-xs font-semibold text-heritage-green shadow-xs"
+                          >
+                            <span>
+                              Category:{" "}
+                              {selectedCategoryId === "all"
+                                ? "All"
+                                : normalizeDesignStyleCategoryName(
+                                    visibleCategories.find((c) => c.id === selectedCategoryId)?.name ?? "All",
+                                  )}{" "}
+                              ▾
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                      <div className={`relative min-w-0 ${visibleCategories.length > 12 ? "hidden sm:block" : ""}`}>
+                        <div
+                          ref={categoryFilterRowRef}
+                          role="group"
+                          aria-label="Filter design styles by category"
+                          data-testid="step3-category-filter"
+                          className="flex flex-nowrap items-center gap-2 overflow-x-auto pr-8 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pr-0"
+                        >
+                          <button
+                            type="button"
+                            data-testid="step3-category-chip-all"
+                            aria-pressed={selectedCategoryId === "all"}
+                            onClick={() => setSelectedCategoryId("all")}
+                            className={`inline-flex min-h-9 shrink-0 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition ${selectedCategoryId === "all"
                                 ? "border-heritage-green bg-heritage-green text-white"
                                 : "border-heritage-gold/30 bg-white text-heritage-green hover:border-heritage-green/50"
                               }`}
                           >
-                            {displayCategoryName}
+                            All
                           </button>
-                        );
-                      })}
-                    </div>
+                          {visibleCategories.map((category) => {
+                            const displayCategoryName =
+                              normalizeDesignStyleCategoryName(category.name);
+                            const active = selectedCategoryId === category.id;
+                            return (
+                              <button
+                                key={category.id}
+                                type="button"
+                                data-testid={`step3-category-chip-${category.id}`}
+                                aria-pressed={active}
+                                onClick={() => setSelectedCategoryId(category.id)}
+                                className={`inline-flex min-h-9 shrink-0 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition ${active
+                                    ? "border-heritage-green bg-heritage-green text-white"
+                                    : "border-heritage-gold/30 bg-white text-heritage-green hover:border-heritage-green/50"
+                                  }`}
+                              >
+                                {displayCategoryName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent sm:hidden"
+                        />
+                      </div>
+                      {categorySheetOpen && visibleCategories.length > 12 && (
+                        <div
+                          role="dialog"
+                          aria-modal="true"
+                          aria-label="Select design category"
+                          data-testid="step3-category-bottom-sheet"
+                          onClick={() => setCategorySheetOpen(false)}
+                          className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/45 p-0 sm:hidden"
+                        >
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex max-h-[80dvh] w-full flex-col overflow-hidden rounded-t-3xl border-t border-heritage-gold/40 bg-white shadow-xl"
+                          >
+                            <div className="flex items-center justify-between border-b border-heritage-gold/20 px-4 py-3.5">
+                              <h4 className="font-serif text-base font-bold text-heritage-green">Select Category</h4>
+                              <button
+                                type="button"
+                                aria-label="Close category selector"
+                                onClick={() => setCategorySheetOpen(false)}
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green"
+                              >
+                                <X aria-hidden="true" size={16} />
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-2 overflow-y-auto p-4">
+                              <button
+                                type="button"
+                                aria-pressed={selectedCategoryId === "all"}
+                                onClick={() => {
+                                  setSelectedCategoryId("all");
+                                  setCategorySheetOpen(false);
+                                }}
+                                className={`inline-flex min-h-9 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold ${selectedCategoryId === "all"
+                                    ? "border-heritage-green bg-heritage-green text-white"
+                                    : "border-heritage-gold/30 bg-white text-heritage-green"
+                                  }`}
+                              >
+                                All
+                              </button>
+                              {visibleCategories.map((category) => {
+                                const displayCategoryName = normalizeDesignStyleCategoryName(category.name);
+                                const active = selectedCategoryId === category.id;
+                                return (
+                                  <button
+                                    key={category.id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => {
+                                      setSelectedCategoryId(category.id);
+                                      setCategorySheetOpen(false);
+                                    }}
+                                    className={`inline-flex min-h-9 items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold ${active
+                                        ? "border-heritage-green bg-heritage-green text-white"
+                                        : "border-heritage-gold/30 bg-white text-heritage-green"
+                                      }`}
+                                  >
+                                    {displayCategoryName}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                   {availableAudiences.length > 1 && (
-                    <div
-                      role="group"
-                      aria-label="Filter design styles by audience"
-                      data-testid="step3-audience-filter"
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <button
-                        type="button"
-                        data-testid="step3-audience-chip-all"
-                        aria-pressed={selectedAudience === "all"}
-                        onClick={() => setSelectedAudience("all")}
-                        className={`inline-flex min-h-8 items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition ${selectedAudience === "all"
-                            ? "border-heritage-gold bg-heritage-gold/15 text-heritage-green"
-                            : "border-gray-200 bg-white text-heritage-ink/75 hover:border-heritage-gold/40"
-                          }`}
+                    <div className="relative min-w-0">
+                      <div
+                        ref={audienceFilterRowRef}
+                        role="group"
+                        aria-label="Filter design styles by audience"
+                        data-testid="step3-audience-filter"
+                        className="flex flex-nowrap items-center gap-2 overflow-x-auto pr-8 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pr-0"
                       >
-                        All Audiences
-                      </button>
-                      {availableAudiences.map((audience) => {
-                        const active = selectedAudience === audience;
-                        return (
-                          <button
-                            key={audience}
-                            type="button"
-                            data-testid={`step3-audience-chip-${audience}`}
-                            aria-pressed={active}
-                            onClick={() => setSelectedAudience(audience)}
-                            className={`inline-flex min-h-8 items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition ${active
-                                ? "border-heritage-gold bg-heritage-gold/15 text-heritage-green"
-                                : "border-gray-200 bg-white text-heritage-ink/75 hover:border-heritage-gold/40"
-                              }`}
-                          >
-                            {AUDIENCE_FILTER_LABELS[audience]}
-                          </button>
-                        );
-                      })}
+                        <button
+                          type="button"
+                          data-testid="step3-audience-chip-all"
+                          aria-pressed={selectedAudience === "all"}
+                          onClick={() => setSelectedAudience("all")}
+                          className={`inline-flex min-h-8 shrink-0 items-center rounded-full border px-3 py-1 text-[11px] font-semibold whitespace-nowrap transition ${selectedAudience === "all"
+                              ? "border-heritage-gold bg-heritage-gold/15 text-heritage-green"
+                              : "border-gray-200 bg-white text-heritage-ink/75 hover:border-heritage-gold/40"
+                            }`}
+                        >
+                          All Audiences
+                        </button>
+                        {availableAudiences.map((audience) => {
+                          const active = selectedAudience === audience;
+                          return (
+                            <button
+                              key={audience}
+                              type="button"
+                              data-testid={`step3-audience-chip-${audience}`}
+                              aria-pressed={active}
+                              onClick={() => setSelectedAudience(audience)}
+                              className={`inline-flex min-h-8 shrink-0 items-center rounded-full border px-3 py-1 text-[11px] font-semibold whitespace-nowrap transition ${active
+                                  ? "border-heritage-gold bg-heritage-gold/15 text-heritage-green"
+                                  : "border-gray-200 bg-white text-heritage-ink/75 hover:border-heritage-gold/40"
+                                }`}
+                            >
+                              {AUDIENCE_FILTER_LABELS[audience]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent sm:hidden"
+                      />
                     </div>
                   )}
                 </div>
@@ -1682,17 +1808,41 @@ export const DormantFutureDesignStyleStep = ({
                 </div>
               ) : (
                 <>
-                  {paginatedCatalogue.totalPages > 1 && (
-                    <div
-                      data-testid="step3-catalogue-range"
-                      className="mt-2 text-xs text-heritage-ink/60"
-                      aria-live="polite"
-                    >
-                      Showing {paginatedCatalogue.startIndex}–{paginatedCatalogue.endIndex} of{" "}
-                      {paginatedCatalogue.totalItems} designs
+                  {(paginatedCatalogue.totalPages > 1 || selectedCategoryId !== "all" || selectedAudience !== "all") && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {paginatedCatalogue.totalPages > 1 ? (
+                        <div
+                          data-testid="step3-catalogue-range"
+                          className="text-xs text-heritage-ink/60"
+                          aria-live="polite"
+                        >
+                          Showing {paginatedCatalogue.startIndex}–{paginatedCatalogue.endIndex} of{" "}
+                          {paginatedCatalogue.totalItems} designs
+                        </div>
+                      ) : (
+                        <div
+                          className="text-xs text-heritage-ink/60 sm:hidden"
+                          aria-live="polite"
+                        >
+                          Showing {paginatedCatalogue.totalItems} of {catalogueEntries.length} designs
+                        </div>
+                      )}
+                      {(selectedCategoryId !== "all" || selectedAudience !== "all") && (
+                        <button
+                          type="button"
+                          data-testid="step3-clear-filters"
+                          onClick={() => {
+                            setSelectedCategoryId("all");
+                            setSelectedAudience("all");
+                          }}
+                          className="cursor-pointer text-xs font-bold text-heritage-green underline decoration-heritage-gold underline-offset-2 sm:hidden"
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
                   )}
-                  <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
                     {paginatedCatalogue.items.map((entry, index) => {
                       const displayStyleName = formatDisplayStyleLabel(entry.style);
                     return (
@@ -1711,18 +1861,18 @@ export const DormantFutureDesignStyleStep = ({
                           {galleryStyleId && galleryStyleId === entry.style.id ? <span className="absolute left-3 top-3 inline-flex max-w-[58%] items-center rounded-full border border-heritage-gold bg-white px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-heritage-green shadow-sm">From gallery</span> : null}
                           {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                         </div>
-                        <div data-testid="design-style-card-content" className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col p-3 sm:p-4">
-                          <div data-testid="design-style-card-title-zone" className="min-h-[2.75rem]">
+                        <div data-testid="design-style-card-content" className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col px-3 pt-2.5 pb-3 sm:p-4">
+                          <div data-testid="design-style-card-title-zone" className="min-h-[2.75rem] max-sm:min-h-0">
                             <h4 className="break-words font-serif text-base font-bold leading-snug text-heritage-green line-clamp-2">{displayStyleName}</h4>
                           </div>
-                          <div className="mt-1 min-h-4">
+                          <div className={entry.selectedOccurrenceLabels.length > 0 ? "mt-1 min-h-4" : "hidden sm:mt-1 sm:block sm:min-h-4"}>
                             {entry.selectedOccurrenceLabels.length > 0 && <p title={`Applied to ${entry.selectedOccurrenceLabels.join(", ")}`} className="break-words text-[11px] leading-4 text-heritage-ink/60 line-clamp-1">Applied to {entry.selectedOccurrenceLabels.join(", ")}</p>}
                           </div>
-                          <div data-testid="design-style-card-description-zone" className="mt-2 min-h-[2.5rem]">
-                            {entry.style.description && <p data-testid="design-style-description-preview" className="break-words text-xs leading-relaxed text-heritage-ink/65 line-clamp-2">{entry.style.description}</p>}
+                          <div data-testid="design-style-card-description-zone" className="mt-1 sm:mt-2 min-h-[2.5rem] max-sm:min-h-0">
+                            {entry.style.description && <p data-testid="design-style-description-preview" className="break-words text-xs leading-snug text-heritage-ink/80 sm:leading-relaxed sm:text-heritage-ink/65 line-clamp-2">{entry.style.description}</p>}
                           </div>
-                          <button type="button" onClick={(event) => { event.stopPropagation?.(); openDetails(entry, event.currentTarget); }} aria-label={`Read more about ${displayStyleName}`} className="pointer-events-auto relative z-[2] mt-2 inline-flex w-fit min-h-9 items-center text-xs font-bold text-heritage-green underline decoration-heritage-gold/70 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Read more</button>
-                          <div data-testid="design-style-card-cta-zone" className="pointer-events-auto relative z-[2] mt-auto pt-3">
+                          <button type="button" onClick={(event) => { event.stopPropagation?.(); openDetails(entry, event.currentTarget); }} aria-label={`Read more about ${displayStyleName}`} className="pointer-events-auto relative z-[2] mt-1 sm:mt-2 inline-flex w-fit min-h-8 sm:min-h-9 items-center text-xs font-bold text-heritage-green underline decoration-heritage-gold/70 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Read more</button>
+                          <div data-testid="design-style-card-cta-zone" className="pointer-events-auto relative z-[2] mt-auto pt-2 sm:pt-3">
                             <button type="button" disabled={!mutationsEnabled} onClick={(event) => { event.stopPropagation?.(); openDialog(entry, event.currentTarget); }} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${displayStyleName}`} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45" data-hand-guide-target={!hasAnySelectedStyle && mutationsEnabled && index === 0 ? "design-style-select" : undefined}>{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
                           </div>
                         </div>
