@@ -201,7 +201,7 @@ const isAdditionalDesignStyleOccurrence = (
 ): boolean => occurrence.target.garmentKey.startsWith("additional:");
 
 const assignmentListClassName = (count: number): string =>
-  `mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white${count > 2 ? " divide-y divide-heritage-green/15" : ""
+  `mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white max-sm:[&>*+*]:border-t max-sm:[&>*+*]:border-heritage-green/15${count > 2 ? " divide-y divide-heritage-green/15" : ""
   }`;
 
 /**
@@ -1128,7 +1128,7 @@ export const DormantFutureDesignStyleStep = ({
             ? "design_style"
             : undefined
         }
-        className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-l-2 px-3 py-2 sm:grid-cols-[4rem_minmax(0,1fr)] ${highlightPrefersReducedMotion
+        className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 border-l-2 px-3 py-3 sm:gap-y-1.5 sm:py-2 sm:grid-cols-[4rem_minmax(0,1fr)] ${highlightPrefersReducedMotion
             ? ""
             : "transition-[background-color,border-color,box-shadow] duration-200"
           } lg:grid-cols-[4rem_minmax(0,1fr)_22rem] lg:gap-x-3 ${isAssignmentFeedbackTarget
@@ -1184,7 +1184,7 @@ export const DormantFutureDesignStyleStep = ({
             {garmentDisplayLabel}
           </p>
           <p className="break-words text-xs leading-relaxed text-heritage-ink/70">
-            <span className="font-semibold text-heritage-green">
+            <span className={occurrence.assignmentLabel ? "font-semibold text-heritage-green" : "font-normal text-heritage-ink/65 sm:font-semibold sm:text-heritage-green"}>
               {occurrence.assignmentLabel || "No design selected"}
             </span>
           </p>
@@ -1196,7 +1196,7 @@ export const DormantFutureDesignStyleStep = ({
           ) : null}
         </div>
         <div className="@container col-span-2 flex min-w-0 flex-col items-stretch gap-1.5 lg:col-span-1 lg:items-end lg:self-center">
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className={`grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end ${occurrence.assignment && occurrenceClearRequest && mutationsEnabled && occurrenceUploadState.status !== "pending" ? (isUploadedAssignment ? "grid-cols-2" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]") : "grid-cols-2"}`}>
             <button
               type="button"
               onClick={(event) => {
@@ -1207,7 +1207,7 @@ export const DormantFutureDesignStyleStep = ({
                   block: "start",
                 });
               }}
-              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
               {catalogueChooseLabel}
             </button>
@@ -1225,7 +1225,7 @@ export const DormantFutureDesignStyleStep = ({
                     if (input instanceof HTMLInputElement) input.click();
                   }}
                   aria-label={uploadActionLabel}
-                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 bg-heritage-green px-3 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+                  className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-heritage-green/25 bg-heritage-green px-3 text-xs font-bold text-white sm:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {isUploadedAssignment ? "Replace Upload" : "Upload Design"}
                 </button>
@@ -1266,7 +1266,7 @@ export const DormantFutureDesignStyleStep = ({
                 data-design-clear-compact={isUploadedAssignment ? undefined : "true"}
                 className={
                   isUploadedAssignment
-                    ? "inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                    ? "col-span-2 inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 sm:col-span-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                     : // A 40px red X when the button row is too narrow for the
                     // "Clear" text to fit beside Choose/Change and Upload
                     // (container query on the row); the "Clear" text otherwise.
@@ -1291,7 +1291,7 @@ export const DormantFutureDesignStyleStep = ({
               <span
                 aria-hidden="true"
                 data-design-clear-placeholder="true"
-                className="pointer-events-none invisible inline-flex h-0 w-10 select-none overflow-hidden border-x border-transparent text-[11px] font-bold @min-[18.75rem]:w-auto @min-[18.75rem]:px-2.5 @min-[18.75rem]:before:content-['Clear']"
+                className="pointer-events-none invisible max-sm:hidden inline-flex h-0 w-10 select-none overflow-hidden border-x border-transparent text-[11px] font-bold @min-[18.75rem]:w-auto @min-[18.75rem]:px-2.5 @min-[18.75rem]:before:content-['Clear']"
               />
             ) : null}
           </div>
@@ -1534,7 +1534,7 @@ export const DormantFutureDesignStyleStep = ({
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
 
           {baseOccurrences.length > 0 && (
-            <section ref={mappingsSectionRef} aria-labelledby="current-design-mappings-title" className="mt-5">
+            <section ref={mappingsSectionRef} aria-labelledby="current-design-mappings-title" className="mt-2 sm:mt-5">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
                 {occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
