@@ -140,6 +140,7 @@ export function SiteFeedbackButton({
   // The control that opened the panel (left tab or desktop header button) gets focus back on close.
   const openerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -293,7 +294,12 @@ export function SiteFeedbackButton({
       }
     };
     document.addEventListener("keydown", onKeyDown, true);
-    const focusTimer = window.setTimeout(() => messageRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => {
+      if (dialogRef.current) {
+        dialogRef.current.scrollTop = 0;
+      }
+      closeButtonRef.current?.focus({ preventScroll: true });
+    }, 0);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
       window.clearTimeout(focusTimer);
@@ -427,9 +433,9 @@ export function SiteFeedbackButton({
             aria-modal="true"
             aria-labelledby={`${ids}-title`}
             data-site-feedback-dialog="true"
-            className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-heritage-gold/40 bg-heritage-cream p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] font-sans text-heritage-ink shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
+            className="max-h-[85dvh] sm:max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-heritage-gold/40 bg-heritage-cream px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] pt-0 font-sans text-heritage-ink shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="sticky top-0 z-10 -mx-5 flex items-start justify-between gap-3 border-b border-heritage-gold/25 bg-heritage-cream px-5 pt-4 pb-3 sm:static sm:mx-0 sm:border-b-0 sm:p-0">
               <div className="flex items-center gap-2">
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-heritage-green text-heritage-gold">
                   <MessageSquare aria-hidden="true" size={16} />
@@ -439,6 +445,7 @@ export function SiteFeedbackButton({
                 </h2>
               </div>
               <button
+                ref={closeButtonRef}
                 type="button"
                 onClick={closeDialog}
                 aria-label="Close feedback"
