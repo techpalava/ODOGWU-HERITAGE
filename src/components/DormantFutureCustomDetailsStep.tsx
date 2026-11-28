@@ -1307,6 +1307,7 @@ export const DormantFutureCustomDetailsStep = ({
         ? resolveLegacySleeveConstructionOptionId(selectedConstructionId || "") === option.id
         : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id);
       const hasOptionPhoto = group.selectionGroup === "neck_design";
+      const stackPricePillOnMobile = hasOptionPhoto || isPersonalizedRequirement;
       return (
         <div key={option.id} className="h-full min-w-0 w-full">
           <label
@@ -1327,12 +1328,12 @@ export const DormantFutureCustomDetailsStep = ({
                   onSingleSelect(occurrence.subject.garmentKey, group.selectionGroup, option.id);
                 }
               }}
-              className={`size-5 shrink-0 accent-heritage-green${hasOptionPhoto ? " max-sm:mt-0.5" : ""}`}
+              className={`size-5 shrink-0 accent-heritage-green${stackPricePillOnMobile ? " max-sm:mt-0.5" : ""}`}
             />
-            <span className={`min-w-0 flex-1${hasOptionPhoto ? " max-sm:grid max-sm:grid-cols-1" : ""}`}>
-              <span className={hasOptionPhoto ? "max-sm:contents sm:flex sm:min-w-0 sm:items-start sm:justify-between sm:gap-x-3" : "flex min-w-0 items-start justify-between gap-x-3"}>
-                <span className={`min-w-0 flex-1 break-words text-sm font-bold leading-5 text-heritage-green${hasOptionPhoto ? " max-sm:order-1" : ""}`}>{canonicalSleeveConstructionLabel(option.id, option.label)}</span>
-                <span className={hasOptionPhoto ? "max-sm:order-3 max-sm:mt-1.5 max-sm:inline-flex max-sm:w-fit max-sm:items-center max-sm:rounded-full max-sm:border max-sm:border-heritage-gold/35 max-sm:bg-heritage-cream/60 max-sm:px-2 max-sm:py-0.5 max-sm:font-sans max-sm:text-[11px] max-sm:font-semibold max-sm:leading-tight max-sm:text-heritage-green shrink-0 whitespace-nowrap sm:text-right sm:font-mono sm:text-xs sm:font-bold sm:leading-5 sm:text-heritage-gold" : "shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold"}>{getOptionPriceLabel(option, group.isConstruction, checked, isNarrowedDressSleeveGroup)}</span>
+            <span className={`min-w-0 flex-1${stackPricePillOnMobile ? " max-sm:grid max-sm:grid-cols-1" : ""}`}>
+              <span className={stackPricePillOnMobile ? "max-sm:contents sm:flex sm:min-w-0 sm:items-start sm:justify-between sm:gap-x-3" : "flex min-w-0 items-start justify-between gap-x-3"}>
+                <span className={`min-w-0 flex-1 break-words [hyphens:none] text-sm font-bold leading-5 text-heritage-green${stackPricePillOnMobile ? " max-sm:order-1" : ""}`}>{canonicalSleeveConstructionLabel(option.id, option.label)}</span>
+                <span className={isPersonalizedRequirement ? "max-sm:order-3 max-sm:mt-1.5 max-sm:inline-flex max-sm:w-fit max-sm:items-center max-sm:rounded-full max-sm:border max-sm:border-heritage-gold/45 max-sm:bg-heritage-gold/10 max-sm:px-2.5 max-sm:py-0.5 max-sm:font-sans max-sm:text-[11px] max-sm:font-semibold max-sm:leading-tight max-sm:text-heritage-gold shrink-0 whitespace-nowrap sm:text-right sm:font-mono sm:text-xs sm:font-bold sm:leading-5 sm:text-heritage-gold" : hasOptionPhoto ? "max-sm:order-3 max-sm:mt-1.5 max-sm:inline-flex max-sm:w-fit max-sm:items-center max-sm:rounded-full max-sm:border max-sm:border-heritage-gold/35 max-sm:bg-heritage-cream/60 max-sm:px-2 max-sm:py-0.5 max-sm:font-sans max-sm:text-[11px] max-sm:font-semibold max-sm:leading-tight max-sm:text-heritage-green shrink-0 whitespace-nowrap sm:text-right sm:font-mono sm:text-xs sm:font-bold sm:leading-5 sm:text-heritage-gold" : "shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold leading-5 text-heritage-gold"}>{getOptionPriceLabel(option, group.isConstruction, checked, isNarrowedDressSleeveGroup)}</span>
               </span>
               {!isPersonalizedRequirement && option.description && <span className={`mt-0.5 block break-words text-xs leading-snug text-heritage-ink/65${hasOptionPhoto ? " max-sm:order-2 max-sm:mt-1 max-sm:line-clamp-2 max-sm:text-heritage-ink/80" : ""}`}>{option.description}</span>}
               {!isPersonalizedRequirement && option.requiresEvaluation && <span className={`mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50${hasOptionPhoto ? " max-sm:order-4" : ""}`}>Confirmed after tailoring review</span>}
