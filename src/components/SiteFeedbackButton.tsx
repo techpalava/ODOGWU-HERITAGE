@@ -23,6 +23,30 @@ import {
   writeOrderFeedbackPromptState,
 } from "../utils/designStudioOrderFeedbackPrompt.js";
 
+/** Saves and restores inline body styles for the iOS-safe scroll lock. */
+const saveBodyStyles = (): CSSStyleDeclaration | null => {
+  if (typeof document === "undefined") return null;
+  const body = document.body;
+  // Clone current inline styles so we can restore them exactly.
+  const style = body.style.cssText;
+  return { cssText: style } as unknown as CSSStyleDeclaration;
+};
+
+const restoreBodyStyles = (saved: CSSStyleDeclaration | null) => {
+  if (typeof document === "undefined" || !saved) return;
+  document.body.style.cssText = (saved as { cssText: string }).cssText;
+};
+
+/** Restores window scroll instantly, bypassing CSS scroll-behavior: smooth. */
+const restoreScrollPosition = (y: number) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.scrollTo({ top: y, left: 0, behavior: "instant" as ScrollBehavior });
+  } catch {
+    window.scrollTo(0, y);
+  }
+};
+
 type SubmitFeedback = (
   value: Extract<SiteFeedbackValidation, { ok: true }>["value"],
   context: SiteFeedbackContext,
@@ -140,8 +164,23 @@ export function SiteFeedbackButton({
   // The control that opened the panel (left tab or desktop header button) gets focus back on close.
   const openerRef = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Scroll lock: snapshot scrollY on open, restore on close.
+  const scrollYRef = useRef<number>(0);
+  const bodyStylesRef = useRef<CSSStyleDeclaration | null>(null);
+  const isOrderFlowRef = useRef(false);
+  const isScrollLockedRef = useRef(false);
+
+  const unlockBodyScroll = useCallback(() => {
+    if (!isScrollLockedRef.current) return;
+    restoreBodyStyles(bodyStylesRef.current);
+    bodyStylesRef.current = null;
+    isScrollLockedRef.current = false;
+    restoreScrollPosition(scrollYRef.current);
+  }, []);
 
   // Preview URL for the picked photo; revoked when it changes or unmounts.
   useEffect(() => {
@@ -217,10 +256,25 @@ export function SiteFeedbackButton({
     setSubmitError(null);
     setFieldError(null);
     setOrderFlowPrompt(options?.orderFlow === true);
+    isOrderFlowRef.current = options?.orderFlow === true;
     if (!options?.orderFlow) {
       activeOrderFlowTrigger.current = null;
       activeOrderFlowDraftKey.current = null;
     }
+
+    // Snapshot scrollY and lock body scroll (iOS-safe pattern).
+    if (typeof window !== "undefined" && typeof document !== "undefined" && !isScrollLockedRef.current) {
+      scrollYRef.current = window.scrollY;
+      bodyStylesRef.current = saveBodyStyles();
+      const body = document.body;
+      body.style.position = "fixed";
+      body.style.top = `-${scrollYRef.current}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      isScrollLockedRef.current = true;
+    }
+
     setOpen(true);
   }, [activeTab, currentUser?.email]);
 
@@ -236,14 +290,38 @@ export function SiteFeedbackButton({
       setPhoto(null);
       setSent(false);
     }
+
+    // Restore body scroll immediately (no smooth-scroll animation).
+    unlockBodyScroll();
+
+    // Focus handling: order-flow closes focus the Design Studio step target;
+    // manual closes focus the opener (or feedback tab as fallback).
     if (typeof window !== "undefined") {
       window.setTimeout(() => {
-        const opener = openerRef.current;
-        if (opener && opener.isConnected && opener !== document.body) opener.focus();
-        else tabRef.current?.focus();
+        if (isOrderFlowRef.current) {
+          // Order-flow: focus the active Design Studio step heading.
+          const stepTarget = document.querySelector<HTMLElement>(
+            "[data-design-studio-stage-target]",
+          );
+          if (stepTarget) {
+            stepTarget.focus({ preventScroll: true });
+          } else if (openerRef.current && openerRef.current.isConnected && openerRef.current !== document.body) {
+            openerRef.current.focus({ preventScroll: true });
+          } else {
+            tabRef.current?.focus({ preventScroll: true });
+          }
+        } else {
+          // Manual open: restore focus to opener or feedback tab.
+          const opener = openerRef.current;
+          if (opener && opener.isConnected && opener !== document.body) {
+            opener.focus({ preventScroll: true });
+          } else {
+            tabRef.current?.focus({ preventScroll: true });
+          }
+        }
       }, 0);
     }
-  }, [sent]);
+  }, [sent, unlockBodyScroll]);
 
   // Header Feedback and Design Studio step prompts ask the store to open this panel.
   const lastOpenRequest = useRef(siteFeedbackOpenRequest);
@@ -265,6 +343,13 @@ export function SiteFeedbackButton({
     siteFeedbackOpenDraftKey,
     openDialog,
   ]);
+
+  // Scroll lock cleanup on unmount.
+  useEffect(() => {
+    return () => {
+      unlockBodyScroll();
+    };
+  }, [unlockBodyScroll]);
 
   // Esc closes; Tab stays inside the dialog.
   useEffect(() => {
@@ -293,7 +378,12 @@ export function SiteFeedbackButton({
       }
     };
     document.addEventListener("keydown", onKeyDown, true);
-    const focusTimer = window.setTimeout(() => messageRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => {
+      if (dialogRef.current) {
+        dialogRef.current.scrollTop = 0;
+      }
+      closeButtonRef.current?.focus({ preventScroll: true });
+    }, 0);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
       window.clearTimeout(focusTimer);
@@ -427,9 +517,9 @@ export function SiteFeedbackButton({
             aria-modal="true"
             aria-labelledby={`${ids}-title`}
             data-site-feedback-dialog="true"
-            className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-heritage-gold/40 bg-heritage-cream p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] font-sans text-heritage-ink shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
+            className="max-h-[85dvh] sm:max-h-[92dvh] w-full overflow-y-auto overscroll-contain rounded-t-3xl border border-heritage-gold/40 bg-heritage-cream max-sm:px-5 max-sm:pt-0 max-sm:pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] font-sans text-heritage-ink shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="sticky top-0 z-10 -mx-5 flex items-start justify-between gap-3 border-b border-heritage-gold/25 bg-heritage-cream px-5 pt-4 pb-3 sm:static sm:mx-0 sm:border-b-0 sm:p-0">
               <div className="flex items-center gap-2">
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-heritage-green text-heritage-gold">
                   <MessageSquare aria-hidden="true" size={16} />
@@ -439,6 +529,7 @@ export function SiteFeedbackButton({
                 </h2>
               </div>
               <button
+                ref={closeButtonRef}
                 type="button"
                 onClick={closeDialog}
                 aria-label="Close feedback"

@@ -611,6 +611,462 @@ try {
   }
 }
 
+// --- Task 12: scroll/focus restore + mobile classes --------------------------
+// These cases must run under `npm run test:site-feedback` in Node. They stub
+// the minimal window/document globals (restored in finally) and use
+// createNodeMock so refs can record focus and scrollTop.
+
+type FocusCall = { name: string; options?: FocusOptions };
+
+class FakeHTMLElement {
+  isConnected = true;
+  scrollTop = 0;
+  style: Record<string, string> = {};
+  focus(_options?: FocusOptions) {}
+  getAttribute(_name: string): string | null {
+    return null;
+  }
+  querySelectorAll(_selector: string) {
+    return [] as FakeHTMLElement[];
+  }
+}
+
+function createBodyStyle() {
+  const values: Record<string, string> = {
+    cssText: "",
+    position: "",
+    top: "",
+    left: "",
+    right: "",
+    width: "",
+  };
+  const applyCssText = (text: string) => {
+    values.cssText = text;
+    values.position = "";
+    values.top = "";
+    values.left = "";
+    values.right = "";
+    values.width = "";
+    for (const part of text.split(";")) {
+      const idx = part.indexOf(":");
+      if (idx === -1) continue;
+      const key = part.slice(0, idx).trim();
+      const val = part.slice(idx + 1).trim();
+      if (key in values && key !== "cssText") values[key] = val;
+    }
+  };
+  const syncCssText = () => {
+    values.cssText = (["position", "top", "left", "right", "width"] as const)
+      .filter((key) => values[key])
+      .map((key) => `${key}: ${values[key]}`)
+      .join("; ");
+  };
+  return new Proxy(values, {
+    set(target, prop, value) {
+      if (typeof prop !== "string") return false;
+      if (prop === "cssText") {
+        applyCssText(String(value ?? ""));
+        return true;
+      }
+      target[prop] = String(value ?? "");
+      syncCssText();
+      return true;
+    },
+  });
+}
+
+function installFeedbackDom() {
+  const previous: Record<string, { had: boolean; value: unknown }> = {};
+  const snapshot = (key: string) => {
+    previous[key] = {
+      had: Object.prototype.hasOwnProperty.call(globalThis, key),
+      value: (globalThis as Record<string, unknown>)[key],
+    };
+  };
+  for (const key of ["window", "document", "HTMLElement"]) snapshot(key);
+
+  const bodyStyle = createBodyStyle();
+  const body = Object.assign(new FakeHTMLElement(), { style: bodyStyle, tagName: "BODY" });
+  const listeners = new Map<string, Set<(event: any) => void>>();
+  let activeElement: FakeHTMLElement | null = null;
+  let stepTarget: FakeHTMLElement | null = null;
+  let mockScrollY = 0;
+  const scrollToCalls: unknown[][] = [];
+  const focusCalls: FocusCall[] = [];
+
+  const documentStub: any = {
+    body,
+    get activeElement() {
+      return activeElement;
+    },
+    set activeElement(el: FakeHTMLElement | null) {
+      activeElement = el;
+    },
+    querySelector(selector: string) {
+      if (selector === "[data-design-studio-stage-target]") return stepTarget;
+      return null;
+    },
+    addEventListener(type: string, fn: (event: any) => void) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)!.add(fn);
+    },
+    removeEventListener(type: string, fn: (event: any) => void) {
+      listeners.get(type)?.delete(fn);
+    },
+    dispatchEvent(event: { type: string }) {
+      for (const fn of listeners.get(event.type) ?? []) fn(event);
+      return true;
+    },
+    createElement(tag: string) {
+      return Object.assign(new FakeHTMLElement(), { tagName: tag.toUpperCase() });
+    },
+  };
+
+  const windowStub: any = {
+    get scrollY() {
+      return mockScrollY;
+    },
+    scrollTo(...args: unknown[]) {
+      scrollToCalls.push(args);
+      const first = args[0];
+      if (first && typeof first === "object" && typeof (first as { top?: unknown }).top === "number") {
+        mockScrollY = (first as { top: number }).top;
+      } else if (typeof args[1] === "number") {
+        mockScrollY = args[1];
+      }
+    },
+    setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args),
+    clearTimeout: (...args: Parameters<typeof clearTimeout>) => clearTimeout(...args),
+    setInterval: () => 0,
+    clearInterval: () => {},
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  (globalThis as any).HTMLElement = FakeHTMLElement;
+  (globalThis as any).document = documentStub;
+  (globalThis as any).window = windowStub;
+
+  const mocks: Record<string, FakeHTMLElement> = {};
+  const named = (name: string, init?: Partial<FakeHTMLElement>) => {
+    if (!mocks[name]) {
+      const el = Object.assign(new FakeHTMLElement(), init ?? {});
+      el.focus = (options?: FocusOptions) => {
+        focusCalls.push({ name, options });
+      };
+      mocks[name] = el;
+    }
+    return mocks[name];
+  };
+
+  const createNodeMock = (element: { type?: unknown; props?: unknown }) => {
+    const props = (element.props ?? {}) as Record<string, unknown>;
+    if (props["data-site-feedback-dialog"] === "true") {
+      return named("dialog", { scrollTop: 42 });
+    }
+    if (props["aria-label"] === "Close feedback") {
+      return named("close");
+    }
+    if (element.type === "textarea") {
+      return named("message");
+    }
+    if (props["data-site-feedback-tab"] === "true") {
+      return named("tab");
+    }
+    if (element.type === "input" && props.type === "file") {
+      return named("photo", { value: "" } as Partial<FakeHTMLElement>);
+    }
+    return named(`anon:${String(element.type)}`);
+  };
+
+  return {
+    bodyStyle,
+    focusCalls,
+    scrollToCalls,
+    mocks,
+    createNodeMock,
+    setScrollY(y: number) {
+      mockScrollY = y;
+    },
+    getScrollY() {
+      return mockScrollY;
+    },
+    setActiveElement(el: FakeHTMLElement | null) {
+      activeElement = el;
+    },
+    setStepTarget(el: FakeHTMLElement | null) {
+      stepTarget = el;
+    },
+    makeElement(name: string) {
+      const el = Object.assign(new FakeHTMLElement(), { name });
+      el.focus = (options?: FocusOptions) => {
+        focusCalls.push({ name, options });
+      };
+      return el;
+    },
+    dispatchKey(key: string) {
+      documentStub.dispatchEvent({
+        type: "keydown",
+        key,
+        stopPropagation() {},
+        preventDefault() {},
+      });
+    },
+    async flush() {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    },
+    restore() {
+      for (const key of Object.keys(previous)) {
+        if (previous[key].had) {
+          (globalThis as any)[key] = previous[key].value;
+        } else {
+          delete (globalThis as any)[key];
+        }
+      }
+    },
+  };
+}
+
+async function flushTimeouts() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+{
+  // a) open: dialog scrollTop is 0, close button focused, message not focused, classes present
+  const dom = installFeedbackDom();
+  let tree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  try {
+    dom.setScrollY(400);
+    useAppStore.setState({
+      activeTab: "design",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      tree = create(<SiteFeedbackButton submit={async () => "doc-task12-a"} />, {
+        createNodeMock: dom.createNodeMock,
+      });
+    });
+    const tab = tree!.root.findByProps({ "data-site-feedback-tab": "true" });
+    await act(async () => tab.props.onClick());
+    await flushTimeouts();
+
+    const dialog = tree!.root.find((n) => n.props?.["data-site-feedback-dialog"] === "true");
+    assert.equal(dom.mocks.dialog?.scrollTop, 0, "dialog scrollTop is 0 on open");
+    const closeFocus = dom.focusCalls.find((call) => call.name === "close");
+    assert.ok(closeFocus, "close button received focus on open");
+    assert.equal(closeFocus!.options?.preventScroll, true, "close button focus uses preventScroll: true");
+    assert.equal(
+      dom.focusCalls.some((call) => call.name === "message"),
+      false,
+      "Message textarea is not focused on open",
+    );
+    assert.match(String(dialog.props.className), /max-h-\[85dvh\]/, "mobile max-h-[85dvh] present");
+    assert.match(String(dialog.props.className), /overscroll-contain/, "overscroll-contain present");
+    assert.match(String(dialog.props.className), /max-sm:px-5/, "mobile horizontal padding scoped with max-sm:px-5");
+    assert.match(String(dialog.props.className), /max-sm:pt-0/, "mobile top padding scoped with max-sm:pt-0");
+    assert.match(String(dialog.props.className), /max-sm:pb-\[calc\(1\.25rem\+env\(safe-area-inset-bottom,0px\)\)\]/, "mobile bottom safe-area padding scoped with max-sm");
+    assert.match(String(dialog.props.className), /\bsm:p-6\b/, "desktop sm:p-6 still present");
+    const header = dialog.find((n) => n.type === "div" && String(n.props.className ?? "").includes("sticky"));
+    assert.ok(header, "sticky header exists");
+    assert.match(String(header.props.className), /sticky/, "header has sticky class");
+    assert.match(String(header.props.className), /top-0/, "header has top-0");
+    assert.match(String(header.props.className), /bg-heritage-cream/, "header has opaque background");
+  } finally {
+    act(() => tree?.unmount());
+    useAppStore.setState(original, true);
+    dom.restore();
+  }
+}
+
+{
+  // b) body lock on open, restore on close; unmount while closed does not scroll
+  const dom = installFeedbackDom();
+  let tree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  try {
+    dom.setScrollY(400);
+    useAppStore.setState({
+      activeTab: "design",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      tree = create(<SiteFeedbackButton submit={async () => "doc-task12-b"} />, {
+        createNodeMock: dom.createNodeMock,
+      });
+    });
+    const tab = tree!.root.findByProps({ "data-site-feedback-tab": "true" });
+    await act(async () => tab.props.onClick());
+    assert.equal(dom.bodyStyle.position, "fixed", "body position is fixed while open");
+    assert.equal(dom.bodyStyle.top, "-400px", "body top is -400px while open");
+
+    const closeBtn = tree!.root.findByProps({ "aria-label": "Close feedback" });
+    await act(async () => closeBtn.props.onClick());
+    assert.equal(dom.getScrollY(), 400, "scrollY restored to 400 after close");
+    assert.equal(dom.bodyStyle.position, "", "body position restored after close");
+    assert.equal(dom.bodyStyle.top, "", "body top restored after close");
+
+    const callsAfterClose = dom.scrollToCalls.length;
+    act(() => tree?.unmount());
+    tree = undefined;
+    assert.equal(dom.scrollToCalls.length, callsAfterClose, "unmounting while closed does not call window.scrollTo");
+  } finally {
+    act(() => tree?.unmount());
+    useAppStore.setState(original, true);
+    dom.restore();
+  }
+}
+
+{
+  // c) order-flow close focuses the Design Studio stage target after setTimeout 0
+  const dom = installFeedbackDom();
+  let tree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  try {
+    const stepTarget = dom.makeElement("step-target");
+    stepTarget.getAttribute = (name: string) =>
+      name === "data-design-studio-stage-target" ? "measurement" : null;
+    dom.setStepTarget(stepTarget);
+    useAppStore.setState({
+      activeTab: "design",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      tree = create(<SiteFeedbackButton submit={async () => "doc-task12-c"} />, {
+        createNodeMock: dom.createNodeMock,
+      });
+    });
+    await act(async () => {
+      useAppStore.getState().requestSiteFeedbackOpen({
+        source: "order_flow",
+        trigger: "after_step_5",
+        draftKey: "guest:test",
+      });
+    });
+    const closeBtn = tree!.root.findByProps({ "aria-label": "Close feedback" });
+    dom.focusCalls.length = 0;
+    await act(async () => closeBtn.props.onClick());
+    await flushTimeouts();
+    const stepFocus = dom.focusCalls.find((call) => call.name === "step-target");
+    assert.ok(stepFocus, "order-flow close focuses the stage target");
+    assert.equal(stepFocus!.options?.preventScroll, true, "stage target focus uses preventScroll: true");
+  } finally {
+    act(() => tree?.unmount());
+    useAppStore.setState(original, true);
+    dom.restore();
+  }
+}
+
+{
+  // d) manual close focuses the opener after setTimeout 0, with preventScroll
+  const dom = installFeedbackDom();
+  let tree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  try {
+    const opener = dom.makeElement("opener");
+    opener.isConnected = true;
+    dom.setActiveElement(opener);
+    useAppStore.setState({
+      activeTab: "home",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      tree = create(<SiteFeedbackButton submit={async () => "doc-task12-d"} />, {
+        createNodeMock: dom.createNodeMock,
+      });
+    });
+    const tab = tree!.root.findByProps({ "data-site-feedback-tab": "true" });
+    await act(async () => tab.props.onClick());
+    const closeBtn = tree!.root.findByProps({ "aria-label": "Close feedback" });
+    dom.focusCalls.length = 0;
+    await act(async () => closeBtn.props.onClick());
+    await flushTimeouts();
+    const openerFocus = dom.focusCalls.find((call) => call.name === "opener");
+    assert.ok(openerFocus, "manual close focuses the opener");
+    assert.equal(openerFocus!.options?.preventScroll, true, "opener focus uses preventScroll: true");
+  } finally {
+    act(() => tree?.unmount());
+    useAppStore.setState(original, true);
+    dom.restore();
+  }
+}
+
+{
+  // e) Escape closes the dialog and restores scrollY
+  const dom = installFeedbackDom();
+  let tree: ReturnType<typeof create> | undefined;
+  const original = useAppStore.getState();
+  try {
+    dom.setScrollY(500);
+    useAppStore.setState({
+      activeTab: "design",
+      currentUser: null,
+      isCartOpen: false,
+      isMobileMenuOpen: false,
+      siteFeedbackOpenRequest: 0,
+      siteFeedbackOpenSource: "manual",
+      siteFeedbackOpenTrigger: null,
+      siteFeedbackOpenDraftKey: null,
+    });
+    await act(async () => {
+      tree = create(<SiteFeedbackButton submit={async () => "doc-task12-e"} />, {
+        createNodeMock: dom.createNodeMock,
+      });
+    });
+    const tab = tree!.root.findByProps({ "data-site-feedback-tab": "true" });
+    await act(async () => tab.props.onClick());
+    assert.ok(
+      tree!.root.find((n) => n.props?.["data-site-feedback-dialog"] === "true"),
+      "dialog is open before Escape",
+    );
+    await act(async () => {
+      dom.dispatchKey("Escape");
+    });
+    assert.equal(
+      tree!.root.findAll((n) => n.props?.role === "dialog" || n.props?.["data-site-feedback-dialog"] === "true").length,
+      0,
+      "Escape closes the dialog",
+    );
+    assert.equal(dom.getScrollY(), 500, "scrollY restored after Escape");
+  } finally {
+    act(() => tree?.unmount());
+    useAppStore.setState(original, true);
+    dom.restore();
+  }
+}
+
+console.log("PASS: site feedback task 12 (5 cases)");
+
 console.log("PASS: site feedback");
 
 process.exit(0);
