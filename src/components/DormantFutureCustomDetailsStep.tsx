@@ -42,9 +42,9 @@ import type {
   StyleCategory,
 } from "../types";
 import { AssignedFabricPreview } from "./AssignedFabricPreview";
+import { OrderSummaryGarmentCard } from "./OrderSummaryGarmentCard";
 import type { FuturePaymentReviewGarmentPicture } from "../utils/futurePaymentReviewPictures";
 import {
-  getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
   getStep1PresetReferenceImage,
   isStep1GarmentReferenceType,
@@ -265,42 +265,6 @@ interface DormantFutureCustomDetailsStepProps {
   onContinue: () => void;
   orderSummary?: ReactNode;
 }
-
-const GarmentContextDesignThumb = ({
-  garmentKey,
-  garmentLabel,
-  imageUrl,
-}: {
-  garmentKey: string;
-  garmentLabel: string;
-  imageUrl: string | null;
-}) => {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (imageUrl && failedUrl !== imageUrl) {
-    return (
-      <img
-        src={imageUrl}
-        alt={`Selected design for ${garmentLabel}`}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={() => setFailedUrl(imageUrl)}
-        data-garment-context-design={garmentKey}
-        className="size-11 shrink-0 rounded-lg border border-heritage-gold/25 bg-heritage-cream/40 object-cover"
-      />
-    );
-  }
-  return (
-    <div
-      role="img"
-      aria-label={`No design photo for ${garmentLabel}`}
-      data-garment-context-design={garmentKey}
-      data-garment-context-design-missing="true"
-      className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/35 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
-    >
-      No design photo
-    </div>
-  );
-};
 
 export type AdditionalGarmentCustomDetailsChoice =
   | { mode: "choose" }
@@ -2319,88 +2283,30 @@ export const DormantFutureCustomDetailsStep = ({
                 (picture) => picture.garmentKey === context.garmentKey,
               )?.design ?? null;
             return (
-              <article
+              <OrderSummaryGarmentCard
                 key={context.garmentKey}
-                data-step4-garment-context={
+                garmentKey={context.garmentKey}
+                baseGarmentLabel={baseGarmentLabel}
+                garmentLabel={garmentLabel}
+                plainDescription={plainDescription}
+                sourceRole={context.sourceRole}
+                referenceImage={referenceImage}
+                assignedFabric={
+                  assigned
+                    ? {
+                        fabric: assigned.fabric,
+                        fabricCode: assigned.fabricCode,
+                      }
+                    : null
+                }
+                design={design}
+                step4Marker={
                   isCustomDetailsStage ? context.garmentKey : undefined
                 }
-                data-step5-garment-context={
+                step5Marker={
                   isPersonalizedAdditionsStage ? context.garmentKey : undefined
                 }
-                className="flex min-w-0 items-center gap-3 rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-2.5"
-              >
-                {referenceImage ? (
-                  <img
-                    src={referenceImage.src}
-                    alt={getStep1GarmentReferenceAlt(garmentLabel)}
-                    data-step4-garment-reference={context.garmentKey}
-                    className="size-11 shrink-0 rounded-lg object-cover"
-                  />
-                ) : (
-                  <div
-                    role="img"
-                    aria-label={`Garment preview unavailable for ${baseGarmentLabel}`}
-                    data-step4-garment-reference={context.garmentKey}
-                    className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-heritage-gold/10 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
-                  >
-                    Garment preview unavailable
-                  </div>
-                )}
-                {assigned ? (
-                  <AssignedFabricPreview
-                    fabric={assigned.fabric}
-                    garmentKey={context.garmentKey}
-                    garmentLabel={baseGarmentLabel}
-                    fabricCode={assigned.fabricCode}
-                    className="size-11 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40"
-                    size="thumb"
-                  />
-                ) : (
-                  <div
-                    role="img"
-                    aria-label={`No Fabric assigned to ${baseGarmentLabel}`}
-                    data-step4-assigned-fabric={context.garmentKey}
-                    className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/35 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
-                  >
-                    No Fabric
-                  </div>
-                )}
-                <GarmentContextDesignThumb
-                  garmentKey={context.garmentKey}
-                  garmentLabel={baseGarmentLabel}
-                  imageUrl={design?.imageUrl ?? null}
-                />
-                <div className="min-w-0 text-xs leading-snug">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <p className="text-heritage-ink/60">Garment</p>
-                    {context.sourceRole === "additional" ? (
-                      <span className="rounded-full border border-heritage-gold/35 bg-heritage-gold/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-heritage-gold">
-                        Additional
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="break-words font-bold text-heritage-green">{garmentLabel}</p>
-                  {plainDescription ? (
-                    <p
-                      data-testid={`garment-context-plain-description-${context.garmentKey}`}
-                      className="mt-0.5 break-words text-[11px] leading-snug text-heritage-ink/70"
-                    >
-                      {plainDescription}
-                    </p>
-                  ) : null}
-                  <p className="mt-1 text-heritage-ink/60">Assigned Fabric</p>
-                  <p className="break-words font-semibold text-heritage-ink">
-                    {assigned?.fabric?.name || assigned?.fabricCode || "Not assigned"}
-                  </p>
-                  <p className="mt-1 text-heritage-ink/60">Design</p>
-                  <p
-                    data-garment-context-design-name={context.garmentKey}
-                    className="break-words font-semibold text-heritage-ink"
-                  >
-                    {design?.name || "Not assigned"}
-                  </p>
-                </div>
-              </article>
+              />
             );
           })}
         </section>
