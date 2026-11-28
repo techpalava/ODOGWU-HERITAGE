@@ -1842,7 +1842,7 @@ export const DormantFutureDesignStyleStep = ({
                       )}
                     </div>
                   )}
-                  <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-4 grid min-w-0 grid-cols-1 items-stretch gap-5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
                     {paginatedCatalogue.items.map((entry, index) => {
                       const displayStyleName = formatDisplayStyleLabel(entry.style);
                     return (
@@ -1861,18 +1861,18 @@ export const DormantFutureDesignStyleStep = ({
                           {galleryStyleId && galleryStyleId === entry.style.id ? <span className="absolute left-3 top-3 inline-flex max-w-[58%] items-center rounded-full border border-heritage-gold bg-white px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-heritage-green shadow-sm">From gallery</span> : null}
                           {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                         </div>
-                        <div data-testid="design-style-card-content" className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col p-3 sm:p-4">
-                          <div data-testid="design-style-card-title-zone" className="min-h-[2.75rem]">
+                        <div data-testid="design-style-card-content" className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col px-3 pt-2.5 pb-3 sm:p-4">
+                          <div data-testid="design-style-card-title-zone" className="min-h-[2.75rem] max-sm:min-h-0">
                             <h4 className="break-words font-serif text-base font-bold leading-snug text-heritage-green line-clamp-2">{displayStyleName}</h4>
                           </div>
-                          <div className="mt-1 min-h-4">
+                          <div className={entry.selectedOccurrenceLabels.length > 0 ? "mt-1 min-h-4" : "hidden sm:mt-1 sm:block sm:min-h-4"}>
                             {entry.selectedOccurrenceLabels.length > 0 && <p title={`Applied to ${entry.selectedOccurrenceLabels.join(", ")}`} className="break-words text-[11px] leading-4 text-heritage-ink/60 line-clamp-1">Applied to {entry.selectedOccurrenceLabels.join(", ")}</p>}
                           </div>
-                          <div data-testid="design-style-card-description-zone" className="mt-2 min-h-[2.5rem]">
-                            {entry.style.description && <p data-testid="design-style-description-preview" className="break-words text-xs leading-relaxed text-heritage-ink/65 line-clamp-2">{entry.style.description}</p>}
+                          <div data-testid="design-style-card-description-zone" className="mt-1 sm:mt-2 min-h-[2.5rem] max-sm:min-h-0">
+                            {entry.style.description && <p data-testid="design-style-description-preview" className="break-words text-xs leading-snug text-heritage-ink/80 sm:leading-relaxed sm:text-heritage-ink/65 line-clamp-2">{entry.style.description}</p>}
                           </div>
-                          <button type="button" onClick={(event) => { event.stopPropagation?.(); openDetails(entry, event.currentTarget); }} aria-label={`Read more about ${displayStyleName}`} className="pointer-events-auto relative z-[2] mt-2 inline-flex w-fit min-h-9 items-center text-xs font-bold text-heritage-green underline decoration-heritage-gold/70 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Read more</button>
-                          <div data-testid="design-style-card-cta-zone" className="pointer-events-auto relative z-[2] mt-auto pt-3">
+                          <button type="button" onClick={(event) => { event.stopPropagation?.(); openDetails(entry, event.currentTarget); }} aria-label={`Read more about ${displayStyleName}`} className="pointer-events-auto relative z-[2] mt-1 sm:mt-2 inline-flex w-fit min-h-8 sm:min-h-9 items-center text-xs font-bold text-heritage-green underline decoration-heritage-gold/70 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Read more</button>
+                          <div data-testid="design-style-card-cta-zone" className="pointer-events-auto relative z-[2] mt-auto pt-2 sm:pt-3">
                             <button type="button" disabled={!mutationsEnabled} onClick={(event) => { event.stopPropagation?.(); openDialog(entry, event.currentTarget); }} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${displayStyleName}`} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45" data-hand-guide-target={!hasAnySelectedStyle && mutationsEnabled && index === 0 ? "design-style-select" : undefined}>{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
                           </div>
                         </div>
