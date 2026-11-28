@@ -595,9 +595,10 @@ const MeasurementSection = ({
       }`}
     >
       <div className="flex min-w-0 items-start gap-3">
-        <Ruler aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-gold" size={20} />
+        <Ruler aria-hidden="true" className="hidden sm:mt-0.5 sm:block sm:shrink-0 sm:text-heritage-gold" size={20} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Ruler aria-hidden="true" className="shrink-0 text-heritage-gold sm:hidden" size={20} />
             <h3 className="font-serif text-lg font-bold text-heritage-green">{title}</h3>
             {section === "required" && requiredCount > 0 && (
               <span className="rounded-full border border-heritage-gold/40 bg-white px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-heritage-bronze">
@@ -643,7 +644,7 @@ const MeasurementSection = ({
       </div>
       {sharedRequirements.length > 0 && (
         <div
-          className="mt-5"
+          className="mt-6 border-t border-heritage-gold/12 pt-6 sm:mt-5 sm:border-t-0 sm:pt-0"
           data-measurement-group={MEASUREMENT_GROUP_SHARED_KEY}
           data-measurement-group-section={section}
         >
@@ -1774,16 +1775,17 @@ export const DormantFutureMeasurementStep = ({
           <section
             aria-label="Measurement guide and PDF download"
             data-measurement-guide-banner="true"
-            className="mt-3 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
+            className="mt-2 sm:mt-3 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/70 p-4 shadow-sm sm:p-5"
           >
             <div className="flex min-w-0 flex-col gap-3.5">
               <div className="flex min-w-0 items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
+                <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-heritage-gold/30 bg-white text-heritage-green">
                   <BookOpen size={19} aria-hidden="true" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
-                    Measurement guide
+                <div className="min-w-0 flex-1">
+                  <p className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-[0.16em] text-heritage-bronze">
+                    <BookOpen size={15} aria-hidden="true" className="shrink-0 text-heritage-green sm:hidden" />
+                    <span>Measurement guide</span>
                   </p>
                   <h3 className="mt-0.5 font-serif text-base font-extrabold text-heritage-green sm:text-lg">
                     Need help taking accurate measurements?
@@ -1795,12 +1797,12 @@ export const DormantFutureMeasurementStep = ({
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pl-[52px]">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:pl-[52px]">
                 <button
                   type="button"
                   data-measurement-guide-open="true"
                   onClick={() => setGuideModalOpen(true)}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
                   <BookOpen size={15} aria-hidden="true" />
                   <span>View Measurement Guide</span>
@@ -1809,7 +1811,7 @@ export const DormantFutureMeasurementStep = ({
                   href={MEASUREMENT_GUIDE_PDF_HREF}
                   download={MEASUREMENT_GUIDE_PDF_DOWNLOAD_FILENAME}
                   data-measurement-guide-download="true"
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
                   <Download size={15} aria-hidden="true" />
                   <span>Download PDF Guide</span>
